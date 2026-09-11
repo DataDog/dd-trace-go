@@ -7,6 +7,14 @@ You can use the tags below to reduce the size of your binaries (note that some t
 - `grpcnotrace` ([only for gRPC users](https://github.com/grpc/grpc-go/pull/6954)): disables gRPC's built-in `golang.org/x/net/trace` debug tracing endpoints (avoids the `reflect.MethodByName` dependency).
 - `nomsgpack` ([only for Gin users](https://github.com/gin-gonic/gin/blob/master/docs/doc.md#build-without-msgpack-rendering-feature)): disables msgpack binding/rendering support in Gin; msgpack-based request/response handling will not be available (dd-trace-go's msgpack usage is unaffected).
 
+## How do I configure duration-based Auto Test Retries?
+
+Dynamic Auto Test Retries (ATR) are disabled by default. Set `DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED=true` to opt in when the Datadog backend has enabled Automatic Test Retries for the test session. This setting does not enable ATR on its own: backend ATR must be enabled, and the existing global retry budget still applies.
+
+By default, dynamic ATR uses the backend's Early Flake Detection (EFD) retry settings. To override those settings, set `DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS` to exactly five comma-separated integers from `1` through `20`. The values apply, in order, to initial test durations `<=5s`, `<=10s`, `<=30s`, `<=300s`, and `>300s`. For example, `3,2,1,1,1` allows three retries for a test that completes within five seconds.
+
+An unset, empty, malformed, or out-of-range bucket value logs a warning and falls back to the EFD settings. When dynamic ATR is effective, it replaces the flat per-test limit configured by `DD_CIVISIBILITY_FLAKY_RETRY_COUNT`; the flat limit is ignored while the global retry cap and normal stop-after-pass behavior are preserved.
+
 ## Why do client integration spans not use the global service name?
 Integrations that are considered *clients* (http clients, grpc clients, sql clients) do **not** use the globally-configured service name by default. This is by design and is a product-level decision that spans across all the languages' tracers. This is likely to segregate the time spent actually doing the work of the service from the time waiting for another service (i.e. waiting on a web server to return a response). If you want client spans to use the global service name, enable either `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`, or start the tracer with `tracer.WithGlobalServiceName(true)`.
 

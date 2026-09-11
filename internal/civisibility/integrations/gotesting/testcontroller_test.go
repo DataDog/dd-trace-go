@@ -76,7 +76,7 @@ func TestMain(m *testing.M) {
 
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure", "TestDynamicATRWithFlatRetryCountZero"}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
@@ -105,6 +105,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[7], false) {
 		fmt.Printf(scenarioStarted, scenarios[7])
 		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
+	} else if internal.BoolEnv(scenarios[8], false) {
+		fmt.Printf(scenarioStarted, scenarios[8])
+		runDynamicATRWithFlatRetryCountZeroTests(m)
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
@@ -131,7 +134,11 @@ func TestMain(m *testing.M) {
 		if layoutAvailable {
 			runTestControllerSubprocess("RetryNativeParallelUnitTest", "^TestRetryAttemptNativeMaxParallelMatchesTestingFlag$", "Bypass=true", "-test.parallel=3")
 			for _, v := range scenarios {
-				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
+				runFilter := legacyScenarioRunFilter
+				if v == "TestDynamicATRWithFlatRetryCountZero" {
+					runFilter = "^TestDynamicATRWithFlatRetryCountZero$"
+				}
+				runTestControllerSubprocess(v, runFilter, v+"=true")
 			}
 		}
 	}
@@ -376,6 +383,36 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check logs
 	checkLogs()
+
+	os.Exit(0)
+}
+
+// runDynamicATRWithFlatRetryCountZeroTests verifies that dynamic ATR supersedes the flat
+// per-test retry setting while still reserving the configured global retry budget.
+func runDynamicATRWithFlatRetryCountZeroTests(m *testing.M) {
+	server := setUpHTTPServer(true, false, false, nil, false, nil, false, nil, false, nil)
+	defer server.Close()
+
+	os.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "0")
+	os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "1")
+	os.Setenv(constants.CIVisibilityDynamicATREnabledEnvironmentVariable, "true")
+	os.Setenv(constants.CIVisibilityDynamicATRBucketsEnvironmentVariable, "3,1,1,1,1")
+
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	if exitCode := RunM(m); exitCode != 0 {
+		panic("expected dynamic ATR retry scenario to pass; got exit code: " + strconv.Itoa(exitCode))
+	}
+
+	finishedSpans := mTracer.FinishedSpans()
+	dynamicATRSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestDynamicATRWithFlatRetryCountZero", 2)
+	checkSpansByTagValue(dynamicATRSpans, constants.TestIsRetry, "true", 1)
+	checkSpansByTagValue(dynamicATRSpans, constants.TestRetryReason, "auto_test_retry", 1)
+	if remainingRetries := atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount); remainingRetries != 0 {
+		panic(fmt.Sprintf("expected global retry budget to be exhausted, got %d remaining retries", remainingRetries))
+	}
 
 	os.Exit(0)
 }

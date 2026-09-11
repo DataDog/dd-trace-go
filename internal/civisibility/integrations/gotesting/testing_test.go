@@ -156,6 +156,17 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
+var dynamicATRWithFlatRetryCountZeroRunNumber atomic.Int32
+
+func TestDynamicATRWithFlatRetryCountZero(t *testing.T) {
+	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
+		t.Skip("no CI Visibility retry wrapper active; skipping dynamic ATR failure injection")
+	}
+	if dynamicATRWithFlatRetryCountZeroRunNumber.Add(1) == 1 {
+		t.Fatal("dynamic ATR should retry even when the flat retry count is zero")
+	}
+}
+
 //dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 
