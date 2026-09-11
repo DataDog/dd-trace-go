@@ -108,3 +108,5 @@ For example if you're running tests that need the `mysql` database container to 
 ```shell
 docker compose -f docker-compose.yaml -p dd-trace-go up -d mysql
 ```
+
+// ci-canary: no-op comment to exercise change detection. Do not merge.
