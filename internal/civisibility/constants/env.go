@@ -106,4 +106,16 @@ const (
 
 	// CIVisibilityUseNoopTracer indicates if the ci visibility mode must set a noop tracer (avoid change current test behaviors over the noop tracer implementation)
 	CIVisibilityUseNoopTracer = "DD_CIVISIBILITY_USE_NOOP_TRACER"
+
+	// CIVisibilityDynamicATREnabledEnvironmentVariable enables dynamic, duration-based Auto Test Retries budgets.
+	// When enabled, the number of retries allowed for a test is determined by the duration of its initial attempt,
+	// using the same duration buckets as Early Flake Detection, instead of the flat per-test retry limit.
+	// Requires Auto Test Retries to be enabled by the backend.
+	CIVisibilityDynamicATREnabledEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED"
+
+	// CIVisibilityDynamicATRBucketsEnvironmentVariable optionally overrides the five duration-based ATR retry budgets.
+	// Five comma-separated positive integers in [1, 20] for the 5s, 10s, 30s, 5m, and >5m buckets respectively.
+	// When unset or empty, the Early Flake Detection retry settings from the backend are used.
+	// Only takes effect when DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED is enabled.
+	CIVisibilityDynamicATRBucketsEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS"
 )

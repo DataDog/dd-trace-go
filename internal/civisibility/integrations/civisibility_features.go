@@ -371,6 +371,9 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				RemainingTotalRetryCount: totalRetriesCount,
 			}
 			log.Debug("civisibility: automatic test retries enabled [retryCount: %d, totalRetryCount: %d]", retryCount, totalRetriesCount)
+
+			// Parse dynamic ATR env vars once. When dynamic ATR is disabled, normal ATR stays on its existing path.
+			initDynamicATRSettings()
 		}
 
 		// wait group to wait for all the additional features to be loaded
