@@ -189,7 +189,6 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Restore golangci-lint cache
-        if: false # Temporary benchmark: measure lint without the explicit cache.
         id: golangci-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -222,7 +221,7 @@ jobs:
           filter_mode: nofilter
 
       - name: Save golangci-lint cache
-        if: false # Temporary benchmark: measure lint without the explicit cache.
+        if: steps.golangci-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/golangci-lint
