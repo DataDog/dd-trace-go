@@ -100,18 +100,18 @@ func TestParallelSubTests(gt *testing.T) {
 		<-time.After(300 * time.Millisecond) // Simulate some work
 		fmt.Println("Running parallel subtest 1")
 	})
-
 	t.Run("parallel_subtest_2", func(t *testing.T) {
 		t.Parallel()
 		<-time.After(200 * time.Millisecond) // Simulate some work
 		fmt.Println("Running parallel subtest 2")
 	})
-
 	t.Run("parallel_subtest_3", func(t *testing.T) {
 		t.Parallel()
 		<-time.After(100 * time.Millisecond) // Simulate some work
 		fmt.Println("Running parallel subtest 3")
 	})
+
+	time.Sleep(parallelSubtestBlockerDuration)
 }
 
 // Tests for test retries feature

@@ -63,14 +63,15 @@ func TestGetFieldPointerFrom(t *testing.T) {
 		t.Fatal("Expected an error for non-existent field, got nil")
 	}
 
+	// These pure instrumentation assertions share an existing top-level test so
+	// the subprocess span-count scenarios do not gain extra test spans.
 	exerciseTestingInternalsOffsetLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
 	exerciseTestingInternalsHelperMapIsolation(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
+	exerciseParallelTiming(t)
 	exerciseDenyParallelFieldCompatibility(t)
 	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
-	// These pure instrumentation assertions run under this existing top-level test
-	// so the subprocess span-count scenarios do not gain extra test spans.
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)
@@ -250,6 +251,15 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
 		testutils.SkipIfGoTip(t, "some fast-path sections unavailable (expected forward-compat drift): %+v", layout)
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
+	}
+	if !layout.parallelStateOK || !layout.parallelTimingOK {
+		t.Fatalf("expected parallel timing layout to be enabled: %+v", layout)
+	}
+	parallelTimingDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
+	parallelTimingDrift.parallelNow.available = false
+	parallelTimingDrift.computeSectionFlags()
+	if !parallelTimingDrift.parallelStateOK || parallelTimingDrift.parallelTimingOK || parallelTimingDrift.retryAttemptOK {
+		t.Fatal("nested clock drift must preserve parallel-state detection and disable timing-dependent paths")
 	}
 	if !layout.common.finished.available || !processRetryChildCleanupLayoutSupported(layout) {
 		t.Fatal("expected process retry child cleanup layout to include testing.common.finished")

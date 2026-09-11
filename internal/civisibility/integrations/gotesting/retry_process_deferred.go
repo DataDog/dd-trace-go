@@ -1141,11 +1141,12 @@ func (g *deferredProcessRetryGroup) applyCompletedAttempt(completed deferredProc
 	if len(raceInvocations) > 0 {
 		replayQuarantinedRaceResults(&g.testInfo, g.raceProcess, raceInvocations, false, g.raceReplay)
 	}
+	policyDuration, _ := attempt.Result.policyDuration()
 	g.latest = retryAttemptObservation{
 		executionIndex: completed.prepared.index,
 		failed:         effective.Failed,
 		skipped:        effective.Skipped,
-		duration:       max(attempt.FinishTime.Sub(attempt.StartTime), 0),
+		duration:       policyDuration,
 		raceDetected:   attempt.Result.RaceDetected,
 		rootParallel:   attempt.Result.RootParallel,
 	}

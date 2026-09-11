@@ -146,6 +146,7 @@ type testingInternalsLayout struct {
 	outputWriter   outputWriterLayout
 	testState      testStateLayout
 	benchmark      benchmarkFieldsLayout
+	parallelNow    unsafeField
 
 	testFieldsOK      bool
 	parentFieldsOK    bool
@@ -157,6 +158,8 @@ type testingInternalsLayout struct {
 	testStateOK       bool
 	benchmarkFieldsOK bool
 	retryAttemptOK    bool
+	parallelStateOK   bool
+	parallelTimingOK  bool
 }
 
 var (
@@ -260,8 +263,20 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.buildContextMatcherLayout()
 	l.buildChattyPrinterLayout()
 	l.buildTestStateLayout()
+	l.buildParallelTimingLayout()
 	l.computeSectionFlags()
 	return l
+}
+
+func (l *testingInternalsLayout) buildParallelTimingLayout() {
+	start := l.common.start.unsafeField
+	if !start.available || start.typ.Kind() != reflect.Struct {
+		return
+	}
+	now, ok := exactField(start.typ, "now", parallelTimeNowType(), false)
+	if ok {
+		l.parallelNow = now
+	}
 }
 
 func (l *testingInternalsLayout) buildTestStateLayout() {
@@ -361,6 +376,10 @@ func (l *testingInternalsLayout) buildChattyPrinterLayout() {
 // helper wrappers read these flags directly instead of repeating compatibility
 // decisions in hot paths.
 func (l *testingInternalsLayout) computeSectionFlags() {
+	l.parallelStateOK = l.common.isParallel.available
+	l.parallelTimingOK = l.parallelStateOK && allAvailable(
+		l.common.start.unsafeField, l.common.duration, l.parallelNow,
+	)
 	l.testFieldsOK = allAvailable(
 		l.common.mu, l.common.output, l.common.level, l.common.name,
 		l.common.failed, l.common.skipped, l.common.parent.unsafeField, l.common.barrier,
@@ -399,7 +418,7 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 		l.common.lastRaceErrors, l.common.raceErrorLogged,
 		l.common.tempDir, l.common.tempDirErr, l.common.tempDirSeq,
 		l.common.ctx, l.common.cancelCtx, l.tstate.unsafeField, l.denyParallel,
-	) && l.testStateOK
+	) && l.testStateOK && l.parallelTimingOK
 }
 
 func denyParallelField(owner reflect.Type) (unsafeField, bool) {

@@ -8,32 +8,23 @@
 package gotesting
 
 import (
-	"reflect"
 	"time"
 	"unsafe"
 )
 
 func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
-	if base == nil || !field.available {
+	layout := getTestingInternalsLayout()
+	if base == nil || !field.available || layout == nil || !layout.parallelTimingOK {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
-	now := value.FieldByName("now")
-	if now.IsValid() && now.CanAddr() && now.Type() == reflect.TypeFor[time.Time]() {
-		reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().Set(reflect.ValueOf(time.Now()))
-	}
+	*(*time.Time)(unsafe.Add(base, field.offset+layout.parallelNow.offset)) = time.Now()
 }
 
 func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout) {
 	field := layout.common.start.unsafeField
-	if base == nil || !field.available {
+	if base == nil || !field.available || !layout.parallelTimingOK {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
-	now := value.FieldByName("now")
-	if !now.IsValid() || !now.CanAddr() || now.Type() != reflect.TypeFor[time.Time]() {
-		return
-	}
-	started := reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().Interface().(time.Time)
+	started := *(*time.Time)(unsafe.Add(base, field.offset+layout.parallelNow.offset))
 	*fieldPtr[time.Duration](base, layout.common.duration) += time.Since(started)
 }

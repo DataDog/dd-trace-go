@@ -5,7 +5,12 @@
 
 package civisibility
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+const parallelPayloadBlockerDuration = 75 * time.Millisecond
 
 func TestNormal(t *testing.T) {
 	t.Log("Normal test")
@@ -30,6 +35,15 @@ func TestWithParallelSubTests(t *testing.T) {
 			t.Logf("Parallel sub test %s", localName)
 		})
 	}
+
+	// Keep the children paused long enough for the payload assertions to prove
+	// that active duration excludes the native parallel wait.
+	time.Sleep(parallelPayloadBlockerDuration)
+}
+
+func TestParallelSkip(t *testing.T) {
+	t.Parallel()
+	t.Skip("parallel skip")
 }
 
 func TestFail(t *testing.T) {
