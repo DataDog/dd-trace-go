@@ -320,12 +320,10 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 }
 
 // Init initializes the provider. For the Datadog provider,
-// this is waiting for the first configuration to be loaded.
+// this is waiting for the first configuration to be loaded, bounded by
+// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
-	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), internalconfig.Get().FlaggingProviderInitTimeout())
-	defer cancel()
-	return p.InitWithContext(ctx, evaluationContext)
+	return p.InitWithContext(context.Background(), evaluationContext)
 }
 
 // waitForConfigurationUpdate waits for a configuration update or context
@@ -351,8 +349,17 @@ func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error 
 
 // InitWithContext initializes the provider with context support.
 // This method respects context cancellation and timeouts, allowing users
-// to cancel the initialization process if needed.
+// to cancel the initialization process if needed. A context without a
+// deadline gets DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
 func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+	// The SDK's SetProviderAndWait calls this directly with context.Background(),
+	// never Init, so the timeout has to be applied here or it waits forever.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, internalconfig.Get().FlaggingProviderInitTimeout())
+		defer cancel()
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
