@@ -16,6 +16,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   pull_request:
   workflow_dispatch:

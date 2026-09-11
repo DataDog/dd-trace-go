@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 )
 
-// WrapContext returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
+// WrapContext returns the GLS-wrapped context if the GLS is woven in, otherwise it returns the given parameter.
 func WrapContext(ctx context.Context) context.Context {
-	if !Enabled() {
+	if !glsActive() {
 		return ctx
 	}
 
@@ -30,11 +30,11 @@ func WrapContext(ctx context.Context) context.Context {
 }
 
 // CtxWithValue runs context.WithValue, adds the result to the GLS slot of orchestrion, and returns it.
-// If orchestrion is not enabled, it will run context.WithValue and return the result.
+// If the GLS is not woven in, it will run context.WithValue and return the result.
 // Since we don't support cross-goroutine switch of the GLS we still run context.WithValue in the case
 // we are switching goroutines.
 func CtxWithValue(parent context.Context, key, val any) context.Context {
-	if !Enabled() {
+	if !glsActive() {
 		return context.WithValue(parent, key, val)
 	}
 
@@ -55,10 +55,10 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 // once is harmless — after the first call the token is gone and the rest are
 // no-ops.
 //
-// When orchestrion is disabled this degrades to context.WithValue and a cleanup
+// When the GLS is not woven in, this degrades to context.WithValue and a cleanup
 // that does nothing.
 func CtxWithScopedValue(parent context.Context, key, val any) (context.Context, func()) {
-	if !Enabled() {
+	if !glsActive() {
 		return context.WithValue(parent, key, val), glsNoop
 	}
 
@@ -74,7 +74,7 @@ func CtxWithScopedValue(parent context.Context, key, val any) (context.Context, 
 // This takes the top of the stack, so it is only correct for keys whose scopes
 // close strictly LIFO. Anything else must use [CtxWithScopedValue].
 func GLSPopValue(key any) any {
-	if !Enabled() {
+	if !glsActive() {
 		return nil
 	}
 
@@ -177,13 +177,13 @@ var doneSentinel = func() *atomic.Bool {
 //
 // When ctxp is non-nil the parent context is wrapped (via WrapContext) so the
 // returned context is also GLS-aware, matching the former in-source CtxWithValue.
-// Everything is a no-op when orchestrion is disabled.
+// Everything is a no-op when the GLS is not woven in.
 //
 // Grouping the wrap, push, popper-capture and cell allocation here keeps the
 // injected templates a single call and the logic unit-testable in plain go test.
 // The companions are GLSDeactivate (finish) and GLSReset (span-pool reuse).
 func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell, done *GLSDoneCell) {
-	if !Enabled() {
+	if !glsActive() {
 		return
 	}
 	if ctxp != nil {
@@ -339,7 +339,7 @@ func GLSReset(done *GLSDoneCell, pop *GLSPopperCell) {
 // opened inside that scope) rather than whatever is on top. A token that has
 // already been removed matches nothing, so a late or repeated call does nothing.
 func GLSPopFunc(key any, token uint64) func() {
-	if !Enabled() {
+	if !glsActive() {
 		return glsNoop
 	}
 	pushStack := getDDContextStack()
@@ -356,7 +356,7 @@ func GLSPopFunc(key any, token uint64) func() {
 // shared with a positional [GLSPopValue] exit, which would otherwise reach past
 // its own scope once its entry had been swept. See [contextStack.PopEntry].
 func GLSPopEntryFunc(key any, token uint64) func() {
-	if !Enabled() {
+	if !glsActive() {
 		return glsNoop
 	}
 	pushStack := getDDContextStack()
@@ -370,10 +370,10 @@ func GLSPopEntryFunc(key any, token uint64) func() {
 var glsNoop = func() {}
 
 // GLSStackDepth returns the total number of entries in the current goroutine's
-// GLS context stack. Returns 0 if orchestrion is not enabled. This is intended
+// GLS context stack. Returns 0 if the GLS is not woven in. This is intended
 // for use in tests to detect GLS leaks.
 func GLSStackDepth() int {
-	if !Enabled() {
+	if !glsActive() {
 		return 0
 	}
 	return getDDContextStack().Depth()
@@ -386,7 +386,7 @@ type glsContext struct {
 }
 
 func (g *glsContext) Value(key any) any {
-	if !Enabled() {
+	if !glsActive() {
 		return g.Context.Value(key)
 	}
 
