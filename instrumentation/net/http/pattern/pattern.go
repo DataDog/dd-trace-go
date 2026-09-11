@@ -24,8 +24,9 @@ import (
 // Route returns a Go 1.22 ServeMux pattern without its optional method.
 // It retains any host: "GET example.com/foo" becomes "example.com/foo".
 func Route(s string) string {
-	// Go 1.22 ServeMux patterns use [METHOD ][HOST]/[PATH].
-	// See net/http.parsePattern and https://pkg.go.dev/net/http#hdr-Patterns-ServeMux.
+	// Go 1.22 ServeMux validates patterns as [METHOD ][HOST]/[PATH], so text before
+	// the first space or tab is the method. See net/http.parsePattern and
+	// https://pkg.go.dev/net/http#hdr-Patterns-ServeMux.
 	if i := strings.IndexAny(s, " \t"); i > 0 && len(s) >= i+1 {
 		return strings.TrimLeft(s[i+1:], " \t")
 	}
