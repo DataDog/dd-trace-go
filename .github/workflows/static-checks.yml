@@ -184,19 +184,6 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Record checked-out commit
-        id: checkout
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore golangci-lint cache
-        id: golangci-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/golangci-lint
-          key: golangci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ inputs.go-version || 'stable' }}-${{ hashFiles('.golangci.yml', 'internal/orchestrion/_integration/.golangci.yml') }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ steps.checkout.outputs.sha }}
-          restore-keys: |
-            golangci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ inputs.go-version || 'stable' }}-${{ hashFiles('.golangci.yml', 'internal/orchestrion/_integration/.golangci.yml') }}-
-
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
@@ -219,13 +206,6 @@ jobs:
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
-
-      - name: Save golangci-lint cache
-        if: steps.golangci-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/golangci-lint
-          key: ${{ steps.golangci-cache.outputs.cache-primary-key }}
 
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
