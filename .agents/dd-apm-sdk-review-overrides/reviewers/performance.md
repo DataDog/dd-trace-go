@@ -9,7 +9,7 @@ The source of truth for the pattern below is [`contrib/AGENTS.md` § "Span Tag P
 
 ## `WithStartSpanConfig` must not be the first tag-setting option
 
-`WithStartSpanConfig`'s tag merge *aliases* the cached base's `Tags` map onto the live span config when that config does not have a tags map yet. If `WithStartSpanConfig(cachedBase)` is the first tag-setting option, the next `Tag` / `WithTags` call mutates the shared cached base in place — every future span built from it inherits the last request's dynamic tags.
+`WithStartSpanConfig`'s tag merge *aliases* the cached base's `Tags` map onto the live span config when that config does not have a tags map yet. If `WithStartSpanConfig(cachedBase)` is the first tag-setting option, the next `Tag` / `WithTags` call mutates the shared cached base in place. A later caller that reuses `cachedBase` without resetting that key inherits the last dynamic tags, and concurrent starts race on the same map. Sequential calls that always rewrite the same key still pollute `cachedBase`; they do not "inherit" the previous value because they overwrite it before the span is created.
 
 This is a silent cross-request data leak, not a style nit. Treat it as **P0**.
 

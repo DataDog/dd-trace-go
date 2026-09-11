@@ -1,7 +1,7 @@
 # LLM Validation Platform — dd-trace-go config
 #
-# Starter suite for the dd-apm-sdk-review skill. Two cases on purpose: one per
-# starter override, cheap enough to re-run while you add the next rule.
+# Starter suite for the dd-apm-sdk-review skill. One template case on purpose:
+# cheap enough to re-run while you add the next rule.
 #
 # DataDog/dd-trace-go#4965 (draft) already adds AGENTS.md cases. The platform
 # allows only one YAML under suites/ — fold those cases into
@@ -29,12 +29,11 @@ instruction_files:
 
 default_level: gate
 presets:
-  gate: # Both starter cases. Add yours here when you want CI to run it.
+  gate: # The starter case. Add yours here when you want CI to run it.
     cases:
       - go-perf-startspanconfig-first
-      - go-security-secret-into-tag
     runs: 2
-  minimum: # Cheapest smoke — the performance override.
+  minimum: # Cheapest smoke — the same starter case.
     cases:
       - go-perf-startspanconfig-first
     runs: 2

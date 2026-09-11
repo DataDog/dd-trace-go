@@ -84,6 +84,10 @@ Our CI pipeline includes several automated checks:
 
 - **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
 
+#### LLM Validation Workflow
+
+- **LLM Validation**: GitLab job `"llm validation"` from [`ddoghq/llm-validation-platform`](https://github.com/ddoghq/llm-validation-platform). It is an A/B eval of the `dd-apm-sdk-review` skill, not a `go test`. Cases live in [`.llm-validation/`](./.llm-validation/); how to add one is in [`.llm-validation/README.md`](./.llm-validation/README.md).
+
 #### Customer Simulation Platform (CuSim)
 
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.

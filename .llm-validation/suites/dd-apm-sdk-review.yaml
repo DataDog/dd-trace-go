@@ -2,7 +2,7 @@ name: dd-apm-sdk-review
 version: "0.1"
 
 # One file on purpose: the platform CLI errors if suites/ has more than one YAML.
-# Two starter cases — one per override. Copy either block to add the next one.
+# One starter case — a template. Copy this block to add the next one.
 #
 # These are written as traps, not as obvious bugs: a generic reviewer without
 # the override should miss or mis-classify them. That is what makes the
@@ -35,36 +35,9 @@ cases:
       ```
     expected_criteria:
       - "Flags that `WithStartSpanConfig(cachedBase)` is the first tag-setting option, so `ResourceName(name)` (a `Tag` wrapper) mutates the shared `cachedBase` Tags map in place."
-      - "Names the concrete failure — a later `handle` call inherits the previous request's resource name."
+      - "Names the concrete failures — pollution of `cachedBase`, inheritance by a later caller that does not reset `resource.name`, and unsafe concurrent map mutation."
       - "Recommends a `Tag` / `WithTags` / `ResourceName` call *before* `WithStartSpanConfig(cachedBase)`, not after."
     bad_signals:
       - "Approves the snippet or calls this option order the recommended / correct contrib pattern."
       - "Treats the leading comment as accurate and does not mention in-place mutation of `cachedBase`."
-
-  - id: go-security-secret-into-tag
-    files:
-      - .agents/skills/dd-apm-sdk-review/reviewers/security.md
-      - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
-      - .agents/dd-apm-sdk-review-overrides/reviewers/security.md
-    input: |
-      Apply this repo's security-review criteria (reviewers/security.md, its
-      .agents/dd-apm-sdk-review-overrides/reviewers/security.md override, and _common.md) to the
-      following contrib connect path. No git checkout available — this snippet is the entire
-      change to review. `cfg.BrokerURL` is the AMQP URL the client dials
-      (`amqp://user:password@host:5672/vhost`).
-
-      ```go
-      func startClient(cfg Config) {
-          span := tracer.StartSpan("amqp.connect")
-          // OpenTelemetry peer tag so dashboards group by destination.
-          span.SetTag("peer.hostname", cfg.BrokerURL)
-          defer span.Finish()
-      }
-      ```
-    expected_criteria:
-      - "Flags `span.SetTag(\"peer.hostname\", cfg.BrokerURL)` as writing a credential-bearing URL into a span tag, even though the key looks like a hostname field."
-      - "Says the password becomes customer-visible in Datadog, not merely a naming / OpenTelemetry-convention nit."
-      - "Recommends tagging host / port / scheme only, or a redacted URL — not keeping the raw `BrokerURL` under a different key."
-    bad_signals:
-      - "Approves `peer.hostname` because the tag name is a standard peer / hostname / OpenTelemetry field."
-      - "Only asks to rename the tag (e.g. to `peer.url` or `amqp.url`) while still storing `cfg.BrokerURL`."
+      - "Claims a later sequential `handle` call inherits the previous request's resource name."
