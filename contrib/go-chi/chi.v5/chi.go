@@ -63,7 +63,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, span, cfg)
+				next = withAppsec(next, r, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -72,10 +72,21 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
-			span.SetTag(ext.HTTPRoute, routePattern)
+			if routePattern != "" || !cfg.otelEnabled {
+				span.SetTag(ext.HTTPRoute, routePattern)
+			}
+			if cfg.otelEnabled {
+				// Chi exposes the final route pattern only after dispatch, so endpoint tagging
+				// must happen here rather than when the span starts.
+				if endpoint, ok := httptrace.HTTPEndpoint(routePattern, r); ok {
+					span.SetTag(ext.HTTPEndpoint, endpoint)
+				}
+			}
 			var resourceName string
 			if cfg.resourceNamer != nil {
 				resourceName = cfg.resourceNamer(r)
+			} else if cfg.otelEnabled {
+				resourceName = httptrace.ServerSpanName(r.Method, routePattern)
 			} else {
 				resourceName = routePattern
 				if resourceName == "" {

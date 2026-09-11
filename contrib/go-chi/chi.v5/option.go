@@ -25,6 +25,7 @@ type config struct {
 	headerTags         instrumentation.HeaderTags
 	resourceNamer      func(r *http.Request) string
 	appsecDisabled     bool
+	otelEnabled        bool
 	appsecConfig       httpsec.Config
 }
 
@@ -51,6 +52,7 @@ func defaults(cfg *config) {
 	cfg.resourceNamer = nil
 	cfg.appsecDisabled = false
 	cfg.appsecConfig.Framework = "github.com/go-chi/chi/v5"
+	cfg.otelEnabled = instr.OTelSemanticsEnabled()
 }
 
 // WithService sets the given service name for the router.
