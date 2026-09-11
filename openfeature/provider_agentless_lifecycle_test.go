@@ -189,3 +189,92 @@ func TestDatadogProvider_ConcurrentLifecycleRace(t *testing.T) {
 	defer cancel()
 	require.NoError(t, p.ShutdownWithContext(ctx))
 }
+
+// TestInitWithContext_UndeadlinedContextHonorsInitTimeout pins the regression
+// that hung the parametric weblog: the OpenFeature SDK's SetProviderAndWait
+// calls InitWithContext directly with context.Background(), never Init, so a
+// timeout applied only in Init left the caller waiting forever.
+func TestInitWithContext_UndeadlinedContextHonorsInitTimeout(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
+
+	p := newDatadogProvider(ProviderConfig{})
+
+	start := time.Now()
+	err := runWithDeadline(t, 10*time.Second, func() error {
+		return p.InitWithContext(context.Background(), openfeature.EvaluationContext{})
+	})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if assert.ErrorAs(t, err, &initErr) {
+		assert.Equal(t, openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+	// Guard both sides of the configured timeout: returning immediately and
+	// silently substituting the much longer default must both fail this test.
+	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond,
+		"initialization must wait for the configured timeout before reporting not ready")
+	// A small multiple of the configured 200ms, so a hard-coded longer timeout
+	// (the 10s default included) still fails this.
+	assert.Less(t, elapsed, 2*time.Second,
+		"an undeadlined context must be bounded by the configured init timeout, not a fixed one")
+}
+
+// TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady
+// exercises the complete customer-visible lifecycle. SetProviderAndWait must
+// not report READY when its wait ends without configuration, while delivery
+// must remain registered so a later configuration can recover the provider.
+func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
+
+	openfeature.Shutdown() // drop providers and handlers left by other tests
+	t.Cleanup(openfeature.Shutdown)
+
+	readyEvents := make(chan openfeature.EventDetails, 2)
+	readyCallback := func(details openfeature.EventDetails) {
+		readyEvents <- details
+	}
+	openfeature.AddHandler(openfeature.ProviderReady, &readyCallback)
+
+	p := newDatadogProvider(ProviderConfig{})
+
+	err := runWithDeadline(t, 10*time.Second, func() error {
+		return openfeature.SetProviderAndWait(p)
+	})
+
+	var initErr *openfeature.ProviderInitError
+	if assert.ErrorAs(t, err, &initErr) {
+		assert.Equal(t, openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+	assert.Nil(t, p.getConfiguration())
+	assert.NotEqual(t, openfeature.ReadyState, openfeature.NewDefaultClient().State(),
+		"SetProviderAndWait must not report READY before the first configuration")
+
+	select {
+	case <-readyEvents:
+		t.Error("ProviderReady was emitted before the first configuration")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Delivery continues after the bounded initialization wait. The first late
+	// configuration must be observable as the recovery transition to READY.
+	p.updateConfiguration(createTestConfig())
+
+	select {
+	case <-readyEvents:
+	case <-time.After(time.Second):
+		t.Fatal("late configuration did not emit ProviderReady")
+	}
+	assert.Eventually(t, func() bool {
+		return openfeature.NewDefaultClient().State() == openfeature.ReadyState
+	}, time.Second, time.Millisecond, "late configuration must promote the SDK state to READY")
+
+	result := p.BooleanEvaluation(context.Background(), "bool-flag", false, openfeature.FlattenedContext{
+		"targetingKey": "user-123",
+		"country":      "US",
+	})
+	assert.True(t, result.Value, "evaluation must succeed after late readiness recovery")
+}
