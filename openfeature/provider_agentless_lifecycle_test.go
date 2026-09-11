@@ -24,16 +24,21 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid")
 
-	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
+	settings := internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}
+	p := newDatadogProviderWithSourceAndEVP(
+		ProviderConfig{},
+		internalffe.SourceAgentless,
+		newAgentlessEVPClient(settings),
+	)
 	p.mu.Lock()
 	p.shutdownCalled = true
 	p.mu.Unlock()
 
-	src, err := newAgentlessSource(internalffe.Settings{
-		AgentlessBaseURL: backend.server.URL,
-		PollInterval:     time.Hour,
-		RequestTimeout:   2 * time.Second,
-	}, p.updateConfiguration)
+	src, err := newAgentlessSource(settings, p.updateConfiguration)
 	require.NoError(t, err)
 
 	assert.False(t, p.tryRegisterAgentless(src))
@@ -115,7 +120,12 @@ func TestStartWithAgentless_ConfiguresAgentlessEVP(t *testing.T) {
 }
 
 func TestInitWithContext_DeliveryErrFailsFast(t *testing.T) {
-	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
+	settings := internalffe.Settings{}
+	p := newDatadogProviderWithSourceAndEVP(
+		ProviderConfig{},
+		internalffe.SourceAgentless,
+		newAgentlessEVPClient(settings),
+	)
 	p.mu.Lock()
 	p.deliveryErr = errors.New("no API key for managed agentless endpoint")
 	p.mu.Unlock()

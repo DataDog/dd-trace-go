@@ -144,16 +144,16 @@ var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
 	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
 })
 
-// newDatadogProvider builds a provider defaulting to the Remote Config
-// source. It exists so the ~60 existing tests exercising evaluation, hooks,
-// and metrics — none of which care about the delivery source — don't need to
-// be touched; production code paths call newDatadogProviderWithSource.
+// newDatadogProvider is a test-only bare provider constructor. Tests that use
+// it exercise evaluation, hook, and metric behavior without starting a
+// delivery source; source-to-transport wiring must be tested through the
+// source-specific start functions.
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
-	return newDatadogProviderWithSource(config, internalffe.SourceRemoteConfig)
-}
-
-func newDatadogProviderWithSource(config ProviderConfig, source internalffe.Source) *DatadogProvider {
-	return newDatadogProviderWithSourceAndEVP(config, source, newEVPClient())
+	return newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 }
 
 func newDatadogProviderWithSourceAndEVP(
