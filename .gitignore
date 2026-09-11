@@ -29,8 +29,10 @@ coverage-*.txt
 
 # Editors and Agents
 /.codex/
-/.cursor
+/.cursor/*
+!/.cursor/skills/
 /.vscode
 /.claude/*
 !/.claude/commands/
 !/.claude/settings.json
+!/.claude/skills/
