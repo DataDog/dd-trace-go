@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
@@ -903,7 +904,10 @@ func TestStatsPropagateOTelHTTPServerSpanFields(t *testing.T) {
 	assert.Equal(t, uint64(1), group.Errors)
 
 	otelAttrs := buildDataPointAttributes(group, group.Errors > 0)
-	assertOTLPIntAttribute(t, otelAttrs, ext.HTTPResponseStatusCode, int64(status))
+	statusAttr := extractOTLPAttribute(t, otelAttrs, ext.HTTPResponseStatusCode)
+	statusValue, ok := statusAttr.Value.Value.(*otlpcommon.AnyValue_IntValue)
+	require.True(t, ok, "%s must use an OTLP integer value", ext.HTTPResponseStatusCode)
+	assert.Equal(t, int64(status), statusValue.IntValue)
 	attrs := kvAttrsToMap(otelAttrs)
 	assert.Equal(t, "SPAN_KIND_SERVER", attrs["span.kind"])
 	assert.Equal(t, method, attrs[ext.HTTPRequestMethod])
