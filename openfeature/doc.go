@@ -32,40 +32,40 @@
 // To use the Datadog OpenFeature provider, create a new provider instance and
 // register it with the OpenFeature SDK:
 //
-//		import (
-//		    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
-//		    of "github.com/open-feature/go-sdk/openfeature"
-//		)
+//	import (
+//	    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
+//	    of "github.com/open-feature/go-sdk/openfeature"
+//	)
 //
-//		// Create and register the provider
-//		provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
-//		if err != nil {
-//		    log.Fatal(err)
-//		}
-//		defer provider.Shutdown()
+//	// Create and register the provider
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer provider.Shutdown()
 //
-//		// Blocks while waiting for the first configuration, bounded by
-//		// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS (default 10s).
-//		// On expiry it returns a recoverable PROVIDER_NOT_READY error: delivery keeps
-//		// running and a later configuration transitions the provider to ready.
-//		if err = of.SetProviderAndWait(provider); err != nil {
-//		    log.Printf("feature flags are not ready yet: %v", err)
-//		}
+//	// Blocks while waiting for the first configuration, bounded by
+//	// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS (default 10s).
+//	// On expiry it returns a recoverable PROVIDER_NOT_READY error: delivery keeps
+//	// running and a later configuration transitions the provider to ready.
+//	if err = of.SetProviderAndWait(provider); err != nil {
+//	    log.Printf("feature flags are not ready yet: %v", err)
+//	}
 //
-//		// Create a client and evaluate flags
-//		client := of.NewClient("my-app")
-//		ctx := context.Background()
+//	// Create a client and evaluate flags
+//	client := of.NewClient("my-app")
+//	ctx := context.Background()
 //
-//		// Evaluate a boolean flag with a targetless context
-//		evalCtx := of.NewTargetlessEvaluationContext()
-//		enabled, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
-//		if err != nil {
-//		    log.Printf("Failed to evaluate flag: %v", err)
-//		}
+//	// Evaluate a boolean flag with a targetless context
+//	evalCtx := of.NewTargetlessEvaluationContext()
+//	enabled, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//	if err != nil {
+//	    log.Printf("Failed to evaluate flag: %v", err)
+//	}
 //
-//		if enabled {
-//		    // Execute new feature code
-//		}
+//	if enabled {
+//	    // Execute new feature code
+//	}
 //
 // # Targeting Context
 //
