@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -35,6 +36,7 @@ type PromptTemplate struct {
 type PromptFallback struct {
 	Template PromptTemplate
 	Version  string
+	Config   map[string]any
 }
 
 // PromptSource identifies where a managed prompt came from.
@@ -54,6 +56,7 @@ type ManagedPrompt struct {
 	version           string
 	source            PromptSource
 	template          PromptTemplate
+	config            map[string]any
 	promptUUID        string
 	promptVersionUUID string
 }
@@ -69,6 +72,12 @@ func (p *ManagedPrompt) Source() PromptSource { return p.source }
 
 // Template returns an unrendered copy of the prompt template.
 func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.template) }
+
+// Config returns a copy of the application-consumed configuration stored with this prompt version.
+func (p *ManagedPrompt) Config() map[string]any {
+	config, _ := normalizePromptConfig(p.config)
+	return config
+}
 
 var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
@@ -178,6 +187,9 @@ func WithPromptFallback(fallback PromptFallback) GetPromptOption {
 	return func(config *getPromptConfig) {
 		copy := fallback
 		copy.Template = copyPromptTemplate(fallback.Template)
+		if config, err := normalizePromptConfig(fallback.Config); err == nil {
+			copy.Config = config
+		}
 		config.fallback = &copy
 		config.fallbackFunc = nil
 	}
@@ -197,16 +209,36 @@ func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	return copy
 }
 
-func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {
+func normalizePromptConfig(config map[string]any) (map[string]any, error) {
+	if config == nil {
+		return map[string]any{}, nil
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must contain JSON values: %w", err)
+	}
+	var copy map[string]any
+	if err := json.Unmarshal(encoded, &copy); err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must be a JSON object: %w", err)
+	}
+	return copy, nil
+}
+
+func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, config map[string]any, promptUUID, versionUUID string) (*ManagedPrompt, error) {
 	if template.Text != "" && template.Messages != nil {
 		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")
 	}
-	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
+	config, err := normalizePromptConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), config: config, promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
 }
 
 func (p *ManagedPrompt) withSource(source PromptSource) *ManagedPrompt {
 	copy := *p
 	copy.source = source
 	copy.template = copyPromptTemplate(p.template)
+	copy.config = p.Config()
 	return &copy
 }

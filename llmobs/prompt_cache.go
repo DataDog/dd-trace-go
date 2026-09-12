@@ -102,6 +102,7 @@ type promptDiskValue struct {
 	ID                string         `json:"id"`
 	Version           string         `json:"version"`
 	Template          PromptTemplate `json:"template"`
+	Config            map[string]any `json:"config"`
 	PromptUUID        string         `json:"prompt_uuid,omitempty"`
 	PromptVersionUUID string         `json:"prompt_version_uuid,omitempty"`
 }
@@ -143,7 +144,7 @@ func (c *promptFileCache) get(key promptCacheKey) (*ManagedPrompt, time.Time, bo
 	if json.Unmarshal(data, &entry) != nil || entry.Prompt.ID == "" || entry.Prompt.Version == "" || entry.WrittenAt.IsZero() {
 		return nil, time.Time{}, false, false
 	}
-	prompt, err := newManagedPrompt(entry.Prompt.ID, entry.Prompt.Version, PromptSourceCache, entry.Prompt.Template, entry.Prompt.PromptUUID, entry.Prompt.PromptVersionUUID)
+	prompt, err := newManagedPrompt(entry.Prompt.ID, entry.Prompt.Version, PromptSourceCache, entry.Prompt.Template, entry.Prompt.Config, entry.Prompt.PromptUUID, entry.Prompt.PromptVersionUUID)
 	if err != nil {
 		return nil, time.Time{}, false, false
 	}
@@ -154,7 +155,7 @@ func (c *promptFileCache) set(key promptCacheKey, prompt *ManagedPrompt, written
 	if !c.enabled {
 		return
 	}
-	entry := promptFileEntry{Prompt: promptDiskValue{ID: prompt.id, Version: prompt.version, Template: prompt.Template(), PromptUUID: prompt.promptUUID, PromptVersionUUID: prompt.promptVersionUUID}, WrittenAt: writtenAt}
+	entry := promptFileEntry{Prompt: promptDiskValue{ID: prompt.id, Version: prompt.version, Template: prompt.Template(), Config: prompt.Config(), PromptUUID: prompt.promptUUID, PromptVersionUUID: prompt.promptVersionUUID}, WrittenAt: writtenAt}
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return
