@@ -137,6 +137,10 @@ func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 // time.Duration without overflowing int64 into a negative duration.
 const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
 
+// maxDurationSeconds is the largest whole-second value that converts to a
+// time.Duration without overflowing.
+const maxDurationSeconds = float64(math.MaxInt64 / int64(time.Second))
+
 // validateFlaggingProviderInitTimeout rejects an overflow-prone value so the caller falls
 // back to the default rather than Init receiving an already-expired context.
 func validateFlaggingProviderInitTimeout(ms int) bool {

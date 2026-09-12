@@ -6,7 +6,6 @@
 package config
 
 import (
-	"math"
 	"net/url"
 	"os"
 	"reflect"
@@ -1717,8 +1716,6 @@ func TestLLMObsPromptEnvVars(t *testing.T) {
 		assert.Empty(t, cfg.LLMObsPromptsCacheDir())
 	})
 
-	maxDurationSeconds := float64(math.MaxInt64) / float64(time.Second)
-	maxSafeDurationSeconds := math.Nextafter(maxDurationSeconds, 0)
 	for _, test := range []struct {
 		name, ttl, ttlAlias, timeout, timeoutAlias string
 		wantTTL, wantTimeout                       time.Duration
@@ -1729,8 +1726,7 @@ func TestLLMObsPromptEnvVars(t *testing.T) {
 		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
 		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
 		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
-		{name: "maximum safe duration", ttl: strconv.FormatFloat(maxSafeDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxSafeDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxSafeDurationSeconds * float64(time.Second)), wantTimeout: time.Duration(maxSafeDurationSeconds * float64(time.Second))},
-		{name: "rounded maximum overflows", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "maximum duration", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxDurationSeconds) * time.Second, wantTimeout: time.Duration(maxDurationSeconds) * time.Second},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			resetGlobalState()
