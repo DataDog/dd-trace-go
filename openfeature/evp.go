@@ -229,7 +229,8 @@ func (c *evpClient) send(
 	}
 
 	u := *baseURL
-	u.Path = joinEVPPath(basePath, endpoint)
+	u.Path = joinEVPPath(u.Path, basePath, endpoint)
+	u.RawPath = ""
 	requestURL := u.String()
 	var wroteRequest atomic.Bool
 	trace := &httptrace.ClientTrace{
@@ -312,7 +313,8 @@ func (c *evpClient) discoverLocalRoute() string {
 	}
 
 	u := *c.agentURL
-	u.Path = "/info"
+	u.Path = joinEVPPath(u.Path, "/info")
+	u.RawPath = ""
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
 	if err != nil {
 		return ""
@@ -327,12 +329,30 @@ func (c *evpClient) discoverLocalRoute() string {
 	}
 
 	var info struct {
-		Endpoints []string `json:"endpoints"`
+		Endpoints              []string `json:"endpoints"`
+		EVPProxyAllowedHeaders []string `json:"evp_proxy_allowed_headers"`
 	}
 	if err := c.jsonConfig.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		return ""
 	}
+	if !supportsEVPProxyIdentityHeaders(info.EVPProxyAllowedHeaders) {
+		return ""
+	}
 	return selectEVPProxyPath(info.Endpoints)
+}
+
+func supportsEVPProxyIdentityHeaders(headers []string) bool {
+	hasOrigin := false
+	hasOriginVersion := false
+	for _, header := range headers {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(header), headerEVPOrigin):
+			hasOrigin = true
+		case strings.EqualFold(strings.TrimSpace(header), headerEVPOriginVersion):
+			hasOriginVersion = true
+		}
+	}
+	return hasOrigin && hasOriginVersion
 }
 
 func selectEVPProxyPath(endpoints []string) string {
@@ -348,8 +368,17 @@ func selectEVPProxyPath(endpoints []string) string {
 	return ""
 }
 
-func joinEVPPath(basePath, endpoint string) string {
-	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(endpoint, "/")
+func joinEVPPath(parts ...string) string {
+	joined := ""
+	for _, part := range parts {
+		if part = strings.Trim(part, "/"); part != "" {
+			joined += "/" + part
+		}
+	}
+	if joined == "" {
+		return "/"
+	}
+	return joined
 }
 
 func (c *evpClient) canUseDirect() bool {
