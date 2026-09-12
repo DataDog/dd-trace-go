@@ -184,8 +184,7 @@ func (c *evpClient) postRaw(endpoint, eventName string, body []byte) error {
 			return nil
 		}
 
-		var statusErr *evpHTTPStatusError
-		if errors.As(result.err, &statusErr) {
+		if statusErr, ok := errors.AsType[*evpHTTPStatusError](result.err); ok {
 			replay := statusErr.statusCode == http.StatusNotFound ||
 				statusErr.statusCode == http.StatusMethodNotAllowed
 			if !replay && !shouldSwitchFutureRoute(statusErr.statusCode) {
