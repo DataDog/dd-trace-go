@@ -186,11 +186,12 @@ func (c *evpClient) postRaw(endpoint, eventName string, body []byte) error {
 
 		var statusErr *evpHTTPStatusError
 		if errors.As(result.err, &statusErr) {
-			if statusErr.statusCode != http.StatusNotFound &&
-				statusErr.statusCode != http.StatusMethodNotAllowed {
+			replay := statusErr.statusCode == http.StatusNotFound ||
+				statusErr.statusCode == http.StatusMethodNotAllowed
+			if !replay && !shouldSwitchFutureRoute(statusErr.statusCode) {
 				return result.err
 			}
-			if c.leaveLocalRoute() {
+			if direct := c.leaveLocalRoute(); direct && replay {
 				return c.sendDirect(endpoint, eventName, body)
 			}
 			return result.err
@@ -369,20 +370,27 @@ func selectEVPProxyPath(endpoints []string) string {
 }
 
 func joinEVPPath(parts ...string) string {
-	joined := ""
+	var joined strings.Builder
 	for _, part := range parts {
 		if part = strings.Trim(part, "/"); part != "" {
-			joined += "/" + part
+			joined.WriteByte('/')
+			joined.WriteString(part)
 		}
 	}
-	if joined == "" {
+	if joined.Len() == 0 {
 		return "/"
 	}
-	return joined
+	return joined.String()
 }
 
 func (c *evpClient) canUseDirect() bool {
 	return c.directClient != nil && c.directURL != nil && c.apiKey != ""
+}
+
+func shouldSwitchFutureRoute(statusCode int) bool {
+	return statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests ||
+		statusCode >= http.StatusInternalServerError && statusCode < 600
 }
 
 // leaveLocalRoute selects direct intake for future events when available.

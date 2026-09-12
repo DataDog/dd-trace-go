@@ -399,7 +399,60 @@ func TestAgentlessEVPDoesNotReplayAmbiguousResponses(t *testing.T) {
 			if got := directCalls.Load(); got != 0 {
 				t.Fatalf("direct calls = %d, want 0", got)
 			}
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatalf("future post through direct route: %v", err)
+			}
+			if got := directCalls.Load(); got != 1 {
+				t.Fatalf("future direct calls = %d, want 1", got)
+			}
 		})
+	}
+}
+
+func TestAgentlessEVPNonReplayableResponseWithoutCredentialsEntersCooldown(t *testing.T) {
+	var ready atomic.Bool
+	var infoCalls atomic.Int32
+	var eventCalls atomic.Int32
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			infoCalls.Add(1)
+			_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`)
+			return
+		}
+		eventCalls.Add(1)
+		if ready.Load() {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer agent.Close()
+
+	c := testAgentlessEVPClient(t, agent, nil, "")
+	now := time.Unix(100, 0)
+	c.now = func() time.Time { return now }
+	c.cooldown = time.Minute
+
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); err == nil {
+		t.Fatal("first post returned nil, want status error")
+	}
+	ready.Store(true)
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); !errors.Is(err, errNoEVPRoute) {
+		t.Fatalf("post during cooldown error = %v, want %v", err, errNoEVPRoute)
+	}
+	if got := eventCalls.Load(); got != 1 {
+		t.Fatalf("local posts during cooldown = %d, want 1", got)
+	}
+
+	now = now.Add(time.Minute)
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+		t.Fatalf("post after cooldown: %v", err)
+	}
+	if got := infoCalls.Load(); got != 2 {
+		t.Fatalf("/info calls = %d, want 2", got)
+	}
+	if got := eventCalls.Load(); got != 2 {
+		t.Fatalf("local posts after recovery = %d, want 2", got)
 	}
 }
 
