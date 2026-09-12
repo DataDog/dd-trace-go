@@ -69,7 +69,14 @@ type Prompt struct {
 	// RAGContextVariables specifies which variables contain RAG context.
 	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
-	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
+	RAGQueryVariables   []string `json:"_dd_query_variable_keys,omitempty"`
+	managedChatTemplate any
+}
+
+// WithManagedPromptChatTemplate preserves authored structural items for managed-prompt annotation.
+func WithManagedPromptChatTemplate(prompt Prompt, template any) Prompt {
+	prompt.managedChatTemplate = template
+	return prompt
 }
 
 // promptPayload is the JSON encoding shape for Prompt.
@@ -78,6 +85,18 @@ type Prompt struct {
 type promptPayload struct {
 	Prompt
 	MLApp string `json:"ml_app,omitempty"`
+}
+
+func (p promptPayload) MarshalJSON() ([]byte, error) {
+	type alias promptPayload
+	chatTemplate := p.managedChatTemplate
+	if chatTemplate == nil && len(p.ChatTemplate) > 0 {
+		chatTemplate = p.ChatTemplate
+	}
+	return json.Marshal(struct {
+		*alias
+		ChatTemplate any `json:"chat_template,omitempty"`
+	}{alias: (*alias)(&p), ChatTemplate: chatTemplate})
 }
 
 // ToolDefinition represents a tool definition for LLM spans.

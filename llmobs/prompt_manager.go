@@ -480,16 +480,15 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 	}
 	messages := make([]PromptMessage, len(items))
 	for i, item := range items {
-		message, ok := item.(map[string]any)
+		fields, ok := item.(map[string]any)
 		if !ok {
 			return PromptTemplate{}, errors.New("invalid prompt response: invalid chat message")
 		}
-		role, roleOK := message["role"].(string)
-		content, contentOK := message["content"].(string)
-		if !roleOK || !contentOK {
-			return PromptTemplate{}, errors.New("invalid prompt response: chat role and content must be strings")
+		message, err := promptMessage(fields)
+		if err != nil {
+			return PromptTemplate{}, fmt.Errorf("invalid prompt response: %w", err)
 		}
-		messages[i] = PromptMessage{Role: role, Content: content}
+		messages[i] = message
 	}
 	return PromptTemplate{Messages: messages}, nil
 }

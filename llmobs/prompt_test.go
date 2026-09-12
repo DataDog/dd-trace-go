@@ -6,6 +6,7 @@
 package llmobs
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -48,6 +49,105 @@ func TestPromptTextAndChat(t *testing.T) {
 	}
 	if _, err := newManagedPrompt("bad", "1", PromptSourceFallback, PromptTemplate{Text: "x", Messages: []PromptMessage{}}, "", ""); err == nil {
 		t.Fatal("expected ambiguous template error")
+	}
+}
+
+func TestPromptMessagePlaceholders(t *testing.T) {
+	prompt, err := parsePrompt([]byte(`{
+		"prompt_id":"chat","version":3,
+		"template":[
+			{"role":"system","content":"Plan: {{ plan }}"},
+			{"type":"placeholder","name":"history"},
+			{"role":"user","content":"{{ question }}"},
+			{"type":"placeholder","name":"history"},
+			{"type":"placeholder","name":"empty"}
+		]
+	}`), PromptSourceRegistry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := []PromptMessage{
+		{
+			Role: "assistant", Content: "{{ opaque }}",
+			AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"},
+		},
+		{
+			Role: "assistant",
+			AdditionalFields: map[string]any{
+				"content": nil,
+				"tool_calls": []any{
+					map[string]any{"name": "lookup", "arguments": map[string]any{"id": 1}, "tool_id": "call-1"},
+				},
+			},
+		},
+		{
+			Role: "tool",
+			AdditionalFields: map[string]any{
+				"tool_results": []any{
+					map[string]any{"name": "lookup", "result": "found", "tool_id": "call-1"},
+				},
+			},
+		},
+	}
+	rendered, err := prompt.Format(map[string]any{
+		"plan": "pro", "question": "Why?", "history": history, "empty": []PromptMessage{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PromptMessage{
+		{Role: "system", Content: "Plan: pro"},
+		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+		history[1],
+		history[2],
+		{Role: "user", Content: "Why?"},
+		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+		history[1],
+		history[2],
+	}
+	if !reflect.DeepEqual(rendered.Messages, want) {
+		t.Fatalf("rendered %#v, want %#v", rendered.Messages, want)
+	}
+	history[0].AdditionalFields["tool_call_id"] = "changed"
+	if rendered.Messages[1].AdditionalFields["tool_call_id"] != "call-1" {
+		t.Fatal("formatted messages alias runtime input")
+	}
+	annotation := prompt.Annotation(map[string]any{
+		"plan": "pro", "question": "Why?", "history": history, "empty": []PromptMessage{},
+	})
+	if !reflect.DeepEqual(annotation.Variables, map[string]string{"plan": "pro", "question": "Why?"}) {
+		t.Fatalf("annotation variables %#v", annotation.Variables)
+	}
+	if _, err := prompt.Format(map[string]any{"empty": []PromptMessage{}}); err == nil {
+		t.Fatal("expected missing history error")
+	}
+	for _, malformed := range []any{
+		"history",
+		[]any{},
+		[]PromptMessage{{Type: "placeholder", Name: "nested"}},
+		[]PromptMessage{{Role: "assistant", AdditionalFields: map[string]any{
+			"content": []any{map[string]any{"type": "image"}}, "tool_calls": []any{map[string]any{}},
+		}}},
+	} {
+		if _, err := prompt.Format(map[string]any{"history": malformed, "empty": []PromptMessage{}}); err == nil {
+			t.Fatalf("accepted malformed history %#v", malformed)
+		}
+	}
+	encoded, err := json.Marshal(rendered.Messages[1])
+	if err != nil || string(encoded) != `{"content":"{{ opaque }}","role":"assistant","tool_call_id":"call-1","type":"reasoning"}` {
+		t.Fatalf("encoded message %s, err %v", encoded, err)
+	}
+	encoded, err = json.Marshal(rendered.Messages[2])
+	if err != nil || string(encoded) != `{"content":null,"role":"assistant","tool_calls":[{"arguments":{"id":1},"name":"lookup","tool_id":"call-1"}]}` {
+		t.Fatalf("encoded tool-call message %s, err %v", encoded, err)
+	}
+	cached, err := json.Marshal(prompt.Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored PromptTemplate
+	if err := json.Unmarshal(cached, &restored); err != nil || !reflect.DeepEqual(restored, prompt.Template()) {
+		t.Fatalf("restored template %#v, err %v", restored, err)
 	}
 }
 

@@ -7,12 +7,15 @@ package llmobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
+
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
 // ErrPromptAuth is returned when HTTP retrieval requires DD_API_KEY and none is configured.
@@ -22,6 +25,30 @@ var ErrPromptAuth = errors.New("llmobs: DD_API_KEY is required for prompt operat
 type PromptMessage struct {
 	Role    string
 	Content string
+	// Type and Name represent an authored message placeholder when Type is "placeholder".
+	Type string
+	Name string
+	// AdditionalFields preserves provider-specific runtime message fields without interpreting them.
+	AdditionalFields map[string]any
+}
+
+// MarshalJSON preserves provider-specific message fields at their original level.
+func (m PromptMessage) MarshalJSON() ([]byte, error) {
+	return json.Marshal(promptMessageMap(m))
+}
+
+// UnmarshalJSON restores a message or authored message placeholder.
+func (m *PromptMessage) UnmarshalJSON(data []byte) error {
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	message, err := promptMessage(fields)
+	if err != nil {
+		return err
+	}
+	*m = message
+	return nil
 }
 
 // PromptTemplate is either text or chat content. A non-nil Messages slice,
@@ -72,7 +99,8 @@ func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.
 
 var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
-// Format renders supplied variables and leaves missing placeholders unchanged.
+// Format renders supplied variables. Missing text variables remain unchanged;
+// missing or malformed message-placeholder values return an error.
 func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error) {
 	render := func(s string) string {
 		var rendered strings.Builder
@@ -102,9 +130,23 @@ func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error)
 	if p.template.Messages == nil {
 		return PromptTemplate{Text: render(p.template.Text)}, nil
 	}
-	messages := make([]PromptMessage, len(p.template.Messages))
-	for i, message := range p.template.Messages {
-		messages[i] = PromptMessage{Role: message.Role, Content: render(message.Content)}
+	messages := make([]PromptMessage, 0, len(p.template.Messages))
+	for _, message := range p.template.Messages {
+		if message.Type != "placeholder" {
+			copy := copyPromptMessage(message)
+			copy.Content = render(message.Content)
+			messages = append(messages, copy)
+			continue
+		}
+		value, ok := variables[message.Name]
+		if !ok {
+			return PromptTemplate{}, fmt.Errorf("llmobs: missing message placeholder variable %q", message.Name)
+		}
+		inserted, err := runtimePromptMessages(value)
+		if err != nil {
+			return PromptTemplate{}, fmt.Errorf("llmobs: invalid message placeholder variable %q: %w", message.Name, err)
+		}
+		messages = append(messages, inserted...)
 	}
 	return PromptTemplate{Messages: messages}, nil
 }
@@ -119,16 +161,30 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 		PromptVersionUUID: p.promptVersionUUID,
 		Variables:         make(map[string]string, len(variables)),
 	}
+	placeholderNames := make(map[string]struct{})
+	for _, message := range p.template.Messages {
+		if message.Type == "placeholder" {
+			placeholderNames[message.Name] = struct{}{}
+		}
+	}
 	for name, value := range variables {
+		if _, structural := placeholderNames[name]; structural {
+			continue
+		}
 		annotation.Variables[name] = fmt.Sprint(value)
 	}
 	if p.template.Messages == nil {
 		annotation.Template = p.template.Text
 	} else {
-		annotation.ChatTemplate = make([]LLMMessage, len(p.template.Messages))
+		authored := make([]map[string]any, len(p.template.Messages))
+		annotation.ChatTemplate = make([]LLMMessage, 0, len(p.template.Messages))
 		for i, message := range p.template.Messages {
-			annotation.ChatTemplate[i] = LLMMessage{Role: message.Role, Content: message.Content}
+			authored[i] = promptMessageMap(message)
+			if message.Type != "placeholder" {
+				annotation.ChatTemplate = append(annotation.ChatTemplate, LLMMessage{Role: message.Role, Content: message.Content})
+			}
 		}
+		annotation = illmobs.WithManagedPromptChatTemplate(annotation, authored)
 	}
 	return annotation
 }
@@ -194,7 +250,81 @@ func WithPromptFallbackFunc(fallback func() (PromptFallback, error)) GetPromptOp
 func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	copy := template
 	copy.Messages = slices.Clone(template.Messages)
+	for i := range copy.Messages {
+		copy.Messages[i] = copyPromptMessage(copy.Messages[i])
+	}
 	return copy
+}
+
+func copyPromptMessage(message PromptMessage) PromptMessage {
+	message.AdditionalFields = maps.Clone(message.AdditionalFields)
+	return message
+}
+
+func promptMessage(fields map[string]any) (PromptMessage, error) {
+	additional := maps.Clone(fields)
+	if messageType, _ := fields["type"].(string); messageType == "placeholder" {
+		name, ok := fields["name"].(string)
+		if !ok || name == "" {
+			return PromptMessage{}, errors.New("message placeholder name must be a non-empty string")
+		}
+		delete(additional, "type")
+		delete(additional, "name")
+		if len(additional) == 0 {
+			additional = nil
+		}
+		return PromptMessage{Type: messageType, Name: name, AdditionalFields: additional}, nil
+	}
+	role, roleOK := fields["role"].(string)
+	content, contentOK := fields["content"].(string)
+	if !roleOK || !contentOK {
+		return PromptMessage{}, errors.New("message role and content must be strings")
+	}
+	delete(additional, "role")
+	delete(additional, "content")
+	if len(additional) == 0 {
+		additional = nil
+	}
+	return PromptMessage{Role: role, Content: content, AdditionalFields: additional}, nil
+}
+
+func promptMessageMap(message PromptMessage) map[string]any {
+	fields := maps.Clone(message.AdditionalFields)
+	if fields == nil {
+		fields = make(map[string]any)
+	}
+	if message.Type == "placeholder" {
+		fields["type"] = message.Type
+		fields["name"] = message.Name
+		delete(fields, "role")
+		delete(fields, "content")
+	} else {
+		fields["role"] = message.Role
+		if _, ok := fields["content"]; !ok {
+			fields["content"] = message.Content
+		}
+	}
+	return fields
+}
+
+func runtimePromptMessages(value any) ([]PromptMessage, error) {
+	messages, ok := value.([]PromptMessage)
+	if !ok {
+		return nil, errors.New("expected a message list")
+	}
+	copies := make([]PromptMessage, len(messages))
+	for i, message := range messages {
+		if message.Type != "" {
+			return nil, errors.New("runtime messages cannot contain placeholders")
+		}
+		if content, ok := message.AdditionalFields["content"]; ok && content != nil {
+			if _, ok := content.(string); !ok {
+				return nil, errors.New("runtime message content must be a string or null")
+			}
+		}
+		copies[i] = copyPromptMessage(message)
+	}
+	return copies, nil
 }
 
 func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {
