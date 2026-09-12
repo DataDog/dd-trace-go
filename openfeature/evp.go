@@ -131,8 +131,8 @@ func newEVPClientBase() *evpClient {
 }
 
 // evpAgentBaseURL keeps an explicit Agent URL prefix while removing a known
-// trace intake endpoint. Serverless relays commonly require DD_TRACE_AGENT_URL
-// to include that endpoint even though /info and /evp_proxy are rooted beside it.
+// trace intake endpoint. DD_TRACE_AGENT_URL may name that endpoint even though
+// /info and /evp_proxy are sibling routes.
 func evpAgentBaseURL(agentURL *url.URL) *url.URL {
 	u := *agentURL
 	u.Path = strings.TrimRight(u.Path, "/")
