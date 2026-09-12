@@ -41,7 +41,13 @@ const (
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
+
+	datadogProviderName = "Datadog Provider"
 )
+
+func init() {
+	internalffe.NewEvaluator = newEvaluator
+}
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
@@ -140,6 +146,56 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	}
 }
 
+func newEvaluator(domain string) (internalffe.Evaluator, error) {
+	client := openfeature.NewDefaultClient()
+	if openfeature.ProviderMetadata().Name != datadogProviderName {
+		provider, err := NewDatadogProvider(ProviderConfig{})
+		if err != nil {
+			return nil, err
+		}
+		if provider.Metadata().Name != datadogProviderName {
+			return nil, errors.New("openfeature: Datadog provider is unavailable")
+		}
+		if err := openfeature.SetNamedProvider(domain, provider); err != nil {
+			return nil, err
+		}
+		client = openfeature.NewClient(domain)
+	}
+	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+		if err := waitForProvider(ctx, client); err != nil {
+			return nil, err
+		}
+		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+		return details.Value, err
+	}, nil
+}
+
+func waitForProvider(ctx context.Context, client *openfeature.Client) error {
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	stateChanged := make(chan struct{}, 1)
+	notify := func(openfeature.EventDetails) {
+		select {
+		case stateChanged <- struct{}{}:
+		default:
+		}
+	}
+	client.AddHandler(openfeature.ProviderReady, &notify)
+	client.AddHandler(openfeature.ProviderError, &notify)
+	defer client.RemoveHandler(openfeature.ProviderReady, &notify)
+	defer client.RemoveHandler(openfeature.ProviderError, &notify)
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	select {
+	case <-stateChanged:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
 	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
 })
@@ -209,7 +265,7 @@ func newDatadogProviderWithSourceAndEVP(
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
-			Name: "Datadog Provider",
+			Name: datadogProviderName,
 		},
 		hooks:                 hooks,
 		exposureWriter:        writer,
