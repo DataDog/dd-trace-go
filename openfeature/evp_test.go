@@ -286,6 +286,42 @@ func TestAgentlessEVPPreservesAgentURLPath(t *testing.T) {
 	}
 }
 
+func TestAgentlessEVPStripsKnownTraceEndpointAndPreservesPrefix(t *testing.T) {
+	for _, traceEndpoint := range []string{"/v0.4/traces", "/v0.5/traces", "/v1.0/traces"} {
+		t.Run(traceEndpoint, func(t *testing.T) {
+			const agentPrefix = "/agent-prefix"
+			var infoCalls atomic.Int32
+			var eventCalls atomic.Int32
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case agentPrefix + "/info":
+					infoCalls.Add(1)
+					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"],`+compatibleEVPProxyHeadersJSON+`}`)
+				case agentPrefix + evpProxyV4Path + exposureEndpoint:
+					eventCalls.Add(1)
+					w.WriteHeader(http.StatusAccepted)
+				default:
+					t.Errorf("unexpected path %q", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer agent.Close()
+
+			t.Setenv("DD_TRACE_AGENT_URL", agent.URL+agentPrefix+traceEndpoint)
+			c := newAgentlessEVPClient(internalffe.Settings{})
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := infoCalls.Load(); got != 1 {
+				t.Fatalf("/info calls = %d, want 1", got)
+			}
+			if got := eventCalls.Load(); got != 1 {
+				t.Fatalf("event calls = %d, want 1", got)
+			}
+		})
+	}
+}
+
 func TestAgentlessEVPNoRouteRecoversAfterCooldown(t *testing.T) {
 	var ready atomic.Bool
 	var infoCalls atomic.Int32
@@ -731,7 +767,7 @@ func TestAgentOnlyEVPClientKeepsV2Route(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer agent.Close()
-	t.Setenv("DD_TRACE_AGENT_URL", agent.URL+"/agent-prefix")
+	t.Setenv("DD_TRACE_AGENT_URL", agent.URL+"/agent-prefix/v1.0/traces")
 
 	body := []byte(`{"context":{"service":"test-service"},"flagEvaluations":[]}`)
 	c := newEVPClient()

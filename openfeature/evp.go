@@ -120,6 +120,7 @@ func newEVPClientBase() *evpClient {
 	} else {
 		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 	}
+	agentURL = evpAgentBaseURL(agentURL)
 	return &evpClient{
 		httpClient: httpClient,
 		agentURL:   agentURL,
@@ -127,6 +128,22 @@ func newEVPClientBase() *evpClient {
 		now:        time.Now,
 		cooldown:   defaultEVPRouteRecoveryCooldown,
 	}
+}
+
+// evpAgentBaseURL keeps an explicit Agent URL prefix while removing a known
+// trace intake endpoint. Serverless relays commonly require DD_TRACE_AGENT_URL
+// to include that endpoint even though /info and /evp_proxy are rooted beside it.
+func evpAgentBaseURL(agentURL *url.URL) *url.URL {
+	u := *agentURL
+	u.Path = strings.TrimRight(u.Path, "/")
+	for _, endpoint := range []string{"/v0.4/traces", "/v0.5/traces", "/v1.0/traces"} {
+		if basePath, ok := strings.CutSuffix(u.Path, endpoint); ok {
+			u.Path = basePath
+			break
+		}
+	}
+	u.RawPath = ""
+	return &u
 }
 
 func refuseEVPRedirect(*http.Request, []*http.Request) error {
