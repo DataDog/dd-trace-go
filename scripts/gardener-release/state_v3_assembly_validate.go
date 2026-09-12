@@ -7,6 +7,13 @@ package gardenerrelease
 
 import "bytes"
 
+// ValidateStateV3Policy validates a supplied v3 policy without providing a
+// default or selecting a runtime policy. It is a narrow read-only bridge for
+// the internal snapshot collector's bounded preflight.
+func ValidateStateV3Policy(policy StateV3Policy) error {
+	return validateStateV3Policy(policy)
+}
+
 // ValidateStateV3Authentication validates a fully assembled lane snapshot
 // against the authoritative lane-history and lifecycle rules. It binds raw to
 // both the supplied record and the current authenticated snapshot.

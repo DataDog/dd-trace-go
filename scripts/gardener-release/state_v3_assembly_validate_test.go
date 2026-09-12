@@ -11,6 +11,22 @@ import (
 	"testing"
 )
 
+func TestValidateStateV3PolicyBridgePreservesAuthoritativeValidation(t *testing.T) {
+	if err := ValidateStateV3Policy(fixtureStateV3Policy()); err != nil {
+		t.Fatalf("valid policy rejected: %v", err)
+	}
+	maximum := fixtureStateV3Policy()
+	maximum.StateLanes.Minor.MaxHistoryCommits = MaxStateV3HistoryCommits
+	if err := ValidateStateV3Policy(maximum); err != nil {
+		t.Fatalf("maximum valid policy rejected: %v", err)
+	}
+	invalid := fixtureStateV3Policy()
+	invalid.Coordination.MaxHistoryCommits = 1
+	if err := ValidateStateV3Policy(invalid); err == nil {
+		t.Fatal("invalid policy accepted")
+	}
+}
+
 func TestValidateStateV3AuthenticationBridgePreservesLaneAuthentication(t *testing.T) {
 	record := fixtureStateV3Record(t)
 	policy := fixtureStateV3Policy()

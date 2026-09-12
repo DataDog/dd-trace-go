@@ -75,8 +75,17 @@ type Session struct {
 	mu            sync.Mutex
 	artifacts     map[string]*artifact
 	reads         int
+	reservedReads int
+	spineLease    *stateV3SpineReadLease
 	retainedBytes int
 	closed        bool
+}
+
+// stateV3SpineReadLease is an assembly-owned capability. It is deliberately
+// non-zero-sized and is passed only through private spine read methods;
+// ordinary Session reads cannot present or settle it.
+type stateV3SpineReadLease struct {
+	remaining int
 }
 
 type kind string
@@ -144,14 +153,20 @@ func (s *Session) ReadCoordinationRef(ctx context.Context, deadline time.Time) (
 }
 
 func (s *Session) readFixedRef(ctx context.Context, deadline time.Time, ref string) (Handle, Result) {
-	return s.readRef(ctx, kindControlRef, ref, deadline)
+	return s.readFixedRefWithSpineLease(nil, ctx, deadline, ref)
+}
+func (s *Session) readFixedRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, deadline time.Time, ref string) (Handle, Result) {
+	return s.readRefWithSpineLease(lease, ctx, kindControlRef, ref, deadline)
 }
 func (s *Session) readRef(ctx context.Context, k kind, ref string, deadline time.Time) (Handle, Result) {
+	return s.readRefWithSpineLease(nil, ctx, k, ref, deadline)
+}
+func (s *Session) readRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, k kind, ref string, deadline time.Time) (Handle, Result) {
 	if !validFixedRef(k, ref) {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
 	path := "/repos/" + repository + "/git/ref/" + strings.TrimPrefix(ref, "refs/")
-	return s.execute(ctx, deadline, k, http.MethodGet, path, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeWithSpineLease(lease, ctx, deadline, k, http.MethodGet, path, nil, func(raw []byte) (*artifact, bool) {
 		value, ok := decodeRef(raw, ref, "commit")
 		return &artifact{kind: k, ref: value}, ok
 	})
@@ -159,55 +174,73 @@ func (s *Session) readRef(ctx context.Context, k kind, ref string, deadline time
 
 // ReadRawCommitForRef can read only the commit named by a live ref Handle.
 func (s *Session) ReadRawCommitForRef(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+	return s.readRawCommitForRefWithSpineLease(nil, ctx, prior, deadline)
+}
+func (s *Session) readRawCommitForRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
 	ref, ok := s.consumeRef(prior, edgeRaw, kindControlRef, kindBranchRef)
 	if !ok || ref.Type != "commit" {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommit(ctx, ref.SHA, deadline)
+	return s.readRawCommitWithSpineLease(lease, ctx, ref.SHA, deadline)
 }
 func (s *Session) ReadRawCommitParent(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+	return s.readRawCommitParentWithSpineLease(nil, ctx, prior, deadline)
+}
+func (s *Session) readRawCommitParentWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeParent)
 	if !ok || len(commit.Parents) != 1 {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommit(ctx, commit.Parents[0], deadline)
+	return s.readRawCommitWithSpineLease(lease, ctx, commit.Parents[0], deadline)
 }
 func (s *Session) readRawCommit(ctx context.Context, oid string, deadline time.Time) (Handle, Result) {
+	return s.readRawCommitWithSpineLease(nil, ctx, oid, deadline)
+}
+func (s *Session) readRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, oid string, deadline time.Time) (Handle, Result) {
 	if !validOID(oid) {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	return s.execute(ctx, deadline, kindRawCommit, http.MethodGet, "/repos/"+repository+"/git/commits/"+oid, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeWithSpineLease(lease, ctx, deadline, kindRawCommit, http.MethodGet, "/repos/"+repository+"/git/commits/"+oid, nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeRawCommit(raw, oid)
 		return &artifact{kind: kindRawCommit, raw: v}, ok
 	})
 }
 func (s *Session) ReadRESTCommitForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+	return s.readRESTCommitForRawCommitWithSpineLease(nil, ctx, prior, deadline)
+}
+func (s *Session) readRESTCommitForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeRest)
 	if !ok {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	return s.execute(ctx, deadline, kindRESTCommit, http.MethodGet, "/repos/"+repository+"/commits/"+commit.SHA, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeWithSpineLease(lease, ctx, deadline, kindRESTCommit, http.MethodGet, "/repos/"+repository+"/commits/"+commit.SHA, nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeRESTCommit(raw, commit.SHA)
 		return &artifact{kind: kindRESTCommit, rest: v}, ok
 	})
 }
 func (s *Session) ReadGraphQLCommitForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+	return s.readGraphQLCommitForRawCommitWithSpineLease(nil, ctx, prior, deadline)
+}
+func (s *Session) readGraphQLCommitForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeGraphQL)
 	if !ok {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
 	body := []byte(`{"query":"query StateV3Commit($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){__typename ... on Commit{oid author{name email date user{__typename login databaseId}} committer{name email date user{__typename login databaseId}} signature{isValid state wasSignedByGitHub signer{__typename login databaseId}}}}}}","variables":{"owner":"DataDog","name":"dd-trace-go","oid":"` + commit.SHA + `"}}`)
-	return s.execute(ctx, deadline, kindGraphQLCommit, http.MethodPost, "/graphql", body, func(raw []byte) (*artifact, bool) {
+	return s.executeWithSpineLease(lease, ctx, deadline, kindGraphQLCommit, http.MethodPost, "/graphql", body, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeGQLCommit(raw, commit.SHA)
 		return &artifact{kind: kindGraphQLCommit, gql: v}, ok
 	})
 }
 func (s *Session) ReadTreeForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+	return s.readTreeForRawCommitWithSpineLease(nil, ctx, prior, deadline)
+}
+func (s *Session) readTreeForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeTree)
 	if !ok || !validOID(commit.Tree) {
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	return s.execute(ctx, deadline, kindTree, http.MethodGet, "/repos/"+repository+"/git/trees/"+commit.Tree+"?recursive=1", nil, func(raw []byte) (*artifact, bool) {
+	return s.executeWithSpineLease(lease, ctx, deadline, kindTree, http.MethodGet, "/repos/"+repository+"/git/trees/"+commit.Tree+"?recursive=1", nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeTree(raw, commit.Tree)
 		return &artifact{kind: kindTree, tree: v}, ok
 	})
@@ -228,6 +261,8 @@ func (s *Session) ReadBlobForTreeEntry(ctx context.Context, prior Handle, index 
 func (s *Session) Close() {
 	s.mu.Lock()
 	clear(s.artifacts)
+	s.reservedReads = 0
+	s.spineLease = nil
 	s.retainedBytes = 0
 	s.closed = true
 	s.mu.Unlock()
@@ -394,15 +429,36 @@ func (s *Session) tagFor(handle Handle) (wireTag, bool) {
 }
 
 func (s *Session) execute(ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (Handle, Result) {
+	return s.executeWithSpineLease(nil, ctx, deadline, k, method, path, body, decode)
+}
+
+// executeWithSpineLease is the sole reservation settlement point. A lease is
+// accepted only when it is the session's active assembly capability; ordinary
+// exported reads always pass nil and cannot spend reserved capacity.
+func (s *Session) executeWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (Handle, Result) {
 	if deadline.IsZero() || !s.now().Before(deadline) || ctx == nil {
 		return Handle{}, failure(DiagnosticDeadline)
 	}
 	s.mu.Lock()
-	if s.closed || s.reads >= maxReads {
+	if s.closed {
 		s.mu.Unlock()
 		return Handle{}, failure(DiagnosticProtocol)
 	}
-	s.reads++
+	if s.spineLease != nil {
+		if lease != s.spineLease || lease.remaining == 0 || s.reservedReads == 0 {
+			s.mu.Unlock()
+			return Handle{}, failure(DiagnosticProtocol)
+		}
+		lease.remaining--
+		s.reservedReads--
+		s.reads++
+	} else {
+		if lease != nil || s.reads >= maxReads {
+			s.mu.Unlock()
+			return Handle{}, failure(DiagnosticProtocol)
+		}
+		s.reads++
+	}
 	s.mu.Unlock()
 	requestContext, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
