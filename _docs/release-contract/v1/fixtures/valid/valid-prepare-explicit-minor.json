@@ -1,0 +1,22 @@
+{
+  "id": "valid-prepare-explicit-minor",
+  "case": "valid_command",
+  "body": "/gardener release:prepare v2.11",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": true,
+    "name": "release_prepare",
+    "command": "release:prepare",
+    "normalized_version": "v2.11.0",
+    "version_explicit": true,
+    "body_snapshot": "/gardener release:prepare v2.11",
+    "request_key": "123:789",
+    "marker": "<!-- gardener:release:request:v1:123:789 command=release:prepare version=v2.11.0 -->",
+    "request_sha256": "aac7f8c999f2c13d2245ebfa009b125bcf59cb142176485e9104562e0f2a73bf"
+  }
+}

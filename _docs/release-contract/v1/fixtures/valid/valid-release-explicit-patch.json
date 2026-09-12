@@ -1,0 +1,22 @@
+{
+  "id": "valid-release-explicit-patch",
+  "case": "valid_command",
+  "body": "/gardener release:release v2.11.3",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": true,
+    "name": "release_release",
+    "command": "release:release",
+    "normalized_version": "v2.11.3",
+    "version_explicit": true,
+    "body_snapshot": "/gardener release:release v2.11.3",
+    "request_key": "123:789",
+    "marker": "<!-- gardener:release:request:v1:123:789 command=release:release version=v2.11.3 -->",
+    "request_sha256": "5b22cf92feec88476d4d7c004136a480a4b3b7fac87d0a53a20e9fee7054597b"
+  }
+}

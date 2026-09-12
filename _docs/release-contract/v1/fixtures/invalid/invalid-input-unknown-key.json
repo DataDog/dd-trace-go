@@ -1,0 +1,16 @@
+{
+  "id": "invalid-input-unknown-key",
+  "case": "invalid_dispatch",
+  "inputs": {
+    "contract_version": "1",
+    "command": "release:promote",
+    "version": "v2.11.0",
+    "context": "{\"repository_id\":\"123\",\"repository_full_name\":\"DataDog/dd-trace-go\",\"issue_number\":\"456\",\"original_comment_id\":\"789\",\"acknowledgement_comment_id\":\"790\",\"policy_revision\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"body_snapshot\":\"/gardener release:promote v2.11\"}",
+    "ref": "main"
+  },
+  "expected": {
+    "ok": false,
+    "error_code": "unknown_input_key",
+    "matrix": "R07"
+  }
+}

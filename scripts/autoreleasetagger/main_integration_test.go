@@ -1405,6 +1405,160 @@ func TestExcludeModulesSkipsTagCreation(t *testing.T) {
 	}
 }
 
+func TestPlanJSONWritesDeterministicReadOnlyManifest(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+	tmpDir := scaffoldRepo(t, branch)
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+
+	headBefore, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("read HEAD before plan: %v", err)
+	}
+	tagsBefore, err := runGitCommandWithOutput(tmpDir, "tag", "--list")
+	if err != nil {
+		t.Fatalf("read tags before plan: %v", err)
+	}
+	versionBefore, err := readVersionFile(tmpDir)
+	if err != nil {
+		t.Fatalf("read version before plan: %v", err)
+	}
+
+	if err := writePlanJSON(tmpDir, version, []string{}, []string{"example.com/root/moduleC/v2"}, []string{}, planPath); err != nil {
+		t.Fatalf("writePlanJSON failed: %v", err)
+	}
+
+	headAfter, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("read HEAD after plan: %v", err)
+	}
+	if strings.TrimSpace(headAfter) != strings.TrimSpace(headBefore) {
+		t.Fatalf("plan mode changed HEAD: before %s after %s", headBefore, headAfter)
+	}
+	tagsAfter, err := runGitCommandWithOutput(tmpDir, "tag", "--list")
+	if err != nil {
+		t.Fatalf("read tags after plan: %v", err)
+	}
+	if tagsAfter != tagsBefore {
+		t.Fatalf("plan mode changed tags: before %q after %q", tagsBefore, tagsAfter)
+	}
+	versionAfter, err := readVersionFile(tmpDir)
+	if err != nil {
+		t.Fatalf("read version after plan: %v", err)
+	}
+	if versionAfter != versionBefore {
+		t.Fatalf("plan mode changed version file: before %q after %q", versionBefore, versionAfter)
+	}
+	status, err := runGitCommandWithOutput(tmpDir, "status", "--porcelain")
+	if err != nil {
+		t.Fatalf("read status after plan: %v", err)
+	}
+	if status != "" {
+		t.Fatalf("plan mode changed worktree: %s", status)
+	}
+
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan manifest: %v", err)
+	}
+	var manifest planManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if manifest.SchemaVersion != "1" || manifest.SourceSHA != strings.TrimSpace(headBefore) || manifest.Branch != branch || manifest.RequestedVersion != version {
+		t.Fatalf("unexpected manifest header: %#v", manifest)
+	}
+	wantTags := []string{version, "moduleA/" + version, "moduleB/" + version}
+	if strings.Join(manifest.ExpectedTags, "\n") != strings.Join(wantTags, "\n") {
+		t.Fatalf("expected tags = %v, want %v", manifest.ExpectedTags, wantTags)
+	}
+	if len(manifest.Modules) != 4 || manifest.Modules[0].Path != "example.com/root/v2" || manifest.Modules[0].Dir != "." || !manifest.Modules[0].Tagged {
+		t.Fatalf("unexpected root module entry: %#v", manifest.Modules)
+	}
+	if manifest.Modules[1].Path != "example.com/root/moduleA/v2" || manifest.Modules[2].Path != "example.com/root/moduleB/v2" || manifest.Modules[3].Path != "example.com/root/moduleC/v2" {
+		t.Fatalf("module order is not deterministic dependency order: %#v", manifest.Modules)
+	}
+	if manifest.Modules[3].Tagged {
+		t.Fatalf("untagged module must be listed but not tagged: %#v", manifest.Modules[3])
+	}
+	for _, want := range []string{"internal/version/version.go", "moduleA/go.mod", "moduleA/go.sum", "moduleB/go.mod", "moduleB/go.sum", "moduleC/go.mod", "moduleC/go.sum"} {
+		if !containsString(manifest.PermittedOutputFiles, want) {
+			t.Fatalf("permitted output files missing %q: %v", want, manifest.PermittedOutputFiles)
+		}
+	}
+}
+
+func TestPlanJSONFlagDoesNotPushCommitTagOrMutateDependencies(t *testing.T) {
+	t.Parallel()
+
+	const (
+		branch  = "release-v2.99.x"
+		version = "v2.99.99-rc.1"
+	)
+	bin := getSharedBinary(t)
+	tmpDir := scaffoldRepo(t, branch)
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+	if err := runGitCommand(tmpDir, "remote", "add", "origin", "https://invalid.example.invalid/DataDog/dd-trace-go.git"); err != nil {
+		t.Fatalf("add invalid remote: %v", err)
+	}
+	headBefore, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("read HEAD before: %v", err)
+	}
+	moduleBefore, err := os.ReadFile(filepath.Join(tmpDir, "moduleA", "go.mod"))
+	if err != nil {
+		t.Fatalf("read moduleA before: %v", err)
+	}
+
+	stdout, stderr, ok := runBinary(tmpDir, bin, "--version", version, "--root", tmpDir, "--plan-json", planPath)
+	if !ok {
+		t.Fatalf("plan-json command failed\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+	if _, err := os.Stat(planPath); err != nil {
+		t.Fatalf("plan manifest was not written: %v", err)
+	}
+	headAfter, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("read HEAD after: %v", err)
+	}
+	if strings.TrimSpace(headAfter) != strings.TrimSpace(headBefore) {
+		t.Fatalf("plan-json changed HEAD: before %s after %s", headBefore, headAfter)
+	}
+	tags, err := runGitCommandWithOutput(tmpDir, "tag", "--list")
+	if err != nil {
+		t.Fatalf("read tags after: %v", err)
+	}
+	if tags != "" {
+		t.Fatalf("plan-json created tags: %s", tags)
+	}
+	moduleAfter, err := os.ReadFile(filepath.Join(tmpDir, "moduleA", "go.mod"))
+	if err != nil {
+		t.Fatalf("read moduleA after: %v", err)
+	}
+	if !bytes.Equal(moduleAfter, moduleBefore) {
+		t.Fatal("plan-json mutated moduleA/go.mod")
+	}
+	if status, err := runGitCommandWithOutput(tmpDir, "status", "--porcelain"); err != nil {
+		t.Fatalf("read status after: %v", err)
+	} else if status != "" {
+		t.Fatalf("plan-json changed worktree: %s", status)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 // assertJSONErrorCode parses the JSON on stderr and asserts the "error" field
 // matches the expected code.
 func assertJSONErrorCode(t *testing.T, stderrOut, wantCode string) {

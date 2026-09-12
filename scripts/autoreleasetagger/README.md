@@ -49,6 +49,8 @@ Usage of ./autoreleasetagger:
     	Output format for errors: "text" or "json" (default "text")
   -loglevel string
     	Log level (debug, info, warn, error) (default "info")
+  -plan-json string
+        Write a read-only release plan manifest to this path and perform no mutations
   -remote string
     	Git remote name (default "origin")
   -root string

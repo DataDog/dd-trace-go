@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "manifests": [
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 1234,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.version": "v2.10.1",
+    "org.opencontainers.image.revision": "cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+    "io.datadog.dd-trace-go.module-tag-object": "2222222222222222222222222222222222222222",
+    "io.datadog.dd-trace-go.repository": "DataDog/dd-trace-go",
+    "io.datadog.dd-trace-go.workflow-path": ".github/workflows/docker-images-release.yml",
+    "io.datadog.dd-trace-go.workflow-run-id": "33368426164",
+    "io.datadog.dd-trace-go.workflow-run-attempt": "1"
+  },
+  "digest": "sha256:3e4e0ee0e4e463c32c380570a54596a2bf9a7d9a55bebcc01520ddfbf36f8801"
+}

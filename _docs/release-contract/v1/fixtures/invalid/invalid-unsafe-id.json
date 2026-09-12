@@ -1,0 +1,17 @@
+{
+  "id": "invalid-unsafe-id",
+  "case": "invalid_command",
+  "body": "/gardener release:promote v2.11",
+  "webhook": {
+    "repository_id": "9007199254740993",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": false,
+    "name": "release_invalid",
+    "error_code": "unsafe_id",
+    "matrix": "R06"
+  }
+}
