@@ -1,0 +1,36 @@
+{
+  "data": {
+    "repository": {
+      "object": {
+        "__typename": "Commit",
+        "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "author": {
+          "name": "Release Automation",
+          "email": "release-automation@example.invalid",
+          "date": "2026-09-12T06:30:00Z",
+          "user": {
+            "__typename": "Bot",
+            "login": "release-automation[bot]",
+            "databaseId": 100
+          }
+        },
+        "committer": {
+          "name": "Release Automation",
+          "email": "release-automation@example.invalid",
+          "date": "2026-09-12T06:30:00Z",
+          "user": null
+        },
+        "signature": {
+          "isValid": true,
+          "state": "VALID",
+          "wasSignedByGitHub": true,
+          "signer": {
+            "__typename": "Bot",
+            "login": "release-automation[bot]",
+            "databaseId": 100
+          }
+        }
+      }
+    }
+  }
+}
