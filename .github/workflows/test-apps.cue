@@ -50,10 +50,12 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
+        policy: "dd-trace-go",
     },
     {
         name: "staging",
         site: "datad0g.com",
+        policy: "dd-trace-go-staging",
     },
 ]
 
@@ -146,7 +148,7 @@ jobs: {
                         id: "dd-sts",
                         uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
                         with: {
-                            policy: "dd-trace-go",
+                            policy: "\(env.policy)",
                         },
                     },
                     {

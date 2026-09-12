@@ -17,6 +17,7 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/status"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -190,6 +191,7 @@ func (a *appsec) start() error {
 	a.enableRCBlocking()
 	a.enableRASP()
 
+	status.MarkEnabled()
 	a.started = true
 	log.Info("appsec: up and running")
 
@@ -204,6 +206,7 @@ func (a *appsec) stop() {
 	if !a.started {
 		return
 	}
+
 	a.started = false
 	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
