@@ -306,17 +306,15 @@ func TestCollectStateV3SpineAdmitsExactRemainingCapacity(t *testing.T) {
 		return response(`{"sha":null}`), nil
 	}), time.Now)
 	deadline := time.Now().Add(time.Second)
-	for range 3 {
-		handle, result := s.ReadMinorStateRef(context.Background(), deadline)
-		if result.Diagnostic != DiagnosticOK {
-			t.Fatalf("seed result=%#v", result)
-		}
-		s.Release(handle)
-	}
 	policy := validStateV3Policy(t)
-	policy.StateLanes.Minor.MaxHistoryCommits = (maxReads - 1) / 4
+	policy.StateLanes.Minor.MaxHistoryCommits = gardenerrelease.MaxStateV3StateLaneHistoryCommits
+	// Simulate exact remaining capacity without issuing unrelated transport
+	// reads: the fixed-root spine reservation remains one root plus four
+	// strict commit-fact reads per node. Tree-bound document reads are a later
+	// full-assembler concern and are excluded from this spine-only primitive.
+	s.reads = maxReads - (1 + 4*policy.StateLanes.Minor.MaxHistoryCommits)
 	_, result := s.collectStateV3Spine(context.Background(), deadline, policy, stateV3MinorSpine)
-	if result.Diagnostic != DiagnosticResponseInvalid || calls.Load() != 5 {
+	if result.Diagnostic != DiagnosticResponseInvalid || calls.Load() != 2 {
 		t.Fatalf("result=%#v calls=%d", result, calls.Load())
 	}
 	assertStateV3SpineSessionClosed(t, s)

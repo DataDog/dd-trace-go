@@ -26,6 +26,9 @@ func validStateV3StagedEnvelope(envelope StateV3StagedEnvelopeEvidence, reservat
 	if err != nil {
 		return false
 	}
+	if len(envelope.Files[0].Raw) == 0 || len(envelope.Files[0].Raw) > MaxStateV3PreparedBundleBytes || len(preparedRaw) == 0 || len(preparedRaw) > MaxStateV3PreparedManifestBytes || len(reservationRaw) == 0 || len(reservationRaw) > MaxStateV3ReservationBytes {
+		return false
+	}
 	expectedRaw := [][]byte{envelope.Files[0].Raw, preparedRaw, reservationRaw}
 	for index, file := range envelope.Files {
 		expected := envelope.Prepared.StateFiles[index]

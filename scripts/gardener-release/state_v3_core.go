@@ -23,7 +23,13 @@ import (
 func ValidateStateV3Record(raw []byte, record StateV3Record, policy StateV3Policy, authentication StateV3Authentication) error {
 	invalid := func() error { return newReleaseError(ErrorClassStateConflict, "invalid_state_v3_record") }
 	canonical, err := canonicalJSON(record)
-	if err != nil || !bytes.Equal(raw, canonical) || !bytes.Equal(raw, authentication.Current.RawRecord) {
+	authenticatedRaw := authentication.Current.RawRecord
+	// A completed operation is authenticated from the lease-held complete
+	// snapshot immediately preceding its terminal empty-tree cleanup commit.
+	if record.Phase == StateV3PhaseComplete && !authentication.Current.RecordPresent && len(authentication.Predecessors) != 0 {
+		authenticatedRaw = authentication.Predecessors[0].RawRecord
+	}
+	if err != nil || !bytes.Equal(raw, canonical) || !bytes.Equal(raw, authenticatedRaw) {
 		return invalid()
 	}
 	decoded, err := DecodeStateV3Record(raw)
@@ -352,7 +358,7 @@ func stateV3CoordinationArm(snapshot StateV3CoordinationSnapshot) (*StateV3Coord
 		return nil, true
 	}
 	evidence := snapshot.Arm
-	if evidence.Path != stateV3CoordinationArmPath || !lowerHexDigest(evidence.SHA256) || !validStateV3OID(evidence.BlobOID) || evidence.Arm.Ref != StateV3CoordinationRef || (evidence.Arm.Operation != "claim_acquire" && evidence.Arm.Operation != "claim_release") || !validStateV3CoordinationPath(evidence.Arm.ClaimPath) || !validStateV3Text(evidence.Arm.RequestKey, 256) || !validStateV3Text(evidence.Arm.ReleaseLine, 64) || !validStateV3Text(evidence.Arm.LaneRef, 128) || !validStateV3Text(evidence.Arm.ResolvedVersion, 128) || !validStateV3OID(evidence.Arm.ExpectedHeadOID) || evidence.Arm.Attempt != 1 || (evidence.Arm.ExpectedClaimBlobOID != "" && !validStateV3OID(evidence.Arm.ExpectedClaimBlobOID)) {
+	if len(evidence.Raw) == 0 || len(evidence.Raw) > MaxStateV3CoordinationArmBytes || evidence.Path != stateV3CoordinationArmPath || !lowerHexDigest(evidence.SHA256) || !validStateV3OID(evidence.BlobOID) || evidence.Arm.Ref != StateV3CoordinationRef || (evidence.Arm.Operation != "claim_acquire" && evidence.Arm.Operation != "claim_release") || !validStateV3CoordinationPath(evidence.Arm.ClaimPath) || !validStateV3Text(evidence.Arm.RequestKey, 256) || !validStateV3Text(evidence.Arm.ReleaseLine, 64) || !validStateV3Text(evidence.Arm.LaneRef, 128) || !validStateV3Text(evidence.Arm.ResolvedVersion, 128) || !validStateV3OID(evidence.Arm.ExpectedHeadOID) || evidence.Arm.Attempt != 1 || (evidence.Arm.ExpectedClaimBlobOID != "" && !validStateV3OID(evidence.Arm.ExpectedClaimBlobOID)) {
 		return nil, false
 	}
 	if evidence.Arm.Operation == "claim_acquire" && (!lowerHexDigest(evidence.Arm.IntendedClaimSHA256) || evidence.Arm.ExpectedClaimBlobOID != "") || evidence.Arm.Operation == "claim_release" && (evidence.Arm.IntendedClaimSHA256 != "" || !validStateV3OID(evidence.Arm.ExpectedClaimBlobOID)) {
@@ -379,7 +385,7 @@ func stateV3CoordinationArm(snapshot StateV3CoordinationSnapshot) (*StateV3Coord
 }
 
 func stateV3CoordinationClaims(snapshot StateV3CoordinationSnapshot) (map[string]StateV3ReleaseLineClaimEvidence, bool) {
-	if !validStateV3CompleteTree(snapshot.Tree) || !sort.SliceIsSorted(snapshot.Claims, func(i, j int) bool { return snapshot.Claims[i].Path < snapshot.Claims[j].Path }) {
+	if !validStateV3CompleteTree(snapshot.Tree) || len(snapshot.Tree.Entries) > MaxStateV3CoordinationReleaseProofs+1 || len(snapshot.Claims) > MaxStateV3CoordinationReleaseProofs || !sort.SliceIsSorted(snapshot.Claims, func(i, j int) bool { return snapshot.Claims[i].Path < snapshot.Claims[j].Path }) {
 		return nil, false
 	}
 	if _, ok := stateV3CoordinationArm(snapshot); !ok {
@@ -396,16 +402,18 @@ func stateV3CoordinationClaims(snapshot StateV3CoordinationSnapshot) (map[string
 		entries[entry.Path] = entry.OID
 	}
 	claims := make(map[string]StateV3ReleaseLineClaimEvidence, len(snapshot.Claims))
+	lanes := map[string]bool{}
 	for _, claim := range snapshot.Claims {
 		if !validStateV3CoordinationDocument(claim) || entries[claim.Path] != claim.BlobOID {
 			return nil, false
 		}
-		if _, duplicate := claims[claim.Path]; duplicate {
+		if _, duplicate := claims[claim.Path]; duplicate || lanes[claim.Claim.LaneRef] || (claim.Claim.LaneRef != StateV3MinorStateRef && claim.Claim.LaneRef != StateV3PatchStateRef) {
 			return nil, false
 		}
+		lanes[claim.Claim.LaneRef] = true
 		claims[claim.Path] = claim
 	}
-	if len(claims) != len(entries) {
+	if len(claims) != len(entries) || len(entries) > MaxStateV3CoordinationReleaseProofs {
 		return nil, false
 	}
 	return claims, true
@@ -413,7 +421,7 @@ func stateV3CoordinationClaims(snapshot StateV3CoordinationSnapshot) (map[string
 
 func validStateV3CoordinationDocument(evidence StateV3ReleaseLineClaimEvidence) bool {
 	path, ok := stateV3CoordinationClaimPath(evidence.Claim.ReleaseLine)
-	if !ok || evidence.Path != path || evidence.Claim.State != "active" || evidence.Claim.Attempt != 1 || evidence.Claim.Phase != StateV3PhaseReserved || !isReleaseCommand(evidence.Claim.Command) || !lowerHexDigest(evidence.SHA256) || !validStateV3OID(evidence.BlobOID) || !validStateV3OID(evidence.Claim.LaneExpectedHeadOID) || !lowerHexDigest(evidence.Claim.ReservationSHA256) || !lowerHexDigest(evidence.Claim.VersionResolutionSHA256) {
+	if !ok || len(evidence.Raw) == 0 || len(evidence.Raw) > MaxStateV3CoordinationClaimBytes || evidence.Path != path || evidence.Claim.State != "active" || evidence.Claim.Attempt != 1 || evidence.Claim.Phase != StateV3PhaseReserved || !isReleaseCommand(evidence.Claim.Command) || !lowerHexDigest(evidence.SHA256) || !validStateV3OID(evidence.BlobOID) || !validStateV3OID(evidence.Claim.LaneExpectedHeadOID) || !lowerHexDigest(evidence.Claim.ReservationSHA256) || !lowerHexDigest(evidence.Claim.VersionResolutionSHA256) {
 		return false
 	}
 	raw, err := canonicalJSON(evidence.Claim)
@@ -434,6 +442,8 @@ func validStateV3CoordinationAuthentication(authentication StateV3CoordinationAu
 	}
 	snapshots := append([]StateV3CoordinationSnapshot{authentication.Current}, authentication.Predecessors...)
 	seen := map[string]bool{}
+	releaseProofLanes := map[string]bool{}
+	releaseProofs := 0
 	for index := range snapshots {
 		checkpoint := index == len(snapshots)-1
 		snapshot := snapshots[index]
@@ -480,15 +490,25 @@ func validStateV3CoordinationAuthentication(authentication StateV3CoordinationAu
 					return false
 				}
 			case parentArm.Operation == "claim_release" && hadOld && !hasNew:
-				if child.Release == nil || claimChange.ParentOID != old.BlobOID || claimChange.ChildOID != "" || parentArm.ClaimPath != old.Path || parentArm.RequestKey != old.Claim.RequestKey || parentArm.ReleaseLine != old.Claim.ReleaseLine || parentArm.LaneRef != old.Claim.LaneRef || parentArm.ResolvedVersion != old.Claim.ResolvedVersion || parentArm.ExpectedClaimBlobOID != old.BlobOID || parentArm.IntendedClaimSHA256 != "" || !validStateV3ClaimRelease(*child.Release, old, child, parent, policy, authentication.LaneTerminations) {
+				if child.Release == nil || claimChange.ParentOID != old.BlobOID || claimChange.ChildOID != "" || parentArm.ClaimPath != old.Path || parentArm.RequestKey != old.Claim.RequestKey || parentArm.ReleaseLine != old.Claim.ReleaseLine || parentArm.LaneRef != old.Claim.LaneRef || parentArm.ResolvedVersion != old.Claim.ResolvedVersion || parentArm.ExpectedClaimBlobOID != old.BlobOID || parentArm.IntendedClaimSHA256 != "" || releaseProofLanes[old.Claim.LaneRef] || releaseProofs == MaxStateV3CoordinationReleaseProofs || !validStateV3ClaimRelease(*child.Release, old, child, parent, policy, authentication.LaneTerminations) {
 					return false
 				}
+				releaseProofLanes[old.Claim.LaneRef] = true
+				releaseProofs++
 			default:
 				return false
 			}
 			continue
 		}
 		return false
+	}
+	if len(authentication.LaneTerminations) != releaseProofs {
+		return false
+	}
+	for _, termination := range authentication.LaneTerminations {
+		if !releaseProofLanes[termination.StateRef] {
+			return false
+		}
 	}
 	claims, claimsOK := stateV3CoordinationClaims(authentication.Current)
 	// A pending acquire still needs its result plus an ordinary release; a
@@ -529,20 +549,16 @@ func validStateV3LaneTermination(termination StateV3LaneTerminationEvidence, cla
 		return false
 	}
 	for _, authentication := range terminations {
-		if authentication.StateRef != termination.StateRef || authentication.CheckpointOID != termination.CheckpointOID || authentication.HeadOID != termination.LeaseReleaseHeadOID {
-			continue
-		}
-		record, recordOK := stateV3SnapshotActiveRecord(authentication.Current, policy)
-		if !recordOK || record == nil || record.Phase != StateV3PhaseComplete || authentication.Current.LeasePresent || authentication.Current.Commit.OID != termination.LeaseReleaseHeadOID || authentication.Current.RecordSHA256 != termination.CompleteRecordSHA256 || authentication.Current.RecordBlobOID != termination.CompleteRecordBlobOID || len(authentication.Predecessors) == 0 {
+		if authentication.StateRef != termination.StateRef || authentication.CheckpointOID != termination.CheckpointOID || authentication.HeadOID != termination.LeaseReleaseHeadOID || authentication.Current.Commit.OID != termination.LeaseReleaseHeadOID || authentication.Current.LeasePresent || authentication.Current.RecordPresent || len(authentication.Current.Tree.Entries) != 0 || len(authentication.Predecessors) == 0 {
 			continue
 		}
 		before := authentication.Predecessors[0]
 		beforeRecord, beforeOK := stateV3SnapshotActiveRecord(before, policy)
 		beforeLease, leaseOK := stateV3SnapshotLease(before)
-		if !beforeOK || !leaseOK || beforeRecord == nil || beforeLease == nil || before.Commit.OID != termination.CompleteRecordOID || !reflect.DeepEqual(beforeRecord, record) || beforeRecord.Phase != StateV3PhaseComplete || before.RecordSHA256 != termination.CompleteRecordSHA256 || before.RecordBlobOID != termination.CompleteRecordBlobOID || !validStateV3Lease(*beforeLease, beforeRecord.Reservation, policy) {
+		if !beforeOK || !leaseOK || beforeRecord == nil || beforeLease == nil || before.Commit.OID != termination.CompleteRecordOID || beforeRecord.Phase != StateV3PhaseComplete || before.RecordSHA256 != termination.CompleteRecordSHA256 || before.RecordBlobOID != termination.CompleteRecordBlobOID || !validStateV3Lease(*beforeLease, beforeRecord.Reservation, policy) || !stateV3TerminalCleanupChanges(authentication.Current.Commit.ChangedPaths, before) {
 			continue
 		}
-		if beforeRecord.Reservation.RequestKey != claim.Claim.RequestKey || beforeRecord.Reservation.RequestSHA256 != claim.Claim.RequestSHA256 || beforeRecord.Reservation.ReleaseLine != claim.Claim.ReleaseLine || beforeLease.CoordinationClaimOID != claim.Commit.OID || beforeLease.CoordinationClaimBlobOID != claim.BlobOID || beforeLease.CoordinationClaimSHA256 != claim.SHA256 || !validStateV3Authentication(authentication, policy, *record) {
+		if beforeRecord.Reservation.RequestKey != claim.Claim.RequestKey || beforeRecord.Reservation.RequestSHA256 != claim.Claim.RequestSHA256 || beforeRecord.Reservation.ReleaseLine != claim.Claim.ReleaseLine || beforeLease.CoordinationClaimOID != claim.Commit.OID || beforeLease.CoordinationClaimBlobOID != claim.BlobOID || beforeLease.CoordinationClaimSHA256 != claim.SHA256 || !validStateV3Authentication(authentication, policy, *beforeRecord) {
 			continue
 		}
 		return true

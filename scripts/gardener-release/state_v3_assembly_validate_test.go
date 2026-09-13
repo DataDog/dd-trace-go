@@ -16,9 +16,16 @@ func TestValidateStateV3PolicyBridgePreservesAuthoritativeValidation(t *testing.
 		t.Fatalf("valid policy rejected: %v", err)
 	}
 	maximum := fixtureStateV3Policy()
-	maximum.StateLanes.Minor.MaxHistoryCommits = MaxStateV3HistoryCommits
+	maximum.StateLanes.Minor.MaxHistoryCommits = MaxStateV3StateLaneHistoryCommits
+	maximum.StateLanes.Patch.MaxHistoryCommits = MaxStateV3StateLaneHistoryCommits
+	maximum.Coordination.MaxHistoryCommits = MaxStateV3CoordinationHistoryCommits
 	if err := ValidateStateV3Policy(maximum); err != nil {
 		t.Fatalf("maximum valid policy rejected: %v", err)
+	}
+	overMaximum := maximum
+	overMaximum.StateLanes.Minor.MaxHistoryCommits++
+	if err := ValidateStateV3Policy(overMaximum); err == nil {
+		t.Fatal("policy history above the bounded topology maximum accepted")
 	}
 	invalid := fixtureStateV3Policy()
 	invalid.Coordination.MaxHistoryCommits = 1
@@ -43,10 +50,10 @@ func TestValidateStateV3AuthenticationBridgePreservesLaneAuthentication(t *testi
 		"noncanonical raw": func(raw []byte, _ *StateV3Authentication) {
 			raw[len(raw)-1] = ' '
 		},
-		"current raw mismatch": func(_ []byte, authentication *StateV3Authentication) {
-			authentication.Current.RawRecord = append([]byte(nil), authentication.Current.RawRecord...)
-			authentication.Current.RawRecord[0] = '{'
-			authentication.Current.RawRecord[len(authentication.Current.RawRecord)-1] = ' '
+		"terminal predecessor raw mismatch": func(_ []byte, authentication *StateV3Authentication) {
+			authentication.Predecessors[0].RawRecord = append([]byte(nil), authentication.Predecessors[0].RawRecord...)
+			authentication.Predecessors[0].RawRecord[0] = '{'
+			authentication.Predecessors[0].RawRecord[len(authentication.Predecessors[0].RawRecord)-1] = ' '
 		},
 		"invalid history": func(_ []byte, authentication *StateV3Authentication) {
 			authentication.Current.Tree.Truncated = true

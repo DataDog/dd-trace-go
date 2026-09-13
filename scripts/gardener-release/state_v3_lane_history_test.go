@@ -361,7 +361,7 @@ func TestStateV3RejectsCheckpointAndHistoryAmbiguity(t *testing.T) {
 			a.Current.Tree.Entries = append(a.Current.Tree.Entries, StateV3StateTreeEntry{Path: "requests/123/789/extra.json", Mode: "100644", Type: "blob", OID: v3OIDa})
 			sort.Slice(a.Current.Tree.Entries, func(i, j int) bool { return a.Current.Tree.Entries[i].Path < a.Current.Tree.Entries[j].Path })
 		},
-		"missing prepared tree entry": func(a *StateV3Authentication) { a.Current.Tree.Entries = a.Current.Tree.Entries[1:] },
+		"missing prepared tree entry": func(a *StateV3Authentication) { a.Predecessors[0].Tree.Entries = a.Predecessors[0].Tree.Entries[1:] },
 		"record digest":               func(a *StateV3Authentication) { a.Current.RecordSHA256 = v3SHAa },
 		"head mismatch":               func(a *StateV3Authentication) { a.HeadOID = v3OIDb },
 		"self parent":                 func(a *StateV3Authentication) { a.Current.Commit.ParentOID = a.Current.Commit.OID },
@@ -384,7 +384,7 @@ func TestStateV3RejectsCheckpointAndHistoryAmbiguity(t *testing.T) {
 			a.Current.Commit.ChangedPaths = []StateV3ChangedPath{{Path: "caller/state.json", ChildOID: v3OIDa}}
 		},
 		"truncated tree":        func(a *StateV3Authentication) { a.Current.Tree.Truncated = true },
-		"tree entry wrong mode": func(a *StateV3Authentication) { a.Current.Tree.Entries[0].Mode = "100755" },
+		"tree entry wrong mode": func(a *StateV3Authentication) { a.Predecessors[0].Tree.Entries[0].Mode = "100755" },
 		"incomplete tree":       func(a *StateV3Authentication) { a.Current.Tree.Complete = false },
 		"unverified ancestor":   func(a *StateV3Authentication) { a.Predecessors[0].Commit.RESTVerified = false },
 		"wrong state writer":    func(a *StateV3Authentication) { a.Predecessors[0].Commit.Roles.AuthorREST.Login = "caller" },

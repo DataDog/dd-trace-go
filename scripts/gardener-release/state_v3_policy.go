@@ -32,7 +32,7 @@ func DecodeStateV3Policy(raw []byte) (StateV3Policy, error) {
 
 func DecodeStateV3Record(raw []byte) (StateV3Record, error) {
 	var record StateV3Record
-	if err := decodeStateV3Document(raw, MaxStateV3DocumentBytes, &record); err != nil {
+	if err := decodeStateV3Document(raw, MaxStateV3StateRecordBytes, &record); err != nil {
 		return StateV3Record{}, newReleaseError(ErrorClassStateConflict, "invalid_state_v3_record")
 	}
 	if record.SchemaVersion != StateV3SchemaVersion {
@@ -83,7 +83,7 @@ func validateStateV3NoNull(raw []byte) error {
 func validStateV3CoordinationPolicy(policy StateV3CoordinationPolicy) bool {
 	// Coordination retains only compact per-line claim lifecycle commits. The
 	// reviewed checkpoint rotation procedure must occur with no active claims.
-	return policy.StateRef == StateV3CoordinationRef && validStateV3OID(policy.CheckpointOID) && policy.MaxHistoryCommits >= 2 && policy.MaxHistoryCommits <= MaxStateV3HistoryCommits
+	return policy.StateRef == StateV3CoordinationRef && validStateV3OID(policy.CheckpointOID) && policy.MaxHistoryCommits >= 2 && policy.MaxHistoryCommits <= MaxStateV3CoordinationHistoryCommits
 }
 
 func validStateV3TrustedArtifact(artifact StateV3TrustedArtifact) bool {
@@ -107,7 +107,7 @@ func validStateV3LanePolicy(lane StateV3LanePolicy, expectedRef string) bool {
 	if expectedRef == StateV3MinorStateRef {
 		minimum = 4*MaxStateV3Tags + StateV3PrepareHistoryOverhead
 	}
-	return lane.StateRef == expectedRef && validStateV3OID(lane.CheckpointOID) && lane.MaxHistoryCommits >= minimum && lane.MaxHistoryCommits <= MaxStateV3HistoryCommits
+	return lane.StateRef == expectedRef && validStateV3OID(lane.CheckpointOID) && lane.MaxHistoryCommits >= minimum && lane.MaxHistoryCommits <= MaxStateV3StateLaneHistoryCommits
 }
 
 func stateV3LaneForReservation(reservation StateV3Reservation, policy StateV3Policy) (StateV3LanePolicy, bool) {

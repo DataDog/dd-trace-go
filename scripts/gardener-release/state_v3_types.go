@@ -8,11 +8,41 @@ package gardenerrelease
 // The v3 contract is intentionally additive until the GitHub-created state
 // backend is implemented. Production code continues to read only schema v2.
 const (
-	StateV3SchemaVersion           = "3"
-	StateV3PolicySchemaVersion     = "3"
-	MaxStateV3DocumentBytes        = 1024 * 1024
-	MaxStateV3PreparedBundleBytes  = 1_048_576
-	MaxStateV3DecodedAdditionBytes = 1_049_185
+	StateV3SchemaVersion       = "3"
+	StateV3PolicySchemaVersion = "3"
+	// MaxStateV3DocumentBytes is retained for legacy callers that need the
+	// outer JSON bound. Every state-control document below has a narrower
+	// class-specific limit.
+	MaxStateV3DocumentBytes          = 1024 * 1024
+	MaxStateV3StateRecordBytes       = 128 * 1024
+	MaxStateV3ActiveLeaseBytes       = 16 * 1024
+	MaxStateV3CoordinationArmBytes   = 16 * 1024
+	MaxStateV3CoordinationClaimBytes = 16 * 1024
+	MaxStateV3PreparedManifestBytes  = 64 * 1024
+	MaxStateV3ReservationBytes       = 64 * 1024
+	MaxStateV3PreparedBundleBytes    = 1_048_576
+	// MaxStateV3StateLaneHistoryCommits bounds a state-lane spine so a
+	// session can read its fixed ref, strict commit facts, and every
+	// five-document active snapshot without exceeding its 4096-read limit.
+	MaxStateV3StateLaneHistoryCommits    = 455
+	MaxStateV3CoordinationHistoryCommits = 512
+	MaxStateV3CoordinationReleaseProofs  = 2
+	stateV3TerminalCleanupPathCount      = 5
+
+	// The three-session topology is intentionally conservative: it assumes no
+	// blob memoization. A state snapshot can require lease, record, and three
+	// prepared-envelope blob reads; terminal cleanup deletes that same exact
+	// five-file set. Coordination can require one arm and two claims.
+	stateV3SpineRootReads                   = 1
+	stateV3SpineCommitFactReadsPerSnapshot  = 4
+	stateV3StateDocumentReadsPerSnapshot    = stateV3TerminalCleanupPathCount
+	stateV3CoordinationDocumentReadsPerNode = MaxStateV3CoordinationReleaseProofs + 1
+	stateV3StateSpineMaximumReads           = stateV3SpineRootReads + stateV3SpineCommitFactReadsPerSnapshot*MaxStateV3StateLaneHistoryCommits + stateV3StateDocumentReadsPerSnapshot*(MaxStateV3StateLaneHistoryCommits-1)
+	stateV3CoordinationSpineMaximumReads    = stateV3SpineRootReads + stateV3SpineCommitFactReadsPerSnapshot*MaxStateV3CoordinationHistoryCommits + stateV3CoordinationDocumentReadsPerNode*(MaxStateV3CoordinationHistoryCommits-1)
+	stateV3TopologyMaximumLogicalReads      = 2*stateV3StateSpineMaximumReads + stateV3CoordinationSpineMaximumReads
+	stateV3CollectorMaximumAttempts         = 4
+	stateV3TopologyMaximumAttempts          = stateV3TopologyMaximumLogicalReads * stateV3CollectorMaximumAttempts
+	MaxStateV3DecodedAdditionBytes          = 1_049_185
 	// MaxStateV3GraphQLRequestBytes is reserved for the next strict wire-model writer; this foundation makes no serialized-request claim.
 	MaxStateV3GraphQLRequestBytes = 1_399_719
 	StateV3PreparedAdditionCount  = 3

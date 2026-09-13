@@ -24,7 +24,11 @@ func ValidateStateV3Policy(policy StateV3Policy) error {
 func ValidateStateV3Authentication(raw []byte, record StateV3Record, policy StateV3Policy, authentication StateV3Authentication) error {
 	invalid := func() error { return newReleaseError(ErrorClassStateConflict, "invalid_state_v3_authentication") }
 	canonical, err := canonicalJSON(record)
-	if err != nil || validateStateV3Policy(policy) != nil || !bytes.Equal(raw, canonical) || !bytes.Equal(raw, authentication.Current.RawRecord) || !validStateV3Authentication(authentication, policy, record) {
+	authenticatedRaw := authentication.Current.RawRecord
+	if record.Phase == StateV3PhaseComplete && !authentication.Current.RecordPresent && len(authentication.Predecessors) != 0 {
+		authenticatedRaw = authentication.Predecessors[0].RawRecord
+	}
+	if err != nil || validateStateV3Policy(policy) != nil || !bytes.Equal(raw, canonical) || !bytes.Equal(raw, authenticatedRaw) || !validStateV3Authentication(authentication, policy, record) {
 		return invalid()
 	}
 	return nil

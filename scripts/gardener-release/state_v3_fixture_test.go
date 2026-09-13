@@ -71,10 +71,10 @@ func fixtureStateV3Policy() StateV3Policy {
 		RepositoryID:       "123",
 		RepositoryFullName: RepositoryFullName,
 		StateLanes: StateV3LanePolicies{
-			Minor: StateV3LanePolicy{StateRef: StateV3MinorStateRef, CheckpointOID: v3OIDa, MaxHistoryCommits: 512},
-			Patch: StateV3LanePolicy{StateRef: StateV3PatchStateRef, CheckpointOID: v3OIDb, MaxHistoryCommits: 512},
+			Minor: StateV3LanePolicy{StateRef: StateV3MinorStateRef, CheckpointOID: v3OIDa, MaxHistoryCommits: MaxStateV3StateLaneHistoryCommits},
+			Patch: StateV3LanePolicy{StateRef: StateV3PatchStateRef, CheckpointOID: v3OIDb, MaxHistoryCommits: MaxStateV3StateLaneHistoryCommits},
 		},
-		Coordination:   StateV3CoordinationPolicy{StateRef: StateV3CoordinationRef, CheckpointOID: v3OIDc, MaxHistoryCommits: 512},
+		Coordination:   StateV3CoordinationPolicy{StateRef: StateV3CoordinationRef, CheckpointOID: v3OIDc, MaxHistoryCommits: MaxStateV3CoordinationHistoryCommits},
 		TaggerArtifact: artifact,
 		App: StateV3AppIdentity{
 			AppID: "10001", InstallationID: "20002", Slug: "synthetic-release-app",
@@ -455,10 +455,13 @@ func fixtureStateV3Authentication(t *testing.T, policy StateV3Policy, record Sta
 		}
 	}
 	if record.Phase == StateV3PhaseComplete {
+		complete := chronological[len(chronological)-1]
+		if !complete.LeasePresent || !complete.RecordPresent {
+			t.Fatal("complete fixture must end at the lease-held complete record")
+		}
 		index := len(chronological)
-		released := fixtureStateV3Snapshot(t, policy, &record, chronological[index-1].StagedEnvelope, fmt.Sprintf("%040x", 100+index), chronological[index-1].Commit.OID, fmt.Sprintf("%040x", 10000+index))
-		fixtureStateV3RemoveLease(&released)
-		chronological = append(chronological, released)
+		cleanup := fixtureStateV3Snapshot(t, policy, nil, nil, fmt.Sprintf("%040x", 100+index), complete.Commit.OID, fmt.Sprintf("%040x", 10000+index))
+		chronological = append(chronological, cleanup)
 	}
 	for index := 1; index < len(chronological); index++ {
 		chronological[index].Commit.ChangedPaths = stateV3TreeChanges(chronological[index-1].Tree, chronological[index].Tree)
@@ -541,12 +544,6 @@ func fixtureStateV3AfterHistory(t *testing.T, policy StateV3Policy, prior StateV
 		t.Fatal("prior history does not match record lane")
 	}
 	priorSnapshots := append([]StateV3StateSnapshot{cloneStateV3(t, prior.Current)}, cloneStateV3(t, prior.Predecessors)...)
-	for index := range priorSnapshots {
-		priorSnapshots[index].RecordPresent = false
-		priorSnapshots[index].RecordPath, priorSnapshots[index].RecordSHA256, priorSnapshots[index].RecordBlobOID = "", "", ""
-		priorSnapshots[index].RawRecord = nil
-		priorSnapshots[index].StagedEnvelope = nil
-	}
 	parent := priorSnapshots[0]
 	leaseSnapshot := cloneStateV3(t, parent)
 	leaseSnapshot.ActiveRecord = StateV3ActiveRecordEvidence{}

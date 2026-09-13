@@ -52,7 +52,7 @@ func stateV3SnapshotLease(snapshot StateV3StateSnapshot) (*StateV3ActiveOperatio
 		return nil, false
 	}
 	var lease StateV3ActiveOperationLease
-	if decodeStateV3Document(snapshot.RawLease, MaxStateV3DocumentBytes, &lease) != nil {
+	if decodeStateV3Document(snapshot.RawLease, MaxStateV3ActiveLeaseBytes, &lease) != nil {
 		return nil, false
 	}
 	canonical, err := canonicalJSON(lease)
@@ -82,7 +82,7 @@ func ValidateStateV3ActiveLease(raw []byte, lease StateV3ActiveOperationLease, r
 	for index := range snapshots {
 		checkpoint := index == len(snapshots)-1
 		record, valid := validStateV3Snapshot(snapshots[index], recordPath, policy, checkpoint)
-		if !valid || record != nil || seen[snapshots[index].Commit.OID] {
+		if !valid || index == 0 && record != nil || seen[snapshots[index].Commit.OID] {
 			return invalid()
 		}
 		seen[snapshots[index].Commit.OID] = true
@@ -185,7 +185,7 @@ func validStateV3LaneLifecycles(snapshots []StateV3StateSnapshot, policy StateV3
 				return false
 			}
 		case previousLease != nil && lease == nil:
-			if record == nil || previousRecord == nil || record.Phase != StateV3PhaseComplete || !reflect.DeepEqual(record, previousRecord) || !validStateV3Lease(*previousLease, record.Reservation, policy) || len(changes) != 1 || changes[0] != (StateV3ChangedPath{Path: StateV3ActiveLeasePath, ParentOID: parent.LeaseBlobOID}) {
+			if record != nil || previousRecord == nil || previousRecord.Phase != StateV3PhaseComplete || !validStateV3Lease(*previousLease, previousRecord.Reservation, policy) || !stateV3TerminalCleanupChanges(changes, parent) {
 				return false
 			}
 		}
@@ -248,11 +248,18 @@ func validStateV3Authentication(authentication StateV3Authentication, policy Sta
 		}
 	}
 	currentRaw, currentErr := canonicalJSON(current)
-	recordRaw := []byte(nil)
-	if records[0] != nil {
-		recordRaw, _ = canonicalJSON(*records[0])
+	recordIndex := 0
+	if current.Phase == StateV3PhaseComplete && !authentication.Current.RecordPresent {
+		recordIndex = 1
+		if len(snapshots) < 2 || snapshots[0].LeasePresent || snapshots[0].RecordPresent || records[0] != nil {
+			return false
+		}
 	}
-	if currentErr != nil || records[0] == nil || !bytes.Equal(recordRaw, currentRaw) || snapshots[len(snapshots)-1].LeasePresent || !validStateV3LaneLifecycles(snapshots, policy, lane) {
+	recordRaw := []byte(nil)
+	if recordIndex < len(records) && records[recordIndex] != nil {
+		recordRaw, _ = canonicalJSON(*records[recordIndex])
+	}
+	if currentErr != nil || recordIndex >= len(records) || records[recordIndex] == nil || !bytes.Equal(recordRaw, currentRaw) || snapshots[len(snapshots)-1].LeasePresent || !validStateV3LaneLifecycles(snapshots, policy, lane) {
 		return false
 	}
 	leaseAcquisitions, leaseReleases := 0, 0
@@ -266,12 +273,21 @@ func validStateV3Authentication(authentication StateV3Authentication, policy Sta
 			leaseReleases++
 		}
 		derived := stateV3TreeChanges(snapshots[index+1].Tree, snapshots[index].Tree)
-		if !reflect.DeepEqual(derived, snapshots[index].Commit.ChangedPaths) || !validStateV3SnapshotTransition(snapshots[index], records[index], snapshots[index+1], records[index+1], recordPath, expectedLease) {
+		if !reflect.DeepEqual(derived, snapshots[index].Commit.ChangedPaths) {
+			return false
+		}
+		if childLease != nil && *childLease != expectedLease || parentLease != nil && *parentLease != expectedLease {
+			continue
+		}
+		if !validStateV3SnapshotTransition(snapshots[index], records[index], snapshots[index+1], records[index+1], recordPath, expectedLease) {
 			return false
 		}
 	}
 	if leaseAcquisitions != 1 || current.Phase == StateV3PhaseComplete && !authentication.Current.LeasePresent && leaseReleases != 1 || (current.Phase != StateV3PhaseComplete || authentication.Current.LeasePresent) && leaseReleases != 0 || current.Phase != StateV3PhaseComplete && !authentication.Current.LeasePresent {
 		return false
+	}
+	if current.Phase == StateV3PhaseComplete && !authentication.Current.RecordPresent {
+		return stateV3CapacityFits(len(snapshots), 0, lane.MaxHistoryCommits)
 	}
 	remaining, capacityKnown := stateV3RemainingOperationCommits(current, authentication.Current)
 	return capacityKnown && stateV3CapacityFits(len(snapshots), remaining, lane.MaxHistoryCommits)
@@ -338,7 +354,7 @@ func stateV3RemainingOperationCommits(record StateV3Record, snapshot StateV3Stat
 	return totalEvents - len(record.Events) + stageCommitRemaining + leaseReleaseRemaining, true
 }
 
-func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, policy StateV3Policy, checkpoint bool) (*StateV3Record, bool) {
+func validStateV3Snapshot(snapshot StateV3StateSnapshot, _ string, policy StateV3Policy, checkpoint bool) (*StateV3Record, bool) {
 	commit := snapshot.Commit
 	if !validStateV3OID(commit.OID) || !validStateV3OID(commit.TreeOID) || !checkpoint && (!validStateV3OID(commit.ParentOID) || commit.OID == commit.ParentOID) || !commit.RESTVerified || commit.RESTReason != StateV3RequiredRESTVerificationReason || !commit.GraphQLSignatureValid || !commit.WasSignedByGitHub || commit.SignatureState != StateV3RequiredSignatureState || commit.Roles != policy.CommitRoles {
 		return nil, false
@@ -346,12 +362,10 @@ func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, poli
 	if !checkpoint && !validStateV3StateChanges(commit.ChangedPaths) || checkpoint && len(commit.ChangedPaths) != 0 {
 		return nil, false
 	}
-	if snapshot.Tree.OID != commit.TreeOID || !snapshot.Tree.Complete || snapshot.Tree.Truncated || len(snapshot.Tree.Entries) > 10_000 {
+	if snapshot.Tree.OID != commit.TreeOID || !snapshot.Tree.Complete || snapshot.Tree.Truncated || len(snapshot.Tree.Entries) > stateV3TerminalCleanupPathCount || checkpoint && len(snapshot.Tree.Entries) != 0 {
 		return nil, false
 	}
-	entryFound := false
 	leaseEntryFound := false
-	recordPathSeen := false
 	entries := map[string]string{}
 	previous := ""
 	for _, entry := range snapshot.Tree.Entries {
@@ -360,10 +374,6 @@ func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, poli
 		}
 		previous = entry.Path
 		entries[entry.Path] = entry.OID
-		if entry.Path == recordPath {
-			recordPathSeen = true
-			entryFound = entry.OID == snapshot.RecordBlobOID
-		}
 		if entry.Path == StateV3ActiveLeasePath {
 			leaseEntryFound = entry.OID == snapshot.LeaseBlobOID
 		}
@@ -373,9 +383,15 @@ func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, poli
 		return nil, false
 	}
 	if !snapshot.RecordPresent {
-		return nil, !recordPathSeen && snapshot.RecordPath == "" && len(snapshot.RawRecord) == 0 && snapshot.RecordSHA256 == "" && snapshot.RecordBlobOID == "" && snapshot.StagedEnvelope == nil
+		if snapshot.RecordPath != "" || len(snapshot.RawRecord) != 0 || snapshot.RecordSHA256 != "" || snapshot.RecordBlobOID != "" || snapshot.StagedEnvelope != nil {
+			return nil, false
+		}
+		if lease == nil {
+			return nil, len(entries) == 0
+		}
+		return nil, len(entries) == 1 && entries[StateV3ActiveLeasePath] == snapshot.LeaseBlobOID
 	}
-	if snapshot.RecordPath != recordPath || !entryFound || !lowerHexDigest(snapshot.RecordSHA256) || !validStateV3OID(snapshot.RecordBlobOID) {
+	if lease == nil || !lowerHexDigest(snapshot.RecordSHA256) || !validStateV3OID(snapshot.RecordBlobOID) {
 		return nil, false
 	}
 	digest := sha256.Sum256(snapshot.RawRecord)
@@ -388,11 +404,11 @@ func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, poli
 		return nil, false
 	}
 	canonical, err := canonicalJSON(decoded)
-	if err != nil || !bytes.Equal(canonical, snapshot.RawRecord) || validateStateV3RecordCore(decoded, policy) != nil {
+	entryFound := entries[snapshot.RecordPath] == snapshot.RecordBlobOID
+	if err != nil || !entryFound || snapshot.RecordPath != decoded.ActiveRecordPath() || !bytes.Equal(canonical, snapshot.RawRecord) || validateStateV3RecordCore(decoded, policy) != nil {
 		return nil, false
 	}
-	root := strings.TrimSuffix(recordPath, "state.json")
-	expected := map[string]string{recordPath: snapshot.RecordBlobOID}
+	expected := map[string]string{snapshot.RecordPath: snapshot.RecordBlobOID}
 	if snapshot.LeasePresent {
 		expected[StateV3ActiveLeasePath] = snapshot.LeaseBlobOID
 	}
@@ -411,10 +427,8 @@ func validStateV3Snapshot(snapshot StateV3StateSnapshot, recordPath string, poli
 	} else if snapshot.StagedEnvelope != nil && decoded.Phase != StateV3PhaseReserved {
 		return nil, false
 	}
-	for path, oid := range entries {
-		if strings.HasPrefix(path, root) && expected[path] != oid {
-			return nil, false
-		}
+	if len(entries) != len(expected) {
+		return nil, false
 	}
 	for path, oid := range expected {
 		if entries[path] != oid {
@@ -439,13 +453,15 @@ func validStateV3SnapshotTransition(childSnapshot StateV3StateSnapshot, child *S
 	if childLease != nil && parentLease == nil {
 		return child == nil && parent == nil && len(changes) == 1 && changes[0] == (StateV3ChangedPath{Path: StateV3ActiveLeasePath, ChildOID: childSnapshot.LeaseBlobOID})
 	}
-	// The current operation's release proves complete, byte-identical state. A
-	// prior operation's release is still exactly a one-path lease deletion.
+	// Completion is followed by one terminal cleanup transition. It removes
+	// every control document for the completed operation, returning the lane to
+	// the empty tree required before any later lease acquisition.
 	if childLease == nil && parentLease != nil {
-		if *parentLease != expectedLease {
-			return child == nil && parent == nil && len(changes) == 1 && changes[0] == (StateV3ChangedPath{Path: StateV3ActiveLeasePath, ParentOID: parentSnapshot.LeaseBlobOID})
+		parentComplete := parent != nil && parent.Phase == StateV3PhaseComplete
+		if !parentComplete && parentSnapshot.ActiveRecord.Present {
+			parentComplete = true
 		}
-		return child != nil && parent != nil && child.Phase == StateV3PhaseComplete && reflect.DeepEqual(child, parent) && reflect.DeepEqual(childSnapshot.StagedEnvelope, parentSnapshot.StagedEnvelope) && len(changes) == 1 && changes[0] == (StateV3ChangedPath{Path: StateV3ActiveLeasePath, ParentOID: parentSnapshot.LeaseBlobOID})
+		return child == nil && parentComplete && (parentSnapshot.StagedEnvelope != nil || parentSnapshot.ActiveRecord.StagedEnvelope != nil) && len(childSnapshot.Tree.Entries) == 0 && stateV3TerminalCleanupChanges(changes, parentSnapshot)
 	}
 	if childLease == nil || parentLease == nil || *childLease != *parentLease {
 		return false
@@ -498,6 +514,39 @@ func validStateV3SnapshotTransition(childSnapshot StateV3StateSnapshot, child *S
 	return false // While held, no unrelated or byte-identical interleaving commit is valid.
 }
 
+func stateV3TerminalCleanupChanges(changes []StateV3ChangedPath, parent StateV3StateSnapshot) bool {
+	envelope := parent.StagedEnvelope
+	if envelope == nil && parent.ActiveRecord.Present {
+		envelope = parent.ActiveRecord.StagedEnvelope
+	}
+	if len(changes) != stateV3TerminalCleanupPathCount || !parent.LeasePresent || envelope == nil {
+		return false
+	}
+	recordPath, recordOID := parent.RecordPath, parent.RecordBlobOID
+	if parent.ActiveRecord.Present {
+		recordPath, recordOID = parent.ActiveRecord.Path, parent.ActiveRecord.BlobOID
+	}
+	if recordPath == "" || recordOID == "" {
+		return false
+	}
+	expected := map[string]string{
+		StateV3ActiveLeasePath: parent.LeaseBlobOID,
+		recordPath:             recordOID,
+	}
+	for _, file := range envelope.Files {
+		expected[file.Path] = file.BlobOID
+	}
+	if len(expected) != stateV3TerminalCleanupPathCount {
+		return false
+	}
+	for _, change := range changes {
+		if expected[change.Path] == "" || change.ParentOID != expected[change.Path] || change.ChildOID != "" {
+			return false
+		}
+	}
+	return true
+}
+
 func containsStateV3Change(changes []StateV3ChangedPath, want string) bool {
 	index := sort.Search(len(changes), func(index int) bool { return changes[index].Path >= want })
 	return index < len(changes) && changes[index].Path == want
@@ -536,7 +585,7 @@ func stateV3GitBlobOID(raw []byte) string {
 }
 
 func validStateV3StateChanges(changes []StateV3ChangedPath) bool {
-	if len(changes) == 0 || len(changes) > StateV3PreparedAdditionCount || !sort.SliceIsSorted(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path }) {
+	if len(changes) == 0 || len(changes) > stateV3TerminalCleanupPathCount || !sort.SliceIsSorted(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path }) {
 		return false
 	}
 	seen := map[string]bool{}
