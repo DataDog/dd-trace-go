@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-package readcollector
+package strictcollector
 
 import (
 	"compress/gzip"
@@ -24,7 +24,7 @@ import (
 
 func TestCollectStateV3SpineRejectsDeadlineBeforeTransport(t *testing.T) {
 	calls := 0
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls++
 		return nil, nil
 	}), time.Now)
@@ -36,7 +36,7 @@ func TestCollectStateV3SpineRejectsDeadlineBeforeTransport(t *testing.T) {
 }
 
 func TestCollectStateV3SpineClosesSeededSessionOnPreflightFailure(t *testing.T) {
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Path != "/repos/DataDog/dd-trace-go/git/ref/heads/gardener-release-state/minor" {
 			t.Fatalf("unexpected seed request %s", request.URL.Path)
 		}
@@ -57,7 +57,7 @@ func TestCollectStateV3SpineClosesSeededSessionOnPreflightFailure(t *testing.T) 
 
 func TestCollectStateV3SpineRejectsInvalidPolicyBeforeTransport(t *testing.T) {
 	calls := 0
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls++
 		return nil, nil
 	}), time.Now)
@@ -70,7 +70,7 @@ func TestCollectStateV3SpineRejectsInvalidPolicyBeforeTransport(t *testing.T) {
 
 func TestCollectStateV3SpineRejectsMaximumValidPolicyBeforeTransport(t *testing.T) {
 	calls := 0
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls++
 		return nil, nil
 	}), time.Now)
@@ -85,7 +85,7 @@ func TestCollectStateV3SpineRejectsMaximumValidPolicyBeforeTransport(t *testing.
 
 func TestCollectStateV3SpineRejectsUnknownRootBeforeTransport(t *testing.T) {
 	calls := 0
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls++
 		return nil, nil
 	}), time.Now)
@@ -142,7 +142,7 @@ func TestCollectStateV3SpineCollectsFixedTwoNodeChainAndClosesSession(t *testing
 	}
 	calls := 0
 	graphQLCalls := 0
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		calls++
 		switch {
 		case request.URL.Path == "/repos/DataDog/dd-trace-go/git/ref/heads/gardener-release-state/minor":
@@ -202,7 +202,7 @@ func TestCollectStateV3SpineUsesEachFixedRoot(t *testing.T) {
 		t.Run(expectedRef, func(t *testing.T) {
 			policy := validStateV3Policy(t)
 			calls := 0
-			s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+			s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 				calls++
 				if calls == 1 {
 					if request.URL.Path != "/repos/DataDog/dd-trace-go/git/ref/"+strings.TrimPrefix(expectedRef, "refs/") {
@@ -223,7 +223,7 @@ func TestCollectStateV3SpineUsesEachFixedRoot(t *testing.T) {
 func TestCollectStateV3SpineClearsArtifactsAfterMidSpineFailure(t *testing.T) {
 	policy := validStateV3Policy(t)
 	calls := 0
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		calls++
 		if strings.Contains(request.URL.Path, "/git/ref/") {
 			return response(refJSON(gardenerrelease.StateV3MinorStateRef)), nil
@@ -251,7 +251,7 @@ func TestStateV3SpineReadBudgetReservesFixedRootRead(t *testing.T) {
 
 func TestCollectStateV3SpineRejectsPreConsumedReadCapacityBeforeTransport(t *testing.T) {
 	var calls atomic.Int32
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return response(refJSON(gardenerrelease.StateV3MinorStateRef)), nil
 	}), time.Now)
@@ -277,11 +277,11 @@ func TestCollectStateV3SpineRejectsPreConsumedReadCapacityBeforeTransport(t *tes
 
 func TestStateV3SpineReservationCannotBeSpentByOrdinaryRead(t *testing.T) {
 	var calls atomic.Int32
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return response(refJSON(gardenerrelease.StateV3MinorStateRef)), nil
 	}), time.Now)
-	lease, reserved := s.reserveStateV3SpineReads(2)
+	lease, reserved := s.reserveStateV3SpineReads(2, context.Background(), time.Now().Add(time.Second), stateV3MinorSpine)
 	if !reserved {
 		t.Fatal("reserve spine reads")
 	}
@@ -298,7 +298,7 @@ func TestStateV3SpineReservationCannotBeSpentByOrdinaryRead(t *testing.T) {
 
 func TestCollectStateV3SpineAdmitsExactRemainingCapacity(t *testing.T) {
 	var calls atomic.Int32
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		calls.Add(1)
 		if strings.Contains(request.URL.Path, "/git/ref/") {
 			return response(refJSON(gardenerrelease.StateV3MinorStateRef)), nil
@@ -325,7 +325,7 @@ func TestStateV3SpineReservationExcludesParallelCollection(t *testing.T) {
 	rootStarted := make(chan struct{})
 	unblockRoot := make(chan struct{})
 	var calls atomic.Int32
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		calls.Add(1)
 		if strings.Contains(request.URL.Path, "/git/ref/") {
 			select {
@@ -567,7 +567,7 @@ func TestStateV3SpineChangesDerivesOnlyFromCompleteEvidence(t *testing.T) {
 	}
 }
 
-func assertStateV3SpineSessionClosed(t *testing.T, session *Session) {
+func assertStateV3SpineSessionClosed(t *testing.T, session *session) {
 	t.Helper()
 	if !session.closed || len(session.artifacts) != 0 || session.retainedBytes != 0 {
 		t.Fatalf("closed=%t artifacts=%d retained=%d", session.closed, len(session.artifacts), session.retainedBytes)

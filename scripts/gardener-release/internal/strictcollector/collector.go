@@ -3,11 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-// Package readcollector contains the isolated, read-only v3 GitHub collector.
+// Package strictcollector contains the isolated, read-only v3 GitHub collector.
 // It deliberately has no production constructor. A future authenticated
 // snapshot assembler belongs in this package, so callers cannot obtain its
 // transport, manufacture a request, or inspect mutable predecessor evidence.
-package readcollector
+package strictcollector
 
 import (
 	"bytes"
@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	gardenerrelease "github.com/DataDog/dd-trace-go/scripts/gardener-release"
 )
 
 const (
@@ -44,6 +46,7 @@ type Result struct {
 	RequestSHA256 string
 	BodySHA256    string
 	Diagnostic    string
+	responseBytes int
 }
 
 const (
@@ -58,35 +61,60 @@ const (
 	DiagnosticResponseInvalid        = "github_response_invalid"
 )
 
-// Handle is opaque continuation evidence. Its fields cannot be constructed or
+// handle is opaque continuation evidence. Its fields cannot be constructed or
 // changed outside this internal package. A handle is accepted only by its
 // exact successor on the session which issued it.
-type Handle struct {
-	session *Session
+type handle struct {
+	session *session
 	nonce   string
 }
 
-// Session owns the only transport and mutable artifact store. There is no
+// session owns the only transport and mutable artifact store. There is no
 // exported constructor: tests construct it inside this package, and production
 // construction remains deferred until credentials and policy are reviewed.
-type Session struct {
-	transport     http.RoundTripper
-	now           func() time.Time
-	mu            sync.Mutex
-	artifacts     map[string]*artifact
-	reads         int
-	reservedReads int
-	spineLease    *stateV3SpineReadLease
-	retainedBytes int
-	closed        bool
+type session struct {
+	transport        http.RoundTripper
+	now              func() time.Time
+	mu               sync.Mutex
+	artifacts        map[string]*artifact
+	reads            int
+	reservedReads    int
+	spineLease       *stateV3SpineReadLease
+	spineContext     context.Context
+	spineDeadline    time.Time
+	spineRoot        stateV3SpineRoot
+	assembly         *stateV3AssemblyQuota
+	assemblyLease    *stateV3AssemblyReadLease
+	assemblyRole     stateV3AssemblyRole
+	assemblyContext  context.Context
+	assemblyDeadline time.Time
+	assemblyReads    int
+	assemblyBytes    int
+	assemblyLive     bool
+	retainedBytes    int
+	closed           bool
 }
 
 // stateV3SpineReadLease is an assembly-owned capability. It is deliberately
 // non-zero-sized and is passed only through private spine read methods;
-// ordinary Session reads cannot present or settle it.
+// ordinary session reads cannot present or settle it.
 type stateV3SpineReadLease struct {
 	remaining int
 }
+
+// stateV3AssemblyReadLease is issued only to an operation child. Unlike a
+// context value, it is checked by identity at the collector settlement point.
+type stateV3AssemblyReadLease struct {
+	remaining int
+}
+
+type readMode uint8
+
+const (
+	readOrdinary readMode = iota
+	readSpine
+	readAssembly
+)
 
 type kind string
 
@@ -136,121 +164,95 @@ const (
 	edgeTagObject
 )
 
-func newSession(transport http.RoundTripper, now func() time.Time) *Session {
-	return &Session{transport: transport, now: now, artifacts: make(map[string]*artifact)}
-}
-
 // ReadMinorStateRef, ReadPatchStateRef, and ReadCoordinationRef are the only
-// root reads. They own fixed refs; no caller supplies a path or URL.
-func (s *Session) ReadMinorStateRef(ctx context.Context, deadline time.Time) (Handle, Result) {
-	return s.readFixedRef(ctx, deadline, "refs/heads/gardener-release-state/minor")
+// ordinary root reads. Active spine and assembly reservations reject them.
+func (s *session) ReadMinorStateRef(ctx context.Context, deadline time.Time) (handle, Result) {
+	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3MinorStateRef)
 }
-func (s *Session) ReadPatchStateRef(ctx context.Context, deadline time.Time) (Handle, Result) {
-	return s.readFixedRef(ctx, deadline, "refs/heads/gardener-release-state/patch")
+func (s *session) ReadPatchStateRef(ctx context.Context, deadline time.Time) (handle, Result) {
+	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3PatchStateRef)
 }
-func (s *Session) ReadCoordinationRef(ctx context.Context, deadline time.Time) (Handle, Result) {
-	return s.readFixedRef(ctx, deadline, "refs/heads/gardener-release-coordination")
+func (s *session) ReadCoordinationRef(ctx context.Context, deadline time.Time) (handle, Result) {
+	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3CoordinationRef)
 }
 
-func (s *Session) readFixedRef(ctx context.Context, deadline time.Time, ref string) (Handle, Result) {
-	return s.readFixedRefWithSpineLease(nil, ctx, deadline, ref)
-}
-func (s *Session) readFixedRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, deadline time.Time, ref string) (Handle, Result) {
-	return s.readRefWithSpineLease(lease, ctx, kindControlRef, ref, deadline)
-}
-func (s *Session) readRef(ctx context.Context, k kind, ref string, deadline time.Time) (Handle, Result) {
-	return s.readRefWithSpineLease(nil, ctx, k, ref, deadline)
-}
-func (s *Session) readRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, k kind, ref string, deadline time.Time) (Handle, Result) {
-	if !validFixedRef(k, ref) {
-		return Handle{}, failure(DiagnosticProtocol)
+func (s *session) readFixedRef(ctx context.Context, deadline time.Time, ref string) (handle, Result) {
+	if !validFixedRef(kindControlRef, ref) {
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	path := "/repos/" + repository + "/git/ref/" + strings.TrimPrefix(ref, "refs/")
-	return s.executeWithSpineLease(lease, ctx, deadline, k, http.MethodGet, path, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeOrdinary(ctx, deadline, kindControlRef, http.MethodGet, "/repos/"+repository+"/git/ref/"+strings.TrimPrefix(ref, "refs/"), nil, func(raw []byte) (*artifact, bool) {
 		value, ok := decodeRef(raw, ref, "commit")
-		return &artifact{kind: k, ref: value}, ok
+		return &artifact{kind: kindControlRef, ref: value}, ok
 	})
 }
 
-// ReadRawCommitForRef can read only the commit named by a live ref Handle.
-func (s *Session) ReadRawCommitForRef(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
-	return s.readRawCommitForRefWithSpineLease(nil, ctx, prior, deadline)
-}
-func (s *Session) readRawCommitForRefWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+// ReadRawCommitForRef can read only the commit named by a live ref handle.
+func (s *session) ReadRawCommitForRef(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
 	ref, ok := s.consumeRef(prior, edgeRaw, kindControlRef, kindBranchRef)
 	if !ok || ref.Type != "commit" {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommitWithSpineLease(lease, ctx, ref.SHA, deadline)
+	return s.readRawCommit(ctx, ref.SHA, deadline)
 }
-func (s *Session) ReadRawCommitParent(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
-	return s.readRawCommitParentWithSpineLease(nil, ctx, prior, deadline)
-}
-func (s *Session) readRawCommitParentWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+func (s *session) ReadRawCommitParent(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeParent)
 	if !ok || len(commit.Parents) != 1 {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommitWithSpineLease(lease, ctx, commit.Parents[0], deadline)
+	return s.readRawCommit(ctx, commit.Parents[0], deadline)
 }
-func (s *Session) readRawCommit(ctx context.Context, oid string, deadline time.Time) (Handle, Result) {
-	return s.readRawCommitWithSpineLease(nil, ctx, oid, deadline)
-}
-func (s *Session) readRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, oid string, deadline time.Time) (Handle, Result) {
+func (s *session) readRawCommit(ctx context.Context, oid string, deadline time.Time) (handle, Result) {
 	if !validOID(oid) {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeWithSpineLease(lease, ctx, deadline, kindRawCommit, http.MethodGet, "/repos/"+repository+"/git/commits/"+oid, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeOrdinary(ctx, deadline, kindRawCommit, http.MethodGet, "/repos/"+repository+"/git/commits/"+oid, nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeRawCommit(raw, oid)
 		return &artifact{kind: kindRawCommit, raw: v}, ok
 	})
 }
-func (s *Session) ReadRESTCommitForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
-	return s.readRESTCommitForRawCommitWithSpineLease(nil, ctx, prior, deadline)
-}
-func (s *Session) readRESTCommitForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+func (s *session) ReadRESTCommitForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeRest)
 	if !ok {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeWithSpineLease(lease, ctx, deadline, kindRESTCommit, http.MethodGet, "/repos/"+repository+"/commits/"+commit.SHA, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeOrdinary(ctx, deadline, kindRESTCommit, http.MethodGet, "/repos/"+repository+"/commits/"+commit.SHA, nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeRESTCommit(raw, commit.SHA)
 		return &artifact{kind: kindRESTCommit, rest: v}, ok
 	})
 }
-func (s *Session) ReadGraphQLCommitForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
-	return s.readGraphQLCommitForRawCommitWithSpineLease(nil, ctx, prior, deadline)
-}
-func (s *Session) readGraphQLCommitForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+func (s *session) ReadGraphQLCommitForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeGraphQL)
 	if !ok {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	body := []byte(`{"query":"query StateV3Commit($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){__typename ... on Commit{oid author{name email date user{__typename login databaseId}} committer{name email date user{__typename login databaseId}} signature{isValid state wasSignedByGitHub signer{__typename login databaseId}}}}}}","variables":{"owner":"DataDog","name":"dd-trace-go","oid":"` + commit.SHA + `"}}`)
-	return s.executeWithSpineLease(lease, ctx, deadline, kindGraphQLCommit, http.MethodPost, "/graphql", body, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeGQLCommit(raw, commit.SHA)
+	return s.executeGraphQL(ctx, deadline, commit.SHA)
+}
+func (s *session) executeGraphQL(ctx context.Context, deadline time.Time, oid string) (handle, Result) {
+	body := []byte(`{"query":"query StateV3Commit($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){__typename ... on Commit{oid author{name email date user{__typename login databaseId}} committer{name email date user{__typename login databaseId}} signature{isValid state wasSignedByGitHub signer{__typename login databaseId}}}}}}","variables":{"owner":"DataDog","name":"dd-trace-go","oid":"` + oid + `"}}`)
+	return s.executeOrdinary(ctx, deadline, kindGraphQLCommit, http.MethodPost, "/graphql", body, func(raw []byte) (*artifact, bool) {
+		v, ok := decodeGQLCommit(raw, oid)
 		return &artifact{kind: kindGraphQLCommit, gql: v}, ok
 	})
 }
-func (s *Session) ReadTreeForRawCommit(ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
-	return s.readTreeForRawCommitWithSpineLease(nil, ctx, prior, deadline)
-}
-func (s *Session) readTreeForRawCommitWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, prior Handle, deadline time.Time) (Handle, Result) {
+func (s *session) ReadTreeForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeTree)
 	if !ok || !validOID(commit.Tree) {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeWithSpineLease(lease, ctx, deadline, kindTree, http.MethodGet, "/repos/"+repository+"/git/trees/"+commit.Tree+"?recursive=1", nil, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeTree(raw, commit.Tree)
+	return s.executeTree(ctx, deadline, commit.Tree)
+}
+func (s *session) executeTree(ctx context.Context, deadline time.Time, oid string) (handle, Result) {
+	return s.executeOrdinary(ctx, deadline, kindTree, http.MethodGet, "/repos/"+repository+"/git/trees/"+oid+"?recursive=1", nil, func(raw []byte) (*artifact, bool) {
+		v, ok := decodeTree(raw, oid)
 		return &artifact{kind: kindTree, tree: v}, ok
 	})
 }
-func (s *Session) ReadBlobForTreeEntry(ctx context.Context, prior Handle, index int, deadline time.Time) (Handle, Result) {
+func (s *session) ReadBlobForTreeEntry(ctx context.Context, prior handle, index int, deadline time.Time) (handle, Result) {
 	entry, ok := s.consumeTreeEntry(prior, index)
 	if !ok {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.execute(ctx, deadline, kindBlob, http.MethodGet, "/repos/"+repository+"/git/blobs/"+entry.SHA, nil, func(raw []byte) (*artifact, bool) {
+	return s.executeOrdinary(ctx, deadline, kindBlob, http.MethodGet, "/repos/"+repository+"/git/blobs/"+entry.SHA, nil, func(raw []byte) (*artifact, bool) {
 		v, ok := decodeBlob(raw, entry.SHA, maxResponseBytes)
 		return &artifact{kind: kindBlob, blob: v}, ok
 	})
@@ -258,18 +260,29 @@ func (s *Session) ReadBlobForTreeEntry(ctx context.Context, prior Handle, index 
 
 // Close deterministically releases every transient evidence artifact retained
 // by a partial collection. A closed session has no retained evidence.
-func (s *Session) Close() {
+func (s *session) Close() {
 	s.mu.Lock()
 	clear(s.artifacts)
 	s.reservedReads = 0
 	s.spineLease = nil
+	s.spineContext = nil
+	s.spineDeadline = time.Time{}
+	s.spineRoot = 0
+	s.assembly = nil
+	s.assemblyLease = nil
+	s.assemblyRole = 0
+	s.assemblyContext = nil
+	s.assemblyDeadline = time.Time{}
+	s.assemblyReads = 0
+	s.assemblyBytes = 0
+	s.assemblyLive = false
 	s.retainedBytes = 0
 	s.closed = true
 	s.mu.Unlock()
 }
 
 // Release makes an issued handle unavailable to all later continuations.
-func (s *Session) Release(handle Handle) {
+func (s *session) Release(handle handle) {
 	if handle.session != s || handle.nonce == "" {
 		return
 	}
@@ -280,7 +293,7 @@ func (s *Session) Release(handle Handle) {
 	}
 	s.mu.Unlock()
 }
-func (s *Session) consumeRef(handle Handle, edge uint8, allowed ...kind) (refEvidence, bool) {
+func (s *session) consumeRef(handle handle, edge uint8, allowed ...kind) (refEvidence, bool) {
 	a := s.get(handle)
 	if a == nil {
 		return refEvidence{}, false
@@ -299,7 +312,7 @@ func (s *Session) consumeRef(handle Handle, edge uint8, allowed ...kind) (refEvi
 	s.Release(handle)
 	return v, true
 }
-func (s *Session) consumeCommit(handle Handle, edge uint8) (commitEvidence, bool) {
+func (s *session) consumeCommit(handle handle, edge uint8) (commitEvidence, bool) {
 	a := s.get(handle)
 	if a == nil {
 		return commitEvidence{}, false
@@ -316,7 +329,7 @@ func (s *Session) consumeCommit(handle Handle, edge uint8) (commitEvidence, bool
 	}
 	return v, true
 }
-func (s *Session) consumeTreeEntry(handle Handle, index int) (treeEntry, bool) {
+func (s *session) consumeTreeEntry(handle handle, index int) (treeEntry, bool) {
 	a := s.get(handle)
 	if a == nil {
 		return treeEntry{}, false
@@ -333,7 +346,7 @@ func (s *Session) consumeTreeEntry(handle Handle, index int) (treeEntry, bool) {
 	e := a.tree.Tree[index]
 	return treeEntry{e.Path, e.SHA, e.Type, e.Mode}, true
 }
-func (s *Session) get(handle Handle) *artifact {
+func (s *session) get(handle handle) *artifact {
 	if handle.session != s || handle.nonce == "" {
 		return nil
 	}
@@ -345,16 +358,16 @@ func (s *Session) get(handle Handle) *artifact {
 	return s.artifacts[handle.nonce]
 }
 
-func (s *Session) retained(handle Handle, artifact *artifact) bool {
+func (s *session) retained(handle handle, artifact *artifact) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return !s.closed && s.artifacts[handle.nonce] == artifact
 }
 
 // The following accessors are intentionally package-private. A future
-// assembler belongs beside Session and receives defensive typed copies only;
+// assembler belongs beside session and receives defensive typed copies only;
 // raw HTTP bytes and a generic artifact accessor never cross this boundary.
-func (s *Session) rawCommitFor(handle Handle) (wireRawCommit, bool) {
+func (s *session) rawCommitFor(handle handle) (wireRawCommit, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindRawCommit {
 		return wireRawCommit{}, false
@@ -366,7 +379,7 @@ func (s *Session) rawCommitFor(handle Handle) (wireRawCommit, bool) {
 	}
 	return cloneRawCommit(a.raw), true
 }
-func (s *Session) restCommitFor(handle Handle) (wireRESTCommit, bool) {
+func (s *session) restCommitFor(handle handle) (wireRESTCommit, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindRESTCommit {
 		return wireRESTCommit{}, false
@@ -378,7 +391,7 @@ func (s *Session) restCommitFor(handle Handle) (wireRESTCommit, bool) {
 	}
 	return cloneRESTCommit(a.rest), true
 }
-func (s *Session) graphQLCommitFor(handle Handle) (wireGQLCommit, bool) {
+func (s *session) graphQLCommitFor(handle handle) (wireGQLCommit, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindGraphQLCommit {
 		return wireGQLCommit{}, false
@@ -390,7 +403,7 @@ func (s *Session) graphQLCommitFor(handle Handle) (wireGQLCommit, bool) {
 	}
 	return cloneGQLCommit(a.gql), true
 }
-func (s *Session) treeFor(handle Handle) (wireTree, bool) {
+func (s *session) treeFor(handle handle) (wireTree, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindTree {
 		return wireTree{}, false
@@ -402,7 +415,7 @@ func (s *Session) treeFor(handle Handle) (wireTree, bool) {
 	}
 	return cloneTree(a.tree), true
 }
-func (s *Session) blobFor(handle Handle) (wireBlob, bool) {
+func (s *session) blobFor(handle handle) (wireBlob, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindBlob {
 		return wireBlob{}, false
@@ -415,7 +428,7 @@ func (s *Session) blobFor(handle Handle) (wireBlob, bool) {
 	return cloneBlob(a.blob), true
 }
 
-func (s *Session) tagFor(handle Handle) (wireTag, bool) {
+func (s *session) tagFor(handle handle) (wireTag, bool) {
 	a := s.get(handle)
 	if a == nil || a.kind != kindTagObject {
 		return wireTag{}, false
@@ -428,34 +441,267 @@ func (s *Session) tagFor(handle Handle) (wireTag, bool) {
 	return cloneTag(a.tag), true
 }
 
-func (s *Session) execute(ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (Handle, Result) {
-	return s.executeWithSpineLease(nil, ctx, deadline, k, method, path, body, decode)
+func (s *session) executeOrdinary(ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (handle, Result) {
+	return s.executeRequest(readOrdinary, ctx, deadline, k, method, path, body, decode)
 }
 
-// executeWithSpineLease is the sole reservation settlement point. A lease is
-// accepted only when it is the session's active assembly capability; ordinary
-// exported reads always pass nil and cannot spend reserved capacity.
-func (s *Session) executeWithSpineLease(lease *stateV3SpineReadLease, ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (Handle, Result) {
+// fixedRequest is a closed, purpose-specific read description. It is issued
+// only by fixed-root and opaque-handle continuation methods below; settlement
+// derives its context, deadline, and reservation mode from the active session.
+type fixedRequest struct {
+	scope   fixedRequestScope
+	kind    kind
+	purpose fixedRequestPurpose
+	oid     string
+	ref     string
+}
+
+type fixedRequestScope uint8
+
+const (
+	fixedAssembly fixedRequestScope = iota + 1
+	fixedSpine
+)
+
+type fixedRequestPurpose uint8
+
+const (
+	fixedRequestRoot fixedRequestPurpose = iota + 1
+	fixedRequestRaw
+	fixedRequestREST
+	fixedRequestGraphQL
+	fixedRequestTree
+)
+
+// settleFixed is the only active-operation settlement point. It accepts the
+// closed request value rather than caller-selected HTTP or decode inputs, and
+// derives its context, deadline, and reservation mode from active session state.
+func (s *session) settleFixed(request fixedRequest) (handle, Result) {
+	var mode readMode
+	s.mu.Lock()
+	var ctx context.Context
+	var deadline time.Time
+	switch request.scope {
+	case fixedAssembly:
+		ctx, deadline, mode = s.assemblyContext, s.assemblyDeadline, readAssembly
+		if !s.assemblyLive || ctx == nil {
+			s.mu.Unlock()
+			return handle{}, failure(DiagnosticProtocol)
+		}
+	case fixedSpine:
+		ctx, deadline, mode = s.spineContext, s.spineDeadline, readSpine
+		if s.spineLease == nil || ctx == nil {
+			s.mu.Unlock()
+			return handle{}, failure(DiagnosticProtocol)
+		}
+	default:
+		s.mu.Unlock()
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	s.mu.Unlock()
+	var method, path string
+	var body []byte
+	var decode func([]byte) (*artifact, bool)
+	switch request.purpose {
+	case fixedRequestRoot:
+		if request.kind != kindControlRef || request.ref == "" {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method = http.MethodGet
+		path = "/repos/" + repository + "/git/ref/" + strings.TrimPrefix(request.ref, "refs/")
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeRef(raw, request.ref, "commit")
+			return &artifact{kind: kindControlRef, ref: value}, ok
+		}
+	case fixedRequestRaw:
+		if request.kind != kindRawCommit || !validOID(request.oid) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method, path = http.MethodGet, "/repos/"+repository+"/git/commits/"+request.oid
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeRawCommit(raw, request.oid)
+			return &artifact{kind: kindRawCommit, raw: value}, ok
+		}
+	case fixedRequestREST:
+		if request.kind != kindRESTCommit || !validOID(request.oid) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method, path = http.MethodGet, "/repos/"+repository+"/commits/"+request.oid
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeRESTCommit(raw, request.oid)
+			return &artifact{kind: kindRESTCommit, rest: value}, ok
+		}
+	case fixedRequestGraphQL:
+		if request.kind != kindGraphQLCommit || !validOID(request.oid) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method, path, body = http.MethodPost, "/graphql", stateV3GraphQLBody(request.oid)
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeGQLCommit(raw, request.oid)
+			return &artifact{kind: kindGraphQLCommit, gql: value}, ok
+		}
+	case fixedRequestTree:
+		if request.kind != kindTree || !validOID(request.oid) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method, path = http.MethodGet, "/repos/"+repository+"/git/trees/"+request.oid+"?recursive=1"
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeTree(raw, request.oid)
+			return &artifact{kind: kindTree, tree: value}, ok
+		}
+	default:
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.executeRequest(mode, ctx, deadline, request.kind, method, path, body, decode)
+}
+
+func (s *session) reserveAssembly(role stateV3AssemblyRole, reads, bytes int, quota *stateV3AssemblyQuota) (*stateV3AssemblyReadLease, bool) {
+	if role < stateV3AssemblyMinor || role > stateV3AssemblyCoordination || reads <= 0 || bytes <= 0 || quota == nil {
+		return nil, false
+	}
+	lease := &stateV3AssemblyReadLease{remaining: reads}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.spineLease != nil || s.assembly != nil || reads > maxReads-s.reads-s.reservedReads {
+		return nil, false
+	}
+	s.reservedReads += reads
+	s.assemblyReads = reads
+	s.assemblyBytes = bytes
+	s.assembly = quota
+	s.assemblyLease = lease
+	s.assemblyRole = role
+	return lease, true
+}
+
+func (s *session) releaseAssembly() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.assembly == nil {
+		return
+	}
+	s.reservedReads -= s.assemblyReads
+	s.assemblyReads = 0
+	s.assemblyBytes = 0
+	s.assembly = nil
+	s.assemblyLease = nil
+	s.assemblyRole = 0
+	s.assemblyContext = nil
+	s.assemblyDeadline = time.Time{}
+	s.assemblyLive = false
+}
+
+func (s *session) activateAssembly(ctx context.Context, deadline time.Time, role stateV3AssemblyRole) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.assembly == nil || s.assemblyLive || ctx == nil || deadline.IsZero() || !s.now().Before(deadline) || role != s.assemblyRole {
+		return false
+	}
+	s.assemblyContext = ctx
+	s.assemblyDeadline = deadline
+	s.assemblyLive = true
+	return true
+}
+
+// readAssemblyRoot and all assembly continuations derive route, identity,
+// context, deadline, and quota from active session state and opaque handles.
+func (s *session) readAssemblyRoot() (handle, Result) {
+	s.mu.Lock()
+	role, live := s.assemblyRole, s.assemblyLive
+	s.mu.Unlock()
+	if !live {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	var ref string
+	switch role {
+	case stateV3AssemblyMinor:
+		ref = gardenerrelease.StateV3MinorStateRef
+	case stateV3AssemblyPatch:
+		ref = gardenerrelease.StateV3PatchStateRef
+	case stateV3AssemblyCoordination:
+		ref = gardenerrelease.StateV3CoordinationRef
+	default:
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindControlRef, purpose: fixedRequestRoot, ref: ref})
+}
+func (s *session) readAssemblyRawForRef(prior handle) (handle, Result) {
+	ref, ok := s.consumeRef(prior, edgeRaw, kindControlRef)
+	if !ok || ref.Type != "commit" {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindRawCommit, purpose: fixedRequestRaw, oid: ref.SHA})
+}
+func (s *session) readAssemblyRawParent(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeParent)
+	if !ok || len(commit.Parents) != 1 {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindRawCommit, purpose: fixedRequestRaw, oid: commit.Parents[0]})
+}
+func (s *session) readAssemblyREST(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeRest)
+	if !ok {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindRESTCommit, purpose: fixedRequestREST, oid: commit.SHA})
+}
+func (s *session) readAssemblyGraphQL(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeGraphQL)
+	if !ok {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindGraphQLCommit, purpose: fixedRequestGraphQL, oid: commit.SHA})
+}
+func (s *session) readAssemblyTree(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeTree)
+	if !ok || !validOID(commit.Tree) {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindTree, purpose: fixedRequestTree, oid: commit.Tree})
+}
+
+func stateV3GraphQLBody(oid string) []byte {
+	return []byte(`{"query":"query StateV3Commit($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){__typename ... on Commit{oid author{name email date user{__typename login databaseId}} committer{name email date user{__typename login databaseId}} signature{isValid state wasSignedByGitHub signer{__typename login databaseId}}}}}}","variables":{"owner":"DataDog","name":"dd-trace-go","oid":"` + oid + `"}}`)
+}
+
+func (s *session) closeAssembly() {
+	s.Close()
+}
+
+// executeRequest is the sole settlement point. Its private mode is selected
+// only by closed spine or assembly continuation methods; ordinary reads cannot
+// spend an active reservation.
+func (s *session) executeRequest(mode readMode, ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (handle, Result) {
 	if deadline.IsZero() || !s.now().Before(deadline) || ctx == nil {
-		return Handle{}, failure(DiagnosticDeadline)
+		return handle{}, failure(DiagnosticDeadline)
 	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
-	if s.spineLease != nil {
-		if lease != s.spineLease || lease.remaining == 0 || s.reservedReads == 0 {
+	if s.assembly != nil {
+		if mode != readAssembly || !s.assemblyLive || s.assemblyLease == nil || s.assemblyLease.remaining == 0 || s.assemblyReads == 0 || s.reservedReads == 0 {
 			s.mu.Unlock()
-			return Handle{}, failure(DiagnosticProtocol)
+			return handle{}, failure(DiagnosticProtocol)
 		}
-		lease.remaining--
+		s.assemblyLease.remaining--
+		s.assemblyReads--
+		s.reservedReads--
+		s.reads++
+	} else if s.spineLease != nil {
+		if mode != readSpine || s.spineLease.remaining == 0 || s.reservedReads == 0 {
+			s.mu.Unlock()
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		s.spineLease.remaining--
 		s.reservedReads--
 		s.reads++
 	} else {
-		if lease != nil || s.reads >= maxReads {
+		if mode != readOrdinary || s.reads >= maxReads {
 			s.mu.Unlock()
-			return Handle{}, failure(DiagnosticProtocol)
+			return handle{}, failure(DiagnosticProtocol)
 		}
 		s.reads++
 	}
@@ -463,7 +709,13 @@ func (s *Session) executeWithSpineLease(lease *stateV3SpineReadLease, ctx contex
 	requestContext, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if !s.chargeAssemblyAttempt() {
+			return handle{}, failure(DiagnosticProtocol)
+		}
 		obs, retry, delay, result := s.readOnce(requestContext, k, method, path, body, attempt)
+		if !s.chargeAssemblyBytes(result.responseBytes) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
 		if result.Diagnostic == DiagnosticOK {
 			if artifact, ok := decode(obs); ok {
 				// Raw bytes remain confined to this stack frame. Their bounded
@@ -472,19 +724,42 @@ func (s *Session) executeWithSpineLease(lease *stateV3SpineReadLease, ctx contex
 				return s.issue(artifact, result)
 			}
 			result.Diagnostic = DiagnosticResponseInvalid
-			return Handle{}, result
+			return handle{}, result
 		}
 		if !retry || attempt == maxAttempts {
-			return Handle{}, result
+			return handle{}, result
 		}
 		if delay <= 0 || s.now().Add(delay).After(deadline) || !sleep(requestContext, delay) {
 			result.Diagnostic = DiagnosticDeadline
-			return Handle{}, result
+			return handle{}, result
 		}
 	}
-	return Handle{}, failure(DiagnosticProtocol)
+	return handle{}, failure(DiagnosticProtocol)
 }
-func (s *Session) readOnce(ctx context.Context, k kind, method, path string, body []byte, attempt int) ([]byte, bool, time.Duration, Result) {
+func (s *session) chargeAssemblyAttempt() bool {
+	s.mu.Lock()
+	quota := s.assembly
+	live := s.assemblyLive
+	s.mu.Unlock()
+	return quota == nil || !live || quota.chargeAttempt()
+}
+
+func (s *session) chargeAssemblyBytes(bytes int) bool {
+	s.mu.Lock()
+	quota := s.assembly
+	live := s.assemblyLive
+	if live && bytes > s.assemblyBytes {
+		s.mu.Unlock()
+		return false
+	}
+	if live {
+		s.assemblyBytes -= bytes
+	}
+	s.mu.Unlock()
+	return quota == nil || !live || quota.chargeBytes(bytes)
+}
+
+func (s *session) readOnce(ctx context.Context, k kind, method, path string, body []byte, attempt int) ([]byte, bool, time.Duration, Result) {
 	result := Result{Descriptor: string(k), Attempts: attempt, RequestSHA256: digest(body)}
 	req, err := http.NewRequestWithContext(ctx, method, apiOrigin+path, bytes.NewReader(body))
 	if err != nil {
@@ -515,6 +790,7 @@ func (s *Session) readOnce(ctx context.Context, k kind, method, path string, bod
 		return nil, false, 0, result
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	result.responseBytes = len(raw)
 	if ctx.Err() != nil {
 		result.Diagnostic = DiagnosticDeadline
 		return nil, false, 0, result
@@ -583,19 +859,19 @@ func rateLimitDelay(value string, now time.Time) (time.Duration, bool) {
 	delay := time.Unix(seconds, 0).Sub(now)
 	return delay, delay > 0 && delay <= 24*time.Hour
 }
-func (s *Session) issue(decoded *artifact, r Result) (Handle, Result) {
+func (s *session) issue(decoded *artifact, r Result) (handle, Result) {
 	if decoded == nil {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
 	bytes := artifactBytes(decoded)
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		return Handle{}, failure(DiagnosticTransport)
+		return handle{}, failure(DiagnosticTransport)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || len(s.artifacts) >= maxArtifacts || bytes < 0 || bytes > maxRetainedBytes-s.retainedBytes {
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
 	a := cloneArtifact(decoded)
 	a.bytes = bytes
@@ -603,10 +879,10 @@ func (s *Session) issue(decoded *artifact, r Result) (Handle, Result) {
 	n := hex.EncodeToString(nonce[:])
 	s.artifacts[n] = a
 	s.retainedBytes += a.bytes
-	return Handle{session: s, nonce: n}, r
+	return handle{session: s, nonce: n}, r
 }
 
-// cloneArtifact transfers only immutable evidence into Session ownership. It
+// cloneArtifact transfers only immutable evidence into session ownership. It
 // deliberately does not copy locks or consumption state from a decoder-local
 // value, and all pointer/slice-backed values receive fresh backing storage.
 func cloneArtifact(value *artifact) *artifact {

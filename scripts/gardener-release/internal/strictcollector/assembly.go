@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-package readcollector
+package strictcollector
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type stateV3Spine struct {
 }
 
 const (
-	// These limits account for evidence retained after Session.Close releases
+	// These limits account for evidence retained after session.Close releases
 	// transport artifacts. They are independent of the session's artifact
 	// store and bound all projected regular-file and changed-path evidence.
 	maxStateV3SpineEntries = 8_192
@@ -58,14 +58,14 @@ func (b *stateV3SpineBudget) reserve(entries, bytes int) bool {
 }
 
 // collectStateV3Spine collects a single fixed checkpoint-bounded commit spine.
-// It deliberately closes its Session before returning so no opaque handles or
+// It deliberately closes its session before returning so no opaque handles or
 // retained API artifacts survive either a successful collection or a failure.
 //
 // This is intentionally not a public operation assembler. A complete lane plus
 // coordination assembly cannot fit the accepted 4096-read collector limit at
 // the still-valid maximum policy history sizes; callers must not mistake this
 // independently authenticated partial primitive for cross-lane authority.
-func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, policy gardenerrelease.StateV3Policy, root stateV3SpineRoot) (stateV3Spine, Result) {
+func (s *session) collectStateV3Spine(ctx context.Context, deadline time.Time, policy gardenerrelease.StateV3Policy, root stateV3SpineRoot) (stateV3Spine, Result) {
 	var lease *stateV3SpineReadLease
 	defer func() { s.closeStateV3Spine(lease) }()
 
@@ -84,23 +84,23 @@ func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, p
 	if !budgetOK {
 		return stateV3Spine{}, failure(DiagnosticProtocol)
 	}
-	reservation, reserved := s.reserveStateV3SpineReads(readBudget)
+	reservation, reserved := s.reserveStateV3SpineReads(readBudget, ctx, deadline, root)
 	if !reserved {
 		return stateV3Spine{}, failure(DiagnosticProtocol)
 	}
 	lease = reservation
 
-	rootHandle, result := s.readStateV3SpineRoot(lease, ctx, deadline, root)
+	rootHandle, result := s.readStateV3SpineRoot()
 	if result.Diagnostic != DiagnosticOK {
 		return stateV3Spine{}, result
 	}
-	current, result := s.readRawCommitForRefWithSpineLease(lease, ctx, rootHandle, deadline)
+	current, result := s.readSpineRawForRef(rootHandle)
 	if result.Diagnostic != DiagnosticOK {
 		return stateV3Spine{}, result
 	}
 
 	budget := stateV3SpineBudget{}
-	// The returned snapshots backing array is retained after Session.Close.
+	// The returned snapshots backing array is retained after session.Close.
 	// Reserve its exact capacity before allocating it; no map is needed for
 	// duplicate detection because the bounded spine itself is the seen set.
 	if !reserveStateV3Snapshots(&budget, maximum) || !budget.reserve(0, stateV3StringsBytes(ref, checkpoint)) {
@@ -123,7 +123,7 @@ func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, p
 			}
 		}
 
-		restHandle, restResult := s.readRESTCommitForRawCommitWithSpineLease(lease, ctx, current, deadline)
+		restHandle, restResult := s.readSpineREST(current)
 		if restResult.Diagnostic != DiagnosticOK {
 			s.Release(current)
 			return stateV3Spine{}, restResult
@@ -135,7 +135,7 @@ func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, p
 			return stateV3Spine{}, failure(DiagnosticProtocol)
 		}
 
-		graphQLHandle, graphQLResult := s.readGraphQLCommitForRawCommitWithSpineLease(lease, ctx, current, deadline)
+		graphQLHandle, graphQLResult := s.readSpineGraphQL(current)
 		if graphQLResult.Diagnostic != DiagnosticOK {
 			s.Release(current)
 			return stateV3Spine{}, graphQLResult
@@ -147,7 +147,7 @@ func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, p
 			return stateV3Spine{}, failure(DiagnosticProtocol)
 		}
 
-		treeHandle, treeResult := s.readTreeForRawCommitWithSpineLease(lease, ctx, current, deadline)
+		treeHandle, treeResult := s.readSpineTree(current)
 		if treeResult.Diagnostic != DiagnosticOK {
 			s.Release(current)
 			return stateV3Spine{}, treeResult
@@ -173,7 +173,7 @@ func (s *Session) collectStateV3Spine(ctx context.Context, deadline time.Time, p
 			s.Release(current)
 			return stateV3Spine{}, failure(DiagnosticRequiredEvidenceAbsent)
 		}
-		parent, parentResult := s.readRawCommitParentWithSpineLease(lease, ctx, current, deadline)
+		parent, parentResult := s.readSpineRawParent(current)
 		s.Release(current)
 		if parentResult.Diagnostic != DiagnosticOK {
 			return stateV3Spine{}, parentResult
@@ -195,8 +195,8 @@ func stateV3SpineReadBudget(maximum int) (int, bool) {
 // to every ordinary collector path before root dispatch. The returned private
 // operation capability is accepted only by private spine read methods; context
 // values cannot manufacture authority to settle this reservation.
-func (s *Session) reserveStateV3SpineReads(reads int) (*stateV3SpineReadLease, bool) {
-	if reads <= 0 {
+func (s *session) reserveStateV3SpineReads(reads int, ctx context.Context, deadline time.Time, root stateV3SpineRoot) (*stateV3SpineReadLease, bool) {
+	if reads <= 0 || ctx == nil || deadline.IsZero() || !s.now().Before(deadline) || root < stateV3MinorSpine || root > stateV3CoordinationSpine {
 		return nil, false
 	}
 	lease := &stateV3SpineReadLease{remaining: reads}
@@ -207,13 +207,14 @@ func (s *Session) reserveStateV3SpineReads(reads int) (*stateV3SpineReadLease, b
 	}
 	s.reservedReads += reads
 	s.spineLease = lease
+	s.spineContext, s.spineDeadline, s.spineRoot = ctx, deadline, root
 	return lease, true
 }
 
 // closeStateV3Spine is Close scoped to one exclusive spine lease. A rejected
 // concurrent collection must not close the session while the winning lease is
 // still issuing its reserved reads.
-func (s *Session) closeStateV3Spine(lease *stateV3SpineReadLease) {
+func (s *session) closeStateV3Spine(lease *stateV3SpineReadLease) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.spineLease != nil && s.spineLease != lease {
@@ -222,21 +223,67 @@ func (s *Session) closeStateV3Spine(lease *stateV3SpineReadLease) {
 	clear(s.artifacts)
 	s.reservedReads = 0
 	s.spineLease = nil
+	s.spineContext = nil
+	s.spineDeadline = time.Time{}
+	s.spineRoot = 0
 	s.retainedBytes = 0
 	s.closed = true
 }
 
-func (s *Session) readStateV3SpineRoot(lease *stateV3SpineReadLease, ctx context.Context, deadline time.Time, root stateV3SpineRoot) (Handle, Result) {
+func (s *session) readStateV3SpineRoot() (handle, Result) {
+	s.mu.Lock()
+	root, live := s.spineRoot, s.spineLease != nil
+	s.mu.Unlock()
+	if !live {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	var ref string
 	switch root {
 	case stateV3MinorSpine:
-		return s.readFixedRefWithSpineLease(lease, ctx, deadline, gardenerrelease.StateV3MinorStateRef)
+		ref = gardenerrelease.StateV3MinorStateRef
 	case stateV3PatchSpine:
-		return s.readFixedRefWithSpineLease(lease, ctx, deadline, gardenerrelease.StateV3PatchStateRef)
+		ref = gardenerrelease.StateV3PatchStateRef
 	case stateV3CoordinationSpine:
-		return s.readFixedRefWithSpineLease(lease, ctx, deadline, gardenerrelease.StateV3CoordinationRef)
+		ref = gardenerrelease.StateV3CoordinationRef
 	default:
-		return Handle{}, failure(DiagnosticProtocol)
+		return handle{}, failure(DiagnosticProtocol)
 	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindControlRef, purpose: fixedRequestRoot, ref: ref})
+}
+func (s *session) readSpineRawForRef(prior handle) (handle, Result) {
+	ref, ok := s.consumeRef(prior, edgeRaw, kindControlRef)
+	if !ok || ref.Type != "commit" {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindRawCommit, purpose: fixedRequestRaw, oid: ref.SHA})
+}
+func (s *session) readSpineRawParent(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeParent)
+	if !ok || len(commit.Parents) != 1 {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindRawCommit, purpose: fixedRequestRaw, oid: commit.Parents[0]})
+}
+func (s *session) readSpineREST(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeRest)
+	if !ok {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindRESTCommit, purpose: fixedRequestREST, oid: commit.SHA})
+}
+func (s *session) readSpineGraphQL(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeGraphQL)
+	if !ok {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindGraphQLCommit, purpose: fixedRequestGraphQL, oid: commit.SHA})
+}
+func (s *session) readSpineTree(prior handle) (handle, Result) {
+	commit, ok := s.consumeCommit(prior, edgeTree)
+	if !ok || !validOID(commit.Tree) {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedSpine, kind: kindTree, purpose: fixedRequestTree, oid: commit.Tree})
 }
 
 func stateV3SpinePolicy(policy gardenerrelease.StateV3Policy, root stateV3SpineRoot) (string, string, int, bool) {

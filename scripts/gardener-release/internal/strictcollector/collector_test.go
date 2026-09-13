@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-package readcollector
+package strictcollector
 
 import (
 	"context"
@@ -23,13 +23,17 @@ func response(body string) *http.Response {
 	return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }
 
+func newTestSession(transport http.RoundTripper, now func() time.Time) *session {
+	return &session{transport: transport, now: now, artifacts: make(map[string]*artifact)}
+}
+
 const oid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func refJSON(ref string) string {
 	return `{"ref":"` + ref + `","node_id":"n","url":"u","object":{"sha":"` + oid + `","type":"commit","url":"u"}}`
 }
 func TestClosedRootReadPinsRequest(t *testing.T) {
-	s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) {
 		if r.URL.String() != "https://api.github.com/repos/DataDog/dd-trace-go/git/ref/heads/gardener-release-state/minor" || r.Header.Get("Authorization") != "" || r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("X-GitHub-Api-Version") != apiVersion {
 			t.Fatal("unclosed request")
 		}
@@ -43,8 +47,8 @@ func TestClosedRootReadPinsRequest(t *testing.T) {
 }
 func TestForgedHandleCannotRead(t *testing.T) {
 	calls := 0
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New("no") }), time.Now)
-	_, r := s.ReadRawCommitForRef(context.Background(), Handle{}, time.Now().Add(time.Second))
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New("no") }), time.Now)
+	_, r := s.ReadRawCommitForRef(context.Background(), handle{}, time.Now().Add(time.Second))
 	if r.Diagnostic != DiagnosticProtocol || calls != 0 {
 		t.Fatal(r)
 	}
@@ -52,7 +56,7 @@ func TestForgedHandleCannotRead(t *testing.T) {
 func TestRootContinuationIsSingleUse(t *testing.T) {
 	var mu sync.Mutex
 	calls := 0
-	s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		calls++
@@ -82,19 +86,19 @@ func TestRootContinuationIsSingleUse(t *testing.T) {
 	}
 }
 func TestDeadlineAndMalformedBodyFailClosed(t *testing.T) {
-	s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() }), time.Now)
+	s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() }), time.Now)
 	_, r := s.ReadMinorStateRef(context.Background(), time.Now().Add(10*time.Millisecond))
 	if r.Diagnostic != DiagnosticDeadline {
 		t.Fatal(r)
 	}
-	s = newSession(roundTrip(func(*http.Request) (*http.Response, error) { return response(`{"data":{}}`), nil }), time.Now)
+	s = newTestSession(roundTrip(func(*http.Request) (*http.Response, error) { return response(`{"data":{}}`), nil }), time.Now)
 	_, r = s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Second))
 	if r.Diagnostic != DiagnosticResponseInvalid {
 		t.Fatal(r)
 	}
 }
 func TestSessionCloseReleasesPartialCollection(t *testing.T) {
-	s := newSession(roundTrip(func(*http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		return response(refJSON("refs/heads/gardener-release-state/minor")), nil
 	}), time.Now)
 	h, result := s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Second))
@@ -112,7 +116,7 @@ func TestSessionCloseReleasesPartialCollection(t *testing.T) {
 
 func TestTreeEntryContinuationIsSingleUse(t *testing.T) {
 	entryOID := gitBlobOID([]byte("x"))
-	s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case strings.Contains(r.URL.Path, "/git/ref/"):
 			return response(refJSON("refs/heads/gardener-release-state/minor")), nil
@@ -139,7 +143,7 @@ func TestTreeEntryContinuationIsSingleUse(t *testing.T) {
 
 func TestCollectorRejectsMalformedEvidenceWithoutHandle(t *testing.T) {
 	t.Run("raw identity", func(t *testing.T) {
-		s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) {
+		s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) {
 			if strings.Contains(r.URL.Path, "/git/ref/") {
 				return response(refJSON("refs/heads/gardener-release-state/minor")), nil
 			}
@@ -155,7 +159,7 @@ func TestCollectorRejectsMalformedEvidenceWithoutHandle(t *testing.T) {
 		}
 	})
 	t.Run("tree path", func(t *testing.T) {
-		s := newSession(roundTrip(func(r *http.Request) (*http.Response, error) {
+		s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case strings.Contains(r.URL.Path, "/git/ref/"):
 				return response(refJSON("refs/heads/gardener-release-state/minor")), nil
@@ -177,16 +181,16 @@ func TestCollectorRejectsMalformedEvidenceWithoutHandle(t *testing.T) {
 	})
 }
 
-func TestNoExportedConstructorOrGenericDispatch(t *testing.T) { // Compile-time API shape: only opaque Handle and narrow methods exist.
-	var _ func(*Session, context.Context, time.Time) (Handle, Result) = (*Session).ReadMinorStateRef
-	var _ func(*Session, Handle) = (*Session).Release
-	var _ func(*Session) = (*Session).Close
+func TestNoExportedConstructorOrGenericDispatch(t *testing.T) { // Compile-time API shape: only opaque handle and narrow methods exist.
+	var _ func(*session, context.Context, time.Time) (handle, Result) = (*session).ReadMinorStateRef
+	var _ func(*session, handle) = (*session).Release
+	var _ func(*session) = (*session).Close
 }
 
 func pointer[T any](value T) *T { return &value }
 
 func TestArtifactAccessorsDeepCopyAllRetainedEvidence(t *testing.T) {
-	s := newSession(nil, time.Now)
+	s := newTestSession(nil, time.Now)
 
 	raw, ok := decodeRawCommit([]byte(wireRawJSON()), wireOID)
 	if !ok {
@@ -306,7 +310,7 @@ func TestArtifactAccessorsDeepCopyAllRetainedEvidence(t *testing.T) {
 }
 
 func TestArtifactBudgetCountsVerificationAndCleansUp(t *testing.T) {
-	s := newSession(nil, time.Now)
+	s := newTestSession(nil, time.Now)
 	large := strings.Repeat("x", 6<<20)
 	rawJSON := strings.Replace(strings.Replace(wireRawJSON(), `"signature":"sig"`, `"signature":"`+large+`"`, 1), `"payload":"payload"`, `"payload":"`+large+`"`, 1)
 	raw, ok := decodeRawCommit([]byte(rawJSON), wireOID)
@@ -332,7 +336,7 @@ func TestArtifactBudgetCountsVerificationAndCleansUp(t *testing.T) {
 }
 
 func TestArtifactBudgetCountsRESTVerification(t *testing.T) {
-	s := newSession(nil, time.Now)
+	s := newTestSession(nil, time.Now)
 	large := strings.Repeat("x", 6<<20)
 	restJSON := strings.Replace(strings.Replace(wireRESTJSON(), `"signature":"sig"`, `"signature":"`+large+`"`, 1), `"payload":"payload"`, `"payload":"`+large+`"`, 1)
 	rest, ok := decodeRESTCommit([]byte(restJSON), wireOID)
@@ -357,7 +361,7 @@ func TestArtifactBudgetCountsRESTVerification(t *testing.T) {
 }
 
 func TestRESTCommitWithEmptyFilesIssuesAndReleasesBoundedArtifact(t *testing.T) {
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		switch {
 		case strings.Contains(request.URL.Path, "/git/ref/"):
 			return response(refJSON("refs/heads/gardener-release-state/minor")), nil
@@ -394,7 +398,7 @@ func TestRESTCommitWithEmptyFilesIssuesAndReleasesBoundedArtifact(t *testing.T) 
 }
 
 func TestRESTNegativeStatsProduceNoHandle(t *testing.T) {
-	s := newSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
 		switch {
 		case strings.Contains(request.URL.Path, "/git/ref/"):
 			return response(refJSON("refs/heads/gardener-release-state/minor")), nil
