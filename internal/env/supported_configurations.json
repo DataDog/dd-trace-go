@@ -278,7 +278,7 @@
     "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS": [
       {
         "implementation": "A",
-        "type": "string",
+        "type": "array",
         "default": null
       }
     ],
