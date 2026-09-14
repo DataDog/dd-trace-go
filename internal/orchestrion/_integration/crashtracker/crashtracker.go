@@ -1,0 +1,195 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-present Datadog, Inc.
+
+package crashtracker
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DataDog/orchestrion/runtime/built"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+)
+
+const (
+	// e2eRoleEnv drives subprocess behaviour in TestMain.
+	e2eRoleEnv = "_CRASHTRACKER_E2E_ORCH"
+
+	// crashRoleOrch is the panic-victim role.
+	crashRoleOrch = "panic"
+
+	// orchCrashMsg is the panic string asserted in the received crash report.
+	orchCrashMsg = "orchestrion e2e crash"
+)
+
+// TestCase is the orchestrion integration test for the crashtracker aspect.
+//
+// It verifies the full crash-reporting chain under an orchestrion-built test
+// binary: a subprocess starts crashtracker explicitly, panics, and the monitor
+// child uploads a structured report to the mock intake. The aspect deliberately
+// excludes test binaries' main functions with test-main:false, so injection into
+// real non-test main functions is validated by TestCrashtrackerMainInjection.
+type TestCase struct {
+	mockSrv  *httptest.Server
+	received chan []byte
+}
+
+func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+	// Capacity 1: this scenario's single panic produces exactly one report.
+	// A second report (e.g. a retried upload after a slow-but-successful
+	// send) would be dropped by the handler's non-blocking select below
+	// rather than queued, which is fine only as long as that one-report
+	// assumption holds.
+	tc.received = make(chan []byte, 1)
+	tc.mockSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isCrashtrackerRequest(r) {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		body := decompressGzipBody(t, r)
+		select {
+		case tc.received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(tc.mockSrv.Close)
+}
+
+func (tc *TestCase) Run(_ context.Context, t *testing.T) {
+	var out bytes.Buffer
+	cmd := spawnSubprocess(t, crashRoleOrch, tc.mockSrv.URL, &out)
+
+	err := cmd.Wait()
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		t.Fatalf("subprocess failed to start: %v", execErr)
+	}
+	// Any other non-zero exit is expected: the subprocess panics.
+
+	select {
+	case body := <-tc.received:
+		assertOrchCrashReport(t, body)
+	case <-time.After(15 * time.Second):
+		t.Fatalf("timed out waiting for crash report from explicit crashtracker.Start() subprocess\nsubprocess output:\n%s", out.String())
+	}
+}
+
+func (*TestCase) ExpectedTraces() trace.Traces {
+	return trace.Traces{}
+}
+
+// spawnSubprocess re-execs this binary as a crash-victim subprocess. It is
+// called from TestCase.Run. Only runs when the binary was built with
+// orchestrion. Combined stdout+stderr is written to out: a panicking
+// subprocess's own crash dump is the most direct evidence available when a
+// report doesn't arrive as expected.
+func spawnSubprocess(t *testing.T, role, agentURL string, out io.Writer) *exec.Cmd {
+	t.Helper()
+	if !built.WithOrchestrion {
+		t.Skip("subprocess e2e requires orchestrion-built binary; run via orchestrion go test")
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false") //nolint:gosec
+	cmd.Env = append(filterOrchEnv(os.Environ()),
+		e2eRoleEnv+"="+role,
+		"DD_TRACE_AGENT_URL="+agentURL,
+		"DD_CRASHTRACKING_ENABLED=true",
+	)
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn subprocess: %v", err)
+	}
+	return cmd
+}
+
+// filterOrchEnv strips variables that must not pollute the subprocess
+// environment. DD_API_KEY/DD-API-KEY (the hyphenated alias internal/env also
+// resolves DD_API_KEY from) and DD_SITE are stripped because crashtracker
+// prefers the agentless path whenever an API key is set, ahead of
+// DD_TRACE_AGENT_URL: an ambient key from a developer's shell or CI
+// environment would send the subprocess's report to the real intake instead
+// of tc.mockSrv, and Run would wait out its full 15s timeout for a report
+// that never arrives.
+func filterOrchEnv(env []string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, e2eRoleEnv+"=") ||
+			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
+			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_API_KEY=") ||
+			strings.HasPrefix(kv, "DD-API-KEY=") ||
+			strings.HasPrefix(kv, "DD_SITE=") {
+			continue
+		}
+		filtered = append(filtered, kv)
+	}
+	return filtered
+}
+
+func isCrashtrackerRequest(r *http.Request) bool {
+	return r.URL.Path == "/evp_proxy/v4/api/v2/errorsintake" &&
+		r.Header.Get("X-Datadog-EVP-Subdomain") == "error-tracking-intake"
+}
+
+// decompressGzipBody reads and gunzips a request body. uploadReport
+// (crashtracker/upload.go) always gzips the report and sets
+// Content-Encoding: gzip; reading the raw body without this step fails with
+// "invalid character '\x1f'" — the first byte of the gzip magic number,
+// mistaken for the start of a JSON value.
+func decompressGzipBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+	gz, err := gzip.NewReader(r.Body)
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gz.Close()
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read gzip stream: %v", err)
+	}
+	return body
+}
+
+// assertOrchCrashReport validates the key fields of the received crash report.
+func assertOrchCrashReport(t *testing.T, body []byte) {
+	t.Helper()
+	if len(body) == 0 {
+		t.Fatal("received empty crash report body")
+	}
+	var report map[string]any
+	if err := json.Unmarshal(body, &report); err != nil {
+		t.Fatalf("unmarshal crash report: %v\nbody: %s", err, body)
+	}
+	if report["ddsource"] != "crashtracker" {
+		t.Errorf("ddsource = %q, want \"crashtracker\"", report["ddsource"])
+	}
+	errObj, ok := report["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error field missing or not an object")
+	}
+	if errObj["is_crash"] != true {
+		t.Errorf("error.is_crash = %v, want true", errObj["is_crash"])
+	}
+	if got, _ := errObj["type"].(string); got != "panic" {
+		t.Errorf("error.type = %q, want \"panic\"", got)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, orchCrashMsg) {
+		t.Errorf("error.message = %q, want it to contain %q", msg, orchCrashMsg)
+	}
+}

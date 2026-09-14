@@ -428,6 +428,7 @@ jobs:
         id: resolve
         run: |-
           set -euo pipefail
+          root=github.com/DataDog/dd-trace-go/v2
           module=github.com/DataDog/dd-trace-go/orchestrion/all/v2
 
           # Build the throwaway consumer outside the workspace, so no go.work or replace
@@ -443,6 +444,28 @@ jobs:
           # forces each contrib module to resolve.
           printf '//go:build tools\n\npackage tools\n\nimport _ "%s"\n' "$module" > orchestrion.tool.go
 
+          # Resolve the root module at the commit under test rather than at its last
+          # published tag. orchestrion/all's own `replace $root => ../..` only applies while
+          # orchestrion/all is the main module; as a dependency it is ignored, so the consumer
+          # falls back to the `require` on the newest dev tag. Any package added to the root
+          # module since that tag is then missing -- orchestrion.tool.go imports seven of
+          # them -- and every such addition reds main until the next tag is cut.
+          #
+          # This has to be a `replace` rather than a second `go get`: the pseudo-version of a
+          # commit past `vX.Y.0-dev.N` sorts below that tag (`dev.0.<ts>-<sha>` < `dev.N`), so
+          # requesting both versions is a downgrade that `go get` refuses. A main-module
+          # `replace` is applied after version selection and sidesteps the ordering.
+          #
+          # Contrib modules keep resolving from their published tags on purpose: a new nested
+          # module landing without one is the failure this job exists to catch.
+          pseudo=$(go list -m -f '{{.Version}}' "$root@$REF")
+          echo "Pinning $root to $pseudo ($REF)"
+          go mod edit -replace "$root=$root@$pseudo"
+
+          # Captured before tidy so the assertion below compares against what $REF should
+          # resolve to, not against whatever ends up in go.mod.
+          want=$(go list -m -f '{{.Version}}' "$module@$REF")
+
           echo "::group::go get $module@$REF"
           go get "$module@$REF"
           echo "::endgroup::"
@@ -450,6 +473,14 @@ jobs:
           echo "::group::go mod tidy"
           go mod tidy
           echo "::endgroup::"
+
+          # Without the pin, `go mod tidy` silently settles on an older published
+          # orchestrion/all and the job passes while testing a commit nobody asked about.
+          got=$(go list -m -f '{{.Version}}' "$module")
+          if [[ "$got" != "$want" ]]; then
+            echo "::error::expected $module@$want, resolved $got"
+            exit 1
+          fi
       - name: Explain how to fix this
         if: failure() && steps.resolve.outcome == 'failure'
         run: |-

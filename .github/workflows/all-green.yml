@@ -23,6 +23,8 @@ jobs:
             devflow/mergegate
             label_issues
             check-title
+            dd-gitlab/.*
+            DDCI Status
 
 # Reason for ignored-name-patterns:
 #
@@ -31,3 +33,6 @@ jobs:
 #   prevents all open PRs from appearing as failing CI before reviews are complete, making PRs with actual
 #   CI failures indistinguishable from PRs that are simply awaiting review.
 # * check-title: CI job used to validate the PR title, enforced by branch protection rules, do not remove it.
+# * dd-gitlab/.* and DDCI Status: Datadog-internal GitLab statuses. They cannot be re-run from GitHub, and
+#   DDCI Status is already marked "Not required to merge", so re-reporting them as this workflow's failure
+#   sends people to the wrong place.

@@ -93,11 +93,11 @@ func main() {
 
 	modules, err := findContribModules(projectRoot)
 	if err != nil {
-		log.Fatalf("Failed to find contrib modules: %v", err)
+		log.Fatalf("Failed to find contrib modules: %s", err.Error())
 	}
 
 	if err := generateSourceFile(outputFile, modules); err != nil {
-		log.Fatalf("Failed to generate source file: %v", err)
+		log.Fatalf("Failed to generate source file: %s", err.Error())
 	}
 
 	log.Printf("Generated %s with %d contrib module links", outputFile, len(modules))

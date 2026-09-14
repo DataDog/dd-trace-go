@@ -247,6 +247,34 @@ type traceParams struct {
 	cfg        *config
 	driverName string
 	meta       map[string]string
+	// spanCfg holds the tags that are constant for every query traced through
+	// this connection (component, span kind, db system, service name, and any
+	// user-configured static tags/analytics rate). It is built once when the
+	// connection is established (see newSpanConfig) and merged into each
+	// query span via WithStartSpanConfig, instead of rebuilding a Tag()
+	// closure per tag on every query.
+	spanCfg *tracer.StartSpanConfig
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every query traced through a connection with the given driver
+// name and config, so per-query calls don't need to rebuild them.
+func newSpanConfig(cfg *config, driverName string) *tracer.StartSpanConfig {
+	dbSystem, _ := normalizeDBSystem(driverName)
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.SpanType(ext.SpanTypeSQL),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, dbSystem),
+	}
+	for key, tag := range cfg.tags {
+		opts = append(opts, tracer.Tag(key, tag))
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 type contextKey int
@@ -335,24 +363,8 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	dbSystem, _ := normalizeDBSystem(tp.driverName)
-	opts := options.Expand(spanOpts, 0, 6+len(tp.cfg.tags)+1)
-	opts = append(opts,
-		instrumentation.ServiceNameWithSource(tp.cfg.serviceName, tp.cfg.serviceSource),
-		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.StartTime(startTime),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, dbSystem),
-	)
-	if tp.cfg.tags != nil {
-		for key, tag := range tp.cfg.tags {
-			opts = append(opts, tracer.Tag(key, tag))
-		}
-	}
-	if !math.IsNaN(tp.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
-	}
+	opts := options.Expand(spanOpts, 0, 2)
+	opts = append(opts, tracer.StartTime(startTime), tracer.WithStartSpanConfig(tp.spanCfg))
 	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.spanName, opts...)
 	resource := string(qtype)
 	if query != "" {

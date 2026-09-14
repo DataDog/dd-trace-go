@@ -1,8 +1,14 @@
 name: Govulncheck
 on:
   pull_request:
+    # No "**/*.go" here, deliberately. Vulnerabilities enter through
+    # dependencies, which these globs cover. A Go edit can still change
+    # *reachability* of an already-known vulnerable symbol, and that case is
+    # covered twice over without paying 17 job-minutes on every pull request:
+    # the `push` trigger below has no paths filter, so every merge-queue branch
+    # is scanned in full before it can land on main, and the nightly cron
+    # rescans the whole tree.
     paths:
-      - "**/*.go"
       - "**/go.mod"
       - "**/go.sum"
       - "go.work"
@@ -33,6 +39,9 @@ on:
 concurrency:
   group: govulncheck-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
 
 permissions:
   contents: read
