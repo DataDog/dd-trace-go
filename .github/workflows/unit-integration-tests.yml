@@ -11,6 +11,17 @@ on:
         required: false
         type: string
         default: ""
+      rerun-fails:
+        description: >-
+          Retry failed tests up to this many times. Leave empty on the pull
+          request path: a gotestsum rerun overwrites -coverprofile with the
+          rerun's partial profile, and that path uploads coverage against a 90%
+          target. Dynamic analysis uploads no coverage, so it sets this to
+          absorb flakes in a probabilistic detector instead of failing the
+          merge queue.
+        required: false
+        type: string
+        default: ""
       contrib-modules:
         description: >-
           Space-separated contrib/instrumentation module directories to test, or
@@ -127,6 +138,7 @@ jobs:
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
+          RERUN_FAILS: ${{ inputs.rerun-fails }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
@@ -317,6 +329,7 @@ jobs:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
+          RERUN_FAILS: ${{ inputs.rerun-fails }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"

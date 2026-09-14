@@ -48,6 +48,12 @@ jobs:
     with:
       go-version: "1.27"
       build_tags: "debug"
+      # This is a probabilistic detector. Of 8 recent merge-queue attempts, 3
+      # failed here alone -- two on unrelated pull requests -- so a rare
+      # non-deterministic failure was blocking merges. A rerun still fails a
+      # real deadlock (it fails twice) and gotestsum records every attempt, so
+      # the flake stays visible in the test report instead of blocking.
+      rerun-fails: "2"
     secrets: inherit
 
   test-with-deadlock:
@@ -56,6 +62,12 @@ jobs:
     with:
       go-version: "1.27"
       build_tags: "deadlock"
+      # This is a probabilistic detector. Of 8 recent merge-queue attempts, 3
+      # failed here alone -- two on unrelated pull requests -- so a rare
+      # non-deterministic failure was blocking merges. A rerun still fails a
+      # real deadlock (it fails twice) and gotestsum records every attempt, so
+      # the flake stays visible in the test report instead of blocking.
+      rerun-fails: "2"
     secrets: inherit
 
   # Test internal/locking specifically with different Go versions and build tags.
