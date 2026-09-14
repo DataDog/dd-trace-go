@@ -49,9 +49,15 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
-	// defaultDataStreamsIntakeBufferSize is the default number of slots in the Data
-	// Streams Monitoring processor's input ring buffer.
-	defaultDataStreamsIntakeBufferSize = 10000
+	// defaultDataStreamsIntakeBufferKB is the default memory budget, in
+	// kibibytes, of the Data Streams Monitoring processor's input ring buffer.
+	defaultDataStreamsIntakeBufferKB = 4096
+	// minDataStreamsIntakeBufferKB is the smallest budget accepted: below it
+	// the input ring would hold fewer than 10,000 entries, which is too few to
+	// absorb a burst. Budgets under it are raised, with a warning. It has to
+	// stay in step with internal/datastreams, which derives the same floor
+	// from its own per-entry sizing; a test asserts they agree.
+	minDataStreamsIntakeBufferKB = 2110
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a

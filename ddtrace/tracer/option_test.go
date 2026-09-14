@@ -1961,31 +1961,38 @@ func TestWithStatsComputation(t *testing.T) {
 	})
 }
 
-func TestWithDataStreamsIntakeBufferSize(t *testing.T) {
+func TestWithDataStreamsIntakeBufferSizeKB(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
+		assert.Equal(4096, c.internalConfig.DataStreamsIntakeBufferKB())
 	})
 	t.Run("set-via-option", func(t *testing.T) {
 		assert := assert.New(t)
-		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(500))
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSizeKB(8192))
 		assert.NoError(err)
-		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+		assert.Equal(8192, c.internalConfig.DataStreamsIntakeBufferKB())
 	})
 	t.Run("set-via-env", func(t *testing.T) {
 		assert := assert.New(t)
-		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", "500")
+		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB", "8192")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+		assert.Equal(8192, c.internalConfig.DataStreamsIntakeBufferKB())
+	})
+	t.Run("below-minimum-raised", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSizeKB(1))
+		assert.NoError(err)
+		// the ring never holds fewer than 10,000 entries
+		assert.Equal(2110, c.internalConfig.DataStreamsIntakeBufferKB())
 	})
 	t.Run("non-positive-ignored", func(t *testing.T) {
 		assert := assert.New(t)
-		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(0))
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSizeKB(0))
 		assert.NoError(err)
-		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
+		assert.Equal(4096, c.internalConfig.DataStreamsIntakeBufferKB())
 	})
 }
 

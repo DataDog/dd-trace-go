@@ -151,6 +151,10 @@ type processorInput struct {
 	kafkaOffset kafkaOffset
 	typ         pointType
 	queuePos    int64
+	// sizeBytes is what this entry retains, measured by fastQueue.push and
+	// kept here so that whoever removes the entry can discount it without
+	// walking it again.
+	sizeBytes int64
 }
 
 type processorStats struct {
@@ -228,12 +232,13 @@ func (p *Processor) time() time.Time {
 // ProcessorOption configures optional, rarely-changed Processor behavior.
 type ProcessorOption func(*Processor)
 
-// WithQueueSize overrides the number of slots in the processor's input ring
-// buffer. Sizes <= 0 are ignored and the default is kept.
-func WithQueueSize(size int) ProcessorOption {
+// WithIntakeBufferKB overrides the memory budget, in kibibytes, of the
+// processor's input ring buffer. Budgets <= 0 are ignored and the default is
+// kept.
+func WithIntakeBufferKB(kb int) ProcessorOption {
 	return func(p *Processor) {
-		if size > 0 {
-			p.in = newFastQueue(size)
+		if kb > 0 {
+			p.in = newFastQueue(kb)
 		}
 	}
 }
@@ -246,7 +251,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		tsTypeCurrentBuckets: make(map[bucketKey]bucket),
 		tsTypeOriginBuckets:  make(map[bucketKey]bucket),
 		hashCache:            newHashCache(),
-		in:                   newFastQueue(defaultQueueSize),
+		in:                   newFastQueue(defaultIntakeBufferKB),
 		stopped:              1,
 		statsd:               statsd,
 		env:                  env,
