@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -373,6 +374,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	// If HAProxy fails to send the body, the processor times out without an active message on which it could return a blocking response.
 	// The trace therefore records the security event, but does not claim that the request was blocked.
 	t.Run("blocking-event-on-response-headers-with-body-not-sent", func(t *testing.T) {
+		telemetryClient := testutils.StartTelemetryRecorder(t)
+
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
@@ -397,6 +400,16 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		span := finished[0]
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.NotEqual(t, "true", span.Tag("appsec.blocked"))
+
+		failedBlockMetrics := 0.0
+		for key, metric := range telemetryClient.Metrics {
+			if key.Name == "waf.requests" &&
+				strings.Contains(key.Tags, "block_failure:true") &&
+				strings.Contains(key.Tags, "request_blocked:false") {
+				failedBlockMetrics += metric.Get()
+			}
+		}
+		require.Equal(t, 1.0, failedBlockMetrics)
 	})
 }
 

@@ -292,6 +292,9 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 }
 
 func responseStarted(w http.ResponseWriter) bool {
+	if res, ok := w.(interface{ Committed() bool }); ok {
+		return res.Committed()
+	}
 	if res, ok := w.(interface{ Written() bool }); ok {
 		return res.Written()
 	}

@@ -99,8 +99,8 @@ func (w *statusResponseWriter) Status() int {
 	return 0
 }
 
-// Written reports whether Echo committed the response.
-func (w *statusResponseWriter) Written() bool {
+// Committed reports whether Echo committed the response.
+func (w *statusResponseWriter) Committed() bool {
 	if r, err := echo.UnwrapResponse(w.ResponseWriter); err == nil {
 		return r.Committed
 	}

@@ -16,39 +16,52 @@ import (
 	appsecwaf "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
+type committedResponseWriter struct {
+	header    http.Header
+	status    int
+	committed bool
+}
+
 type writtenResponseWriter struct {
-	header  http.Header
-	status  int
+	http.ResponseWriter
 	written bool
 }
 
-func (w *writtenResponseWriter) Header() http.Header {
-	return w.header
-}
-
-func (w *writtenResponseWriter) Write(b []byte) (int, error) {
-	w.written = true
-	return len(b), nil
-}
-
-func (w *writtenResponseWriter) WriteHeader(status int) {
-	w.status = status
-	w.written = true
-}
-
-func (w *writtenResponseWriter) Status() int {
-	return w.status
+func (*writtenResponseWriter) Status() int {
+	return http.StatusOK
 }
 
 func (w *writtenResponseWriter) Written() bool {
 	return w.written
 }
 
+func (w *committedResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *committedResponseWriter) Write(b []byte) (int, error) {
+	w.committed = true
+	return len(b), nil
+}
+
+func (w *committedResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.committed = true
+}
+
+func (w *committedResponseWriter) Status() int {
+	return w.status
+}
+
+func (w *committedResponseWriter) Committed() bool {
+	return w.committed
+}
+
 func TestCommittedResponseStillInterruptsBlockedRequest(t *testing.T) {
 	contextOp, _ := appsecwaf.StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
 	op := &HandlerOperation{ContextOperation: contextOp}
 	action := actions.NewBlockAction(map[string]any{})[0].(*actions.BlockHTTP)
-	w := &writtenResponseWriter{header: make(http.Header), status: http.StatusOK, written: true}
+	w := &committedResponseWriter{header: make(http.Header), status: http.StatusOK, committed: true}
 	aborted := false
 
 	handled := applyBlockAction(op, action, w, httptest.NewRequest(http.MethodGet, "/", nil), []func(){func() { aborted = true }})
@@ -85,8 +98,8 @@ func TestFinishReportsUnappliedBlock(t *testing.T) {
 	}
 }
 
-func TestResponseStartedPrefersWritten(t *testing.T) {
-	w := &writtenResponseWriter{header: make(http.Header), status: http.StatusOK}
+func TestResponseStartedPrefersCommitted(t *testing.T) {
+	w := &committedResponseWriter{header: make(http.Header), status: http.StatusOK}
 	if responseStarted(w) {
 		t.Fatal("pre-seeded status must not imply that response headers were sent")
 	}
@@ -94,5 +107,17 @@ func TestResponseStartedPrefersWritten(t *testing.T) {
 	w.WriteHeader(http.StatusOK)
 	if !responseStarted(w) {
 		t.Fatal("committed response was not detected")
+	}
+}
+
+func TestResponseStartedSupportsWritten(t *testing.T) {
+	w := &writtenResponseWriter{ResponseWriter: httptest.NewRecorder()}
+	if responseStarted(w) {
+		t.Fatal("pre-seeded status must not imply that response headers were sent")
+	}
+
+	w.written = true
+	if !responseStarted(w) {
+		t.Fatal("written response was not detected")
 	}
 }

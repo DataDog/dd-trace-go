@@ -46,8 +46,8 @@ func (w *responseWriter) Status() int {
 	return w.status
 }
 
-// Written reports whether the response headers were sent.
-func (w *responseWriter) Written() bool {
+// Committed reports whether the response headers were sent.
+func (w *responseWriter) Committed() bool {
 	return w.committed
 }
 
@@ -88,7 +88,7 @@ type responseWriterFlusher struct {
 }
 
 func (w responseWriterFlusher) Flush() {
-	if !w.responseWriter.Written() {
+	if !w.responseWriter.Committed() {
 		w.responseWriter.WriteHeader(http.StatusOK)
 	}
 	w.Flusher.Flush()

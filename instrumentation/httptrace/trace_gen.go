@@ -37,7 +37,7 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
-		Written() bool
+		Committed() bool
 		resetStatusCode()
 		Unwrap() http.ResponseWriter
 	}

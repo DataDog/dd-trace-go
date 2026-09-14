@@ -64,8 +64,8 @@ func (w *statusResponseWriter) Status() int {
 	return w.Response.Status
 }
 
-// Written reports whether Echo committed the response.
-func (w *statusResponseWriter) Written() bool {
+// Committed reports whether Echo committed the response.
+func (w *statusResponseWriter) Committed() bool {
 	return w.Response.Committed
 }
 

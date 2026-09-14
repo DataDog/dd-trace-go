@@ -32,7 +32,7 @@ func TestResponseWriterTracksFlushAndHijack(t *testing.T) {
 	t.Run("flush", func(t *testing.T) {
 		wrapped, monitored := wrapResponseWriter(httptest.NewRecorder())
 		wrapped.(http.Flusher).Flush()
-		assert.True(t, monitored.Written())
+		assert.True(t, monitored.Committed())
 		assert.Equal(t, http.StatusOK, monitored.Status())
 	})
 
@@ -40,7 +40,7 @@ func TestResponseWriterTracksFlushAndHijack(t *testing.T) {
 		wrapped, monitored := wrapResponseWriter(&hijackResponseWriter{header: make(http.Header)})
 		_, _, err := wrapped.(http.Hijacker).Hijack()
 		assert.NoError(t, err)
-		assert.True(t, monitored.Written())
+		assert.True(t, monitored.Committed())
 	})
 
 	t.Run("hijack error", func(t *testing.T) {
@@ -48,7 +48,7 @@ func TestResponseWriterTracksFlushAndHijack(t *testing.T) {
 		wrapped, monitored := wrapResponseWriter(&hijackResponseWriter{header: make(http.Header), err: wantErr})
 		_, _, err := wrapped.(http.Hijacker).Hijack()
 		assert.ErrorIs(t, err, wantErr)
-		assert.False(t, monitored.Written())
+		assert.False(t, monitored.Committed())
 	})
 }
 
@@ -72,15 +72,15 @@ func Test_wrapResponseWriter(t *testing.T) {
 		assert.True(t, ok)
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
-		written, ok := w.(interface{ Written() bool })
+		committed, ok := w.(interface{ Committed() bool })
 		assert.True(t, ok)
-		assert.False(t, written.Written())
+		assert.False(t, committed.Committed())
 
 		monitored.status = http.StatusCreated
 		monitored.committed = true
 		ResetStatusCode(w)
 		assert.Zero(t, monitored.Status())
-		assert.False(t, monitored.Written())
+		assert.False(t, monitored.Committed())
 	})
 
 }

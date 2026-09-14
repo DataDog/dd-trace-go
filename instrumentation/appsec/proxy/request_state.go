@@ -19,7 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
-	appsecwaf "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
 var _ io.Closer = (*RequestState)(nil)
@@ -52,7 +52,7 @@ type RequestState struct {
 // final transport fallback is request.RemoteAddr.
 func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, blockingUnavailable, ackBodyMessagesUntilEndOfStream bool, blockMessageFunc func(context.Context, BlockActionOptions) error, options ...tracer.StartSpanOption) (RequestState, bool) {
 	if blockingUnavailable {
-		request = request.WithContext(appsecwaf.ContextWithBlockingUnavailable(request.Context()))
+		request = request.WithContext(waf.ContextWithBlockingUnavailable(request.Context()))
 	}
 
 	fakeResponseWriter := newFakeResponseWriter()
