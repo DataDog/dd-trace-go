@@ -63,10 +63,17 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	metrics := op.GetMetricsInstance()
 	actionConfig := op.actionConfig()
 	if _, blocking := result.Actions["block_request"]; blocking && addrs.TimerKey != addresses.RASPScope {
-		actionConfig = actionConfig.WithBlockRequestApplied(func() {
+		if metrics != nil {
+			metrics.SetBlockRequested()
+		}
+		actionConfig = actionConfig.WithBlockRequestOutcome(func() {
 			op.SetRequestBlocked()
 			if metrics != nil {
 				metrics.SetBlockApplied()
+			}
+		}, func() {
+			if metrics != nil {
+				metrics.SetBlockFailed()
 			}
 		})
 	}

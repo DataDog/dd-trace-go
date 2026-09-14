@@ -75,6 +75,7 @@ type (
 		http.Handler
 		blocking            bool
 		reportsBlockOutcome bool
+		reportFailure       func()
 	}
 )
 
@@ -134,6 +135,38 @@ func (a *BlockHTTP) ReportsBlockOutcome() bool {
 	return a.reportsBlockOutcome
 }
 
+// ReportFailure consumes an unapplied action and reports that its response
+// could not be enforced.
+func (a *BlockHTTP) ReportFailure() {
+	if a.Handler == nil {
+		return
+	}
+	a.Handler = nil
+	if a.reportsBlockOutcome && a.reportFailure != nil {
+		a.reportFailure()
+	}
+}
+
+type blockResponseCommitter interface {
+	AppSecCommitBlockResponse() error
+}
+
+// CommitBlockResponse asks an integration-specific response writer to commit
+// its staged block response. Ordinary HTTP response writers return nil.
+func CommitBlockResponse(w http.ResponseWriter) error {
+	for w != nil {
+		if committer, ok := w.(blockResponseCommitter); ok {
+			return committer.AppSecCommitBlockResponse()
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return nil
+		}
+		w = unwrapper.Unwrap()
+	}
+	return nil
+}
+
 func newGRPCBlockRequestAction(status int) *BlockGRPC {
 	return &BlockGRPC{GRPCWrapper: newGRPCBlockHandler(status)}
 }
@@ -172,16 +205,27 @@ func newBlockAction(params map[string]any, cfg Config) []Action {
 	grpcAction := newGRPCBlockRequestAction(p.GRPCStatusCode)
 	if callback := cfg.blockRequestCallback; callback != nil {
 		httpAction.reportsBlockOutcome = true
+		httpAction.reportFailure = callback.failed
 		handler := httpAction.Handler
 		httpAction.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handler.ServeHTTP(w, r)
-			callback.applied()
+			if CommitBlockResponse(w) != nil {
+				if callback.failed != nil {
+					callback.failed()
+				}
+				return
+			}
+			if callback.applied != nil {
+				callback.applied()
+			}
 		})
 
 		grpcWrapper := grpcAction.GRPCWrapper
 		grpcAction.GRPCWrapper = func() (uint32, error) {
 			status, err := grpcWrapper()
-			callback.applied()
+			if callback.applied != nil {
+				callback.applied()
+			}
 			return status, err
 		}
 	}

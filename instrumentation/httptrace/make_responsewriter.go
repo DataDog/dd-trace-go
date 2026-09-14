@@ -96,10 +96,17 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 {{- end }}
 
 	mw := newResponseWriter(w)
+	if okFlusher {
+		hFlusher = responseWriterFlusher{Flusher: hFlusher, responseWriter: mw}
+	}
+	if okHijacker {
+		hHijacker = responseWriterHijacker{Hijacker: hHijacker, responseWriter: mw}
+	}
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
 		Written() bool
+		resetStatusCode()
 		Unwrap() http.ResponseWriter
 	}
 	switch {

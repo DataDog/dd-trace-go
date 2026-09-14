@@ -34,16 +34,17 @@ type (
 
 	blockRequestCallback struct {
 		applied func()
+		failed  func()
 	}
 )
 
-// WithBlockRequestApplied returns a copy that calls applied after a block_request
-// response is applied successfully.
-func (c Config) WithBlockRequestApplied(applied func()) Config {
-	if applied == nil {
+// WithBlockRequestOutcome returns a copy that reports whether a block_request
+// response was applied or could not be constructed or delivered.
+func (c Config) WithBlockRequestOutcome(applied, failed func()) Config {
+	if applied == nil && failed == nil {
 		return c
 	}
-	c.blockRequestCallback = &blockRequestCallback{applied: applied}
+	c.blockRequestCallback = &blockRequestCallback{applied: applied, failed: failed}
 	return c
 }
 
@@ -81,21 +82,37 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any, configs ...Con
 	var blocked bool
 	for aType, params := range actions {
 		log.Debug("appsec: processing %q action with params %v", aType, params) //nolint:gocritic
+		blockRequest := aType == "block_request"
+
 		params, ok := params.(map[string]any)
 		if !ok {
 			telemetrylog.Error("appsec: could not cast action params to map[string]any", slog.String("actual_type", fmt.Sprintf("%T", params)))
+			if blockRequest && cfg.blockRequestCallback != nil && cfg.blockRequestCallback.failed != nil {
+				cfg.blockRequestCallback.failed()
+			}
 			continue
 		}
-
-		blocked = blocked || aType == "block_request"
 
 		actionHandler, ok := actionHandlers[aType]
 		if !ok {
 			telemetrylog.Error("appsec: unknown action type", slog.String("action_type", aType))
+			if blockRequest && cfg.blockRequestCallback != nil && cfg.blockRequestCallback.failed != nil {
+				cfg.blockRequestCallback.failed()
+			}
 			continue
 		}
 
-		for _, a := range actionHandler(params, cfg) {
+		actions := actionHandler(params, cfg)
+		if blockRequest {
+			if len(actions) == 0 {
+				if cfg.blockRequestCallback != nil && cfg.blockRequestCallback.failed != nil {
+					cfg.blockRequestCallback.failed()
+				}
+			} else {
+				blocked = true
+			}
+		}
+		for _, a := range actions {
 			a.EmitData(op)
 		}
 	}

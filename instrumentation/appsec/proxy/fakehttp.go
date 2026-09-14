@@ -100,11 +100,22 @@ func (pr PseudoResponse) toNetHTTP(rw http.ResponseWriter) {
 	rw.WriteHeader(pr.StatusCode)
 }
 
+var (
+	errBlockMessageFuncUnavailable = errors.New("proxy block response function is unavailable")
+	errBlockResponseNotDeliverable = errors.New("proxy block response cannot be delivered outside message processing")
+)
+
 type fakeResponseWriter struct {
 	mu      sync.Mutex
 	status  int
 	body    []byte
 	headers http.Header
+
+	blockContext        context.Context
+	blockMessageFunc    func(context.Context, BlockActionOptions) error
+	blockMessageEnabled bool
+	blockMessageSent    bool
+	blockMessageErr     error
 }
 
 // Reset resets the fakeResponseWriter to its initial state
@@ -114,6 +125,8 @@ func (w *fakeResponseWriter) Reset() {
 	w.status = 0
 	w.body = nil
 	w.headers = make(http.Header)
+	w.blockMessageSent = false
+	w.blockMessageErr = nil
 }
 
 // Status is not in the [http.ResponseWriter] interface, but it is cast into it by the tracing code
@@ -140,6 +153,67 @@ func (w *fakeResponseWriter) Write(b []byte) (int, error) {
 	defer w.mu.Unlock()
 	w.body = append(w.body, b...)
 	return len(b), nil
+}
+
+func (w *fakeResponseWriter) setBlockMessageFunc(blockMessageFunc func(context.Context, BlockActionOptions) error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blockMessageFunc = blockMessageFunc
+}
+
+func (w *fakeResponseWriter) enableBlockMessages(ctx context.Context) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blockContext = ctx
+	w.blockMessageEnabled = true
+}
+
+func (w *fakeResponseWriter) disableBlockMessages() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blockMessageEnabled = false
+}
+
+// AppSecCommitBlockResponse constructs the proxy block response once.
+func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
+	w.mu.Lock()
+	if w.blockMessageSent {
+		err := w.blockMessageErr
+		w.mu.Unlock()
+		return err
+	}
+	if w.blockMessageFunc == nil {
+		w.blockMessageErr = errBlockMessageFuncUnavailable
+		w.mu.Unlock()
+		return errBlockMessageFuncUnavailable
+	}
+	if !w.blockMessageEnabled {
+		w.blockMessageErr = errBlockResponseNotDeliverable
+		w.mu.Unlock()
+		return errBlockResponseNotDeliverable
+	}
+
+	w.blockMessageSent = true
+	blockMessageFunc := w.blockMessageFunc
+	ctx := w.blockContext
+	opts := BlockActionOptions{
+		StatusCode: w.status,
+		Headers:    w.headers,
+		Body:       w.body,
+	}
+	w.mu.Unlock()
+
+	err := blockMessageFunc(ctx, opts)
+	w.mu.Lock()
+	w.blockMessageErr = err
+	w.mu.Unlock()
+	return err
+}
+
+func (w *fakeResponseWriter) blockResponseResult() (sent bool, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.blockMessageSent, w.blockMessageErr
 }
 
 var _ http.ResponseWriter = &fakeResponseWriter{}

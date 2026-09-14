@@ -37,7 +37,8 @@ func TestBlockRequestAppliedCallback(t *testing.T) {
 	})
 
 	applied := 0
-	cfg := Config{}.WithBlockRequestApplied(func() { applied++ })
+	failed := 0
+	cfg := Config{}.WithBlockRequestOutcome(func() { applied++ }, func() { failed++ })
 	SendActionEvents(op, map[string]any{
 		"block_request": map[string]any{"status_code": uint64(http.StatusForbidden)},
 	}, cfg)
@@ -71,6 +72,15 @@ func TestBlockRequestAppliedCallback(t *testing.T) {
 	action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if applied != 1 {
 		t.Fatalf("redirect invoked block callback: calls = %d, want 1", applied)
+	}
+
+	if blocked := SendActionEvents(op, map[string]any{
+		"block_request": map[string]any{"status_code": "invalid"},
+	}, cfg); blocked {
+		t.Fatal("invalid block action reported that it could interrupt the request")
+	}
+	if failed != 1 {
+		t.Fatalf("invalid block failure callbacks = %d, want 1", failed)
 	}
 }
 

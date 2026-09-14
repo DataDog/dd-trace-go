@@ -50,18 +50,21 @@ type RequestState struct {
 // newRequestState creates a new request state. clientIP carries an identity the
 // proxy resolved itself; leaving it invalid defers to the default policy, whose
 // final transport fallback is request.RemoteAddr.
-func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, blockingUnavailable, ackBodyMessagesUntilEndOfStream bool, options ...tracer.StartSpanOption) (RequestState, bool) {
+func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, blockingUnavailable, ackBodyMessagesUntilEndOfStream bool, blockMessageFunc func(context.Context, BlockActionOptions) error, options ...tracer.StartSpanOption) (RequestState, bool) {
 	if blockingUnavailable {
 		request = request.WithContext(appsecwaf.ContextWithBlockingUnavailable(request.Context()))
 	}
 
 	fakeResponseWriter := newFakeResponseWriter()
+	fakeResponseWriter.setBlockMessageFunc(blockMessageFunc)
+	fakeResponseWriter.enableBlockMessages(request.Context())
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
 		ClientIP:  clientIP,
 	}, fakeResponseWriter, request)
+	fakeResponseWriter.disableBlockMessages()
 
 	var requestBuffer *bodyBuffer
 	if bodyLimit > 0 {
