@@ -114,3 +114,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

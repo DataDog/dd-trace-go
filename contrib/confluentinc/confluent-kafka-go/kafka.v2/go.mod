@@ -85,3 +85,5 @@ require (
 replace github.com/spf13/viper => github.com/DataDog/viper v1.7.0
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.
