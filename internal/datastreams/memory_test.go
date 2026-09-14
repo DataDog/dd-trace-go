@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime/debug"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -135,6 +134,41 @@ func TestCgroupMemoryLimit(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			// Limits nest, and a descendant may declare more than an ancestor allows. The
+			// lower ancestor is the ceiling that actually binds.
+			name: "a-lower-ancestor-limit-beats-the-process-own",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/pod123/container456\n",
+				"sys/fs/cgroup/kubepods/pod123/container456/memory.max": "4294967296",
+				"sys/fs/cgroup/kubepods/pod123/memory.max":              "536870912",
+			},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			// The same ancestry the other way round: the leaf is the lowest, so it wins.
+			name: "a-lower-process-own-limit-beats-the-ancestor",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/pod123/container456\n",
+				"sys/fs/cgroup/kubepods/pod123/container456/memory.max": "536870912",
+				"sys/fs/cgroup/kubepods/pod123/memory.max":              "4294967296",
+			},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			// A level that sets no limit does not constrain, so the walk has to keep going
+			// rather than treat it as the answer.
+			name: "an-unlimited-level-does-not-mask-a-limited-ancestor",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/pod123/container456\n",
+				"sys/fs/cgroup/kubepods/pod123/container456/memory.max": "max\n",
+				"sys/fs/cgroup/kubepods/memory.max":                     "268435456",
+			},
+			wantLimit: 268435456,
+			wantOK:    true,
+		},
+		{
 			// cgroup v1 lists one hierarchy per line; only the memory controller matters.
 			name: "cgroup-v1-picks-the-memory-controller-line",
 			files: map[string]string{
@@ -247,19 +281,51 @@ func TestMemoryBudget(t *testing.T) {
 	}
 }
 
-// The bug the case above guards against, stated as the size it produced: a ring at ~30 MB
-// inside a 512 MiB pod, 5.9% of the container rather than the intended 0.5%.
-func TestRingSlotsHonorsTheContainerLimitOverAHigherGoLimit(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "sys/fs/cgroup", cgroupV2MemoryLimit)
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-	require.NoError(t, os.WriteFile(path, []byte(strconv.Itoa(512<<20)), 0o644))
+// Both ways a higher limit can shadow the one that actually binds, stated as the ring
+// size each produced before it was fixed. A 512 MiB container is below the floor, so in
+// both cases the correct answer is the floor rather than a ring sized from the higher
+// number — ~30 MB (5.9% of that container) and 21.5 MB respectively.
+func TestRingSlotsHonorsTheLowestEffectiveLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		goLimit int64
+		files   map[string]string
+	}{
+		{
+			// A Go memory limit is a soft GC target and does not lift the container's.
+			name:    "a-go-limit-above-the-container-limit",
+			goLimit: 8 << 30,
+			files:   map[string]string{"sys/fs/cgroup/memory.max": "536870912"},
+		},
+		{
+			// Limits nest, so a 4 GiB leaf under a 512 MiB ancestor is still capped at
+			// 512 MiB. This gave a 71,582-slot ring.
+			name:    "a-leaf-cgroup-limit-above-its-ancestor",
+			goLimit: math.MaxInt64,
+			files: map[string]string{
+				"proc/self/cgroup": "0::/kubepods/pod123/container456\n",
+				"sys/fs/cgroup/kubepods/pod123/container456/memory.max": "4294967296",
+				"sys/fs/cgroup/kubepods/pod123/memory.max":              "536870912",
+			},
+		},
+	}
 
-	previous := debug.SetMemoryLimit(-1)
-	t.Cleanup(func() { debug.SetMemoryLimit(previous) })
-	debug.SetMemoryLimit(8 << 30)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for path, content := range tt.files {
+				full := filepath.Join(root, path)
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+			}
 
-	assert.Equal(t, minRingSlots, ringSlots(memoryBudget(root)))
+			previous := debug.SetMemoryLimit(-1)
+			t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+			debug.SetMemoryLimit(tt.goLimit)
+
+			assert.Equal(t, minRingSlots, ringSlots(memoryBudget(root)))
+		})
+	}
 }
 
 // ringBytesPerSlot estimates the struct plus what it points at, so it has to stay above

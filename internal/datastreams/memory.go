@@ -111,6 +111,8 @@ func memoryBudget(root string) (int64, bool) {
 // not exist, every read fails, and the caller falls back to minRingSlots. The cost is a
 // handful of failed opens once per process.
 func cgroupMemoryLimit(root string) (int64, bool) {
+	paths := cgroupSelfPaths(root)
+
 	for _, limitFile := range []string{cgroupV2MemoryLimit, cgroupV1MemoryLimit} {
 		mount := filepath.Join(root, cgroupMountPath)
 		// The v1 memory controller is mounted in its own subdirectory, which the relative
@@ -118,10 +120,22 @@ func cgroupMemoryLimit(root string) (int64, bool) {
 		base := filepath.Join(mount, filepath.Dir(limitFile))
 		name := filepath.Base(limitFile)
 
-		for _, relative := range cgroupSelfPaths(root) {
-			if limit, ok := readCgroupMemoryLimit(filepath.Join(base, relative, name)); ok {
-				return limit, true
+		// Limits nest: every ancestor constrains its descendants, and nothing stops a
+		// descendant from declaring more than an ancestor allows — a systemd unit with a
+		// MemoryMax above its slice's, say. So the effective ceiling is the lowest limit in
+		// the ancestry rather than the first one that happens to be readable. A level that
+		// sets no limit does not constrain, and is skipped.
+		var (
+			lowest int64
+			found  bool
+		)
+		for _, relative := range paths {
+			if limit, ok := readCgroupMemoryLimit(filepath.Join(base, relative, name)); ok && (!found || limit < lowest) {
+				lowest, found = limit, true
 			}
+		}
+		if found {
+			return lowest, true
 		}
 	}
 
