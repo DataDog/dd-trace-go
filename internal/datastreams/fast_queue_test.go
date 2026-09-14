@@ -60,7 +60,7 @@ func TestNewFastQueueStaysWithinItsBounds(t *testing.T) {
 	// The resolved size depends on the host, so report it rather than assert it: this is
 	// how `go test -v`, and a run under an explicit GOMEMLIMIT, show what the heuristic
 	// actually decided.
-	budget, found := memoryBudget()
+	budget, found := memoryBudget("/")
 	t.Logf("ring: %d slots (~%d bytes at capacity); budget %d bytes, found=%t", q.size, q.size*ringBytesPerSlot, budget, found)
 
 	assert.GreaterOrEqual(t, q.size, int64(minRingSlots))

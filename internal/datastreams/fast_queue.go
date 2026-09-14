@@ -30,7 +30,7 @@ type fastQueue struct {
 }
 
 func newFastQueue() *fastQueue {
-	budget, found := memoryBudget()
+	budget, found := memoryBudget("/")
 	slots := ringSlots(budget, found)
 	// The resolved size is otherwise invisible from outside the process, which is
 	// precisely when it is worth knowing.

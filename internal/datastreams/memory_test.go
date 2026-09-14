@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime/debug"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -170,41 +171,95 @@ func TestCgroupMemoryLimit(t *testing.T) {
 	}
 }
 
-// The Go runtime reads no cgroup limit itself, so a declared GOMEMLIMIT is the more
-// specific signal and has to win over the container's.
-//
-// Not parallel: the memory limit is process-wide.
-func TestMemoryBudgetPrefersTheGoMemoryLimit(t *testing.T) {
-	const limit = int64(2) << 30
+// A Go memory limit and a cgroup limit can both be present and need not agree. Each
+// subtest is not parallel: the Go memory limit is process-wide.
+func TestMemoryBudget(t *testing.T) {
+	// math.MaxInt64 is what the runtime reports for an unset GOMEMLIMIT, so it stands in
+	// for "no Go limit" here. It is not a budget, and must not be read as one: 0.5% of it
+	// would pin every ring to the cap.
+	const noGoLimit = int64(math.MaxInt64)
 
-	// A negative argument reads the limit without setting it.
-	previous := debug.SetMemoryLimit(-1)
-	t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+	tests := []struct {
+		name       string
+		goLimit    int64
+		cgroup     string
+		wantBudget int64
+		wantFound  bool
+	}{
+		{
+			name:      "neither-limit-is-present",
+			goLimit:   noGoLimit,
+			wantFound: false,
+		},
+		{
+			name:       "only-a-go-limit",
+			goLimit:    2 << 30,
+			wantBudget: 2 << 30,
+			wantFound:  true,
+		},
+		{
+			name:       "only-a-cgroup-limit",
+			goLimit:    noGoLimit,
+			cgroup:     "536870912",
+			wantBudget: 536870912,
+			wantFound:  true,
+		},
+		{
+			// The deliberate case: GOMEMLIMIT set below the container limit to leave room
+			// for non-Go memory.
+			name:       "a-go-limit-below-the-cgroup-limit-wins",
+			goLimit:    1 << 30,
+			cgroup:     "2147483648",
+			wantBudget: 1 << 30,
+			wantFound:  true,
+		},
+		{
+			// The accidental case: one value baked into an image or chart and reused across
+			// differently sized deployments. A Go memory limit is a soft GC target and does
+			// not lift the container's hard ceiling, so the cgroup has to win.
+			name:       "a-go-limit-above-the-cgroup-limit-does-not-lift-it",
+			goLimit:    8 << 30,
+			cgroup:     "536870912",
+			wantBudget: 536870912,
+			wantFound:  true,
+		},
+	}
 
-	debug.SetMemoryLimit(limit)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tt.cgroup != "" {
+				path := filepath.Join(root, "sys/fs/cgroup", cgroupV2MemoryLimit)
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+				require.NoError(t, os.WriteFile(path, []byte(tt.cgroup), 0o644))
+			}
 
-	budget, found := memoryBudget()
+			// A negative argument reads the limit without setting it.
+			previous := debug.SetMemoryLimit(-1)
+			t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+			debug.SetMemoryLimit(tt.goLimit)
 
-	assert.True(t, found)
-	assert.Equal(t, limit, budget)
+			budget, found := memoryBudget(root)
+
+			assert.Equal(t, tt.wantFound, found)
+			assert.Equal(t, tt.wantBudget, budget)
+		})
+	}
 }
 
-// An unset GOMEMLIMIT reports math.MaxInt64 rather than an error. That is not a budget
-// and must not be read as one: 0.5% of math.MaxInt64 would pin every ring to the cap.
-func TestMemoryBudgetTreatsTheRuntimeDefaultAsUnset(t *testing.T) {
+// The bug the case above guards against, stated as the size it produced: a ring at ~30 MB
+// inside a 512 MiB pod, 5.9% of the container rather than the intended 0.5%.
+func TestRingSlotsHonorsTheContainerLimitOverAHigherGoLimit(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "sys/fs/cgroup", cgroupV2MemoryLimit)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(strconv.Itoa(512<<20)), 0o644))
+
 	previous := debug.SetMemoryLimit(-1)
 	t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+	debug.SetMemoryLimit(8 << 30)
 
-	debug.SetMemoryLimit(math.MaxInt64)
-
-	// Whether a budget is found now depends on the host's cgroups, which the test cannot
-	// control. Either way it must not be the runtime sentinel.
-	budget, found := memoryBudget()
-
-	assert.NotEqual(t, int64(math.MaxInt64), budget)
-	if !found {
-		assert.Zero(t, budget)
-	}
+	assert.Equal(t, minRingSlots, ringSlots(memoryBudget(root)))
 }
 
 // ringBytesPerSlot estimates the struct plus what it points at, so it has to stay above

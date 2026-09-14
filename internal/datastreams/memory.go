@@ -64,16 +64,32 @@ func ringSlots(budget int64, found bool) int {
 }
 
 // memoryBudget reports how many bytes this process may use, and whether any limit was
-// found at all.
-func memoryBudget() (int64, bool) {
+// found at all. root is the filesystem root to resolve the cgroup paths against.
+func memoryBudget(root string) (int64, bool) {
+	var (
+		budget int64
+		found  bool
+	)
+
 	// A negative argument reads the limit without setting it. Unset, the runtime reports
 	// math.MaxInt64 rather than an error, which is not a budget. Reading the runtime
 	// rather than GOMEMLIMIT also picks up an application that called SetMemoryLimit
 	// itself, and avoids a bare os.Getenv, which this repository does not permit.
 	if limit := debug.SetMemoryLimit(-1); limit > 0 && limit < math.MaxInt64 {
-		return limit, true
+		budget, found = limit, true
 	}
-	return cgroupMemoryLimit("/")
+
+	// Both limits can be present, and they do not have to agree. A Go memory limit is a
+	// soft GC target and does not lift the container's hard ceiling, so one value baked
+	// into an image or chart and reused across differently sized deployments — 8 GiB in a
+	// 512 MiB pod — must not be read as 8 GiB of headroom. The binding constraint is
+	// whichever is lower, which also leaves the deliberate case alone, where GOMEMLIMIT
+	// is set below the container limit to leave room for non-Go memory.
+	if limit, ok := cgroupMemoryLimit(root); ok && (!found || limit < budget) {
+		budget, found = limit, true
+	}
+
+	return budget, found
 }
 
 // cgroupMemoryLimit reports the container memory limit in bytes, preferring cgroup v2
