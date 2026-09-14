@@ -167,8 +167,12 @@ jobs:
             -name "coverage-*.txt" -print0 \
             | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
+      # Not uploaded when retries are on: a gotestsum rerun overwrites the
+      # coverprofile with the rerun's partial results, so publishing it would
+      # report a collapsed coverage figure for this SHA. Test results are still
+      # uploaded above, which is what keeps a flake visible.
       - name: Upload Coverage to Datadog
-        if: always()
+        if: always() && inputs.rerun-fails == ''
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
@@ -351,8 +355,12 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
+      # Not uploaded when retries are on: a gotestsum rerun overwrites the
+      # coverprofile with the rerun's partial results, so publishing it would
+      # report a collapsed coverage figure for this SHA. Test results are still
+      # uploaded above, which is what keeps a flake visible.
       - name: Upload Coverage to Datadog
-        if: always()
+        if: always() && inputs.rerun-fails == ''
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
