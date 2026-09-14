@@ -18,6 +18,7 @@ variables:
   # Disable one-pipeline shared pipeline (packaging/publish/system-test) as dd-trace-go runs those in its own way.
   SKIP_SHARED_PIPELINE: "true"
   DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
+  REPO_NOTIFICATION_CHANNEL: "#guild-dd-trace-go-notifications"
 
 workflow:
   auto_cancel:
