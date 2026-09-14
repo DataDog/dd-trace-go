@@ -6,20 +6,23 @@
 package gotesting
 
 import (
-	"reflect"
 	"testing"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
 
 func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 	tests := []struct {
 		name                  string
 		meta                  additionalFeatureMetadata
-		impactedTestsEnabled  bool
 		flakyRetryCount       int64
 		remainingFlakyRetries int64
+		attemptToFixRetries   int
+		efdRetryPossible      bool
 		needsMetadataOnly     bool
 		wantPath              additionalFeaturePath
-		wantReasons           []string
+		wantReasons           additionalFeatureReasons
 	}{
 		{
 			name:     "test management enabled without directive does not wrap",
@@ -40,19 +43,20 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			name:        "disabled without attempt to fix uses disabled fast path",
 			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isDisabled: true},
 			wantPath:    additionalFeaturePathDisabledFast,
-			wantReasons: []string{"test_management_disabled"},
+			wantReasons: additionalFeatureReasonTestManagementDisabled,
 		},
 		{
 			name:        "quarantined test still uses retry wrapper",
 			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isQuarantined: true},
 			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"test_management_quarantined"},
+			wantReasons: additionalFeatureReasonTestManagementQuarantined,
 		},
 		{
-			name:        "attempt to fix owns retry wrapper",
-			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
-			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"attempt_to_fix"},
+			name:                "attempt to fix owns retry wrapper",
+			meta:                additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			attemptToFixRetries: 3,
+			wantPath:            additionalFeaturePathRetryWrapper,
+			wantReasons:         additionalFeatureReasonAttemptToFix,
 		},
 		{
 			name: "attempt to fix owns retry wrapper over EFD and flaky retry",
@@ -65,27 +69,47 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			},
 			flakyRetryCount:       2,
 			remainingFlakyRetries: 1,
+			attemptToFixRetries:   3,
 			wantPath:              additionalFeaturePathRetryWrapper,
-			wantReasons:           []string{"attempt_to_fix"},
+			wantReasons:           additionalFeatureReasonAttemptToFix,
+		},
+		{
+			name:        "attempt to fix with zero retries keeps metadata without retry group",
+			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			wantPath:    additionalFeaturePathMetadataOnly,
+			wantReasons: additionalFeatureReasonAttemptToFixZeroRetries,
+		},
+		{
+			name:        "masked attempt to fix with zero retries keeps isolated wrapper",
+			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isQuarantined: true, isAttemptToFix: true, shouldOrchestrateAttemptToFix: true},
+			wantPath:    additionalFeaturePathRetryWrapper,
+			wantReasons: additionalFeatureReasonAttemptToFix,
 		},
 		{
 			name:        "disabled attempt to fix still needs retry wrapper metadata",
 			meta:        additionalFeatureMetadata{isTestManagementEnabled: true, isDisabled: true, isAttemptToFix: true},
 			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"test_management_disabled", "attempt_to_fix"},
+			wantReasons: additionalFeatureReasonTestManagementDisabled | additionalFeatureReasonAttemptToFix,
 		},
 		{
 			name:              "metadata only preserves inherited subtest override without retry wrapper",
 			meta:              additionalFeatureMetadata{isTestManagementEnabled: true, hasExplicitAttemptToFix: true},
 			needsMetadataOnly: true,
 			wantPath:          additionalFeaturePathMetadataOnly,
-			wantReasons:       []string{"inherited_subtest_state"},
+			wantReasons:       additionalFeatureReasonInheritedSubtestState,
 		},
 		{
-			name:        "EFD new test uses retry wrapper",
+			name:             "EFD new test uses retry wrapper",
+			meta:             additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isNew: true},
+			efdRetryPossible: true,
+			wantPath:         additionalFeaturePathRetryWrapper,
+			wantReasons:      additionalFeatureReasonEFDNewTest,
+		},
+		{
+			name:        "EFD new test with zero retries keeps metadata without retry group",
 			meta:        additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isNew: true},
-			wantPath:    additionalFeaturePathRetryWrapper,
-			wantReasons: []string{"efd_new_test"},
+			wantPath:    additionalFeaturePathMetadataOnly,
+			wantReasons: additionalFeatureReasonEFDZeroRetries,
 		},
 		{
 			name:     "EFD known test without impacted tests does not wrap",
@@ -93,11 +117,11 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			wantPath: additionalFeaturePathNone,
 		},
 		{
-			name:                 "impacted tests keep conservative EFD wrapper",
-			meta:                 additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true},
-			impactedTestsEnabled: true,
-			wantPath:             additionalFeaturePathRetryWrapper,
-			wantReasons:          []string{"efd_modified_candidate"},
+			name:             "EFD modified test uses retry wrapper",
+			meta:             additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isModified: true},
+			efdRetryPossible: true,
+			wantPath:         additionalFeaturePathRetryWrapper,
+			wantReasons:      additionalFeatureReasonEFDModifiedTest,
 		},
 		{
 			name:                  "flaky retry budget selects retry wrapper",
@@ -105,7 +129,7 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			flakyRetryCount:       2,
 			remainingFlakyRetries: 1,
 			wantPath:              additionalFeaturePathRetryWrapper,
-			wantReasons:           []string{"flaky_retry"},
+			wantReasons:           additionalFeatureReasonFlakyRetry,
 		},
 		{
 			name:                  "flaky retry without remaining budget does not wrap",
@@ -124,13 +148,41 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := selectAdditionalFeaturePath(&tt.meta, tt.impactedTestsEnabled, tt.flakyRetryCount, tt.remainingFlakyRetries, tt.needsMetadataOnly)
+		got := selectAdditionalFeaturePath(
+			&tt.meta,
+			tt.flakyRetryCount,
+			tt.remainingFlakyRetries,
+			tt.attemptToFixRetries,
+			tt.efdRetryPossible,
+			tt.needsMetadataOnly,
+		)
 		if got.path != tt.wantPath {
 			t.Fatalf("%s: expected path %s, got %s", tt.name, tt.wantPath, got.path)
 		}
-		if !reflect.DeepEqual(got.reasons, tt.wantReasons) {
+		if got.reasons != tt.wantReasons {
 			t.Fatalf("%s: expected reasons %v, got %v", tt.name, tt.wantReasons, got.reasons)
 		}
+	}
+}
+
+func TestAdditionalFeatureSelectorDoesNotAllocate(t *testing.T) {
+	meta := additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isModified: true}
+	allocs := testing.AllocsPerRun(1000, func() {
+		selection := selectAdditionalFeaturePath(&meta, 0, 0, 0, true, false)
+		if selection.path != additionalFeaturePathRetryWrapper {
+			panic("unexpected selection")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("expected allocation-free selection, got %.2f allocations", allocs)
+	}
+}
+
+func BenchmarkSelectAdditionalFeaturePath(b *testing.B) {
+	meta := additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isModified: true}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = selectAdditionalFeaturePath(&meta, 0, 0, 0, true, false)
 	}
 }
 
@@ -233,5 +285,58 @@ func exerciseMetadataOnlyPropagationSuppression(t *testing.T) {
 	}
 	if !childMeta.isQuarantined || !childMeta.isDisabled {
 		t.Fatal("expected current disabled and quarantine inheritance semantics to be preserved")
+	}
+}
+
+func exerciseSlowEFDAbortTagging(t *testing.T) {
+	tests := []struct {
+		name     string
+		meta     testExecutionMetadata
+		duration time.Duration
+		wantTag  bool
+	}{
+		{
+			name:     "new EFD test at threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+			duration: 5 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "modified EFD test above threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isAModifiedTest: true},
+			duration: 6 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "EFD fallback to flaky retries remains an aborted EFD execution",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true, efdFellBackToFlakyRetries: true},
+			duration: 5 * time.Minute,
+			wantTag:  true,
+		},
+		{
+			name:     "new test with EFD disabled",
+			meta:     testExecutionMetadata{isANewTest: true},
+			duration: 5 * time.Minute,
+		},
+		{
+			name:     "attempt to fix takes precedence over EFD",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true, isAttemptToFix: true},
+			duration: 5 * time.Minute,
+		},
+		{
+			name:     "EFD test below threshold",
+			meta:     testExecutionMetadata{isEarlyFlakeDetectionEnabled: true, isANewTest: true},
+			duration: 5*time.Minute - time.Nanosecond,
+		},
+	}
+
+	for i := range tests {
+		tt := &tests[i]
+		test := &processRetryRecordingTest{}
+		finalizeInstrumentedTestExecution(t, &tt.meta, test, nil, nil, tt.duration, nil, nil, "", false)
+		_, gotTag := test.GetTag(constants.TestEarlyFlakeDetectionRetryAborted)
+		if gotTag != tt.wantTag {
+			t.Fatalf("%s: expected slow EFD abort tag=%t, got %t", tt.name, tt.wantTag, gotTag)
+		}
 	}
 }

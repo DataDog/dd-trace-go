@@ -10,7 +10,6 @@ package internal
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -111,7 +110,7 @@ func TestReadEntityIDFallbackOnInode(t *testing.T) {
 	require.NoError(t, err)
 	expectedInode := fmt.Sprintf("in-%d", stat.Sys().(*syscall.Stat_t).Ino)
 
-	procSelfCgroup, err := ioutil.TempFile("", "procselfcgroup")
+	procSelfCgroup, err := os.CreateTemp("", "procselfcgroup")
 	require.NoError(t, err)
 	defer os.Remove(procSelfCgroup.Name())
 	_, err = procSelfCgroup.WriteString("0::/mynode")
@@ -249,7 +248,7 @@ func TestGetCgroupInode(t *testing.T) {
 				expectedInode = fmt.Sprintf(tc.expectedResult, stat.Sys().(*syscall.Stat_t).Ino)
 			}
 
-			procSelfCgroup, err := ioutil.TempFile("", "procselfcgroup")
+			procSelfCgroup, err := os.CreateTemp("", "procselfcgroup")
 			require.NoError(t, err)
 			defer os.Remove(procSelfCgroup.Name())
 			_, err = procSelfCgroup.WriteString(tc.procSelfCgroupContent)

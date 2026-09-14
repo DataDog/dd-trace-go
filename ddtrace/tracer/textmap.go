@@ -372,15 +372,11 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		}
 		ctx.spanLinks = []SpanLink{link}
 
-		// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
-		// first successful non-baggage extractor, so incomingCtx carries no baggage.
-		// Extract baggage explicitly so it is propagated regardless.
-		baggage := incomingCtx.baggage // +checklocksignore
-		if p.onlyExtractFirst {
-			baggage = p.extractBaggage(carrier)
-		}
-		if len(baggage) > 0 {
-			ctx.baggage = maps.Clone(baggage) // +checklocksignore
+		// incomingCtx.baggage is already fully populated here: extractIncomingSpanContext
+		// extracts baggage unconditionally, independent of onlyExtractFirst and of the
+		// trace-context extractor loop.
+		if baggage := incomingCtx.baggage; len(baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			ctx.baggage = maps.Clone(baggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
 
@@ -393,8 +389,9 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 }
 
 // extractBaggage runs only the baggage propagator against the carrier and
-// returns the extracted items. Used when onlyExtractFirst has prevented the
-// baggage propagator from running inside extractIncomingSpanContext.
+// returns the extracted items. Baggage is orthogonal to trace-context
+// propagation, so extractIncomingSpanContext calls this once, up front,
+// independent of extractor order and of onlyExtractFirst.
 func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
 	for _, v := range p.extractors {
 		if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
@@ -414,42 +411,37 @@ func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
 // propagator that created the ctx is returned, not subsequent ones that
 // enriched it.
 func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, Propagator, error) {
+	// Baggage is orthogonal to trace-context propagation: extract it once, up
+	// front, so it survives regardless of extractor order or of onlyExtractFirst
+	// short-circuiting the loop below.
+	pendingBaggage := p.extractBaggage(carrier)
+
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
-	var pendingBaggage map[string]string // used to store baggage items temporarily, allocated lazily
 
 	for _, v := range p.extractors {
+		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
+			continue // already handled by extractBaggage above
+		}
+
 		// If incomingCtx is nil, no extraction has run yet
 		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
-		// If this is the baggage propagator, just stash its items into pendingBaggage
-		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				if pendingBaggage == nil {
-					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				}
-				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-			}
-			continue
-		}
-
 		if firstExtraction {
-			if err != nil {
-				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
-					return nil, nil, err
-				}
-				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
-					return nil, nil, err
-				}
-			}
-			if p.onlyExtractFirst {
-				return extractedCtx, v, nil
+			// Hard errors always bail immediately, regardless of onlyExtractFirst.
+			// ErrSpanContextNotFound falls through to try the next extractor either
+			// way: onlyExtractFirst only stops the loop once a context is actually
+			// found below, it does not skip failed extractors (see PR #2339).
+			if err != nil && err != ErrSpanContextNotFound {
+				return nil, nil, err
 			}
 			if extractedCtx != nil {
-				ctx = extractedCtx
-				producer = v
+				ctx, producer = extractedCtx, v
+				if p.onlyExtractFirst {
+					break
+				}
 			}
 		} else { // A trace context was already extracted by a previous propagator
 			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
@@ -487,10 +479,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)), // +checklocksignore - Initialization time, not shared yet.
-				baggageOnly: true,                                         // +checklocksignore - Initialization time, not shared yet.
+				baggage:     pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
+				baggageOnly: true,           // +checklocksignore - Initialization time, not shared yet.
 			}
-			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil, nil
 		}
@@ -499,16 +490,22 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			// Common case: no OT "ot-baggage-<key>" headers were extracted, so
+			// pendingBaggage can be taken directly instead of copied into a new map.
+			ctx.baggage = pendingBaggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		} else {
+			// ctx.baggage already holds OT-baggage items; merge, don't replace.
+			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
-		maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
 	if len(links) > 0 {
 		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
-	log.Debug("Extracted span context: %s", ctx.safeDebugString())
+	if log.DebugEnabled() { // safeDebugString is not cheap; avoid it when debug logging is off.
+		log.Debug("Extracted span context: %s", ctx.safeDebugString())
+	}
 	return ctx, producer, nil
 }
 
@@ -566,6 +563,22 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
 	ts := w3cCtx.trace.propagatingTag(tracestateHeader)
+	// On the dual-header path (both Datadog and W3C headers, same trace ID) the
+	// Datadog context wins extraction and carries no ot= of its own, while the
+	// inbound OTel sampling decision was parsed onto the W3C context. Carry it
+	// over so composeTracestate re-emits it; otherwise it strips the inbound ot=
+	// from the raw tracestate and the threshold is lost.
+	if crv, cth, _ := ctx.trace.otelTracestate(); crv == nil && cth == nil {
+		wrv, wth, wunknown := w3cCtx.trace.otelTracestate()
+		var rv, th uint64
+		if wrv != nil {
+			rv = *wrv
+		}
+		if wth != nil {
+			th = *wth
+		}
+		ctx.trace.setOtelUpstream(rv, wrv != nil, th, wth != nil, wunknown)
+	}
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 	ctx.isRemote = (w3cCtx.isRemote)
@@ -595,9 +608,15 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
+	// traceID.Upper is immutable after span creation, so check before writing:
+	// the read of propagatingTag is lock-free, and skipping the write avoids
+	// the CoW allocation on every Inject call.
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-	} else if ctx.trace != nil {
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
+	} else if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 		ctx.trace.unsetPropagatingTag(keyTraceID128)
 	}
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
@@ -608,9 +627,31 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if ctx.origin != "" { // +checklocksignore - Read-only after init.
 		writer.Set(originHeader, ctx.origin) // +checklocksignore - Read-only after init.
 	}
+	baggageItems, baggageBytes := 0, 0
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		// Propagate OpenTracing baggage.
-		writer.Set(p.cfg.BaggagePrefix+k, v)
+		// Cap at baggageMaxItems/baggageMaxBytes the same way
+		// propagatorBaggage.injectTextMap already does for the "baggage"
+		// header -- this prefix path had no such limit.
+		if baggageItemCapped(baggageItems) {
+			return false
+		}
+		// Percent-encode as propagatorBaggage.injectTextMap does for the
+		// "baggage" header, so a decoded control byte (e.g. a CRLF from
+		// percent-decoded baggage) can't reach the header name/value
+		// verbatim and poison the request.
+		ek, ev := encodeKey(k), encodeValue(v)
+		// The header name carries p.cfg.BaggagePrefix on top of the encoded
+		// key, so it must count toward the byte cap too -- otherwise the
+		// actual emitted bytes (prefix + key + value, times up to
+		// baggageMaxItems headers) can exceed baggageMaxBytes even though
+		// this check passes.
+		addBytes := len(p.cfg.BaggagePrefix) + len(ek) + len(ev)
+		if baggageByteCapped(baggageBytes, addBytes) {
+			return false
+		}
+		writer.Set(p.cfg.BaggagePrefix+ek, ev)
+		baggageBytes += addBytes
+		baggageItems++
 		return true
 	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
@@ -668,6 +709,53 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
+// baggageItemCapped reports whether items already accepted has reached
+// baggageMaxItems. Shared by the ot-baggage-<key> extractors and injector so
+// the cap isn't hand-rolled at each call site.
+func baggageItemCapped(items int) bool {
+	return items >= baggageMaxItems
+}
+
+// baggageByteCapped reports whether accepting addBytes more bytes on top of
+// bytes already accepted would exceed baggageMaxBytes.
+func baggageByteCapped(bytes, addBytes int) bool {
+	return bytes+addBytes > baggageMaxBytes
+}
+
+// addOTBaggageItem stores a baggage item received under the legacy
+// ot-baggage-<key> header prefix, enforcing the same baggageMaxItems/
+// baggageMaxBytes limits that propagatorBaggage already enforces for the
+// W3C "baggage" header, and percent-decoding key/val the same way
+// propagatorBaggage.extractTextMap decodes the "baggage" header -- undoing
+// the percent-encoding the injector above applies, so an inject/extract
+// hop through this legacy prefix path is lossless. baggageBytes is the
+// running total of accepted (still-encoded) key+value bytes, and warned
+// tracks whether a limit has already been logged; both, and the (possibly
+// newly allocated) map, are returned for the caller to store back into its
+// scratch value. A carrier with thousands of ot-baggage-* headers past the
+// limit would otherwise log a warning per header.
+func addOTBaggageItem(baggage map[string]string, baggageBytes int, warned bool, key, val string) (map[string]string, int, bool) {
+	if baggageItemCapped(len(baggage)) {
+		if !warned {
+			log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
+		}
+		return baggage, baggageBytes, true
+	}
+	if baggageByteCapped(baggageBytes, len(key)+len(val)) {
+		if !warned {
+			log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
+		}
+		return baggage, baggageBytes, true
+	}
+	if baggage == nil {
+		baggage = make(map[string]string, 1)
+	}
+	dk, _ := url.QueryUnescape(key)
+	dv, _ := url.QueryUnescape(val)
+	baggage[dk] = dv
+	return baggage, baggageBytes + len(key) + len(val), warned
+}
+
 // datadogExtractScratch holds the fields extracted from incoming Datadog
 // headers before a *SpanContext is allocated. It exists so the ForeachKey
 // closure below captures a single value instead of six separate local
@@ -676,12 +764,14 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 // allocation count even though no single one of them is as large as a full
 // SpanContext. A single consolidated scratch value only needs one escape.
 type datadogExtractScratch struct {
-	traceID traceID
-	spanID  uint64
-	origin  string
-	tr      *trace
-	updated bool
-	baggage map[string]string
+	traceID            traceID
+	spanID             uint64
+	origin             string
+	tr                 *trace
+	updated            bool
+	baggage            map[string]string
+	baggageBytes       int
+	baggageLimitWarned bool
 }
 
 // extractTextMap parses the incoming Datadog headers into a scratch value
@@ -727,10 +817,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr = unmarshalPropagatingTagsIntoTrace(s.tr, v, p.cfg.MaxTagsHeaderLen)
 		default:
 			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
-				if s.baggage == nil {
-					s.baggage = make(map[string]string, 1)
-				}
-				s.baggage[strings.ToLower(after)] = v
+				s.baggage, s.baggageBytes, s.baggageLimitWarned = addOTBaggageItem(s.baggage, s.baggageBytes, s.baggageLimitWarned, strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -853,6 +940,17 @@ func setPropagatingTag(ctx *SpanContext, k, v string) {
 		ctx.trace = newTrace()
 	}
 	ctx.trace.setPropagatingTag(k, v)
+}
+
+// setPropagatingTagUnsafe is like setPropagatingTag but writes directly into
+// the map without copy-on-write. Caller must guarantee the trace is not yet
+// shared with other goroutines (i.e. during extraction, before SpanContext is
+// returned to the caller).
+func setPropagatingTagUnsafe(ctx *SpanContext, k, v string) {
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	ctx.trace.setPropagatingTagUnsafe(k, v)
 }
 
 const (
@@ -1044,6 +1142,16 @@ const (
 	tracestateHeader  = "tracestate"
 	// tracestateDDMaxSize bounds the length of a `dd=` list-entry in tracestate.
 	tracestateDDMaxSize = 256
+	// tracestateMaxSize bounds the total length of an incoming tracestate
+	// header. Headers larger than this are dropped entirely rather than
+	// stored and re-propagated.
+	tracestateMaxSize = 4096
+	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
+	// kept from an incoming tracestate, per the W3C recommendation.
+	tracestateMemberMaxSize = 512
+	// tracestateHeaderReserve is the byte budget consumed by the fixed dd= prefix
+	// (e.g. "dd=s:1;p:<16-hex-chars>") before any t.* tag entries are written.
+	tracestateHeaderReserve = 28
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1088,11 +1196,14 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 
 	var traceID string
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
 		traceID = ctx.TraceID()
 	} else {
 		traceID = ctx.TraceID()
-		if ctx.trace != nil {
+		if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
@@ -1350,13 +1461,43 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(value)
 		return true
 	})
+	// Emit the OpenTelemetry `ot=` member as the second list-member (right
+	// after `dd=`), keeping both DD-managed members at the front so a crowded
+	// tracestate can't truncate them. An inherited value may be rv-only or
+	// th-only; a DD-generated one is always the rv+th pair.
+	rv, th, unknown := ctx.trace.otelTracestate()
+	if rv != nil || th != nil || unknown != "" {
+		b.WriteString(",ot=")
+		appendOtelValue(&b, rv, th, unknown)
+		listLength++
+	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	if len(oldState) == 0 {
 		return b.String()
 	}
 	for s := range strings.SplitSeq(strings.Trim(oldState, " \t"), ",") {
-		if strings.HasPrefix(s, "dd=") {
+		// The W3C spec allows optional whitespace (OWS) around the commas
+		// separating list-members, so an entry may arrive as " dd=..." or
+		// " ot=...". Trim before the prefix check: filtering on the raw entry
+		// would miss OWS-prefixed managed members and re-emit them here,
+		// producing duplicate dd=/ot= list-members and an invalid tracestate.
+		s = strings.Trim(s, " \t")
+		// dd= and ot= are DD-managed and re-emitted above; drop any inbound copy.
+		if strings.HasPrefix(s, "dd=") || strings.HasPrefix(s, "ot=") {
 			continue
+		}
+		if len(s) > tracestateMemberMaxSize {
+			// Per the W3C recommendation, drop oversized non-dd members
+			// instead of letting one attacker-sized vendor entry consume
+			// the whole re-composed header.
+			continue
+		}
+		// +1 accounts for the "," separator written below. dd= and ot= are
+		// already written above and stay under tracestateMaxSize on their
+		// own, so stop adding further vendors here instead of silently
+		// re-emitting a header that exceeds the cap.
+		if b.Len()+1+len(s) > tracestateMaxSize {
+			break
 		}
 		listLength++
 		// if the resulting tracestateHeader exceeds 32 list-members,
@@ -1365,7 +1506,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 			break
 		}
 		b.WriteString(",")
-		b.WriteString(strings.Trim(s, " \t"))
+		b.WriteString(s)
 	}
 	return b.String()
 }
@@ -1387,9 +1528,11 @@ func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 // even though no single one of them is as large as a full SpanContext. A
 // single consolidated scratch value only needs one escape.
 type w3cExtractScratch struct {
-	parentHeader string
-	stateHeader  string
-	baggage      map[string]string
+	parentHeader       string
+	stateHeader        string
+	baggage            map[string]string
+	baggageBytes       int
+	baggageLimitWarned bool
 }
 
 // extractTextMap parses the W3C headers into a scratch value during the
@@ -1420,10 +1563,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 			s.stateHeader = v
 		default:
 			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
-				if s.baggage == nil {
-					s.baggage = make(map[string]string, 1)
-				}
-				s.baggage[strings.ToLower(after)] = v
+				s.baggage, s.baggageBytes, s.baggageLimitWarned = addOTBaggageItem(s.baggage, s.baggageBytes, s.baggageLimitWarned, strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -1540,20 +1680,55 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // `origin` = `o`
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
+// tracestateEntryOversized reports whether a tracestate list-member exceeds
+// its applicable size cap: tracestateDDMaxSize for the dd= member (Datadog's
+// own), or tracestateMemberMaxSize for any other vendor, per the W3C
+// recommendation. entry must already be trimmed of surrounding whitespace.
+func tracestateEntryOversized(entry string) bool {
+	if strings.HasPrefix(entry, "dd=") {
+		return len(entry) > tracestateDDMaxSize
+	}
+	return len(entry) > tracestateMemberMaxSize
+}
+
 func parseTracestate(ctx *SpanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
 		return
 	}
-	hasOversizedDD := false
+	if len(header) > tracestateMaxSize {
+		// Only the dd= member is size-checked below; an oversized header is
+		// otherwise stored and re-propagated verbatim regardless of how many
+		// (or how large) non-dd vendors it carries. Treat it like an absent
+		// header rather than trying to selectively trim it.
+		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize)
+		return
+	}
+	needsCleaning := false
 	for group := range strings.SplitSeq(header, ",") {
 		group = strings.Trim(group, "\t ")
-		if !strings.HasPrefix(group, "dd=") {
+		if after, ok := strings.CutPrefix(group, "ot="); ok {
+			// OpenTelemetry consistent probability sampling: read rv/th so DD
+			// can honor an upstream decision. Malformed values are treated as
+			// absent (never reject the trace).
+			rv, rvOK, th, thOK, unknown := parseOtelTracestate(after)
+			if rvOK || thOK || unknown != "" {
+				if ctx.trace == nil {
+					ctx.trace = newTrace()
+				}
+				ctx.trace.setOtelUpstream(rv, rvOK, th, thOK, unknown)
+			}
 			continue
 		}
-		if len(group) > tracestateDDMaxSize {
-			hasOversizedDD = true
+		if !strings.HasPrefix(group, "dd=") {
+			if tracestateEntryOversized(group) {
+				needsCleaning = true
+			}
+			continue
+		}
+		if tracestateEntryOversized(group) {
+			needsCleaning = true
 			break
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
@@ -1598,18 +1773,22 @@ func parseTracestate(ctx *SpanContext, header string) {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue
 				}
-				setPropagatingTag(ctx, keyDecisionMaker, val)
+				setPropagatingTagUnsafe(ctx, keyDecisionMaker, val)
 			} else if strings.HasPrefix(key, "t.") {
 				keySuffix := key[len("t."):]
 				val = strings.ReplaceAll(val, "~", "=")
-				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
+				setPropagatingTagUnsafe(ctx, "_dd.p."+keySuffix, val)
 			}
 		}
 	}
 	// Store the propagating tag, rebuilding the header to exclude oversized
-	// dd= entries when present.
-	if !hasOversizedDD {
-		setPropagatingTag(ctx, tracestateHeader, header)
+	// dd= and non-dd entries when present. Filtering here -- not just in
+	// composeTracestate -- matters because other readers (e.g. the SpanLink
+	// built from this tag on a restart/terminated-context extraction, or an
+	// inject that reuses the cached tracestate tag verbatim) consume this
+	// stored value directly, without ever going through composeTracestate.
+	if !needsCleaning {
+		setPropagatingTagUnsafe(ctx, tracestateHeader, header)
 		return
 	}
 	var cleaned strings.Builder
@@ -1617,7 +1796,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 	first := true
 	for entry := range strings.SplitSeq(header, ",") {
 		trimmed := strings.Trim(entry, "\t ")
-		if strings.HasPrefix(trimmed, "dd=") && len(trimmed) > tracestateDDMaxSize {
+		if tracestateEntryOversized(trimmed) {
 			continue
 		}
 		if !first {
@@ -1629,7 +1808,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 	if cleaned.Len() == 0 {
 		return
 	}
-	setPropagatingTag(ctx, tracestateHeader, cleaned.String())
+	setPropagatingTagUnsafe(ctx, tracestateHeader, cleaned.String())
 }
 
 // extractTraceID128 extracts the trace id from v and populates the traceID
@@ -1720,7 +1899,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	ctr := 0
 	var baggageBuilder strings.Builder
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if ctr >= baggageMaxItems {
+		if baggageItemCapped(ctr) {
 			return false
 		}
 
@@ -1732,7 +1911,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		itemBuilder.WriteString(encodeKey(k))
 		itemBuilder.WriteRune('=')
 		itemBuilder.WriteString(encodeValue(v))
-		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
+		if baggageByteCapped(baggageBuilder.Len(), itemBuilder.Len()) {
 			return false
 		}
 		baggageBuilder.WriteString(itemBuilder.String())
@@ -1754,26 +1933,83 @@ func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
-func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var baggageHeader string
-	var ctx SpanContext
+// baggageKeyLen is len("baggage"), used to reject non-matches before paying
+// for strings.EqualFold, which has no length fast path.
+const baggageKeyLen = 7
+
+// lookupBaggageHeader returns the case-insensitive "baggage" header value
+// found in reader, or "" if none is present. TextMapCarrier and
+// HTTPHeadersCarrier get a direct-iteration fast path instead of going
+// through ForeachKey: ForeachKey is an interface method, so the compiler
+// must assume any closure passed to it escapes, which forces both the
+// closure and the local it captures onto the heap on every call -- even the
+// common case where there is no baggage header at all. Other TextMapReader
+// implementations fall back to foreachBaggageHeader, which is deliberately
+// its own function so its heap-allocated locals are scoped to calls that
+// actually take that path.
+//
+// This deliberately diverges from the ForeachKey-plus-scratch-struct pattern
+// datadogExtractScratch/w3cExtractScratch use: those extractors must inspect
+// every header key to find several different fields, so a scan is the only
+// option regardless of carrier type. Baggage reads exactly one key, so a
+// direct map/slice lookup on the two built-in carriers beats any scan.
+func lookupBaggageHeader(reader TextMapReader) (string, error) {
+	switch c := reader.(type) {
+	case TextMapCarrier:
+		for k, v := range c {
+			if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+				return v, nil
+			}
+		}
+		return "", nil
+	case HTTPHeadersCarrier:
+		// "Baggage" is the canonical form net/http produces and the one
+		// HTTPHeadersCarrier.Set writes via http.Header.Set.
+		if vals := c["Baggage"]; len(vals) > 0 {
+			return vals[len(vals)-1], nil
+		}
+		for k, vals := range c {
+			if len(vals) == 0 || len(k) != baggageKeyLen || !strings.EqualFold(k, "baggage") {
+				continue
+			}
+			return vals[len(vals)-1], nil
+		}
+		return "", nil
+	default:
+		return foreachBaggageHeader(reader)
+	}
+}
+
+// foreachBaggageHeader keeps the last matching value, not the first: carriers
+// that reach this fallback (Kafka/gRPC/etc. in contrib/) can have a real,
+// deterministic order where a repeated "baggage" key's last occurrence is the
+// documented winner -- see e.g. contrib/IBM/sarama's ProducerMessageCarrier.Get.
+func foreachBaggageHeader(reader TextMapReader) (string, error) {
+	var header string
 	err := reader.ForeachKey(func(k, v string) error {
-		if strings.EqualFold(k, "baggage") {
-			// Expect only one baggage header, return early
-			baggageHeader = v
-			return nil
+		if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+			header = v
 		}
 		return nil
 	})
+	return header, err
+}
+
+// extractTextMap parses the incoming "baggage" header into a scratch map and
+// only allocates a *SpanContext once at least one item has been extracted,
+// matching the pattern used by datadogExtractScratch above: the common case
+// of no baggage header should cost nothing.
+func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+	baggageHeader, err := lookupBaggageHeader(reader)
 	if err != nil {
 		return nil, err
 	}
-
 	if baggageHeader == "" {
-		return &ctx, nil
+		return nil, nil
 	}
 
 	// Single pass: enforce baggageMaxItems and baggageMaxBytes, validate, and apply.
+	var baggage map[string]string
 	ctr := 0
 	byteCount := 0
 	for kv := range strings.SplitSeq(baggageHeader, ",") {
@@ -1781,11 +2017,11 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		if ctr > 0 {
 			itemBytes++ // comma separator
 		}
-		if ctr >= baggageMaxItems {
+		if baggageItemCapped(ctr) {
 			log.Warn("baggage item count exceeded limit (%d), dropping remaining items", baggageMaxItems)
 			break
 		}
-		if byteCount+itemBytes > baggageMaxBytes {
+		if baggageByteCapped(byteCount, itemBytes) {
 			log.Warn("baggage byte limit exceeded (%d), dropping remaining items", baggageMaxBytes)
 			break
 		}
@@ -1794,14 +2030,22 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &SpanContext{}, nil
+			return nil, nil
 		}
 		key, _ := url.QueryUnescape(trimmedK)
 		val, _ := url.QueryUnescape(trimmedV)
-		ctx.setBaggageItem(key, val)
+		if baggage == nil {
+			baggage = make(map[string]string, 1)
+		}
+		baggage[key] = val
 		byteCount += itemBytes
 		ctr++
 	}
+	if len(baggage) == 0 {
+		return nil, nil
+	}
 
-	return &ctx, nil
+	ctx := &SpanContext{baggage: baggage} // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+	atomic.StoreUint32(&ctx.hasBaggage, 1)
+	return ctx, nil
 }

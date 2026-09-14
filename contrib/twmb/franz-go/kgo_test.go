@@ -326,6 +326,36 @@ func TestConsumeSpansFinishedOnClose(t *testing.T) {
 	assert.Equal(t, "kafka.consume", spans[1].OperationName())
 }
 
+// TestFinishAndClearActiveSpansReleasesRetainedSpans is a regression test for
+// issue #5192: activeSpans[:0] only reset the slice length, leaving every
+// finished span's pointer alive in the backing array until a later, larger
+// poll happened to overwrite that slot.
+func TestFinishAndClearActiveSpansReleasesRetainedSpans(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	h := newTracingHook()
+
+	const bigPoll = 1000
+	for range bigPoll {
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test")
+		h.activeSpans = append(h.activeSpans, span)
+	}
+
+	h.finishAndClearActiveSpans()
+	require.Empty(t, h.activeSpans)
+
+	// Peek past len (legal up to cap) to confirm the backing array no
+	// longer references the finished spans.
+	retained := 0
+	for _, s := range h.activeSpans[:cap(h.activeSpans)] {
+		if s != nil {
+			retained++
+		}
+	}
+	assert.Zero(t, retained, "finished spans should not be retained in the activeSpans backing array")
+}
+
 func TestProduceDSMPathway(t *testing.T) {
 	topic := topicName(t)
 	createTopicWithCleanup(t, topic)

@@ -327,8 +327,8 @@ func TestFlagEvaluationBackpressureDrops(t *testing.T) {
 		w.record(hookCtx, details) // must never block, even once the queue is full
 	}
 
-	if got := w.dropped.Load(); got != overflow {
-		t.Errorf("expected exactly %d dropped evaluations once the queue filled, got %d", overflow, got)
+	if got := w.preQueueOverflow.Load(); got != overflow {
+		t.Errorf("expected exactly %d pre-queue-overflow drops once the queue filled, got %d", overflow, got)
 	}
 }
 
@@ -343,8 +343,8 @@ func TestFlagEvaluationBackpressureDropsBeforeContextSnapshot(t *testing.T) {
 
 	w.record(hookCtx, details)
 
-	if got := w.dropped.Load(); got != 1 {
-		t.Fatalf("expected one dropped evaluation when queue is already full, got %d", got)
+	if got := w.preQueueOverflow.Load(); got != 1 {
+		t.Fatalf("expected one pre-queue-overflow drop when queue is already full, got %d", got)
 	}
 	if got := len(w.events); got != cap(w.events) {
 		t.Fatalf("full queue length changed: got %d, want %d", got, cap(w.events))

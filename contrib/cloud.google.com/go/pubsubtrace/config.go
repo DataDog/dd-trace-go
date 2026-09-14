@@ -19,6 +19,7 @@ type config struct {
 	serviceSource          string
 	publishSpanName        string
 	receiveSpanName        string
+	requestSpanName        string
 	measured               bool
 	propagationAsSpanLinks bool
 }
@@ -35,6 +36,7 @@ func (tr *Tracer) defaultConfig() *config {
 		serviceSource:          string(tr.component),
 		publishSpanName:        tr.instr.OperationName(instrumentation.ComponentProducer, nil),
 		receiveSpanName:        tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
+		requestSpanName:        tr.instr.OperationName(instrumentation.ComponentClient, nil),
 		measured:               false,
 		propagationAsSpanLinks: propagationAsSpanLinks,
 	}

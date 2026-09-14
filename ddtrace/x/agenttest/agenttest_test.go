@@ -254,3 +254,27 @@ func TestAgent_HandleTraces_InProcess(t *testing.T) {
 func newTestRequest(method, url string, body io.Reader) (*http.Request, error) {
 	return http.NewRequest(method, url, body)
 }
+
+// TestAgent_StatsEndpoint_AdvertisedIsReachable verifies that when a test
+// advertises the stats endpoint via SetInfoEndpoints (as its doc comment
+// suggests), a POST to that path actually succeeds instead of 404ing —
+// SetInfoEndpoints controls discovery, not routing.
+func TestAgent_StatsEndpoint_AdvertisedIsReachable(t *testing.T) {
+	a := New()
+	a.HandleTraces("/v0.4/traces", func(io.Reader) []*Span { return nil })
+	a.SetInfoEndpoints([]string{"/v0.4/traces", statsPattern})
+	if err := a.Start(t); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := a.Transport()
+	req, _ := newTestRequest("POST", "http://"+a.Addr()+statsPattern, strings.NewReader("payload"))
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 for advertised stats endpoint, got %d", resp.StatusCode)
+	}
+}

@@ -51,7 +51,7 @@ func (h *spanEnrichmentHook) Finally(ctx context.Context, hookContext of.HookCon
 
 // buildEvaluation extracts a FeatureFlagEvaluation from OpenFeature hook data.
 func buildEvaluation(evalCtx of.EvaluationContext, evalDetails of.InterfaceEvaluationDetails) *iof.FeatureFlagEvaluation {
-	if raw, ok := evalDetails.FlagMetadata[metadataSerialIDKey]; ok {
+	if raw, ok := evalDetails.FlagMetadata[metadataSplitSerialIDKey]; ok {
 		sid, ok := raw.(uint32)
 		if !ok {
 			log.Debug("openfeature: span enrichment: malformed serial id in metadata")

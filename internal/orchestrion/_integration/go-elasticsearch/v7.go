@@ -12,6 +12,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/require"
@@ -22,8 +23,7 @@ type TestCaseV7 struct {
 }
 
 func (tc *TestCaseV7) Setup(ctx context.Context, t *testing.T) {
-	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:7.17.24", func(addr string, _ []byte) (esClient, error) {
+	tc.base.Setup(ctx, t, "elasticsearch7", containers.Image("elasticsearch7"), func(addr string, _ []byte) (esClient, error) {
 		return elasticsearch.NewClient(elasticsearch.Config{
 			Addresses: []string{addr},
 		})

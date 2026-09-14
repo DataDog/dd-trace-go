@@ -110,7 +110,7 @@ message "Command ran successfully: go mod download"
 # Install tools
 message "Installing tools to $BIN_DIR_ABS..."
 install_tool_bins() {
-  cd "$TOOLS_DIR_ABS" && GOWORK=$GOWORK GOBIN="$BIN_DIR_ABS" go install -v $(grep -E '^[[:space:]]*_[[:space:]]+".*"' tools.go | awk -F'"' '{print $2}')
+  cd "$TOOLS_DIR_ABS" && grep -E '^[[:space:]]*_[[:space:]]+".*"' tools.go | awk -F'"' '{print $2}' | GOWORK=$GOWORK GOBIN="$BIN_DIR_ABS" xargs go install -v
 }
 if ! retry_on_corruption install_tool_bins; then
   message "Command failed: go install tools"

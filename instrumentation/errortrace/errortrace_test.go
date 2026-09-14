@@ -8,6 +8,7 @@ package errortrace
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,6 +23,25 @@ func testErrorWrapper() *TracerError {
 // Creates a new TracerError instance with default parameters (n = 32, skip = 0)
 func createTestError() *TracerError {
 	return New("Something wrong")
+}
+
+//go:noinline
+func wrapNForRawStackTest(skip uint) *TracerError {
+	return WrapN(errors.New("msg"), skip)
+}
+
+func TestWrapNRawSkip(t *testing.T) {
+	wrapped := wrapNForRawStackTest(0)
+	if assert.NotEmpty(t, wrapped.rawStack.PCs) {
+		frame, _ := runtime.CallersFrames(wrapped.rawStack.PCs).Next()
+		assert.Contains(t, frame.Function, "errortrace.WrapN")
+	}
+
+	wrapped = wrapNForRawStackTest(1)
+	if assert.NotEmpty(t, wrapped.rawStack.PCs) {
+		frame, _ := runtime.CallersFrames(wrapped.rawStack.PCs).Next()
+		assert.Contains(t, frame.Function, "wrapNForRawStackTest")
+	}
 }
 
 func TestWrap(t *testing.T) {

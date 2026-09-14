@@ -383,6 +383,7 @@ func TestTraceTagging(t *testing.T) {
 				RequestRoute: "/fake/:id/uri",
 				Host:         "localhost",
 				RemoteAddr:   "127.0.0.1:4242",
+				ClientIP:     netip.MustParseAddr("127.0.0.1"),
 				Headers:      map[string][]string{"user-agent": {tc.UserAgent}},
 				Cookies:      map[string][]string{},
 				QueryParams:  map[string][]string{},

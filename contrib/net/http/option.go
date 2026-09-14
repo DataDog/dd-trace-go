@@ -28,6 +28,17 @@ type OptionFn = internal.OptionFn
 // HandlerOptionFn represents options applicable to NewServeMux and WrapHandler.
 type HandlerOptionFn = internal.HandlerOptionFn
 
+// WithServeMux sets the given *http.ServeMux as the underlying ServeMux instead
+// of allocating a new one. This is useful when the traced ServeMux needs to wrap
+// a ServeMux that was already configured elsewhere, or when it needs to be the
+// outermost handler in a chain of wrapped handlers.
+// This option only affects NewServeMux; it has no effect when passed to WrapHandler.
+func WithServeMux(mux *http.ServeMux) HandlerOptionFn {
+	return func(cfg *internal.Config) {
+		cfg.Mux = mux
+	}
+}
+
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) OptionFn {

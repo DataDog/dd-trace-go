@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,13 +28,69 @@ import (
 // namedSourceFixtureFunc provides a stable top-level declaration for cache tests.
 func namedSourceFixtureFunc() {}
 
+func secondNamedSourceFixtureFunc() {}
+
 func namedSourceFixtureRuntimeFunc() *runtime.Func {
 	return runtime.FuncForPC(reflect.ValueOf(namedSourceFixtureFunc).Pointer())
+}
+
+func secondNamedSourceFixtureRuntimeFunc() *runtime.Func {
+	return runtime.FuncForPC(reflect.ValueOf(secondNamedSourceFixtureFunc).Pointer())
 }
 
 func literalSourceFixtureRuntimeFunc() *runtime.Func {
 	literal := func() {}
 	return runtime.FuncForPC(reflect.ValueOf(literal).Pointer())
+}
+
+type recordingImpactedTestClassifier struct {
+	called    bool
+	testName  string
+	source    string
+	startLine int
+	endLine   int
+	result    bool
+}
+
+func (c *recordingImpactedTestClassifier) IsImpacted(testName, source string, startLine, endLine int) bool {
+	c.called = true
+	c.testName = testName
+	c.source = source
+	c.startLine = startLine
+	c.endLine = endLine
+	return c.result
+}
+
+func TestIsTestFuncModifiedUsesResolvedSourceRange(t *testing.T) {
+	resetSourceCacheTestState(t)
+	classifier := &recordingImpactedTestClassifier{result: true}
+
+	require.True(t, isTestFuncModified(classifier, "TestSourceFixture", namedSourceFixtureRuntimeFunc()))
+	require.True(t, classifier.called)
+	require.Equal(t, "TestSourceFixture", classifier.testName)
+	require.NotEmpty(t, classifier.source)
+	require.Positive(t, classifier.startLine)
+	require.GreaterOrEqual(t, classifier.endLine, classifier.startLine)
+}
+
+func TestIsTestFuncModifiedWithAnalyzerRejectsMissingAnalyzer(t *testing.T) {
+	assert.False(t, IsTestFuncModifiedWithAnalyzer(nil, "TestSourceFixture", namedSourceFixtureRuntimeFunc()))
+}
+
+func TestTestFuncSourceMetadataDoesNotRequireTestEvent(t *testing.T) {
+	resetSourceCacheTestState(t)
+	start, end, unskippable := TestFuncSourceMetadata(runtime.FuncForPC(reflect.ValueOf(suiteUnskippableFixtureFunc).Pointer()))
+	assert.Positive(t, start)
+	assert.GreaterOrEqual(t, end, start)
+	assert.True(t, unskippable)
+	_, _, unskippable = TestFuncSourceMetadata(runtime.FuncForPC(reflect.ValueOf(declarationUnskippableFixtureFunc).Pointer()))
+	assert.True(t, unskippable)
+	_, _, unskippable = TestFuncSourceMetadata(namedSourceFixtureRuntimeFunc())
+	assert.False(t, unskippable)
+	start, end, unskippable = TestFuncSourceMetadata(nil)
+	assert.Zero(t, start)
+	assert.Zero(t, end)
+	assert.False(t, unskippable)
 }
 
 // resetSourceCacheTestState installs repository metadata so sourcecache tests also work with -trimpath.
@@ -65,6 +122,260 @@ func TestLoadSourceFileMetadataCachesValidFiles(t *testing.T) {
 
 	require.True(t, first.parseOK)
 	assert.Equal(t, first, second)
+}
+
+func TestLoadSourceFunctionMetadataCachesResolvedFunction(t *testing.T) {
+	resetSourceCacheTestState(t)
+
+	fn := namedSourceFixtureRuntimeFunc()
+	first := loadSourceFunctionMetadata(fn)
+	second := loadSourceFunctionMetadata(fn)
+
+	require.Equal(t, first.runtimePath, second.runtimePath)
+	require.Equal(t, first.runtimeStartLine, second.runtimeStartLine)
+	require.Equal(t, first.sourcePath, second.sourcePath)
+	require.Equal(t, first.resolution, second.resolution)
+	firstOwner, firstOwnerFound := loadSourceFunctionCodeOwner(first)
+	secondOwner, secondOwnerFound := loadSourceFunctionCodeOwner(second)
+	require.True(t, firstOwnerFound)
+	require.Equal(t, firstOwnerFound, secondOwnerFound)
+	require.Equal(t, firstOwner, secondOwner)
+	require.NotEmpty(t, firstOwner)
+
+	entries := 0
+	sourceFunctionMetadataCache.Range(func(key, value any) bool {
+		entries++
+		require.Equal(t, fn.Entry(), key)
+		slot, ok := value.(*sourceFunctionCacheSlot)
+		require.True(t, ok)
+		require.Equal(t, first, slot.entry)
+		return true
+	})
+	require.Equal(t, 1, entries)
+}
+
+type recordingCodeOwnerMatcher struct {
+	calls int
+	entry utils.Entry
+}
+
+func (m *recordingCodeOwnerMatcher) Match(string) (*utils.Entry, bool) {
+	m.calls++
+	return &m.entry, true
+}
+
+type staticCodeOwnerMatcher struct {
+	entry utils.Entry
+}
+
+func (m *staticCodeOwnerMatcher) Match(string) (*utils.Entry, bool) {
+	return &m.entry, true
+}
+
+func TestSourceFileCodeOwnerCacheIsSharedAcrossFunctions(t *testing.T) {
+	resetSourceCacheTestState(t)
+
+	first := loadSourceFunctionMetadata(namedSourceFixtureRuntimeFunc())
+	second := loadSourceFunctionMetadata(secondNamedSourceFixtureRuntimeFunc())
+	require.Equal(t, first.sourcePath.FilesystemPath, second.sourcePath.FilesystemPath)
+
+	firstSlot := sourceFileSlot(first.sourcePath.FilesystemPath, newSourceFileCacheSlot)
+	secondSlot := sourceFileSlot(second.sourcePath.FilesystemPath, newSourceFileCacheSlot)
+	require.Same(t, firstSlot, secondSlot)
+
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@shared-owner"}}}
+	firstOwner, firstFound := loadSourceFileCodeOwner(firstSlot, matcher, true, first.sourcePath.RelativePath)
+	secondOwner, secondFound := loadSourceFileCodeOwner(secondSlot, matcher, true, second.sourcePath.RelativePath)
+
+	require.True(t, firstFound)
+	require.True(t, secondFound)
+	require.Equal(t, "[\"@shared-owner\"]", firstOwner)
+	require.Equal(t, firstOwner, secondOwner)
+	require.Equal(t, 1, matcher.calls)
+}
+
+func TestSourceFileCodeOwnerCacheCachesCompletedMissingLookup(t *testing.T) {
+	slot := &sourceFileCacheSlot{}
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@unexpected-owner"}}}
+
+	firstOwner, firstFound := loadSourceFileCodeOwner(slot, nil, true, "source.go")
+	secondOwner, secondFound := loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+
+	require.False(t, firstFound)
+	require.False(t, secondFound)
+	require.Empty(t, firstOwner)
+	require.Empty(t, secondOwner)
+	require.Zero(t, matcher.calls)
+}
+
+func TestSourceFileCodeOwnerCacheRetriesIncompleteLookup(t *testing.T) {
+	slot := &sourceFileCacheSlot{}
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@recovered-owner"}}}
+
+	firstOwner, firstFound := loadSourceFileCodeOwner(slot, nil, false, "source.go")
+	secondOwner, secondFound := loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+
+	require.False(t, firstFound)
+	require.Empty(t, firstOwner)
+	require.True(t, secondFound)
+	require.Equal(t, "[\"@recovered-owner\"]", secondOwner)
+	require.Equal(t, 1, matcher.calls)
+}
+
+func TestSourceFunctionCodeOwnerCacheSkipsCompletedLookup(t *testing.T) {
+	slot := &sourceFileCacheSlot{}
+	metadata := sourceFunctionMetadata{
+		fileSlot:   slot,
+		sourcePath: utils.SourceFilePath{RelativePath: "source.go"},
+	}
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@cached-owner"}}}
+	lookups := 0
+	lookup := func() (codeOwnerMatcher, bool) {
+		lookups++
+		return matcher, true
+	}
+
+	firstOwner, firstFound := loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+	secondOwner, secondFound := loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+
+	require.True(t, firstFound)
+	require.True(t, secondFound)
+	require.Equal(t, "[\"@cached-owner\"]", firstOwner)
+	require.Equal(t, firstOwner, secondOwner)
+	require.Equal(t, 1, lookups)
+	require.Equal(t, 1, matcher.calls)
+}
+
+func TestSourceFunctionCodeOwnerCacheConcurrentHitsSkipCompletedLookup(t *testing.T) {
+	slot := &sourceFileCacheSlot{}
+	metadata := sourceFunctionMetadata{
+		fileSlot:   slot,
+		sourcePath: utils.SourceFilePath{RelativePath: "source.go"},
+	}
+	matcher := &staticCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@cached-owner"}}}
+	var lookups atomic.Int64
+	lookup := func() (codeOwnerMatcher, bool) {
+		lookups.Add(1)
+		return matcher, true
+	}
+
+	owner, found := loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+	require.True(t, found)
+	require.Equal(t, "[\"@cached-owner\"]", owner)
+
+	const readers = 32
+	var wait sync.WaitGroup
+	wait.Add(readers)
+	owners := make([]string, readers)
+	foundResults := make([]bool, readers)
+	for index := range readers {
+		go func() {
+			defer wait.Done()
+			owners[index], foundResults[index] = loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+		}()
+	}
+	wait.Wait()
+
+	for index := range readers {
+		require.True(t, foundResults[index])
+		require.Equal(t, owner, owners[index])
+	}
+	require.Equal(t, int64(1), lookups.Load())
+}
+
+func BenchmarkSourceFileCodeOwnerSharedMiss(b *testing.B) {
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@shared-owner"}}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		slot := &sourceFileCacheSlot{}
+		loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+		loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+	}
+	b.StopTimer()
+	if matcher.calls != b.N {
+		b.Fatalf("CODEOWNERS matcher calls = %d, want %d", matcher.calls, b.N)
+	}
+}
+
+func BenchmarkSourceFileCodeOwnerCachedResult(b *testing.B) {
+	slot := &sourceFileCacheSlot{}
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@shared-owner"}}}
+	loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		loadSourceFileCodeOwner(slot, matcher, true, "source.go")
+	}
+	b.StopTimer()
+	if matcher.calls != 1 {
+		b.Fatalf("CODEOWNERS matcher calls = %d, want 1", matcher.calls)
+	}
+}
+
+func BenchmarkSourceFunctionCodeOwnerCachedResult(b *testing.B) {
+	slot := &sourceFileCacheSlot{}
+	metadata := sourceFunctionMetadata{
+		fileSlot:   slot,
+		sourcePath: utils.SourceFilePath{RelativePath: "source.go"},
+	}
+	matcher := &recordingCodeOwnerMatcher{entry: utils.Entry{Owners: []string{"@shared-owner"}}}
+	lookups := 0
+	lookup := func() (codeOwnerMatcher, bool) {
+		lookups++
+		return matcher, true
+	}
+	loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		loadSourceFunctionCodeOwnerWithLookup(metadata, lookup)
+	}
+	b.StopTimer()
+	if lookups != 1 {
+		b.Fatalf("CODEOWNERS lookups = %d, want 1", lookups)
+	}
+}
+
+func TestSourceFunctionCacheHitDoesNotCreateDiscardedSlot(t *testing.T) {
+	resetSourceCacheTestState(t)
+	created := 0
+	newSlot := func() *sourceFunctionCacheSlot {
+		created++
+		return &sourceFunctionCacheSlot{}
+	}
+
+	fn := namedSourceFixtureRuntimeFunc()
+	first := sourceFunctionSlotForEntry(fn.Entry(), newSlot)
+	second := sourceFunctionSlotForEntry(fn.Entry(), newSlot)
+
+	require.Same(t, first, second)
+	require.Equal(t, 1, created)
+}
+
+func TestSourceFileCacheHitDoesNotCreateDiscardedSlot(t *testing.T) {
+	resetSourceCacheTestState(t)
+	created := 0
+	newSlot := func() *sourceFileCacheSlot {
+		created++
+		return &sourceFileCacheSlot{}
+	}
+
+	path := filepath.Join(t.TempDir(), "missing.go")
+	first := sourceFileSlot(path, newSlot)
+	second := sourceFileSlot(path, newSlot)
+
+	require.Same(t, first, second)
+	require.Equal(t, 1, created)
+}
+
+func TestFunctionLiteralsToLogSkipsDebugOnlyTraversal(t *testing.T) {
+	literals := []functionLiteralMetadata{{bodyStartLine: 10, endLine: 12}}
+
+	require.NotPanics(t, func() {
+		require.Nil(t, functionLiteralsToLog(literals, len(literals)+1, false))
+	})
+	require.Equal(t, literals, functionLiteralsToLog(literals, len(literals), true))
 }
 
 func TestLoadSourceFileMetadataNegativeCachesParseFailures(t *testing.T) {
@@ -164,12 +475,12 @@ func TestFindMatchingFunctionLiteral(t *testing.T) {
 		},
 	}
 
-	literal, inspectedLiterals, ok := findMatchingFunctionLiteral(literals, 19)
+	literal, inspectedLiteralCount, ok := findMatchingFunctionLiteral(literals, 19)
 	require.True(t, ok)
 	assert.Equal(t, 20, literal.bodyStartLine)
-	assert.Equal(t, literals, inspectedLiterals)
+	assert.Equal(t, len(literals), inspectedLiteralCount)
 
-	literal, inspectedLiterals, ok = findMatchingFunctionLiteral([]functionLiteralMetadata{
+	literal, inspectedLiteralCount, ok = findMatchingFunctionLiteral([]functionLiteralMetadata{
 		{
 			bodyStartLine: 10,
 			endLine:       12,
@@ -185,25 +496,16 @@ func TestFindMatchingFunctionLiteral(t *testing.T) {
 	}, 11)
 	require.True(t, ok)
 	assert.Equal(t, 11, literal.bodyStartLine)
-	assert.Equal(t, []functionLiteralMetadata{
-		{
-			bodyStartLine: 10,
-			endLine:       12,
-		},
-		{
-			bodyStartLine: 11,
-			endLine:       13,
-		},
-	}, inspectedLiterals)
+	assert.Equal(t, 2, inspectedLiteralCount)
 
-	literal, inspectedLiterals, ok = findMatchingFunctionLiteral(literals, 10)
+	literal, inspectedLiteralCount, ok = findMatchingFunctionLiteral(literals, 10)
 	require.True(t, ok)
 	assert.Equal(t, 10, literal.bodyStartLine)
-	assert.Equal(t, []functionLiteralMetadata{literals[0]}, inspectedLiterals)
+	assert.Equal(t, 1, inspectedLiteralCount)
 
-	_, inspectedLiterals, ok = findMatchingFunctionLiteral(literals, 50)
+	_, inspectedLiteralCount, ok = findMatchingFunctionLiteral(literals, 50)
 	assert.False(t, ok)
-	assert.Equal(t, literals, inspectedLiterals)
+	assert.Equal(t, len(literals), inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationUsesNamedDeclarationEndLine(t *testing.T) {
@@ -273,7 +575,7 @@ func TestResolveSourceLocationUsesLineConfirmedFunc1Declaration(t *testing.T) {
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
 	assert.Nil(t, resolution.matchedLiteral)
-	assert.Empty(t, resolution.inspectedLiterals)
+	assert.Zero(t, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationDisambiguatesFunc1MethodsByRuntimeStartLine(t *testing.T) {
@@ -324,7 +626,7 @@ func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationIsUnrelated(t *t
 	assert.False(t, resolution.functionUnskippable)
 	assert.Nil(t, resolution.matchedDeclaration)
 	require.NotNil(t, resolution.matchedLiteral)
-	assert.Len(t, resolution.inspectedLiterals, 1)
+	assert.Equal(t, 1, resolution.inspectedLiteralCount)
 }
 
 // TestResolveSourceLocationPrefersExactFuncNLiteralOverEarlierTolerated verifies generated closures use exact line matches first.
@@ -347,16 +649,7 @@ func TestResolveSourceLocationPrefersExactFuncNLiteralOverEarlierTolerated(t *te
 	assert.Nil(t, resolution.matchedDeclaration)
 	require.NotNil(t, resolution.matchedLiteral)
 	assert.Equal(t, 11, resolution.matchedLiteral.bodyStartLine)
-	assert.Equal(t, []functionLiteralMetadata{
-		{
-			bodyStartLine: 10,
-			endLine:       12,
-		},
-		{
-			bodyStartLine: 11,
-			endLine:       13,
-		},
-	}, resolution.inspectedLiterals)
+	assert.Equal(t, 2, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationHasNoBody(t *testing.T) {
@@ -378,7 +671,7 @@ func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationHasNoBody(t *tes
 	assert.False(t, resolution.functionUnskippable)
 	assert.Nil(t, resolution.matchedDeclaration)
 	require.NotNil(t, resolution.matchedLiteral)
-	assert.Len(t, resolution.inspectedLiterals, 1)
+	assert.Equal(t, 1, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationLeavesUnmatchedFunc1Unresolved(t *testing.T) {
@@ -402,7 +695,7 @@ func TestResolveSourceLocationLeavesUnmatchedFunc1Unresolved(t *testing.T) {
 	assert.False(t, resolution.functionUnskippable)
 	assert.Nil(t, resolution.matchedDeclaration)
 	assert.Nil(t, resolution.matchedLiteral)
-	assert.Len(t, resolution.inspectedLiterals, 1)
+	assert.Equal(t, 1, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationKeepsNonFuncNDeclarationFallback(t *testing.T) {
@@ -426,7 +719,7 @@ func TestResolveSourceLocationKeepsNonFuncNDeclarationFallback(t *testing.T) {
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
 	assert.Nil(t, resolution.matchedLiteral)
-	assert.Empty(t, resolution.inspectedLiterals)
+	assert.Zero(t, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationAdjustsLiteralStartLine(t *testing.T) {
@@ -442,7 +735,7 @@ func TestResolveSourceLocationAdjustsLiteralStartLine(t *testing.T) {
 	assert.False(t, resolution.functionUnskippable)
 	assert.Nil(t, resolution.matchedDeclaration)
 	require.NotNil(t, resolution.matchedLiteral)
-	assert.Len(t, resolution.inspectedLiterals, 1)
+	assert.Equal(t, 1, resolution.inspectedLiteralCount)
 }
 
 func TestResolveSourceLocationLeavesNoMatchUnchanged(t *testing.T) {
@@ -457,7 +750,7 @@ func TestResolveSourceLocationLeavesNoMatchUnchanged(t *testing.T) {
 	assert.Zero(t, resolution.endLine)
 	assert.Nil(t, resolution.matchedDeclaration)
 	assert.Nil(t, resolution.matchedLiteral)
-	assert.Len(t, resolution.inspectedLiterals, 1)
+	assert.Equal(t, 1, resolution.inspectedLiteralCount)
 }
 
 func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {

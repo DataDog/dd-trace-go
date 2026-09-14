@@ -159,7 +159,7 @@ func TestEvaluatorResult_RichReturnPopulatesAllFields(t *testing.T) {
 			continue
 		}
 		found = true
-		assert.Equal(t, "score", m.MetricType)
+		assert.Equal(t, llmobstransport.EvalMetricTypeScore, m.MetricType)
 		require.NotNil(t, m.ScoreValue)
 		assert.Equal(t, 0.80, *m.ScoreValue)
 		assert.Equal(t, "the answer covered the central finding", m.Reasoning)
@@ -247,9 +247,9 @@ func TestEvaluatorResult_MixedLegacyAndRich(t *testing.T) {
 	}
 	require.NotNil(t, legacy, "did not find legacy metric")
 	require.NotNil(t, rich, "did not find rich metric")
-	assert.Equal(t, "boolean", legacy.MetricType)
+	assert.Equal(t, llmobstransport.EvalMetricTypeBoolean, legacy.MetricType)
 	assert.Empty(t, legacy.Reasoning)
-	assert.Equal(t, "categorical", rich.MetricType)
+	assert.Equal(t, llmobstransport.EvalMetricTypeCategorical, rich.MetricType)
 	require.NotNil(t, rich.CategoricalValue)
 	assert.Equal(t, "good", *rich.CategoricalValue)
 	assert.Equal(t, "categorical with reasoning", rich.Reasoning)

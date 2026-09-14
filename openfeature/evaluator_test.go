@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,335 +18,6 @@ import (
 
 	of "github.com/open-feature/go-sdk/openfeature"
 )
-
-func TestEvaluateCondition_IsNull(t *testing.T) {
-	tests := []struct {
-		name      string
-		condition *condition
-		context   map[string]any
-		expected  bool
-	}{
-		{
-			name: "attribute missing, expect null",
-			condition: &condition{
-				Operator:  operatorIsNull,
-				Attribute: "missing_attr",
-				Value:     true,
-			},
-			context:  map[string]any{},
-			expected: true,
-		},
-		{
-			name: "attribute missing, expect not null",
-			condition: &condition{
-				Operator:  operatorIsNull,
-				Attribute: "missing_attr",
-				Value:     false,
-			},
-			context:  map[string]any{},
-			expected: false,
-		},
-		{
-			name: "attribute present, expect null",
-			condition: &condition{
-				Operator:  operatorIsNull,
-				Attribute: "present_attr",
-				Value:     true,
-			},
-			context:  map[string]any{"present_attr": "value"},
-			expected: false,
-		},
-		{
-			name: "attribute present, expect not null",
-			condition: &condition{
-				Operator:  operatorIsNull,
-				Attribute: "present_attr",
-				Value:     false,
-			},
-			context:  map[string]any{"present_attr": "value"},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateCondition(tt.condition, tt.context)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestEvaluateCondition_NumericComparison(t *testing.T) {
-	tests := []struct {
-		name      string
-		condition *condition
-		context   map[string]any
-		expected  bool
-	}{
-		{
-			name: "GT - greater than",
-			condition: &condition{
-				Operator:  operatorGT,
-				Attribute: "age",
-				Value:     18.0,
-			},
-			context:  map[string]any{"age": 25},
-			expected: true,
-		},
-		{
-			name: "GT - not greater than",
-			condition: &condition{
-				Operator:  operatorGT,
-				Attribute: "age",
-				Value:     30.0,
-			},
-			context:  map[string]any{"age": 25},
-			expected: false,
-		},
-		{
-			name: "GTE - greater than or equal",
-			condition: &condition{
-				Operator:  operatorGTE,
-				Attribute: "age",
-				Value:     25.0,
-			},
-			context:  map[string]any{"age": 25},
-			expected: true,
-		},
-		{
-			name: "LT - less than",
-			condition: &condition{
-				Operator:  operatorLT,
-				Attribute: "age",
-				Value:     30.0,
-			},
-			context:  map[string]any{"age": 25},
-			expected: true,
-		},
-		{
-			name: "LTE - less than or equal",
-			condition: &condition{
-				Operator:  operatorLTE,
-				Attribute: "age",
-				Value:     25.0,
-			},
-			context:  map[string]any{"age": 25},
-			expected: true,
-		},
-		{
-			name: "numeric with float attribute",
-			condition: &condition{
-				Operator:  operatorGT,
-				Attribute: "score",
-				Value:     85.5,
-			},
-			context:  map[string]any{"score": 90.7},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateCondition(tt.condition, tt.context)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestEvaluateCondition_RegexMatching(t *testing.T) {
-	tests := []struct {
-		name      string
-		condition *condition
-		context   map[string]any
-		expected  bool
-	}{
-		{
-			name: "MATCHES - matches pattern",
-			condition: &condition{
-				Operator:  operatorMatches,
-				Attribute: "email",
-				Value:     ".*@example\\.com$",
-			},
-			context:  map[string]any{"email": "user@example.com"},
-			expected: true,
-		},
-		{
-			name: "MATCHES - does not match pattern",
-			condition: &condition{
-				Operator:  operatorMatches,
-				Attribute: "email",
-				Value:     ".*@example\\.com$",
-			},
-			context:  map[string]any{"email": "user@other.com"},
-			expected: false,
-		},
-		{
-			name: "NOT_MATCHES - does not match pattern",
-			condition: &condition{
-				Operator:  operatorNotMatches,
-				Attribute: "email",
-				Value:     ".*@spam\\.com$",
-			},
-			context:  map[string]any{"email": "user@example.com"},
-			expected: true,
-		},
-		{
-			name: "NOT_MATCHES - matches pattern",
-			condition: &condition{
-				Operator:  operatorNotMatches,
-				Attribute: "email",
-				Value:     ".*@example\\.com$",
-			},
-			context:  map[string]any{"email": "user@example.com"},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateCondition(tt.condition, tt.context)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestEvaluateCondition_SetMembership(t *testing.T) {
-	tests := []struct {
-		name      string
-		condition *condition
-		context   map[string]any
-		expected  bool
-	}{
-		{
-			name: "ONE_OF - in list",
-			condition: &condition{
-				Operator:  operatorOneOf,
-				Attribute: "country",
-				Value:     []string{"US", "CA", "MX"},
-			},
-			context:  map[string]any{"country": "US"},
-			expected: true,
-		},
-		{
-			name: "ONE_OF - not in list",
-			condition: &condition{
-				Operator:  operatorOneOf,
-				Attribute: "country",
-				Value:     []string{"US", "CA", "MX"},
-			},
-			context:  map[string]any{"country": "UK"},
-			expected: false,
-		},
-		{
-			name: "NOT_ONE_OF - not in list",
-			condition: &condition{
-				Operator:  operatorNotOneOf,
-				Attribute: "country",
-				Value:     []string{"CN", "RU"},
-			},
-			context:  map[string]any{"country": "US"},
-			expected: true,
-		},
-		{
-			name: "NOT_ONE_OF - in list",
-			condition: &condition{
-				Operator:  operatorNotOneOf,
-				Attribute: "country",
-				Value:     []string{"US", "CA"},
-			},
-			context:  map[string]any{"country": "US"},
-			expected: false,
-		},
-		{
-			name: "ONE_OF - with interface{} slice",
-			condition: &condition{
-				Operator:  operatorOneOf,
-				Attribute: "tier",
-				Value:     []any{"gold", "platinum"},
-			},
-			context:  map[string]any{"tier": "gold"},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateCondition(tt.condition, tt.context)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
-
-func TestEvaluateRule(t *testing.T) {
-	tests := []struct {
-		name     string
-		rule     *rule
-		context  map[string]any
-		expected bool
-	}{
-		{
-			name: "all conditions match",
-			rule: &rule{
-				Conditions: []*condition{
-					{
-						Operator:  operatorGTE,
-						Attribute: "age",
-						Value:     18.0,
-					},
-					{
-						Operator:  operatorOneOf,
-						Attribute: "country",
-						Value:     []string{"US", "CA"},
-					},
-				},
-			},
-			context: map[string]any{
-				"age":     25,
-				"country": "US",
-			},
-			expected: true,
-		},
-		{
-			name: "one condition fails",
-			rule: &rule{
-				Conditions: []*condition{
-					{
-						Operator:  operatorGTE,
-						Attribute: "age",
-						Value:     18.0,
-					},
-					{
-						Operator:  operatorOneOf,
-						Attribute: "country",
-						Value:     []string{"US", "CA"},
-					},
-				},
-			},
-			context: map[string]any{
-				"age":     25,
-				"country": "UK",
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateRule(tt.rule, tt.context)
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
 
 func TestEvaluateShard(t *testing.T) {
 	t.Run("targeting key hashes to correct shard", func(t *testing.T) {
@@ -453,153 +125,6 @@ func TestEvaluateShard(t *testing.T) {
 	})
 }
 
-func TestEvaluateAllocation(t *testing.T) {
-	now := time.Now()
-	past := now.Add(-1 * time.Hour)
-	future := now.Add(1 * time.Hour)
-
-	tests := []struct {
-		name              string
-		allocation        *allocation
-		context           map[string]any
-		currentTime       time.Time
-		expectMatch       bool
-		expectedVariation string
-	}{
-		{
-			name: "allocation matches with time window",
-			allocation: &allocation{
-				Key:     "allocation1",
-				StartAt: &past,
-				EndAt:   &future,
-				Rules: []*rule{
-					{
-						Conditions: []*condition{
-							{
-								Operator:  operatorOneOf,
-								Attribute: "country",
-								Value:     []string{"US"},
-							},
-						},
-					},
-				},
-				Splits: []*split{
-					{
-						Shards: []*shard{
-							{
-								Salt: "test",
-								Ranges: []*shardRange{
-									{Start: 0, End: 8192}, // All traffic
-								},
-								TotalShards: 8192,
-							},
-						},
-						VariationKey: "variant-a",
-					},
-				},
-			},
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			currentTime:       now,
-			expectMatch:       true,
-			expectedVariation: "variant-a",
-		},
-		{
-			name: "allocation outside time window (before start)",
-			allocation: &allocation{
-				Key:     "allocation1",
-				StartAt: &future,
-				Rules: []*rule{
-					{
-						Conditions: []*condition{
-							{
-								Operator:  operatorOneOf,
-								Attribute: "country",
-								Value:     []string{"US"},
-							},
-						},
-					},
-				},
-				Splits: []*split{
-					{
-						Shards: []*shard{
-							{
-								Salt: "test",
-								Ranges: []*shardRange{
-									{Start: 0, End: 8192},
-								},
-								TotalShards: 8192,
-							},
-						},
-						VariationKey: "variant-a",
-					},
-				},
-			},
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			currentTime: now,
-			expectMatch: false,
-		},
-		{
-			name: "allocation outside time window (after end)",
-			allocation: &allocation{
-				Key:   "allocation1",
-				EndAt: &past,
-				Rules: []*rule{
-					{
-						Conditions: []*condition{
-							{
-								Operator:  operatorOneOf,
-								Attribute: "country",
-								Value:     []string{"US"},
-							},
-						},
-					},
-				},
-				Splits: []*split{
-					{
-						Shards: []*shard{
-							{
-								Salt: "test",
-								Ranges: []*shardRange{
-									{Start: 0, End: 8192},
-								},
-								TotalShards: 8192,
-							},
-						},
-						VariationKey: "variant-a",
-					},
-				},
-			},
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			currentTime: now,
-			expectMatch: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			split, matched, err := evaluateAllocation(tt.allocation, tt.context, tt.currentTime)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if matched != tt.expectMatch {
-				t.Errorf("expected match=%v, got match=%v", tt.expectMatch, matched)
-			}
-			if matched && split != nil && split.VariationKey != tt.expectedVariation {
-				t.Errorf("expected variation=%s, got variation=%s", tt.expectedVariation, split.VariationKey)
-			}
-		})
-	}
-}
-
 func TestComputeShardIndex(t *testing.T) {
 	// Test consistency: same input should always produce same output
 	key1 := computeShardIndex("salt1", "user-123", 8192)
@@ -618,6 +143,92 @@ func TestComputeShardIndex(t *testing.T) {
 	if key1 < 0 || key1 >= 8192 {
 		t.Errorf("shard index out of bounds: %d", key1)
 	}
+}
+
+func TestEvaluateSemverCondition(t *testing.T) {
+	tests := []struct {
+		name      string
+		operator  conditionOperator
+		attribute any
+		comparand any
+		want      bool
+	}{
+		{name: "equal", operator: operatorSemverEQ, attribute: "1.2.3", comparand: "1.2.3", want: true},
+		{name: "equal mismatch", operator: operatorSemverEQ, attribute: "1.2.4", comparand: "1.2.3"},
+		{name: "not equal", operator: operatorSemverNEQ, attribute: "1.2.4", comparand: "1.2.3", want: true},
+		{name: "not equal mismatch", operator: operatorSemverNEQ, attribute: "1.2.3", comparand: "1.2.3"},
+		{name: "less than", operator: operatorSemverLT, attribute: "1.9.9", comparand: "2.0.0", want: true},
+		{name: "less than mismatch", operator: operatorSemverLT, attribute: "2.0.0", comparand: "2.0.0"},
+		{name: "less than or equal", operator: operatorSemverLTE, attribute: "2.0.0", comparand: "2.0.0", want: true},
+		{name: "less than or equal mismatch", operator: operatorSemverLTE, attribute: "2.0.1", comparand: "2.0.0"},
+		{name: "greater than", operator: operatorSemverGT, attribute: "1.0.1", comparand: "1.0.0", want: true},
+		{name: "greater than mismatch", operator: operatorSemverGT, attribute: "1.0.0", comparand: "1.0.0"},
+		{name: "greater than or equal", operator: operatorSemverGTE, attribute: "1.0.0", comparand: "1.0.0", want: true},
+		{name: "greater than or equal mismatch", operator: operatorSemverGTE, attribute: "0.9.9", comparand: "1.0.0"},
+		{name: "prerelease before release", operator: operatorSemverLT, attribute: "1.0.0-beta.1", comparand: "1.0.0", want: true},
+		{name: "numeric prerelease ordering", operator: operatorSemverLT, attribute: "1.0.0-beta.2", comparand: "1.0.0-beta.11", want: true},
+		{name: "equal ignores build metadata", operator: operatorSemverEQ, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "equal ignores dotted build metadata", operator: operatorSemverEQ, attribute: "4.0.0+exp.sha.5114f85", comparand: "4.0.0", want: true},
+		{name: "not equal ignores build metadata", operator: operatorSemverNEQ, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "less than ignores build metadata", operator: operatorSemverLT, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "less than or equal ignores build metadata", operator: operatorSemverLTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "greater than ignores build metadata", operator: operatorSemverGT, attribute: "4.0.0+build.42", comparand: "4.0.0"},
+		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
+		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
+		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
+		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
+		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
+		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
+		{name: "invalid comparand", operator: operatorSemverNEQ, attribute: "1.2.3", comparand: "not-a-version"},
+		{name: "non-string comparand", operator: operatorSemverEQ, attribute: "1.2.3", comparand: 1.2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comparand, _ := tt.comparand.(string)
+			var parsedComparand *parsedSemver
+			if parsed, ok := parseSemver(comparand); ok {
+				parsedComparand = &parsed
+			}
+			condition := &condition{
+				Operator:        tt.operator,
+				Attribute:       "version",
+				Value:           tt.comparand,
+				semverComparand: parsedComparand,
+			}
+			context := map[string]any{"version": tt.attribute}
+			if got := evaluateCondition(condition, context); got != tt.want {
+				t.Errorf("evaluateCondition() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing attribute", func(t *testing.T) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
+		condition := &condition{
+			Operator:        operatorSemverEQ,
+			Attribute:       "version",
+			Value:           "1.2.3",
+			semverComparand: &comparand,
+		}
+		if evaluateCondition(condition, map[string]any{}) {
+			t.Error("expected a missing attribute not to match")
+		}
+	})
+
+	t.Run("unsupported operator", func(t *testing.T) {
+		comparand, ok := parseSemver("1.2.3")
+		if !ok {
+			t.Fatal("parseSemver failed")
+		}
+		if evaluateSemverCondition("1.2.3", &comparand, conditionOperator("UNKNOWN")) {
+			t.Error("expected an unsupported operator not to match")
+		}
+	})
 }
 
 func TestValidateVariantType(t *testing.T) {
@@ -720,21 +331,30 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 }
 
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
-	configData, err := os.ReadFile(filepath.Join("testdata", "ufc-config.json"))
+	fixtureDir := "ffe-system-test-data"
+
+	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
 	}
 	var cfg universalFlagsConfiguration
 	if err := json.Unmarshal(configData, &cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	files, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(&cfg)
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatalf("set provider: %v", err)
+	}
+	client := of.NewClient("fixture-test")
+
+	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no evaluation-case fixture files found")
+		t.Fatal("no canonical FFE evaluation-case fixtures found (initialize them with `git submodule update --init --recursive`)")
 	}
 
 	for _, file := range files {
@@ -749,8 +369,9 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+					Value     any    `json:"value"`
+					Reason    string `json:"reason"`
+					ErrorCode string `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -768,13 +389,26 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx, time.Now())
+					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now())
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					if tc.Result.ErrorCode != "" {
+						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
+						if tc.TargetingKey != nil {
+							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
+						}
+						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
+						if err == nil {
+							t.Error("expected SDK evaluation error, got nil")
+						}
+						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						}
 					}
 				})
 			}

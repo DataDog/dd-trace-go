@@ -60,6 +60,7 @@ lint_shell_files() {
 lint_misc_files() {
   message "Running miscellaneous linters..."
   run "go run ./scripts/check_copyright.go"
+  run "go run ./scripts/check_codeowners.go"
   run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile profiler/internal/fastdelta/Makefile"
 }
 

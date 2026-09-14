@@ -7,7 +7,8 @@ package pproflite_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,7 +19,7 @@ import (
 )
 
 func TestDecoderEncoder(t *testing.T) {
-	data, err := ioutil.ReadFile(filepath.Join("testdata", "heap.pprof"))
+	data, err := os.ReadFile(filepath.Join("testdata", "heap.pprof"))
 	require.NoError(t, err)
 
 	inProf, err := profile.ParseData(data)
@@ -61,11 +62,11 @@ func TestDecoderEncoder(t *testing.T) {
 }
 
 func BenchmarkEncodeDecode(b *testing.B) {
-	data, err := ioutil.ReadFile(filepath.Join("testdata", "heap.pprof"))
+	data, err := os.ReadFile(filepath.Join("testdata", "heap.pprof"))
 	require.NoError(b, err)
 
 	d := pproflite.NewDecoder(data)
-	e := pproflite.NewEncoder(ioutil.Discard)
+	e := pproflite.NewEncoder(io.Discard)
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.SetBytes(int64(len(data)))

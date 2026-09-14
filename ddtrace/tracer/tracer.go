@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
@@ -41,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -49,19 +51,20 @@ import (
 )
 
 type TracerConf struct { //nolint:revive
-	CanComputeStats      bool
-	CanDropP0s           bool
-	DebugAbandonedSpans  bool
-	Disabled             bool
-	PartialFlush         bool
-	PartialFlushMinSpans int
-	PeerServiceDefaults  bool
-	PeerServiceMappings  map[string]string
-	EnvTag               string
-	VersionTag           string
-	ServiceTag           string
-	TracingAsTransport   bool
-	isLambdaFunction     bool
+	CanComputeStats        bool
+	CanDropP0s             bool
+	DebugAbandonedSpans    bool
+	Disabled               bool
+	PartialFlush           bool
+	PartialFlushMinSpans   int
+	PeerServiceDefaults    bool
+	PeerServiceMappings    map[string]string
+	EnvTag                 string
+	VersionTag             string
+	ServiceTag             string
+	TracingAsTransport     bool
+	isLambdaFunction       bool
+	OTLPSpanMetricsEnabled bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -305,11 +308,13 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	t.startAppSec()
 
-	if t.config.llmobs.Enabled {
-		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+	if t.config.internalConfig.LLMObsEnabled() {
+		cfg, resolveErr := buildLLMObsConfig(t.config)
+		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
+
 	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
@@ -325,6 +330,49 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
+// resolving agentless mode against the agent's advertised features. Callers
+// must only invoke this when c.internalConfig.LLMObsEnabled() is true.
+func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
+	af := c.agent.load()
+	var resolvedAgentless bool
+	if c.llmobsTestBaseURL != "" {
+		// TestBaseURL bypasses agent/agentless selection and validation entirely.
+		resolvedAgentless = false
+	} else {
+		var err error
+		resolvedAgentless, err = llmobs.ResolveAgentlessEnabled(
+			c.internalConfig.LLMObsAgentlessEnabled(),
+			af.evpProxyV2,
+		)
+		if err != nil {
+			return llmobsconfig.Config{}, err
+		}
+	}
+	cfg := llmobsconfig.Config{
+		Enabled:          true,
+		MLApp:            c.internalConfig.LLMObsMLApp(),
+		AgentlessEnabled: resolvedAgentless,
+		ProjectName:      c.internalConfig.LLMObsProjectName(),
+		TracerConfig: llmobsconfig.TracerConfig{
+			DDTags:     c.internalConfig.GlobalTags(),
+			Env:        c.internalConfig.Env(),
+			Service:    c.internalConfig.ServiceName(),
+			Version:    c.internalConfig.Version(),
+			AgentURL:   c.internalConfig.AgentURL(),
+			APIKey:     c.internalConfig.APIKey(),
+			APPKey:     c.internalConfig.AppKey(),
+			HTTPClient: c.httpClient,
+			Site:       c.internalConfig.Site(),
+		},
+		TestBaseURL: c.llmobsTestBaseURL,
+	}
+	if c.llmobsHTTPClient != nil {
+		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
+	}
+	return cfg, nil
 }
 
 // startAppSec builds the remote-config client config and AppSec start options,
@@ -378,12 +426,28 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
+		// Not reported to Error Tracking: on Linux, memfd_create can fail
+		// because the runtime environment denies it (or sealing) via seccomp,
+		// kernel capabilities, or resource limits. That's a customer-environment
+		// condition, not an actionable SDK defect, and reporting it would create
+		// fleet-wide false positives for hardened deployments (e.g. gVisor,
+		// locked-down seccomp profiles).
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to publish the OTEL process context: %s", err.Error())
+		// Unlike the memfd site above, this stays reported: PublishProcessContext's
+		// error path is not exclusively an environment-hardening condition.
+		// otelcontextmapping_linux.go's updateOtelProcessContextMapping can return
+		// ErrPayloadTooLarge on a second-or-later Start() in the same process (e.g.
+		// Stop() then Start() with a longer ServiceName/Env/Version/ContainerID) if
+		// the new payload outgrows the mapping sized on the first call — a genuine
+		// dd-trace-go sizing bug across restarts within one process, not seccomp or
+		// kernel-capability denial. proto.Marshal failing in PublishProcessContext
+		// itself would likewise be our own defect. Silencing this site would also
+		// hide those, so it's kept distinct from the memfd sibling deliberately.
+		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }
 
@@ -514,9 +578,14 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
-	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
-	if c.internalConfig.OTLPExportMode() {
+	var sc statsConcentrator
+	if c.internalConfig.OTLPSpanMetricsEnabled() {
+		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
+		sc = newOTLPMetricsConcentrator(c, statsd)
+	} else if c.internalConfig.OTLPExportMode() {
 		sc = &noopConcentrator{}
+	} else {
+		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
 	}
 	t = &tracer{
 		config:           c,
@@ -636,8 +705,25 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
 // updates the dynamic agent capabilities. Static fields that are baked into
-// components at startup (transport URL, statsd address, obfuscator config, etc.)
-// are preserved from the current snapshot so a poll can never change them.
+// components at startup (statsd address, obfuscator config, etc.) are
+// preserved from the current snapshot so a poll can never change them.
+//
+// The trace-protocol decision is NOT part of that snapshot: it lives in
+// config.protocolState (see trace_protocol_state.go), a monotone lattice that
+// only ever moves protoUnknown -> protoV1 -> protoV04 (terminal). A poll's
+// evidence here and a rejected v1 send's evidence (see
+// (*agentTraceWriter).downgradeAfterRejectedSend) both feed the same state
+// through advanceTraceProtocolState, so however the poll goroutine and a send
+// goroutine interleave, they converge on the same result — there is no
+// streak or hysteresis to reason about.
+//
+// This also means re-upgrading to v1 after a downgrade requires a process
+// restart, not just a healthy poll. A poll-count-based hysteresis was tried
+// and rejected: /info polls and trace sends are independent requests that a
+// load-balanced fleet can route to different backends, so no number of
+// consecutive positive polls proves anything about where the next send
+// lands. Sticking to v0.4 is the fail-safe direction, since it is
+// universally accepted; see doc.go for the resulting trade-off.
 func (t *tracer) refreshAgentFeatures() {
 	ctx, cancel := gocontext.WithCancel(gocontext.Background())
 	defer cancel()
@@ -650,32 +736,58 @@ func (t *tracer) refreshAgentFeatures() {
 		}
 	}()
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
-	if err != nil {
-		if !errors.Is(err, errAgentFeaturesNotSupported) {
-			log.Debug("agent info poll failed: %s", err.Error())
-		}
-		return // keep last-known-good
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+		log.Debug("agent info poll failed: %s", err.Error())
+		// Keep last-known-good; a network or decode error is never evidence that
+		// v1 became unavailable.
+		return
 	}
-	// Atomically graft the startup-frozen static fields from the current
-	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
-	// loop in case a concurrent store races this write. fn must be a pure
-	// transform — work on a local copy f so retries start fresh.
-	t.config.agent.update(func(current agentFeatures) agentFeatures {
-		// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
-		// must be overwritten from current or cloned below to avoid shared mutable
-		// backing storage across CAS retries.
-		f := newFeatures
-		f.v1ProtocolAvailable = current.v1ProtocolAvailable
-		f.StatsdPort = current.StatsdPort
-		f.evpProxyV2 = current.evpProxyV2
-		f.metaStructAvailable = current.metaStructAvailable
-		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
-		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
-		f.defaultEnv = current.defaultEnv
-		f.reachable = current.reachable
-		f.hasTelemetryProxy = current.hasTelemetryProxy
-		return f
-	})
+	if err != nil {
+		// errAgentFeaturesNotSupported means the agent returned 404 on /info,
+		// i.e. it doesn't support /info at all. Unlike a generic fetch error,
+		// this IS evidence v1 is unavailable: /v1.0/traces support postdates
+		// /info support, so an agent without /info cannot serve v1 either.
+		// Leave every other dynamic field at its last-known-good value — we
+		// have no fresh snapshot to refresh them from.
+		t.config.advanceTraceProtocolState(protoV04)
+	} else {
+		if newFeatures.v1TracesAdvertised {
+			t.config.advanceTraceProtocolState(protoV1)
+		} else {
+			t.config.advanceTraceProtocolState(protoV04)
+		}
+		// Atomically graft the startup-frozen static fields from the current
+		// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+		// loop in case a concurrent store races this write. fn must be a pure
+		// transform — work on a local copy f so retries start fresh.
+		t.config.agent.update(func(current agentFeatures) agentFeatures {
+			// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
+			// must be overwritten from current or cloned below to avoid shared mutable
+			// backing storage across CAS retries.
+			f := newFeatures
+			f.StatsdPort = current.StatsdPort
+			f.evpProxyV2 = current.evpProxyV2
+			f.metaStructAvailable = current.metaStructAvailable
+			f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
+			f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
+			f.defaultEnv = current.defaultEnv
+			f.reachable = current.reachable
+			f.hasTelemetryProxy = current.hasTelemetryProxy
+			return f
+		})
+	}
+	proto := t.config.effectiveTraceProtocol()
+	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
+		protoStr := internalconfig.TraceProtocolVersionString(proto)
+		log.Info("trace protocol changed to %s", protoStr)
+		t.statsd.Incr("datadog.tracer.trace_protocol_changed", []string{"to:" + protoStr}, 1)
+	}
+	// Outside the agent.update() graft above, whose transform must stay pure.
+	// The agent version is not grafted, so an agent upgraded or rolled back
+	// under a running tracer can engage or lift the v1.0 stats override here;
+	// surface that transition rather than letting it change behaviour
+	// silently.
+	t.config.surfaceStatsOverride(t.config.agent.load())
 }
 
 // pollAgentInfo polls the agent /info endpoint at the given interval until the
@@ -726,14 +838,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			spansToRelease := trace.releasableSpans()
-			t.sampleChunk(trace)
-			if len(trace.spans) > 0 {
-				t.traceWriter.add(trace.spans)
-			}
-			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+			t.processOutChunk(trace)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
+			t.statsd.Gauge("datadog.tracer.queue.length", float64(len(t.out)), nil, 1)
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
@@ -746,12 +854,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					spansToRelease := trace.releasableSpans()
-					t.sampleChunk(trace)
-					if len(trace.spans) > 0 {
-						t.traceWriter.add(trace.spans)
-					}
-					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+					t.processOutChunk(trace)
 				default:
 					break loop
 				}
@@ -785,6 +888,7 @@ type chunk struct {
 	spans          []*Span
 	willSend       bool // willSend indicates whether the trace will be sent to the agent.
 	spansToRelease []*Span
+	filterRejected bool
 }
 
 func (c *chunk) releasableSpans() []*Span {
@@ -792,6 +896,19 @@ func (c *chunk) releasableSpans() []*Span {
 		return c.spansToRelease
 	}
 	return c.spans
+}
+
+func (t *tracer) processOutChunk(trace *chunk) {
+	spansToRelease := trace.releasableSpans()
+	if trace.filterRejected {
+		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		return
+	}
+	t.sampleChunk(trace)
+	if len(trace.spans) > 0 {
+		t.traceWriter.add(trace.spans)
+	}
+	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -836,6 +953,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
+		if !trace.filterRejected {
+			// Filter-rejected chunks are already accounted for as reason:trace_filter
+			// in emitFilterDrop; counting them again here would double-count the drop.
+			t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:queue_full"}, 1)
+			t.statsd.Count("datadog.tracer.spans_dropped", int64(len(trace.spans)), []string{"reason:queue_full"}, 1)
+		}
 		// Do NOT call releaseSpans here: pushChunk is called from within
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
@@ -1009,6 +1132,10 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Apply the pprof labels before t.sample: a custom Sampler receives the span
+	// and may publish it to another goroutine, after which writing span fields
+	// here would race with that goroutine (e.g. SetTag or Finish).
+	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
@@ -1017,11 +1144,6 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
-	}
-	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
-		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
-	} else {
-		span.pprofCtxRestore = nil
 	}
 	if cSnap.DebugAbandonedSpans {
 		select {
@@ -1047,29 +1169,33 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
-// endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally, this func informs the profiler how
-// many times each endpoint is called.
-// +checklocksignore — Initialization time, called from StartSpan before span is shared.
+// endpoint filtering features, and the trace correlation label for AppSec.
+// When span finishes, any pprof labels found in ctx are restored. Additionally,
+// this func informs the profiler how many times each endpoint is called.
+// +checklocksignore — Initialization time, called from StartSpan before the span
+// is handed to the sampler, so it is not yet shared with other goroutines.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
+	// The "trace id" pprof label is AppSec-only. Profiling features retain their
+	// own labels without adding trace correlation cardinality.
+	appsecCorrelation := appsec.Enabled()
+	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
+		// No feature needs pprof labels; nothing to restore when the span finishes.
+		span.pprofCtxRestore = nil
+		return
+	}
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
-	localRootSpan := span.Root()
-	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
-		spanID := localRootSpan.getSpanID()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
-	}
+	labels := make([]string, 0, 3*2)
 	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if snap.ProfilerEndpoints && localRootSpan != nil {
-		resource, piiSafe := localRootSpan.getResourceWithPIISafe()
+	if root := span.Root(); snap.ProfilerEndpoints && root != nil {
+		resource, piiSafe := root.getResourceWithPIISafe()
 		if piiSafe {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
-			if span == localRootSpan {
+			if span == root {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
@@ -1077,12 +1203,27 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 			}
 		}
 	}
-	if len(labels) > 0 {
-		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
-		span.pprofCtxRestore = ctx
-		span.pprofCtxActive = pprofActive
-		pprof.SetGoroutineLabels(pprofActive)
+	if appsecCorrelation {
+		// newSpanContext already finalized the hex cache, so this is a pure read.
+		labels = append(labels, traceprof.TraceID, span.context.traceID.HexEncoded())
 	}
+	if len(labels) == 0 {
+		// Every enabled feature declined to label this span, so there is nothing
+		// to restore when it finishes.
+		span.pprofCtxRestore = nil
+		return
+	}
+	pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
+	span.pprofCtxRestore = ctx
+	span.pprofCtxActive = pprofActive
+	pprof.SetGoroutineLabels(pprofActive)
+}
+
+// hasEndpointLabel reports whether ctx already carries the profiler's endpoint
+// label, i.e. whether endpoint profiling labelled the span when it started.
+func hasEndpointLabel(ctx gocontext.Context) bool {
+	_, ok := pprof.Label(ctx, traceprof.TraceEndpoint)
+	return ok
 }
 
 // spanResourcePIISafe returns true if s.resource can be considered to not
@@ -1211,36 +1352,64 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
+	// canDropP0s is a pure alias of canComputeStats (see its doc comment);
+	// compute once so both fields, and both agent.load() calls the two
+	// methods would otherwise make, collapse into one.
+	canComputeStats := t.config.canComputeStats()
 	return TracerConf{
-		CanComputeStats:      t.config.canComputeStats(),
-		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.internalConfig.TracingEnabled(),
-		PartialFlush:         pfEnabled,
-		PartialFlushMinSpans: pfMin,
-		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
-		EnvTag:               t.config.internalConfig.Env(),
-		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.internalConfig.ServiceName(),
-		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
+		CanComputeStats:        canComputeStats,
+		CanDropP0s:             canComputeStats,
+		DebugAbandonedSpans:    t.config.internalConfig.DebugAbandonedSpans(),
+		Disabled:               !t.config.internalConfig.TracingEnabled(),
+		PartialFlush:           pfEnabled,
+		PartialFlushMinSpans:   pfMin,
+		PeerServiceDefaults:    t.config.internalConfig.PeerServiceDefaultsEnabled(),
+		PeerServiceMappings:    t.config.internalConfig.PeerServiceMappings(),
+		EnvTag:                 t.config.internalConfig.Env(),
+		VersionTag:             t.config.internalConfig.Version(),
+		ServiceTag:             t.config.internalConfig.ServiceName(),
+		TracingAsTransport:     t.config.tracingAsTransport,
+		isLambdaFunction:       t.config.internalConfig.IsLambdaFunction(),
+		OTLPSpanMetricsEnabled: t.config.internalConfig.OTLPSpanMetricsEnabled(),
 	}
 }
 
-func (t *tracer) submit(s *Span) {
-	if !t.config.internalConfig.TracingEnabled() {
+// +checklocks:span.mu
+// +checklocks:trace.mu
+func (t *tracer) computeSpanStats(trace *trace, span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
+		if span == trace.root {
+			trace.filterReject = false
+		}
 		return
 	}
-	// we have an active tracer
-	if !t.config.canDropP0s() {
+	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	if span == trace.root {
+		trace.filterReject = agentFeatures.traceFilters != nil && agentFeatures.traceFilters.reject(span)
+	}
+}
+
+// +checklocks:span.mu
+func (t *tracer) computeOversizedSpanStats(span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	// A capable agent and OTLP span metrics are independent paths to stats
+	// computation: don't let the agent-capability check gate out OTLP-only mode.
+	if !t.config.internalConfig.TracingEnabled() ||
+		(!t.config.internalConfig.OTLPSpanMetricsEnabled() && !t.config.canComputeStatsWithAgent(agentFeatures)) {
 		return
 	}
-	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-	if !shouldCalc {
-		return
+	// The oversized-trace path sends the stat span immediately and never
+	// assembles a chunk, so there is no need to retain it on the span.
+	statSpan, _ := t.stats.newTracerStatSpan(span, t.obfuscator)
+	if statSpan != nil {
+		t.stats.trySendSpan(statSpan)
 	}
-	t.stats.trySendSpan(statSpan)
 }
 
 func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
@@ -1252,8 +1421,29 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished spans' statSpan during chunk assembly.
 func (t *tracer) submitChunk(c *chunk) {
+	if c.filterRejected {
+		t.emitFilterDrop(len(c.spans))
+	} else {
+		stats := make([]*tracerStatSpan, 0, len(c.spans))
+		for _, span := range c.spans {
+			if span != nil && span.statSpan != nil {
+				stats = append(stats, span.statSpan)
+			}
+		}
+		if len(stats) > 0 {
+			t.stats.trySendSpans(stats)
+		}
+	}
 	t.pushChunk(c)
+}
+
+func (t *tracer) emitFilterDrop(spans int) {
+	t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:trace_filter"}, 1)
+	t.statsd.Count("datadog.tracer.spans_dropped", int64(spans), []string{"reason:trace_filter"}, 1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.traces_dropped", []string{"reason:trace_filter"}).Submit(1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.spans_dropped", []string{"reason:trace_filter"}).Submit(float64(spans))
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

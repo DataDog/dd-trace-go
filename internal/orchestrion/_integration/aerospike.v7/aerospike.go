@@ -11,7 +11,6 @@ import (
 	"context"
 	"net"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,11 +23,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
-type TestCase struct {
-	client *as.Client
-}
-
-func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+// newClient dials the Aerospike container, retrying until it is ready.
+func newClient(t *testing.T) *as.Client {
+	t.Helper()
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	_, addr := containers.StartAerospikeTestContainer(t)
@@ -38,19 +35,47 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
+	var client *as.Client
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxElapsedTime = 2 * time.Minute
 	require.NoError(t,
 		backoff.Retry(
 			func() error {
 				var aerr as.Error
-				tc.client, aerr = newClientReturn(host, port)
+				client, aerr = as.NewClient(host, port)
 				return aerr
 			},
 			bo,
 		),
 	)
-	t.Cleanup(func() { tc.client.Close() })
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
+func aerospikeChild(resource string) *trace.Trace {
+	return &trace.Trace{
+		Tags: map[string]any{
+			"name":     "aerospike.command",
+			"service":  "aerospike",
+			"resource": resource,
+			"type":     "aerospike",
+		},
+		Meta: map[string]string{
+			"component": "aerospike/aerospike-client-go.v7",
+			"span.kind": "client",
+			"db.system": "aerospike",
+		},
+	}
+}
+
+// TestCase covers the common case: a context in scope on the calling function,
+// so Orchestrion parents the Put and Get spans under test.root.
+type TestCase struct {
+	client *as.Client
+}
+
+func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
@@ -68,231 +93,105 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	require.NotNil(t, record)
 }
 
-// These helpers type-check constructor shapes that must continue returning
-// *as.Client after Orchestrion instrumentation.
-func newClientReturn(host string, port int) (*as.Client, as.Error) {
-	return as.NewClient(host, port)
-}
-
-func newClientAssign(host string, port int) (*as.Client, as.Error) {
-	var client *as.Client
-	var err as.Error
-	client, err = as.NewClient(host, port)
-	return client, err
-}
-
-func newClientArgument(host string, port int) (*as.Client, as.Error) {
-	return acceptClient(as.NewClient(host, port))
-}
-
-func acceptClient(client *as.Client, err as.Error) (*as.Client, as.Error) {
-	return client, err
-}
-
-var (
-	_ = newClientAssign
-	_ = newClientArgument
-)
-
-// withContexter is satisfied by *as.Client when built with Orchestrion, which
-// injects a WithContext method via the struct-definition aspect. The interface
-// lets the test compile and run without Orchestrion (the assertion simply
-// fails and the goroutine falls back to unparented spans).
-type withContexter interface {
-	WithContext(ctx context.Context) *as.Client
-}
-
-// applyCtx calls client.WithContext(ctx) when the injected method is present
-// (Orchestrion build), storing ctx in the goroutine-local map so the next
-// instrumented method call on this goroutine creates a child span. Without
-// Orchestrion the client is returned unchanged.
-func applyCtx(client *as.Client, ctx context.Context) *as.Client {
-	if wc, ok := any(client).(withContexter); ok {
-		return wc.WithContext(ctx)
-	}
-	return client
-}
-
-// TestCaseConcurrent verifies that concurrent calls on a shared *as.Client
-// are each instrumented with a span that is correctly parented under test.root.
-// Each goroutine calls a different operation (Put / Get / Delete) on its own
-// key, making the three expected child spans uniquely matchable by resource name.
-type TestCaseConcurrent struct {
-	client *as.Client
-	putKey *as.Key // written by goroutine 0
-	getKey *as.Key // pre-populated in Setup; read by goroutine 1
-	delKey *as.Key // pre-populated in Setup; deleted by goroutine 2
-}
-
-func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
-	containers.SkipIfProviderIsNotHealthy(t)
-
-	_, addr := containers.StartAerospikeTestContainer(t)
-
-	host, portStr, err := net.SplitHostPort(addr)
-	require.NoError(t, err)
-	port, err := strconv.Atoi(portStr)
-	require.NoError(t, err)
-
-	bo2 := backoff.NewExponentialBackOff()
-	bo2.MaxElapsedTime = 2 * time.Minute
-	require.NoError(t,
-		backoff.Retry(
-			func() error {
-				var aerr as.Error
-				tc.client, aerr = newClientReturn(host, port)
-				return aerr
-			},
-			bo2,
-		),
-	)
-	t.Cleanup(func() { tc.client.Close() })
-
-	tc.putKey, err = as.NewKey("test", "testset", "concurrent-put")
-	require.NoError(t, err)
-	tc.getKey, err = as.NewKey("test", "testset", "concurrent-get")
-	require.NoError(t, err)
-	tc.delKey, err = as.NewKey("test", "testset", "concurrent-del")
-	require.NoError(t, err)
-
-	// Pre-populate getKey and delKey before the tracer starts so these Puts
-	// don't generate spans of their own.
-	require.NoError(t, tc.client.Put(nil, tc.getKey, as.BinMap{"value": "get"}))
-	require.NoError(t, tc.client.Put(nil, tc.delKey, as.BinMap{"value": "del"}))
-}
-
-func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
-	defer span.Finish()
-
-	type result struct{ err as.Error }
-	results := make([]result, 3)
-	var wg sync.WaitGroup
-	wg.Add(3)
-
-	// applyCtx(tc.client, ctx) calls client.WithContext(ctx) when Orchestrion
-	// has injected it, storing ctx in the per-goroutine map so the method call
-	// that follows creates a child span of test.root.
-	go func() {
-		defer wg.Done()
-		results[0].err = applyCtx(tc.client, ctx).Put(nil, tc.putKey, as.BinMap{"value": "put"})
-	}()
-	go func() { defer wg.Done(); _, results[1].err = applyCtx(tc.client, ctx).Get(nil, tc.getKey) }()
-	go func() { defer wg.Done(); _, results[2].err = applyCtx(tc.client, ctx).Delete(nil, tc.delKey) }()
-
-	wg.Wait()
-	for _, r := range results {
-		require.NoError(t, r.err)
-	}
-}
-
-func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
-	child := func(resource string) *trace.Trace {
-		return &trace.Trace{
-			Tags: map[string]any{
-				"name":     "aerospike.command",
-				"service":  "aerospike",
-				"resource": resource,
-				"type":     "aerospike",
-			},
-			Meta: map[string]string{
-				"component": "aerospike/aerospike-client-go.v7",
-				"span.kind": "client",
-				"db.system": "aerospike",
-			},
-		}
-	}
-	// Each goroutine uses a different operation so the three child spans are
-	// uniquely matchable by resource name — no two expected entries can resolve
-	// to the same actual span.
-	return trace.Traces{
-		{
-			Tags: map[string]any{"name": "test.root"},
-			Children: trace.Traces{
-				child("Put"),
-				child("Get"),
-				child("Delete"),
-			},
-		},
-	}
-}
-
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
-			Tags: map[string]any{
-				"name": "test.root",
-			},
-			Children: trace.Traces{
-				{
-					Tags: map[string]any{
-						"name":     "aerospike.command",
-						"service":  "aerospike",
-						"resource": "Put",
-						"type":     "aerospike",
-					},
-					Meta: map[string]string{
-						"component": "aerospike/aerospike-client-go.v7",
-						"span.kind": "client",
-						"db.system": "aerospike",
-					},
-				},
-				{
-					Tags: map[string]any{
-						"name":     "aerospike.command",
-						"service":  "aerospike",
-						"resource": "Get",
-						"type":     "aerospike",
-					},
-					Meta: map[string]string{
-						"component": "aerospike/aerospike-client-go.v7",
-						"span.kind": "client",
-						"db.system": "aerospike",
-					},
-				},
-			},
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("Put"), aerospikeChild("Get")},
 		},
 	}
 }
 
-// TestCaseScanAll verifies that a direct ScanAll call produces exactly one span
-// named "ScanAll".  In an Orchestrion build, ScanAll delegates internally to
-// ScanPartitions (also instrumented); the re-entrancy guard must suppress the
-// inner span so only the outer "ScanAll" span is reported.
+// TestCaseGoroutine verifies context propagation when the aerospike call happens
+// on a goroutine that received a context.Context as a parameter. This
+// distinguishes call-site context injection (which works across goroutines) from
+// GLS-based propagation (which does not cross goroutine boundaries): the parent
+// span is started on the test goroutine, so it is absent from the spawned
+// goroutine's GLS, and correct parenting can only come from the injected context.
+type TestCaseGoroutine struct {
+	client *as.Client
+}
+
+func (tc *TestCaseGoroutine) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
+}
+
+func (tc *TestCaseGoroutine) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	key, err := as.NewKey("test", "testset", "orchestrion-goroutine-key")
+	require.NoError(t, err)
+
+	errCh := make(chan as.Error, 1)
+	go putInGoroutine(ctx, tc.client, key, errCh)
+	require.NoError(t, <-errCh)
+}
+
+// putInGoroutine calls client.Put with a context.Context in scope so the
+// instrumentation threads it into the span. It runs on a goroutine that does not
+// hold the parent span in its GLS, so correct parenting proves the context
+// propagated through the surrounding scope rather than GLS. The error goes back
+// to the test goroutine, since require must not call FailNow from here.
+func putInGoroutine(ctx context.Context, client *as.Client, key *as.Key, errCh chan<- as.Error) {
+	_ = ctx
+	errCh <- client.Put(nil, key, as.BinMap{"value": "hello"})
+}
+
+func (tc *TestCaseGoroutine) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("Put")},
+		},
+	}
+}
+
+// TestCaseValueReceiver covers calling through a dereferenced client. Go only
+// permits these calls because the value is addressable, so the aspect can reach
+// them, but the receiver resolves to as.Client rather than *as.Client.
+type TestCaseValueReceiver struct {
+	client *as.Client
+}
+
+func (tc *TestCaseValueReceiver) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
+}
+
+func (tc *TestCaseValueReceiver) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	key, err := as.NewKey("test", "testset", "orchestrion-value-key")
+	require.NoError(t, err)
+
+	client := *tc.client
+	require.NoError(t, client.Put(nil, key, as.BinMap{"value": "hello"}))
+}
+
+func (tc *TestCaseValueReceiver) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("Put")},
+		},
+	}
+}
+
+// TestCaseScanAll checks that ScanAll yields exactly one span: its internal
+// delegation to ScanPartitions runs on the raw client, which is not instrumented.
 type TestCaseScanAll struct {
 	client *as.Client
 }
 
-func (tc *TestCaseScanAll) Setup(ctx context.Context, t *testing.T) {
-	containers.SkipIfProviderIsNotHealthy(t)
-
-	_, addr := containers.StartAerospikeTestContainer(t)
-
-	host, portStr, err := net.SplitHostPort(addr)
-	require.NoError(t, err)
-	port, err := strconv.Atoi(portStr)
-	require.NoError(t, err)
-
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxElapsedTime = 2 * time.Minute
-	require.NoError(t,
-		backoff.Retry(
-			func() error {
-				var aerr as.Error
-				tc.client, aerr = newClientReturn(host, port)
-				return aerr
-			},
-			bo,
-		),
-	)
-	t.Cleanup(func() { tc.client.Close() })
+func (tc *TestCaseScanAll) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
 }
 
 func (tc *TestCaseScanAll) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	_ = ctx // WithContext pattern not used here; GLS provides parenting.
 	rs, err := tc.client.ScanAll(nil, "test", "testset")
 	require.NoError(t, err)
 	if rs != nil {
@@ -303,63 +202,26 @@ func (tc *TestCaseScanAll) Run(ctx context.Context, t *testing.T) {
 func (tc *TestCaseScanAll) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
-			Tags: map[string]any{"name": "test.root"},
-			Children: trace.Traces{
-				{
-					Tags: map[string]any{
-						"name":     "aerospike.command",
-						"service":  "aerospike",
-						"resource": "ScanAll",
-						"type":     "aerospike",
-					},
-					Meta: map[string]string{
-						"component": "aerospike/aerospike-client-go.v7",
-						"span.kind": "client",
-						"db.system": "aerospike",
-					},
-				},
-			},
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("ScanAll")},
 		},
 	}
 }
 
-// TestCaseQuery verifies that a direct Query call produces exactly one span
-// named "Query".  Query delegates internally to QueryPartitions; the guard must
-// suppress the inner span.
+// TestCaseQuery checks that Query yields exactly one span: its internal
+// delegation to QueryPartitions runs on the raw client, which is not instrumented.
 type TestCaseQuery struct {
 	client *as.Client
 }
 
-func (tc *TestCaseQuery) Setup(ctx context.Context, t *testing.T) {
-	containers.SkipIfProviderIsNotHealthy(t)
-
-	_, addr := containers.StartAerospikeTestContainer(t)
-
-	host, portStr, err := net.SplitHostPort(addr)
-	require.NoError(t, err)
-	port, err := strconv.Atoi(portStr)
-	require.NoError(t, err)
-
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxElapsedTime = 2 * time.Minute
-	require.NoError(t,
-		backoff.Retry(
-			func() error {
-				var aerr as.Error
-				tc.client, aerr = newClientReturn(host, port)
-				return aerr
-			},
-			bo,
-		),
-	)
-	t.Cleanup(func() { tc.client.Close() })
+func (tc *TestCaseQuery) Setup(_ context.Context, t *testing.T) {
+	tc.client = newClient(t)
 }
 
 func (tc *TestCaseQuery) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	_ = ctx
 	stmt := as.NewStatement("test", "testset")
 	rs, err := tc.client.Query(nil, stmt)
 	require.NoError(t, err)
@@ -371,22 +233,8 @@ func (tc *TestCaseQuery) Run(ctx context.Context, t *testing.T) {
 func (tc *TestCaseQuery) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
-			Tags: map[string]any{"name": "test.root"},
-			Children: trace.Traces{
-				{
-					Tags: map[string]any{
-						"name":     "aerospike.command",
-						"service":  "aerospike",
-						"resource": "Query",
-						"type":     "aerospike",
-					},
-					Meta: map[string]string{
-						"component": "aerospike/aerospike-client-go.v7",
-						"span.kind": "client",
-						"db.system": "aerospike",
-					},
-				},
-			},
+			Tags:     map[string]any{"name": "test.root"},
+			Children: trace.Traces{aerospikeChild("Query")},
 		},
 	}
 }

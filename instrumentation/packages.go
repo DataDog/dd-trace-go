@@ -238,6 +238,12 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
 	},
 	PackageGCPPubsubV2: {
@@ -255,6 +261,12 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName(""),
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
 			},
 		},
 	},

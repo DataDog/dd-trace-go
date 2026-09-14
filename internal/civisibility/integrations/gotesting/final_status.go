@@ -11,7 +11,41 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
+
+type retryOutcomeAccumulator struct {
+	passed  int
+	skipped int
+	failed  int
+}
+
+func (o *retryOutcomeAccumulator) observe(failed, skipped bool) {
+	switch {
+	case failed:
+		o.failed++
+	case skipped:
+		o.skipped++
+	default:
+		o.passed++
+	}
+}
+
+func (o retryOutcomeAccumulator) anyPassed() bool {
+	return o.passed > 0
+}
+
+func (o retryOutcomeAccumulator) anyFailed() bool {
+	return o.failed > 0
+}
+
+func (o retryOutcomeAccumulator) allAttemptsPassed() bool {
+	return o.failed == 0 && o.skipped == 0
+}
+
+func (o retryOutcomeAccumulator) allRetriesFailed() bool {
+	return o.passed == 0 && o.skipped == 0
+}
 
 // calculateFinalStatus computes the test.final_status value based on the overall test outcome.
 // Priority order: quarantined/disabled -> ATF fail (any fail) -> pass (any pass wins) -> fail -> skip -> fail.
@@ -36,10 +70,19 @@ func calculateFinalStatus(anyPassed, anyFailed, currentIsSkip, isQuarantined, is
 	return constants.TestStatusFail
 }
 
-// computeAdjustedRetryCount mirrors postAdjustRetryCount logic to determine the retry count
-// for the initial execution (before the first run completes). This allows us to predict
-// whether more retries will happen.
+// computeAdjustedRetryCount selects and caches the retry count from the initial
+// execution so span finalization and retry scheduling use the same duration bucket.
 func computeAdjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration) int64 {
+	if execMeta.initialRetryCountSet {
+		return execMeta.initialRetryCount
+	}
+	retryCount := adjustedRetryCount(execMeta, duration)
+	execMeta.initialRetryCount = retryCount
+	execMeta.initialRetryCountSet = true
+	return retryCount
+}
+
+func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration) int64 {
 	settings := integrations.GetSettings()
 
 	// Attempt To Fix retries are always set to the configured value.
@@ -48,17 +91,12 @@ func computeAdjustedRetryCount(execMeta *testExecutionMetadata, duration time.Du
 	}
 
 	// Early Flake Detection adjusts the retry count based on test duration.
-	if isAnEfdExecution(execMeta) {
-		slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-		secs := duration.Seconds()
-		if secs < 5 {
-			return int64(slowTestRetries.FiveS)
-		} else if secs < 10 {
-			return int64(slowTestRetries.TenS)
-		} else if secs < 30 {
-			return int64(slowTestRetries.ThirtyS)
-		} else if duration.Minutes() < 5 {
-			return int64(slowTestRetries.FiveM)
+	if usesEfdRetrySemantics(execMeta) {
+		if retryCount, ok := efdRetryCountForDuration(settings, duration); ok {
+			return retryCount
+		}
+		if execMeta.isFlakyTestRetriesEnabled {
+			execMeta.efdFellBackToFlakyRetries = true
 		}
 	}
 
@@ -71,6 +109,48 @@ func computeAdjustedRetryCount(execMeta *testExecutionMetadata, duration time.Du
 	return 0
 }
 
+func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
+	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
+	secs := duration.Seconds()
+	if secs < 5 {
+		return int64(slowTestRetries.FiveS), true
+	} else if secs < 10 {
+		return int64(slowTestRetries.TenS), true
+	} else if secs < 30 {
+		return int64(slowTestRetries.ThirtyS), true
+	} else if duration.Minutes() < 5 {
+		return int64(slowTestRetries.FiveM), true
+	}
+	return 0, false
+}
+
+func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {
+	if settings == nil {
+		return false
+	}
+	retries := settings.EarlyFlakeDetection.SlowTestRetries
+	return retries.FiveS > 0 || retries.TenS > 0 || retries.ThirtyS > 0 || retries.FiveM > 0
+}
+
+// retryExecutionIsLast reports whether the current retry is the last one for
+// a recognized retry family. Callers retain their existing behavior when no
+// retry family is active by consulting the second return value.
+func retryExecutionIsLast(execMeta *testExecutionMetadata, remainingRetries, remainingBudget int64) (bool, bool) {
+	if execMeta == nil {
+		return false, false
+	}
+	if execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix {
+		return remainingRetries == 1, true
+	}
+	if usesEfdRetrySemantics(execMeta) {
+		return remainingRetries == 1, true
+	}
+	if execMeta.isFlakyTestRetriesEnabled {
+		return remainingRetries == 1 || remainingBudget == 0, true
+	}
+	return false, false
+}
+
 // willRetryAfterExecution mirrors postShouldRetry logic to determine if another retry
 // will happen after the current execution. The skipped state is needed because
 // clean skipped EFD executions are terminal even when retry budget remains.
@@ -80,7 +160,7 @@ func willRetryAfterExecution(failed, skipped bool, execMeta *testExecutionMetada
 		return remainingRetries > 0
 	}
 
-	if isAnEfdExecution(execMeta) {
+	if usesEfdRetrySemantics(execMeta) {
 		// For EFD, retry executions that are not clean skips.
 		cleanSkip := skipped && !failed
 		return !cleanSkip && remainingRetries >= 0
@@ -107,6 +187,15 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	// ATF takes precedence over parallel EFD - ATF tests should always compute final status
 	// even when parallel EFD is enabled, because ATF orchestrates its own retry loop.
 	isAtfExecution := execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix
+	var remainingRetries int64
+	if execMeta.isARetry {
+		// For retries, use the captured remaining retries minus 1 (the decrement happens after span close).
+		remainingRetries = execMeta.remainingRetries - 1
+	} else {
+		// For the initial execution, compute the retry count that would be set.
+		// Subtract 1 because the decrement happens before postShouldRetry is called.
+		remainingRetries = computeAdjustedRetryCount(execMeta, duration) - 1
+	}
 
 	// Parallel EFD: skip final status tagging.
 	// All parallel executions capture the same remainingRetries, making it impossible
@@ -115,34 +204,35 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	if execMeta.isEfdInParallel && !isAtfExecution {
 		return false
 	}
-
-	var remainingRetries int64
-	var remainingBudget int64
-
-	if execMeta.isARetry {
-		// For retries, use the captured remaining retries minus 1 (the decrement happens after span close).
-		remainingRetries = execMeta.remainingRetries - 1
-
-		// For flaky retries, also account for the global budget decrement.
-		if execMeta.isFlakyTestRetriesEnabled {
-			remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) - 1
-		} else {
-			remainingBudget = 0
-		}
-	} else {
-		// For the initial execution, compute the retry count that would be set.
-		// Subtract 1 because the decrement happens before postShouldRetry is called.
-		remainingRetries = computeAdjustedRetryCount(execMeta, duration) - 1
-		if execMeta.isFlakyTestRetriesEnabled {
-			// For the initial execution, the global budget isn't decremented in postPerExecution,
-			// but we need to check what postShouldRetry will see.
-			remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount)
-		} else {
-			remainingBudget = 0
-		}
+	if execMeta.retryContinuationDecided {
+		return !execMeta.retryContinuationAdmitted
 	}
 
-	// Check if another retry would happen.
+	remainingBudget := int64(0)
+	if usesFlakyRetryBudget(execMeta) {
+		remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount)
+	}
+	// Legacy callers that do not own retry admission use a read-only projection.
 	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, remainingBudget)
 	return !willRetry
+}
+
+func tryReserveFlakyRetryBudget() bool {
+	remaining := &integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount
+	for {
+		current := atomic.LoadInt64(remaining)
+		if current <= 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(remaining, current, current-1) {
+			return true
+		}
+	}
+}
+
+func flakyRetryBudgetRemaining(settings *integrations.FlakyRetriesSetting) int64 {
+	if settings == nil {
+		return 0
+	}
+	return atomic.LoadInt64(&settings.RemainingTotalRetryCount)
 }

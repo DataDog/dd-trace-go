@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -256,6 +257,9 @@ func runSubprocess(t *testing.T, scenario string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = append(os.Environ(), scenarioEnv+"="+scenario)
+	if scenario == "test-cleanup-skip-does-not-retry" {
+		cmd.Env = append(cmd.Env, "DD_TRACE_DEBUG=true")
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("scenario %s failed: %v\n%s", scenario, err, output)
@@ -580,11 +584,11 @@ func setEnv(values map[string]string) func() {
 		_ = os.Setenv(key, value)
 	}
 	return func() {
-		for i := len(snapshots) - 1; i >= 0; i-- {
-			if snapshots[i].had {
-				_ = os.Setenv(snapshots[i].key, snapshots[i].value)
+		for _, s := range slices.Backward(snapshots) {
+			if s.had {
+				_ = os.Setenv(s.key, s.value)
 			} else {
-				_ = os.Unsetenv(snapshots[i].key)
+				_ = os.Unsetenv(s.key)
 			}
 		}
 	}

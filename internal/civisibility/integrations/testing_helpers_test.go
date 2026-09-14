@@ -17,8 +17,12 @@ import (
 func resetCIVisibilityStateForTesting() {
 	stopCIVisibilitySignalHandler()
 
+	additionalFeaturesResetting.Store(true)
 	additionalFeaturesInitializationMu.Lock()
-	defer additionalFeaturesInitializationMu.Unlock()
+	defer func() {
+		additionalFeaturesResetting.Store(false)
+		additionalFeaturesInitializationMu.Unlock()
+	}()
 
 	// Payload-file tests can start a telemetry client that writes files
 	// asynchronously, so stop it before temporary output directories are cleaned.
@@ -26,8 +30,11 @@ func resetCIVisibilityStateForTesting() {
 
 	settingsInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce = sync.Once{}
+	additionalFeaturesInitialized.Store(false)
 
 	closeActions = nil
+	preCloseActions = nil
+	ciVisibilityShutdownDone = nil
 
 	ciVisibilityClient = nil
 	ciVisibilitySettings = net.SettingsResponseData{}
@@ -38,6 +45,7 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityTestManagementTests = net.TestManagementTestsResponseDataModules{}
 	ciVisibilityImpactedTestsAnalyzer = nil
 	sourceFileMetadataCache = sync.Map{}
+	sourceFunctionMetadataCache = sync.Map{}
 
 	repositoryUploadHooksMu.Lock()
 	uploadRepositoryChangesFunc = nil

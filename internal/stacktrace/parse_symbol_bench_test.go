@@ -11,6 +11,7 @@ func BenchmarkParseSymbol(b *testing.B) {
 	testCases := []string{
 		"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestFunc",
 		"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException",
+		"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.Event.NewException",
 		"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestFunc.func1",
 		"os/exec.(*Cmd).Run.func1",
 		"test.(*Test).Method",

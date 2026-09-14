@@ -54,19 +54,22 @@ func PopExecutionTraced() {
 }
 
 // ScopedExecutionNotTraced marks ctx as not covered by an execution trace task
-// and returns a cleanup function that pops the GLS entry. Unlike using
-// WithExecutionNotTraced + PopExecutionTraced separately, the returned cleanup
-// is goroutine-safe: it captures the pushing goroutine's GLS contextStack
-// pointer and only pops if called from the same goroutine. This makes it safe
-// for use with spans that may be finished on a different goroutine than the one
-// that created them.
+// and returns a cleanup function that removes the GLS entry it pushed. Unlike
+// using WithExecutionNotTraced + PopExecutionTraced separately, the cleanup is
+// scope-exact and goroutine-safe: it removes the entry this call pushed rather
+// than whatever is on top, and only when called from the pushing goroutine.
+//
+// Both properties matter here. The only caller is the tracer's
+// startExecutionTracerTask, which hands the cleanup to Span.taskEnd — so it runs
+// when that span finishes, at no fixed position relative to the pushes around
+// it, and possibly on a different goroutine than the one that started it.
 func ScopedExecutionNotTraced(ctx context.Context) (context.Context, func()) {
-	newCtx := WithExecutionNotTraced(ctx)
-	if newCtx == ctx {
-		// Fast path: nothing was pushed, no cleanup needed.
+	if orchestrion.WrapContext(ctx).Value(executionTracedKey{}) == nil {
+		// Fast path: it wasn't marked before, so there is nothing to override
+		// and nothing to clean up. Mirrors WithExecutionNotTraced.
 		return ctx, glsNoop
 	}
-	return newCtx, orchestrion.GLSPopFunc(executionTracedKey{})
+	return orchestrion.CtxWithScopedValue(ctx, executionTracedKey{}, false)
 }
 
 var glsNoop = func() {}

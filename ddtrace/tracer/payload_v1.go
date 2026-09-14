@@ -274,8 +274,10 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		p.staticBufLen = len(p.buf)
 	}
 
-	// Encode the new chunk immediately while spans are still valid (before any
-	// pool release). This is what makes the incremental model safe with span pooling.
+	// Encode the new chunk immediately, synchronously, while spans are still
+	// valid: tracer.processOutChunk calls traceWriter.add (which reaches this
+	// push) before releaseSpans clears and recycles them. payloadV04.push
+	// honors the same contract via its single msgp.Encode call.
 	if p.bm.contains(11) {
 		p.encodeTraceChunk(tc, p.st)
 	}

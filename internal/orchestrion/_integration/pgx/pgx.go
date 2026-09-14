@@ -35,7 +35,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	tc.container, err = testpostgres.Run(ctx,
-		"docker.io/postgres:16-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		containers.Image("postgres"),
 		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		// https://golang.testcontainers.org/modules/postgres/#wait-strategies_1

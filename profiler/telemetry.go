@@ -55,7 +55,7 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
 		{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
 		{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
-		{Name: "goroutine_leak_profile_enabled", Value: profileEnabled(goroutineLeakProfile)},
+		{Name: "goroutine_leak_profile_enabled", Value: profileEnabled(GoroutineLeakProfile)},
 		{Name: "upload_timeout", Value: c.uploadTimeout.String()},
 		{Name: "execution_trace_enabled", Value: c.traceConfig.Enabled},
 		{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
@@ -64,5 +64,6 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
 		{Name: "flush_on_exit", Value: c.flushOnExit},
 		{Name: "debug_compression_settings", Value: c.compressionConfig},
+		{Name: "appsec_enabled", Value: appsecEnabled()},
 	}
 }

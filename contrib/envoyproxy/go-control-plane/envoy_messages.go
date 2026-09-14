@@ -8,12 +8,13 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
-	"os"
+	"net/netip"
 	"strconv"
-	"sync"
+	"strings"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -28,7 +29,8 @@ var _ proxy.HTTPBody = (*messageBody)(nil)
 type messageRequestHeaders struct {
 	*extproc.ProcessingRequest
 	*extproc.HttpHeaders
-	integration Integration
+	integration            Integration
+	trustGCLBXForwardedFor bool
 }
 
 func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.PseudoRequest, error) {
@@ -36,6 +38,13 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	if err := checkPseudoRequestHeaders(pseudoHeaders); err != nil {
 		return proxy.PseudoRequest{}, err
 	}
+
+	// Captured before mergeMetadataHeaders, which fills an absent X-Forwarded-For
+	// from the ext_proc stream's own metadata. The GCLB positional contract below
+	// describes the request that travelled through the load balancer, not the gRPC
+	// connection carrying this callout, so only the proxied request's own header
+	// may decide identity.
+	requestForwardedFor := headers["X-Forwarded-For"]
 
 	var remoteAddr string
 	md, ok := metadata.FromIncomingContext(ctx)
@@ -45,6 +54,17 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	}
 
 	headers["Host"] = append(headers["Host"], pseudoHeaders[":authority"])
+
+	// X-Forwarded-For is deliberately left exactly as received, forged entries
+	// and all, so the WAF keeps inspecting the header the client actually sent.
+	// The trustworthy address travels beside it instead.
+	var clientIP netip.Addr
+	if m.component(ctx) == componentNameGCPServiceExtension {
+		if trustedIP, ok := trustedClientIP(m.ProcessingRequest.GetAttributes(), requestForwardedFor, m.trustGCLBXForwardedFor); ok {
+			clientIP = trustedIP
+		}
+	}
+
 	return proxy.PseudoRequest{
 		Method:     pseudoHeaders[":method"],
 		Authority:  pseudoHeaders[":authority"],
@@ -52,7 +72,67 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		Scheme:     pseudoHeaders[":scheme"],
 		Headers:    headers,
 		RemoteAddr: remoteAddr,
+		ClientIP:   clientIP,
 	}, nil
+}
+
+const (
+	// Envoy keys forwarded attributes by the filter's own name.
+	extProcAttributesNamespace = "envoy.filters.http.ext_proc"
+
+	// GCP rejects source.address as a forward attribute, so source.ip is the only
+	// infrastructure-provided address accepted here.
+	sourceIPAttribute = "source.ip"
+)
+
+func trustedClientIP(attributes map[string]*structpb.Struct, forwardedFor []string, gclbShape bool) (netip.Addr, bool) {
+	if sourceIP, ok := parseExtProcSourceIP(attributes); ok {
+		return sourceIP, true
+	}
+	if !gclbShape {
+		return netip.Addr{}, false
+	}
+	return gclbForwardedForClientIP(forwardedFor)
+}
+
+func parseExtProcSourceIP(attributes map[string]*structpb.Struct) (netip.Addr, bool) {
+	raw := attributes[extProcAttributesNamespace].GetFields()[sourceIPAttribute].GetStringValue()
+	if addrPort, err := netip.ParseAddrPort(raw); err == nil {
+		return addrPort.Addr().Unmap(), true
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, false
+	}
+
+	return addr.Unmap(), true
+}
+
+// GCLB appends two entries of its own to whatever the client sent:
+//
+//	X-Forwarded-For: <client-supplied>,<client observed by GCLB>,<forwarding rule IP>
+//
+// Position, not address class, identifies the observed peer: the forwarding
+// rule may be public or private.
+func gclbForwardedForClientIP(forwardedFor []string) (netip.Addr, bool) {
+	entries := make([]string, 0, len(forwardedFor)+1)
+	for _, value := range forwardedFor {
+		for value != "" {
+			var entry string
+			entry, value, _ = strings.Cut(value, ",")
+			entries = append(entries, strings.TrimSpace(entry))
+		}
+	}
+	if len(entries) < 2 {
+		return netip.Addr{}, false
+	}
+
+	addr, err := netip.ParseAddr(entries[len(entries)-2])
+	if err != nil || addr.Zone() != "" {
+		return netip.Addr{}, false
+	}
+
+	return addr.Unmap(), true
 }
 
 func (m messageRequestHeaders) MessageType() proxy.MessageType {
@@ -68,10 +148,6 @@ const (
 	datadogEnvoyIntegrationHeader = "x-datadog-envoy-integration"
 	datadogIntegrationHeader      = "x-datadog-istio-integration"
 )
-
-var isK8s = sync.OnceValue(func() bool {
-	return os.Getenv("KUBERNETES") != ""
-})
 
 func (i Integration) String() string {
 	switch i {
@@ -97,6 +173,35 @@ func (m messageRequestHeaders) BodyParsingSizeLimit(ctx context.Context) int {
 	}
 }
 
+// AckBodyMessagesUntilEndOfStream reports whether the gateway requires an acknowledgement
+// for every response body message. Only Google Cloud load balancers do; self-managed Envoy,
+// Istio and Envoy Gateway accept a clean close as soon as the analysis is done.
+//
+// The gateway is only identifiable per request, because the published callout container
+// reports GCPServiceExtensionIntegration for every TCP deployment. Draining therefore
+// stops only on positive identification — an explicitly configured integration or the
+// documented header — and never on inference. Getting this wrong reintroduces the callout
+// timeouts the acknowledgement exists to prevent, whereas acknowledging a gateway that did
+// not need it only costs a round trip per chunk.
+func (m messageRequestHeaders) AckBodyMessagesUntilEndOfStream(ctx context.Context) bool {
+	// Explicitly configured as something other than Google Cloud.
+	if m.integration != GCPServiceExtensionIntegration {
+		return false
+	}
+
+	// Explicitly identified by the header the documentation instructs customers to inject.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := md.Get(datadogEnvoyIntegrationHeader); len(values) > 0 && values[0] == "1" {
+			return false
+		}
+		if values := md.Get(datadogIntegrationHeader); len(values) > 0 && values[0] == "1" {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSpanOption {
 	return []tracer.StartSpanOption{tracer.Tag(ext.Component, m.component(ctx))}
 }
@@ -120,17 +225,14 @@ func (m messageRequestHeaders) component(ctx context.Context) string {
 		if len(valuesIstio) > 0 && valuesIstio[0] == "1" {
 			return componentNameIstio
 		}
-
-		// We don't have the ability to add custom headers in envoy gateway EnvoyExtensionPolicy CRD.
-		// So we fall back to detecting if we are running in k8s or not.
-		// If we are running in k8s, we assume it is Envoy Gateway, otherwise GCP Service Extension.
-		if isK8s() {
-			return componentNameEnvoyGateway
-		}
 	}
 
+	// Envoy Gateway cannot inject a header from its EnvoyExtensionPolicy CRD, so it has to
+	// be named explicitly through the integration above. Presence in Kubernetes used to be
+	// taken as proof of Envoy Gateway, which cannot work: a Google Cloud Service Extensions
+	// callout deployed on GKE is equally in Kubernetes, so the two are indistinguishable by
+	// that signal.
 	return componentNameGCPServiceExtension
-
 }
 
 type responseHeadersEnvoy struct {

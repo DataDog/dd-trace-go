@@ -135,7 +135,6 @@ func TestOTLPWriterFlushEmpty(t *testing.T) {
 	w := newTestOTLPWriter(t, srv)
 
 	w.flush()
-	w.wg.Wait()
 
 	assert.Equal(t, 0, srv.requestCount())
 }
@@ -150,7 +149,7 @@ func TestOTLPWriterFlush(t *testing.T) {
 		newSpan("op2", "svc", "res", 2, 1, 0),
 	})
 	w.flush()
-	w.wg.Wait()
+	w.wait()
 
 	payloads := srv.getPayloads()
 	require.Equal(t, 1, len(payloads))
@@ -178,15 +177,15 @@ func TestOTLPWriterFlushClearsSpans(t *testing.T) {
 
 	w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0)})
 	w.flush()
-	w.wg.Wait()
 
 	w.mu.Lock()
 	assert.Equal(t, 0, len(w.spans))
 	w.mu.Unlock()
+	w.wait()
 
 	// Second flush should be a no-op
 	w.flush()
-	w.wg.Wait()
+	w.wait()
 	assert.Equal(t, 1, srv.requestCount())
 }
 
@@ -199,7 +198,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 		bigSpan := newSpan("op", "svc", "res", 1, 1, 0)
 		bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit+1))
 		w.add([]*Span{bigSpan})
-		w.wg.Wait()
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 		w.mu.Lock()
@@ -220,7 +219,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 			s.meta.Set("data", strings.Repeat("X", spanSize))
 			w.add([]*Span{s})
 		}
-		w.wg.Wait()
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 	})
@@ -262,14 +261,14 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 	for _, tc := range testcases {
 		name := fmt.Sprintf("retries=%d/fails=%d", tc.configRetries, tc.failCount)
 		t.Run(name, func(t *testing.T) {
-			var totalRequests int32
+			var totalRequests atomic.Int32
 			srv := newTestOTLPServer()
 			atomic.StoreInt32(&srv.failCount, int32(tc.failCount))
 			defer srv.Close()
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				atomic.AddInt32(&totalRequests, 1)
+				totalRequests.Add(1)
 				srv.Server.Config.Handler.ServeHTTP(w, r)
 			})
 			countingSrv := httptest.NewServer(mux)
@@ -283,9 +282,9 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 
 			w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
 			w.flush()
-			w.wg.Wait()
+			w.wait()
 
-			assert.Equal(t, int32(tc.expAttempts), atomic.LoadInt32(&totalRequests))
+			assert.Equal(t, int32(tc.expAttempts), totalRequests.Load())
 			assert.Equal(t, tc.tracesSent, len(srv.getPayloads()) > 0)
 		})
 	}
@@ -314,14 +313,14 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 
-	var spansAdded int32
+	var spansAdded atomic.Int32
 
 	for range numAdders {
 		wg.Go(func() {
 			<-start
 			for range spansPerAdder {
 				w.add([]*Span{newSpan("op", "svc", "res", randUint64(), randUint64(), 0)})
-				atomic.AddInt32(&spansAdded, 1)
+				spansAdded.Add(1)
 			}
 		})
 	}
@@ -340,7 +339,7 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 
 	w.stop()
 
-	assert.Equal(t, int32(numAdders*spansPerAdder), atomic.LoadInt32(&spansAdded))
+	assert.Equal(t, int32(numAdders*spansPerAdder), spansAdded.Load())
 
 	// Verify all sent payloads are valid protobuf
 	totalSpans := 0
@@ -355,6 +354,44 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 		}
 	}
 	assert.Equal(t, numAdders*spansPerAdder, totalSpans)
+}
+
+// TestOTLPWriterConcurrentAddAndWait regression-tests the specific hazard that
+// motivated removing async dispatch from flush() in the first place: add()'s
+// size-triggered flush() call runs wg.Add on one goroutine while wait()/stop()
+// runs wg.Wait() on another. Without wgMu serializing the two, sync.WaitGroup
+// panics with "Add called concurrently with Wait" once a Wait call observes a
+// zero counter at the same instant a new flush starts one.
+func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	const numAdders = 20
+	stop := make(chan struct{})
+	var adders sync.WaitGroup
+	for range numAdders {
+		adders.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				bigSpan := newSpan("op", "svc", "res", randUint64(), randUint64(), 0)
+				bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit/4))
+				w.add([]*Span{bigSpan})
+			}
+		})
+	}
+
+	for range 200 {
+		w.wait()
+	}
+
+	close(stop)
+	adders.Wait()
+	w.stop()
 }
 
 func TestOTLPWriterBuffSizeTracking(t *testing.T) {
@@ -383,11 +420,11 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 
 	t.Run("flush resets buffSize to baseSize", func(t *testing.T) {
 		w.flush()
-		w.wg.Wait()
 
 		w.mu.Lock()
 		assert.Equal(t, w.baseSize, w.buffSize)
 		w.mu.Unlock()
+		w.wait()
 	})
 
 	t.Run("buffSize approximates actual marshal size", func(t *testing.T) {
@@ -420,7 +457,7 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 			"estimated %d should be within 5%% of actual %d", estimated, actual)
 
 		w.flush()
-		w.wg.Wait()
+		w.wait()
 	})
 }
 

@@ -827,8 +827,139 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 	return nil
 }
 
-func (t *simpleTransport) endpoint() string {
+func (t *simpleTransport) endpoint(float64) string {
 	return "http://localhost:9/v1.0/traces"
+}
+
+// rejectV1Transport rejects every v1 payload it sees with
+// errV1TracesNotSupported (simulating a backend that doesn't support v1,
+// e.g. a load-balanced fleet where /info and the trace send land on
+// different backends) and succeeds on everything else, decoding and
+// recording every trace that is actually delivered. sendCalls counts how
+// many times send was invoked, to confirm a rejected v1 payload isn't
+// retried against the same doomed endpoint.
+type rejectV1Transport struct {
+	mu        sync.Mutex
+	sendCalls int
+	delivered spanLists
+}
+
+func (t *rejectV1Transport) send(p payload) (io.ReadCloser, error) {
+	t.mu.Lock()
+	t.sendCalls++
+	t.mu.Unlock()
+	if p.protocol() == traceProtocolV1 {
+		return nil, errV1TracesNotSupported
+	}
+	defer p.Close()
+	traces, _, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	t.delivered = append(t.delivered, traces...)
+	t.mu.Unlock()
+	return io.NopCloser(strings.NewReader("{}")), nil
+}
+
+func (t *rejectV1Transport) sendStats(*pb.ClientStatsPayload, int) error {
+	return nil
+}
+
+func (t *rejectV1Transport) endpoint(float64) string {
+	return "http://localhost:9/v1.0/traces"
+}
+
+// TestAgentWriterDowngradesWhenAgentRejectsV1 is the writer-level
+// verification for downgradeAfterRejectedSend: when an agent rejects a live
+// v1 send outright, the writer must downgrade config's protocol state
+// immediately and permanently (see trace_protocol_state.go), count the
+// rejected payload as dropped rather than retrying it against an endpoint
+// that will keep rejecting it, and let the very next payload recover on
+// v0.4.
+func TestAgentWriterDowngradesWhenAgentRejectsV1(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	ft := &rejectV1Transport{}
+	cfg, err := newTestConfig(
+		withNoopInfoHTTPClient(),
+		withStatsdClient(&tg),
+		func(c *config) {
+			c.ddTransport = ft
+		},
+	)
+	require.NoError(t, err)
+	setTraceProtocolStateForTest(cfg, protoV1)
+	require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol(), "sanity check: writer must start on v1")
+
+	w := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+	w.add([]*Span{makeSpan(1)})
+	w.flush()
+	w.wg.Wait()
+
+	assert.Empty(t, ft.delivered, "the rejected payload must not be redelivered -- see doc.go's documented trace-loss trade-off")
+	assert.Equal(t, 1, ft.sendCalls, "a rejected v1 send must not be retried against the same endpoint")
+	assert.Equal(t, traceProtocolV04, cfg.effectiveTraceProtocol(), "a rejected v1 send must downgrade immediately")
+	assert.False(t, cfg.advanceTraceProtocolState(protoV1), "the downgrade must be permanent: nothing can move the state back to v1")
+
+	counts := tg.Counts()
+	assert.Equal(t, int64(1), counts["datadog.tracer.traces_dropped"], "the rejected trace must be counted as dropped")
+	assert.Zero(t, counts["datadog.tracer.flush_traces"], "no successful delivery should be counted for the rejected payload")
+
+	// The very next payload recovers: it is built for v0.4 and delivered.
+	w.add([]*Span{makeSpan(2)})
+	w.flush()
+	w.wg.Wait()
+	require.Len(t, ft.delivered, 1, "the post-downgrade trace must be delivered")
+	assert.Equal(t, 2, ft.sendCalls)
+}
+
+// TestDowngradeAfterRejectedSendSkipsMetricWhenTelemetryAlreadyReported pins
+// that downgradeAfterRejectedSend's metric/log are gated on
+// ReportEffectiveTraceProtocol's own return value, not on
+// advanceTraceProtocolState's -- those are two separate, independently
+// racing CAS operations (protocolState vs effectiveTraceProtocolBits), so
+// winning the first (the state transition) is no guarantee of winning the
+// second (the telemetry report). Concretely: a concurrent /info poll can
+// observe and report the same v0.4 transition to telemetry before the
+// rejected send's own goroutine gets there, since refreshAgentFeatures always
+// attempts ReportEffectiveTraceProtocol regardless of whether its own
+// advanceTraceProtocolState call actually moved anything.
+//
+// That interleaving can't be staged deterministically by pausing between
+// downgradeAfterRejectedSend's own two statements (there's no exposed
+// yield point, and it's plain sequential code), so this reproduces the
+// essential precondition instead: make telemetry already reflect v0.4 (as if
+// a concurrent poll's report had already landed), then force the protocol
+// state to v1 so downgradeAfterRejectedSend's own advanceTraceProtocolState
+// call is genuinely the one that performs the v1->v0.4 transition. Gating on
+// that call's return (true, since it really did just move the state) would
+// emit unconditionally; gating on ReportEffectiveTraceProtocol's own return
+// (false, since telemetry already holds this value) must not.
+func TestDowngradeAfterRejectedSendSkipsMetricWhenTelemetryAlreadyReported(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), withStatsdClient(&tg))
+	require.NoError(t, err)
+
+	w := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+
+	// withNoopInfoHTTPClient's /info 404s, so startup already resolved to
+	// v0.4 and reported it -- telemetry already holds v0.4 bits.
+	require.False(t, cfg.internalConfig.ReportEffectiveTraceProtocol(traceProtocolV04),
+		"sanity check: telemetry must already reflect v0.4 from startup")
+
+	// Force the precondition: the protocol state is v1, so
+	// downgradeAfterRejectedSend's own advanceTraceProtocolState call below
+	// will be the one that actually performs the v1->v0.4 transition.
+	setTraceProtocolStateForTest(cfg, protoV1)
+	require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol(), "sanity check: simulated precondition")
+
+	tg.Reset()
+	w.downgradeAfterRejectedSend()
+
+	require.Equal(t, traceProtocolV04, cfg.effectiveTraceProtocol(), "sanity check: the call must still have applied the downgrade")
+	counts := tg.Counts()
+	assert.Zero(t, counts["datadog.tracer.trace_protocol_changed"],
+		"must not emit when telemetry already reflects this transition, even though this call's own state transition just won")
 }
 
 // TestAgentWriterFlushSizeMetrics validates that flush_bytes metrics are accurate
@@ -836,19 +967,19 @@ func (t *simpleTransport) endpoint() string {
 func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	testCases := []struct {
 		name        string
-		newPayload  func() payload
+		protocol    float64
 		description string
 		size        int64
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayload(traceProtocolV04) },
+			protocol:    traceProtocolV04,
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1811,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayload(traceProtocolV1) },
+			protocol:    traceProtocolV1,
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -862,18 +993,27 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			assert := assert.New(t)
 			var tg statsdtest.TestStatsdClient
 
-			// Use a simple transport that always succeeds
+			// Use a simple transport that always succeeds, and pin the effective
+			// protocol to tc.protocol regardless of any real local agent: add()
+			// now rotates an idle payload that disagrees with the live config
+			// (see rotateStalePayload), so the writer's payload must agree with
+			// it up front rather than merely being overridden below.
 			cfg, err := newTestConfig(
+				withNoopInfoHTTPClient(),
 				withStatsdClient(&tg),
 				func(c *config) {
 					c.ddTransport = &simpleTransport{}
 				},
 			)
 			require.NoError(t, err)
+			if tc.protocol == traceProtocolV1 {
+				setTraceProtocolStateForTest(cfg, protoV1)
+			}
+			require.Equal(t, tc.protocol, cfg.effectiveTraceProtocol(), "sanity check: effective protocol must match the case under test")
 
 			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 			// Override the payload with the specific protocol we want to test
-			writer.payload = tc.newPayload()
+			writer.payload = newPayload(tc.protocol)
 
 			// Add a trace (one call to add = one trace)
 			// Each trace is an array of spans

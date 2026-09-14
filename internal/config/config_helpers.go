@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -111,6 +112,41 @@ func validateAgentTimeout(timeout int) bool {
 	return true
 }
 
+// validateFeatureFlagsAgentlessPollInterval rejects rather than clamps: clamping would
+// silently move a misconfigured billed-polling interval to a valid one.
+func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
+	if seconds <= 0 || seconds > 3600 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds)
+		return false
+	}
+	return true
+}
+
+// validateFeatureFlagsAgentlessRequestTimeout caps the upper bound because a larger value
+// overflows int64 as a nanosecond duration, and http.Client reads a negative Timeout as
+// "no timeout".
+func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
+	if seconds <= 0 || seconds > 300 {
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		return false
+	}
+	return true
+}
+
+// maxFlaggingProviderInitTimeoutMs is the largest value that still converts to a
+// time.Duration without overflowing int64 into a negative duration.
+const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
+
+// validateFlaggingProviderInitTimeout rejects an overflow-prone value so the caller falls
+// back to the default rather than Init receiving an already-expired context.
+func validateFlaggingProviderInitTimeout(ms int) bool {
+	if ms <= 0 || int64(ms) > maxFlaggingProviderInitTimeoutMs {
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs)
+		return false
+	}
+	return true
+}
+
 func validateSendRetries(retries int) bool {
 	if retries < 0 {
 		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
@@ -196,6 +232,17 @@ func resolveTraceProtocol(v string) float64 {
 		return TraceProtocolV1
 	}
 	return TraceProtocolV04
+}
+
+// TraceProtocolVersionString is the inverse of resolveTraceProtocol: it renders
+// a protocol float64 back into the wire-version string reported to config
+// telemetry, so DD_TRACE_AGENT_PROTOCOL_VERSION is always reported with a
+// consistent type regardless of which source set it.
+func TraceProtocolVersionString(v float64) string {
+	if v == TraceProtocolV1 {
+		return TraceProtocolVersionStringV1
+	}
+	return TraceProtocolVersionStringV04
 }
 
 // resolveAgentURL computes the final agent URL from the three env-var strings
@@ -306,9 +353,6 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
-// When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
-// If validation fails, the default endpoint is used instead.
 // parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
 // Logs a warning and returns (nil, false) on failure.
 func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
@@ -324,6 +368,9 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
+// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
+// else derives a default from agentURL host + port 4318 + /v1/traces.
+// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
 func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
 	if otlpTracesEndpoint != "" {
 		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
@@ -449,7 +496,17 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
-// resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
+// validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
+// envVar is used in the warning message to identify which env var had the bad value.
+func validateOTLPProtocol(v, envVar string) bool {
+	if v == "http/json" || v == "http/protobuf" {
+		return true
+	}
+	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	return false
+}
+
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_STATS_INTERVAL (milliseconds).
 // The variable is internal and intended for tests only; in production it returns the default 10 s.
 func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	if raw == "" {
@@ -457,7 +514,7 @@ func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	}
 	ms, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || ms <= 0 {
-		log.Warn("Invalid _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		log.Warn("Invalid _DD_TRACE_STATS_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
 		return OTLPMetricsFlushInterval
 	}
 	return time.Duration(ms) * time.Millisecond

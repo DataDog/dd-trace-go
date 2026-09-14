@@ -895,7 +895,8 @@ func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) [
 	return []string{
 		"direction:out",
 		"type:eventbridge",
-		"topic:" + eventBridgeNameForTest(entry) + ":" + eventBridgeDetailTypeForTest(entry),
+		"topic:" + eventBridgeDetailTypeForTest(entry),
+		"exchange:" + eventBridgeNameForTest(entry),
 	}
 }
 

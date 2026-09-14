@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -140,15 +141,14 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	op.SetStringTags(clientip.TagsFor(args.RemoteAddr, args.ClientIP))
 
-	op.SetStringTags(tags)
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}
 
 	setRequestHeadersTags(op, headers)
 
-	return headers, ip
+	return headers, args.ClientIP
 }
 
 func extractResponseHeaders(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) map[string][]string {

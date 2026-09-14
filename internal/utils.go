@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
 	"github.com/puzpuzpuz/xsync/v4"
 
@@ -20,6 +21,19 @@ const OtelTagsDelimeter = "="
 
 // DDTagsDelimiter is the separator between key-val pairs for DD env vars
 const DDTagsDelimiter = ":"
+
+// IsAPIKeyValid reports whether key has the expected Datadog API key shape.
+func IsAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
+}
 
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
 // This should not be used for cases with heavy write load and performance concerns.

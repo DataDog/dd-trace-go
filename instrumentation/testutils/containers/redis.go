@@ -50,7 +50,7 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 		}),
 	}
 	container, err := redis.Run(ctx,
-		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		Image("redis"),
 		opts...,
 	)
 	AssertTestContainersError(t, err)

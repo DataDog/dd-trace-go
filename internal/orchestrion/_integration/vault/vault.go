@@ -32,7 +32,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	tc.server, err = testvault.Run(ctx,
-		"vault:1.7.3", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		containers.Image("vault"),
 		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testvault.WithToken("root"),
