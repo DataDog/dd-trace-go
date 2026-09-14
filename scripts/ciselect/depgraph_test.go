@@ -131,11 +131,16 @@ func ddPackages(t *testing.T, root, dir string) map[string]bool {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", "./...")
 	cmd.Dir = filepath.Join(root, dir)
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	// A module that does not build is not a reason to fail this check; it will
-	// fail its own tests. Use whatever `go list` managed to resolve.
-	_ = cmd.Run()
+	cmd.Stderr = &stderr
+	// Do not swallow this. A module that fails to resolve yields an empty
+	// package set, which reads as "nothing depends on it" and would silently
+	// turn a real dependency into a passing check -- the opposite of what this
+	// guard is for.
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go list -deps in %s: %v\n%s", dir, err, stderr.String())
+	}
 
 	out := map[string]bool{}
 	for _, line := range strings.Split(stdout.String(), "\n") {

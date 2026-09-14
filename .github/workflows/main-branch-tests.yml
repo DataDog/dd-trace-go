@@ -66,6 +66,12 @@ jobs:
   # so it is verified here instead.
   ci-components-depgraph:
     name: Verify ci-components dependency facts
+    # Nightly only. This workflow also triggers on push to
+    # mq-working-branch-**, and these facts describe the dependency graph of
+    # `main`, not of the pull request under test -- so in the merge queue the
+    # check fails for whoever happens to be queued when somebody else's merge
+    # changes an import. It reports drift; it must not gate a merge.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
