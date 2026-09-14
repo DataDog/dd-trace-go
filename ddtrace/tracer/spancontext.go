@@ -133,10 +133,18 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 	isRemote bool
-	// when true, context only propagates baggage (and tags) and should not be used for distributed tracing fields
+	// startsNewTrace marks a context that carries no usable trace identity, so a
+	// span created from it becomes the root of a new trace (fresh trace and span
+	// ID, no parent) rather than a child. Whatever the context does carry —
+	// baggage, propagating tags, span links — still travels onto that root.
+	//
+	// Set on extraction when: DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart
+	// deliberately severs the incoming trace; only baggage arrived; or
+	// propagating tags arrived without trace identity (an intermediary
+	// discarded x-datadog-trace-id/parent-id but forwarded x-datadog-tags).
 	// +checklocks:mu
-	baggageOnly bool
-	errors      atomic.Int32 // number of spans with errors in this trace
+	startsNewTrace bool
+	errors         atomic.Int32 // number of spans with errors in this trace
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
 
@@ -285,7 +293,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
+		if !parent.startsNewTrace { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
@@ -303,9 +311,9 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		})
 	}
 	// We generate a new upper trace ID when the trace is brand new (no parent)
-	// or when the parent is baggage only, since baggage only parents should
-	// not propagate their trace IDs
-	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
+	// or when the parent starts a new trace, since such parents carry no trace
+	// ID to propagate
+	if (parent == nil || parent.startsNewTrace) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -584,10 +592,10 @@ func (c *SpanContext) safeDebugString() string {
 		c.mu.RUnlock()
 	}
 
-	origin := c.origin           // +checklocksignore - Read-only after init.
-	baggageOnly := c.baggageOnly // +checklocksignore - Read-only after init.
-	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
-		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, origin, c.updated, c.isRemote, baggageOnly)
+	origin := c.origin                 // +checklocksignore - Read-only after init.
+	startsNewTrace := c.startsNewTrace // +checklocksignore - Read-only after init.
+	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, startsNewTrace=%t}",
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, origin, c.updated, c.isRemote, startsNewTrace)
 }
 
 // samplingDecision is the decision to send a trace to the agent or not.

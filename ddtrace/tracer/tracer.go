@@ -1023,7 +1023,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
+	if context != nil && !context.startsNewTrace { // +checklocksignore - Read-only after init.
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID

@@ -470,7 +470,7 @@ func TestExtractTraceTagsWithoutIdentity(t *testing.T) {
 	ctx, err := tracer.Extract(src)
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
-	assert.True(t, ctx.baggageOnly)
+	assert.True(t, ctx.startsNewTrace)
 	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
 	assert.Equal(t, "5678", ctx.trace.propagatingTag(keyPropagatedLLMObsTraceID))
 	assert.Empty(t, ctx.trace.propagatingTag(keyTraceID128))
@@ -503,13 +503,12 @@ func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {
 	assert.Nil(t, ctx)
 }
 
-// TestExtractCarrierOnlyDoesNotShadowIdentity covers an intermediary that
+// TestExtractIdentitylessContextDoesNotShadowIdentity covers an intermediary that
 // discards the x-datadog-* identity headers while forwarding x-datadog-tags
 // and a W3C traceparent. The Datadog extractor runs first and yields only a
-// carrier-only context, but the W3C trace must still be continued: the
-// carrier-only context contributes its propagating tags, not its (absent)
-// identity.
-func TestExtractCarrierOnlyDoesNotShadowIdentity(t *testing.T) {
+// identity-less context, but the W3C trace must still be continued: that
+// context contributes its propagating tags, not its (absent) identity.
+func TestExtractIdentitylessContextDoesNotShadowIdentity(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog,tracecontext,baggage")
 	src := TextMapCarrier(map[string]string{
 		traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
@@ -523,7 +522,7 @@ func TestExtractCarrierOnlyDoesNotShadowIdentity(t *testing.T) {
 	ctx, err := tracer.Extract(src)
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
-	assert.False(t, ctx.baggageOnly, "identity-bearing context must win over carrier-only")
+	assert.False(t, ctx.startsNewTrace, "identity-bearing context must win over an identity-less one")
 	assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
 	assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
 	assert.Empty(t, ctx.spanLinks, "the W3C context must be continued, not linked as terminated")
@@ -3963,7 +3962,7 @@ func TestExtractFirstContinuesPastFailedExtractor(t *testing.T) {
 			require.NotNil(t, ctx)
 
 			// Must be the real W3C-derived trace context, not a baggage-only stand-in.
-			assert.False(t, ctx.baggageOnly)
+			assert.False(t, ctx.startsNewTrace)
 			assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
 			assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
 
