@@ -28,8 +28,24 @@ type (
 		// StackTraceDepth is the maximum number of frames captured by a stack-trace
 		// action. A non-positive value uses the default depth.
 		StackTraceDepth int
+
+		blockRequestCallback *blockRequestCallback
+	}
+
+	blockRequestCallback struct {
+		applied func()
 	}
 )
+
+// WithBlockRequestApplied returns a copy that calls applied after a block_request
+// response is applied successfully.
+func (c Config) WithBlockRequestApplied(applied func()) Config {
+	if applied == nil {
+		return c
+	}
+	c.blockRequestCallback = &blockRequestCallback{applied: applied}
+	return c
+}
 
 type actionHandler func(map[string]any, Config) []Action
 

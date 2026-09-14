@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed" // For go:embed
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -126,8 +127,11 @@ func TestFeature_headerCollection(t *testing.T) {
 			dyngo.OnData(rootOp, func(blk *events.BlockingSecurityEvent) { blocked = blk != nil })
 
 			span := mt.StartSpan("test")
-			req, _, _ := emitter.StartOperation(ctx, request, span)
+			req, blockAction, _ := emitter.StartOperation(ctx, request, span)
 			assert.Equal(t, tc.ExpectedBlocked, blocked)
+			if action := blockAction.Load(); action != nil {
+				action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+			}
 			req.Finish(response)
 			span.Finish()
 

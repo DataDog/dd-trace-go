@@ -47,7 +47,7 @@ func init() {
 		}
 	}
 
-	registerActionHandler("block_request", withoutConfig(NewBlockAction))
+	registerActionHandler("block_request", newBlockAction)
 }
 
 type (
@@ -70,9 +70,11 @@ type (
 		GRPCWrapper
 	}
 
-	// BlockHTTP are actions that interact with an HTTP request flow
+	// BlockHTTP are actions that interact with an HTTP request flow.
 	BlockHTTP struct {
 		http.Handler
+		blocking            bool
+		reportsBlockOutcome bool
 	}
 )
 
@@ -120,6 +122,18 @@ func (a *BlockHTTP) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, &events.BlockingSecurityEvent{})
 }
 
+// IsBlocking reports whether this action came from a block_request action.
+// Redirect actions also use BlockHTTP but are not blocking actions for telemetry.
+func (a *BlockHTTP) IsBlocking() bool {
+	return a.blocking
+}
+
+// ReportsBlockOutcome reports whether applying this action updates the
+// waf.requests block outcome through its wrapped handler.
+func (a *BlockHTTP) ReportsBlockOutcome() bool {
+	return a.reportsBlockOutcome
+}
+
 func newGRPCBlockRequestAction(status int) *BlockGRPC {
 	return &BlockGRPC{GRPCWrapper: newGRPCBlockHandler(status)}
 }
@@ -142,21 +156,43 @@ func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 	return p, nil
 }
 
-// NewBlockAction creates an action for the "block_request" action type
+// NewBlockAction creates an action for the "block_request" action type.
 func NewBlockAction(params map[string]any) []Action {
+	return newBlockAction(params, Config{})
+}
+
+func newBlockAction(params map[string]any, cfg Config) []Action {
 	p, err := blockParamsFromMap(params)
 	if err != nil {
 		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
 	}
-	return []Action{
-		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
-		newGRPCBlockRequestAction(p.GRPCStatusCode),
+
+	httpAction := newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID)
+	grpcAction := newGRPCBlockRequestAction(p.GRPCStatusCode)
+	if callback := cfg.blockRequestCallback; callback != nil {
+		httpAction.reportsBlockOutcome = true
+		handler := httpAction.Handler
+		httpAction.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler.ServeHTTP(w, r)
+			callback.applied()
+		})
+
+		grpcWrapper := grpcAction.GRPCWrapper
+		grpcAction.GRPCWrapper = func() (uint32, error) {
+			status, err := grpcWrapper()
+			callback.applied()
+			return status, err
+		}
 	}
+	return []Action{httpAction, grpcAction}
 }
 
 func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {
-	return &BlockHTTP{Handler: newBlockHandler(status, template, securityResponseID)}
+	return &BlockHTTP{
+		Handler:  newBlockHandler(status, template, securityResponseID),
+		blocking: true,
+	}
 }
 
 // newBlockHandler creates, initializes and returns a new BlockRequestAction

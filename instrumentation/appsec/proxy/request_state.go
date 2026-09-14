@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	appsecwaf "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
 var _ io.Closer = (*RequestState)(nil)
@@ -49,7 +50,11 @@ type RequestState struct {
 // newRequestState creates a new request state. clientIP carries an identity the
 // proxy resolved itself; leaving it invalid defers to the default policy, whose
 // final transport fallback is request.RemoteAddr.
-func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, ackBodyMessagesUntilEndOfStream bool, options ...tracer.StartSpanOption) (RequestState, bool) {
+func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, blockingUnavailable, ackBodyMessagesUntilEndOfStream bool, options ...tracer.StartSpanOption) (RequestState, bool) {
+	if blockingUnavailable {
+		request = request.WithContext(appsecwaf.ContextWithBlockingUnavailable(request.Context()))
+	}
+
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
@@ -126,6 +131,11 @@ func (rs *RequestState) CloseBeforeResponse() {
 	// but that still add appsec data if any
 	op, ok := dyngo.FindOperation[httpsec.HandlerOperation](rs.Context)
 	if ok {
+		// This path closes the request without applying a pending block action.
+		// SetBlockFailed is gated by SetBlockRequested when the metric is resolved.
+		if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
+			metrics.SetBlockFailed()
+		}
 		op.Finish(httpsec.HandlerOperationRes{})
 	}
 
@@ -135,6 +145,9 @@ func (rs *RequestState) CloseBeforeResponse() {
 		span.Finish()
 	}
 
+	// CloseBeforeResponse deliberately skips deferred response analysis. Mark
+	// it finalized so a later Close cannot run afterHandle after metric submission.
+	rs.responseFinalized = true
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}

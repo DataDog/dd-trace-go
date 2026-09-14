@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 )
 
 // assertContentLength verifies that the Content-Length header is present and
@@ -24,6 +26,60 @@ func assertContentLength(t *testing.T, recorder *httptest.ResponseRecorder) {
 	expected := strconv.Itoa(recorder.Body.Len())
 	if cl != expected {
 		t.Errorf("Content-Length mismatch: header=%q, body length=%q", cl, expected)
+	}
+}
+
+func TestBlockRequestAppliedCallback(t *testing.T) {
+	op := dyngo.NewRootOperation()
+	var action *BlockHTTP
+	dyngo.OnData(op, func(got *BlockHTTP) {
+		action = got
+	})
+
+	applied := 0
+	cfg := Config{}.WithBlockRequestApplied(func() { applied++ })
+	SendActionEvents(op, map[string]any{
+		"block_request": map[string]any{"status_code": uint64(http.StatusForbidden)},
+	}, cfg)
+	if action == nil {
+		t.Fatal("block_request did not emit BlockHTTP")
+	}
+	if !action.ReportsBlockOutcome() {
+		t.Fatal("configured block_request must report its outcome")
+	}
+	if applied != 0 {
+		t.Fatalf("callback called before action application: %d", applied)
+	}
+	action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if applied != 1 {
+		t.Fatalf("callback calls = %d, want 1", applied)
+	}
+
+	action = nil
+	SendActionEvents(op, map[string]any{
+		"redirect_request": map[string]any{
+			"status_code": uint64(http.StatusFound),
+			"location":    "/redirected",
+		},
+	}, cfg)
+	if action == nil {
+		t.Fatal("redirect_request did not emit BlockHTTP")
+	}
+	if action.ReportsBlockOutcome() {
+		t.Fatal("redirect_request must not report a block outcome")
+	}
+	action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if applied != 1 {
+		t.Fatalf("redirect invoked block callback: calls = %d, want 1", applied)
+	}
+}
+
+func TestBlockHTTPIsBlocking(t *testing.T) {
+	if !newHTTPBlockRequestAction(http.StatusForbidden, "auto", "").IsBlocking() {
+		t.Fatal("block_request action must be marked as blocking")
+	}
+	if newRedirectRequestAction(http.StatusFound, "/redirected", "").IsBlocking() {
+		t.Fatal("redirect_request action must not be marked as blocking")
 	}
 }
 

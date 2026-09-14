@@ -32,6 +32,11 @@ func (w *responseWriter) Status() int {
 	return w.status
 }
 
+// Written reports whether the response headers were sent.
+func (w *responseWriter) Written() bool {
+	return w.status != 0
+}
+
 // Write writes the data to the connection as part of an HTTP reply.
 // We explicitly call WriteHeader with the 200 status code
 // in order to get it reported into the span.

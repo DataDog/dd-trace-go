@@ -12,6 +12,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestResolveBlockMilestones(t *testing.T) {
+	tests := []struct {
+		name           string
+		requested      bool
+		outcomes       []int32
+		requestBlocked bool
+		blockFailure   bool
+	}{
+		{name: "not requested"},
+		{name: "not requested but unavailable", outcomes: []int32{blockOutcomeFailed}},
+		{name: "requested outcome unknown", requested: true, requestBlocked: true},
+		{name: "requested and applied", requested: true, outcomes: []int32{blockOutcomeApplied}, requestBlocked: true},
+		{name: "requested and failed", requested: true, outcomes: []int32{blockOutcomeFailed}, blockFailure: true},
+		{name: "failure followed by success", requested: true, outcomes: []int32{blockOutcomeFailed, blockOutcomeApplied}, requestBlocked: true},
+		{name: "success followed by failure", requested: true, outcomes: []int32{blockOutcomeApplied, blockOutcomeFailed}, requestBlocked: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := new(ContextMetrics)
+			if tc.requested {
+				metrics.SetBlockRequested()
+			}
+			for _, outcome := range tc.outcomes {
+				switch outcome {
+				case blockOutcomeApplied:
+					metrics.SetBlockApplied()
+				case blockOutcomeFailed:
+					metrics.SetBlockFailed()
+				}
+			}
+
+			metrics.resolveBlockMilestones()
+
+			require.Equal(t, tc.requestBlocked, metrics.Milestones.requestBlocked)
+			require.Equal(t, tc.blockFailure, metrics.Milestones.blockFailure)
+			require.False(t, metrics.Milestones.requestBlocked && metrics.Milestones.blockFailure)
+		})
+	}
+}
+
 func TestUpdateClosestToZero(t *testing.T) {
 	t.Run("first_error_sets_code", func(t *testing.T) {
 		var target atomic.Int32

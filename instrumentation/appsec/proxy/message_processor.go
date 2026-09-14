@@ -113,6 +113,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		pseudoRequest.ClientIP,
 		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
+		mp.BlockingUnavailable,
 		// Resolved per request rather than cached: the gateway is identified from the request
 		// headers, so a single processor can serve several kinds of gateway.
 		ackBodyMessagesUntilEndOfStream(ctx, req),

@@ -31,6 +31,9 @@ func Test_wrapResponseWriter(t *testing.T) {
 		assert.True(t, ok)
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
+		written, ok := w.(interface{ Written() bool })
+		assert.True(t, ok)
+		assert.False(t, written.Written())
 	})
 
 }

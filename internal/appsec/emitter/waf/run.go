@@ -60,7 +60,17 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
+	metrics := op.GetMetricsInstance()
+	actionConfig := op.actionConfig()
+	if _, blocking := result.Actions["block_request"]; blocking && addrs.TimerKey != addresses.RASPScope {
+		actionConfig = actionConfig.WithBlockRequestApplied(func() {
+			op.SetRequestBlocked()
+			if metrics != nil {
+				metrics.SetBlockApplied()
+			}
+		})
+	}
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, actionConfig)
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.
@@ -72,7 +82,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	if metrics := op.GetMetricsInstance(); metrics != nil {
+	if metrics != nil {
 		metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,

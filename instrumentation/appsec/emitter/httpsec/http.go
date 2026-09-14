@@ -189,7 +189,15 @@ func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) {
+	op.finishOperation(res)
+	op.finishContext()
+}
+
+func (op *HandlerOperation) finishOperation(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
+}
+
+func (op *HandlerOperation) finishContext() {
 	if op.wafContextOwner {
 		op.ContextOperation.Finish()
 	}
@@ -274,6 +282,47 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	return err
 }
 
+func responseStarted(w http.ResponseWriter) bool {
+	if res, ok := w.(interface{ Written() bool }); ok {
+		return res.Written()
+	}
+	res, ok := w.(interface{ Status() int })
+	return ok && res.Status() != 0
+}
+
+func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.ResponseWriter, r *http.Request, onBlock []func()) bool {
+	if action == nil || action.Handler == nil {
+		return false
+	}
+
+	handler := action.Handler
+	metrics := op.ContextOperation.GetMetricsInstance()
+	if responseStarted(w) || op.ContextOperation.BlockingUnavailable() {
+		if action.ReportsBlockOutcome() && metrics != nil {
+			metrics.SetBlockFailed()
+		}
+		return false
+	}
+
+	action.Handler = nil
+	for _, f := range onBlock {
+		f()
+	}
+
+	if action.ReportsBlockOutcome() && metrics != nil {
+		// Treat a panic while writing the blocking response as a failure. A
+		// successful write below replaces this provisional outcome.
+		metrics.SetBlockFailed()
+	}
+	handler.ServeHTTP(w, r)
+	if !action.ReportsBlockOutcome() {
+		// Redirects and RASP blocks do not contribute to the WAF-scope block
+		// outcome, but applying them still marks the request as interrupted.
+		op.ContextOperation.SetRequestBlocked()
+	}
+	return true
+}
+
 // BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
 // It returns the modified http.ResponseWriter and http.Request, an additional afterHandle function
 // that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
@@ -313,39 +362,25 @@ func BeforeHandle(
 		if res, ok := w.(interface{ Status() int }); ok {
 			statusCode = res.Status()
 		}
-		op.Finish(HandlerOperationRes{
+
+		// Finishing the HTTP operation can produce a blocking action from the
+		// response data. Apply or reject that action before finishing the WAF
+		// context, which submits waf.requests.
+		op.finishOperation(HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
 		})
+		defer op.finishContext()
 
-		// Execute the onBlock functions to make sure blocking works properly
-		// in case we are instrumenting the Gin framework
-		if blockPtr := blockAtomic.Load(); blockPtr != nil {
-			for _, f := range opts.OnBlock {
-				f()
-			}
-
-			if blockPtr.Handler != nil {
-				blockPtr.Handler.ServeHTTP(w, tr)
-			}
-		}
+		applyBlockAction(op, blockAtomic.Load(), w, tr, opts.OnBlock)
 	}
 
-	handled := false
-	if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
-		// handler is replaced
-		blockPtr.Handler.ServeHTTP(w, tr)
-		blockPtr.Handler = nil
-		handled = true
-	}
+	handled := applyBlockAction(op, blockAtomic.Load(), w, tr, opts.OnBlock)
 
 	// We register a handler for cases that would require us to write the blocking response before any more code
 	// from a specific framework (like Gin) is executed that would write another (wrong) response here.
-	dyngo.OnData(op, func(e EarlyBlock) {
-		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
-			blockPtr.Handler.ServeHTTP(w, tr)
-			blockPtr.Handler = nil
-		}
+	dyngo.OnData(op, func(EarlyBlock) {
+		applyBlockAction(op, blockAtomic.Load(), w, tr, opts.OnBlock)
 	})
 
 	return w, tr, afterHandle, handled

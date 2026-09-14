@@ -91,12 +91,20 @@ type statusResponseWriter struct {
 	http.ResponseWriter
 }
 
-// Status returns the status code of the response
+// Status returns the status code of the response.
 func (w *statusResponseWriter) Status() int {
 	if r, err := echo.UnwrapResponse(w.ResponseWriter); err == nil {
 		return r.Status
 	}
 	return 0
+}
+
+// Written reports whether Echo committed the response.
+func (w *statusResponseWriter) Written() bool {
+	if r, err := echo.UnwrapResponse(w.ResponseWriter); err == nil {
+		return r.Committed
+	}
+	return false
 }
 
 // Unwrap returns the underlying http.ResponseWriter so that echo.UnwrapResponse can work through the chain.
