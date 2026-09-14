@@ -6,6 +6,7 @@
 package main
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -100,6 +101,29 @@ func TestClassify(t *testing.T) {
 			name:    "an unknown top-level directory runs everything",
 			files:   []string{"zz-brand-new/thing.go"},
 			wantAll: true,
+		},
+		{
+			// Its own go.mod, so nothing in the root module can import it. Only
+			// unit tests (test-telemetry-errors-e2e lives here) plus hygiene.
+			name:    "a submodule under internal/ is not core",
+			files:   []string{"internal/apps/apps.go"},
+			want:    []string{"pull-request-tests", "static-lint"},
+			notWant: []string{"system-tests", "orchestrion", "parametric-tests"},
+		},
+		{
+			// orchestrion.yml pre-pulls the pinned images from this module's
+			// docker-compose.yaml, so it is the one submodule that keeps that gate.
+			name:    "the testcontainers module keeps the orchestrion gate",
+			files:   []string{"instrumentation/testutils/containers/images/docker-compose.yaml"},
+			want:    []string{"orchestrion", "pull-request-tests"},
+			notWant: []string{"system-tests", "parametric-tests"},
+		},
+		{
+			// Referenced only by smoke-tests.yml, which has no pull_request trigger.
+			name:    "a submodule no pull-request workflow builds needs only hygiene",
+			files:   []string{"internal/setup-smoke-test/main.go"},
+			want:    []string{"static-lint", "generate"},
+			notWant: []string{"pull-request-tests", "system-tests", "orchestrion"},
 		},
 		{
 			name:    "an unknown root-level file runs everything",
@@ -330,4 +354,40 @@ func sorted(s []string) []string {
 	out := append([]string(nil), s...)
 	sort.Strings(out)
 	return out
+}
+
+// TestNoSubmoduleIsClassifiedAsCore is a structural rule, not a judgement.
+//
+// A directory with its own go.mod is not part of the root module, so no
+// root-module package -- and therefore no contrib module -- can import it. It
+// cannot be `core`, whose whole meaning is "reachable from everything". Several
+// such directories live under internal/ and instrumentation/, which the core
+// component claims with a broad prefix, so each needs its own earlier entry.
+//
+// Measured on the 120 merged pull requests before this rule existed: nine
+// submodules were swallowed by `core`, and four of those pull requests ran the
+// entire suite solely because of it.
+func TestNoSubmoduleIsClassifiedAsCore(t *testing.T) {
+	tab, _, root := testTable(t)
+
+	var offenders []string
+	for _, f := range trackedFiles(t, root) {
+		if filepath.Base(f) != "go.mod" {
+			continue
+		}
+		dir := filepath.ToSlash(filepath.Dir(f))
+		if dir == "." {
+			continue // the root module is core by definition
+		}
+		c := tab.componentFor(dir + "/probe_test.go")
+		if c != nil && c.ID == "core" {
+			offenders = append(offenders, dir)
+		}
+	}
+	sort.Strings(offenders)
+	for _, d := range offenders {
+		t.Errorf("%s has its own go.mod but classifies as `core`. Nothing in the root module "+
+			"can import it, so it cannot need the full suite. Add a component for it in %s, "+
+			"ordered before `core`.", d, tableRelPath)
+	}
 }
