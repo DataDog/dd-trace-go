@@ -11,6 +11,8 @@ on:
         type: boolean
         default: false
         required: false
+  workflow_dispatch: # On-demand runs; the `push` trigger below only covers release-v* branches,
+                     # so `main` is otherwise only exercised by the nightly schedule.
   pull_request:
   push:
     branches:
