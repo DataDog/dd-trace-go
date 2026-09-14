@@ -136,6 +136,16 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/action
+      # These validate CI configuration, not Go code: that every workflow is
+      # registered in .github/ci-components.yml, that native paths: filters are
+      # declared and still live, that each join job depends on `changes`, and
+      # that the GitLab benchmark filter covers every benchmark it gates. They
+      # also run under `make lint/misc` in the copyright job, but that gate is
+      # off for a CI-config-only change -- which is exactly when these files are
+      # the thing being edited. scripts/ciselect/workflows_test.go asserts this
+      # step exists.
+      - name: Verify CI component table and workflow invariants
+        run: go test ./scripts/ciselect/
 
   check-modules:
     needs: [changes, warm-tools-cache]

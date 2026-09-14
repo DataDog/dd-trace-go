@@ -262,10 +262,15 @@ jobs:
           fi
           echo " - All APM Test Agent Check Traces returned successful!"
 
-      # Allowlist the failing results: 'skipped' means no changed module needs a
-      # contrib test, which is a pass, not a failure.
+      # 'skipped' is only a pass when set-up decided no module needed testing.
+      # A failing set-up also skips test-contrib-matrix, and accepting that skip
+      # would report a green contrib gate having tested nothing.
       - name: Failure
-        if: contains(fromJSON('["failure", "cancelled"]'), needs.test-contrib-matrix.result)
+        if: >-
+          needs.set-up.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.test-contrib-matrix.result)
+          || (needs.set-up.outputs.has-contribs == 'true'
+              && needs.test-contrib-matrix.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Success
         run: echo "Success!"

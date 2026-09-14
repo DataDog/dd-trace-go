@@ -40,10 +40,13 @@ func TestClassify(t *testing.T) {
 		notWant []string
 	}{
 		{
-			name:    "leaf package runs unit tests but not the heavy suites",
+			// system-tests stays on: the FEATURE_FLAGGING_AND_EXPERIMENTATION
+			// scenario is this feature's only end-to-end coverage. Orchestrion
+			// and parametric have nothing to do with it.
+			name:    "leaf package skips the suites that cannot see it",
 			files:   []string{"openfeature/provider.go", "openfeature/remoteconfig.go"},
-			want:    []string{"pull-request-tests", "generate", "codeql", "static-lint"},
-			notWant: []string{"system-tests", "orchestrion", "parametric-tests"},
+			want:    []string{"pull-request-tests", "generate", "codeql", "static-lint", "system-tests"},
+			notWant: []string{"orchestrion", "parametric-tests"},
 		},
 		{
 			name:  "contrib/os has no go.mod, so it is root-module code",
@@ -85,10 +88,13 @@ func TestClassify(t *testing.T) {
 			notWant: []string{"generate", "pull-request-tests", "system-tests"},
 		},
 		{
+			// The gitlink has no trailing slash and no children, so the
+			// openfeature/** pattern has to match the bare path. This fixture
+			// *is* the FFE scenario's data, so it must reach system-tests.
 			name:    "a submodule pointer bump is a bare gitlink path",
 			files:   []string{"openfeature/ffe-system-test-data"},
-			want:    []string{"pull-request-tests"},
-			notWant: []string{"system-tests"},
+			want:    []string{"pull-request-tests", "system-tests"},
+			notWant: []string{"orchestrion", "parametric-tests"},
 		},
 		{
 			name:    "an unknown top-level directory runs everything",

@@ -168,6 +168,10 @@ components:
   # directory (contrib/README.md) from dragging in that directory's test suite.
   # ------------------------------------------------------- CI config and docs
   - id: workflows
+    why: >-
+      static-actions covers actionlint and, since these tests validate CI
+      configuration rather than Go code, the scripts/ciselect invariants --
+      workflows_test.go asserts things about the very files being edited.
     paths: [ .github/workflows/*.yml ]
     self-reference: true
     gates: [ static-actions ]
@@ -216,11 +220,15 @@ components:
     gates: [ static-copyright ]
 
   - id: gitlab
-    why: Separate pipeline. .gitlab/ is its own Go module, not imported here.
+    why: >-
+      A separate pipeline; .gitlab/ is its own Go module, not imported here. It
+      still needs static-actions, because gitlab_test.go checks that the
+      microbenchmark path filter covers every package declaring a benchmark
+      named in BENCHMARKS -- exactly the file being edited.
     paths:
       - .gitlab/**
       - .gitlab-ci.yml
-    gates: []
+    gates: [ static-actions ]
 
   - id: repo-meta
     paths:
@@ -277,11 +285,17 @@ components:
   # No contrib imports these. `dependent-modules` is the measured set of
   # workspace modules that do; depgraph_test.go re-derives it nightly.
   - id: openfeature
+    why: >-
+      No contrib imports it, but system-tests runs the
+      FEATURE_FLAGGING_AND_EXPERIMENTATION scenario against the checked-out
+      tracer (.github/workflows/system-tests.yml), and the fixture submodule
+      below is that scenario's data. It is the only end-to-end coverage this
+      feature has, so it keeps the system-tests gate.
     paths:
       - openfeature/**
       - openfeature/ffe-system-test-data   # git submodule; matched as a bare gitlink
     dependent-modules: []
-    gates: [ "@go-hygiene", pull-request-tests ]
+    gates: [ "@go-hygiene", pull-request-tests, system-tests ]
 
   - id: crashtracker
     paths: [ crashtracker/** ]
