@@ -487,6 +487,42 @@ func TestExtractTraceTagsWithoutIdentity(t *testing.T) {
 	assert.Equal(t, "5678", root.Context().trace.propagatingTag(keyPropagatedLLMObsTraceID))
 }
 
+// TestExtractTraceTagsWithoutIdentityDecisionMaker verifies the derived
+// trace.dm cache is populated when propagating tags are copied onto the new
+// root, and that the root does not alias the extracted trace's tag map.
+func TestExtractTraceTagsWithoutIdentityDecisionMaker(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	src := TextMapCarrier(map[string]string{
+		traceTagsHeader: keyDecisionMaker + "=-1," + keyPropagatedLLMObsParentID + "=1234",
+	})
+
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+
+	root := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer root.Finish()
+
+	// The string tag and its numeric cache must agree: v1 encoding reads the
+	// latter via decisionMaker(), and setSamplingPriority skips the repairing
+	// write whenever the string already matches the local sampler's mechanism.
+	rt := root.Context().trace
+	assert.Equal(t, "-1", rt.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, uint32(1), rt.decisionMaker())
+
+	// The root's snapshot is a clone, not the extracted trace's live map.
+	require.NotNil(t, ctx.trace)
+	rootTags := rt.loadPropagatingTags()
+	srcTags := ctx.trace.loadPropagatingTags()
+	require.NotEmpty(t, rootTags)
+	require.NotEmpty(t, srcTags)
+	assert.NotEqual(t, reflect.ValueOf(srcTags).Pointer(), reflect.ValueOf(rootTags).Pointer())
+}
+
 // TestExtractNoIdentityNoPropagatingTags verifies a missing identity with no
 // tags to rescue is still a hard extraction failure.
 func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {

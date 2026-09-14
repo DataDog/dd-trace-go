@@ -302,7 +302,10 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			// propagate tags (LLMObs lineage, _dd.p.ts, _dd.p.usr.id, ...)
 			if pt := parent.trace.loadPropagatingTags(); len(pt) > 0 {
 				context.trace = newTrace()
-				context.trace.propagatingTags.Store(pt)
+				// replacePropagatingTags, not a raw Store: it clones the
+				// snapshot (so the two traces don't alias one map) and derives
+				// trace.dm, which v1 encoding reads via decisionMaker().
+				context.trace.replacePropagatingTags(pt)
 			}
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
