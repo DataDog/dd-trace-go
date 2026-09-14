@@ -6,7 +6,9 @@
 package main
 
 import (
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -96,6 +98,18 @@ func TestClassify(t *testing.T) {
 			files:   []string{"openfeature/ffe-system-test-data"},
 			want:    []string{"pull-request-tests", "system-tests"},
 			notWant: []string{"orchestrion", "parametric-tests"},
+		},
+		{
+			// Only the orchestrion/ subtree of these fixtures has a go.mod. The
+			// rest are root-module packages, and the tests that run them --
+			// internal/civisibility/.../itrbackfillfixture -- are root-module
+			// too, so test-core is the only place any of it executes.
+			name:  "ITR backfill fixtures still need the tests that drive them",
+			files: []string{"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/manual/lib/lib.go"},
+			want:  []string{"pull-request-tests", "static-lint"},
+			// Nothing ships these and no weblog or parametric scenario builds
+			// them.
+			notWant: []string{"system-tests", "parametric-tests"},
 		},
 		{
 			name:    "an unknown top-level directory runs everything",
@@ -390,4 +404,92 @@ func TestNoSubmoduleIsClassifiedAsCore(t *testing.T) {
 			"can import it, so it cannot need the full suite. Add a component for it in %s, "+
 			"ordered before `core`.", d, tableRelPath)
 	}
+}
+
+// Root-module tests keep the pull-request-tests gate.
+//
+// scripts/ci_test_core.sh decides what to run with `go list ./...` over the
+// root module, inside the test-core job that the pull-request-tests gate owns.
+// test-core and multios-unit-tests are the only jobs that execute root-module
+// tests, and both sit behind that one gate. So a component claiming a
+// root-module _test.go while dropping the gate describes tests that no longer
+// run for a change confined to it -- including tests that exist purely to
+// drive a neighbouring fixture.
+//
+// Scoped to _test.go on purpose. A root-module package with no tests of its own
+// is still type-checked by static-lint and built by static-cross-compile, both
+// in @go-hygiene, so dropping pull-request-tests loses nothing for it. That is
+// why internal/orchestrion/generator and matrix legitimately sit on the
+// orchestrion gate alone.
+//
+// This is the mirror of TestNoSubmoduleIsClassifiedAsCore. That rule keeps
+// submodules out of `core`; this one keeps root-module tests inside
+// pull-request-tests. civisibility-fixtures broke it: it was filed under the
+// submodule section, but only its orchestrion/ subtree has a go.mod, so
+// test-core had been running the other three all along.
+func TestRootModuleTestsKeepPullRequestTests(t *testing.T) {
+	tab, _, root := testTable(t)
+
+	tracked := trackedFiles(t, root)
+
+	// Every directory that owns a go.mod is a module boundary: files below it
+	// belong to that module, not the root one.
+	var submodules []string
+	for _, f := range tracked {
+		if filepath.Base(f) != "go.mod" {
+			continue
+		}
+		if dir := filepath.ToSlash(filepath.Dir(f)); dir != "." {
+			submodules = append(submodules, dir+"/")
+		}
+	}
+
+	offenders := map[string][]string{}
+	for _, f := range tracked {
+		f = filepath.ToSlash(f)
+		if !strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		// `go list ./...` never descends into testdata, so those files are not
+		// packages of the root module however they classify.
+		if strings.Contains("/"+f, "/testdata/") {
+			continue
+		}
+		if inSubmodule(f, submodules) {
+			continue
+		}
+		c := tab.componentFor(f)
+		if c == nil {
+			continue // unclassified already escalates to every gate
+		}
+		gates, err := tab.expand(c.Gates, nil)
+		if err != nil {
+			t.Fatalf("component %q: expand(%v) = %v", c.ID, c.Gates, err)
+		}
+		if slices.Contains(gates, "pull-request-tests") {
+			continue
+		}
+		offenders[c.ID] = append(offenders[c.ID], f)
+	}
+
+	for _, id := range slices.Sorted(maps.Keys(offenders)) {
+		files := offenders[id]
+		t.Errorf("component %q drops the pull-request-tests gate but claims %d root-module "+
+			"test file(s), e.g. %s. test-core is the only job that runs them, so a change "+
+			"confined to this component would not run its own tests. Either add "+
+			"pull-request-tests to the component in %s, or give the directory its own go.mod "+
+			"if it really is outside the root module.",
+			id, len(files), files[0], tableRelPath)
+	}
+}
+
+// inSubmodule reports whether file lives under one of dirs, each of which must
+// end in "/".
+func inSubmodule(file string, dirs []string) bool {
+	for _, d := range dirs {
+		if strings.HasPrefix(file, d) {
+			return true
+		}
+	}
+	return false
 }

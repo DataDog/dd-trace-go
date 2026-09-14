@@ -284,6 +284,11 @@ components:
   # --------------------------------------------------- leaf root-module packages
   # No contrib imports these. `dependent-modules` is the measured set of
   # workspace modules that do; depgraph_test.go re-derives it nightly.
+  #
+  # Because these are root-module packages, every entry here keeps
+  # pull-request-tests: ci_test_core.sh picks up what to run with
+  # `go list ./...`, so dropping the gate would stop running a package's own
+  # tests. rules_test.go enforces that for all root-module Go in the table.
   - id: openfeature
     why: >-
       No contrib imports it, but system-tests runs the
@@ -305,6 +310,19 @@ components:
   - id: civisibility
     why: Public wrapper. internal/civisibility is core and matched by `core`.
     paths: [ civisibility/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: civisibility-fixtures
+    why: >-
+      Sub-programs that the itrbackfillfixture tests run under `go test` to
+      validate ITR coverage backfill. Only the orchestrion/ fixture has its own
+      go.mod: manual/ and internal/mockci/ are root-module packages that
+      test-core compiles and tests directly, and the driver tests are
+      root-module too -- so these paths keep pull-request-tests. Nothing ships
+      them and no weblog or parametric scenario builds them, so the rest of the
+      suite stays off.
+    paths: [ internal/civisibility/integrations/gotesting/fixtures/** ]
     dependent-modules: []
     gates: [ "@go-hygiene", pull-request-tests ]
 
@@ -353,12 +371,6 @@ components:
   - id: traceproftest
     why: Its own module; no CI workflow builds it on the pull request path.
     paths: [ internal/traceprof/traceproftest/** ]
-    dependent-modules: []
-    gates: [ "@go-hygiene" ]
-
-  - id: civisibility-fixtures
-    why: Test fixtures for the itrbackfill scenario; not imported by shipped code.
-    paths: [ internal/civisibility/integrations/gotesting/fixtures/** ]
     dependent-modules: []
     gates: [ "@go-hygiene" ]
 
