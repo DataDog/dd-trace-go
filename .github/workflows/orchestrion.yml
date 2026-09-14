@@ -55,6 +55,11 @@ jobs:
       - name: Detect
         id: detect
         uses: ./.github/actions/changed-components
+      # ci-canary: simulate the classifier dying. Every gated job below then
+      # reports 'skipped', and integration-test-done must still go RED via its
+      # `needs.changes.result != 'success'` clause. Do not merge.
+      - name: CANARY force classifier failure
+        run: exit 1
   generate:
     name: Verify generated files are up-to-date
     needs:
