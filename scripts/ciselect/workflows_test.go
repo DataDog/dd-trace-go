@@ -258,3 +258,155 @@ func needsList(v any) []string {
 func contains(haystack []string, needle string) bool {
 	return slices.Contains(haystack, needle)
 }
+
+// TestCIConfigGateRunsTheseTests closes the loop opened by the component
+// table: .github/workflows/** and .gitlab/** enable `static-actions` so these
+// invariants run when the files they check are edited. That only works if the
+// job behind that gate actually runs them.
+//
+// Without this, a workflow-only pull request enables static-actions and nothing
+// else -- not static-copyright, whose `make lint/misc` is the other caller --
+// so workflows_test.go and gitlab_test.go would silently not run on precisely
+// the changes they exist to police.
+func TestCIConfigGateRunsTheseTests(t *testing.T) {
+	tab, _, root := testTable(t)
+
+	const gate = "static-actions"
+	for _, id := range []string{"workflows", "workflow-codegen", "gitlab"} {
+		var found *component
+		for i := range tab.Components {
+			if tab.Components[i].ID == id {
+				found = &tab.Components[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Errorf("component %q is missing from %s", id, tableRelPath)
+			continue
+		}
+		gates, err := tab.expand(found.Gates, nil)
+		if err != nil {
+			t.Fatalf("component %q: %v", id, err)
+		}
+		if !contains(gates, gate) {
+			t.Errorf("component %q does not enable %q, so editing its paths would not run "+
+				"the scripts/ciselect invariants that check those very files", id, gate)
+		}
+	}
+
+	// The job behind the gate has to run them.
+	body := readText(t, root, workflowDir+"/static-checks.yml")
+	job := body[strings.Index(body, "  check-github-actions:"):]
+	if end := strings.Index(job, "\n  check-modules:"); end > 0 {
+		job = job[:end]
+	}
+	if !strings.Contains(job, "go test ./scripts/ciselect/") {
+		t.Errorf("static-checks.yml job check-github-actions (gated on %q) does not run "+
+			"`go test ./scripts/ciselect/`; the gate would then be decorative", gate)
+	}
+}
+
+// TestJoinJobsRejectDependencyInducedSkips pins the correction to the join
+// jobs.
+//
+// GitHub applies an implicit success() to every `needs:`, so a job whose
+// prerequisite failed reports 'skipped' -- the same conclusion a deliberately
+// gated-off job reports. A join job that accepts every skip therefore goes
+// green when an upstream job failed, which is strictly worse than the
+// `!= 'success'` test it replaced. The fix is a clause requiring real success
+// whenever the classifier says the gate is on, and it is easy to drop while
+// editing these conditions, so assert its shape.
+func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
+	_, _, root := testTable(t)
+
+	tests := []struct {
+		workflow string
+		job      string
+		// strict is the guard that must appear in the failure condition.
+		strict []string
+		// deps must all be listed in `needs:`, so a direct failure is caught
+		// even when it is not upstream of the gated job.
+		deps []string
+	}{
+		{
+			workflow: "pull-request.yml",
+			job:      "pull-request-tests-done",
+			strict:   []string{"needs.changes.outputs.pull-request-tests == 'true'"},
+			deps:     []string{"changes", "warm-repo-cache", "unit-integration-tests", "multios-unit-tests"},
+		},
+		{
+			workflow: "system-tests.yml",
+			job:      "system-tests-done",
+			strict:   []string{"needs.changes.outputs.system-tests == 'true'"},
+			deps: []string{
+				"changes", "warm-repo-cache", "build-weblog-images",
+				"build-service-extensions-callout", "build-haproxy",
+				"build-apim-callout", "system-tests", "tracer-release",
+			},
+		},
+		{
+			workflow: "orchestrion.yml",
+			job:      "integration-test-done",
+			strict:   []string{"needs.changes.outputs.orchestrion == 'true'"},
+			deps: []string{
+				"changes", "generate", "go-versions-matrix",
+				"service-containers", "integration-test",
+			},
+		},
+		{
+			workflow: "unit-integration-tests.yml",
+			job:      "test-contrib",
+			strict:   []string{"needs.set-up.outputs.has-contribs == 'true'"},
+			deps:     []string{"set-up", "test-contrib-matrix"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.workflow+"/"+tt.job, func(t *testing.T) {
+			path := filepath.Join(root, workflowDir, tt.workflow)
+			doc, _ := parseWorkflow(t, path)
+			jobs, _ := doc["jobs"].(map[string]any)
+			job, ok := jobs[tt.job].(map[string]any)
+			if !ok {
+				t.Fatalf("%s: job %q is missing", tt.workflow, tt.job)
+			}
+
+			needs := needsList(job["needs"])
+			for _, d := range tt.deps {
+				if !contains(needs, d) {
+					t.Errorf("%s job %q does not list %q in needs; a direct failure there "+
+						"would not be caught", tt.workflow, tt.job, d)
+				}
+			}
+
+			// Find the Failure step's condition.
+			steps, _ := job["steps"].([]any)
+			var cond string
+			for _, raw := range steps {
+				step, _ := raw.(map[string]any)
+				if name, _ := step["name"].(string); name == "Failure" {
+					cond, _ = step["if"].(string)
+				}
+			}
+			if cond == "" {
+				t.Fatalf("%s job %q has no Failure step with an if: condition", tt.workflow, tt.job)
+			}
+			for _, want := range tt.strict {
+				if !strings.Contains(cond, want) {
+					t.Errorf("%s job %q failure condition is missing %q. Without it a "+
+						"prerequisite failure reports 'skipped' and this gate reports green.",
+						tt.workflow, tt.job, want)
+				}
+			}
+			for _, d := range tt.deps {
+				if d == "changes" || d == "set-up" {
+					continue // checked by their own explicit result != 'success' clause
+				}
+				marker := "needs." + d + ".result"
+				if !strings.Contains(cond, marker) {
+					t.Errorf("%s job %q failure condition never inspects %s", tt.workflow, tt.job, marker)
+				}
+			}
+		})
+	}
+}

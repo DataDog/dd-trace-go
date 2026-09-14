@@ -83,20 +83,30 @@ jobs:
         name: [ "test-contrib", "test-core" ]
     needs:
       - changes
+      - warm-repo-cache
       - unit-integration-tests
       - multios-unit-tests
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
-      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
-      # reports 'skipped', which must not read as a failure. `changes` itself is
-      # checked explicitly -- if the classifier dies, everything downstream is
-      # 'skipped' and this gate would otherwise go green without running a test.
+      # 'skipped' is only a pass when the classifier actually turned the suite
+      # off. A job whose prerequisite failed also reports 'skipped' -- GitHub
+      # applies an implicit success() to every `needs:` -- so accepting every
+      # skip would let a failed warm-repo-cache carry this gate green having run
+      # no tests. Hence three separate conditions:
+      #   1. the classifier itself must have succeeded, otherwise everything
+      #      downstream is 'skipped' for the wrong reason;
+      #   2. no dependency may have failed or been cancelled;
+      #   3. if the gate is on, the test jobs must have actually succeeded.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.warm-repo-cache.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.unit-integration-tests.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.multios-unit-tests.result)
+          || (needs.changes.outputs.pull-request-tests == 'true'
+              && (needs.unit-integration-tests.result != 'success'
+                  || needs.multios-unit-tests.result != 'success'))
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.unit-integration-tests.result == 'skipped'

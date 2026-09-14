@@ -373,19 +373,30 @@ jobs:
     needs:
       - changes
       - generate
+      - go-versions-matrix
+      - service-containers
       - integration-test
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
-      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
-      # reports 'skipped', which must not read as a failure. `changes` is
-      # checked explicitly -- if the classifier dies, everything downstream is
-      # 'skipped' and this gate would otherwise go green without running a test.
+      # 'skipped' is only a pass when the classifier actually turned the suite
+      # off. GitHub applies an implicit success() to every `needs:`, so a failing
+      # go-versions-matrix or service-containers would skip integration-test, and
+      # accepting that skip would carry this gate green. Both are dependencies
+      # here, and when the gate is on integration-test must have really succeeded.
+      #
+      # generate gets no strict clause: it carries its own
+      # `inputs.orchestrion-version == ''` condition, so a legitimate skip on a
+      # cross-repo workflow_call must stay a pass.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
           || contains(fromJSON('["failure", "cancelled"]'), needs.generate.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.go-versions-matrix.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.service-containers.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.integration-test.result)
+          || (needs.changes.outputs.orchestrion == 'true'
+              && needs.integration-test.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.integration-test.result == 'skipped'

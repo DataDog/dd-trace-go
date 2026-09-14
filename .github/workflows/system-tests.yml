@@ -481,23 +481,37 @@ jobs:
     name: System Tests
     needs:
       - changes
+      - warm-repo-cache
       - build-weblog-images
+      - build-service-extensions-callout
+      - build-haproxy
+      - build-apim-callout
       - system-tests
       - tracer-release
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
-      # Failure is an allowlist, not `!= 'success'`: a gated-off dependency
-      # reports 'skipped', which must not read as a failure. That also subsumes
-      # the tracer-release special case, which only runs on a schedule.
-      # `changes` is checked explicitly -- if the classifier dies, everything
-      # downstream is 'skipped' and this gate would otherwise go green.
+      # 'skipped' is only a pass when the classifier actually turned the suite
+      # off. GitHub applies an implicit success() to every `needs:`, so a job
+      # whose prerequisite failed also reports 'skipped': a failing
+      # build-haproxy would skip system-tests, and accepting that skip would
+      # carry this gate green. Every image build is therefore a dependency here,
+      # and when the gate is on the system-tests job must have really succeeded.
+      #
+      # tracer-release needs no strict clause -- it is schedule-only, so its
+      # skip is legitimate and the allowlist below is enough.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.warm-repo-cache.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.build-weblog-images.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-service-extensions-callout.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-haproxy.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-apim-callout.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.system-tests.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.tracer-release.result)
+          || (needs.changes.outputs.system-tests == 'true'
+              && needs.system-tests.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.system-tests.result == 'skipped'
