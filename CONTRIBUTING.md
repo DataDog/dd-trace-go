@@ -89,6 +89,53 @@ Our CI pipeline includes several automated checks:
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
 
 
+### Which checks run on a pull request
+
+Most workflows only run when a change could plausibly affect them. Two mechanisms
+do this, and which one applies is recorded in
+[`.github/ci-components.yml`](./.github/ci-components.yml):
+
+- A **`changes` job** classifies the pull request diff and the workflow's other
+  jobs gate on its outputs with `if:`. Skipped jobs still report a check run, and
+  the green-CI gate counts a `skipped` conclusion as a pass.
+- A native **`on.pull_request.paths`** filter, for workflows scoped to one narrow
+  area. A filtered-out workflow reports no check run at all.
+
+`.github/ci-components.yml` maps every path in the repository to the CI work it
+requires. It is ordered and first-match-wins, and the one rule that matters is:
+
+> **A path matching no component enables every gate.**
+
+The table is an allowlist of paths that are provably safe to skip, not a denylist
+of expensive ones. A new directory is therefore fully tested by default, and
+`make lint/misc` fails until someone classifies it — the same no-catch-all
+discipline as [CODEOWNERS](#codeowners-patterns).
+
+Some things worth knowing before editing the table:
+
+- **Directory names are a poor proxy for impact.** Every `contrib/` module
+  transitively imports 90-100 root-module packages, so a `ddtrace/tracer` change
+  really does need all of them. Conversely `datastreams/options` is reachable from
+  77 modules while the rest of `datastreams/` is reachable from 8. Check with
+  `go list -deps` rather than guessing from the path.
+- **`contrib/os/` has no `go.mod`.** It is root-module code living under a
+  `contrib/` path, so it escalates to the full suite.
+- The `dependent-modules` lists are measured facts, re-derived nightly by
+  `go test -tags depgraph ./scripts/ciselect/` in the `Main Branch and Release
+  Tests` workflow.
+- The merge queue is not gated. Everything gating a pull request still runs in
+  full on `mq-working-branch-*` before a commit can land on `main`.
+
+To see what a change set resolves to, without pushing:
+
+```shell
+git diff --name-only origin/main...HEAD | go run ./scripts/ciselect -explain
+```
+
+If a workflow was skipped and you believe it should have run, that is a bug in
+the table — open an issue or fix the component. To restore full CI for a
+component without touching any workflow, set its `gates:` to `[ "@everything" ]`.
+
 ### CI Troubleshooting
 
 Sometimes a pull request's checks will show failures that aren't related to its changes. When this happens, you can try the following steps:
