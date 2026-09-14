@@ -1,10 +1,10 @@
 services:
   aerospike:
-    image: aerospike:ce-8.1.2.4_1@sha256:fb172169a3b0c217563a4c7eb88ef117c4d24ac64a3a66ad99a18c0dca36bd8c
+    image: aerospike:ce-8.1.2.5_1@sha256:9d07c09a07b449d3438d20770c913bbed4031b8f86d92b31c30f014883b8db85
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:d35e159439b302146f964919904f84fd3c2cebf347272b8cb8c4368c1cf200e5
+    image: cassandra:5@sha256:da9dad3aaf67c4e5126c6aafa769460d75f27c1716951c48896ff5c4e97d2af3
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -13,7 +13,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:26@sha256:66aec17cd21a956029b83f083b813073859e8355dc1a00e55df6ba02f0e32345
+    image: mysql:26@sha256:45abdd9b4144660b5c93a5b7d0ebb21e024f0ba9851ecb4ab43bf83c6bf83592
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -71,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:8d09295845fe07eb5fdaba0d75b700891063ec84e943d417815cea10d6d3bb15
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -83,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:8d09295845fe07eb5fdaba0d75b700891063ec84e943d417815cea10d6d3bb15
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -95,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:8d09295845fe07eb5fdaba0d75b700891063ec84e943d417815cea10d6d3bb15
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -108,7 +108,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:3e915817a38ad113551851015d56a0e50f83fb587bcbbb1ae703dc157b112538
+    image: registry.datadoghq.com/agent:latest@sha256:ed0bd588e955d82f661d1b8dd1cdf179c1023e74a2817e7a812c99d52f05c319
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -128,11 +128,11 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:81a1c8842a09589fc8d5f285266f3340bf4abdf66700ba22988f14cc9b2b3118
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:81a1c8842a09589fc8d5f285266f3340bf4abdf66700ba22988f14cc9b2b3118
     ports:
       - "27017:27017"
   memcached:
