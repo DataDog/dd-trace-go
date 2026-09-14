@@ -816,6 +816,41 @@ func TestInitWithContext_CancelledDuringWait(t *testing.T) {
 	}
 }
 
+// TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady is the
+// cancellation counterpart of TestInitWithContext_LateConfigurationStillBecomesReady.
+// Cancelling Init hands the first ready event back to the provider, so a
+// configuration arriving afterwards must emit ProviderReady itself rather than
+// leaving the SDK stuck in a not-ready state.
+func TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runWithDeadline(t, 2*time.Second, func() error {
+		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	})
+	assertInitCanceledError(t, err)
+
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
+	}
+
+	provider.updateConfiguration(createTestConfig())
+
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the configuration arriving after cancellation, got %v", event.EventType)
+	}
+
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("a configuration arriving after cancellation must promote the provider to ready")
+	}
+}
+
 // TestInitWithContext_ConfigurationArrivesDuringWait pins that a real
 // configuration update still wakes a blocked InitWithContext, guarding
 // against a fix that stops missing cancellation but breaks the success path

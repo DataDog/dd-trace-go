@@ -382,6 +382,10 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			// arrive. Return an error rather than nil — nil would tell the
 			// OpenFeature SDK initialization succeeded and move it to
 			// ReadyState, even though the provider just tore itself down.
+			// Unlike the cancel and timeout branches below, this one leaves
+			// initialReadyHandoffComplete unset: updateConfiguration returns
+			// early once shutdownCalled is true, so no later configuration can
+			// reach emitFirstOrChangeEvent and the flag would have no effect.
 			return &openfeature.ProviderInitError{
 				ErrorCode: openfeature.ProviderFatalCode,
 				Message:   "provider was shut down before configuration arrived",
