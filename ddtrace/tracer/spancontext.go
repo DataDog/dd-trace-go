@@ -133,15 +133,8 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 	isRemote bool
-	// startsNewTrace marks a context that carries no usable trace identity, so a
-	// span created from it becomes the root of a new trace (fresh trace and span
-	// ID, no parent) rather than a child. Whatever the context does carry —
-	// baggage, propagating tags, span links — still travels onto that root.
-	//
-	// Set on extraction when: DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart
-	// deliberately severs the incoming trace; only baggage arrived; or
-	// propagating tags arrived without trace identity (an intermediary
-	// discarded x-datadog-trace-id/parent-id but forwarded x-datadog-tags).
+	// when true, indicates context carries no trace identity so a span created from it becomes the root of a new trace.
+	// This means the context only propagates baggage/tags/span links and is not used for distributed tracing fields
 	// +checklocks:mu
 	startsNewTrace bool
 	errors         atomic.Int32 // number of spans with errors in this trace
@@ -314,8 +307,8 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		})
 	}
 	// We generate a new upper trace ID when the trace is brand new (no parent)
-	// or when the parent starts a new trace, since such parents carry no trace
-	// ID to propagate
+	// or when the parent starts a new trace, since such parents should
+	// not propagate their trace IDs
 	if (parent == nil || parent.startsNewTrace) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>

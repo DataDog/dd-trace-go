@@ -346,9 +346,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// and sampling decision. The incoming context is referenced via a span
 	// link. Baggage is propagated.
 	//
-	// If incomingCtx is nil or already starts a new trace (no upstream trace
-	// context), there is no trace to link to, so fall through to continue
-	// behavior.
+	// If incomingCtx is nil or starts a new trace (no upstream trace ctx),
+	// there is no trace to link to, so fall through to continue behavior.
 	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.startsNewTrace { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		ctx := &SpanContext{
 			startsNewTrace: true, // signals spanStart to generate new traceID/spanID
@@ -419,14 +418,12 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
-	// An identity-less context — propagating tags that arrived without trace
-	// identity, see propagator.extractTextMap — must not end the search: a
-	// later extractor may still supply real identity, and treating the
-	// identity-less context as the incoming one would sever that trace. Hold
-	// it aside and either promote it (nothing else extracted) or merge its
-	// tags into the identity-bearing context below.
-	var pendingNewTrace *SpanContext
-	var pendingNewTraceProducer Propagator
+	// extractTextMap can return a context holding propagating tags but no trace
+	// identity (x-datadog-tags arrived, x-datadog-trace-id/parent-id did not).
+	// Such a context must not end the search: a later extractor (typically
+	// tracecontext) may still supply real identity, and letting the
+	// identity-less one win would sever that trace. Hold it aside instead.
+	var pendingTagsOnly *SpanContext
 	var links []SpanLink
 
 	for _, v := range p.extractors {
@@ -447,11 +444,13 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 				return nil, nil, err
 			}
 			if extractedCtx != nil {
+				// No trace identity: park it (first one wins) and keep
+				// looking for an extractor that has identity.
 				if extractedCtx.startsNewTrace { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-					if pendingNewTrace == nil {
-						pendingNewTrace, pendingNewTraceProducer = extractedCtx, v
+					if pendingTagsOnly == nil {
+						pendingTagsOnly = extractedCtx
 					}
-					continue // no identity here; keep looking
+					continue
 				}
 				ctx, producer = extractedCtx, v
 				if p.onlyExtractFirst {
@@ -492,12 +491,14 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 
 	if ctx == nil {
-		if pendingNewTrace != nil {
-			// No extractor supplied identity, so the identity-less context is
-			// the incoming one: the new span becomes a genuine root carrying
-			// the propagating tags that survived.
-			ctx, producer = pendingNewTrace, pendingNewTraceProducer
-			pendingNewTrace = nil
+		if pendingTagsOnly != nil {
+			// Nothing supplied identity, so the parked context is the incoming
+			// one: the span becomes a genuine root (fresh trace ID, no parent)
+			// that still carries the propagating tags. producer stays nil - it
+			// is only read on the restart path, which skips startsNewTrace
+			// contexts.
+			ctx = pendingTagsOnly
+			pendingTagsOnly = nil
 		} else if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
 				baggage:        pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
@@ -510,10 +511,11 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 			return nil, nil, ErrSpanContextNotFound
 		}
 	}
-	if pendingNewTrace != nil {
-		// Identity came from another propagator; keep the tags that arrived
-		// without it so no propagating-tag consumer loses lineage.
-		mergePropagatingTags(ctx, pendingNewTrace)
+	// Another propagator supplied identity, so ctx wins propagation. Fold in
+	// the parked tags anyway, otherwise x-datadog-tags that parsed fine would
+	// be silently dropped just because the Datadog IDs were missing.
+	if pendingTagsOnly != nil {
+		mergePropagatingTags(ctx, pendingTagsOnly)
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
@@ -540,10 +542,10 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 // (tags that arrived without trace identity) onto the context that did supply
 // identity. Keys already present win: the identity-bearing context describes
 // the trace actually being continued, so it must not be overwritten by a
-// carrier whose identity we discarded.
-// +checklocksignore - Initialization time, neither context is shared yet.
-func mergePropagatingTags(ctx, pendingNewTrace *SpanContext) {
-	src := pendingNewTrace.trace
+// carrier whose identity we discarded. Both contexts are freshly extracted and
+// not yet shared, so the unsynchronized writes below are safe.
+func mergePropagatingTags(ctx, tagsOnly *SpanContext) {
+	src := tagsOnly.trace
 	if src == nil {
 		return
 	}
