@@ -124,6 +124,11 @@ jobs:
           persist-credentials: false
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      # ci-canary: fail a prerequisite while the orchestrion gate is ON. That
+      # skips integration-test, which before the fix looked identical to a
+      # deliberately gated-off skip and carried the gate green. Do not merge.
+      - name: CANARY fail a prerequisite
+        run: exit 1
       - name: Define Services JSON
         id: set-services
         run: |
