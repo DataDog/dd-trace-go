@@ -123,6 +123,16 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE adds wall clock, so only do it where no pull
+          # request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
       - name: Merge contrib coverage files
         if: always()
         run: |

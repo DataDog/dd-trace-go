@@ -73,3 +73,25 @@ runs:
       shell: bash
       run: |-
         ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}
+
+    # Cache outcomes are only observable here, but the sizes worth recording are the
+    # post-build ones, and the API key needed to submit anything is minted later in the
+    # job (dd-sts). So stash the outcomes in the environment and let
+    # .github/actions/cache-metrics do the measuring and submitting near the end of the job.
+    - name: Record cache outcomes
+      # A tools-cache miss that goes on to fail install_tools.sh is worth recording, so
+      # this must not be skipped when an earlier step in the composite failed.
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "DD_CACHE_GO_VERSION=${{ steps.setup-go.outputs.go-version }}"
+          echo "DD_CACHE_TOOLS_HIT=${{ steps.cache-tools.outputs.cache-hit == 'true' && 'hit' || 'miss' }}"
+        } >> "$GITHUB_ENV"
+        # setup-go only reports cache-hit when it manages the cache itself; recording
+        # "n/a" rather than "miss" keeps opted-out jobs from looking like misses.
+        if [[ "${{ inputs.cache }}" == "true" ]]; then
+          echo "DD_CACHE_GOMOD_HIT=${{ steps.setup-go.outputs.cache-hit == 'true' && 'hit' || 'miss' }}" >> "$GITHUB_ENV"
+        else
+          echo "DD_CACHE_GOMOD_HIT=n/a" >> "$GITHUB_ENV"
+        fi

@@ -91,6 +91,16 @@ jobs:
           path: ./
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE costs tens of seconds on Windows, so only do it
+          # where no pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
