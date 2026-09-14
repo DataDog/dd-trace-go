@@ -14,43 +14,37 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Docker image tag to use for the package (default to selected branch name)'
-        required: false
+        description: 'Immutable Docker image tag to use for the package'
+        required: true
       commit_sha:
-        description: 'Commit SHA to checkout (default to latest commit on selected branch)'
-        required: false
-      set_as_latest:
-        description: 'Set the tag as latest'
-        required: false
-        default: false
-        type: boolean
+        description: 'Full commit SHA to checkout'
+        required: true
       build_service_extensions:
-        description: 'Build service-extensions-callout image'
+        description: 'Build service-extensions-callout image (versioned-only)'
         required: false
         default: false
         type: boolean
       build_request_mirror:
-        description: 'Build request-mirror image'
+        description: 'Build request-mirror image (versioned-only)'
         required: false
         default: false
         type: boolean
       build_apim_callout:
-        description: 'Build APIM callout image'
+        description: 'Build APIM callout image (versioned-only)'
         required: false
         default: false
         type: boolean
       build_haproxy:
-        description: 'Build haproxy SPOA image'
+        description: 'Build haproxy SPOA image (versioned-only)'
         required: false
         default: false
         type: boolean
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 jobs:
   prepare-tag:
+    permissions: {}
     runs-on: ubuntu-latest
     outputs:
       apim_callout_image_tag: ${{ steps.extract.outputs.apim_callout_image_tag }}
@@ -62,11 +56,15 @@ jobs:
         id: extract
         env:
           RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
           PREFIX_APIM_CALLOUT: contrib/azure/apim-callout/
           PREFIX_SERVICE_EXTENSION: contrib/envoyproxy/go-control-plane/
           PREFIX_REQUEST_MIRRORING: contrib/k8s.io/gateway-api/
           PREFIX_HAPROXY: contrib/haproxy/stream-processing-offload/
         run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            [[ "$RAW_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-docker\.(0|[1-9][0-9]*))?$ ]]
+          fi
           {
             echo "apim_callout_image_tag=${RAW_TAG#"$PREFIX_APIM_CALLOUT"}"
             echo "service_extension_image_tag=${RAW_TAG#"$PREFIX_SERVICE_EXTENSION"}"
@@ -74,11 +72,36 @@ jobs:
             echo "haproxy_image_tag=${RAW_TAG#"$PREFIX_HAPROXY"}"
           } >> "$GITHUB_OUTPUT"
 
+  verify-release-workflows:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact image workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify release workflows before package mutation
+        env:
+          EXPECTED_PARENT_SHA256: ${{ vars.GARDENER_RELEASE_DOCKER_IMAGES_WORKFLOW_SHA256 }}
+          EXPECTED_CHILD_SHA256: ${{ vars.GARDENER_RELEASE_DOCKER_BUILD_WORKFLOW_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_PARENT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_CHILD_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  %s\n' "$EXPECTED_PARENT_SHA256" .github/workflows/docker-images-release.yml | sha256sum --check --strict -
+          printf '%s  %s\n' "$EXPECTED_CHILD_SHA256" .github/workflows/docker-build-and-push.yml | sha256sum --check --strict -
+
   build-apim-callout:
-    needs: prepare-tag
+    needs: [prepare-tag, verify-release-workflows]
     if: >
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/azure/apim-callout')
       || github.event.inputs.build_apim_callout == 'true'
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/apim-callout
@@ -86,15 +109,19 @@ jobs:
       artifact_prefix: apim-callout
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
       version: ${{ needs.prepare-tag.outputs.apim_callout_image_tag }}
-      tags: >-
-        ${{ needs.prepare-tag.outputs.apim_callout_image_tag }}
-        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+      tags: ${{ needs.prepare-tag.outputs.apim_callout_image_tag }}
+      module_tag_prefix: contrib/azure/apim-callout/
+      promote_latest: ${{ github.event_name == 'push' && github.run_attempt == 1 && !contains(github.ref_name, '-docker.') }}
 
   build-service-extensions-callout:
-    needs: prepare-tag
+    needs: [prepare-tag, verify-release-workflows]
     if: >
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/envoyproxy/go-control-plane')
       || github.event.inputs.build_service_extensions == 'true'
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/service-extensions-callout
@@ -102,15 +129,19 @@ jobs:
       artifact_prefix: service-extensions
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
       version: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
-      tags: >-
-        ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
-        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+      tags: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
+      module_tag_prefix: contrib/envoyproxy/go-control-plane/
+      promote_latest: ${{ github.event_name == 'push' && github.run_attempt == 1 && !contains(github.ref_name, '-docker.') }}
 
   build-request-mirror:
-    needs: prepare-tag
+    needs: [prepare-tag, verify-release-workflows]
     if: >
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/k8s.io/gateway-api')
       || github.event.inputs.build_request_mirror == 'true'
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/request-mirror
@@ -118,15 +149,19 @@ jobs:
       artifact_prefix: request-mirror
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
       version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
-      tags: >-
-        ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
-        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+      tags: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
+      module_tag_prefix: contrib/k8s.io/gateway-api/
+      promote_latest: ${{ github.event_name == 'push' && github.run_attempt == 1 && !contains(github.ref_name, '-docker.') }}
 
   build-haproxy:
-    needs: prepare-tag
+    needs: [prepare-tag, verify-release-workflows]
     if: >
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/haproxy/stream-processing-offload')
       || github.event.inputs.build_haproxy == 'true'
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
@@ -134,6 +169,80 @@ jobs:
       artifact_prefix: haproxy-spoa
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
       version: ${{ needs.prepare-tag.outputs.haproxy_image_tag }}
-      tags: >-
-        ${{ needs.prepare-tag.outputs.haproxy_image_tag }}
-        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+      tags: ${{ needs.prepare-tag.outputs.haproxy_image_tag }}
+      module_tag_prefix: contrib/haproxy/stream-processing-offload/
+      promote_latest: ${{ github.event_name == 'push' && github.run_attempt == 1 && !contains(github.ref_name, '-docker.') }}
+
+  gardener-release-result:
+    if: ${{ always() && github.event_name == 'push' && github.run_attempt == 1 && !contains(github.ref_name, '-docker.') }}
+    needs: [build-apim-callout, build-service-extensions-callout, build-request-mirror, build-haproxy]
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source and annotated tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Emit fixed public release result
+        env:
+          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          APIM: ${{ toJSON(needs.build-apim-callout) }}
+          SERVICE: ${{ toJSON(needs.build-service-extensions-callout) }}
+          MIRROR: ${{ toJSON(needs.build-request-mirror) }}
+          HAPROXY: ${{ toJSON(needs.build-haproxy) }}
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = DataDog/dd-trace-go
+          test "$RUN_ATTEMPT" = 1
+          case "$REF_NAME" in
+            contrib/azure/apim-callout/*) PREFIX=contrib/azure/apim-callout/; IMAGE=ghcr.io/datadog/dd-trace-go/apim-callout; SELECTED=$APIM ;;
+            contrib/envoyproxy/go-control-plane/*) PREFIX=contrib/envoyproxy/go-control-plane/; IMAGE=ghcr.io/datadog/dd-trace-go/service-extensions-callout; SELECTED=$SERVICE ;;
+            contrib/k8s.io/gateway-api/*) PREFIX=contrib/k8s.io/gateway-api/; IMAGE=ghcr.io/datadog/dd-trace-go/request-mirror; SELECTED=$MIRROR ;;
+            contrib/haproxy/stream-processing-offload/*) PREFIX=contrib/haproxy/stream-processing-offload/; IMAGE=ghcr.io/datadog/dd-trace-go/haproxy-spoa; SELECTED=$HAPROXY ;;
+            *) exit 1 ;;
+          esac
+          test "$(jq -r '.result' <<<"$SELECTED")" = success
+          DIGEST=$(jq -er '.outputs.digest' <<<"$SELECTED")
+          PROMOTION=$(jq -er '.outputs.promotion_outcome' <<<"$SELECTED")
+          TAG_OBJECT=$(jq -er '.outputs.module_tag_object' <<<"$SELECTED")
+          ROOT_OBJECT=$(jq -er '.outputs.root_tag_object' <<<"$SELECTED")
+          VERSION=${REF_NAME#"$PREFIX"}
+          [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$PROMOTION" = promoted -o "$PROMOTION" = reconciled
+          MODULE_REF=refs/tags/$REF_NAME
+          ROOT_REF=refs/tags/$VERSION
+          test "$(git cat-file -t "$MODULE_REF")" = tag
+          test "$(git rev-parse "$MODULE_REF")" = "$TAG_OBJECT"
+          test "$(git rev-parse "$MODULE_REF^{}")" = "$COMMIT_SHA"
+          test "$(git cat-file -t "$ROOT_REF")" = tag
+          test "$(git rev-parse "$ROOT_REF")" = "$ROOT_OBJECT"
+          test "$(git rev-parse "$ROOT_REF^{}")" = "$COMMIT_SHA"
+          WORKFLOW_SHA256=$(sha256sum .github/workflows/docker-images-release.yml | cut -d' ' -f1)
+          CHILD_WORKFLOW_SHA256=$(sha256sum .github/workflows/docker-build-and-push.yml | cut -d' ' -f1)
+          WORKFLOW_ID=$(curl --fail --silent --show-error --max-time 60 --max-filesize 16777216 \
+            -H "Authorization: Bearer $API_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "$API_URL/repos/$REPOSITORY/actions/workflows/docker-images-release.yml" | jq -er '.id | tostring')
+          jq -n -c --arg repository "$REPOSITORY" --arg workflow_id "$WORKFLOW_ID" --arg workflow_sha "$WORKFLOW_SHA256" --arg child_workflow_sha "$CHILD_WORKFLOW_SHA256" \
+            --arg ref "$MODULE_REF" --arg tag_object "$TAG_OBJECT" --arg commit "$COMMIT_SHA" --arg run_id "$RUN_ID" \
+            --argjson attempt "$RUN_ATTEMPT" --arg image "$IMAGE" --arg version "$VERSION" --arg digest "$DIGEST" \
+            --arg root_object "$ROOT_OBJECT" --arg promotion "$PROMOTION" \
+            '{schema_version:"1",repository_full_name:$repository,workflow_id:$workflow_id,workflow_path:".github/workflows/docker-images-release.yml",workflow_sha256:$workflow_sha,child_workflow_sha256:$child_workflow_sha,event:"push",run_id:$run_id,run_attempt:$attempt,build_status:"completed",build_conclusion:"success",module_tag_ref:$ref,module_tag_object_sha:$tag_object,commit_sha:$commit,version:$version,image:$image,version_digest:$digest,root_tag_object_sha:$root_object,promotion_outcome:$promotion}' \
+            > gardener-release-image-result-v1.json
+      - name: Upload fixed release result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gardener-release-image-result-v1
+          path: gardener-release-image-result-v1.json
+          if-no-files-found: error
+          retention-days: 30

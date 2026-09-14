@@ -1,0 +1,17 @@
+{
+  "id": "invalid-interior-newline",
+  "case": "invalid_command",
+  "body": "/gardener release:promote\nv2.11",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": false,
+    "name": "release_invalid",
+    "error_code": "control_character",
+    "matrix": "R06"
+  }
+}

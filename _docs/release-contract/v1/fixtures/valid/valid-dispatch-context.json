@@ -1,0 +1,16 @@
+{
+  "id": "valid-dispatch-context",
+  "case": "valid_dispatch",
+  "inputs": {
+    "contract_version": "1",
+    "command": "release:promote",
+    "version": "v2.11.0",
+    "context": "{\"repository_id\":\"123\",\"repository_full_name\":\"DataDog/dd-trace-go\",\"issue_number\":\"456\",\"original_comment_id\":\"789\",\"acknowledgement_comment_id\":\"790\",\"policy_revision\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"body_snapshot\":\"/gardener release:promote v2.11\"}"
+  },
+  "expected": {
+    "ok": true,
+    "request_key": "123:789",
+    "marker": "<!-- gardener:release:request:v1:123:789 command=release:promote version=v2.11.0 -->",
+    "request_sha256": "13534e6cbdcd02bfa318c6dcfbc6ffaec296a99dcbccc5000ae3f79014189381"
+  }
+}

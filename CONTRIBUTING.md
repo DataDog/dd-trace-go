@@ -84,6 +84,10 @@ Our CI pipeline includes several automated checks:
 
 - **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
 
+#### Gardener Release Workflow
+
+The disabled-by-default Gardener release workflow coordinates validated release requests through signed durable state, isolated generation, exact-SHA tests, forward-only publication, image observation, and request-bound feedback. The workflow requires administrator-provisioned policy, protected-environment, signing, and token controls before Gardener can dispatch a release. See [`_docs/gardener-release-operations.md`](./_docs/gardener-release-operations.md) for the inspection and recovery contract.
+
 #### Customer Simulation Platform (CuSim)
 
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.

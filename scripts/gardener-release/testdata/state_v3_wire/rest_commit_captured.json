@@ -1,0 +1,101 @@
+{
+  "sha": "cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+  "node_id": "C_kwDOBAi6idoAKGNhZDk5YjdlNWE5YjRiNzU2NmYxZDkwOWE1YjVlMjI2MjEwM2VmNWM",
+  "commit": {
+    "author": {
+      "name": "Release Automation",
+      "email": "release-automation@example.invalid",
+      "date": "2026-08-31T07:23:09Z"
+    },
+    "committer": {
+      "name": "Release Automation",
+      "email": "release-automation@example.invalid",
+      "date": "2026-08-31T07:23:09Z"
+    },
+    "message": "internal/version: v2.10.1",
+    "tree": {
+      "sha": "3013827fc78cbfbc37b386e49d6343c801dd89d5",
+      "url": "https://api.github.com/repos/DataDog/dd-trace-go/git/trees/3013827fc78cbfbc37b386e49d6343c801dd89d5"
+    },
+    "url": "https://api.github.com/repos/DataDog/dd-trace-go/git/commits/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+    "comment_count": 0,
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "SANITIZED SIGNATURE",
+      "payload": "SANITIZED PAYLOAD",
+      "verified_at": "2026-08-31T07:23:22Z"
+    }
+  },
+  "url": "https://api.github.com/repos/DataDog/dd-trace-go/commits/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+  "html_url": "https://github.com/DataDog/dd-trace-go/commit/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+  "comments_url": "https://api.github.com/repos/DataDog/dd-trace-go/commits/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c/comments",
+  "author": {
+    "login": "release-automation",
+    "id": 163009,
+    "node_id": "MDQ6VXNlcjE2MzAwOQ==",
+    "avatar_url": "https://avatars.example.invalid/u/100",
+    "gravatar_id": "",
+    "url": "https://api.github.example.invalid/users/release-automation",
+    "html_url": "https://github.example.invalid/release-automation",
+    "followers_url": "https://api.github.example.invalid/users/release-automation/followers",
+    "following_url": "https://api.github.example.invalid/users/release-automation/following{/other_user}",
+    "gists_url": "https://api.github.example.invalid/users/release-automation/gists{/gist_id}",
+    "starred_url": "https://api.github.example.invalid/users/release-automation/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.example.invalid/users/release-automation/subscriptions",
+    "organizations_url": "https://api.github.example.invalid/users/release-automation/orgs",
+    "repos_url": "https://api.github.example.invalid/users/release-automation/repos",
+    "events_url": "https://api.github.example.invalid/users/release-automation/events{/privacy}",
+    "received_events_url": "https://api.github.example.invalid/users/release-automation/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "committer": {
+    "login": "release-automation",
+    "id": 163009,
+    "node_id": "MDQ6VXNlcjE2MzAwOQ==",
+    "avatar_url": "https://avatars.example.invalid/u/100",
+    "gravatar_id": "",
+    "url": "https://api.github.example.invalid/users/release-automation",
+    "html_url": "https://github.example.invalid/release-automation",
+    "followers_url": "https://api.github.example.invalid/users/release-automation/followers",
+    "following_url": "https://api.github.example.invalid/users/release-automation/following{/other_user}",
+    "gists_url": "https://api.github.example.invalid/users/release-automation/gists{/gist_id}",
+    "starred_url": "https://api.github.example.invalid/users/release-automation/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.example.invalid/users/release-automation/subscriptions",
+    "organizations_url": "https://api.github.example.invalid/users/release-automation/orgs",
+    "repos_url": "https://api.github.example.invalid/users/release-automation/repos",
+    "events_url": "https://api.github.example.invalid/users/release-automation/events{/privacy}",
+    "received_events_url": "https://api.github.example.invalid/users/release-automation/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "parents": [
+    {
+      "sha": "b25bcf1a71c23ef9a4e751b520174824b8c00f8f",
+      "url": "https://api.github.com/repos/DataDog/dd-trace-go/commits/b25bcf1a71c23ef9a4e751b520174824b8c00f8f",
+      "html_url": "https://github.com/DataDog/dd-trace-go/commit/b25bcf1a71c23ef9a4e751b520174824b8c00f8f"
+    }
+  ],
+  "stats": {
+    "total": 486,
+    "additions": 243,
+    "deletions": 243
+  },
+  "files": [
+    {
+      "sha": "66ca74f1f3f67c0ed499ecfeff1185baed135b8a",
+      "filename": "contrib/99designs/gqlgen/go.mod",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/DataDog/dd-trace-go/blob/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c/contrib%2F99designs%2Fgqlgen%2Fgo.mod",
+      "raw_url": "https://github.com/DataDog/dd-trace-go/raw/cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c/contrib%2F99designs%2Fgqlgen%2Fgo.mod",
+      "contents_url": "https://api.github.com/repos/DataDog/dd-trace-go/contents/contrib%2F99designs%2Fgqlgen%2Fgo.mod?ref=cad99b7e5a9b4b7566f1d909a5b5e2262103ef5c",
+      "patch": "@@ -4,7 +4,7 @@ go 1.25.0\n \n require (\n \tgithub.com/99designs/gqlgen v0.17.92\n-\tgithub.com/DataDog/dd-trace-go/v2 v2.10.1-rc.1\n+\tgithub.com/DataDog/dd-trace-go/v2 v2.10.1\n \tgithub.com/stretchr/testify v1.11.1\n \tgithub.com/vektah/gqlparser/v2 v2.5.35\n )"
+    }
+  ]
+}

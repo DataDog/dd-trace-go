@@ -1,0 +1,17 @@
+{
+  "id": "invalid-prepare-patch",
+  "case": "invalid_command",
+  "body": "/gardener release:prepare v2.11.1",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": false,
+    "name": "release_invalid",
+    "error_code": "prepare_patch_not_zero",
+    "matrix": "R05"
+  }
+}

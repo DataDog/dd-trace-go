@@ -52,6 +52,8 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 
 Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](CONTRIBUTING.md).
 
+Release operators can inspect and reconcile Gardener-driven operations with the standalone tool in `scripts/gardener-release`. Gardener dispatch remains disabled until the protected environment and production policy pass the acceptance procedure in [`_docs/gardener-release-operations.md`](./_docs/gardener-release-operations.md).
+
 ### Testing
 
 Tests can be run locally using make targets or Go toolset directly.

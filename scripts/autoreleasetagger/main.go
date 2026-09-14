@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -200,6 +201,7 @@ func main() {
 		excludeDirsInput    string
 		remote              string
 		disablePush         bool
+		planJSON            string
 	)
 
 	flag.StringVar(&root, "root", ".", "Path to the root directory (defaults to current directory)")
@@ -212,6 +214,7 @@ func main() {
 	flag.StringVar(&excludeDirsInput, "exclude-dirs", "", "Comma-separated list of directories to exclude. Paths are relative to the root directory")
 	flag.StringVar(&remote, "remote", "origin", "Git remote name")
 	flag.BoolVar(&disablePush, "disable-push", false, "Disable pushing tags to remote")
+	flag.StringVar(&planJSON, "plan-json", "", "Write a read-only release plan manifest to this path and perform no mutations")
 	flag.Parse()
 
 	if version == "" {
@@ -262,10 +265,105 @@ func main() {
 		}
 	}
 
+	if planJSON != "" {
+		if err := writePlanJSON(root, version, excludedModules, untaggedModules, excludedDirs, planJSON); err != nil {
+			renderError(os.Stderr, err, format)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(dryRun, remote, disablePush, root, version, excludedModules, untaggedModules, excludedDirs); err != nil {
 		renderError(os.Stderr, err, format)
 		os.Exit(1)
 	}
+}
+
+type planManifest struct {
+	SchemaVersion        string       `json:"schema_version"`
+	SourceSHA            string       `json:"source_sha"`
+	Branch               string       `json:"branch"`
+	RequestedVersion     string       `json:"requested_version"`
+	RootModule           string       `json:"root_module"`
+	Modules              []planModule `json:"modules"`
+	PermittedOutputFiles []string     `json:"permitted_output_files"`
+	ExpectedTags         []string     `json:"expected_tags"`
+}
+
+type planModule struct {
+	Path   string `json:"path"`
+	Dir    string `json:"dir"`
+	Tagged bool   `json:"tagged"`
+}
+
+func writePlanJSON(root, version string, excludedModules, untaggedModules, excludedDirs []string, outputPath string) error {
+	manifest, err := buildPlanManifest(root, version, excludedModules, untaggedModules, excludedDirs)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal plan manifest: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create plan manifest directory: %w", err)
+	}
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write plan manifest: %w", err)
+	}
+	return nil
+}
+
+func buildPlanManifest(root, version string, excludedModules, untaggedModules, excludedDirs []string) (planManifest, error) {
+	if err := validateVersionAndBranch(root, version); err != nil {
+		return planManifest{}, err
+	}
+	branch, err := currentBranch(root)
+	if err != nil {
+		return planManifest{}, fmt.Errorf("failed to determine current branch: %w", err)
+	}
+	sourceSHA, err := runCommandWithOutput(root, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return planManifest{}, fmt.Errorf("failed to read source SHA: %w", err)
+	}
+	sourceSHA = strings.TrimSpace(sourceSHA)
+	modules, err := findModules(root, excludedDirs)
+	if err != nil {
+		return planManifest{}, fmt.Errorf("failed to find modules: %w", err)
+	}
+	rootModule, err := readModule(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return planManifest{}, fmt.Errorf("failed to read root module: %w", err)
+	}
+	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
+	sortedModules, err := topologicalSort(buildDependencyGraph(filteredModules))
+	if err != nil {
+		return planManifest{}, fmt.Errorf("failed to topologically sort modules: %w", err)
+	}
+	manifestModules := []planModule{{Path: rootModule.Module.Path, Dir: ".", Tagged: true}}
+	permitted := []string{filepath.ToSlash(versionFileRelPath)}
+	for _, modulePath := range sortedModules {
+		mod := filteredModules[modulePath]
+		rel, err := filepath.Rel(root, mod.dir)
+		if err != nil {
+			return planManifest{}, fmt.Errorf("failed to relativize module path: %w", err)
+		}
+		rel = filepath.ToSlash(rel)
+		manifestModules = append(manifestModules, planModule{Path: mod.Module.Path, Dir: rel, Tagged: !containsPath(untaggedModules, mod.Module.Path)})
+		permitted = append(permitted, rel+"/go.mod", rel+"/go.sum")
+	}
+	sort.Strings(permitted)
+	return planManifest{
+		SchemaVersion:        "1",
+		SourceSHA:            sourceSHA,
+		Branch:               branch,
+		RequestedVersion:     version,
+		RootModule:           rootModule.Module.Path,
+		Modules:              manifestModules,
+		PermittedOutputFiles: permitted,
+		ExpectedTags:         buildTagList(root, rootModule, filteredModules, sortedModules, version, untaggedModules),
+	}, nil
 }
 
 func run(dryRun bool, remote string, disablePush bool, root, version string, excludedModules, untaggedModules, excludedDirs []string) error {
@@ -1050,6 +1148,7 @@ func topologicalSort(graph map[string][]string) ([]string, error) {
 	inDegree := make(map[string]int)
 	for node := range graph {
 		inDegree[node] = 0
+		sort.Strings(graph[node])
 	}
 
 	for _, adj := range graph {
@@ -1065,6 +1164,7 @@ func topologicalSort(graph map[string][]string) ([]string, error) {
 			queue = append(queue, node)
 		}
 	}
+	sort.Strings(queue)
 
 	var sorted []string
 
@@ -1080,6 +1180,7 @@ func topologicalSort(graph map[string][]string) ([]string, error) {
 				queue = append(queue, dep)
 			}
 		}
+		sort.Strings(queue)
 	}
 
 	if len(sorted) != len(graph) {

@@ -1,0 +1,642 @@
+name: Gardener release
+
+on:
+  workflow_dispatch:
+    inputs:
+      contract_version:
+        description: Release dispatch contract version.
+        required: true
+        type: string
+      command:
+        description: Release command selected by Gardener.
+        required: true
+        type: string
+      version:
+        description: Normalized release version or auto.
+        required: true
+        type: string
+      context:
+        description: Release request context JSON string.
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: gardener-release-production-v1
+  cancel-in-progress: false
+
+env:
+  POLICY_PATH: .github/gardener-release-policy.json
+  TRUSTED_ARTIFACT: gardener-release-trusted-tool-v1
+  SELECTOR_ARTIFACT: gardener-release-validate_request-v1
+
+jobs:
+  validate_request:
+    name: Validate request and select durable phase
+    if: ${{ github.repository == 'DataDog/dd-trace-go' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+    outputs:
+      command: ${{ steps.select.outputs.command }}
+      next_job: ${{ steps.select.outputs.next_job }}
+      run_reserve: ${{ steps.select.outputs.run_reserve }}
+      run_generate: ${{ steps.select.outputs.run_generate }}
+      run_sign: ${{ steps.select.outputs.run_sign }}
+      run_branches: ${{ steps.select.outputs.run_branches }}
+      run_wait: ${{ steps.select.outputs.run_wait }}
+      run_tags: ${{ steps.select.outputs.run_tags }}
+      run_prepare: ${{ steps.select.outputs.run_prepare }}
+      run_images: ${{ steps.select.outputs.run_images }}
+      run_outcome: ${{ steps.select.outputs.run_outcome }}
+    steps:
+      - name: Check out trusted workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build trusted tools and dispatch document
+        env:
+          INPUT_CONTRACT_VERSION: ${{ inputs.contract_version }}
+          INPUT_COMMAND: ${{ inputs.command }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CONTEXT: ${{ inputs.context }}
+        run: |
+          set -euo pipefail
+          test -f "$POLICY_PATH"
+          install -d -m 0700 "$RUNNER_TEMP/trusted" "$RUNNER_TEMP/control"
+          (cd scripts/gardener-release && GOWORK=off go build -trimpath -o "$RUNNER_TEMP/trusted/gardener-release" ./cmd/gardener-release)
+          (cd scripts/autoreleasetagger && GOWORK=off go build -trimpath -o "$RUNNER_TEMP/trusted/autoreleasetagger" .)
+          install -m 0600 "$POLICY_PATH" "$RUNNER_TEMP/trusted/policy.json"
+          (cd "$RUNNER_TEMP/trusted" && sha256sum gardener-release autoreleasetagger policy.json > SHA256SUMS)
+          jq -n --arg contract_version "$INPUT_CONTRACT_VERSION" --arg command "$INPUT_COMMAND" --arg version "$INPUT_VERSION" --arg context "$INPUT_CONTEXT" '{contract_version:$contract_version,command:$command,version:$version,context:$context}' > "$RUNNER_TEMP/control/dispatch.json"
+      - name: Validate request and state selector
+        env:
+          GARDENER_RELEASE_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/trusted/gardener-release" validate-request --dispatch "$RUNNER_TEMP/control/dispatch.json" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/control/gardener-release-validate_request-v1.json"
+      - name: Select authorized jobs
+        id: select
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/control/gardener-release-validate_request-v1.json"
+          next_job=$(jq -er '.payload.selector.next_job' "$file")
+          command=$(jq -er '.payload.selector.command' "$file")
+          case "$command" in release:prepare|release:promote|release:release) ;; *) exit 1 ;; esac
+          echo "command=$command" >> "$GITHUB_OUTPUT"
+          echo "next_job=$next_job" >> "$GITHUB_OUTPUT"
+          for item in reserve:run_reserve generate:run_generate sign:run_sign branches:run_branches wait:run_tests tags:run_tags prepare:run_prepare_pr images:run_images outcome:run_outcome; do
+            name=${item%%:*}; field=${item##*:}
+            value=$(jq -r ".payload.selector.${field}" "$file")
+            case "$value" in true|false) ;; *) exit 1 ;; esac
+            echo "run_${name}=$value" >> "$GITHUB_OUTPUT"
+          done
+      - name: Upload trusted tools
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload validated selector
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gardener-release-validate_request-v1
+          path: ${{ runner.temp }}/control/gardener-release-validate_request-v1.json
+          retention-days: 7
+          if-no-files-found: error
+
+  reserve_operation:
+    name: Reserve durable operation
+    needs: [validate_request]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_reserve == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: gardener-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-validate_request-v1
+          path: ${{ runner.temp }}/control
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Reserve
+        env:
+          INPUT_CONTRACT_VERSION: ${{ inputs.contract_version }}
+          INPUT_COMMAND: ${{ inputs.command }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CONTEXT: ${{ inputs.context }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          jq -n --arg contract_version "$INPUT_CONTRACT_VERSION" --arg command "$INPUT_COMMAND" --arg version "$INPUT_VERSION" --arg context "$INPUT_CONTEXT" '{contract_version:$contract_version,command:$command,version:$version,context:$context}' > "$RUNNER_TEMP/control/dispatch.json"
+          "$RUNNER_TEMP/trusted/gardener-release" reserve-operation --dispatch "$RUNNER_TEMP/control/dispatch.json" --policy "$RUNNER_TEMP/trusted/policy.json" --validated "$RUNNER_TEMP/control/gardener-release-validate_request-v1.json" --workflow-sha "$GITHUB_SHA" --tool-sha "$GITHUB_SHA" --tagger "$RUNNER_TEMP/trusted/autoreleasetagger" > "$RUNNER_TEMP/control/gardener-release-reserve_operation-v1.json"
+      - name: Upload reservation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-reserve_operation-v1, path: '${{ runner.temp }}/control/gardener-release-reserve_operation-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  generate_unsigned:
+    name: Generate unsigned release data
+    needs: [validate_request, reserve_operation]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_generate == 'true' && (needs.reserve_operation.result == 'success' || (needs.reserve_operation.result == 'skipped' && needs.validate_request.outputs.next_job == 'generate_unsigned')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download reservation
+        if: ${{ needs.reserve_operation.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-reserve_operation-v1, path: '${{ runner.temp }}/reserved'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Generate
+        env:
+          PREVIOUS_RESULT: ${{ needs.reserve_operation.result }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/generated" "$RUNNER_TEMP/cache" "$RUNNER_TEMP/output"
+          git clone --bare --no-local https://github.com/DataDog/dd-trace-go.git "$RUNNER_TEMP/source.git"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--reserved "$RUNNER_TEMP/reserved/gardener-release-reserve_operation-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json" --policy "$RUNNER_TEMP/trusted/policy.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" generate-unsigned "${predecessor[@]}" --source-remote "$RUNNER_TEMP/source.git" --tagger "$RUNNER_TEMP/trusted/autoreleasetagger" --workdir "$RUNNER_TEMP/generated" --bundle-output "$RUNNER_TEMP/output/gardener-release-unsigned-v1.bundle" --cache-dir "$RUNNER_TEMP/cache" > "$RUNNER_TEMP/output/gardener-release-generate_unsigned-v1.json"
+      - name: Upload generation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-generate_unsigned-v1, path: '${{ runner.temp }}/output/', retention-days: 1, if-no-files-found: error}
+
+  validate_sign_store:
+    name: Validate, sign, and store recovery objects
+    needs: [validate_request, reserve_operation, generate_unsigned]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_sign == 'true' && needs.generate_unsigned.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: gardener-release
+    permissions: {contents: read, id-token: write}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download generation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-generate_unsigned-v1, path: '${{ runner.temp }}/generation'}
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download reservation
+        if: ${{ needs.reserve_operation.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-reserve_operation-v1, path: '${{ runner.temp }}/reserved'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Sign and store
+        env:
+          RESERVATION_RESULT: ${{ needs.reserve_operation.result }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$RESERVATION_RESULT" = success ]; then reservation=(--reserved "$RUNNER_TEMP/reserved/gardener-release-reserve_operation-v1.json"); else reservation=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" validate-sign-store --generation "$RUNNER_TEMP/generation/gardener-release-generate_unsigned-v1.json" "${reservation[@]}" --bundle "$RUNNER_TEMP/generation/gardener-release-unsigned-v1.bundle" --policy "$RUNNER_TEMP/trusted/policy.json" --tool "$RUNNER_TEMP/trusted/autoreleasetagger" --validator "$RUNNER_TEMP/trusted/gardener-release" > "$RUNNER_TEMP/output/gardener-release-validate_sign_store-v1.json"
+      - name: Upload signed state
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-validate_sign_store-v1, path: '${{ runner.temp }}/output/gardener-release-validate_sign_store-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  publish_branches:
+    name: Publish exact branches
+    needs: [validate_request, validate_sign_store]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_branches == 'true' && (needs.validate_sign_store.result == 'success' || (needs.validate_sign_store.result == 'skipped' && needs.validate_request.outputs.next_job == 'publish_branches')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: gardener-release
+    permissions: {contents: read, id-token: write}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download signed state
+        if: ${{ needs.validate_sign_store.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_sign_store-v1, path: '${{ runner.temp }}/signed'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Publish branches
+        env:
+          PREVIOUS_RESULT: ${{ needs.validate_sign_store.result }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--signed "$RUNNER_TEMP/signed/gardener-release-validate_sign_store-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" publish-branches "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-publish_branches-v1.json"
+      - name: Upload branch result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-publish_branches-v1, path: '${{ runner.temp }}/output/gardener-release-publish_branches-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  wait_branch_tests:
+    name: Verify exact-SHA tests
+    needs: [validate_request, publish_branches]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_wait == 'true' && (needs.publish_branches.result == 'success' || (needs.publish_branches.result == 'skipped' && needs.validate_request.outputs.next_job == 'wait_branch_tests')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions: {actions: read, contents: read}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download branch result
+        if: ${{ needs.publish_branches.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-publish_branches-v1, path: '${{ runner.temp }}/branches'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Wait for tests
+        env:
+          PREVIOUS_RESULT: ${{ needs.publish_branches.result }}
+          GARDENER_RELEASE_READ_TOKEN: ${{ github.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--branches "$RUNNER_TEMP/branches/gardener-release-publish_branches-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" wait-branch-tests "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-wait_branch_tests-v1.json"
+      - name: Upload test evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-wait_branch_tests-v1, path: '${{ runner.temp }}/output/gardener-release-wait_branch_tests-v1.json', retention-days: 7, if-no-files-found: error}
+
+  publish_tags:
+    name: Persist test evidence and publish exact tags
+    needs: [validate_request, wait_branch_tests]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_tags == 'true' && (needs.wait_branch_tests.result == 'success' || (needs.wait_branch_tests.result == 'skipped' && needs.validate_request.outputs.next_job == 'publish_tags')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: gardener-release
+    permissions: {actions: read, contents: read, id-token: write}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download test evidence
+        if: ${{ needs.wait_branch_tests.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-wait_branch_tests-v1, path: '${{ runner.temp }}/tests'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Publish tags
+        env:
+          PREVIOUS_RESULT: ${{ needs.wait_branch_tests.result }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_READ_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--tests "$RUNNER_TEMP/tests/gardener-release-wait_branch_tests-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" publish-tags "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-publish_tags-v1.json"
+      - name: Upload tag result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-publish_tags-v1, path: '${{ runner.temp }}/output/gardener-release-publish_tags-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  ensure_prepare_pr:
+    name: Ensure development pull request
+    needs: [validate_request, publish_tags]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_prepare == 'true' && (needs.publish_tags.result == 'success' || (needs.publish_tags.result == 'skipped' && needs.validate_request.outputs.next_job == 'ensure_prepare_pr')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: gardener-release
+    permissions: {contents: read, id-token: write}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download tag result
+        if: ${{ needs.publish_tags.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-publish_tags-v1, path: '${{ runner.temp }}/tags'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Ensure pull request
+        env:
+          PREVIOUS_RESULT: ${{ needs.publish_tags.result }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--tags "$RUNNER_TEMP/tags/gardener-release-publish_tags-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" ensure-prepare-pr "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-ensure_prepare_pr-v1.json"
+      - name: Upload pull request result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-ensure_prepare_pr-v1, path: '${{ runner.temp }}/output/gardener-release-ensure_prepare_pr-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  observe_images:
+    name: Observe immutable image outcomes
+    needs: [validate_request, publish_tags]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_images == 'true' && (needs.publish_tags.result == 'success' || (needs.publish_tags.result == 'skipped' && needs.validate_request.outputs.next_job == 'observe_images')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions: {actions: read, contents: read}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download tag result
+        if: ${{ needs.publish_tags.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-publish_tags-v1, path: '${{ runner.temp }}/tags'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Observe images
+        env:
+          PREVIOUS_RESULT: ${{ needs.publish_tags.result }}
+          GARDENER_RELEASE_READ_TOKEN: ${{ github.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          if [ "$PREVIOUS_RESULT" = success ]; then predecessor=(--tags "$RUNNER_TEMP/tags/gardener-release-publish_tags-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" observe-images "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-observe_images-v1.json"
+      - name: Upload image evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-observe_images-v1, path: '${{ runner.temp }}/output/gardener-release-observe_images-v1.json', retention-days: 7, if-no-files-found: error}
+
+  record_outcome:
+    name: Record durable outcome
+    needs: [validate_request, publish_tags, ensure_prepare_pr, observe_images]
+    if: ${{ always() && needs.validate_request.result == 'success' && needs.validate_request.outputs.run_outcome == 'true' && ((needs.validate_request.outputs.command == 'release:prepare' && needs.ensure_prepare_pr.result == 'success') || (needs.validate_request.outputs.command == 'release:release' && needs.observe_images.result == 'success') || (needs.validate_request.outputs.command == 'release:promote' && (needs.publish_tags.result == 'success' || (needs.publish_tags.result == 'skipped' && needs.validate_request.outputs.next_job == 'record_outcome')))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: gardener-release
+    permissions: {contents: read, id-token: write}
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download selector
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-validate_request-v1, path: '${{ runner.temp }}/selector'}
+      - name: Download tag result
+        if: ${{ needs.publish_tags.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-publish_tags-v1, path: '${{ runner.temp }}/tags'}
+      - name: Download pull request result
+        if: ${{ needs.ensure_prepare_pr.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-ensure_prepare_pr-v1, path: '${{ runner.temp }}/prepare'}
+      - name: Download image evidence
+        if: ${{ needs.observe_images.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-observe_images-v1, path: '${{ runner.temp }}/images'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Mint release token
+        id: release-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release
+      - name: Record outcome
+        env:
+          COMMAND: ${{ needs.validate_request.outputs.command }}
+          TAG_RESULT: ${{ needs.publish_tags.result }}
+          PREPARE_RESULT: ${{ needs.ensure_prepare_pr.result }}
+          IMAGE_RESULT: ${{ needs.observe_images.result }}
+          GARDENER_RELEASE_GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          GARDENER_RELEASE_SSH_SIGNING_KEY: ${{ secrets.GARDENER_RELEASE_SSH_SIGNING_KEY }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/output"
+          case "$COMMAND" in
+            release:prepare) predecessor=(--prepare "$RUNNER_TEMP/prepare/gardener-release-ensure_prepare_pr-v1.json") ;;
+            release:release) predecessor=(--images "$RUNNER_TEMP/images/gardener-release-observe_images-v1.json") ;;
+            release:promote)
+              if [ "$TAG_RESULT" = success ]; then predecessor=(--tags "$RUNNER_TEMP/tags/gardener-release-publish_tags-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/selector/gardener-release-validate_request-v1.json"); fi ;;
+            *) exit 1 ;;
+          esac
+          "$RUNNER_TEMP/trusted/gardener-release" record-outcome "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/output/gardener-release-record_outcome-v1.json"
+      - name: Upload durable outcome
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: gardener-release-record_outcome-v1, path: '${{ runner.temp }}/output/gardener-release-record_outcome-v1.json', retention-days: 7, if-no-files-found: error}
+      - name: Remove protected temporary material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP"/gardener-release-{signing,git-auth,state,publish,resolve}-*
+
+  feedback:
+    name: Publish request-bound feedback
+    needs: [validate_request, reserve_operation, generate_unsigned, validate_sign_store, publish_branches, wait_branch_tests, publish_tags, ensure_prepare_pr, observe_images, record_outcome]
+    if: ${{ always() && needs.validate_request.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      issues: read
+    steps:
+      - name: Download trusted tools
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gardener-release-trusted-tool-v1
+          path: ${{ runner.temp }}/trusted
+      - name: Download durable outcome
+        if: ${{ needs.record_outcome.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: gardener-release-record_outcome-v1, path: '${{ runner.temp }}/outcome'}
+      - name: Verify trusted tools
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/trusted"
+          sha256sum -c SHA256SUMS
+          chmod 0500 gardener-release autoreleasetagger
+      - name: Refresh request and durable selector
+        env:
+          INPUT_CONTRACT_VERSION: ${{ inputs.contract_version }}
+          INPUT_COMMAND: ${{ inputs.command }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CONTEXT: ${{ inputs.context }}
+          GARDENER_RELEASE_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$RUNNER_TEMP/feedback"
+          jq -n --arg contract_version "$INPUT_CONTRACT_VERSION" --arg command "$INPUT_COMMAND" --arg version "$INPUT_VERSION" --arg context "$INPUT_CONTEXT" '{contract_version:$contract_version,command:$command,version:$version,context:$context}' > "$RUNNER_TEMP/feedback/dispatch.json"
+          "$RUNNER_TEMP/trusted/gardener-release" validate-request --dispatch "$RUNNER_TEMP/feedback/dispatch.json" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/feedback/gardener-release-validate_request-v1.json"
+      - name: Mint feedback token
+        id: feedback-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.gardener-release-feedback
+      - name: Publish feedback
+        env:
+          OUTCOME_RESULT: ${{ needs.record_outcome.result }}
+          GARDENER_RELEASE_ISSUES_TOKEN: ${{ steps.feedback-token.outputs.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$OUTCOME_RESULT" = success ]; then predecessor=(--outcome "$RUNNER_TEMP/outcome/gardener-release-record_outcome-v1.json"); else predecessor=(--selector "$RUNNER_TEMP/feedback/gardener-release-validate_request-v1.json"); fi
+          "$RUNNER_TEMP/trusted/gardener-release" publish-feedback "${predecessor[@]}" --policy "$RUNNER_TEMP/trusted/policy.json" > "$RUNNER_TEMP/feedback/gardener-release-feedback-v1.json"

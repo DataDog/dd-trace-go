@@ -1,0 +1,53 @@
+{
+  "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "url": "https://api.github.example.invalid/repos/DataDog/dd-trace-go/git/trees/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "truncated": false,
+  "tree": [
+    {
+      "path": "z-last.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 1,
+      "url": "https://api.github.example.invalid/blob/a"
+    },
+    {
+      "path": "requests",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "url": "https://api.github.example.invalid/tree/requests"
+    },
+    {
+      "path": "requests/123/789/prepared.json",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "size": 2,
+      "url": "https://api.github.example.invalid/blob/d"
+    },
+    {
+      "path": "a-first.txt",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "size": 3,
+      "url": "https://api.github.example.invalid/blob/e"
+    },
+    {
+      "path": "release-lines",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "ffffffffffffffffffffffffffffffffffffffff",
+      "url": "https://api.github.example.invalid/tree/release-lines"
+    },
+    {
+      "path": "release-lines/2.11.json",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "1111111111111111111111111111111111111111",
+      "size": 4,
+      "url": "https://api.github.example.invalid/blob/1"
+    }
+  ]
+}

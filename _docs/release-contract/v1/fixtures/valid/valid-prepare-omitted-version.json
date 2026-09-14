@@ -1,0 +1,22 @@
+{
+  "id": "valid-prepare-omitted-version",
+  "case": "valid_command",
+  "body": "/gardener release:prepare",
+  "webhook": {
+    "repository_id": "123",
+    "repository_full_name": "DataDog/dd-trace-go",
+    "issue_number": "456",
+    "original_comment_id": "789"
+  },
+  "expected": {
+    "ok": true,
+    "name": "release_prepare",
+    "command": "release:prepare",
+    "normalized_version": "auto",
+    "version_explicit": false,
+    "body_snapshot": "/gardener release:prepare",
+    "request_key": "123:789",
+    "marker": "<!-- gardener:release:request:v1:123:789 command=release:prepare version=auto -->",
+    "request_sha256": "0baa6974276def0dd0d3aee541a6a9126c1cb114a650d5b1030e42edb144ef31"
+  }
+}
