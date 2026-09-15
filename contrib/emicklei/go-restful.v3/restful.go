@@ -47,11 +47,10 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		)
-		if route != "" || !cfg.otelSemanticsEnabled {
-			requestSpanOpts = append(requestSpanOpts, tracer.Tag(ext.HTTPRoute, route))
-		}
 		if cfg.otelSemanticsEnabled {
 			requestSpanOpts = append(requestSpanOpts, httptrace.HTTPEndpointTag(route, req.Request))
+		} else {
+			requestSpanOpts = append(requestSpanOpts, tracer.Tag(ext.HTTPRoute, route))
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			requestSpanOpts = append(requestSpanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
