@@ -6,11 +6,36 @@
 package remoteconfig
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestDefaultClientConfigResolvesAgentConnection(t *testing.T) {
+	t.Run("HTTP", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "http://agent.test:9126")
+
+		cfg := DefaultClientConfig()
+
+		assert.Equal(t, "http://agent.test:9126", cfg.AgentURL)
+		require.NotNil(t, cfg.HTTP)
+		require.NotNil(t, cfg.HTTP.Transport)
+	})
+
+	t.Run("UDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix:///tmp/apm.socket")
+
+		cfg := DefaultClientConfig()
+
+		assert.Equal(t, "http://UDS__tmp_apm.socket", cfg.AgentURL)
+		transport, ok := cfg.HTTP.Transport.(*http.Transport)
+		require.True(t, ok)
+		require.NotNil(t, transport.DialContext)
+	})
+}
 
 func Test_pollIntervalFromEnv(t *testing.T) {
 	defaultInterval := time.Second * time.Duration(5.0)

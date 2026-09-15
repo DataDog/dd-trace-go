@@ -386,7 +386,8 @@ func (t *tracer) startAppSec() {
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.internalConfig.ServiceName()
-	if t.config.agent.load().hasRemoteConfig {
+	agentFeatures := t.config.agent.load()
+	if agentFeatures.hasRemoteConfig || !agentFeatures.remoteConfigSupportKnown {
 		if err := t.startRemoteConfig(cfg); err != nil {
 			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 				log.Debug("remoteconfig: client not started, remote configuration is disabled")
