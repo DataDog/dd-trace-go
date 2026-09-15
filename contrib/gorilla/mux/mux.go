@@ -145,8 +145,8 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 	var match mux.RouteMatch
 	// get the resource associated with the given request
 	if router.Match(req, &match) && match.Route != nil {
-		if route, err := match.Route.GetPathTemplate(); err == nil {
-			return req.Method + " " + route
+		if r, err := match.Route.GetPathTemplate(); err == nil {
+			return req.Method + " " + r
 		}
 	}
 	return req.Method + " unknown"
