@@ -1,9 +1,8 @@
-# ⚠️ This folder is a mirror — do not edit here
+# Reviewer prompts
 
-These files are copied verbatim from [`dd-apm-sdk-review-core`](https://github.com/DataDog/dd-apm-sdk-review-core).
-Edits made in this tracer repo are overwritten and never propagate back.
+In [`dd-apm-sdk-review-core`](https://github.com/DataDog/dd-apm-sdk-review-core) this directory is the **source** — edit the rules here.
 
-To change a review rule, open a PR against the source repo:
+When these files are copied into a tracer repo (`.agents/skills/dd-apm-sdk-review/reviewers/`), that copy is a **mirror**. Edits there are overwritten and never propagate back. To change a review rule, open a PR against the source repo:
 https://github.com/DataDog/dd-apm-sdk-review-core
 
 Before contributing, please read:

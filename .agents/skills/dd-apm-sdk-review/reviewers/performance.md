@@ -61,7 +61,6 @@ Each check below carries a stable slug in backticks. Cite checks by slug, never 
   - Confidence: flag-with-confidence (unboundedness is structurally visible).
   - Severity: **SEV-1**.
   - Fix: bound by count *and* bytes, or don't cache/aggregate the high-cardinality input at all. Never flag the *absence* of a cache on open-cardinality input — not caching it is the correct choice.
-  - If the growth is attacker-triggerable via external input, also worth a security finding — that's the security lane's call, not yours to escalate.
 4. `deferrable-critical-path-work` — **Expensive work on the critical path that could be deferred** — heavy compute / parse / normalize / serialize / I/O / lock on the synchronous request or span-finish path, that could be moved.
   - Confidence: flag-as-measure (deferability is contextual — verify the move would actually help).
   - Severity: SEV-1/2.
