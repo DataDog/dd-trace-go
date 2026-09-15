@@ -72,6 +72,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CUSTOM_PARENT_ID":                                                     {},
 	"DD_CUSTOM_TRACE_ID":                                                      {},
 	"DD_DATA_STREAMS_ENABLED":                                                 {},
+	"DD_DATA_STREAMS_INTAKE_BUFFER_SIZE":                                      {},
 	"DD_DBM_PROPAGATION_MODE":                                                 {},
 	"DD_DOGSTATSD_HOST":                                                       {},
 	"DD_DOGSTATSD_PORT":                                                       {},
