@@ -16,7 +16,6 @@ instruction_files:
   - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
   - .agents/skills/dd-apm-sdk-review/reviewers/coherence.md
   - .agents/skills/dd-apm-sdk-review/reviewers/correctness.md
-  - .agents/skills/dd-apm-sdk-review/reviewers/security.md
   - .agents/skills/dd-apm-sdk-review/reviewers/design.md
   - .agents/skills/dd-apm-sdk-review/reviewers/performance.md
   - .agents/skills/dd-apm-sdk-review/reviewers/maintainability.md
@@ -26,7 +25,6 @@ instruction_files:
   - .agents/skills/dd-apm-sdk-review/review-without-harness.md
   - .agents/dd-apm-sdk-review-overrides/repo-context.md
   - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
-  - .agents/dd-apm-sdk-review-overrides/reviewers/security.md
 
 default_level: gate
 presets:

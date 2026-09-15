@@ -38,7 +38,5 @@ already commented on the same lines for a different reason.
 - Do not comment on architecture, module placement, or abstraction fit — design owns that.
 - Do not comment on formatting, naming, or style — conventions owns that.
 - Do not comment on performance or allocation cost — performance owns that.
-- Do not comment on security impact of a defect you find; name the defect and let the consolidator route it if it
-  also has a security angle.
 - Do not flag a defect you cannot demonstrate with a concrete input/state. "This might be wrong" without a
   reproducing case is not a finding.

@@ -18,16 +18,14 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 
 ## Review Guidelines
 
-**Local agent with a skill harness:** Before pushing code or creating a pull request, you must run
-the [dd-apm-sdk-review](./.agents/skills/dd-apm-sdk-review/) skill on your unpushed changes.
+**Local agent with a skill harness:** Run the [dd-apm-sdk-review](./.agents/skills/dd-apm-sdk-review/) skill on demand when asked. It is not required before every push.
 
 Verdicts (P0 / P1 / P2, BLOCK / APPROVE) live in
 [`.agents/skills/dd-apm-sdk-review/reviewers/_common.md`](./.agents/skills/dd-apm-sdk-review/reviewers/_common.md)
 — do not restate them here.
 
-If a human authorizes pushing with an unresolved P0, record that finding verbatim in the PR
-description. Exception: security findings are never pasted into a PR description — a PR is a
-public forum. Route them privately.
+If a human authorizes shipping with an unresolved P0, record that finding verbatim in the PR
+description.
 
 **Reviewer without a skill harness** (for example, GitHub Codex): read and follow
 `.agents/skills/dd-apm-sdk-review/review-without-harness.md`. Do not load `SKILL.md`

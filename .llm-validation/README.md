@@ -13,7 +13,7 @@ It answers: *did an edit to a review rule make the agent better or worse?*
 Overrides are owned by this repo. The shared core is not — never edit `.agents/skills/dd-apm-sdk-review/`.
 
 1. Create or extend a file under [`.agents/dd-apm-sdk-review-overrides/reviewers/`](../.agents/dd-apm-sdk-review-overrides/reviewers/).
-   Copy the shape of `performance.md` or `security.md`: one pattern, why it matters, the fix.
+   Copy the shape of `performance.md`: one pattern, why it matters, the fix.
 2. Add the new override path to `instruction_files` in [`config.yaml`](./config.yaml) so CI
    watches it. If the case needs another source-of-truth file (e.g. `contrib/AGENTS.md`), list that too.
 3. Add a case in [`suites/dd-apm-sdk-review.yaml`](./suites/dd-apm-sdk-review.yaml). Copy the starter case.
