@@ -110,20 +110,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var resource string
 	if r.config.resourceNamer != nil {
 		resource = r.config.resourceNamer(r, req)
-	} else {
-		resource = instrhttptrace.ServerSpanName(req.Method, route)
 	}
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
-		Framework:     "github.com/gorilla/mux",
-		Service:       r.config.serviceName,
-		ServiceSource: r.config.serviceSource,
-		Resource:      resource,
-		FinishOpts:    r.config.finishOpts,
-		SpanOpts:      spanopts,
-		QueryParams:   r.config.queryParams,
-		RouteParams:   match.Vars,
-		Route:         route,
-		IsStatusError: r.config.isStatusError,
+		Framework:            "github.com/gorilla/mux",
+		Service:              r.config.serviceName,
+		ServiceSource:        r.config.serviceSource,
+		Resource:             resource,
+		FinishOpts:           r.config.finishOpts,
+		SpanOpts:             spanopts,
+		QueryParams:          r.config.queryParams,
+		RouteParams:          match.Vars,
+		Route:                route,
+		IsStatusError:        r.config.isStatusError,
+		OTelSemanticsEnabled: &r.config.otelEnabled,
 	})
 }
 
