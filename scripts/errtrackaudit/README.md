@@ -4,9 +4,11 @@
 module that may want to adopt the Error Tracking reporting API
 (`internal/telemetry/log.ReportError` / `ReportPanic` /
 `LogAndReportError` / `LogAndReportPanic`), grouped by the `CODEOWNERS` team
-that owns each file. It is the triage tool for the adoption policy in
-[internal/README.md](../../internal/README.md#telemetry) ("When to report, and
-when not to").
+that owns each file. It uses the same dependency-free `internal/codeowners`
+parser and matcher as CI Visibility. Repository-specific CODEOWNERS pattern
+validation remains in `scripts/check_codeowners.go`. The audit is the triage
+tool for the adoption policy in [internal/README.md](../../internal/README.md#telemetry)
+("When to report, and when not to").
 
 ## Scope
 

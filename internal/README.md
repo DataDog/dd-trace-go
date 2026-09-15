@@ -34,6 +34,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 Owns the shared HTTP client-IP resolution policy used by tracing and AppSec.
 
+### Codeowners
+
+Provides the dependency-free CODEOWNERS parser and matcher used by CI Visibility and repository audit tools. Repository-specific pattern validation remains in `scripts/check_codeowners.go`.
+
 ### Locking
 
 Locking functionality that serves as a replacement for `sync.mutex` and similar locking mechanisms. It enables checking for deadlocks and should be used instead of `sync`. For more information, read the [README](./locking/README.md).
