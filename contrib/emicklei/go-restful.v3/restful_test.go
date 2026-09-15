@@ -201,7 +201,11 @@ func TestDatadogSemantics(t *testing.T) {
 		{name: "disabled", value: "false"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			setHTTPConfig(t, tt.value, "")
+			config := make(map[string]string)
+			if tt.value != "" {
+				config["DD_TRACE_OTEL_SEMANTICS_ENABLED"] = tt.value
+			}
+			setHTTPConfig(t, config)
 			span := traceRoute(t, http.MethodGet, "/user/123", http.StatusOK, nil)
 			assert.Equal(t, "/user/{id}", span.Tag(ext.ResourceName))
 			assert.Equal(t, "/user/{id}", span.Tag(ext.HTTPRoute))
@@ -216,7 +220,7 @@ func TestDatadogSemantics(t *testing.T) {
 }
 
 func TestOTelSemantics(t *testing.T) {
-	setHTTPConfig(t, "true", "")
+	setHTTPConfig(t, map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true"})
 	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")
 	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
 	httptrace.ResetCfg()
@@ -292,7 +296,11 @@ func TestOTelSemanticsStatus(t *testing.T) {
 		{name: "real error", status: http.StatusInternalServerError, responseError: errors.New("oh no"), wantErrorType: "*errors.errorString"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			setHTTPConfig(t, "true", tt.statuses)
+			config := map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true"}
+			if tt.statuses != "" {
+				config["DD_TRACE_HTTP_SERVER_ERROR_STATUSES"] = tt.statuses
+			}
+			setHTTPConfig(t, config)
 			span := traceRoute(t, http.MethodGet, "/user/123", tt.status, tt.responseError)
 			assert.Equal(t, tt.wantErrorType, span.Tag(ext.ErrorType))
 			if tt.responseError != nil {
@@ -347,32 +355,46 @@ func traceWithoutRoute(t *testing.T, method, target string) *mocktracer.Span {
 	return spans[0]
 }
 
-func setHTTPConfig(t *testing.T, otel, statuses string) {
+var defaultSensitiveHTTPEnv = []string{
+	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER",
+	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+	"DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT",
+}
+
+func setHTTPConfig(t *testing.T, config map[string]string) {
 	t.Helper()
-	oldOTel, hadOTel := os.LookupEnv("DD_TRACE_OTEL_SEMANTICS_ENABLED")
-	oldStatuses, hadStatuses := os.LookupEnv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES")
-	if otel == "" {
-		require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
-	} else {
-		require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", otel))
+	type envValue struct {
+		value string
+		set   bool
 	}
-	if statuses == "" {
-		require.NoError(t, os.Unsetenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES"))
-	} else {
-		require.NoError(t, os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", statuses))
+
+	names := append([]string{
+		"DD_TRACE_OTEL_SEMANTICS_ENABLED",
+		"DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+	}, defaultSensitiveHTTPEnv...)
+	original := make(map[string]envValue, len(names))
+	for _, name := range names {
+		value, set := os.LookupEnv(name)
+		original[name] = envValue{value: value, set: set}
+		value, set = config[name]
+		if set {
+			require.NoError(t, os.Setenv(name, value))
+		} else {
+			require.NoError(t, os.Unsetenv(name))
+		}
 	}
 	require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
 	httptrace.ResetCfg()
 	t.Cleanup(func() {
-		if hadOTel {
-			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", oldOTel))
-		} else {
-			require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
-		}
-		if hadStatuses {
-			require.NoError(t, os.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", oldStatuses))
-		} else {
-			require.NoError(t, os.Unsetenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES"))
+		for _, name := range names {
+			value := original[name]
+			if value.set {
+				require.NoError(t, os.Setenv(name, value.value))
+			} else {
+				require.NoError(t, os.Unsetenv(name))
+			}
 		}
 		require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
 		httptrace.ResetCfg()
