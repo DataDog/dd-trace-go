@@ -701,6 +701,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 		module := session.GetOrCreateModule(testInfo.moduleName)
 		suite := module.GetOrCreateSuite(testInfo.suiteName)
 		test := suite.CreateTest(testInfo.testName)
+		initializeTestExecutionTiming(test)
 		test.SetTestFunc(originalFunc)
 
 		// If the execution is for a new test we tag the test event as new
@@ -764,11 +765,14 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 		// Initialize the chatty printer if not already done.
 		instrumentChattyPrinter(t)
 
+		parallelBaseline := captureParallelTimingBaseline(t)
 		startTime := time.Now()
 		bodyReturned := false
 		defer func() {
 			r := recover()
-			bodyDuration := time.Since(startTime)
+			bodyEnd := time.Now()
+			bodyDuration := bodyEnd.Sub(startTime)
+			timing := observeTestExecutionTiming(t, execMeta, parallelBaseline, bodyDuration, bodyEnd)
 
 			if tCoverage != nil {
 				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
@@ -787,7 +791,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 				if bodyTerminal != nil {
 					bodyStack = utils.GetStacktrace(1)
 				}
+				execMeta.retryAttemptTiming = timing
 				execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+					reportTestExecutionTiming(test, result.timing)
 					terminal := bodyTerminal
 					terminalStack := bodyStack
 					if result.panicData != nil {
@@ -808,7 +814,12 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 			}
 
 			unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
-			duration := runAndApplyTestCleanupWithDuration(t, execMeta, bodyDuration)
+			reportTestExecutionTiming(test, timing)
+			policyBodyDuration := bodyDuration
+			if timing.activeDurationOK {
+				policyBodyDuration = timing.activeDuration
+			}
+			duration := runAndApplyTestCleanupWithDuration(t, execMeta, policyBodyDuration)
 			if unexpectedTermination {
 				r = unexpectedTestTerminationMessage
 			}
@@ -977,6 +988,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		module := session.GetOrCreateModule(benchmarkInfo.moduleName, integrations.WithTestModuleStartTime(startTime))
 		suite := module.GetOrCreateSuite(benchmarkInfo.suiteName, integrations.WithTestSuiteStartTime(startTime))
 		test := suite.CreateTest(benchmarkInfo.testName, integrations.WithTestStartTime(startTime))
+		initializeTestExecutionTiming(test)
 		test.SetTestFunc(originalFunc)
 
 		// If the execution is for a new test we tag the test event as new
@@ -988,6 +1000,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		// Run the original benchmark function.
 		var iPfOfB *benchmarkPrivateFields
 		var recoverFunc *func(r any)
+		var benchmarkSkipReason string
 		instrumentedFunc := func(b *testing.B) {
 			// Stop the timer to perform initialization and replacements.
 			b.StopTimer()
@@ -1025,6 +1038,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
+			defer func() { benchmarkSkipReason = execMeta.skipReason }()
 
 			// Sets the CI Visibility test
 			execMeta.test = test
@@ -1039,6 +1053,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		b.Run(b.Name(), instrumentedFunc)
 
 		endTime := time.Now()
+		test.SetTag(constants.TestActiveDuration, max(endTime.Sub(startTime), 0).Nanoseconds())
 		results := iPfOfB.result
 
 		// Set benchmark data for CI visibility.
@@ -1085,7 +1100,12 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
+			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
+			if benchmarkSkipReason != "" {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime), integrations.WithTestSkipReason(benchmarkSkipReason))
+			} else {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
+			}
 		} else {
 			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}

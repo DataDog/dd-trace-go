@@ -1184,7 +1184,7 @@ func TestProcessRetryChildInvalidConfig(t *testing.T) {
 	require.Equal(t, 1, runProcessRetryChild(nil))
 
 	result := readProcessRetryResultForTesting(t, resultPath)
-	require.Equal(t, 1, result.Version)
+	require.Equal(t, processRetryResultVersion, result.Version)
 	require.Equal(t, processRetryStatusNotRun, result.Status)
 	require.Equal(t, "missing_test_name", result.ResultError)
 	require.Empty(t, result.TestName)
@@ -1461,7 +1461,7 @@ func TestProcessRetryChildWritesResult(t *testing.T) {
 	require.True(t, ran)
 	require.Empty(t, *tests)
 	result := readProcessRetryResultForTesting(t, resultPath)
-	require.Equal(t, 1, result.Version)
+	require.Equal(t, processRetryResultVersion, result.Version)
 	require.Equal(t, "TestSelected", result.TestName)
 	require.Equal(t, 1, result.Attempt)
 	require.Equal(t, constants.AutoTestRetriesRetryReason, result.RetryReason)
@@ -1470,6 +1470,11 @@ func TestProcessRetryChildWritesResult(t *testing.T) {
 	require.False(t, result.Skipped)
 	require.Positive(t, result.StartUnixNano)
 	require.GreaterOrEqual(t, result.FinishUnixNano, result.StartUnixNano)
+	require.True(t, result.DurationValid)
+	require.True(t, result.ObservedActiveDurationValid)
+	require.False(t, result.RootParallel)
+	require.Nil(t, result.ParallelPauseStartOffsetNanos)
+	require.Nil(t, result.ParallelPauseEndOffsetNanos)
 }
 
 func TestProcessRetryChildRejectsDuplicateMRunBeforeCompletion(t *testing.T) {
@@ -1711,6 +1716,12 @@ func TestProcessRetryChildPublicHelpersPreserveNativeState(t *testing.T) {
 			require.Equal(t, tt.errorMessage, result.ErrorMessage)
 			require.Equal(t, tt.skipReason, result.SkipReason)
 			require.Equal(t, tt.rootParallel, result.RootParallel)
+			if tt.rootParallel {
+				require.True(t, result.DurationValid)
+				require.True(t, result.ObservedActiveDurationValid)
+				require.NotNil(t, result.ParallelPauseStartOffsetNanos)
+				require.NotNil(t, result.ParallelPauseEndOffsetNanos)
+			}
 		})
 	}
 }
@@ -1772,7 +1783,7 @@ func TestProcessRetryStructuredMetadataFitsEncodedResultLimit(t *testing.T) {
 	}
 	encodedExpansion := strings.Repeat("\x00<>&\xff", processRetryErrorStackMaxBytes)
 	result := processRetryResult{
-		Version:        1,
+		Version:        processRetryResultVersion,
 		TestName:       cfg.TestName,
 		Attempt:        cfg.Attempt,
 		RetryReason:    cfg.RetryReason,
@@ -1780,6 +1791,7 @@ func TestProcessRetryStructuredMetadataFitsEncodedResultLimit(t *testing.T) {
 		StartUnixNano:  1,
 		FinishUnixNano: 2,
 		DurationNanos:  1,
+		DurationValid:  true,
 		Failed:         true,
 		ErrorType:      truncateProcessRetryErrorType(encodedExpansion),
 		ErrorMessage:   truncateProcessRetryStructuredErrorMessage(encodedExpansion),
@@ -1804,7 +1816,7 @@ func TestProcessRetryStructuredMetadataFitsEncodedResultLimit(t *testing.T) {
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
 	skipResult := processRetryResult{
-		Version:        1,
+		Version:        processRetryResultVersion,
 		TestName:       skipCfg.TestName,
 		Attempt:        skipCfg.Attempt,
 		RetryReason:    skipCfg.RetryReason,
@@ -1812,6 +1824,7 @@ func TestProcessRetryStructuredMetadataFitsEncodedResultLimit(t *testing.T) {
 		StartUnixNano:  1,
 		FinishUnixNano: 2,
 		DurationNanos:  1,
+		DurationValid:  true,
 		Skipped:        true,
 		SkipReason:     truncateProcessRetrySkipReason(encodedExpansion),
 	}
@@ -1910,7 +1923,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
 	result := processRetryResult{
-		Version:        1,
+		Version:        processRetryResultVersion,
 		TestName:       cfg.TestName,
 		Attempt:        cfg.Attempt,
 		RetryReason:    cfg.RetryReason,
@@ -1918,13 +1931,20 @@ func TestReadProcessRetryResult(t *testing.T) {
 		StartUnixNano:  10,
 		FinishUnixNano: 20,
 		DurationNanos:  10,
+		DurationValid:  true,
 	}
+	pauseStart, pauseEnd := int64(2), int64(5)
+	result.ObservedActiveDurationNanos = 7
+	result.ObservedActiveDurationValid = true
+	result.RootParallel = true
+	result.ParallelPauseStartOffsetNanos = &pauseStart
+	result.ParallelPauseEndOffsetNanos = &pauseEnd
 	writeProcessRetryResultForTesting(t, cfg.ResultPath, result)
 
 	got, timingOK, err := readProcessRetryResult(cfg.ResultPath, cfg)
 	require.NoError(t, err)
 	require.True(t, timingOK)
-	require.Equal(t, processRetryStatusPass, got.Status)
+	require.Equal(t, result, got)
 
 	payload, err := json.Marshal(result)
 	require.NoError(t, err)
@@ -1954,7 +1974,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 	require.ErrorIs(t, err, errProcessRetryResultMissing)
 
 	result = processRetryResult{
-		Version:     1,
+		Version:     processRetryResultVersion,
 		TestName:    cfg.TestName,
 		Attempt:     cfg.Attempt,
 		RetryReason: cfg.RetryReason,
@@ -1968,15 +1988,15 @@ func TestReadProcessRetryResult(t *testing.T) {
 
 	for _, valid := range []processRetryResult{
 		{
-			Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+			Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 			Status: processRetryStatusFail, Failed: true, ErrorType: "Error", ErrorMessage: "message", ErrorStack: "stack",
 		},
 		{
-			Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+			Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 			Status: processRetryStatusFail, Failed: true, RaceDetected: true,
 		},
 		{
-			Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+			Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 			Status: processRetryStatusSkip, Skipped: true, SkipReason: "skip reason",
 		},
 	} {
@@ -1991,9 +2011,46 @@ func TestReadProcessRetryResult(t *testing.T) {
 		result processRetryResult
 	}{
 		{
+			name: "nonzero invalid policy duration",
+			result: processRetryResult{
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Status: processRetryStatusPass, DurationNanos: 1,
+			},
+		},
+		{
+			name: "nonzero invalid observed duration",
+			result: processRetryResult{
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Status: processRetryStatusPass, ObservedActiveDurationNanos: 1,
+			},
+		},
+		{
+			name: "incomplete parallel pause",
+			result: processRetryResult{
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Status: processRetryStatusPass, RootParallel: true, ParallelPauseStartOffsetNanos: &pauseStart,
+			},
+		},
+		{
+			name: "pause on non-parallel test",
+			result: processRetryResult{
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Status: processRetryStatusPass, StartUnixNano: 10, FinishUnixNano: 20,
+				ParallelPauseStartOffsetNanos: &pauseStart, ParallelPauseEndOffsetNanos: &pauseEnd,
+			},
+		},
+		{
+			name: "parallel pause outside wall timing",
+			result: processRetryResult{
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Status: processRetryStatusPass, StartUnixNano: 10, FinishUnixNano: 12, RootParallel: true,
+				ParallelPauseStartOffsetNanos: &pauseStart, ParallelPauseEndOffsetNanos: &pauseEnd,
+			},
+		},
+		{
 			name: "unknown version",
 			result: processRetryResult{
-				Version:     2,
+				Version:     processRetryResultVersion + 1,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2003,7 +2060,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "unknown status",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2013,7 +2070,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "pass failed mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2024,7 +2081,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "pass skipped mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2035,14 +2092,14 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "pass skip reason",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusPass, SkipReason: "invalid",
 			},
 		},
 		{
 			name: "pass panic metadata",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2054,7 +2111,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "pass race mirror",
 			result: processRetryResult{
-				Version:      1,
+				Version:      processRetryResultVersion,
 				TestName:     cfg.TestName,
 				Attempt:      cfg.Attempt,
 				RetryReason:  cfg.RetryReason,
@@ -2065,7 +2122,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "skip missing mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2075,7 +2132,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "skip failed mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2087,7 +2144,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "fail missing mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2097,7 +2154,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "race missing failed mirror",
 			result: processRetryResult{
-				Version:      1,
+				Version:      processRetryResultVersion,
 				TestName:     cfg.TestName,
 				Attempt:      cfg.Attempt,
 				RetryReason:  cfg.RetryReason,
@@ -2108,63 +2165,63 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "fail message without type",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ErrorMessage: "invalid",
 			},
 		},
 		{
 			name: "fail skip reason",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, SkipReason: "invalid",
 			},
 		},
 		{
 			name: "fail result error",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ResultError: "invalid",
 			},
 		},
 		{
 			name: "oversized error type",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ErrorType: strings.Repeat("x", processRetryErrorTypeMaxBytes+1),
 			},
 		},
 		{
 			name: "encoded oversized error type",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ErrorType: strings.Repeat("\n", processRetryErrorTypeMaxBytes),
 			},
 		},
 		{
 			name: "oversized error message",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ErrorType: "Error", ErrorMessage: strings.Repeat("x", processRetryErrorMessageMaxBytes+1),
 			},
 		},
 		{
 			name: "oversized error stack",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusFail, Failed: true, ErrorType: "Error", ErrorStack: strings.Repeat("x", processRetryErrorStackMaxBytes+1),
 			},
 		},
 		{
 			name: "oversized skip reason",
 			result: processRetryResult{
-				Version: 1, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
+				Version: processRetryResultVersion, TestName: cfg.TestName, Attempt: cfg.Attempt, RetryReason: cfg.RetryReason,
 				Status: processRetryStatusSkip, Skipped: true, SkipReason: strings.Repeat("x", processRetrySkipReasonMaxBytes+1),
 			},
 		},
 		{
 			name: "panic missing error type",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
@@ -2176,12 +2233,23 @@ func TestReadProcessRetryResult(t *testing.T) {
 		{
 			name: "not run failed mirror",
 			result: processRetryResult{
-				Version:     1,
+				Version:     processRetryResultVersion,
 				TestName:    cfg.TestName,
 				Attempt:     cfg.Attempt,
 				RetryReason: cfg.RetryReason,
 				Status:      processRetryStatusNotRun,
 				Failed:      true,
+			},
+		},
+		{
+			name: "not run timing mirror",
+			result: processRetryResult{
+				Version:       processRetryResultVersion,
+				TestName:      cfg.TestName,
+				Attempt:       cfg.Attempt,
+				RetryReason:   cfg.RetryReason,
+				Status:        processRetryStatusNotRun,
+				DurationValid: true,
 			},
 		},
 	}
@@ -2195,7 +2263,7 @@ func TestReadProcessRetryResult(t *testing.T) {
 
 	t.Run("invalid timing keeps result", func(t *testing.T) {
 		result := processRetryResult{
-			Version:        1,
+			Version:        processRetryResultVersion,
 			TestName:       cfg.TestName,
 			Attempt:        cfg.Attempt,
 			RetryReason:    cfg.RetryReason,
@@ -3564,7 +3632,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 			}
 			now := time.Now()
 			result := processRetryResult{
-				Version:        1,
+				Version:        processRetryResultVersion,
 				TestName:       cfg.TestName,
 				Attempt:        cfg.Attempt,
 				RetryReason:    cfg.RetryReason,
@@ -3572,6 +3640,7 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 				StartUnixNano:  now.UnixNano(),
 				FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
 				DurationNanos:  int64(time.Millisecond),
+				DurationValid:  true,
 			}
 			data, err := json.Marshal(result)
 			if err != nil {
@@ -4358,7 +4427,7 @@ func TestRunProcessRetryAttemptAttachesBeforeResumeAndReleasesLast(t *testing.T)
 			cfg := processRetryChildConfigFromCommandEnv(t, cmd.Env)
 			now := time.Now()
 			writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
-				Version:        1,
+				Version:        processRetryResultVersion,
 				TestName:       cfg.TestName,
 				Attempt:        cfg.Attempt,
 				RetryReason:    cfg.RetryReason,
@@ -4366,6 +4435,7 @@ func TestRunProcessRetryAttemptAttachesBeforeResumeAndReleasesLast(t *testing.T)
 				StartUnixNano:  now.UnixNano(),
 				FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
 				DurationNanos:  int64(time.Millisecond),
+				DurationValid:  true,
 			})
 			closeProcessRetryCommandWriters(cmd)
 			waitCh := make(chan error, 1)
@@ -4784,7 +4854,7 @@ func TestRunProcessRetryAttemptStartsProcessTimeoutAfterLimiterAcquire(t *testin
 				return nil, err
 			}
 			data, err := json.Marshal(processRetryResult{
-				Version:        1,
+				Version:        processRetryResultVersion,
 				TestName:       cfg.TestName,
 				Attempt:        cfg.Attempt,
 				RetryReason:    cfg.RetryReason,
@@ -4792,6 +4862,7 @@ func TestRunProcessRetryAttemptStartsProcessTimeoutAfterLimiterAcquire(t *testin
 				StartUnixNano:  now.UnixNano(),
 				FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
 				DurationNanos:  int64(time.Millisecond),
+				DurationValid:  true,
 			})
 			if err != nil {
 				return nil, err
@@ -5108,6 +5179,9 @@ func TestFinishProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T)
 	require.Zero(t, modulesCounters[identity.ModuleName])
 	require.Zero(t, suitesCounters[identity.SuiteName])
 	require.Equal(t, true, recorder.tests[0].tags[ext.Error])
+	require.EqualValues(t, 0, recorder.tests[0].tags[constants.TestActiveDuration])
+	require.Equal(t, false, recorder.tests[0].tags[constants.TestIsParallel])
+	require.NotContains(t, recorder.tests[0].tags, constants.TestParallelPauseDuration)
 	require.Empty(t, recorder.tests[0].errorType)
 	require.Empty(t, recorder.tests[0].errorMessage)
 	require.Empty(t, recorder.tests[0].errorStack)
@@ -5116,6 +5190,54 @@ func TestFinishProcessRetryTestEventDoesNotChangeAggregateCounters(t *testing.T)
 }
 
 func TestFinishProcessRetryTestEventForwardsStructuredResultMetadata(t *testing.T) {
+	t.Run("timing", func(t *testing.T) {
+		for _, tt := range []struct {
+			name          string
+			durationValid bool
+			wantSlow      bool
+		}{
+			{name: "valid policy duration", durationValid: true, wantSlow: true},
+			{name: "invalid policy duration"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+				defer restoreSession()
+
+				identity := newTestIdentity("module", "suite", "TestProcessRetryTiming")
+				now := time.Now()
+				finishProcessRetryTestEventForTesting(&commonInfo{
+					moduleName: identity.ModuleName,
+					suiteName:  identity.SuiteName,
+					testName:   identity.FullName,
+					identity:   identity,
+				}, &testExecutionMetadata{
+					identity:                     identity,
+					isARetry:                     true,
+					isEarlyFlakeDetectionEnabled: true,
+					isANewTest:                   true,
+					retryContinuationDecided:     true,
+				}, processRetryAttemptResult{
+					Result: processRetryResult{
+						Status:                      processRetryStatusPass,
+						DurationNanos:               (5 * time.Minute).Nanoseconds(),
+						DurationValid:               tt.durationValid,
+						ObservedActiveDurationNanos: (2 * time.Second).Nanoseconds(),
+						ObservedActiveDurationValid: true,
+						RootParallel:                true,
+					},
+					StartTime:  now,
+					FinishTime: now.Add(5 * time.Minute),
+				})
+
+				require.Len(t, recorder.tests, 1)
+				require.EqualValues(t, (2 * time.Second).Nanoseconds(), recorder.tests[0].tags[constants.TestActiveDuration])
+				require.Equal(t, true, recorder.tests[0].tags[constants.TestIsParallel])
+				_, slow := recorder.tests[0].tags[constants.TestEarlyFlakeDetectionRetryAborted]
+				require.Equal(t, tt.wantSlow, slow)
+			})
+		}
+	})
+
 	t.Run("failure", func(t *testing.T) {
 		recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
 		defer restoreSession()
@@ -5463,7 +5585,7 @@ func TestProcessRetryDiagnosticsKeepSecretPathSentinelsOutOfSpanMetadata(t *test
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
 	writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
-		Version:     1,
+		Version:     processRetryResultVersion,
 		TestName:    secretSentinel,
 		Attempt:     cfg.Attempt,
 		RetryReason: workspacePathSentinel,
@@ -6097,7 +6219,7 @@ func TestWriteProcessRetryResultAtomically(t *testing.T) {
 	start := time.Now()
 	finish := start.Add(time.Millisecond)
 	want := processRetryResult{
-		Version:           1,
+		Version:           processRetryResultVersion,
 		TestName:          cfg.TestName,
 		Attempt:           cfg.Attempt,
 		RetryReason:       cfg.RetryReason,
@@ -6107,6 +6229,7 @@ func TestWriteProcessRetryResultAtomically(t *testing.T) {
 		StartUnixNano:     start.UnixNano(),
 		FinishUnixNano:    finish.UnixNano(),
 		DurationNanos:     finish.Sub(start).Nanoseconds(),
+		DurationValid:     true,
 	}
 
 	require.NoError(t, writeProcessRetryResultAtomically(resultPath, want))
@@ -6181,7 +6304,7 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 	start := time.Now()
 	finish := start.Add(time.Millisecond)
 	require.NoError(t, writeProcessRetryResultAtomically(cfg.ResultPath, processRetryResult{
-		Version:           1,
+		Version:           processRetryResultVersion,
 		TestName:          cfg.TestName,
 		Attempt:           cfg.Attempt,
 		RetryReason:       cfg.RetryReason,
@@ -6191,6 +6314,7 @@ func TestProcessRetryControlAdmissionParallelAndTerminalCommit(t *testing.T) {
 		StartUnixNano:     start.UnixNano(),
 		FinishUnixNano:    finish.UnixNano(),
 		DurationNanos:     finish.Sub(start).Nanoseconds(),
+		DurationValid:     true,
 		Failed:            true,
 		Panic:             true,
 		ErrorType:         "panic",
@@ -6858,7 +6982,7 @@ func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) e
 				return nil, err
 			}
 			if err := writeProcessRetryResultAtomically(cfg.ResultPath, processRetryResult{
-				Version:        1,
+				Version:        processRetryResultVersion,
 				TestName:       cfg.TestName,
 				Attempt:        cfg.Attempt,
 				RetryReason:    cfg.RetryReason,
@@ -6866,6 +6990,7 @@ func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) e
 				StartUnixNano:  now.UnixNano(),
 				FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
 				DurationNanos:  int64(time.Millisecond),
+				DurationValid:  true,
 			}); err != nil {
 				return nil, err
 			}

@@ -125,6 +125,14 @@ func instrumentTestingBuiltWithOrchestrion() {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	return instrumentTestingTFuncWithParallelTiming(f, false)
+}
+
+func instrumentTestingTFuncWithParallelBaseline(f func(*testing.T)) func(*testing.T) {
+	return instrumentTestingTFuncWithParallelTiming(f, true)
+}
+
+func instrumentTestingTFuncWithParallelTiming(f func(*testing.T), captureParallelBaseline bool) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {
 		return f
@@ -224,6 +232,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			module := session.GetOrCreateModule(moduleName)
 			suite := module.GetOrCreateSuite(suiteName)
 			test := suite.CreateTest(currentT.Name())
+			initializeTestExecutionTiming(test)
+			parallelBaseline := parallelTimingBaseline{}
+			if captureParallelBaseline {
+				parallelBaseline = captureParallelTimingBaseline(currentT)
+			}
 			startTime := time.Now()
 
 			if testifyData != nil {
@@ -262,7 +275,14 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			bodyReturned := false
 			defer func() {
 				r := recover()
-				bodyDuration := time.Since(startTime)
+				bodyEnd := time.Now()
+				bodyDuration := bodyEnd.Sub(startTime)
+				var timing testExecutionTiming
+				if captureParallelBaseline {
+					timing = observeTestExecutionTiming(currentT, execMeta, parallelBaseline, bodyDuration, bodyEnd)
+				} else {
+					timing = observeHookedTestExecutionTiming(currentT, execMeta, bodyDuration, bodyEnd)
+				}
 
 				if execMeta.usesFreshRetryAttemptRuntime {
 					bodyTerminal := r
@@ -270,7 +290,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if bodyTerminal != nil {
 						bodyStack = utils.GetStacktrace(1)
 					}
+					execMeta.retryAttemptTiming = timing
 					execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
+						reportTestExecutionTiming(test, result.timing)
 						terminal := bodyTerminal
 						terminalStack := bodyStack
 						if result.panicData != nil {
@@ -291,7 +313,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 
 				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
-				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, bodyDuration)
+				reportTestExecutionTiming(test, timing)
+				policyBodyDuration := bodyDuration
+				if timing.activeDurationOK {
+					policyBodyDuration = timing.activeDuration
+				}
+				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, policyBodyDuration)
 				if unexpectedTermination {
 					r = unexpectedTestTerminationMessage
 				}
@@ -369,7 +396,8 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	}
 }
 
-// instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
+// instrumentCloseAndSkip records a skip reason for the CI Visibility event
+// associated with a *testing.T, *testing.B, or *testing.common.
 //
 //go:linkname instrumentCloseAndSkip
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
@@ -391,24 +419,19 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 		return
 	}
 
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
+	// Leave event closure to the finalizer so it can write timing tags.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly. Store the skip reason for the defer block.
-		if ciTestItem.hasAdditionalFeatureWrapper {
-			ciTestItem.skipReason = skipReason
-			return
+		ciTestItem.skipReason = skipReason
+		if !ciTestItem.hasAdditionalFeatureWrapper {
+			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		}
-		// For single-execution tests (no wrapper), this is the final execution.
-		// Set test.final_status before closing.
-		ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
 
-// instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
+// instrumentSkipNow records a skip when the hook receives no reason argument.
+// It preserves any reason captured earlier for the CI Visibility event.
 //
 //go:linkname instrumentSkipNow
 func instrumentSkipNow(tb testing.TB) {
@@ -426,25 +449,15 @@ func instrumentSkipNow(tb testing.TB) {
 		return
 	}
 
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
+	// Leave event closure to the finalizer so it can write timing tags.
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		if formatted := ciTestItem.processRetrySkipReason.Load(); formatted != nil {
 			ciTestItem.skipReason = *formatted
 		}
 		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly.
-		if ciTestItem.hasAdditionalFeatureWrapper {
-			return
-		}
-		// For single-execution tests (no wrapper), this is the final execution.
-		// Set test.final_status before closing.
-		ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-		if ciTestItem.skipReason != "" {
-			ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(ciTestItem.skipReason))
-		} else {
-			ciTestItem.test.Close(integrations.ResultStatusSkip)
+		if !ciTestItem.hasAdditionalFeatureWrapper {
+			ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		}
 	}
 }
@@ -506,6 +519,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		module := session.GetOrCreateModule(moduleName, integrations.WithTestModuleStartTime(startTime))
 		suite := module.GetOrCreateSuite(suiteName, integrations.WithTestSuiteStartTime(startTime))
 		test := suite.CreateTest(fmt.Sprintf("%s/%s", pb.Name(), name), integrations.WithTestStartTime(startTime))
+		initializeTestExecutionTiming(test)
 		test.SetTestFunc(originalFunc)
 
 		// Restore the original name without the sub-benchmark auto name.
@@ -516,6 +530,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		// Run original benchmark.
 		var iPfOfB *benchmarkPrivateFields
 		var recoverFunc *func(r any)
+		var benchmarkSkipReason string
 		instrumentedFunc := func(b *testing.B) {
 			// Stop the timer to do the initialization and replacements.
 			b.StopTimer()
@@ -549,6 +564,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
+			defer func() { benchmarkSkipReason = execMeta.skipReason }()
 
 			// Set the CI visibility test.
 			execMeta.test = test
@@ -565,6 +581,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		b.Run(name, instrumentedFunc)
 
 		endTime := time.Now()
+		test.SetTag(constants.TestActiveDuration, max(endTime.Sub(startTime), 0).Nanoseconds())
 		results := iPfOfB.result
 
 		// Set benchmark data for CI visibility.
@@ -611,7 +628,12 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			module.SetTag(ext.Error, true)
 			test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(endTime))
 		} else if iPfOfB.B.Skipped() {
-			test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
+			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
+			if benchmarkSkipReason != "" {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime), integrations.WithTestSkipReason(benchmarkSkipReason))
+			} else {
+				test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(endTime))
+			}
 		} else {
 			test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(endTime))
 		}
@@ -684,12 +706,14 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	return nil
 }
 
-// instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Only an isolated quarantined race subtree
-// takes ownership; every other call keeps the existing native fast path.
+// instrumentTestingParallel captures the timing baseline and reports whether CI
+// Visibility has replaced the native Parallel implementation. Only an isolated
+// quarantined race subtree takes ownership; every other call returns false so
+// the native implementation runs.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
+	captureParallelTimingHook(t)
 	if !quarantinedRaceParallelHookActive {
 		return false
 	}
