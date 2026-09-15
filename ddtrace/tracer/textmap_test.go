@@ -454,6 +454,127 @@ func TestExtractOriginSynthetics(t *testing.T) {
 	assert.Equal(t, ctx.origin, "synthetics")
 }
 
+// TestExtractTraceTagsWithoutIdentity verifies that x-datadog-tags arriving
+// without trace-id/parent-id still reaches a genuine fresh root span.
+func TestExtractTraceTagsWithoutIdentity(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	// keyTraceID128 must be dropped: no lower-bit identity to attach it to.
+	src := TextMapCarrier(map[string]string{
+		traceTagsHeader: keyPropagatedLLMObsParentID + "=1234," + keyPropagatedLLMObsTraceID + "=5678," + keyTraceID128 + "=1234567890abcdef",
+	})
+
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.True(t, ctx.startsNewTrace)
+	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", ctx.trace.propagatingTag(keyPropagatedLLMObsTraceID))
+	assert.Empty(t, ctx.trace.propagatingTag(keyTraceID128))
+
+	root := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer root.Finish()
+
+	// Genuine root, not an orphan child.
+	assert.Equal(t, uint64(0), root.parentID)
+	assert.NotZero(t, root.Context().TraceIDLower())
+
+	// Tags reached the new root, so lineage resolves.
+	assert.Equal(t, "1234", root.Context().trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "5678", root.Context().trace.propagatingTag(keyPropagatedLLMObsTraceID))
+}
+
+// TestExtractTraceTagsWithoutIdentityDecisionMaker verifies the derived
+// trace.dm cache is populated when propagating tags are copied onto the new
+// root, and that the root does not alias the extracted trace's tag map.
+func TestExtractTraceTagsWithoutIdentityDecisionMaker(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	src := TextMapCarrier(map[string]string{
+		traceTagsHeader: keyDecisionMaker + "=-1," + keyPropagatedLLMObsParentID + "=1234",
+	})
+
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+
+	root := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer root.Finish()
+
+	// The string tag and its numeric cache must agree: v1 encoding reads the
+	// latter via decisionMaker(), and setSamplingPriority skips the repairing
+	// write whenever the string already matches the local sampler's mechanism.
+	rt := root.Context().trace
+	assert.Equal(t, "-1", rt.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, uint32(1), rt.decisionMaker())
+
+	// The root's snapshot is a clone, not the extracted trace's live map.
+	require.NotNil(t, ctx.trace)
+	rootTags := rt.loadPropagatingTags()
+	srcTags := ctx.trace.loadPropagatingTags()
+	require.NotEmpty(t, rootTags)
+	require.NotEmpty(t, srcTags)
+	assert.NotEqual(t, reflect.ValueOf(srcTags).Pointer(), reflect.ValueOf(rootTags).Pointer())
+}
+
+// TestExtractNoIdentityNoPropagatingTags verifies a missing identity with no
+// tags to rescue is still a hard extraction failure.
+func TestExtractNoIdentityNoPropagatingTags(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	src := TextMapCarrier(map[string]string{
+		DefaultPriorityHeader: "1",
+	})
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	assert.Equal(t, ErrSpanContextNotFound, err)
+	assert.Nil(t, ctx)
+}
+
+// TestExtractIdentitylessContextDoesNotShadowIdentity covers an intermediary that
+// discards the x-datadog-* identity headers while forwarding x-datadog-tags
+// and a W3C traceparent. The Datadog extractor runs first and yields only a
+// identity-less context, but the W3C trace must still be continued: that
+// context contributes its propagating tags, not its (absent) identity.
+func TestExtractIdentitylessContextDoesNotShadowIdentity(t *testing.T) {
+	t.Setenv(envPropagationStyleExtract, "datadog,tracecontext,baggage")
+	src := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+		tracestateHeader:  "dd=s:2;t.dm:-4",
+		traceTagsHeader:   keyPropagatedLLMObsParentID + "=1234," + keyDecisionMaker + "=-1",
+	})
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(src)
+	require.NoError(t, err)
+	require.NotNil(t, ctx)
+	assert.False(t, ctx.startsNewTrace, "identity-bearing context must win over an identity-less one")
+	assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
+	assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
+	assert.Empty(t, ctx.spanLinks, "the W3C context must be continued, not linked as terminated")
+
+	// Tags that arrived without identity are merged in, but the identity-bearing
+	// context's own tags win on conflict (_dd.p.dm here comes from tracestate).
+	assert.Equal(t, "1234", ctx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+	assert.Equal(t, "-4", ctx.trace.propagatingTag(keyDecisionMaker))
+
+	child := tracer.StartSpan("web.request", ChildOf(ctx))
+	defer child.Finish()
+	assert.Equal(t, "12345678901234567890123456789012", child.Context().TraceID())
+	assert.Equal(t, uint64(0x1234567890123456), child.parentID)
+	assert.Equal(t, "1234", child.Context().trace.propagatingTag(keyPropagatedLLMObsParentID))
+}
+
 func Test257CharacterDDTracestateLengh(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 
@@ -3877,7 +3998,7 @@ func TestExtractFirstContinuesPastFailedExtractor(t *testing.T) {
 			require.NotNil(t, ctx)
 
 			// Must be the real W3C-derived trace context, not a baggage-only stand-in.
-			assert.False(t, ctx.baggageOnly)
+			assert.False(t, ctx.startsNewTrace)
 			assert.Equal(t, "12345678901234567890123456789012", ctx.TraceID())
 			assert.Equal(t, uint64(0x1234567890123456), ctx.SpanID())
 

@@ -346,11 +346,11 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// and sampling decision. The incoming context is referenced via a span
 	// link. Baggage is propagated.
 	//
-	// If incomingCtx is nil or baggage-only (no upstream trace context), there
-	// is no trace to link to, so fall through to continue behavior.
-	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.baggageOnly { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+	// If incomingCtx is nil or starts a new trace (no upstream trace ctx),
+	// there is no trace to link to, so fall through to continue behavior.
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.startsNewTrace { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		ctx := &SpanContext{
-			baggageOnly: true, // signals spanStart to generate new traceID/spanID
+			startsNewTrace: true, // signals spanStart to generate new traceID/spanID
 		}
 
 		link := SpanLink{
@@ -418,6 +418,12 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
+	// extractTextMap can return a context holding propagating tags but no trace
+	// identity (x-datadog-tags arrived, x-datadog-trace-id/parent-id did not).
+	// Such a context must not end the search: a later extractor (typically
+	// tracecontext) may still supply real identity, and letting the
+	// identity-less one win would sever that trace. Hold it aside instead.
+	var pendingTagsOnly *SpanContext
 	var links []SpanLink
 
 	for _, v := range p.extractors {
@@ -438,6 +444,14 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 				return nil, nil, err
 			}
 			if extractedCtx != nil {
+				// No trace identity: park it (first one wins) and keep
+				// looking for an extractor that has identity.
+				if extractedCtx.startsNewTrace { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+					if pendingTagsOnly == nil {
+						pendingTagsOnly = extractedCtx
+					}
+					continue
+				}
 				ctx, producer = extractedCtx, v
 				if p.onlyExtractFirst {
 					break
@@ -477,16 +491,31 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 
 	if ctx == nil {
-		if len(pendingBaggage) > 0 {
+		if pendingTagsOnly != nil {
+			// Nothing supplied identity, so the parked context is the incoming
+			// one: the span becomes a genuine root (fresh trace ID, no parent)
+			// that still carries the propagating tags. producer stays nil - it
+			// is only read on the restart path, which skips startsNewTrace
+			// contexts.
+			ctx = pendingTagsOnly
+			pendingTagsOnly = nil
+		} else if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
-				baggageOnly: true,           // +checklocksignore - Initialization time, not shared yet.
+				baggage:        pendingBaggage, // +checklocksignore - Initialization time, not shared yet.
+				startsNewTrace: true,           // +checklocksignore - Initialization time, not shared yet.
 			}
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil, nil
+		} else {
+			// 0 successful extractions
+			return nil, nil, ErrSpanContextNotFound
 		}
-		// 0 successful extractions
-		return nil, nil, ErrSpanContextNotFound
+	}
+	// Another propagator supplied identity, so ctx wins propagation. Fold in
+	// the parked tags anyway, otherwise x-datadog-tags that parsed fine would
+	// be silently dropped just because the Datadog IDs were missing.
+	if pendingTagsOnly != nil {
+		mergePropagatingTags(ctx, pendingTagsOnly)
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
@@ -507,6 +536,31 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	}
 	return ctx, producer, nil
+}
+
+// mergePropagatingTags copies propagating tags from an identity-less context
+// (tags that arrived without trace identity) onto the context that did supply
+// identity. Keys already present win: the identity-bearing context describes
+// the trace actually being continued, so it must not be overwritten by a
+// carrier whose identity we discarded. Both contexts are freshly extracted and
+// not yet shared, so the unsynchronized writes below are safe.
+func mergePropagatingTags(ctx, tagsOnly *SpanContext) {
+	src := tagsOnly.trace
+	if src == nil {
+		return
+	}
+	tags := src.loadPropagatingTags()
+	if len(tags) == 0 {
+		return
+	}
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	for k, v := range tags {
+		if !ctx.trace.hasPropagatingTag(k) {
+			ctx.trace.setPropagatingTagUnsafe(k, v)
+		}
+	}
 }
 
 // cutPrefixFold reports whether s starts with prefix, ignoring case, and if so
@@ -835,16 +889,28 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			s.tr.unsetPropagatingTag(keyTraceID128)
 		}
 	}
+	var ctx *SpanContext
 	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
-		return nil, ErrSpanContextNotFound
-	}
-	s.traceID.cacheHex()
-	ctx := &SpanContext{
-		traceID: s.traceID,
-		spanID:  s.spanID,
-		origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		trace:   s.tr,
-		updated: s.updated,
+		// Special case if absent x-datadog-trace-id/parent-id but
+		// x-datadog-tags present - allow propagating as an identity-less
+		// context that starts a new trace
+		if s.tr == nil {
+			return nil, ErrSpanContextNotFound
+		}
+		s.tr.unsetPropagatingTag(keyTraceID128) // upper bits of a trace we have no lower-bit identity for
+		if len(s.tr.loadPropagatingTags()) == 0 {
+			return nil, ErrSpanContextNotFound
+		}
+		ctx = &SpanContext{startsNewTrace: true, trace: s.tr}
+	} else {
+		s.traceID.cacheHex()
+		ctx = &SpanContext{
+			traceID: s.traceID,
+			spanID:  s.spanID,
+			origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			trace:   s.tr,
+			updated: s.updated,
+		}
 	}
 	if len(s.baggage) > 0 {
 		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
