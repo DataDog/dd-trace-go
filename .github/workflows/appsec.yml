@@ -219,7 +219,7 @@ jobs:
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage to Datadog
-        if: always() && steps.restore.outcome == 'success'
+        if: always()
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
@@ -316,7 +316,7 @@ jobs:
           tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Upload Coverage to Datadog
-        if: always() && steps.restore.outcome == 'success'
+        if: always()
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
