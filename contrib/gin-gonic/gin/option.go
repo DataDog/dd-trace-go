@@ -24,16 +24,17 @@ const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 const serviceSourceGinMiddleware = "opt.gin_middleware"
 
 type config struct {
-	analyticsRate    float64
-	resourceNamer    func(c *gin.Context) string
-	resourceNamerSet bool
-	serviceName      string
-	serviceSource    string
-	ignoreRequest    func(c *gin.Context) bool
-	isStatusError    func(statusCode int) bool
-	useGinErrors     bool
-	headerTags       instrumentation.HeaderTags
-	otelEnabled      bool
+	analyticsRate float64
+	resourceNamer func(c *gin.Context) string
+	serviceName   string
+	serviceSource string
+	ignoreRequest func(c *gin.Context) bool
+	isStatusError func(statusCode int) bool
+	useGinErrors  bool
+	headerTags    instrumentation.HeaderTags
+	// otelEnabled is captured when Middleware is constructed. If OTel semantic
+	// mode becomes dynamically configurable, Middleware must be reconstructed.
+	otelEnabled bool
 }
 
 func newConfig(serviceName string) *config {
@@ -101,7 +102,6 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
-		cfg.resourceNamerSet = true
 	}
 }
 
