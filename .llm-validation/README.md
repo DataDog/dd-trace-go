@@ -62,6 +62,8 @@ docker run --rm -e LLMVAL_AUTH_HEADER -v "$PWD:/repo" "$LLMVAL_IMAGE" \
 CI includes the reusable `"llm validation"` job from the platform repo (see `.gitlab-ci.yml`).
 This repo's default branch is `main`, so the job sets `LLMVAL_BASE_REF: "main"`.
 
+The job leaves `LLMVAL_ALLOW_LABEL_BYPASS` at the platform default (`true`). A GitHub label `llm-validation/ignore-regression` on the PR turns a gate FAIL into success on retry. Only a maintainer should apply that label, and only with an explicit reason on the PR.
+
 ## What a pass means
 
 This is an A/B comparison, not an absolute score:
