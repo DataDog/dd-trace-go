@@ -386,7 +386,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
 		bodyRequested, blockedAct = sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", spanId)
 
-		// Res should be an immediate response with the blocking event
+		// No blocking response can be returned because the expected body message never arrives.
 		require.Nil(t, blockedAct)
 		require.True(t, bodyRequested)
 

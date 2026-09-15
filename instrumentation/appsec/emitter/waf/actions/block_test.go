@@ -84,15 +84,6 @@ func TestBlockRequestAppliedCallback(t *testing.T) {
 	}
 }
 
-func TestBlockHTTPIsBlocking(t *testing.T) {
-	if !newHTTPBlockRequestAction(http.StatusForbidden, "auto", "").IsBlocking() {
-		t.Fatal("block_request action must be marked as blocking")
-	}
-	if newRedirectRequestAction(http.StatusFound, "/redirected", "").IsBlocking() {
-		t.Fatal("redirect_request action must not be marked as blocking")
-	}
-}
-
 func TestBlockRequestHandler_ContentLength(t *testing.T) {
 	tests := []struct {
 		name               string

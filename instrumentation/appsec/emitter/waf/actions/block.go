@@ -73,7 +73,6 @@ type (
 	// BlockHTTP are actions that interact with an HTTP request flow.
 	BlockHTTP struct {
 		http.Handler
-		blocking            bool
 		reportsBlockOutcome bool
 		reportFailure       func()
 	}
@@ -121,12 +120,6 @@ func (a *BlockGRPC) EmitData(op dyngo.Operation) {
 func (a *BlockHTTP) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, a)
 	dyngo.EmitData(op, &events.BlockingSecurityEvent{})
-}
-
-// IsBlocking reports whether this action came from a block_request action.
-// Redirect actions also use BlockHTTP but are not blocking actions for telemetry.
-func (a *BlockHTTP) IsBlocking() bool {
-	return a.blocking
 }
 
 // ReportsBlockOutcome reports whether applying this action updates the
@@ -234,8 +227,7 @@ func newBlockAction(params map[string]any, cfg Config) []Action {
 
 func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {
 	return &BlockHTTP{
-		Handler:  newBlockHandler(status, template, securityResponseID),
-		blocking: true,
+		Handler: newBlockHandler(status, template, securityResponseID),
 	}
 }
 

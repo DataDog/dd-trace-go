@@ -45,7 +45,8 @@ type ProcessorConfig struct {
 	// ContinueMessageFunc is a function that generates a continue message of type O based on the provided ContinueActionOptions.
 	ContinueMessageFunc func(context.Context, ContinueActionOptions) error
 
-	// BlockMessageFunc generates and delivers a block message from the provided status code, headers, and body.
+	// BlockMessageFunc handles a prepared block message at the integration boundary.
+	// Its error reports failures known at that point; final delivery may happen later.
 	// It is required when BlockingUnavailable is false.
 	BlockMessageFunc func(context.Context, BlockActionOptions) error
 }
