@@ -396,7 +396,7 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 #### Overriding automatic test retries
 
-`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting.
+`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
 
 #### Code coverage report flags
 
