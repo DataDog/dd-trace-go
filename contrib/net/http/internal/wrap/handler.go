@@ -60,17 +60,18 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
-			traceAndServe(h, w, req, &httptrace.ServeConfig{
-				Service:       service,
-				ServiceSource: serviceSource,
-				Framework:     "net/http",
-				Resource:      resc,
-				FinishOpts:    cfg.FinishOpts,
-				SpanOpts:      so,
-				IsStatusError: cfg.IsStatusError,
-				Route:         route,
-				RouteParams:   pattern.PathParameters(req.Pattern, req),
-			}, cfg.OTelSemanticsEnabled)
+			TraceAndServe(h, w, req, &httptrace.ServeConfig{
+				Service:              service,
+				ServiceSource:        serviceSource,
+				Framework:            "net/http",
+				Resource:             resc,
+				FinishOpts:           cfg.FinishOpts,
+				SpanOpts:             so,
+				IsStatusError:        cfg.IsStatusError,
+				Route:                route,
+				OTelSemanticsEnabled: &cfg.OTelSemanticsEnabled,
+				RouteParams:          pattern.PathParameters(req.Pattern, req),
+			})
 		}),
 	}
 }

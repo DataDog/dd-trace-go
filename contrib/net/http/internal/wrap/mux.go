@@ -102,13 +102,14 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	traceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
-		Service:       mux.cfg.ServiceName,
-		ServiceSource: mux.cfg.ServiceSource,
-		Framework:     "net/http",
-		Resource:      resource,
-		SpanOpts:      so,
-		Route:         route,
-		IsStatusError: mux.cfg.IsStatusError,
-	}, mux.cfg.OTelSemanticsEnabled)
+	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
+		Service:              mux.cfg.ServiceName,
+		ServiceSource:        mux.cfg.ServiceSource,
+		Framework:            "net/http",
+		Resource:             resource,
+		SpanOpts:             so,
+		Route:                route,
+		OTelSemanticsEnabled: &mux.cfg.OTelSemanticsEnabled,
+		IsStatusError:        mux.cfg.IsStatusError,
+	})
 }
