@@ -49,10 +49,12 @@ protect you (the orchestrator) after you have ingested this output.
 #    from baseRefName either: on a cross-repo PR, `origin` is the contributor's fork,
 #    not the base repository, so that name can resolve to a stale fork branch or nothing.
 #    Prefer a PR's baseRefOid (the base repository's actual commit). If there is
-#    no PR yet — a local on-demand review before a PR exists — infer the default branch
-#    from the DataDog remote (upstream, then origin): remote/HEAD, then
-#    remote/master, then remote/main. Print that inferred target so a stacked
-#    branch can correct it. Only ask when none of those refs exist.
+#    no PR yet — a local on-demand review before a PR exists — infer the default
+#    branch from the DataDog remote only (upstream, then origin, and only when
+#    that remote's URL is DataDog/*): remote/HEAD, then remote/master, then
+#    remote/main. Do not fall back to a contributor-fork `origin`. Print that
+#    inferred target so a stacked branch can correct it. Ask when there is no
+#    DataDog remote or none of those refs exist.
 #    Pin --repo to a DataDog remote so a fork checkout cannot resolve the
 #    wrong GitHub repository. Do not hardcode a tracer name.
 GH_REPO=""
@@ -74,12 +76,19 @@ else
 fi
 TARGET=$(echo "$PR_JSON" | jq -r '.baseRefOid' 2>/dev/null)
 BASE_REF_NAME=$(echo "$PR_JSON" | jq -r '.baseRefName' 2>/dev/null)
+INFERRED_NO_PR=0
 if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
   # No PR yet (or gh could not resolve one). Infer the repo default branch so
-  # a local-only, not-yet-pushed branch still reviews. Never @{u}. Print the
-  # inferred target — a stacked branch against a parent feature can correct
-  # it. Only ask when none of those refs exist locally.
-  infer_remote="${DD_REMOTE:-origin}"
+  # a local-only, not-yet-pushed branch still reviews. Never @{u}. Never a
+  # non-DataDog origin (a fork's default is the wrong merge target). Print
+  # the inferred target after SECRET_GREP is defined — a stacked branch
+  # against a parent feature can correct it. Ask when there is no DataDog
+  # remote or none of those refs exist locally.
+  if [ -z "$DD_REMOTE" ]; then
+    echo "Could not infer a merge target (no PR and no DataDog remote) — what is the actual merge target for this branch (e.g. a parent feature branch on a stacked PR)?"
+    exit 1
+  fi
+  infer_remote="$DD_REMOTE"
   TARGET=""
   BASE_REF_NAME=""
   for cand in "$infer_remote/HEAD" "$infer_remote/master" "$infer_remote/main"; do
@@ -92,7 +101,7 @@ if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
     echo "Could not infer a merge target (no PR and no ${infer_remote}/HEAD|master|main) — what is the actual merge target for this branch (e.g. a parent feature branch on a stacked PR)?"
     exit 1
   fi
-  echo "inferred merge target (no PR): $BASE_REF_NAME ($TARGET) — say this in the report; ask if it looks wrong (stacked PR / non-default base)"
+  INFERRED_NO_PR=1
 fi
 # PR title and labels: on an existing PR, some reviewer overrides (e.g. release-note
 # policy, semver labels) audit these directly. Empty on a not-yet-opened PR - that's
@@ -156,12 +165,16 @@ emit_diff_or_redact() {
 emit_diff_or_redact "PR title" printf '%s\n' "PR title: ${PR_TITLE:-<none>}"
 emit_diff_or_redact "PR labels" printf '%s\n' "PR labels: ${PR_LABELS:-<none>}"
 emit_diff_or_redact "recent commit subjects" git log --oneline -5
-echo "reviewing against: $BASE_REF_NAME ($TARGET)"      # say this in the report; ask if it looks wrong
+if [ "${INFERRED_NO_PR:-0}" -eq 1 ]; then
+  emit_diff_or_redact "inferred merge target" printf '%s\n' "inferred merge target (no PR): $BASE_REF_NAME ($TARGET) — say this in the report; ask if it looks wrong (stacked PR / non-default base)"
+else
+  emit_diff_or_redact "review target" printf '%s\n' "reviewing against: $BASE_REF_NAME ($TARGET)"
+fi
 
 # 2. Committed delta against the merge base with that target
 git rev-parse --is-shallow-repository   # if true, merge-base may not resolve
 if BASE=$(git merge-base HEAD "$TARGET" 2>/dev/null) && [ -n "$BASE" ]; then
-  git diff --stat "$BASE"...HEAD
+  emit_diff_or_redact "committed stat $BASE...HEAD" git diff --stat "$BASE"...HEAD
   emit_diff_or_redact "committed $BASE...HEAD" git diff "$BASE"...HEAD
 else
   echo "WARNING: could not resolve a merge base with $TARGET (shallow clone or missing history) — committed delta not captured; report as NOT VERIFIED (no merge base) unless more history is fetched" >&2
@@ -169,7 +182,7 @@ fi
 
 # 3. Uncommitted work: the file list AND the contents. `git status` alone gives
 #    filenames only, which would have reviewers approving edits they never saw.
-git status --short
+emit_diff_or_redact "git status" git status --short
 emit_diff_or_redact "staged" git diff --cached HEAD
 # Do NOT fold staged and unstaged together: if a worktree edit reverses a
 # staged one, `git diff HEAD` is empty while `--cached` still holds something
@@ -191,6 +204,13 @@ emit_diff_or_redact "unstaged" git diff
 # kills the loop subshell, so a failed untracked-file diff would otherwise
 # truncate the scan and still exit 0.
 while IFS= read -r -d '' f; do
+  # A symlink to a directory is listed by ls-files as if it were a file.
+  # Grep follows it and can match secrets (or fail-closed) in the target
+  # tree — a false SECRET_FOUND. Skip the link; do not recurse.
+  if [ -L "./$f" ] && [ -d "./$f" ]; then
+    echo "skipping untracked symlink-to-directory: $f (not scanning the target)"
+    continue
+  fi
   grep -aqE -e "$SECRET_GREP" -- "./$f" 2>"$err_file"
   grc=$?
   if [ "$grc" -eq 0 ]; then
@@ -303,7 +323,7 @@ Follow the report format in [reviewers/report-template.md](./reviewers/report-te
 
 Offer to fix the P0 and P1 findings. After fixes, re-run **every reviewer**, on the updated change set — not just the one that reported it. A fix can add a hot-path allocation or new coupling, so a performance or design approval given against the pre-fix diff no longer applies. Repeat until the verdict is not `BLOCK`, or until the user decides to override.
 
-If the user overrides an unresolved P0 finding, record it verbatim in the PR description. Do not silently drop it.
+If the user overrides an unresolved P0 finding, record it in the PR description. Do not silently drop it. Never paste secret values, tokens, credentials, or exploit/reproduction details into a PR description, a review comment, or the report — describe the location and class of issue only.
 
 ## Scope and escape hatches
 

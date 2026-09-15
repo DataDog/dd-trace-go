@@ -24,8 +24,9 @@ Verdicts (P0 / P1 / P2, BLOCK / APPROVE) live in
 [`.agents/skills/dd-apm-sdk-review/reviewers/_common.md`](./.agents/skills/dd-apm-sdk-review/reviewers/_common.md)
 — do not restate them here.
 
-If a human authorizes shipping with an unresolved P0, record that finding verbatim in the PR
-description.
+If a human authorizes shipping with an unresolved P0, record that finding in the PR
+description (location and class of issue only — never paste secret values, tokens,
+credentials, or exploit details).
 
 **Reviewer without a skill harness** (for example, GitHub Codex): read and follow
 `.agents/skills/dd-apm-sdk-review/review-without-harness.md`. Do not load `SKILL.md`
