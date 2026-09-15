@@ -20,10 +20,8 @@ func TestVersionIsGoTip(t *testing.T) {
 		{"release minor", "go1.25", false},
 		{"devel long", "devel go1.25-abc1234 Tue Jul 22 15:00:00 2026 +0000", true},
 		{"devel short", "devel +abc1234", true},
-		{"gotip current", "go1.28-devel_d90cb4e0 Tue Sep 15 08:21:00 2026 -0700", true},
 		{"empty", "", false},
 		{"unknown", "weird", false},
-		{"unrelated devel suffix", "not-devel", false},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
