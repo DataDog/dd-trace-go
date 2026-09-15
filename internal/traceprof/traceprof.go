@@ -8,9 +8,12 @@ package traceprof
 
 // pprof labels applied by the tracer to show up in the profiler's profiles.
 const (
-	SpanID          = "span id"
-	LocalRootSpanID = "local root span id"
-	TraceEndpoint   = "trace endpoint"
+	SpanID        = "span id"
+	TraceEndpoint = "trace endpoint"
+	// TraceID is the full 128-bit trace ID encoded as a 32-character lowercase
+	// hex string (unlike SpanID, which is 64-bit decimal). It lets consumers
+	// correlate a sample with the whole trace.
+	TraceID = "trace id"
 )
 
 // env variables used to control cross-cutting tracer/profiling features.

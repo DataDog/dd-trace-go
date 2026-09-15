@@ -144,3 +144,18 @@ func goodIndexedVerbResolvesToErrorDotError(cfg any, err *customError) {
 func suggestRawErrorAtEnd(err *customError) {
 	internallog.Debug("operation failed: %v", err) // want "prefer err.Error"
 }
+
+// badStarWidthShiftsLaterVerbArgument is the regression case for a real
+// false negative in lastVerb's argument-index bookkeeping: a '*' width
+// modifier consumes an extra call argument (the width value itself, here
+// 5) that lastVerb's nextArg counter never accounts for. The real fmt
+// resolution is %*s consuming 5 (arg 1) and err.Error() (arg 2), then %v
+// consuming cfg (arg 3, the call's actual last argument) — a genuinely
+// unsafe %v over a non-error value. Without accounting for the extra
+// argument '*' consumes, the walker's nextArg counter under-counts by one,
+// so finalVerbArg resolves to arg 2 (err.Error()) instead of arg 3 (cfg);
+// run() then wrongly treats %v as backed by err.Error() and silently
+// exempts it, hiding the real reflection-unsafe verb over cfg entirely.
+func badStarWidthShiftsLaterVerbArgument(cfg any, err *customError) {
+	internallog.Warn("%*s %v", 5, err.Error(), cfg) // want "exposes uncontrolled data"
+}
