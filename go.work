@@ -83,6 +83,7 @@ use (
 	./orchestrion/all
 	./scripts/autoreleasetagger
 	./scripts/fixmodules
+	./scripts/gencontribdoc
 	./tools/v2fix
 	./tools/v2fix/_stage
 )

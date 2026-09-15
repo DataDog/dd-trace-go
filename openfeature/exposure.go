@@ -8,7 +8,6 @@ package openfeature
 import (
 	"cmp"
 	"container/list"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -24,8 +23,8 @@ const (
 	// Matches the dd-trace-js implementation (1 second)
 	defaultExposureFlushInterval = 1 * time.Second
 
-	// exposureEndpoint is the EVP proxy endpoint for exposure events
-	exposureEndpoint = "/evp_proxy/v2/api/v2/exposures"
+	// exposureEndpoint is the direct EVP intake path for exposure events.
+	exposureEndpoint = "/api/v2/exposures"
 
 	// evpSubdomainHeader is the HTTP header name for EVP subdomain routing
 	evpSubdomainHeader = "X-Datadog-EVP-Subdomain"
@@ -205,14 +204,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: exposure writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: exposure writer recovered panic", errAttr)
+				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
 			}
 			w.stop()
 		}()

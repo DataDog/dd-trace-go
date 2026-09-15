@@ -50,10 +50,12 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
+        policy: "dd-trace-go",
     },
     {
         name: "staging",
         site: "datad0g.com",
+        policy: "dd-trace-go-staging",
     },
 ]
 
@@ -109,6 +111,9 @@ on: {
 }
 
 env: {
+  // Fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410,
+  // which is all a comma-separated GOPROXY falls through on.
+  GOPROXY: "https://proxy.golang.org|direct",
   DD_ENV: "github",
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
@@ -143,7 +148,7 @@ jobs: {
                         id: "dd-sts",
                         uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
                         with: {
-                            policy: "dd-trace-go",
+                            policy: "\(env.policy)",
                         },
                     },
                     {

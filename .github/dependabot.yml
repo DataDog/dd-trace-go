@@ -67,7 +67,6 @@ updates:
     directories:
       - "/"
       - "/internal/apps"
-      - "/internal/apps/staleidle-soak"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -87,6 +86,38 @@ updates:
     ignore:
       # localstack is frozen entirely — no version/tag bumps, no digest refreshes.
       - dependency-name: "localstack/localstack"
+
+  # Docker Compose (reproduction harnesses) — stacks whose whole purpose is to
+  # reproduce a customer issue against that customer's exact image version. A
+  # bump here doesn't improve the harness, it invalidates it, so the pinned
+  # image is frozen outright (tag *and* digest). Kept as its own entry because
+  # `ignore` applies per update entry, not per directory, and the dev/local
+  # stacks above must keep receiving datadog/agent digest refreshes.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/internal/apps/staleidle-soak"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    groups:
+      docker-compose-harnesses:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 2
+    ignore:
+      # No update-types: frozen entirely, digest refreshes included. staleidle-soak
+      # pins the agent version from APMS-19533; #5172 bumped it to 7.82.0 and had
+      # to be reverted. Any image added to this directory later is still managed —
+      # only datadog/agent is frozen.
+      - dependency-name: "datadog/agent"
 
   # Docker Compose (test images) — CI service containers and the Testcontainers
   # image catalog intentionally pin specific (often old) versions to cover

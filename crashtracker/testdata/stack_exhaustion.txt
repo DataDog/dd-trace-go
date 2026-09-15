@@ -1,0 +1,147 @@
+runtime: goroutine stack exceeds 32768-byte limit
+runtime: sp=0x6d6b70730530 stack=[0x6d6b70730000, 0x6d6b70738000]
+fatal error: stack overflow
+
+runtime stack:
+runtime.throw({0x102505c91?, 0x200000008?})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go:1229 +0x38 fp=0x16d986a10 sp=0x16d9869e0 pc=0x1024e6f38
+runtime.newstack()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/stack.go:1178 +0x498 fp=0x16d986b40 sp=0x16d986a10 pc=0x1024d04c8
+runtime.morestack()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:507 +0x70 fp=0x16d986b40 sp=0x16d986b40 pc=0x1024eace0
+
+goroutine 1 gp=0x6d6b706721e0 m=0 mp=0x1025d23c0 [running]:
+main.recurse(0x1f?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:5 +0x9c fp=0x6d6b70730530 sp=0x6d6b70730530 pc=0x10250413c
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70730d50 sp=0x6d6b70730530 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70731570 sp=0x6d6b70730d50 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70731d90 sp=0x6d6b70731570 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b707325b0 sp=0x6d6b70731d90 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70732dd0 sp=0x6d6b707325b0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b707335f0 sp=0x6d6b70732dd0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70733e10 sp=0x6d6b707335f0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0xf?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70734630 sp=0x6d6b70733e10 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70734e50 sp=0x6d6b70734630 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70735670 sp=0x6d6b70734e50 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70735e90 sp=0x6d6b70735670 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x7?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b707366b0 sp=0x6d6b70735e90 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x0?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70736ed0 sp=0x6d6b707366b0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x3?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b707376f0 sp=0x6d6b70736ed0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.recurse(0x1025c85c8?)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8 +0x74 fp=0x6d6b70737f10 sp=0x6d6b707376f0 pc=0x102504114
+main.recurse(...)
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:8
+main.main()
+	/tmp/crashtracker-fixtures/stack_exhaustion.go:13 +0x30 fp=0x6d6b70737f30 sp=0x6d6b70737f10 pc=0x102504180
+runtime.main()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:290 +0x2b4 fp=0x6d6b70737fd0 sp=0x6d6b70737f30 pc=0x1024b7e54
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b70737fd0 sp=0x6d6b70737fd0 pc=0x1024ecbf4
+
+goroutine 2 gp=0x6d6b70672780 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x6d6b706e0f90 sp=0x6d6b706e0f70 pc=0x1024e700c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:468
+runtime.forcegchelper()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:375 +0xb4 fp=0x6d6b706e0fd0 sp=0x6d6b706e0f90 pc=0x1024b8174
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b706e0fd0 sp=0x6d6b706e0fd0 pc=0x1024ecbf4
+created by runtime.init.7 in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:363 +0x24
+
+goroutine 3 gp=0x6d6b706730e0 m=nil [GC sweep wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x6d6b706e1770 sp=0x6d6b706e1750 pc=0x1024e700c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:468
+runtime.bgsweep(0x6d6b70780000)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgcsweep.go:279 +0x9c fp=0x6d6b706e17b0 sp=0x6d6b706e1770 pc=0x1024a444c
+runtime.gcenable.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgc.go:214 +0x20 fp=0x6d6b706e17d0 sp=0x6d6b706e17b0 pc=0x102495be0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b706e17d0 sp=0x6d6b706e17d0 pc=0x1024ecbf4
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgc.go:214 +0x6c
+
+goroutine 4 gp=0x6d6b706732c0 m=nil [GC scavenge wait]:
+runtime.gopark(0x6d6b70780000?, 0x10250d7c8?, 0x1?, 0x0?, 0x6d6b706732c0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x6d6b706e1f60 sp=0x6d6b706e1f40 pc=0x1024e700c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:468
+runtime.(*scavengerState).park(0x1025d18c0)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgcscavenge.go:425 +0x5c fp=0x6d6b706e1f90 sp=0x6d6b706e1f60 pc=0x1024a203c
+runtime.bgscavenge(0x6d6b70780000)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgcscavenge.go:653 +0x44 fp=0x6d6b706e1fb0 sp=0x6d6b706e1f90 pc=0x1024a2574
+runtime.gcenable.gowrap2()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgc.go:215 +0x20 fp=0x6d6b706e1fd0 sp=0x6d6b706e1fb0 pc=0x102495ba0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b706e1fd0 sp=0x6d6b706e1fd0 pc=0x1024ecbf4
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mgc.go:215 +0xac
+
+goroutine 17 gp=0x6d6b70800000 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x6d6b706dc770 sp=0x6d6b706dc750 pc=0x1024e700c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:468
+runtime.updateMaxProcsGoroutine()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:7095 +0xf4 fp=0x6d6b706dc7d0 sp=0x6d6b706dc770 pc=0x1024c67c4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b706dc7d0 sp=0x6d6b706dc7d0 pc=0x1024ecbf4
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:7083 +0x48
+
+goroutine 33 gp=0x6d6b707043c0 m=nil [finalizer wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/proc.go:462 +0xbc fp=0x6d6b70716580 sp=0x6d6b70716560 pc=0x1024e700c
+runtime.runFinalizers()
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mfinal.go:210 +0x100 fp=0x6d6b707167d0 sp=0x6d6b70716580 pc=0x102494cb0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0x6d6b707167d0 sp=0x6d6b707167d0 pc=0x1024ecbf4
+created by runtime.createfing in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/mfinal.go:172 +0x78
