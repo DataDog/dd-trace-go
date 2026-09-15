@@ -18,6 +18,7 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 		meta                  additionalFeatureMetadata
 		flakyRetryCount       int64
 		remainingFlakyRetries int64
+		dynamicATREnabled     bool
 		attemptToFixRetries   int
 		efdRetryPossible      bool
 		needsMetadataOnly     bool
@@ -139,11 +140,19 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			wantPath:              additionalFeaturePathNone,
 		},
 		{
-			name:                  "flaky retry without per test retries does not wrap",
+			name:                  "flaky retry without per test retries does not wrap when dynamic ATR is disabled",
 			meta:                  additionalFeatureMetadata{isFlakyTestRetriesEnabled: true},
 			flakyRetryCount:       0,
 			remainingFlakyRetries: 10,
 			wantPath:              additionalFeaturePathNone,
+		},
+		{
+			name:                  "dynamic ATR wraps without a flat per test retry count",
+			meta:                  additionalFeatureMetadata{isFlakyTestRetriesEnabled: true},
+			remainingFlakyRetries: 1,
+			dynamicATREnabled:     true,
+			wantPath:              additionalFeaturePathRetryWrapper,
+			wantReasons:           additionalFeatureReasonFlakyRetry,
 		},
 	}
 
@@ -152,6 +161,7 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 			&tt.meta,
 			tt.flakyRetryCount,
 			tt.remainingFlakyRetries,
+			tt.dynamicATREnabled,
 			tt.attemptToFixRetries,
 			tt.efdRetryPossible,
 			tt.needsMetadataOnly,
@@ -168,7 +178,7 @@ func exerciseAdditionalFeaturePathSelection(t *testing.T) {
 func TestAdditionalFeatureSelectorDoesNotAllocate(t *testing.T) {
 	meta := additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isModified: true}
 	allocs := testing.AllocsPerRun(1000, func() {
-		selection := selectAdditionalFeaturePath(&meta, 0, 0, 0, true, false)
+		selection := selectAdditionalFeaturePath(&meta, 0, 0, false, 0, true, false)
 		if selection.path != additionalFeaturePathRetryWrapper {
 			panic("unexpected selection")
 		}
@@ -182,7 +192,7 @@ func BenchmarkSelectAdditionalFeaturePath(b *testing.B) {
 	meta := additionalFeatureMetadata{isEarlyFlakeDetectionEnabled: true, isModified: true}
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = selectAdditionalFeaturePath(&meta, 0, 0, 0, true, false)
+		_ = selectAdditionalFeaturePath(&meta, 0, 0, false, 0, true, false)
 	}
 }
 

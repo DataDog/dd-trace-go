@@ -102,6 +102,11 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 
 	// Automatic flaky tests retries are set to the configured value.
 	if execMeta.isFlakyTestRetriesEnabled {
+		// When dynamic ATR is enabled, compute the retry count from the test's initial
+		// duration bucket instead of the flat per-test limit.
+		if integrations.IsDynamicATREnabled() {
+			return dynamicATRRetryCountForDuration(settings, duration)
+		}
 		return integrations.GetFlakyRetriesSettings().RetryCount
 	}
 
@@ -109,19 +114,41 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 	return 0
 }
 
-func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
-	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-	secs := duration.Seconds()
-	if secs < 5 {
-		return int64(slowTestRetries.FiveS), true
-	} else if secs < 10 {
-		return int64(slowTestRetries.TenS), true
-	} else if secs < 30 {
-		return int64(slowTestRetries.ThirtyS), true
-	} else if duration.Minutes() < 5 {
-		return int64(slowTestRetries.FiveM), true
+// retryBucketIndexForDuration returns the EFD retry-bucket index for an initial test duration.
+// Bucket boundaries: <=5s -> 0, <=10s -> 1, <=30s -> 2, <=300s (5m) -> 3, >300s -> 4.
+func retryBucketIndexForDuration(seconds float64) int {
+	if seconds <= 5 {
+		return 0
 	}
-	return 0, false
+	if seconds <= 10 {
+		return 1
+	}
+	if seconds <= 30 {
+		return 2
+	}
+	if seconds <= 300 {
+		return 3
+	}
+	return 4
+}
+
+// efdRetriesForDuration returns the configured EFD retry budget for an initial test duration.
+func efdRetriesForDuration(settings *civisibilitynet.SettingsResponseData, seconds float64) int {
+	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
+	retries := [...]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM, 0}
+	return retries[retryBucketIndexForDuration(seconds)]
+}
+
+func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
+	secs := duration.Seconds()
+	idx := retryBucketIndexForDuration(secs)
+	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
+	retries := [...]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM, 0}
+	count := retries[idx]
+	if idx == 4 {
+		return 0, false
+	}
+	return int64(count), true
 }
 
 func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {
@@ -235,4 +262,20 @@ func flakyRetryBudgetRemaining(settings *integrations.FlakyRetriesSetting) int64
 		return 0
 	}
 	return atomic.LoadInt64(&settings.RemainingTotalRetryCount)
+}
+
+// dynamicATRRetryCountForDuration computes the retry count for a test under dynamic ATR.
+// When custom buckets are provided via DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS, the bucket value
+// at the duration index is used. Otherwise, the EFD slow-test-retry settings from the backend
+// are used. The result is clamped to a minimum of 1.
+func dynamicATRRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) int64 {
+	secs := duration.Seconds()
+	idx := retryBucketIndexForDuration(secs)
+
+	if buckets := integrations.GetDynamicATRCustomBuckets(); buckets != nil {
+		return int64(max(1, buckets[idx]))
+	}
+
+	count := efdRetriesForDuration(settings, secs)
+	return int64(max(1, count))
 }
