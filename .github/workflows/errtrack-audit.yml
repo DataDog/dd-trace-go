@@ -1,0 +1,117 @@
+name: errtrack-audit
+
+on:
+  pull_request:
+    paths:
+      # Root-module code only: the contrib/* integration modules cannot import
+      # the internal/telemetry/log reporting API, so auditing their changes is
+      # out of scope by construction. contrib/os and top-level orchestrion/ are
+      # exceptions on the other side of that rule: they have no go.mod of their
+      # own, so they are root-module code that CAN import it.
+      - 'appsec/**'
+      - 'crashtracker/**'
+      - 'civisibility/**'
+      - 'contrib/os/**'
+      - 'datastreams/**'
+      - 'ddtrace/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'llmobs/**'
+      - 'openfeature/**'
+      - 'orchestrion/**'
+      - 'profiler/**'
+      # The audit's grouping and its own tooling.
+      - 'CODEOWNERS'
+      - 'scripts/errtrackaudit/**'
+      - '.github/workflows/errtrack-audit.yml'
+  workflow_dispatch:
+
+# Serialize runs on the same PR: two rapid pushes racing the marker-comment
+# upsert would both fail to find the comment and create duplicates. Runs are
+# queued rather than cancelled so the check never reports a cancelled
+# conclusion, which the green-CI gate does not treat as a pass.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run errtrack audit
+        run: |
+          mkdir -p out
+          (cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format json) > out/audit.json
+          (cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format table) | tee out/audit.txt
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: errtrack-audit
+          path: out/
+          retention-days: 14
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            let table = fs.readFileSync('out/audit.txt', 'utf8');
+            // GitHub rejects comments over 65,536 characters, and a failed
+            // createComment/updateComment would mark this advisory workflow red.
+            // Keep a wide margin and point long inventories at the artifact.
+            const MAX_TABLE = 60000;
+            let truncated = false;
+            if (table.length > MAX_TABLE) {
+              table = table.slice(0, MAX_TABLE) + '\n… (truncated)';
+              truncated = true;
+            }
+            const marker = '<!-- errtrack-audit -->';
+            let body = `${marker}\n## Error Tracking Audit\n\`\`\`\n${table}\n\`\`\`\n`;
+            if (truncated) {
+              body += 'Table truncated for the comment size limit — the full inventory is in the `errtrack-audit` artifact.\n\n';
+            }
+            body += 'Both `CANDIDATE` and `LIKELY_INELIGIBLE` are triage labels from message-text heuristics, not verdicts: a human applies the adoption policy in `internal/README.md`. This check is advisory and does not block the PR.';
+
+            // Paginate: on a PR with >100 comments the marker comment can fall
+            // outside the first page, after which every run would create a duplicate.
+            const comments = [];
+            for (let page = 1;; page++) {
+              const resp = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+                page,
+              });
+              comments.push(...resp.data);
+              if (resp.data.length < 100) break;
+            }
+            const existing = comments.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

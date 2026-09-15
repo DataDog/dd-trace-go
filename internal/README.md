@@ -77,6 +77,8 @@ Adopting this in an existing `log.Error` call site means calling `ReportError`/`
 
 A `statsd`/telemetry **count** is the right tool when you want to know *how often* something happens; `ReportError` is the right tool when you want to know *where*. A site that already emits a count with a `reason:` tag and carries no error value usually needs nothing more.
 
+The `scripts/errtrackaudit` tool (`make errtrack-audit`, posted as a PR comment by the errtrack-audit workflow) reports the current inventory of `internal/log.Error`/`Warn` call sites against this policy, tagged `CANDIDATE` or `LIKELY_INELIGIBLE` by textual triage heuristics and grouped by owning team. A site marked `//errtrack:ignore` has been reviewed and drops out of that audit.
+
 **Picking a helper.** Use `LogAndReportError`/`LogAndReportPanic` only when the site already matches `log.Error("<constant>: %s", err.Error())` exactly — the rewrite is then output-identical, including `internal/log`'s dedup key. Otherwise leave the existing `log.Error` call as-is and add a bare `ReportError`/`ReportPanic` next to it.
 
 Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. `errorType` reports the *outer* error's concrete type as-is (stripping only a pointer indirection, never unwrapping), so an error wrapped with `fmt.Errorf("...: %w", err)` reads as `fmt.wrapError` regardless of what `err` actually was, not the wrapped error's own type; so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.
