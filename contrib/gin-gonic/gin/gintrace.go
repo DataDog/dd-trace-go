@@ -70,20 +70,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			status := c.Writer.Status()
-			if cfg.otelEnabled {
-				statusError := cfg.isStatusError(status)
-				var finishOpts []tracer.FinishOption
-				if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
-					finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
-				}
-				finishSpans(status, func(int) bool { return statusError }, finishOpts...)
-			} else {
-				if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
-					finishSpans(status, cfg.isStatusError, tracer.WithError(errors.New(c.Errors.String())))
-				}
-				finishSpans(status, cfg.isStatusError)
-			}
+			finishSpan(cfg, c, finishSpans)
 		}()
 
 		// pass the span through the request context
@@ -101,6 +88,16 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			span.SetTag("gin.errors", c.Errors.String())
 		}
 	}
+}
+
+func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
+	status := c.Writer.Status()
+	statusError := cfg.isStatusError(status)
+	var finishOpts []tracer.FinishOption
+	if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
+		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
+	}
+	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
 }
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
