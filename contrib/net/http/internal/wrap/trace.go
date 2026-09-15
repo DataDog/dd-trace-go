@@ -18,10 +18,10 @@ import (
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *httptrace.ServeConfig) {
-	traceAndServe(h, w, r, cfg, internal.Instrumentation.OTelSemanticsEnabled())
-}
-
-func traceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *httptrace.ServeConfig, otelSemanticsEnabled bool) {
+	otelSemanticsEnabled := internal.Instrumentation.OTelSemanticsEnabled()
+	if cfg != nil && cfg.OTelSemanticsEnabled != nil {
+		otelSemanticsEnabled = *cfg.OTelSemanticsEnabled
+	}
 	if otelSemanticsEnabled {
 		semanticCfg := httptrace.ServeConfig{}
 		if cfg != nil {
