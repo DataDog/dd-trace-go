@@ -119,6 +119,15 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
+      
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: internal/locking/coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt
+          format: go-coverprofile
 
   # Summary job to ensure all dynamic checks pass
   dynamic-checks-summary:
