@@ -105,17 +105,21 @@ var (
 	errBlockResponseNotDeliverable = errors.New("proxy block response cannot be delivered outside message processing")
 )
 
+type blockMessageState struct {
+	ctx     context.Context
+	send    func(context.Context, BlockActionOptions) error
+	enabled bool
+	sent    bool
+	err     error
+}
+
 type fakeResponseWriter struct {
 	mu      sync.Mutex
 	status  int
 	body    []byte
 	headers http.Header
 
-	blockContext        context.Context
-	blockMessageFunc    func(context.Context, BlockActionOptions) error
-	blockMessageEnabled bool
-	blockMessageSent    bool
-	blockMessageErr     error
+	blockMessage blockMessageState
 }
 
 // Reset resets the fakeResponseWriter to its initial state
@@ -125,8 +129,8 @@ func (w *fakeResponseWriter) Reset() {
 	w.status = 0
 	w.body = nil
 	w.headers = make(http.Header)
-	w.blockMessageSent = false
-	w.blockMessageErr = nil
+	w.blockMessage.sent = false
+	w.blockMessage.err = nil
 }
 
 // Status is not in the [http.ResponseWriter] interface, but it is cast into it by the tracing code
@@ -158,44 +162,44 @@ func (w *fakeResponseWriter) Write(b []byte) (int, error) {
 func (w *fakeResponseWriter) setBlockMessageFunc(blockMessageFunc func(context.Context, BlockActionOptions) error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blockMessageFunc = blockMessageFunc
+	w.blockMessage.send = blockMessageFunc
 }
 
 func (w *fakeResponseWriter) enableBlockMessages(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blockContext = ctx
-	w.blockMessageEnabled = true
+	w.blockMessage.ctx = ctx
+	w.blockMessage.enabled = true
 }
 
 func (w *fakeResponseWriter) disableBlockMessages() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blockMessageEnabled = false
+	w.blockMessage.enabled = false
 }
 
 // AppSecCommitBlockResponse constructs the proxy block response once.
 func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
 	w.mu.Lock()
-	if w.blockMessageSent {
-		err := w.blockMessageErr
+	if w.blockMessage.sent {
+		err := w.blockMessage.err
 		w.mu.Unlock()
 		return err
 	}
-	if w.blockMessageFunc == nil {
-		w.blockMessageErr = errBlockMessageFuncUnavailable
+	if w.blockMessage.send == nil {
+		w.blockMessage.err = errBlockMessageFuncUnavailable
 		w.mu.Unlock()
 		return errBlockMessageFuncUnavailable
 	}
-	if !w.blockMessageEnabled {
-		w.blockMessageErr = errBlockResponseNotDeliverable
+	if !w.blockMessage.enabled {
+		w.blockMessage.err = errBlockResponseNotDeliverable
 		w.mu.Unlock()
 		return errBlockResponseNotDeliverable
 	}
 
-	w.blockMessageSent = true
-	blockMessageFunc := w.blockMessageFunc
-	ctx := w.blockContext
+	w.blockMessage.sent = true
+	blockMessageFunc := w.blockMessage.send
+	ctx := w.blockMessage.ctx
 	opts := BlockActionOptions{
 		StatusCode: w.status,
 		Headers:    w.headers,
@@ -205,7 +209,7 @@ func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
 
 	err := blockMessageFunc(ctx, opts)
 	w.mu.Lock()
-	w.blockMessageErr = err
+	w.blockMessage.err = err
 	w.mu.Unlock()
 	return err
 }
@@ -213,7 +217,7 @@ func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
 func (w *fakeResponseWriter) blockResponseResult() (sent bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.blockMessageSent, w.blockMessageErr
+	return w.blockMessage.sent, w.blockMessage.err
 }
 
 var _ http.ResponseWriter = &fakeResponseWriter{}

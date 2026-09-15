@@ -74,6 +74,9 @@ type (
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
+// The WAF emits API Security response schema derivatives under this tag prefix.
+const responseSchemaDerivativePrefix = "_dd.appsec.s.res."
+
 type blockingUnavailableContextKey struct{}
 
 // ContextWithBlockingUnavailable marks ctx as belonging to an integration that cannot enforce blocks.
@@ -217,9 +220,10 @@ func (op *ContextOperation) Derivatives() map[string]any {
 	defer op.mu.Unlock()
 	derivatives := maps.Clone(op.derivatives)
 	if op.requestBlocked {
-		// A successfully blocked request must not report response schemas.
+		// Blocking responses contain a fixed SDK payload, not application data.
+		// Filter at read time because a block can happen after schema collection.
 		maps.DeleteFunc(derivatives, func(key string, _ any) bool {
-			return strings.HasPrefix(key, "_dd.appsec.s.res.")
+			return strings.HasPrefix(key, responseSchemaDerivativePrefix)
 		})
 	}
 	return derivatives
