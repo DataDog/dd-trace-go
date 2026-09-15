@@ -176,7 +176,7 @@ func (tc *TestCaseOTelSemantics) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseOTelSemantics) Run(_ context.Context, t *testing.T) {
-	for _, tt := range []struct {
+	for i, tt := range []struct {
 		method string
 		path   string
 		status int
@@ -187,6 +187,11 @@ func (tc *TestCaseOTelSemantics) Run(_ context.Context, t *testing.T) {
 		recorder := httptest.NewRecorder()
 		tc.router.ServeHTTP(recorder, httptest.NewRequest(tt.method, tt.path, nil))
 		require.Equal(t, tt.status, recorder.Code)
+		if i == 0 {
+			// The first request initializes the router configuration. Later global
+			// changes must not alter the mode captured by that configuration.
+			internalconfig.Get().SetOTelSemanticsEnabled(false, internalconfig.OriginCode)
+		}
 	}
 }
 
