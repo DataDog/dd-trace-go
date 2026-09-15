@@ -73,6 +73,39 @@ func TestStateV3AuthenticatesPhysicalPreparedSequenceAndExactTreeDeltas(t *testi
 	}
 }
 
+func TestStateV3PreparedTransitionRequiresMaterializedEnvelopeEquality(t *testing.T) {
+	full := fixtureStateV3Record(t)
+	prepared := fixtureStateV3RecordAtEventCount(t, full, 2)
+	policy := fixtureStateV3Policy()
+	authentication := fixtureStateV3Authentication(t, policy, prepared)
+	child := authentication.Current
+	parent := authentication.Predecessors[0]
+	var childRecord, parentRecord StateV3Record
+	if err := json.Unmarshal(child.RawRecord, &childRecord); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(parent.RawRecord, &parentRecord); err != nil {
+		t.Fatal(err)
+	}
+	lease, ok := stateV3SnapshotLease(child)
+	if !ok || lease == nil {
+		t.Fatal("prepared fixture lacks a valid lease")
+	}
+	if !validStateV3SnapshotTransition(child, &childRecord, parent, &parentRecord, child.RecordPath, *lease) {
+		t.Fatal("baseline prepared transition was invalid")
+	}
+
+	// An authenticated tree cannot represent this difference with only the
+	// required state.json change: every envelope identity is tree-bound. Test
+	// the parent predicate directly so this verifies the equality guard after
+	// all preceding prepared-transition conditions have passed.
+	altered := cloneStateV3(t, child)
+	altered.StagedEnvelope.Files[0].Raw = append(altered.StagedEnvelope.Files[0].Raw, 'x')
+	if validStateV3SnapshotTransition(altered, &childRecord, parent, &parentRecord, altered.RecordPath, *lease) {
+		t.Fatal("prepared transition accepted a different materialized envelope")
+	}
+}
+
 func TestStateV3RequiresOneDurableEventPerRecordCommitAndRejectsActiveInterleaving(t *testing.T) {
 	record := fixtureStateV3Record(t)
 	policy := fixtureStateV3Policy()

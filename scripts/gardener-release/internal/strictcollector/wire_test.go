@@ -7,6 +7,7 @@ package strictcollector
 
 import (
 	"encoding/base64"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -63,6 +64,21 @@ func TestStrictEndpointDecoderParity(t *testing.T) {
 	tag := `{"node_id":"n","sha":"` + wireTreeOID + `","url":"u","tag":"v1.2.3","message":"v1.2.3\n","tagger":` + wireIdentityJSON() + `,"object":{"type":"commit","sha":"` + wireOID + `","url":"u"},"verification":{"verified":false,"reason":"unsigned","signature":null,"payload":null,"verified_at":null}}`
 	if _, ok := decodeTag([]byte(tag), wireTreeOID, "v1.2.3", wireOID); !ok {
 		t.Fatal("tag")
+	}
+}
+
+func TestDecodeTreeAllowsEmptyAndRejectsOversized(t *testing.T) {
+	empty := `{"sha":"` + wireTreeOID + `","url":"u","truncated":false,"tree":[]}`
+	if value, ok := decodeTree([]byte(empty), wireTreeOID); !ok || len(value.Tree) != 0 {
+		t.Fatal("empty tree rejected")
+	}
+	entries := make([]string, 0, 10_001)
+	for index := 0; index < cap(entries); index++ {
+		entries = append(entries, fmt.Sprintf(`{"path":"entry-%d","mode":"100644","type":"blob","sha":"%s","size":1,"url":"u"}`, index, wireOID))
+	}
+	oversized := `{"sha":"` + wireTreeOID + `","url":"u","truncated":false,"tree":[` + strings.Join(entries, ",") + `]}`
+	if _, ok := decodeTree([]byte(oversized), wireTreeOID); ok {
+		t.Fatal("oversized tree accepted")
 	}
 }
 

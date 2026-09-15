@@ -162,16 +162,7 @@ func TestStateV3TypedDocumentBounds(t *testing.T) {
 	if record.Prepared == nil {
 		t.Fatal("prepared record required")
 	}
-	manifest := stateV3PreparedManifest{
-		SchemaVersion:             StateV3SchemaVersion,
-		Bundle:                    record.Prepared.Bundle,
-		AdditionCount:             record.Prepared.AdditionCount,
-		TotalDecodedAdditionBytes: record.Prepared.TotalDecodedAdditionBytes,
-		ToolDigest:                record.Prepared.ToolDigest,
-		ValidatorDigest:           record.Prepared.ValidatorDigest,
-		Mutation:                  record.Prepared.Mutation,
-		TagPlans:                  record.TagPlans,
-	}
+	manifest := stateV3PreparedManifest{SchemaVersion: StateV3SchemaVersion, Bundle: record.Prepared.Bundle, AdditionCount: record.Prepared.AdditionCount, TotalDecodedAdditionBytes: record.Prepared.TotalDecodedAdditionBytes, ToolDigest: record.Prepared.ToolDigest, ValidatorDigest: record.Prepared.ValidatorDigest, Mutation: record.Prepared.Mutation, TagPlans: record.TagPlans}
 	manifestRaw, err := canonicalJSON(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -199,6 +190,15 @@ func TestStateV3TypedDocumentBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStateV3DocumentOverLimit(t, "coordination claim", claimRaw, MaxStateV3CoordinationClaimBytes, &StateV3ReleaseLineClaim{})
+}
+
+func TestStateV3DocumentStoreTopology(t *testing.T) {
+	if stateV3MinimumCompletedRecordRevisions != 15 || stateV3CompletedOperationSnapshots != 18 || MaxStateV3LaneOperationWindows != 26 || stateV3ByteMaxStateRecordVersionsPerLane != 377 {
+		t.Fatalf("unexpected state lifecycle topology: revisions=%d snapshots=%d windows=%d records=%d", stateV3MinimumCompletedRecordRevisions, stateV3CompletedOperationSnapshots, MaxStateV3LaneOperationWindows, stateV3ByteMaxStateRecordVersionsPerLane)
+	}
+	if MaxStateV3DocumentBlobVersions != 2495 || MaxStateV3DocumentStoreRawBytes != 186_138_624 || MaxStateV3DocumentProvenanceBindings != 6035 {
+		t.Fatalf("unexpected document-store topology: blobs=%d bytes=%d bindings=%d", MaxStateV3DocumentBlobVersions, MaxStateV3DocumentStoreRawBytes, MaxStateV3DocumentProvenanceBindings)
+	}
 }
 
 func assertStateV3DocumentOverLimit(t *testing.T, name string, raw []byte, maximum int, target any) {

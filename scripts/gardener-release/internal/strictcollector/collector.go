@@ -73,8 +73,12 @@ type handle struct {
 // exported constructor: tests construct it inside this package, and production
 // construction remains deferred until credentials and policy are reviewed.
 type session struct {
-	transport        http.RoundTripper
-	now              func() time.Time
+	transport http.RoundTripper
+	now       func() time.Time
+	// ordinary is installed only by the private setup capability below.
+	// Ordinary continuation calls deliberately cannot select the request
+	// context or deadline that reaches the transport.
+	ordinary         *ordinaryOperation
 	mu               sync.Mutex
 	artifacts        map[string]*artifact
 	reads            int
@@ -91,8 +95,42 @@ type session struct {
 	assemblyReads    int
 	assemblyBytes    int
 	assemblyLive     bool
-	retainedBytes    int
-	closed           bool
+	// compactHistory is installed only while a private state-lane admission
+	// pass is live. Compact blob reads derive entries from this session-owned
+	// authenticated history; callers never supply a snapshot or blob OID.
+	compactHistory    *stateV3CompactLaneHistory
+	compactGeneration uint64
+	retainedBytes     int
+	closed            bool
+}
+
+// ordinaryOperation is immutable after installation. It is deliberately
+// retained as one session-owned value so Close can detach and cancel an
+// in-flight ordinary request without leaving any reusable configuration.
+type ordinaryOperation struct {
+	context  context.Context
+	deadline time.Time
+	cancel   context.CancelFunc
+}
+
+// installOrdinary is the sole ordinary-operation setup capability. There is no
+// production session constructor or production caller yet; the source-level
+// authority policy pins this method and rejects a production call until a
+// future reviewed factory is introduced.
+func (s *session) installOrdinary(parent context.Context, deadline time.Time) bool {
+	if parent == nil || deadline.IsZero() || !s.now().Before(deadline) {
+		return false
+	}
+	context, cancel := context.WithCancel(parent)
+	s.mu.Lock()
+	if s.closed || s.ordinary != nil {
+		s.mu.Unlock()
+		cancel()
+		return false
+	}
+	s.ordinary = &ordinaryOperation{context: context, deadline: deadline, cancel: cancel}
+	s.mu.Unlock()
+	return true
 }
 
 // stateV3SpineReadLease is an assembly-owned capability. It is deliberately
@@ -165,103 +203,69 @@ const (
 )
 
 // ReadMinorStateRef, ReadPatchStateRef, and ReadCoordinationRef are the only
-// ordinary root reads. Active spine and assembly reservations reject them.
-func (s *session) ReadMinorStateRef(ctx context.Context, deadline time.Time) (handle, Result) {
-	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3MinorStateRef)
+// ordinary root reads. Each creates a closed fixed request for its exact ref;
+// ordinary object reads likewise derive their OIDs only after consuming an
+// opaque authenticated predecessor handle.
+func (s *session) ReadMinorStateRef(_ context.Context, _ time.Time) (handle, Result) {
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindControlRef, purpose: fixedRequestRoot, ref: gardenerrelease.StateV3MinorStateRef})
 }
-func (s *session) ReadPatchStateRef(ctx context.Context, deadline time.Time) (handle, Result) {
-	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3PatchStateRef)
+func (s *session) ReadPatchStateRef(_ context.Context, _ time.Time) (handle, Result) {
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindControlRef, purpose: fixedRequestRoot, ref: gardenerrelease.StateV3PatchStateRef})
 }
-func (s *session) ReadCoordinationRef(ctx context.Context, deadline time.Time) (handle, Result) {
-	return s.readFixedRef(ctx, deadline, gardenerrelease.StateV3CoordinationRef)
-}
-
-func (s *session) readFixedRef(ctx context.Context, deadline time.Time, ref string) (handle, Result) {
-	if !validFixedRef(kindControlRef, ref) {
-		return handle{}, failure(DiagnosticProtocol)
-	}
-	return s.executeOrdinary(ctx, deadline, kindControlRef, http.MethodGet, "/repos/"+repository+"/git/ref/"+strings.TrimPrefix(ref, "refs/"), nil, func(raw []byte) (*artifact, bool) {
-		value, ok := decodeRef(raw, ref, "commit")
-		return &artifact{kind: kindControlRef, ref: value}, ok
-	})
+func (s *session) ReadCoordinationRef(_ context.Context, _ time.Time) (handle, Result) {
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindControlRef, purpose: fixedRequestRoot, ref: gardenerrelease.StateV3CoordinationRef})
 }
 
 // ReadRawCommitForRef can read only the commit named by a live ref handle.
-func (s *session) ReadRawCommitForRef(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
+func (s *session) ReadRawCommitForRef(_ context.Context, prior handle, _ time.Time) (handle, Result) {
 	ref, ok := s.consumeRef(prior, edgeRaw, kindControlRef, kindBranchRef)
-	if !ok || ref.Type != "commit" {
+	if !ok || ref.Type != "commit" || !validOID(ref.SHA) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommit(ctx, ref.SHA, deadline)
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindRawCommit, purpose: fixedRequestRaw, oid: ref.SHA})
 }
-func (s *session) ReadRawCommitParent(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
+func (s *session) ReadRawCommitParent(_ context.Context, prior handle, _ time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeParent)
-	if !ok || len(commit.Parents) != 1 {
+	if !ok || len(commit.Parents) != 1 || !validOID(commit.Parents[0]) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.readRawCommit(ctx, commit.Parents[0], deadline)
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindRawCommit, purpose: fixedRequestRaw, oid: commit.Parents[0]})
 }
-func (s *session) readRawCommit(ctx context.Context, oid string, deadline time.Time) (handle, Result) {
-	if !validOID(oid) {
-		return handle{}, failure(DiagnosticProtocol)
-	}
-	return s.executeOrdinary(ctx, deadline, kindRawCommit, http.MethodGet, "/repos/"+repository+"/git/commits/"+oid, nil, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeRawCommit(raw, oid)
-		return &artifact{kind: kindRawCommit, raw: v}, ok
-	})
-}
-func (s *session) ReadRESTCommitForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
+func (s *session) ReadRESTCommitForRawCommit(_ context.Context, prior handle, _ time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeRest)
-	if !ok {
+	if !ok || !validOID(commit.SHA) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeOrdinary(ctx, deadline, kindRESTCommit, http.MethodGet, "/repos/"+repository+"/commits/"+commit.SHA, nil, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeRESTCommit(raw, commit.SHA)
-		return &artifact{kind: kindRESTCommit, rest: v}, ok
-	})
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindRESTCommit, purpose: fixedRequestREST, oid: commit.SHA})
 }
-func (s *session) ReadGraphQLCommitForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
+func (s *session) ReadGraphQLCommitForRawCommit(_ context.Context, prior handle, _ time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeGraphQL)
-	if !ok {
+	if !ok || !validOID(commit.SHA) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeGraphQL(ctx, deadline, commit.SHA)
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindGraphQLCommit, purpose: fixedRequestGraphQL, oid: commit.SHA})
 }
-func (s *session) executeGraphQL(ctx context.Context, deadline time.Time, oid string) (handle, Result) {
-	body := []byte(`{"query":"query StateV3Commit($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){__typename ... on Commit{oid author{name email date user{__typename login databaseId}} committer{name email date user{__typename login databaseId}} signature{isValid state wasSignedByGitHub signer{__typename login databaseId}}}}}}","variables":{"owner":"DataDog","name":"dd-trace-go","oid":"` + oid + `"}}`)
-	return s.executeOrdinary(ctx, deadline, kindGraphQLCommit, http.MethodPost, "/graphql", body, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeGQLCommit(raw, oid)
-		return &artifact{kind: kindGraphQLCommit, gql: v}, ok
-	})
-}
-func (s *session) ReadTreeForRawCommit(ctx context.Context, prior handle, deadline time.Time) (handle, Result) {
+func (s *session) ReadTreeForRawCommit(_ context.Context, prior handle, _ time.Time) (handle, Result) {
 	commit, ok := s.consumeCommit(prior, edgeTree)
 	if !ok || !validOID(commit.Tree) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeTree(ctx, deadline, commit.Tree)
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindTree, purpose: fixedRequestTree, oid: commit.Tree})
 }
-func (s *session) executeTree(ctx context.Context, deadline time.Time, oid string) (handle, Result) {
-	return s.executeOrdinary(ctx, deadline, kindTree, http.MethodGet, "/repos/"+repository+"/git/trees/"+oid+"?recursive=1", nil, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeTree(raw, oid)
-		return &artifact{kind: kindTree, tree: v}, ok
-	})
-}
-func (s *session) ReadBlobForTreeEntry(ctx context.Context, prior handle, index int, deadline time.Time) (handle, Result) {
+func (s *session) ReadBlobForTreeEntry(_ context.Context, prior handle, index int, _ time.Time) (handle, Result) {
 	entry, ok := s.consumeTreeEntry(prior, index)
-	if !ok {
+	if !ok || !validOID(entry.SHA) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
-	return s.executeOrdinary(ctx, deadline, kindBlob, http.MethodGet, "/repos/"+repository+"/git/blobs/"+entry.SHA, nil, func(raw []byte) (*artifact, bool) {
-		v, ok := decodeBlob(raw, entry.SHA, maxResponseBytes)
-		return &artifact{kind: kindBlob, blob: v}, ok
-	})
+	return s.settleFixed(fixedRequest{scope: fixedOrdinary, kind: kindBlob, purpose: fixedRequestBlob, oid: entry.SHA})
 }
 
 // Close deterministically releases every transient evidence artifact retained
 // by a partial collection. A closed session has no retained evidence.
 func (s *session) Close() {
 	s.mu.Lock()
+	ordinary := s.ordinary
+	s.ordinary = nil
 	clear(s.artifacts)
 	s.reservedReads = 0
 	s.spineLease = nil
@@ -279,6 +283,9 @@ func (s *session) Close() {
 	s.retainedBytes = 0
 	s.closed = true
 	s.mu.Unlock()
+	if ordinary != nil {
+		ordinary.cancel()
+	}
 }
 
 // Release makes an issued handle unavailable to all later continuations.
@@ -441,10 +448,6 @@ func (s *session) tagFor(handle handle) (wireTag, bool) {
 	return cloneTag(a.tag), true
 }
 
-func (s *session) executeOrdinary(ctx context.Context, deadline time.Time, k kind, method, path string, body []byte, decode func([]byte) (*artifact, bool)) (handle, Result) {
-	return s.executeRequest(readOrdinary, ctx, deadline, k, method, path, body, decode)
-}
-
 // fixedRequest is a closed, purpose-specific read description. It is issued
 // only by fixed-root and opaque-handle continuation methods below; settlement
 // derives its context, deadline, and reservation mode from the active session.
@@ -459,7 +462,8 @@ type fixedRequest struct {
 type fixedRequestScope uint8
 
 const (
-	fixedAssembly fixedRequestScope = iota + 1
+	fixedOrdinary fixedRequestScope = iota + 1
+	fixedAssembly
 	fixedSpine
 )
 
@@ -471,6 +475,7 @@ const (
 	fixedRequestREST
 	fixedRequestGraphQL
 	fixedRequestTree
+	fixedRequestBlob
 )
 
 // settleFixed is the only active-operation settlement point. It accepts the
@@ -482,6 +487,16 @@ func (s *session) settleFixed(request fixedRequest) (handle, Result) {
 	var ctx context.Context
 	var deadline time.Time
 	switch request.scope {
+	case fixedOrdinary:
+		if s.ordinary == nil {
+			s.mu.Unlock()
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		ctx, deadline, mode = s.ordinary.context, s.ordinary.deadline, readOrdinary
+		if ctx == nil || deadline.IsZero() || !s.now().Before(deadline) {
+			s.mu.Unlock()
+			return handle{}, failure(DiagnosticProtocol)
+		}
 	case fixedAssembly:
 		ctx, deadline, mode = s.assemblyContext, s.assemblyDeadline, readAssembly
 		if !s.assemblyLive || ctx == nil {
@@ -548,6 +563,15 @@ func (s *session) settleFixed(request fixedRequest) (handle, Result) {
 		decode = func(raw []byte) (*artifact, bool) {
 			value, ok := decodeTree(raw, request.oid)
 			return &artifact{kind: kindTree, tree: value}, ok
+		}
+	case fixedRequestBlob:
+		if request.kind != kindBlob || !validOID(request.oid) {
+			return handle{}, failure(DiagnosticProtocol)
+		}
+		method, path = http.MethodGet, "/repos/"+repository+"/git/blobs/"+request.oid
+		decode = func(raw []byte) (*artifact, bool) {
+			value, ok := decodeBlob(raw, request.oid, maxResponseBytes)
+			return &artifact{kind: kindBlob, blob: value}, ok
 		}
 	default:
 		return handle{}, failure(DiagnosticProtocol)
@@ -659,6 +683,16 @@ func (s *session) readAssemblyTree(prior handle) (handle, Result) {
 		return handle{}, failure(DiagnosticProtocol)
 	}
 	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindTree, purpose: fixedRequestTree, oid: commit.Tree})
+}
+
+// readAssemblyBlob consumes only an approved regular tree entry. Its OID is
+// derived from the retained tree, never supplied by an assembly caller.
+func (s *session) readAssemblyBlob(prior handle, index int) (handle, Result) {
+	entry, ok := s.consumeTreeEntry(prior, index)
+	if !ok || entry.Type != "blob" || entry.Mode != "100644" || !validOID(entry.SHA) {
+		return handle{}, failure(DiagnosticProtocol)
+	}
+	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindBlob, purpose: fixedRequestBlob, oid: entry.SHA})
 }
 
 func stateV3GraphQLBody(oid string) []byte {

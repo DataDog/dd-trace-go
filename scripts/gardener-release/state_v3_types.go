@@ -27,7 +27,29 @@ const (
 	MaxStateV3StateLaneHistoryCommits    = 455
 	MaxStateV3CoordinationHistoryCommits = 512
 	MaxStateV3CoordinationReleaseProofs  = 2
-	stateV3TerminalCleanupPathCount      = 5
+	// Fixed-store topology bounds for one complete three-session assembly.
+	// A completed non-prepare operation with a one-tag plan has 15 record
+	// revisions. An active prepared operation has acquisition, initial reserved
+	// record, envelope materialization, and prepared-record snapshots.
+	stateV3CheckpointSnapshots              = 1
+	stateV3MinimumCompletedRecordRevisions  = StateV3OtherHistoryOverhead
+	stateV3LeaseAcquisitionSnapshots        = 1
+	stateV3EnvelopeMaterializationSnapshots = 1
+	stateV3TerminalCleanupSnapshots         = 1
+	stateV3CompletedOperationSnapshots      = stateV3LeaseAcquisitionSnapshots + stateV3MinimumCompletedRecordRevisions + stateV3EnvelopeMaterializationSnapshots + stateV3TerminalCleanupSnapshots
+	stateV3MinimumCurrentPreparedSnapshots  = stateV3LeaseAcquisitionSnapshots + 2 + stateV3EnvelopeMaterializationSnapshots
+	stateV3MinimumTagPlans                  = 1
+	// The operation-window bound is a mathematical consequence of the
+	// checkpoint-anchored history cap and minimum lifecycle shape. A valid
+	// twenty-seventh root cannot fit within this history, so no separate
+	// runtime root counter is needed.
+	MaxStateV3LaneOperationWindows           = 1 + (MaxStateV3StateLaneHistoryCommits-stateV3CheckpointSnapshots-stateV3MinimumCurrentPreparedSnapshots)/stateV3CompletedOperationSnapshots
+	stateV3ByteMaxStateRecordVersionsPerLane = (MaxStateV3LaneOperationWindows-1)*stateV3MinimumCompletedRecordRevisions + 2
+	MaxStateV3CoordinationDocumentBindings   = (MaxStateV3CoordinationReleaseProofs + 1) * (MaxStateV3CoordinationHistoryCommits - 1)
+	MaxStateV3DocumentBlobVersions           = 2*(stateV3ByteMaxStateRecordVersionsPerLane+4*MaxStateV3LaneOperationWindows) + MaxStateV3CoordinationDocumentBindings
+	MaxStateV3DocumentProvenanceBindings     = 2*(3*2+5*(MaxStateV3StateLaneHistoryCommits-3*2)) + MaxStateV3CoordinationDocumentBindings
+	MaxStateV3DocumentStoreRawBytes          = 2*(stateV3ByteMaxStateRecordVersionsPerLane*MaxStateV3StateRecordBytes+MaxStateV3LaneOperationWindows*(MaxStateV3ActiveLeaseBytes+MaxStateV3ReservationBytes+MaxStateV3PreparedManifestBytes+MaxStateV3PreparedBundleBytes)) + MaxStateV3CoordinationDocumentBindings*MaxStateV3CoordinationArmBytes
+	stateV3TerminalCleanupPathCount          = 5
 
 	// The three-session topology is intentionally conservative: it assumes no
 	// blob memoization. A state snapshot can require lease, record, and three

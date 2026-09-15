@@ -441,7 +441,7 @@ func decodeGQLCommit(raw []byte, oid string) (wireGQLCommit, bool) {
 }
 func decodeTree(raw []byte, oid string) (wireTree, bool) {
 	var v wireTree
-	ok := decodeWire(raw, &v) && hasFields(raw, nil, "sha", "url", "truncated", "tree") && v.SHA == oid && validText(v.URL, 4096) && v.Truncated != nil && !(*v.Truncated) && len(v.Tree) > 0 && len(v.Tree) <= 10000
+	ok := decodeWire(raw, &v) && hasFields(raw, nil, "sha", "url", "truncated", "tree") && v.SHA == oid && validText(v.URL, 4096) && v.Truncated != nil && !(*v.Truncated) && len(v.Tree) <= 10000
 	seen := map[string]bool{}
 	for _, e := range v.Tree {
 		good := validRepositoryRelativePath(e.Path) && !seen[e.Path] && validOID(e.SHA) && validText(e.URL, 4096)

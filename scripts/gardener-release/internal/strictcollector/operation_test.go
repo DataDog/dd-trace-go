@@ -248,7 +248,10 @@ func TestStateV3AssemblyDeadlineCancelsActiveRead(t *testing.T) {
 		return nil, req.Context().Err()
 	}), time.Now)
 	op := stateV3AssemblyOperation{minor: minor, patch: newTestSession(nil, time.Now), coordination: newTestSession(nil, time.Now)}
-	if result := op.begin(context.Background(), time.Now().Add(20*time.Millisecond), validStateV3Policy(t)); result.Diagnostic != DiagnosticOK {
+	// The test observes deadline propagation through a cancellation-respecting
+	// transport. Leave scheduling headroom for race instrumentation; the
+	// transport still blocks until the operation-owned deadline cancels it.
+	if result := op.begin(context.Background(), time.Now().Add(250*time.Millisecond), validStateV3Policy(t)); result.Diagnostic != DiagnosticOK {
 		t.Fatal(result)
 	}
 	child, result := op.beginChild(stateV3AssemblyMinor)

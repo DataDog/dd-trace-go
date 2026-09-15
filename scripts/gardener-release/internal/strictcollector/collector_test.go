@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -24,7 +25,15 @@ func response(body string) *http.Response {
 }
 
 func newTestSession(transport http.RoundTripper, now func() time.Time) *session {
-	return &session{transport: transport, now: now, artifacts: make(map[string]*artifact)}
+	return newTestSessionWithOrdinary(transport, now, context.Background(), now().Add(time.Minute))
+}
+
+func newTestSessionWithOrdinary(transport http.RoundTripper, now func() time.Time, context context.Context, deadline time.Time) *session {
+	s := &session{transport: transport, now: now, artifacts: make(map[string]*artifact)}
+	if !s.installOrdinary(context, deadline) {
+		panic("invalid test ordinary operation")
+	}
+	return s
 }
 
 const oid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -45,6 +54,36 @@ func TestClosedRootReadPinsRequest(t *testing.T) {
 	}
 	s.Release(h)
 }
+func TestOrdinaryReadsUseSessionOwnedContextAndDeadline(t *testing.T) {
+	contextKey := struct{}{}
+	callerContext := context.WithValue(context.Background(), contextKey, "caller")
+	sessionContext := context.WithValue(context.Background(), contextKey, "session")
+	now := time.Now()
+	s := newTestSessionWithOrdinary(roundTrip(func(request *http.Request) (*http.Response, error) {
+		if got := request.Context().Value(contextKey); got != "session" {
+			t.Fatalf("transport context value = %v, want session-owned value", got)
+		}
+		deadline, ok := request.Context().Deadline()
+		if !ok || !deadline.Equal(now.Add(time.Minute)) {
+			t.Fatalf("transport deadline = %v, %t, want %v", deadline, ok, now.Add(time.Minute))
+		}
+		return response(refJSON("refs/heads/gardener-release-state/minor")), nil
+	}), func() time.Time { return now }, sessionContext, now.Add(time.Minute))
+	if _, result := s.ReadMinorStateRef(callerContext, now.Add(24*time.Hour)); result.Diagnostic != DiagnosticOK {
+		t.Fatalf("ordinary read = %#v", result)
+	}
+}
+
+func TestOrdinaryReadWithoutSessionConfigurationFailsClosed(t *testing.T) {
+	s := &session{transport: roundTrip(func(*http.Request) (*http.Response, error) {
+		t.Fatal("ordinary request dispatched without session configuration")
+		return nil, nil
+	}), now: time.Now, artifacts: make(map[string]*artifact)}
+	if _, result := s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Hour)); result.Diagnostic != DiagnosticProtocol {
+		t.Fatalf("ordinary read = %#v, want protocol failure", result)
+	}
+}
+
 func TestForgedHandleCannotRead(t *testing.T) {
 	calls := 0
 	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New("no") }), time.Now)
@@ -86,8 +125,9 @@ func TestRootContinuationIsSingleUse(t *testing.T) {
 	}
 }
 func TestDeadlineAndMalformedBodyFailClosed(t *testing.T) {
-	s := newTestSession(roundTrip(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() }), time.Now)
-	_, r := s.ReadMinorStateRef(context.Background(), time.Now().Add(10*time.Millisecond))
+	now := time.Now()
+	s := newTestSessionWithOrdinary(roundTrip(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() }), func() time.Time { return now }, context.Background(), now.Add(10*time.Millisecond))
+	_, r := s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Hour))
 	if r.Diagnostic != DiagnosticDeadline {
 		t.Fatal(r)
 	}
@@ -97,6 +137,45 @@ func TestDeadlineAndMalformedBodyFailClosed(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+func TestSessionCloseCancelsOrdinaryReadAndClearsConfiguration(t *testing.T) {
+	started := make(chan struct{})
+	finished := make(chan Result, 1)
+	var calls atomic.Int32
+	s := newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		close(started)
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	}), time.Now)
+	go func() {
+		_, result := s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Hour))
+		finished <- result
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("ordinary transport did not start")
+	}
+	s.Close()
+	select {
+	case result := <-finished:
+		if result.Diagnostic != DiagnosticDeadline {
+			t.Fatalf("ordinary close result = %#v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ordinary transport was not cancelled by close")
+	}
+	s.mu.Lock()
+	ordinary, retained, artifacts := s.ordinary, s.retainedBytes, len(s.artifacts)
+	s.mu.Unlock()
+	if ordinary != nil || retained != 0 || artifacts != 0 {
+		t.Fatalf("close retained ordinary configuration or evidence: ordinary=%#v bytes=%d artifacts=%d", ordinary, retained, artifacts)
+	}
+	if _, result := s.ReadMinorStateRef(context.Background(), time.Now().Add(time.Hour)); result.Diagnostic != DiagnosticProtocol || calls.Load() != 1 {
+		t.Fatalf("closed ordinary read = %#v calls=%d", result, calls.Load())
+	}
+}
+
 func TestSessionCloseReleasesPartialCollection(t *testing.T) {
 	s := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		return response(refJSON("refs/heads/gardener-release-state/minor")), nil

@@ -59,7 +59,10 @@ func (q *stateV3AssemblyQuota) chargeBytes(n int) bool {
 // stateV3AssemblyChild is an operation-owned, role-bound capability. It owns
 // no lease, caller context, deadline, or ref selector: the assigned session
 // retains those values until closeAssembly.
-type stateV3AssemblyChild struct{ session *session }
+type stateV3AssemblyChild struct {
+	session *session
+	store   *stateV3DocumentStore
+}
 
 func (c *stateV3AssemblyChild) readRoot() (handle, Result) {
 	if c == nil || c.session == nil {
@@ -103,6 +106,7 @@ func (c *stateV3AssemblyChild) readTree(prior handle) (handle, Result) {
 type stateV3AssemblyOperation struct {
 	minor, patch, coordination *session
 	quota                      *stateV3AssemblyQuota
+	store                      *stateV3DocumentStore
 	mu                         sync.Mutex
 	next                       stateV3AssemblyRole
 	running                    *stateV3AssemblyChild
@@ -144,7 +148,7 @@ func (op *stateV3AssemblyOperation) begin(ctx context.Context, deadline time.Tim
 	_ = patchLease
 	_ = coordLease // Leases remain session-owned until their child begins.
 	op.ctx, op.cancel = context.WithCancel(ctx)
-	op.deadline, op.quota, op.next, op.active = deadline, quota, stateV3AssemblyMinor, true
+	op.deadline, op.quota, op.store, op.next, op.active = deadline, quota, &stateV3DocumentStore{}, stateV3AssemblyMinor, true
 	return Result{}
 }
 
@@ -169,7 +173,7 @@ func (op *stateV3AssemblyOperation) beginChild(role stateV3AssemblyRole) (*state
 	if !session.activateAssembly(op.ctx, op.deadline, role) {
 		return nil, failure(DiagnosticProtocol)
 	}
-	child := &stateV3AssemblyChild{session: session}
+	child := &stateV3AssemblyChild{session: session, store: op.store}
 	op.running, op.next = child, next
 	return child, Result{}
 }
@@ -205,6 +209,10 @@ func (op *stateV3AssemblyOperation) close() {
 	op.active = false
 	op.next = 0
 	op.running = nil
+	if op.store != nil {
+		op.store.close()
+	}
+	op.store = nil
 	op.quota = nil
 	op.ctx = nil
 	op.cancel = nil
