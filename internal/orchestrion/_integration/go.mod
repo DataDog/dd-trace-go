@@ -20,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
 	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/cloudevents/sdk-go/v2 v2.16.2
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.15.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
@@ -104,6 +105,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.12.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.12.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.12.0-dev.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 v2.12.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.12.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.12.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.2 // indirect
@@ -408,6 +410,8 @@ replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../con
 replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../../contrib/cloud.google.com/go/pubsub.v1
 
 replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 => ../../../contrib/cloud.google.com/go/pubsub.v2
+
+replace github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 => ../../../contrib/cloudevents/sdk-go.v2
 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 
