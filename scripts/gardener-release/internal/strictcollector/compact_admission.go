@@ -23,6 +23,7 @@ type stateV3CompactSnapshot struct {
 	ordinal   uint16
 	entries   [5]stateV3CompactDocumentEntry
 	count     uint8
+	treeEmpty bool
 }
 
 type stateV3CompactDocumentEntry struct {
@@ -73,6 +74,7 @@ func (h *stateV3CompactLaneHistory) append(raw wireRawCommit, tree wireTree, rol
 		copy(snapshot.entries[i].path[:], entry.path)
 	}
 	snapshot.count = uint8(len(entries))
+	snapshot.treeEmpty = len(tree.Tree) == 0
 	h.count++
 	return true
 }
@@ -80,7 +82,7 @@ func (h *stateV3CompactLaneHistory) append(raw wireRawCommit, tree wireTree, rol
 // compactEntry derives every entry field from the fixed slot owned by snapshot.
 // No entry-valued caller input can select a blob request or admission token.
 func compactEntry(snapshot *stateV3CompactSnapshot, document int, role stateV3AssemblyRole) (stateV3ApprovedDocumentEntry, bool) {
-	if snapshot == nil || document < 0 || document >= int(snapshot.count) || role != stateV3AssemblyMinor && role != stateV3AssemblyPatch {
+	if snapshot == nil || document < 0 || document >= int(snapshot.count) || role < stateV3AssemblyMinor || role > stateV3AssemblyCoordination {
 		return stateV3ApprovedDocumentEntry{}, false
 	}
 	compact := snapshot.entries[document]
@@ -103,10 +105,24 @@ func (s *session) compactEntry(generation uint64, ordinal uint16, document int) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.assemblyLive || s.compactHistory == nil || s.compactGeneration != generation || int(ordinal) >= int(s.compactHistory.count) {
+	if !s.assemblyLive || s.compactGeneration != generation {
 		return stateV3ApprovedDocumentEntry{}, false
 	}
-	snapshot := &s.compactHistory.snapshots[ordinal]
+	var snapshot *stateV3CompactSnapshot
+	switch s.assemblyRole {
+	case stateV3AssemblyMinor, stateV3AssemblyPatch:
+		if s.compactHistory == nil || int(ordinal) >= int(s.compactHistory.count) {
+			return stateV3ApprovedDocumentEntry{}, false
+		}
+		snapshot = &s.compactHistory.snapshots[ordinal]
+	case stateV3AssemblyCoordination:
+		if s.coordinationCompactHistory == nil || int(ordinal) >= int(s.coordinationCompactHistory.count) {
+			return stateV3ApprovedDocumentEntry{}, false
+		}
+		snapshot = &s.coordinationCompactHistory.snapshots[ordinal]
+	default:
+		return stateV3ApprovedDocumentEntry{}, false
+	}
 	if snapshot.ordinal != ordinal {
 		return stateV3ApprovedDocumentEntry{}, false
 	}
@@ -121,16 +137,14 @@ func (s *session) readAssemblyCompactBlob(generation uint64, ordinal uint16, doc
 	return s.settleFixed(fixedRequest{scope: fixedAssembly, kind: kindBlob, purpose: fixedRequestBlob, oid: entry.oid})
 }
 
-// collectStateV3LaneDocumentsForPolicy derives every lane selector from the
-// active child role and the reviewed policy. No caller can select a ref,
-// checkpoint, or history length for compact document admission.
 // collectStateV3LaneDocuments authenticates the complete role-bound spine
 // before hydration or blob dispatch. Checkpoint and history maximum are always
-// derived from the active fixed role and policy.
-func (c *stateV3AssemblyChild) collectStateV3LaneDocuments(policy gardenerrelease.StateV3Policy) Result {
-	if c == nil || c.session == nil || c.store == nil || c.session.assemblyRole != stateV3AssemblyMinor && c.session.assemblyRole != stateV3AssemblyPatch {
+// derived from the immutable policy snapshot admitted with this operation.
+func (c *stateV3AssemblyChild) collectStateV3LaneDocuments() Result {
+	if c == nil || c.session == nil || c.store == nil || c.policy == nil || c.session.assemblyRole != stateV3AssemblyMinor && c.session.assemblyRole != stateV3AssemblyPatch {
 		return failure(DiagnosticProtocol)
 	}
+	policy := c.policy.value
 	var checkpoint string
 	var maximum int
 	switch c.session.assemblyRole {
@@ -218,7 +232,7 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments(policy gardenerreleas
 		}
 		current = parent
 	}
-	if !checkpointReached || !historyReachedCheckpoint(&history, checkpoint) || history.snapshots[history.count-1].count != 0 {
+	if !checkpointReached || !historyReachedCheckpoint(&history, checkpoint) || !history.snapshots[history.count-1].treeEmpty {
 		c.store.reset()
 		return failure(DiagnosticRequiredEvidenceAbsent)
 	}
@@ -290,8 +304,61 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments(policy gardenerreleas
 				return failure(DiagnosticProtocol)
 			}
 		}
+		if result := c.captureLaneTerminationPrefix(admission.generation, uint16(child+1), uint16(child)); result.Diagnostic != DiagnosticOK {
+			current.clear()
+			parent.clear()
+			c.store.reset()
+			return result
+		}
 		parent.clear()
 		parent = current
+	}
+	return Result{}
+}
+
+// captureLaneTerminationPrefix records only fixed commit/blob/digest facts for
+// a complete-record followed by the exact empty-tree cleanup snapshot. These
+// prefixes are bounded by the established lane-operation window and remain
+// internal to the three-session assembly transaction.
+func (c *stateV3AssemblyChild) captureLaneTerminationPrefix(generation uint64, completeOrdinal, cleanupOrdinal uint16) Result {
+	if c == nil || c.terminations == nil || c.session == nil || c.store == nil || c.session.assemblyRole < stateV3AssemblyMinor || c.session.assemblyRole > stateV3AssemblyPatch || completeOrdinal != cleanupOrdinal+1 {
+		return failure(DiagnosticProtocol)
+	}
+	c.session.mu.Lock()
+	live := c.session.assemblyLive && c.session.compactGeneration == generation && c.session.compactHistory != nil && int(completeOrdinal) < int(c.session.compactHistory.count) && int(cleanupOrdinal) < int(c.session.compactHistory.count)
+	var complete, cleanup stateV3CompactSnapshot
+	if live {
+		complete, cleanup = c.session.compactHistory.snapshots[completeOrdinal], c.session.compactHistory.snapshots[cleanupOrdinal]
+	}
+	c.session.mu.Unlock()
+	if !live || cleanup.parentOID != complete.commitOID {
+		return failure(DiagnosticProtocol)
+	}
+	if !cleanup.treeEmpty {
+		return Result{}
+	}
+	var recordEntry stateV3CompactDocumentEntry
+	recordFound := false
+	for index := 0; index < int(complete.count); index++ {
+		if complete.entries[index].kind == stateV3DocumentRecord {
+			recordEntry, recordFound = complete.entries[index], true
+			break
+		}
+	}
+	if !recordFound {
+		return Result{}
+	}
+	recordRaw, recordOK := c.store.terminationRecord(c.session.assemblyRole, complete, recordEntry)
+	if !recordOK {
+		return failure(DiagnosticProtocol)
+	}
+	record, err := gardenerrelease.DecodeStateV3Record(recordRaw)
+	if err != nil || record.Phase != gardenerrelease.StateV3PhaseComplete {
+		return failure(DiagnosticResponseInvalid)
+	}
+	recordSHA := compactDocumentDigest(recordRaw)
+	if !c.terminations.append(c.session.assemblyRole, complete.commitOID, cleanup.commitOID, recordEntry.oid, recordSHA) {
+		return failure(DiagnosticResponseInvalid)
 	}
 	return Result{}
 }

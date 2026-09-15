@@ -10,11 +10,18 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	gardenerrelease "github.com/DataDog/dd-trace-go/scripts/gardener-release"
 )
+
+func TestStateV3LaneTerminationPrefixesAreFixedAndRawFree(t *testing.T) {
+	assertFixedCompactType(t, reflect.TypeFor[stateV3LaneTerminationPrefixes]())
+}
 
 func TestStateV3AssemblyOperationAdmissionAndOrder(t *testing.T) {
 	minor := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
@@ -267,6 +274,92 @@ func TestStateV3AssemblyDeadlineCancelsActiveRead(t *testing.T) {
 	op.close()
 	if !minor.closed || len(minor.artifacts) != 0 {
 		t.Fatal("deadline cleanup failed")
+	}
+}
+
+func TestStateV3AssemblyCollectsThreeSpinesUnderBoundPolicy(t *testing.T) {
+	policy := validStateV3Policy(t)
+	minorOID, patchOID, coordinationOID := compactAdmissionOID(20_001), compactAdmissionOID(20_002), compactAdmissionOID(20_003)
+	policy.StateLanes.Minor.CheckpointOID = minorOID
+	policy.StateLanes.Patch.CheckpointOID = patchOID
+	policy.Coordination.CheckpointOID = coordinationOID
+	if err := gardenerrelease.ValidateStateV3Policy(policy); err != nil {
+		t.Fatal(err)
+	}
+	var roots []string
+	newChild := func(ref, oid, tree string) *session {
+		return newTestSession(roundTrip(func(request *http.Request) (*http.Response, error) {
+			switch {
+			case request.URL.Path == "/repos/"+repository+"/git/ref/"+strings.TrimPrefix(ref, "refs/"):
+				roots = append(roots, ref)
+				return response(compactAdmissionRefJSON(ref, oid)), nil
+			case request.URL.Path == "/repos/"+repository+"/git/commits/"+oid:
+				return response(spineRawJSON(oid, tree, "")), nil
+			case request.URL.Path == "/repos/"+repository+"/commits/"+oid:
+				return response(spineRESTJSON(oid, tree, "")), nil
+			case request.URL.Path == "/graphql":
+				return response(spineGraphQLJSON(oid)), nil
+			case request.URL.Path == "/repos/"+repository+"/git/trees/"+tree:
+				return response(compactAdmissionTreeJSON(tree, nil)), nil
+			default:
+				t.Fatalf("unexpected request %s", request.URL.Path)
+				return nil, nil
+			}
+		}), time.Now)
+	}
+	op := stateV3AssemblyOperation{
+		minor:        newChild(gardenerrelease.StateV3MinorStateRef, minorOID, compactAdmissionOID(21_001)),
+		patch:        newChild(gardenerrelease.StateV3PatchStateRef, patchOID, compactAdmissionOID(21_002)),
+		coordination: newChild(gardenerrelease.StateV3CoordinationRef, coordinationOID, compactAdmissionOID(21_003)),
+	}
+	if result := op.begin(context.Background(), time.Now().Add(time.Minute), policy); result.Diagnostic != DiagnosticOK {
+		t.Fatal(result)
+	}
+	// The operation must retain the admitted deep copy, not caller-owned policy
+	// fields supplied to begin.
+	policy.StateLanes.Minor.CheckpointOID = compactAdmissionOID(22_001)
+	policy.StateLanes.Patch.CheckpointOID = compactAdmissionOID(22_002)
+	policy.Coordination.CheckpointOID = compactAdmissionOID(22_003)
+	if result := op.collectThreeSpines(); result.Diagnostic != DiagnosticOK {
+		t.Fatal(result)
+	}
+	want := []string{gardenerrelease.StateV3MinorStateRef, gardenerrelease.StateV3PatchStateRef, gardenerrelease.StateV3CoordinationRef}
+	if !reflect.DeepEqual(roots, want) {
+		t.Fatalf("root order=%v want=%v", roots, want)
+	}
+	if op.active || op.policy != nil || op.store != nil || op.terminations != (stateV3LaneTerminationPrefixes{}) {
+		t.Fatal("three-spine operation retained state after close")
+	}
+}
+
+func TestStateV3AssemblyThreeSpinesStopsAfterEarlierFailure(t *testing.T) {
+	policy := validStateV3Policy(t)
+	var patchCalls, coordinationCalls atomic.Int32
+	minor := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
+		return response("{}"), nil
+	}), time.Now)
+	patch := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
+		patchCalls.Add(1)
+		return nil, nil
+	}), time.Now)
+	coordination := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
+		coordinationCalls.Add(1)
+		return nil, nil
+	}), time.Now)
+	op := stateV3AssemblyOperation{minor: minor, patch: patch, coordination: coordination}
+	if result := op.begin(context.Background(), time.Now().Add(time.Minute), policy); result.Diagnostic != DiagnosticOK {
+		t.Fatal(result)
+	}
+	if result := op.collectThreeSpines(); result.Diagnostic == DiagnosticOK {
+		t.Fatal("invalid minor root succeeded")
+	}
+	if patchCalls.Load() != 0 || coordinationCalls.Load() != 0 {
+		t.Fatalf("later sessions dispatched: patch=%d coordination=%d", patchCalls.Load(), coordinationCalls.Load())
+	}
+	for _, child := range []*session{minor, patch, coordination} {
+		if !child.closed || len(child.artifacts) != 0 {
+			t.Fatal("failed three-spine operation did not close child")
+		}
 	}
 }
 

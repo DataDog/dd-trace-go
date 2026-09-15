@@ -143,6 +143,12 @@ func stateV3DiscoverDocumentEntries(role stateV3AssemblyRole, treeEntries []wire
 	claimPaths := make(map[string]bool)
 	requestRoot := ""
 	for index, value := range treeEntries {
+		// Recursive Git tree responses include directory entries in addition to
+		// leaf blobs. Directories carry no document authority and are ignored;
+		// every retained leaf remains an approved regular blob.
+		if value.Type == "tree" && value.Mode == "040000" {
+			continue
+		}
 		if value.Type != "blob" || value.Mode != "100644" || !validOID(value.SHA) {
 			return nil, false
 		}
@@ -343,6 +349,34 @@ func (s *stateV3DocumentStore) putEntry(key stateV3DocumentKey, entry stateV3App
 	binding.used = true
 	s.bindingCount++
 	return true
+}
+
+// terminationRecord returns only the exact authenticated state-record bytes
+// already retained for a fixed complete snapshot. It is not a generic document
+// accessor: all identity facts come from the live compact-history slot held by
+// the termination-prefix issuer.
+func (s *stateV3DocumentStore) terminationRecord(role stateV3AssemblyRole, snapshot stateV3CompactSnapshot, entry stateV3CompactDocumentEntry) ([]byte, bool) {
+	if s == nil || role < stateV3AssemblyMinor || role > stateV3AssemblyPatch || entry.kind != stateV3DocumentRecord || entry.len == 0 {
+		return nil, false
+	}
+	path := entry.path[:entry.len]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, false
+	}
+	for index := 0; index < int(s.bindingCount); index++ {
+		binding := s.bindings[index]
+		if !binding.used || binding.role != role || binding.commitOID != snapshot.commitOID || binding.treeOID != snapshot.treeOID || binding.pathLen != entry.len || !bytes.Equal(binding.path[:binding.pathLen], path) || int(binding.blobSlot) >= int(s.blobCount) {
+			continue
+		}
+		blob := s.blobs[binding.blobSlot]
+		if !blob.used || blob.kind != stateV3DocumentRecord || blob.oid != entry.oid || blob.rawLen == 0 || uint64(blob.rawAt)+uint64(blob.rawLen) > uint64(s.rawUsed) {
+			return nil, false
+		}
+		return append([]byte(nil), s.raw[blob.rawAt:blob.rawAt+blob.rawLen]...), true
+	}
+	return nil, false
 }
 
 func (s *stateV3DocumentStore) get(key stateV3DocumentKey) (stateV3ImmutableDocument, bool) {

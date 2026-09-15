@@ -98,10 +98,11 @@ type session struct {
 	// compactHistory is installed only while a private state-lane admission
 	// pass is live. Compact blob reads derive entries from this session-owned
 	// authenticated history; callers never supply a snapshot or blob OID.
-	compactHistory    *stateV3CompactLaneHistory
-	compactGeneration uint64
-	retainedBytes     int
-	closed            bool
+	compactHistory             *stateV3CompactLaneHistory
+	coordinationCompactHistory *stateV3CompactCoordinationHistory
+	compactGeneration          uint64
+	retainedBytes              int
+	closed                     bool
 }
 
 // ordinaryOperation is immutable after installation. It is deliberately
@@ -280,6 +281,9 @@ func (s *session) Close() {
 	s.assemblyReads = 0
 	s.assemblyBytes = 0
 	s.assemblyLive = false
+	s.compactHistory = nil
+	s.coordinationCompactHistory = nil
+	s.compactGeneration++
 	s.retainedBytes = 0
 	s.closed = true
 	s.mu.Unlock()

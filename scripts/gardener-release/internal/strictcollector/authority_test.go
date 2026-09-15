@@ -7,6 +7,7 @@ package strictcollector
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -18,6 +19,43 @@ import (
 	"strings"
 	"testing"
 )
+
+const auditedTerminationIssuerBodySHA256 = "70e2fb555e759711610aa96b5fd0552f96a309e036c8d0301a0e77fdff8796f6"
+
+var auditedTreeEmptyAndTerminationSinkBodiesSHA256 = map[string]string{
+	"compact_admission.go:append":      "4ea03c5680fc426a1428ba5f74fe966703b2cf9c82fff2ad9108f3b6d1e92082",
+	"coordination_admission.go:append": "fd695b1fbd4e246e1588489edea40eace0f9160c748283448769104a57b52c2e",
+	"operation.go:append":              "eac4ad05f23589a557ec2b03a562c6cd9dff5449cf223e19ab0d76c2dc94b62d",
+}
+
+// auditedTreeEmptyAuthorityBodiesSHA256 pins every production function that
+// can produce, consume, or reach the live compact history which retains the
+// authenticated tree-emptiness fact. This prevents a same-package helper from
+// replacing an already-admitted compact snapshot after the authenticated tree
+// append path has run.
+var auditedTreeEmptyAuthorityBodiesSHA256 = map[string]string{
+	"assembly.go:session:collectStateV3Spine":                                            "8b3d523047e2519f525e5d037444674bccc56d1d730309c5dba0e5e1f4432d20",
+	"assembly.go::stateV3SpineChanges":                                                   "b5027881e14a452467a4c9b8d1dad262d65e71a97fd51b9ffdbe1cf823e4fa7b",
+	"collector.go:session:Close":                                                         "76ed8219fa3fb68b662b644c124bdcdf9d13c7213cbfeefb796d6781ae6019a1",
+	"compact_admission.go:stateV3CompactLaneHistory:append":                              "4ea03c5680fc426a1428ba5f74fe966703b2cf9c82fff2ad9108f3b6d1e92082",
+	"compact_admission.go:session:compactEntry":                                          "5f7a34dfe762954859296b024f544a006ba57c1de05a70a8840833da01fb2353",
+	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "542c8b9d649fd7874026f97689fe74d277ac09810e22ddaddb4217662a7b4d06",
+	"compact_admission.go:stateV3AssemblyChild:captureLaneTerminationPrefix":             "70e2fb555e759711610aa96b5fd0552f96a309e036c8d0301a0e77fdff8796f6",
+	"compact_admission.go:stateV3AssemblyChild:loadCompactSnapshot":                      "7546a84ecafa98d6487b235d83ca54a9fa4141aae20584d3939e6d84976fcc6e",
+	"compact_admission.go::historyReachedCheckpoint":                                     "7358dc50a9aefca0b027c91bb6869aa3d4e8bbcb889c9788362342ea1e886846",
+	"coordination_admission.go:stateV3CompactCoordinationHistory:append":                 "fd695b1fbd4e246e1588489edea40eace0f9160c748283448769104a57b52c2e",
+	"coordination_admission.go::coordinationHistoryReachedCheckpoint":                    "25b625e64a30680a72f4d7c5fb156e43feb26f943aecd1a2d16e30000a4cfc92",
+	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "581d5f830600b41cd829fa100cf6556729d3de3921c26ef8ffa8dfb1693af3a6",
+}
+
+var auditedAssemblyPolicyBodiesSHA256 = map[string]string{
+	"operation.go:newStateV3AssemblyPolicy":                         "131c1df18e1c69e332a5251e73abf46dbf8d2ba783697eebdde6c7f2b898564d",
+	"operation.go:begin":                                            "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
+	"operation.go:beginChild":                                       "e466efe0fb283776a7975a5376add403695eb4d6a2929b287cff368c52c54e65",
+	"operation.go:close":                                            "4ff5d12dbfe80d8863fbd27686dde2a6db7ed03ff929285bc32143243cb547b0",
+	"compact_admission.go:collectStateV3LaneDocuments":              "542c8b9d649fd7874026f97689fe74d277ac09810e22ddaddb4217662a7b4d06",
+	"coordination_admission.go:collectStateV3CoordinationDocuments": "581d5f830600b41cd829fa100cf6556729d3de3921c26ef8ffa8dfb1693af3a6",
+}
 
 const auditedSettleFixedBody = `{
 	var mode readMode
@@ -229,7 +267,360 @@ func validateDocumentAuthoritySurface(files map[string]*ast.File) error {
 	if err := validateFinalTransportSinks(files, functions); err != nil {
 		return err
 	}
-	return validateOrdinaryOperationAuthority(files, functions)
+	if err := validateOrdinaryOperationAuthority(files, functions); err != nil {
+		return err
+	}
+	if err := validateAssemblyPolicyAuthority(files, functions); err != nil {
+		return err
+	}
+	if err := validateTreeEmptyAuthority(files, functions); err != nil {
+		return err
+	}
+	return validateTerminationPrefixAuthority(files, functions)
+}
+
+// validateTreeEmptyAuthority treats authenticated tree emptiness as a closed
+// capability fact. A treeEmpty selector is permitted only in the two audited
+// append producers and the three body-pinned checkpoint/cleanup consumers.
+// Any route to the live compact histories is also body-pinned, so a future
+// helper cannot replace an admitted snapshot without extending this policy.
+func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
+	appenders := map[string]struct {
+		receiver string
+		params   []string
+	}{
+		"compact_admission.go:stateV3CompactLaneHistory:append":              {"stateV3CompactLaneHistory", []string{"wireRawCommit", "wireTree", "stateV3AssemblyRole"}},
+		"coordination_admission.go:stateV3CompactCoordinationHistory:append": {"stateV3CompactCoordinationHistory", []string{"wireRawCommit", "wireTree"}},
+	}
+	allowedTreeEmpty := map[string]int{
+		"compact_admission.go:stateV3CompactLaneHistory:append":                              1,
+		"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              1,
+		"compact_admission.go:stateV3AssemblyChild:captureLaneTerminationPrefix":             1,
+		"coordination_admission.go:stateV3CompactCoordinationHistory:append":                 1,
+		"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": 1,
+	}
+	seenAppenders := map[string]bool{}
+	seenTreeEmpty := map[string]int{}
+	seenHistoryBodies := map[string]bool{}
+
+	for _, function := range functions {
+		identity := treeEmptyFunctionIdentity(function)
+		if expected, watched := auditedTreeEmptyAuthorityBodiesSHA256[identity]; watched {
+			if functionBodySHA256(function.declaration) != expected {
+				return fmt.Errorf("tree-empty authority body is not audited: %s", identity)
+			}
+			seenHistoryBodies[identity] = true
+		}
+		if appender, watched := appenders[identity]; watched {
+			if err := requireFunctionSignature(function.declaration, appender.receiver, "append", appender.params, []string{"bool"}); err != nil {
+				return fmt.Errorf("tree-empty producer: %w", err)
+			}
+			seenAppenders[identity] = true
+		}
+
+		treeEmptySelectors := map[*ast.Ident]bool{}
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "treeEmpty" {
+				treeEmptySelectors[selector.Sel] = true
+			}
+			return true
+		})
+		invalid := ""
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			if invalid != "" {
+				return false
+			}
+			switch value := node.(type) {
+			case *ast.Ident:
+				if value.Name == "treeEmpty" && !treeEmptySelectors[value] {
+					invalid = "unapproved authenticated tree-empty identifier"
+					return false
+				}
+			case *ast.SelectorExpr:
+				switch value.Sel.Name {
+				case "treeEmpty":
+					if allowedTreeEmpty[identity] == 0 {
+						invalid = "unapproved authenticated tree-empty reference"
+						return false
+					}
+					seenTreeEmpty[identity]++
+				case "snapshots", "compactHistory", "coordinationCompactHistory":
+					if !seenHistoryBodies[identity] {
+						invalid = "unapproved live compact-history reference"
+						return false
+					}
+				}
+			case *ast.TypeSpec:
+				if treeEmptyCompactType(value.Type) {
+					invalid = "compact snapshot/history aliases are forbidden"
+					return false
+				}
+			case *ast.CompositeLit:
+				if treeEmptyCompactType(value.Type) {
+					invalid = "compact snapshot/history construction is forbidden"
+					return false
+				}
+			case *ast.KeyValueExpr:
+				if identifier, ok := value.Key.(*ast.Ident); ok && identifier.Name == "treeEmpty" {
+					invalid = "tree-empty field construction is forbidden"
+					return false
+				}
+			case *ast.CallExpr:
+				if identifier, ok := value.Fun.(*ast.Ident); ok && identifier.Name == "new" && len(value.Args) == 1 && treeEmptyCompactType(value.Args[0]) {
+					invalid = "compact snapshot/history allocation is forbidden"
+					return false
+				}
+			}
+			return true
+		})
+		if invalid != "" {
+			return fmt.Errorf("%s: %s", identity, invalid)
+		}
+	}
+	globalTreeEmptyIdentifiers := 0
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			if _, ok := declaration.(*ast.FuncDecl); ok {
+				continue
+			}
+			invalid := ""
+			ast.Inspect(declaration, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.Ident:
+					if value.Name == "treeEmpty" {
+						globalTreeEmptyIdentifiers++
+					}
+				case *ast.SelectorExpr:
+					if value.Sel.Name == "treeEmpty" || value.Sel.Name == "compactHistory" || value.Sel.Name == "coordinationCompactHistory" {
+						invalid = "global tree-empty or compact-history authority is forbidden"
+						return false
+					}
+				case *ast.CompositeLit:
+					if treeEmptyCompactType(value.Type) {
+						invalid = "global compact snapshot/history construction is forbidden"
+						return false
+					}
+				case *ast.TypeSpec:
+					if treeEmptyCompactType(value.Type) {
+						invalid = "compact snapshot/history aliases are forbidden"
+						return false
+					}
+				}
+				return invalid == ""
+			})
+			if invalid != "" {
+				return fmt.Errorf("%s", invalid)
+			}
+		}
+	}
+	if len(seenAppenders) != len(appenders) || len(seenHistoryBodies) != len(auditedTreeEmptyAuthorityBodiesSHA256) || globalTreeEmptyIdentifiers != 1 {
+		return fmt.Errorf("tree-empty authority topology missing")
+	}
+	for identity, expected := range allowedTreeEmpty {
+		if seenTreeEmpty[identity] != expected {
+			return fmt.Errorf("tree-empty references for %s = %d, want %d", identity, seenTreeEmpty[identity], expected)
+		}
+	}
+	return nil
+}
+
+func treeEmptyFunctionIdentity(function *authorityFunction) string {
+	return function.filename + ":" + receiverTypeName(function.declaration) + ":" + function.declaration.Name.Name
+}
+
+func treeEmptyCompactType(expression ast.Expr) bool {
+	name := astTypeName(expression)
+	return name == "stateV3CompactSnapshot" || name == "stateV3CompactLaneHistory" || name == "stateV3CompactCoordinationHistory"
+}
+
+// validateTerminationPrefixAuthority keeps termination evidence derived from
+// authenticated compact slots. Snapshot-valued callers must never append or
+// select a termination proof.
+func validateTerminationPrefixAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
+	const issuer = "compact_admission.go:captureLaneTerminationPrefix"
+	const appendIdentity = "operation.go:append"
+	issuerFound, callFound, appendFound, prefixContainerReferences := false, false, false, 0
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if identifier, ok := node.(*ast.Ident); ok && identifier.Name == "stateV3LaneTerminationPrefixes" {
+				prefixContainerReferences++
+			}
+			return true
+		})
+	}
+	for _, function := range functions {
+		identity := function.filename + ":" + function.declaration.Name.Name
+		if identity == issuer {
+			issuerFound = true
+			if err := requireFunctionSignature(function.declaration, "stateV3AssemblyChild", "captureLaneTerminationPrefix", []string{"uint64", "uint16", "uint16"}, []string{"Result"}); err != nil {
+				return fmt.Errorf("termination issuer: %w", err)
+			}
+			if functionBodySHA256(function.declaration) != auditedTerminationIssuerBodySHA256 {
+				return fmt.Errorf("termination issuer body is not audited")
+			}
+		}
+		if identity == appendIdentity {
+			appendFound = true
+			if err := requireFunctionSignature(function.declaration, "stateV3LaneTerminationPrefixes", "append", []string{"stateV3AssemblyRole", "*ast.ArrayType", "*ast.ArrayType", "*ast.ArrayType", "*ast.ArrayType"}, []string{"bool"}); err != nil {
+				return fmt.Errorf("termination append sink: %w", err)
+			}
+			if functionBodySHA256(function.declaration) != auditedTreeEmptyAndTerminationSinkBodiesSHA256[identity] {
+				return fmt.Errorf("termination append sink body is not audited")
+			}
+		}
+		direct := map[*ast.SelectorExpr]bool{}
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "captureLaneTerminationPrefix" {
+				return true
+			}
+			if identity != "compact_admission.go:collectStateV3LaneDocuments" || exprName(selector.X) != "c" || len(call.Args) != 3 {
+				direct[selector] = false
+				return true
+			}
+			direct[selector] = true
+			callFound = true
+			return true
+		})
+		invalid := false
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			switch value := node.(type) {
+			case *ast.SelectorExpr:
+				if value.Sel.Name == "captureLaneTerminationPrefix" && !direct[value] {
+					invalid = true
+					return false
+				}
+				if value.Sel.Name == "append" {
+					if exprName(value.X) == "history" {
+						if identity != "compact_admission.go:collectStateV3LaneDocuments" && identity != "coordination_admission.go:collectStateV3CoordinationDocuments" {
+							invalid = true
+							return false
+						}
+					} else {
+						parent, ok := value.X.(*ast.SelectorExpr)
+						if identity != issuer || !ok || exprName(parent.X) != "c" || parent.Sel.Name != "terminations" {
+							invalid = true
+							return false
+						}
+					}
+				}
+				if value.Sel.Name == "terminations" && identity != "operation.go:beginChild" && identity != "operation.go:close" && identity != issuer {
+					invalid = true
+					return false
+				}
+			case *ast.CompositeLit:
+				if astTypeName(value.Type) == "stateV3LaneTerminationPrefix" && identity != appendIdentity {
+					invalid = true
+					return false
+				}
+				if astTypeName(value.Type) == "stateV3LaneTerminationPrefixes" && identity != "operation.go:close" {
+					invalid = true
+					return false
+				}
+			}
+			return true
+		})
+		if invalid {
+			return fmt.Errorf("unapproved termination-prefix issuer reference %s", identity)
+		}
+	}
+	if !issuerFound || !callFound || !appendFound || prefixContainerReferences != 5 {
+		return fmt.Errorf("termination prefix issuer topology missing")
+	}
+	return nil
+}
+
+// validateAssemblyPolicyAuthority pins the operation-owned policy capability.
+// It deliberately checks the complete, finite production use set instead of
+// attempting to infer arbitrary alias/value flow.
+func validateAssemblyPolicyAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
+	allowedPolicy := map[string]int{
+		"operation.go:begin": 1, "operation.go:beginChild": 2, "operation.go:close": 1,
+		"compact_admission.go:collectStateV3LaneDocuments":              2,
+		"coordination_admission.go:collectStateV3CoordinationDocuments": 2,
+	}
+	allowedValue := map[string]int{
+		"compact_admission.go:collectStateV3LaneDocuments":              1,
+		"coordination_admission.go:collectStateV3CoordinationDocuments": 1,
+	}
+	seenPolicy, seenValue := map[string]int{}, map[string]int{}
+	policyFactoryFound, policyTypeReferences := false, 0
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if identifier, ok := node.(*ast.Ident); ok && identifier.Name == "stateV3AssemblyPolicy" {
+				policyTypeReferences++
+			}
+			return true
+		})
+	}
+	for _, function := range functions {
+		identity := function.filename + ":" + function.declaration.Name.Name
+		if expected, audited := auditedAssemblyPolicyBodiesSHA256[identity]; audited && functionBodySHA256(function.declaration) != expected {
+			return fmt.Errorf("assembly policy authority body is not audited: %s", identity)
+		}
+		if identity == "operation.go:newStateV3AssemblyPolicy" {
+			policyFactoryFound = true
+			if err := requireFunctionSignature(function.declaration, "", "newStateV3AssemblyPolicy", []string{"gardenerrelease.StateV3Policy"}, []string{"stateV3AssemblyPolicy", "bool"}); err != nil {
+				return fmt.Errorf("policy factory: %w", err)
+			}
+		}
+		invalid := false
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			switch value := node.(type) {
+			case *ast.SelectorExpr:
+				switch value.Sel.Name {
+				case "policy":
+					seenPolicy[identity]++
+					if seenPolicy[identity] > allowedPolicy[identity] {
+						invalid = true
+					}
+				case "value":
+					if expressionSource(value.X) == "c.policy" {
+						seenValue[identity]++
+						if seenValue[identity] > allowedValue[identity] {
+							invalid = true
+						}
+					}
+				}
+			case *ast.AssignStmt:
+				for _, left := range value.Lhs {
+					if expressionSource(left) == "op.policy" && identity != "operation.go:begin" && identity != "operation.go:close" {
+						invalid = true
+					}
+					if strings.HasSuffix(expressionSource(left), ".value") {
+						invalid = true
+					}
+				}
+			case *ast.CompositeLit:
+				if astTypeName(value.Type) == "stateV3AssemblyPolicy" && identity != "operation.go:newStateV3AssemblyPolicy" {
+					invalid = true
+				}
+			}
+			return !invalid
+		})
+		if invalid {
+			return fmt.Errorf("unapproved assembly policy authority %s", identity)
+		}
+	}
+	if !policyFactoryFound || policyTypeReferences != 5 {
+		return fmt.Errorf("assembly policy capability topology missing")
+	}
+	for identity, want := range allowedPolicy {
+		if seenPolicy[identity] != want {
+			return fmt.Errorf("policy references for %s = %d, want %d", identity, seenPolicy[identity], want)
+		}
+	}
+	for identity, want := range allowedValue {
+		if seenValue[identity] != want {
+			return fmt.Errorf("policy value references for %s = %d, want %d", identity, seenValue[identity], want)
+		}
+	}
+	return nil
 }
 
 // validateDirectSettlementPolicy is deliberately narrower than a Go data-flow
@@ -565,6 +956,9 @@ func validateOrdinaryOperationAuthority(files map[string]*ast.File, functions []
 	s.assemblyReads = 0
 	s.assemblyBytes = 0
 	s.assemblyLive = false
+	s.compactHistory = nil
+	s.coordinationCompactHistory = nil
+	s.compactGeneration++
 	s.retainedBytes = 0
 	s.closed = true
 	s.mu.Unlock()
@@ -1068,6 +1462,15 @@ func validatePinnedDirectFixedRequest(call *ast.CallExpr, aliases map[string]boo
 	return nil
 }
 
+func functionBodySHA256(function *ast.FuncDecl) string {
+	var body bytes.Buffer
+	if function == nil || function.Body == nil || format.Node(&body, token.NewFileSet(), function.Body) != nil {
+		return ""
+	}
+	sum := sha256.Sum256(body.Bytes())
+	return fmt.Sprintf("%x", sum)
+}
+
 func expressionSource(expression ast.Expr) string {
 	switch value := expression.(type) {
 	case *ast.Ident:
@@ -1171,7 +1574,7 @@ func validateDocumentAdmissionIssuers(functions []*authorityFunction, aliases ma
 		if err := validateAdmissionAssignments(function, aliases); err != nil {
 			return err
 		}
-		if callsNamed(function.declaration, "admitCompact") && identity != "compact_admission.go:collectStateV3LaneDocuments" {
+		if callsNamed(function.declaration, "admitCompact") && identity != "compact_admission.go:collectStateV3LaneDocuments" && identity != "coordination_admission.go:collectStateV3CoordinationDocuments" {
 			return fmt.Errorf("unapproved document admission forwarding call %s", identity)
 		}
 	}
@@ -1249,7 +1652,7 @@ func hasApprovedAdmissionFlow(function *ast.FuncDecl) bool {
 			if len(value.Lhs) == 2 && len(value.Rhs) == 1 && exprName(value.Lhs[0]) == "token" && exprName(value.Lhs[1]) == "admitted" {
 				call, ok := value.Rhs[0].(*ast.CallExpr)
 				selector, selectorOK := call.Fun.(*ast.SelectorExpr)
-				issued = ok && selectorOK && exprName(selector.X) == "admission" && selector.Sel.Name == "admitCompact" && len(call.Args) == 2 && expressionSource(call.Args[0]) == "uint16(child)" && exprName(call.Args[1]) == "document"
+				issued = ok && selectorOK && exprName(selector.X) == "admission" && selector.Sel.Name == "admitCompact" && len(call.Args) == 2 && (expressionSource(call.Args[0]) == "uint16(child)" || expressionSource(call.Args[0]) == "uint16(ordinal)") && exprName(call.Args[1]) == "document"
 			}
 		case *ast.IfStmt:
 			guarded = guarded || expressionNegatesIdentifier(value.Cond, "admitted")
@@ -1299,7 +1702,7 @@ func assignmentTargetsAdmission(expression ast.Expr) bool {
 }
 
 func isExactApprovedAdmissionAssignment(function *authorityFunction, assignment *ast.AssignStmt, index int, aliases map[string]bool) bool {
-	if function.filename != "compact_admission.go" || function.declaration.Name.Name != "collectStateV3LaneDocuments" || index != 0 || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+	if !((function.filename == "compact_admission.go" && function.declaration.Name.Name == "collectStateV3LaneDocuments") || (function.filename == "coordination_admission.go" && function.declaration.Name.Name == "collectStateV3CoordinationDocuments")) || index != 0 || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
 		return false
 	}
 	left, ok := assignment.Lhs[0].(*ast.SelectorExpr)
@@ -1338,7 +1741,7 @@ func validateFixedRequestConstruction(functions []*authorityFunction, aliases ma
 }
 
 func approvedBlobReaderIdentity(identity string) bool {
-	return identity == "collector.go:ReadBlobForTreeEntry" || identity == "collector.go:readAssemblyBlob" || identity == "compact_admission.go:readAssemblyCompactBlob" || identity == "compact_admission.go:loadCompactSnapshot"
+	return identity == "collector.go:ReadBlobForTreeEntry" || identity == "collector.go:readAssemblyBlob" || identity == "compact_admission.go:readAssemblyCompactBlob" || identity == "compact_admission.go:loadCompactSnapshot" || identity == "coordination_admission.go:collectStateV3CoordinationDocuments"
 }
 
 func knownBlobReaderName(name string) bool {
@@ -1687,6 +2090,132 @@ func TestExecutionSinkPolicyRejectsIndirectAuthority(t *testing.T) {
 			call.Fun.(*ast.SelectorExpr).X = ast.NewIdent("other")
 			if err := validateDocumentAuthoritySurface(files); err == nil {
 				t.Fatalf("%s receiver other accepted", sink.target)
+			}
+		})
+	}
+}
+
+func TestTerminationPrefixAuthorityRejectsForgedSnapshotSeams(t *testing.T) {
+	for name, source := range map[string]string{
+		"forged compact ordinals": `package strictcollector
+			func route(c *stateV3AssemblyChild) { _ = c.captureLaneTerminationPrefix(1, 1, 0) }`,
+		"termination method value": `package strictcollector
+			func route(c *stateV3AssemblyChild) { issue := c.captureLaneTerminationPrefix; _ = issue(1, 1, 0) }`,
+		"termination method expression": `package strictcollector
+			func route(c *stateV3AssemblyChild) { issue := (*stateV3AssemblyChild).captureLaneTerminationPrefix; _ = issue(c, 1, 1, 0) }`,
+		"forged snapshot projection": `package strictcollector
+			func route(c *stateV3AssemblyChild) { complete := stateV3LoadedCompactSnapshot{}; cleanup := stateV3LoadedCompactSnapshot{}; _ = complete; _ = cleanup; _ = c.captureLaneTerminationPrefix(1, 1, 0) }`,
+		"local fabricated prefix": `package strictcollector
+			func route() { var prefixes stateV3LaneTerminationPrefixes; _ = prefixes.append(stateV3AssemblyMinor, [20]byte{}, [20]byte{}, [20]byte{}, [32]byte{}) }`,
+		"prefix append method value": `package strictcollector
+			func route(prefixes *stateV3LaneTerminationPrefixes) { appendPrefix := prefixes.append; _ = appendPrefix }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, err := productionStrictcollectorFiles(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			files["zz_termination_bypass.go"] = parseAuthorityFixture(t, source)
+			if err := validateDocumentAuthoritySurface(files); err == nil {
+				t.Fatal("forged termination prefix authority accepted")
+			}
+		})
+	}
+}
+
+func TestTreeEmptyAuthorityRejectsSyntheticCapabilitySeams(t *testing.T) {
+	for name, source := range map[string]string{
+		"lane post-append mutation": `package strictcollector
+			func forge(s *session) { s.compactHistory.snapshots[0].treeEmpty = true }`,
+		"coordination post-append mutation": `package strictcollector
+			func forge(s *session) { s.coordinationCompactHistory.snapshots[0].treeEmpty = true }`,
+		"alternate history receiver mutation": `package strictcollector
+			type alternateHistory stateV3CompactLaneHistory
+			func forge(history *stateV3CompactLaneHistory) { converted := (*alternateHistory)(history); converted.snapshots[0].treeEmpty = true }`,
+		"forwarded snapshot mutation": `package strictcollector
+			func mutate(snapshot *stateV3CompactSnapshot) { snapshot.treeEmpty = true }
+			func forge(history *stateV3CompactLaneHistory) { snapshot := &history.snapshots[0]; mutate(snapshot) }`,
+		"forwarded history mutation": `package strictcollector
+			func mutate(history *stateV3CompactLaneHistory) { history.snapshots[0].treeEmpty = true }
+			func forge() { var original stateV3CompactLaneHistory; forwarded := &original; mutate(forwarded) }`,
+		"forged compact snapshot": `package strictcollector
+			func forge() { _ = stateV3CompactSnapshot{treeEmpty: true} }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, err := productionStrictcollectorFiles(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			files["zz_tree_empty_bypass.go"] = parseAuthorityFixture(t, source)
+			if err := validateDocumentAuthoritySurface(files); err == nil {
+				t.Fatal("tree-empty capability authority accepted")
+			}
+		})
+	}
+}
+
+func TestTreeEmptyAndTerminationSinkAuthorityRejectsSyntheticMutations(t *testing.T) {
+	for _, test := range []struct {
+		name, filename, function, source string
+	}{
+		{
+			name:     "lane tree-empty substitution",
+			filename: "compact_admission.go",
+			function: "append",
+			source: `package strictcollector
+				func route() { snapshot.treeEmpty = true }`,
+		},
+		{
+			name:     "coordination tree-empty substitution",
+			filename: "coordination_admission.go",
+			function: "append",
+			source: `package strictcollector
+				func route() { snapshot.treeEmpty = true }`,
+		},
+		{
+			name:     "termination append fabricated facts",
+			filename: "operation.go",
+			function: "append",
+			source: `package strictcollector
+				func route() { value.completeOID, value.recordSHA = [20]byte{}, [32]byte{} }`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			files, err := productionStrictcollectorFiles(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutation := parseAuthorityFixture(t, test.source)
+			mutator := authorityFunctionByIdentity(t, map[string]*ast.File{"mutation.go": mutation}, "mutation.go", "route")
+			target := authorityFunctionByIdentity(t, files, test.filename, test.function)
+			target.Body.List = append(target.Body.List, mutator.Body.List...)
+			if err := validateDocumentAuthoritySurface(files); err == nil {
+				t.Fatal("tree-empty or termination sink mutation accepted")
+			}
+		})
+	}
+}
+
+func TestAssemblyPolicyAuthorityRejectsSyntheticSeams(t *testing.T) {
+	for name, source := range map[string]string{
+		"policy replacement": `package strictcollector
+			func route(op *stateV3AssemblyOperation, policy gardenerrelease.StateV3Policy) { op.policy.value = policy }`,
+		"policy alternate receiver": `package strictcollector
+			type alternateOperation stateV3AssemblyOperation
+			func route(op *stateV3AssemblyOperation) { converted := (*alternateOperation)(op); converted.policy = nil }`,
+		"policy forwarding": `package strictcollector
+			func route(op *stateV3AssemblyOperation) any { return op.policy }`,
+		"policy construction": `package strictcollector
+			func route() { _ = stateV3AssemblyPolicy{} }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, err := productionStrictcollectorFiles(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			files["zz_policy_bypass.go"] = parseAuthorityFixture(t, source)
+			if err := validateDocumentAuthoritySurface(files); err == nil {
+				t.Fatal("assembly policy authority accepted")
 			}
 		})
 	}

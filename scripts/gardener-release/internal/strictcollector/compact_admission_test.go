@@ -180,13 +180,64 @@ func TestStateV3CompactAdmissionRejectsMaximumDepthNonCheckpointBeforeBlobDispat
 	}))
 	defer operation.close()
 
-	result := child.collectStateV3LaneDocuments(policy)
+	result := child.collectStateV3LaneDocuments()
 	if result.Diagnostic != DiagnosticRequiredEvidenceAbsent {
 		t.Fatalf("result=%#v raw_calls=%d", result, rawCalls)
 	}
 	compactAdmissionStoreIsZero(t, operation.store)
 	if blobCalls != 0 {
 		t.Fatalf("blob calls=%d", blobCalls)
+	}
+}
+
+func TestStateV3CompactAdmissionRejectsDirectoryOnlyCheckpointBeforeBlobDispatch(t *testing.T) {
+	policy := validStateV3Policy(t)
+	checkpoint := compactAdmissionOID(250)
+	policy.StateLanes.Minor.CheckpointOID = checkpoint
+	if err := gardenerrelease.ValidateStateV3Policy(policy); err != nil {
+		t.Fatal(err)
+	}
+	child, operation := compactAdmissionChild(t, policy, roundTrip(func(request *http.Request) (*http.Response, error) {
+		if strings.Contains(request.URL.Path, "/git/blobs/") {
+			t.Fatal("directory-only checkpoint dispatched a blob")
+		}
+		switch {
+		case request.URL.Path == "/repos/"+repository+"/git/ref/heads/gardener-release-state/minor":
+			return response(compactAdmissionRefJSON(gardenerrelease.StateV3MinorStateRef, checkpoint)), nil
+		case request.URL.Path == "/repos/"+repository+"/git/commits/"+checkpoint:
+			return response(spineRawJSON(checkpoint, compactAdmissionOID(251), "")), nil
+		case request.URL.Path == "/repos/"+repository+"/commits/"+checkpoint:
+			return response(spineRESTJSON(checkpoint, compactAdmissionOID(251), "")), nil
+		case request.URL.Path == "/graphql":
+			return response(spineGraphQLJSON(checkpoint)), nil
+		case request.URL.Path == "/repos/"+repository+"/git/trees/"+compactAdmissionOID(251):
+			return response(`{"sha":"` + compactAdmissionOID(251) + `","url":"u","truncated":false,"tree":[{"path":"unexpected","mode":"040000","type":"tree","sha":"` + compactAdmissionOID(252) + `","url":"u"}]}`), nil
+		default:
+			t.Fatalf("unexpected request %s", request.URL.Path)
+			return nil, nil
+		}
+	}))
+	defer operation.close()
+	if result := child.collectStateV3LaneDocuments(); result.Diagnostic != DiagnosticRequiredEvidenceAbsent {
+		t.Fatalf("result=%#v", result)
+	}
+	compactAdmissionStoreIsZero(t, operation.store)
+}
+
+func TestStateV3LaneTerminationPrefixRejectsDirectoryOnlyCleanup(t *testing.T) {
+	completeOID, cleanupOID := mustFixedOID(compactAdmissionOID(260)), mustFixedOID(compactAdmissionOID(261))
+	history := stateV3CompactLaneHistory{count: 2}
+	history.snapshots[0] = stateV3CompactSnapshot{commitOID: cleanupOID, parentOID: completeOID, ordinal: 0, treeEmpty: false}
+	history.snapshots[1] = stateV3CompactSnapshot{commitOID: completeOID, ordinal: 1}
+	s := newTestSession(nil, time.Now)
+	s.assemblyLive, s.assemblyRole, s.compactGeneration, s.compactHistory = true, stateV3AssemblyMinor, 1, &history
+	prefixes := stateV3LaneTerminationPrefixes{}
+	child := stateV3AssemblyChild{session: s, store: &stateV3DocumentStore{}, terminations: &prefixes}
+	if result := child.captureLaneTerminationPrefix(1, 1, 0); result.Diagnostic != DiagnosticOK {
+		t.Fatalf("result=%#v", result)
+	}
+	if prefixes != (stateV3LaneTerminationPrefixes{}) {
+		t.Fatal("directory-only cleanup issued a termination prefix")
 	}
 }
 
@@ -234,7 +285,7 @@ func TestStateV3CompactAdmissionResetsStoreAfterMalformedLaterTransition(t *test
 	defer operation.close()
 
 	policy.StateLanes.Minor.MaxHistoryCommits = 3
-	result := child.collectStateV3LaneDocuments(policy)
+	result := child.collectStateV3LaneDocuments()
 	if result.Diagnostic != DiagnosticResponseInvalid {
 		t.Fatalf("result=%#v", result)
 	}
@@ -375,7 +426,7 @@ func TestStateV3LaneAdmissionOperationWindowBoundaryUsesConnectedFixedRoute(t *t
 		child, operation, requests, blobRequests := compactWindowBoundaryChild(t, policy, snapshots)
 		defer operation.close()
 
-		if result := child.collectStateV3LaneDocuments(policy); result.Diagnostic != DiagnosticOK {
+		if result := child.collectStateV3LaneDocuments(); result.Diagnostic != DiagnosticOK {
 			t.Fatalf("result=%#v", result)
 		}
 		if operation.store.bindingCount == 0 || operation.store.rawUsed == 0 {
@@ -397,7 +448,7 @@ func TestStateV3LaneAdmissionOperationWindowBoundaryUsesConnectedFixedRoute(t *t
 		child, operation, requests, blobRequests := compactWindowBoundaryChild(t, policy, snapshots)
 		defer operation.close()
 
-		if result := child.collectStateV3LaneDocuments(policy); result.Diagnostic != DiagnosticRequiredEvidenceAbsent {
+		if result := child.collectStateV3LaneDocuments(); result.Diagnostic != DiagnosticRequiredEvidenceAbsent {
 			t.Fatalf("result=%#v", result)
 		}
 		compactAdmissionStoreIsZero(t, operation.store)
@@ -587,7 +638,7 @@ func TestStateV3CompactAdmissionRetainsMaterializedReservedEnvelope(t *testing.T
 	child, operation := compactStagedTransportChild(t, fixture, nil)
 	defer operation.close()
 
-	result := child.collectStateV3LaneDocuments(compactStagedPolicy(t))
+	result := child.collectStateV3LaneDocuments()
 	if result.Diagnostic != DiagnosticOK {
 		t.Fatalf("result=%#v", result)
 	}
@@ -612,7 +663,7 @@ func TestStateV3CompactAdmissionRejectsMalformedMaterializedEnvelope(t *testing.
 			child, operation := compactStagedTransportChild(t, fixture, nil)
 			defer operation.close()
 
-			result := child.collectStateV3LaneDocuments(compactStagedPolicy(t))
+			result := child.collectStateV3LaneDocuments()
 			if result.Diagnostic != DiagnosticResponseInvalid {
 				t.Fatalf("result=%#v", result)
 			}
@@ -630,7 +681,7 @@ func TestStateV3CompactAdmissionAcceptsCoherentAlternateMaterializedEnvelope(t *
 	})
 	defer operation.close()
 
-	if result := child.collectStateV3LaneDocuments(compactStagedPolicy(t)); result.Diagnostic != DiagnosticOK {
+	if result := child.collectStateV3LaneDocuments(); result.Diagnostic != DiagnosticOK {
 		t.Fatalf("result=%#v", result)
 	}
 	if operation.store.bindingCount == 0 {
@@ -648,7 +699,7 @@ func TestStateV3CompactAdmissionRejectsPreparedEnvelopeChangedAfterMaterializati
 	})
 	defer operation.close()
 
-	result := child.collectStateV3LaneDocuments(compactStagedPolicy(t))
+	result := child.collectStateV3LaneDocuments()
 	if result.Diagnostic != DiagnosticResponseInvalid {
 		t.Fatalf("result=%#v", result)
 	}
