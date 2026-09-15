@@ -173,7 +173,7 @@ jobs:
                   fi
 
                   # shellcheck disable=SC2086
-                  if ! env CGO_ENABLED="$cgo" $appsec_enabled_env $goexp_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.xml" -- -v $PACKAGES; then
+                  if ! env CGO_ENABLED="$cgo" $appsec_enabled_env $goexp_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.xml" -- -v $PACKAGES -coverprofile="coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.txt" -covermode=atomic; then
                     echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $goexp_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.xml\" -- -v $PACKAGES"
                     report_error=1
                   fi
@@ -194,7 +194,7 @@ jobs:
                     cd "$submodule"
                     submodule_name=$(echo "$submodule" | tr '/' '-')
                     # shellcheck disable=SC2086
-                    if ! env CGO_ENABLED="$cgo" $appsec_enabled_env $goexp_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.xml" -- -v .; then
+                    if ! env CGO_ENABLED="$cgo" $appsec_enabled_env $goexp_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.xml" -- -v . -coverprofile="coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.txt" -covermode=atomic; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $goexp_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.xml\" -- -v . (submodule: $submodule)"
                       report_error=1
                     fi
@@ -218,6 +218,14 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+      - name: Upload Coverage to Datadog
+        if: always() && steps.restore.outcome == 'success'
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.txt coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.txt
+          format: go-coverprofile
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
@@ -276,8 +284,8 @@ jobs:
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
               # shellcheck disable=SC2086
-              if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}.xml" -- -v $go_tags $PACKAGES; then
-                echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}.xml\" -- -v $go_tags $PACKAGES"
+              if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}.xml" -- -v $go_tags $PACKAGES -coverprofile="coverage-${appsec_enabled_env:-default}-${go_tags}.txt" -covermode=atomic; then
+                echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}.xml\" -- -v $go_tags $PACKAGES -coverprofile="coverage-${appsec_enabled_env:-default}-${go_tags}.txt" -covermode=atomic"
               fi
 
               # shellcheck disable=SC2086
@@ -285,8 +293,8 @@ jobs:
                 cd "$submodule"
                 submodule_name=$(echo "$submodule" | tr '/' '-')
                 # shellcheck disable=SC2086
-                if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml" -- -v $go_tags .; then
-                  echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml\" -- -v $go_tags . (submodule: $submodule)"
+                if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml" -- -v $go_tags . -coverprofile="coverage-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.txt" -covermode=atomic; then
+                  echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/gotestsum-report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml\" -- -v $go_tags . -coverprofile="coverage-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.txt" -covermode=atomic(submodule: $submodule)"
                 fi
                 cd -
               done
@@ -306,6 +314,15 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
+
+      - name: Upload Coverage to Datadog
+        if: always() && steps.restore.outcome == 'success'
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.txt coverage-${appsec_enabled_env:-default}-${go_tags}.txt
+          format: go-coverprofile
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
