@@ -52,6 +52,67 @@ func ValidateStateV3CoordinationArmDocument(raw []byte) bool {
 	return decodeStateV3Document(raw, MaxStateV3CoordinationArmBytes, &value) == nil && bytes.Equal(mustCanonicalStateV3(value), raw)
 }
 
+// DecodeStateV3CoordinationMutationOutcomeDocument returns canonical immutable
+// transcript facts only. It performs no I/O, outcome observation, or final
+// authorization; a later assembly must authenticate the referenced arm and
+// independently reread post-mutation state before using this document.
+func DecodeStateV3CoordinationMutationOutcomeDocument(raw []byte) (StateV3CoordinationMutationOutcome, bool) {
+	var value StateV3CoordinationMutationOutcome
+	if decodeStateV3Document(raw, MaxStateV3CoordinationOutcomeBytes, &value) != nil || !validStateV3CoordinationMutationOutcome(value) || !bytes.Equal(mustCanonicalStateV3(value), raw) {
+		return StateV3CoordinationMutationOutcome{}, false
+	}
+	return value, true
+}
+
+// ValidateStateV3CoordinationMutationOutcomeDocument validates canonical
+// transcript bytes. It does not turn a transcript into a mutation response.
+func ValidateStateV3CoordinationMutationOutcomeDocument(raw []byte) bool {
+	_, ok := DecodeStateV3CoordinationMutationOutcomeDocument(raw)
+	return ok
+}
+
+// ValidateStateV3CoordinationMutationOutcomeDocumentPath additionally binds a
+// transcript to the sole approved coordination-tree leaf.
+func ValidateStateV3CoordinationMutationOutcomeDocumentPath(raw []byte, path string) bool {
+	return path == StateV3CoordinationMutationOutcomePath && ValidateStateV3CoordinationMutationOutcomeDocument(raw)
+}
+
+func validStateV3CoordinationMutationOutcome(value StateV3CoordinationMutationOutcome) bool {
+	line, lineErr := parseReleaseLine(value.ReleaseLine)
+	version, versionErr := ParseReleaseVersion(value.ResolvedVersion)
+	if value.SchemaVersion != "1" || (value.Operation != "claim_acquire" && value.Operation != "claim_release") || value.StateRef != StateV3CoordinationRef || value.ArmPath != stateV3CoordinationArmPath || !validStateV3OID(value.ArmBlobOID) || !lowerHexDigest(value.ArmSHA256) || !validStateV3OID(value.ArmCommitOID) || !validStateV3OID(value.ArmTreeOID) || lineErr != nil || versionErr != nil || version.Major != line.Major || version.Minor != line.Minor || !validStateV3Text(value.RequestKey, 256) || !lowerHexDigest(value.RequestSHA256) || !validStateV3OID(value.ExpectedHeadOID) || !validStateV3OID(value.ObservedRefOID) || value.ArmCommitOID != value.ExpectedHeadOID || !validStateV3CoordinationAttemptResponse(value.Response, value.ObservedRefOID) {
+		return false
+	}
+	expectedLane := StateV3PatchStateRef
+	if version.Patch == 0 {
+		expectedLane = StateV3MinorStateRef
+	}
+	if value.LaneRef != expectedLane {
+		return false
+	}
+	claimPath, pathOK := stateV3CoordinationClaimPath(value.ReleaseLine)
+	if !pathOK || value.ClaimPath != claimPath {
+		return false
+	}
+	if value.Response.Observation == "observed" && value.ObservedRefOID == value.ExpectedHeadOID {
+		return false
+	}
+	switch value.Operation {
+	case "claim_acquire":
+		if value.ExpectedClaimBlobOID != "" || !lowerHexDigest(value.IntendedClaimSHA256) {
+			return false
+		}
+		if value.Response.Observation == "lost" {
+			return value.ClaimBlobOID == "" && value.ClaimSHA256 == "" && value.ClaimCommitOID == "" && value.ClaimTreeOID == ""
+		}
+		return validStateV3OID(value.ClaimBlobOID) && value.ClaimSHA256 == value.IntendedClaimSHA256 && validStateV3OID(value.ClaimCommitOID) && value.ClaimCommitOID == value.ObservedRefOID && validStateV3OID(value.ClaimTreeOID)
+	case "claim_release":
+		return validStateV3OID(value.ExpectedClaimBlobOID) && value.ClaimBlobOID == value.ExpectedClaimBlobOID && lowerHexDigest(value.ClaimSHA256) && value.IntendedClaimSHA256 == "" && validStateV3OID(value.ClaimCommitOID) && value.ClaimCommitOID == value.ExpectedHeadOID && validStateV3OID(value.ClaimTreeOID) && value.ClaimTreeOID == value.ArmTreeOID
+	default:
+		return false
+	}
+}
+
 // ValidateStateV3ReleaseLineClaimDocument validates canonical claim bytes.
 func ValidateStateV3ReleaseLineClaimDocument(raw []byte) bool {
 	var value StateV3ReleaseLineClaim

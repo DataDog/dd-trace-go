@@ -18,9 +18,14 @@ const (
 	MaxStateV3ActiveLeaseBytes       = 16 * 1024
 	MaxStateV3CoordinationArmBytes   = 16 * 1024
 	MaxStateV3CoordinationClaimBytes = 16 * 1024
-	MaxStateV3PreparedManifestBytes  = 64 * 1024
-	MaxStateV3ReservationBytes       = 64 * 1024
-	MaxStateV3PreparedBundleBytes    = 1_048_576
+	// MaxStateV3CoordinationOutcomeBytes bounds the immutable, tree-bound
+	// transcript written only after a future independently reread coordination
+	// mutation outcome. It matches the other compact coordination documents so
+	// one arm or outcome plus two claims remains within the three-leaf bound.
+	MaxStateV3CoordinationOutcomeBytes = 16 * 1024
+	MaxStateV3PreparedManifestBytes    = 64 * 1024
+	MaxStateV3ReservationBytes         = 64 * 1024
+	MaxStateV3PreparedBundleBytes      = 1_048_576
 	// MaxStateV3StateLaneHistoryCommits bounds a state-lane spine so a
 	// session can read its fixed ref, strict commit facts, and every
 	// five-document active snapshot without exceeding its 4096-read limit.
@@ -48,13 +53,17 @@ const (
 	MaxStateV3CoordinationDocumentBindings   = (MaxStateV3CoordinationReleaseProofs + 1) * (MaxStateV3CoordinationHistoryCommits - 1)
 	MaxStateV3DocumentBlobVersions           = 2*(stateV3ByteMaxStateRecordVersionsPerLane+4*MaxStateV3LaneOperationWindows) + MaxStateV3CoordinationDocumentBindings
 	MaxStateV3DocumentProvenanceBindings     = 2*(3*2+5*(MaxStateV3StateLaneHistoryCommits-3*2)) + MaxStateV3CoordinationDocumentBindings
-	MaxStateV3DocumentStoreRawBytes          = 2*(stateV3ByteMaxStateRecordVersionsPerLane*MaxStateV3StateRecordBytes+MaxStateV3LaneOperationWindows*(MaxStateV3ActiveLeaseBytes+MaxStateV3ReservationBytes+MaxStateV3PreparedManifestBytes+MaxStateV3PreparedBundleBytes)) + MaxStateV3CoordinationDocumentBindings*MaxStateV3CoordinationArmBytes
-	stateV3TerminalCleanupPathCount          = 5
+	// Every non-checkpoint coordination snapshot has at most two claims plus
+	// one mutually exclusive arm or outcome transcript. All three compact
+	// coordination documents share the 16 KiB bound, preserving this formula.
+	MaxStateV3DocumentStoreRawBytes = 2*(stateV3ByteMaxStateRecordVersionsPerLane*MaxStateV3StateRecordBytes+MaxStateV3LaneOperationWindows*(MaxStateV3ActiveLeaseBytes+MaxStateV3ReservationBytes+MaxStateV3PreparedManifestBytes+MaxStateV3PreparedBundleBytes)) + MaxStateV3CoordinationDocumentBindings*MaxStateV3CoordinationOutcomeBytes
+	stateV3TerminalCleanupPathCount = 5
 
 	// The three-session topology is intentionally conservative: it assumes no
 	// blob memoization. A state snapshot can require lease, record, and three
 	// prepared-envelope blob reads; terminal cleanup deletes that same exact
-	// five-file set. Coordination can require one arm and two claims.
+	// five-file set. Coordination can require two claims plus one mutually
+	// exclusive arm or outcome transcript.
 	stateV3SpineRootReads                   = 1
 	stateV3SpineCommitFactReadsPerSnapshot  = 4
 	stateV3StateDocumentReadsPerSnapshot    = stateV3TerminalCleanupPathCount
@@ -77,15 +86,19 @@ const (
 	StateV3PatchStateRef          = "refs/heads/gardener-release-state/patch"
 	// StateV3CoordinationRef serializes only same-release-line claims. It is
 	// not a global release lock: claims for distinct X.Y lines coexist.
-	StateV3CoordinationRef                = "refs/heads/gardener-release-coordination"
-	StateV3WorkflowPath                   = ".github/workflows/gardener-release.yml"
-	stateV3ReservationFile                = "reservation.json"
-	stateV3PreparedFile                   = "prepared.json"
-	stateV3GenerationBundleFile           = "generation.bundle"
-	StateV3ActiveLeasePath                = "active-operation.json"
-	stateV3CoordinationArmPath            = "mutation-arm.json"
-	StateV3RequiredSignatureState         = "VALID"
-	StateV3RequiredRESTVerificationReason = "valid"
+	StateV3CoordinationRef      = "refs/heads/gardener-release-coordination"
+	StateV3WorkflowPath         = ".github/workflows/gardener-release.yml"
+	stateV3ReservationFile      = "reservation.json"
+	stateV3PreparedFile         = "prepared.json"
+	stateV3GenerationBundleFile = "generation.bundle"
+	StateV3ActiveLeasePath      = "active-operation.json"
+	stateV3CoordinationArmPath  = "mutation-arm.json"
+	// StateV3CoordinationMutationOutcomePath is the sole transcript leaf in a
+	// coordination tree. An arm and an outcome are mutually exclusive: the
+	// future lifecycle is arm → effect → outcome → next arm.
+	StateV3CoordinationMutationOutcomePath = "mutation-outcome.json"
+	StateV3RequiredSignatureState          = "VALID"
+	StateV3RequiredRESTVerificationReason  = "valid"
 )
 
 // StateV3Phase is the approved platform-signing phase progression.
@@ -477,6 +490,39 @@ type StateV3CoordinationMutationArm struct {
 	// canonical immutable claim document before its one-shot CAS.
 	IntendedClaimSHA256 string `json:"intended_claim_sha256,omitempty"`
 	Attempt             int    `json:"attempt"`
+}
+
+// StateV3CoordinationMutationOutcome is an immutable, canonical transcript
+// of one future independently reread coordination CAS result. This preparatory
+// schema is not mutation authority and cannot itself establish that its claimed
+// post-state was reread; a later assembly must correlate it with authenticated
+// arm and post-mutation GitHub evidence before invoking final validators.
+type StateV3CoordinationMutationOutcome struct {
+	SchemaVersion   string `json:"schema_version"`
+	Operation       string `json:"operation"`
+	StateRef        string `json:"state_ref"`
+	ArmPath         string `json:"arm_path"`
+	ArmBlobOID      string `json:"arm_blob_oid"`
+	ArmSHA256       string `json:"arm_sha256"`
+	ArmCommitOID    string `json:"arm_commit_oid"`
+	ArmTreeOID      string `json:"arm_tree_oid"`
+	ClaimPath       string `json:"claim_path"`
+	RequestKey      string `json:"request_key"`
+	RequestSHA256   string `json:"request_sha256"`
+	ReleaseLine     string `json:"release_line"`
+	LaneRef         string `json:"lane_ref"`
+	ResolvedVersion string `json:"resolved_version"`
+	ExpectedHeadOID string `json:"expected_head_oid"`
+	// Effect-claim provenance is present only for observed acquisitions and
+	// releases. A lost acquisition records no created claim.
+	ClaimBlobOID         string                  `json:"claim_blob_oid,omitempty"`
+	ClaimSHA256          string                  `json:"claim_sha256,omitempty"`
+	ClaimCommitOID       string                  `json:"claim_commit_oid,omitempty"`
+	ClaimTreeOID         string                  `json:"claim_tree_oid,omitempty"`
+	ExpectedClaimBlobOID string                  `json:"expected_claim_blob_oid,omitempty"`
+	IntendedClaimSHA256  string                  `json:"intended_claim_sha256,omitempty"`
+	Response             StateV3MutationResponse `json:"response"`
+	ObservedRefOID       string                  `json:"observed_ref_oid"`
 }
 
 type StateV3CoordinationArmEvidence struct {

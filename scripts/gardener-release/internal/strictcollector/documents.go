@@ -25,6 +25,7 @@ const (
 	stateV3DocumentBundle
 	stateV3DocumentCoordinationArm
 	stateV3DocumentCoordinationClaim
+	stateV3DocumentCoordinationOutcome
 )
 
 type stateV3ApprovedDocumentEntry struct {
@@ -174,6 +175,11 @@ func stateV3DiscoverDocumentEntries(role stateV3AssemblyRole, treeEntries []wire
 		seenKinds[kind] = true
 		entries = append(entries, stateV3ApprovedDocumentEntry{index: index, kind: kind, path: strings.Clone(value.Path), oid: strings.Clone(value.SHA), role: role})
 	}
+	if role == stateV3AssemblyCoordination {
+		if seenKinds[stateV3DocumentCoordinationArm] && seenKinds[stateV3DocumentCoordinationOutcome] || len(entries) > gardenerrelease.MaxStateV3CoordinationReleaseProofs+1 {
+			return nil, false
+		}
+	}
 	if role == stateV3AssemblyMinor || role == stateV3AssemblyPatch {
 		lease, record := seenKinds[stateV3DocumentLease], seenKinds[stateV3DocumentRecord]
 		envelope := seenKinds[stateV3DocumentReservation] || seenKinds[stateV3DocumentPrepared] || seenKinds[stateV3DocumentBundle]
@@ -198,6 +204,9 @@ func stateV3DocumentEntryKind(role stateV3AssemblyRole, path string) (stateV3Doc
 		}
 		if gardenerrelease.ValidateStateV3CoordinationClaimPath(path) {
 			return stateV3DocumentCoordinationClaim, "", true
+		}
+		if path == gardenerrelease.StateV3CoordinationMutationOutcomePath {
+			return stateV3DocumentCoordinationOutcome, "", true
 		}
 		return 0, "", false
 	}
@@ -232,7 +241,7 @@ func (s *session) assemblyDocumentRoleAllowed(kind stateV3DocumentKind) bool {
 		return false
 	}
 	if s.assemblyRole == stateV3AssemblyCoordination {
-		return kind == stateV3DocumentCoordinationArm || kind == stateV3DocumentCoordinationClaim
+		return kind == stateV3DocumentCoordinationArm || kind == stateV3DocumentCoordinationClaim || kind == stateV3DocumentCoordinationOutcome
 	}
 	return kind >= stateV3DocumentLease && kind <= stateV3DocumentBundle
 }
@@ -242,7 +251,7 @@ func stateV3DocumentPathAllowed(role stateV3AssemblyRole, kind stateV3DocumentKi
 	return ok && actual == kind
 }
 func stateV3DocumentValid(kind stateV3DocumentKind, path string, raw []byte) bool {
-	limit := map[stateV3DocumentKind]int{stateV3DocumentLease: gardenerrelease.MaxStateV3ActiveLeaseBytes, stateV3DocumentRecord: gardenerrelease.MaxStateV3StateRecordBytes, stateV3DocumentReservation: gardenerrelease.MaxStateV3ReservationBytes, stateV3DocumentPrepared: gardenerrelease.MaxStateV3PreparedManifestBytes, stateV3DocumentBundle: gardenerrelease.MaxStateV3PreparedBundleBytes, stateV3DocumentCoordinationArm: gardenerrelease.MaxStateV3CoordinationArmBytes, stateV3DocumentCoordinationClaim: gardenerrelease.MaxStateV3CoordinationClaimBytes}[kind]
+	limit := map[stateV3DocumentKind]int{stateV3DocumentLease: gardenerrelease.MaxStateV3ActiveLeaseBytes, stateV3DocumentRecord: gardenerrelease.MaxStateV3StateRecordBytes, stateV3DocumentReservation: gardenerrelease.MaxStateV3ReservationBytes, stateV3DocumentPrepared: gardenerrelease.MaxStateV3PreparedManifestBytes, stateV3DocumentBundle: gardenerrelease.MaxStateV3PreparedBundleBytes, stateV3DocumentCoordinationArm: gardenerrelease.MaxStateV3CoordinationArmBytes, stateV3DocumentCoordinationClaim: gardenerrelease.MaxStateV3CoordinationClaimBytes, stateV3DocumentCoordinationOutcome: gardenerrelease.MaxStateV3CoordinationOutcomeBytes}[kind]
 	if len(raw) == 0 || len(raw) > limit {
 		return false
 	}
@@ -259,6 +268,8 @@ func stateV3DocumentValid(kind stateV3DocumentKind, path string, raw []byte) boo
 		return gardenerrelease.ValidateStateV3CoordinationArmDocument(raw)
 	case stateV3DocumentCoordinationClaim:
 		return gardenerrelease.ValidateStateV3ReleaseLineClaimDocumentPath(raw, path)
+	case stateV3DocumentCoordinationOutcome:
+		return gardenerrelease.ValidateStateV3CoordinationMutationOutcomeDocumentPath(raw, path)
 	case stateV3DocumentBundle:
 		return true
 	}
