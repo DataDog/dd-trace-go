@@ -1766,7 +1766,7 @@ func BenchmarkSetTagString(b *testing.B) {
 func BenchmarkSetTagStringPtr(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
-	v := makePointer("some text")
+	v := new("some text")
 
 	b.ResetTimer()
 	for i := range b.N {

@@ -240,6 +240,16 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 	require.Equal(t, traceProtocolV1, tr.config.effectiveTraceProtocol(), "sanity check: agent must resolve to v1")
 
 	w := newAgentTraceWriter(tr.config, newPrioritySampler(), tr.statsd)
+	// Seed a real trace into the payload before the race starts, so it is
+	// never empty when the downgrade lands. rotateStalePayload swaps an empty
+	// stale payload for free, without sending it -- if the downgrade instead
+	// won the race against every storm add() below while the payload was
+	// still the empty one newAgentTraceWriter created, that free rotation
+	// would consume the one legitimate v1->v0.4 transition with no
+	// /v1.0/traces request at all, leaving a lone resurrected v1 request
+	// looking like the expected one instead of the regression it is.
+	w.add([]*Span{makeSpan(1)})
+	require.Equal(t, traceProtocolV1, w.payload.protocol(), "sanity check: the seed trace must land in a v1 payload")
 
 	const goroutines = 32
 	const itersPerGoroutine = 200
@@ -272,21 +282,37 @@ func TestConcurrentAddNeverResurrectsDowngradedPayload(t *testing.T) {
 
 	require.Equal(t, traceProtocolV04, tr.config.effectiveTraceProtocol(), "sanity check: the downgrade must have applied")
 
-	// The writer must have settled into agreement with the now-terminal
-	// protocol state -- a reintroduced stale-read race would leave it pinned
-	// to a resurrected v1 payload here.
-	w.mu.Lock()
-	settledProtocol := w.payload.protocol()
-	w.mu.Unlock()
-	assert.Equal(t, traceProtocolV04, settledProtocol, "the writer's current payload must not have been resurrected to v1 after the downgrade settled")
-
-	// Flush and drain whatever the race above produced -- a mix of v1 and
-	// v0.4 requests is expected and fine, since the downgrade landed partway
-	// through the storm. What matters is that the state stays put afterward:
-	// reset the agent's recording and confirm a few more adds, now that the
-	// protocol has fully settled, all land on v0.4.
+	// Drain every async send the storm's add() calls spawned (the seal that
+	// fires when a call detects a protocol mismatch sends the sealed payload
+	// in the background -- see add()'s sealed branch), then flush whatever
+	// add() left behind in h.payload. Deliberately not an extra add(): a
+	// manufactured add() here would read the now-settled protocol itself and
+	// silently repair a resurrected payload before anything inspects it,
+	// laundering the exact regression this test exists to catch. flush()
+	// makes no such repair -- it sends h.payload under its own recorded
+	// protocol, whatever that is -- so a still-resurrected v1 payload shows
+	// up here as a genuine /v1.0/traces request instead of being fixed away.
+	w.wg.Wait()
 	w.flush()
 	w.wg.Wait()
+
+	// Exactly one /v1.0/traces request is expected: because the seed above
+	// guarantees the payload is never empty, whichever add()/flush() call
+	// first observes the (monotone, one-way) downgrade must seal and send a
+	// real v1 payload -- there is no free, unsent rotation path available to
+	// consume that transition silently. A reintroduced stale-read race
+	// resurrects a second v1 payload after the downgrade settled; whether
+	// that resurrection happens mid-storm (caught by the very next add()
+	// detecting the mismatch again) or lingers unflushed until the flush()
+	// above, it always ends up as an extra /v1.0/traces request here.
+	v1Requests := 0
+	for _, path := range agent.Requests() {
+		if path == tracesAPIPathV1 {
+			v1Requests++
+		}
+	}
+	assert.Equal(t, 1, v1Requests, "exactly one /v1.0/traces request -- the seeded pre-downgrade payload's seal -- may occur across the storm and its flush; more indicates a payload resurrected after the downgrade settled, fewer means the seeded seal itself went missing")
+
 	agent.Reset()
 
 	for range 10 {

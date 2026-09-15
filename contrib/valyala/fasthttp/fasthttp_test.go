@@ -7,6 +7,7 @@ package fasthttp
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const errMsg = "This is an error!"
@@ -135,6 +137,116 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
+// Test that the http.url span tag redacts sensitive query string parameters instead of
+// leaking them verbatim (APMSP-3529).
+func TestHTTPURLQueryString(t *testing.T) {
+	t.Run("obfuscation", func(t *testing.T) {
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret&safe=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "safe=1")
+		assert.Contains(url, "<redacted>")
+		assert.NotContains(url, "supersecret")
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED", "true")
+		instrhttptrace.ResetCfg()
+
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(addr+"/any", spans[0].Tag(ext.HTTPURL))
+	})
+
+	t.Run("custom regexp", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `myparam=\w+`)
+		instrhttptrace.ResetCfg()
+
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?myparam=shouldberedacted&other=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "other=1")
+		assert.Contains(url, "<redacted>")
+		assert.NotContains(url, "shouldberedacted")
+	})
+
+	t.Run("allowlist", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
+		instrhttptrace.ResetCfg()
+
+		addr := startServer(t)
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?safe=1&password=hunter2")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		url, _ := spans[0].Tag(ext.HTTPURL).(string)
+		assert.Contains(url, "safe=1")
+		assert.NotContains(url, "hunter2")
+		assert.NotContains(url, "password")
+	})
+}
+
+// Test that the http.url span tag preserves the raw, as-received wire-form path
+// (no dot-segment collapsing, no %2F decoding) rather than a normalized one. A
+// regular net/http.Client would normalize a path like "/a/b/../c" before it ever
+// reaches the wire, so this dials the server directly and writes the request
+// line by hand to control the exact bytes sent.
+func TestHTTPURLPreservesRawPath(t *testing.T) {
+	addr := startServer(t)
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rawAddr := strings.TrimPrefix(addr, "http://")
+	conn, err := net.Dial("tcp", rawAddr)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = conn.Write([]byte("GET /a/b/../c HTTP/1.1\r\nHost: " + rawAddr + "\r\nConnection: close\r\n\r\n"))
+	require.NoError(t, err)
+	_, _ = io.ReadAll(conn) // drain the response so the span finishes before we inspect it
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(addr+"/a/b/../c", spans[0].Tag(ext.HTTPURL))
+}
+
 // Test that HTTP Status codes >= 500 are treated as error spans
 func TestStatusError(t *testing.T) {
 	addr := startServer(t)
@@ -152,8 +264,9 @@ func TestStatusError(t *testing.T) {
 	require.Len(t, spans, 1)
 	span := spans[0]
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
+	wantErr := fmt.Sprintf("%d: %s", 500, fasthttp.StatusMessage(500))
 	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
+	assert.NotContains(span.Tag(ext.ErrorMsg), errMsg, "response body must not be leaked into the error tag")
 }
 
 // Test that users can customize which HTTP status codes are considered an error
@@ -177,7 +290,7 @@ func TestWithStatusCheck(t *testing.T) {
 		span := spans[0]
 		assert.Equal("600", span.Tag(ext.HTTPCode))
 		require.Contains(t, span.Tags(), ext.ErrorMsg)
-		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
+		wantErr := fmt.Sprintf("%d: %s", 600, fasthttp.StatusMessage(600))
 		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 	t.Run("notError", func(t *testing.T) {

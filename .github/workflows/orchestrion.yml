@@ -11,6 +11,8 @@ on:
         type: boolean
         default: false
         required: false
+  workflow_dispatch: # On-demand runs; the `push` trigger below only covers release-v* branches,
+                     # so `main` is otherwise only exercised by the nightly schedule.
   pull_request:
   push:
     branches:
@@ -24,6 +26,9 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   id-token: write
   contents: read
@@ -34,10 +39,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      orchestrion: ${{ steps.detect.outputs.orchestrion }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   generate:
     name: Verify generated files are up-to-date
+    needs:
+      - changes
     # Don't run in workflow_call or workflow_dispatch
-    if: github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
+    if: >-
+      (github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == '')
+      && (github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -47,7 +74,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          go-version: "1.27"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generator
@@ -59,6 +86,9 @@ jobs:
 
   go-versions-matrix:
     name: Go Versions Matrix
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     runs-on: ubuntu-latest
     outputs:
       json: ${{ steps.matrix.outputs.json }}
@@ -72,7 +102,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.4"
+          go-version: "1.27"
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Compute Matrix
@@ -83,6 +113,9 @@ jobs:
 
   service-containers:
     name: Service containers
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     runs-on: ubuntu-latest
     outputs:
       services_json: ${{ steps.set-services.outputs.services_json }}
@@ -108,8 +141,10 @@ jobs:
       # ESPECIALLY on Windows.
       GOWORK: 'off'
     needs:
+      - changes
       - go-versions-matrix
       - service-containers
+    if: github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -336,14 +371,35 @@ jobs:
   integration-test-done:
     name: Orchestrion Integration Tests
     needs:
+      - changes
       - generate
+      - go-versions-matrix
+      - service-containers
       - integration-test
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
-      - name: Success
-        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
-        run: echo "Success!"
+      # 'skipped' is only a pass when the classifier actually turned the suite
+      # off. GitHub applies an implicit success() to every `needs:`, so a failing
+      # go-versions-matrix or service-containers would skip integration-test, and
+      # accepting that skip would carry this gate green. Both are dependencies
+      # here, and when the gate is on integration-test must have really succeeded.
+      #
+      # generate gets no strict clause: it carries its own
+      # `inputs.orchestrion-version == ''` condition, so a legitimate skip on a
+      # cross-repo workflow_call must stay a pass.
       - name: Failure
-        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.generate.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.go-versions-matrix.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.service-containers.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.integration-test.result)
+          || (needs.changes.outputs.orchestrion == 'true'
+              && needs.integration-test.result != 'success')
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.integration-test.result == 'skipped'
+        run: echo "No changed path requires orchestrion tests (see .github/ci-components.yml)."
+      - name: Success
+        run: echo "Success!"

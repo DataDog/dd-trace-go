@@ -34,7 +34,28 @@ permissions:
   packages: write
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      system-tests: ${{ steps.detect.outputs.system-tests }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   warm-repo-cache:
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.system-tests == 'true'
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
@@ -55,9 +76,13 @@ jobs:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
   build-weblog-images:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     runs-on: ubuntu-latest
     needs:
+      - changes
       - warm-repo-cache
     strategy:
       fail-fast: false
@@ -105,6 +130,11 @@ jobs:
           path: 'binaries/dd-trace-go'
 
       - name: Build and save weblog image
+        env:
+          # build.sh retries on failure but defaults to a single attempt, so any
+          # transient module-proxy hiccup during the in-image go mod download fails
+          # the whole aggregated System Tests check.
+          SYSTEM_TEST_BUILD_ATTEMPTS: "3"
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
@@ -115,15 +145,20 @@ jobs:
           retention-days: 1
 
   system-tests:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
     needs:
+      - changes
       - warm-repo-cache
       - build-weblog-images
       - build-service-extensions-callout
       - build-haproxy
+      - build-apim-callout
     strategy:
       matrix:
         weblog-variant:
@@ -242,6 +277,14 @@ jobs:
             scenario: APPSEC_BLOCKING
             image_artifact: haproxy-spoa-image-linux-amd64
             image_name: haproxy-spoa
+          - weblog-variant: apim
+            scenario: DEFAULT
+            image_artifact: apim-callout-image-linux-amd64
+            image_name: apim-callout
+          - weblog-variant: apim
+            scenario: APPSEC_BLOCKING
+            image_artifact: apim-callout-image-linux-amd64
+            image_name: apim-callout
       fail-fast: false
     env:
       SYSTEM_TESTS_WEBLOG: ${{ matrix.weblog-variant }}
@@ -304,7 +347,7 @@ jobs:
         run: npm install -g @datadog/datadog-ci
 
       - name: Download pre-built weblog image
-        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }}
+        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' && matrix.weblog-variant != 'apim' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
@@ -314,21 +357,23 @@ jobs:
         run: ls -la binaries
 
       - name: Build weblog
-        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }}
+        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' && matrix.weblog-variant != 'apim' }}
+        env:
+          SYSTEM_TEST_BUILD_ATTEMPTS: "3"
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }}
 
       - name: Download ${{ matrix.weblog-variant }} artifacts
-        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy') }}
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ matrix.image_artifact }}
 
       - name: Load ${{ matrix.weblog-variant }} image
-        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy') }}
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
         run: docker load -i ${{ matrix.image_artifact }}.tar
       
       - name: Set ${{ matrix.image_name }} image name
-        if: ${{ matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' }}
+        if: ${{ matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim' }}
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Build runner
@@ -341,7 +386,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@e58113510acc7d478e3477077dc5c9d936a36417
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@de004786a0b8b504b5fd3d2edd1a5ae5053e615c
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -362,7 +407,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-service-extensions-callout:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/service-extensions-callout
@@ -377,7 +427,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-haproxy:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
@@ -392,7 +447,12 @@ jobs:
   # Pushing an image tagged with "dev" only on commit to main,
   # otherwise build and use the image from the artifact.
   build-apim-callout:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs:
+      - changes
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.system-tests == 'true'))
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/apim-callout
@@ -420,21 +480,41 @@ jobs:
   system-tests-done:
     name: System Tests
     needs:
+      - changes
+      - warm-repo-cache
       - build-weblog-images
+      - build-service-extensions-callout
+      - build-haproxy
+      - build-apim-callout
       - system-tests
       - tracer-release
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
-      - name: Success
-        if: |
-          needs.build-weblog-images.result == 'success'
-          && needs.system-tests.result == 'success'
-          && (needs.tracer-release.result == 'success' || needs.tracer-release.result == 'skipped')
-        run: echo "Success!"
+      # 'skipped' is only a pass when the classifier actually turned the suite
+      # off. GitHub applies an implicit success() to every `needs:`, so a job
+      # whose prerequisite failed also reports 'skipped': a failing
+      # build-haproxy would skip system-tests, and accepting that skip would
+      # carry this gate green. Every image build is therefore a dependency here,
+      # and when the gate is on the system-tests job must have really succeeded.
+      #
+      # tracer-release needs no strict clause -- it is schedule-only, so its
+      # skip is legitimate and the allowlist below is enough.
       - name: Failure
-        if: |
-          needs.build-weblog-images.result != 'success'
-          || needs.system-tests.result != 'success'
-          || (needs.tracer-release.result != 'success' && needs.tracer-release.result != 'skipped')
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.warm-repo-cache.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-weblog-images.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-service-extensions-callout.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-haproxy.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-apim-callout.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.system-tests.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.tracer-release.result)
+          || (needs.changes.outputs.system-tests == 'true'
+              && needs.system-tests.result != 'success')
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.system-tests.result == 'skipped'
+        run: echo "No changed path requires system tests (see .github/ci-components.yml)."
+      - name: Success
+        run: echo "Success!"

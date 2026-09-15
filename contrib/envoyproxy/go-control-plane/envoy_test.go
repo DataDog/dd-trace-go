@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -1199,6 +1200,106 @@ func TestResponseBodyTruncationIsAcknowledgedUntilEndOfStream(t *testing.T) {
 	response, err := stream.Recv()
 	require.Nil(t, response)
 	require.ErrorIs(t, err, io.EOF)
+	require.Len(t, mt.FinishedSpans(), 1)
+}
+
+// Self-managed Envoy accepts a clean stream close as "processing is done, carry on", so
+// there is no reason to keep acknowledging the tail of an oversized body: doing so would
+// hold every remaining chunk for one callout round trip.
+func TestResponseBodyTruncationClosesStreamEarlyOnSelfManagedEnvoy(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A regression here leaves the stream open waiting for an end-of-stream chunk that this
+	// test never sends, so bound the stream to fail instead of hanging.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := rig.client.Process(ctx)
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When: a single chunk overflows the parsing limit, so analysis completes before EOS
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("too large")},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then: that message is still acknowledged, but the stream ends right after it
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ResponseBody{}, response.GetResponse())
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF, "the stream must close right after the truncation acknowledgement")
+	require.Len(t, mt.FinishedSpans(), 1)
+}
+
+// The published callout container reports GCPServiceExtensionIntegration for every TCP
+// deployment, so a self-managed Envoy is only distinguishable from the per-request
+// integration header. Resolving the acknowledgement policy from the static config value
+// would keep draining here.
+func TestResponseBodyTruncationClosesStreamEarlyWhenEnvoyIsIdentifiedByHeader(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	testutils.StartAppSec(t)
+
+	// Given a processor configured exactly as the container configures it over TCP
+	bodySize := 2
+	rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, &bodySize)
+	require.NoError(t, err)
+	defer rig.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// ...but where the request identifies the gateway as self-managed Envoy
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(datadogEnvoyIntegrationHeader, "1"))
+
+	stream, err := rig.client.Process(ctx)
+	require.NoError(t, err)
+	sendProcessingRequestHeaders(t, stream, nil, "GET", "/", false)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+	sendProcessingResponseHeaders(t, stream, map[string]string{"Content-Type": "application/json"}, "200", true)
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// When a single chunk overflows the parsing limit
+	err = stream.Send(&envoyextproc.ProcessingRequest{
+		Request: &envoyextproc.ProcessingRequest_ResponseBody{
+			ResponseBody: &envoyextproc.HttpBody{Body: []byte("too large")},
+		},
+	})
+	require.NoError(t, err)
+
+	// Then the stream closes early despite the GCP-defaulted Integration
+	response, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, response.GetResponseBody().GetResponse().GetStatus())
+
+	response, err = stream.Recv()
+	require.Nil(t, response)
+	require.ErrorIs(t, err, io.EOF, "the header-identified Envoy must get the early close")
 	require.Len(t, mt.FinishedSpans(), 1)
 }
 

@@ -152,8 +152,10 @@ func New(cfg *config.Config) *Transport {
 }
 
 // AnyPtr returns a pointer to the given value. This is used to create payloads that require pointers instead of values.
+//
+//go:fix inline
 func AnyPtr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 type ErrorMessage struct {
@@ -176,8 +178,8 @@ func NewErrorMessage(err error) *ErrorMessage {
 
 func errType(err error) string {
 	var originalErr error
-	var wErr *errortrace.TracerError
-	if !errors.As(err, &wErr) {
+	wErr, ok := errors.AsType[*errortrace.TracerError](err)
+	if !ok {
 		originalErr = err
 	} else {
 		originalErr = wErr.Unwrap()

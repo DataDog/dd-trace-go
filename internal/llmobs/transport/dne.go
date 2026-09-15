@@ -311,7 +311,7 @@ func (c *Transport) BatchUpdateDataset(
 				InsertRecords: insert,
 				UpdateRecords: update,
 				DeleteRecords: delete,
-				Deduplicate:   AnyPtr(false),
+				Deduplicate:   new(false),
 			},
 		},
 	}
