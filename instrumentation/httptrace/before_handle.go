@@ -116,8 +116,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	return rw, rt, afterHandle, handled
 }
 
-// HTTPEndpointTag returns a start option that applies http.endpoint resource-renaming configuration.
-// A non-empty route is also set as http.route and is preferred as the endpoint unless simplified endpoints are enabled.
+// HTTPEndpointTag returns a start option that sets http.route (when non-empty) and http.endpoint,
+// using HTTPEndpoint to select the endpoint value.
 func HTTPEndpointTag(route string, r *http.Request) tracer.StartSpanOption {
 	opt, _ := handleHTTPEndpoint(route, r)
 	return opt
