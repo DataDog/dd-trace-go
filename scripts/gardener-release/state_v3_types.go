@@ -493,10 +493,12 @@ type StateV3CoordinationMutationArm struct {
 }
 
 // StateV3CoordinationMutationOutcome is an immutable, canonical transcript
-// of one future independently reread coordination CAS result. This preparatory
-// schema is not mutation authority and cannot itself establish that its claimed
-// post-state was reread; a later assembly must correlate it with authenticated
-// arm and post-mutation GitHub evidence before invoking final validators.
+// of one observed future independently reread coordination CAS effect. A lost
+// CAS is a sanitized non-durable retry-stop diagnostic and must not be encoded
+// in the coordination tree. This preparatory schema is not mutation authority
+// and cannot itself establish that its claimed post-state was reread; a later
+// assembly must correlate it with authenticated arm and post-mutation GitHub
+// evidence before invoking final validators.
 type StateV3CoordinationMutationOutcome struct {
 	SchemaVersion   string `json:"schema_version"`
 	Operation       string `json:"operation"`
@@ -513,8 +515,7 @@ type StateV3CoordinationMutationOutcome struct {
 	LaneRef         string `json:"lane_ref"`
 	ResolvedVersion string `json:"resolved_version"`
 	ExpectedHeadOID string `json:"expected_head_oid"`
-	// Effect-claim provenance is present only for observed acquisitions and
-	// releases. A lost acquisition records no created claim.
+	// Effect-claim provenance is present for observed acquisitions and releases.
 	ClaimBlobOID         string                  `json:"claim_blob_oid,omitempty"`
 	ClaimSHA256          string                  `json:"claim_sha256,omitempty"`
 	ClaimCommitOID       string                  `json:"claim_commit_oid,omitempty"`

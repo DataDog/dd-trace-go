@@ -94,16 +94,13 @@ func validStateV3CoordinationMutationOutcome(value StateV3CoordinationMutationOu
 	if !pathOK || value.ClaimPath != claimPath {
 		return false
 	}
-	if value.Response.Observation == "observed" && value.ObservedRefOID == value.ExpectedHeadOID {
+	if value.Response.Observation != "observed" || value.ObservedRefOID == value.ExpectedHeadOID {
 		return false
 	}
 	switch value.Operation {
 	case "claim_acquire":
 		if value.ExpectedClaimBlobOID != "" || !lowerHexDigest(value.IntendedClaimSHA256) {
 			return false
-		}
-		if value.Response.Observation == "lost" {
-			return value.ClaimBlobOID == "" && value.ClaimSHA256 == "" && value.ClaimCommitOID == "" && value.ClaimTreeOID == ""
 		}
 		return validStateV3OID(value.ClaimBlobOID) && value.ClaimSHA256 == value.IntendedClaimSHA256 && validStateV3OID(value.ClaimCommitOID) && value.ClaimCommitOID == value.ObservedRefOID && validStateV3OID(value.ClaimTreeOID)
 	case "claim_release":

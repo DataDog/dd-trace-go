@@ -30,33 +30,25 @@ func TestStateV3CoordinationMutationOutcomeDocument(t *testing.T) {
 	}
 }
 
-func TestStateV3CoordinationMutationOutcomeDocumentAcceptsLostOutcomeWithoutResponseOID(t *testing.T) {
-	value := fixtureStateV3CoordinationMutationOutcome(t, "claim_release")
-	value.ObservedRefOID = value.ExpectedHeadOID
-	value.Response = StateV3MutationResponse{Observation: "lost", Attempts: 1}
-	raw, err := canonicalJSON(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ValidateStateV3CoordinationMutationOutcomeDocument(raw) {
-		t.Fatalf("lost outcome rejected: %s", raw)
-	}
-}
-
-func TestStateV3CoordinationMutationOutcomeDocumentAcceptsLostAcquireWithoutEffectClaim(t *testing.T) {
-	value := fixtureStateV3CoordinationMutationOutcome(t, "claim_acquire")
-	value.ObservedRefOID = value.ExpectedHeadOID
-	value.Response = StateV3MutationResponse{Observation: "lost", Attempts: 1}
-	value.ClaimBlobOID = ""
-	value.ClaimSHA256 = ""
-	value.ClaimCommitOID = ""
-	value.ClaimTreeOID = ""
-	raw, err := canonicalJSON(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ValidateStateV3CoordinationMutationOutcomeDocument(raw) {
-		t.Fatalf("lost acquisition rejected: %s", raw)
+func TestStateV3CoordinationMutationOutcomeDocumentRejectsLostOutcomes(t *testing.T) {
+	for _, operation := range []string{"claim_acquire", "claim_release"} {
+		t.Run(operation, func(t *testing.T) {
+			value := fixtureStateV3CoordinationMutationOutcome(t, operation)
+			value.Response = StateV3MutationResponse{Observation: "lost", Attempts: 1}
+			if operation == "claim_acquire" {
+				value.ClaimBlobOID = ""
+				value.ClaimSHA256 = ""
+				value.ClaimCommitOID = ""
+				value.ClaimTreeOID = ""
+			}
+			raw, err := canonicalJSON(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ValidateStateV3CoordinationMutationOutcomeDocument(raw) {
+				t.Fatalf("durable lost outcome accepted: %s", raw)
+			}
+		})
 	}
 }
 
