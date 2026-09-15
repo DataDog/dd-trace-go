@@ -32,8 +32,8 @@ type config struct {
 	isStatusError func(statusCode int) bool
 	useGinErrors  bool
 	headerTags    instrumentation.HeaderTags
-	// otelEnabled is captured when Middleware is constructed. If OTel semantic
-	// mode becomes dynamically configurable, Middleware must be reconstructed.
+	// otelEnabled is captured when Middleware is called. Dynamic configuration
+	// would require updating or recreating existing middleware.
 	otelEnabled bool
 }
 

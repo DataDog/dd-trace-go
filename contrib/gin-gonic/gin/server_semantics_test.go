@@ -225,21 +225,28 @@ func TestOTelSemanticsGinErrors(t *testing.T) {
 func TestOTelSemanticsResourceNamer(t *testing.T) {
 	setGinHTTPConfig(t, "true")
 
-	span := traceGinRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, WithResourceNamer(func(*gin.Context) string {
-		return "custom-resource"
-	}))
-	assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
-	assert.Equal(t, "/users/:id", span.Tag(ext.HTTPRoute))
+	t.Run("custom", func(t *testing.T) {
+		span := traceGinRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, WithResourceNamer(func(*gin.Context) string {
+			return "custom-resource"
+		}))
+		assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
+		assert.Equal(t, "/users/:id", span.Tag(ext.HTTPRoute))
+	})
+
+	t.Run("nil uses default", func(t *testing.T) {
+		span := traceGinRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, WithResourceNamer(nil))
+		assert.Equal(t, "GET /users/:id", span.Tag(ext.ResourceName))
+	})
 }
 
 func TestOTelSemanticsResourceNamerUnmatchedRoute(t *testing.T) {
 	setGinHTTPConfig(t, "true")
 
-	span := traceGinRequest(t, http.MethodGet, "http://example.com/not-found", http.StatusNotFound, WithResourceNamer(func(*gin.Context) string {
+	span := traceGinRequestWithRoute(t, http.MethodGet, "http://example.com/not-found", http.StatusOK, "", "", nil, WithResourceNamer(func(*gin.Context) string {
 		return "custom-resource"
 	}))
 	assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
-	assert.Nil(t, span.Tag(ext.HTTPRoute))
+	assert.NotContains(t, span.Tags(), ext.HTTPRoute)
 }
 
 func TestOTelSemanticsContextPropagation(t *testing.T) {
