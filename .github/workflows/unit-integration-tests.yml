@@ -13,12 +13,9 @@ on:
         default: ""
       rerun-fails:
         description: >-
-          Retry failed tests up to this many times. Leave empty on the pull
-          request path: a gotestsum rerun overwrites -coverprofile with the
-          rerun's partial profile, and that path uploads coverage against a 90%
-          target. Dynamic analysis uploads no coverage, so it sets this to
-          absorb flakes in a probabilistic detector instead of failing the
-          merge queue.
+          Retry failed tests up to this many times. A gotestsum rerun overwrites
+          -coverprofile with its partial profile, so setting this also disables
+          the coverage uploads below.
         required: false
         type: string
         default: ""
@@ -167,10 +164,6 @@ jobs:
             -name "coverage-*.txt" -print0 \
             | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
-      # Not uploaded when retries are on: a gotestsum rerun overwrites the
-      # coverprofile with the rerun's partial results, so publishing it would
-      # report a collapsed coverage figure for this SHA. Test results are still
-      # uploaded above, which is what keeps a flake visible.
       - name: Upload Coverage to Datadog
         if: always() && inputs.rerun-fails == ''
         continue-on-error: true
@@ -355,10 +348,6 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      # Not uploaded when retries are on: a gotestsum rerun overwrites the
-      # coverprofile with the rerun's partial results, so publishing it would
-      # report a collapsed coverage figure for this SHA. Test results are still
-      # uploaded above, which is what keeps a flake visible.
       - name: Upload Coverage to Datadog
         if: always() && inputs.rerun-fails == ''
         continue-on-error: true

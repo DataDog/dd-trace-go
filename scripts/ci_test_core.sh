@@ -23,20 +23,12 @@ mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep
 # Set +e so that we run all test commands even if one fails
 set +e
 
-# Opt-in flaky-failure retry. Only the dynamic-analysis workflow sets this.
-#
-# Retrying is safe for correctness -- gotestsum reruns just the failed tests and
-# still exits non-zero if they fail again -- but a rerun OVERWRITES
-# -coverprofile with the partial profile of the rerun, so the normal pull
-# request path must never enable it. That path uploads coverage.txt against a
-# 90% target; dynamic analysis uploads no coverage at all.
-#
-# The rerun is visible, not silent: gotestsum prints "N runs, M failures" and
-# records every attempt in the JUnit XML, so a flake still shows up in the
-# Datadog test report.
-# NOTE the ${RERUN_ARGS[@]+...} form: under `set -u`, bash 3.2 -- which is what
-# macOS ships as /bin/bash, and these scripts are documented as runnable there --
-# treats "${ARR[@]}" on an empty array as an unbound variable and aborts.
+# Opt-in flaky-failure retry; only the dynamic-analysis workflow sets it. A
+# rerun overwrites -coverprofile with its partial profile, so any caller that
+# uploads coverage must leave RERUN_FAILS unset. gotestsum still exits non-zero
+# when a test fails every attempt, and keeps each one in the JUnit XML.
+# ${RERUN_ARGS[@]+...} guards bash 3.2, which treats "${ARR[@]}" on an empty
+# array as unbound under `set -u` and aborts.
 RERUN_ARGS=()
 if [[ -n "${RERUN_FAILS:-}" && "${RERUN_FAILS}" != "0" ]]; then
   RERUN_ARGS=(--rerun-fails="${RERUN_FAILS}")

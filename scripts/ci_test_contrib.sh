@@ -28,17 +28,9 @@ export __DD_TRACE_SQL_TEST=true
 
 report_error=0
 
-# Opt-in flaky-failure retry; see the same block in ci_test_core.sh for why the
-# normal pull request path must not enable it (a rerun overwrites -coverprofile).
-#
-# The gotestsum calls below pass packages via --packages rather than as go test
-# args after `--`, because --rerun-fails rejects the latter outright:
-#   "when go test args are used with --rerun-fails the list of packages to test
-#    must be specified by the --packages flag"
-# The two forms produce the same JUnit output and the same coverage profile.
-# NOTE the ${RERUN_ARGS[@]+...} form: under `set -u`, bash 3.2 -- which is what
-# macOS ships as /bin/bash, and these scripts are documented as runnable there --
-# treats "${ARR[@]}" on an empty array as an unbound variable and aborts.
+# Opt-in flaky-failure retry; see ci_test_core.sh for the coverprofile and
+# bash 3.2 caveats. Packages move to --packages below because --rerun-fails
+# rejects them as go test args after `--`.
 RERUN_ARGS=()
 if [[ -n "${RERUN_FAILS:-}" && "${RERUN_FAILS}" != "0" ]]; then
   RERUN_ARGS=(--rerun-fails="${RERUN_FAILS}")
