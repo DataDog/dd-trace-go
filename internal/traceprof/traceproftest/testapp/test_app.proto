@@ -20,5 +20,4 @@ message WorkReq {
 
 message WorkRes {
   string span_id = 1;
-  string local_root_span_id = 2;
 }

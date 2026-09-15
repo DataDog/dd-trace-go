@@ -58,3 +58,29 @@ The API, struct types, and other values necessary for:
 * Dependencies: Sending all the dependencies of the application to the backend (for SCA purposes for example)
 
 For more information, read the [README](./telemetry/README.md).
+
+The `telemetry/log` subpackage also provides an explicit, opt-in API for surfacing SDK errors in Error Tracking. There is no automatic forwarding from `internal/log.Error`/`Warn` — a call site is only reported if it explicitly calls one of these:
+
+* **`ReportError(msg, err, opts...)`**: for swallowed-error sites that want the error reported.
+* **`ReportPanic(msg, recovered)`**: for `recover()` sites that want the panic reported.
+* **`LogAndReportError(msg, err, opts...)`** / **`LogAndReportPanic(msg, recovered)`**: like `ReportError`/`ReportPanic`, but also log `msg` locally via `internal/log.Error` — for call sites that want both a local log line and a report without duplicating the message.
+* **`constantlogmsg` analyzer** (`telemetry/log/analyzer/`): `go vet`-compatible pass that rejects non-constant message arguments on all protected log functions (`ReportError`/`ReportPanic`, `LogAndReportError`/`LogAndReportPanic`, `telemetrylog.Debug/Warn/Error`, and `internal/log.Error/Warn` for their own local dedup-key hygiene), enforcing the dedup-key and PII guarantees.
+
+Adopting this in an existing `log.Error` call site means calling `ReportError`/`ReportPanic` alongside it, one call site at a time — there's no table or hook that changes behavior repo-wide.
+
+**When to report, and when not to.** Report an error only when a non-zero count in Error Tracking would make a dd-trace-go maintainer open the code. Concretely, report when **all four** hold:
+
+1. **It's our defect, not the user's environment or config.** Report a failure to marshal a struct we built, a `recover()` in one of our own goroutines, a protocol response we can't parse. Do not report an unreachable agent, a missing `DD_API_KEY`, an unparseable user-supplied regexp, or a user calling an API out of order — those are already surfaced to the user via `internal/log.Warn`/`Error`, and we cannot act on them.
+2. **We swallow it.** Report the error at the place that finally drops it, not at every layer it passes through — reporting at both ends double-counts the same failure.
+3. **The site is not per-span or per-request.** `ReportError`/`ReportPanic` allocate and capture a stack trace on every call, before the telemetry-disabled check can short-circuit it. Report at a flush, poll, or start boundary instead. If the failure is genuinely per-span, report the aggregate (e.g. "lost N traces") at the flush boundary rather than once per span.
+4. **It fires on the tracer's own startup/poll path, not a customer request.** `ReportError`/`ReportPanic` capture the stack trace eagerly at the call site (`WithCaptureStacktraceNow`), so a report made before `telemetry.StartApp` still points at the real call site once replayed — that is not a reason to avoid reporting early. The actual risk with reporting before `StartApp` is the 512-entry ring buffer shared by every global telemetry call: an early burst (e.g. a startup race with a concurrent poll) can evict earlier queued reports before they are ever transmitted, with only a single debug-level log (off by default) as a signal. Prefer a site that fires after `StartApp` when you have the choice; if you don't, know that eviction — not a bad stack trace — is the failure mode to watch for.
+
+A `statsd`/telemetry **count** is the right tool when you want to know *how often* something happens; `ReportError` is the right tool when you want to know *where*. A site that already emits a count with a `reason:` tag and carries no error value usually needs nothing more.
+
+**Picking a helper.** Use `LogAndReportError`/`LogAndReportPanic` only when the site already matches `log.Error("<constant>: %s", err.Error())` exactly — the rewrite is then output-identical, including `internal/log`'s dedup key. Otherwise leave the existing `log.Error` call as-is and add a bare `ReportError`/`ReportPanic` next to it.
+
+Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. `errorType` reports the *outer* error's concrete type as-is (stripping only a pointer indirection, never unwrapping), so an error wrapped with `fmt.Errorf("...: %w", err)` reads as `fmt.wrapError` regardless of what `err` actually was, not the wrapped error's own type; so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.
+
+### Telemetry Errors
+
+[`apps/telemetry-errors`](./apps/telemetry-errors/) is a manual-only harness (not wired into `test-apps.cue`) for dogfooding `ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` adoptions (see [Telemetry](#telemetry) above) against a real Datadog org before they ship. It documents and partly automates a three-tier verification process — offline wire-shape assertion, real intake acceptance, and product-landing confirmation — for any call site that adopts this API, not just the ones already covered. See its [README](./apps/telemetry-errors/README.md) for the process and the known pitfalls it surfaces.

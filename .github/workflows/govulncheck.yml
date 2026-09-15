@@ -1,8 +1,14 @@
 name: Govulncheck
 on:
   pull_request:
+    # No "**/*.go" here, deliberately. Vulnerabilities enter through
+    # dependencies, which these globs cover. A Go edit can still change
+    # *reachability* of an already-known vulnerable symbol, and that case is
+    # covered twice over without paying 17 job-minutes on every pull request:
+    # the `push` trigger below has no paths filter, so every merge-queue branch
+    # is scanned in full before it can land on main, and the nightly cron
+    # rescans the whole tree.
     paths:
-      - "**/*.go"
       - "**/go.mod"
       - "**/go.sum"
       - "go.work"
@@ -33,6 +39,9 @@ on:
 concurrency:
   group: govulncheck-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
 
 permissions:
   contents: read
@@ -70,7 +79,7 @@ jobs:
           repo-checkout: false
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
@@ -137,7 +146,7 @@ jobs:
           git clean -fdx -e govulncheck-contribs.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
-        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: govulncheck-contribs.sarif
           category: govulncheck-contribs

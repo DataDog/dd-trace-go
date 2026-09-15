@@ -90,14 +90,15 @@ Steps:
    the branch and open a PR.
 
 2. The pipeline includes
-   [`build-ci-images.template.yml`](https://github.com/DataDog/benchmarking-platform-tools/blob/main/images/templates/gitlab/build-ci-images.template.yml). It auto-detects changes under
-   `BASE_CI_IMAGE_CONTAINER_DIR` (`.gitlab/benchmarks/micro/container`) and
-   adds a `build-base-ci-image` job on Gitlab that build and pushes the image to registry.
+   [`build-ci-images.template.yml`](https://github.com/DataDog/benchmarking-platform-tools/blob/main/images/templates/gitlab/build-ci-images.template.yml),
+   which defines a `build-benchmark-ci-images` job (`when: manual`) that builds
+   and pushes the image from `BASE_CI_IMAGE_CONTAINER_DIR`
+   (`.gitlab/benchmarks/micro/container`) to the registry.
 
 3. Open the pipeline on
    [`gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go`](https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go)
-   and run the `build-base-ci-image` job. Wait for it to finish successfully
-   and copy the job URL and the resulting image tag from its logs.
+   and manually run the `build-benchmark-ci-images` job. Wait for it to finish
+   successfully and copy the job URL and the resulting image tag from its logs.
 
 4. Update both files to point at the newly built image (replace the job URL
    in the comment and the image tag):
@@ -107,13 +108,13 @@ Steps:
 
    In micro/gitlab-ci.yml the variable is named MICROBENCHMARKS_CI_IMAGE:
    ```yaml
-   # Benchmarks image is created here: <paste build-base-ci-image job URL>
+   # Benchmarks image is created here: <paste build-benchmark-ci-images job URL>
    MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
    ```
    
    In test-apps/test-apps.yml it is named TESTAPPS_BENCHMARKS_CI_IMAGE:
    ```yaml
-   # Benchmarks image is created here: <paste build-base-ci-image job URL>
+   # Benchmarks image is created here: <paste build-benchmark-ci-images job URL>
    TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
    ```
 

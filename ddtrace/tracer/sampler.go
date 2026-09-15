@@ -170,6 +170,7 @@ func newOtelParentBasedAlwaysOnSampler() *otelParentBasedAlwaysOnSampler {
 func (s *otelParentBasedAlwaysOnSampler) apply(spn *Span) {
 	spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 	spn.SetTag(keySamplingPriorityRate, 1.0)
+	spn.context.trace.setOtelProbability(spn.traceID, 1.0)
 }
 
 // prioritySampler holds a set of per-service sampling rates and applies

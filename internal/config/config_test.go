@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1704,6 +1705,61 @@ func TestLLMObsEnvVars(t *testing.T) {
 	})
 }
 
+func TestLLMObsPromptEnvVars(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		assert.Equal(t, time.Minute, cfg.LLMObsPromptsCacheTTL())
+		assert.Equal(t, 5*time.Second, cfg.LLMObsPromptsTimeout())
+		assert.False(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Empty(t, cfg.LLMObsPromptsCacheDir())
+	})
+
+	for _, test := range []struct {
+		name, ttl, ttlAlias, timeout, timeoutAlias string
+		wantTTL, wantTimeout                       time.Duration
+	}{
+		{name: "values", ttl: "1.5", timeout: "0", wantTTL: 1500 * time.Millisecond, wantTimeout: 0},
+		{name: "aliases", ttlAlias: "2", timeoutAlias: "3", wantTTL: 2 * time.Second, wantTimeout: 3 * time.Second},
+		{name: "canonical wins over alias", ttl: "4", ttlAlias: "2", timeout: "6", timeoutAlias: "3", wantTTL: 4 * time.Second, wantTimeout: 6 * time.Second},
+		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
+		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "maximum duration", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxDurationSeconds) * time.Second, wantTimeout: time.Duration(maxDurationSeconds) * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if test.ttl != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL", test.ttl)
+			}
+			if test.ttlAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS", test.ttlAlias)
+			}
+			if test.timeout != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT", test.timeout)
+			}
+			if test.timeoutAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS", test.timeoutAlias)
+			}
+			cfg := Get()
+			assert.Equal(t, test.wantTTL, cfg.LLMObsPromptsCacheTTL())
+			assert.Equal(t, test.wantTimeout, cfg.LLMObsPromptsTimeout())
+		})
+	}
+
+	t.Run("file cache", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
+		cfg := Get()
+		assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
+	})
+}
+
 func TestReportEffectiveStatsComputation(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()
@@ -1732,4 +1788,202 @@ func TestReportEffectiveStatsComputation(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []bool{false, true}, reports)
+}
+
+func TestExperimentalFlaggingProviderEnabled(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.False(t, enabled)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.True(t, enabled)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsEnabled(t *testing.T) {
+	t.Run("unset stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("explicit true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.True(t, enabled)
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "false")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("unparseable value stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (not explicit), not silently coerced into an explicit false.
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "garbage")
+		cfg := Get()
+		_, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+	})
+}
+
+func TestFeatureFlagsConfigurationSource(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "agentless", source)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "remote_config", source)
+		assert.True(t, explicit)
+	})
+
+	t.Run("blank but set is still explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// A whitespace-only value is explicit here on purpose: deciding what a
+		// blank source means belongs to openfeature.resolveSource, which falls
+		// through to the later precedence rules. Coercing it to non-explicit at
+		// this layer would hide the distinction from that decision.
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "   ")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "   ", source)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsAgentlessBaseURL(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "https://example.com")
+	cfg := Get()
+	assert.Equal(t, "https://example.com", cfg.FeatureFlagsAgentlessBaseURL())
+}
+
+func TestFeatureFlagsAgentlessPollInterval(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 30 * time.Second},
+		{"0", 30 * time.Second},
+		{"-1", 30 * time.Second},
+		{"3601", 30 * time.Second},
+		{"abc", 30 * time.Second},
+		{"3600", 3600 * time.Second},
+		{"60", 60 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessPollInterval())
+		})
+	}
+}
+
+func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 5 * time.Second},
+		{"0", 5 * time.Second},
+		{"-5", 5 * time.Second},
+		{"x", 5 * time.Second},
+		{"10", 10 * time.Second},
+		{"300", 300 * time.Second},
+		{"301", 5 * time.Second},
+		// Regression guard: without an upper bound, this value overflows int64
+		// once converted to a time.Duration and multiplied by time.Second,
+		// wrapping to a negative duration that would disable the HTTP client's
+		// timeout enforcement entirely.
+		{"9223372037", 5 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessRequestTimeout())
+		})
+	}
+}
+
+func TestFlaggingProviderInitTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 10000 * time.Millisecond},
+		{"0", 10000 * time.Millisecond},
+		{"-1", 10000 * time.Millisecond},
+		{"abc", 10000 * time.Millisecond},
+		{"5000", 5000 * time.Millisecond},
+		{"9223372036854775807", 10000 * time.Millisecond}, // math.MaxInt64: overflows on conversion, must fall back
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
+		})
+	}
 }

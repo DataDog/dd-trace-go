@@ -1,0 +1,23 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x1000a79b4]
+
+goroutine 1 [running]:
+main.deref(...)
+	/tmp/crashdemo/main.go:7
+main.main()
+	/tmp/crashdemo/main.go:13 +0x34
+
+goroutine 34 [select (no cases)]:
+main.main.func1()
+	/tmp/crashdemo/main.go:10 +0x1c
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:10 +0x24
+
+goroutine 35 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/time.go:363 +0x150
+main.main.func2()
+	/tmp/crashdemo/main.go:11 +0x28
+created by main.main in goroutine 1
+	/tmp/crashdemo/main.go:11 +0x30
+exit status 2
