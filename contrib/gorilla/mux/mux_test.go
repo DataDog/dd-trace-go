@@ -687,6 +687,40 @@ func TestOTelSemantics(t *testing.T) {
 	}
 }
 
+func TestSemanticModeCapturedAtRouterCreation(t *testing.T) {
+	for _, tt := range []struct {
+		name              string
+		initialOTel       bool
+		wantResource      string
+		wantOTelMethod    any
+		wantDatadogMethod any
+	}{
+		{name: "OpenTelemetry", initialOTel: true, wantResource: "GET /users/{id}", wantOTelMethod: "GET"},
+		{name: "Datadog", initialOTel: false, wantResource: "gEt /users/{id}", wantDatadogMethod: "gEt"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			setMuxHTTPConfig(t, strconv.FormatBool(tt.initialOTel))
+			router := NewRouter()
+			router.HandleFunc("/users/{id}", func(http.ResponseWriter, *http.Request) {})
+
+			// Reload global tracer configuration after router creation without resetting
+			// httptrace's captured mode. Resource naming must retain the router's mode.
+			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(!tt.initialOTel)))
+			require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("gEt", "/users/123", nil))
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.wantResource, spans[0].Tag(ext.ResourceName))
+			assert.Equal(t, tt.wantOTelMethod, spans[0].Tag(ext.HTTPRequestMethod))
+			assert.Equal(t, tt.wantDatadogMethod, spans[0].Tag(ext.HTTPMethod))
+		})
+	}
+}
+
 func TestOTelSemanticsStatus(t *testing.T) {
 	setMuxHTTPConfig(t, "true")
 
