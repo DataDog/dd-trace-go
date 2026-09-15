@@ -59,6 +59,8 @@ func defaults(cfg *routerConfig) {
 	cfg.serviceSource = string(instrumentation.PackageGorillaMux)
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.otelEnabled = instr.OTelSemanticsEnabled()
+	// Leave resourceNamer nil so TraceAndServe applies default OpenTelemetry naming.
+	// WithResourceNamer can still install a custom resource namer after defaults.
 	if !cfg.otelEnabled {
 		cfg.resourceNamer = defaultResourceNamer
 	}

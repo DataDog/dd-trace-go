@@ -89,6 +89,7 @@ aspects:
               {{ $r }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
               {{ $r }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
               {{ $r }}.__dd_config.otelEnabled = __dd_instr.OTelSemanticsEnabled()
+              // Leave resourceNamer nil so TraceAndServe applies default OpenTelemetry naming.
               if !{{ $r }}.__dd_config.otelEnabled {
                 {{ $r }}.__dd_config.resourceNamer = ddDefaultResourceNamer
               }
