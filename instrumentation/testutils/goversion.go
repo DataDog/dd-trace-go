@@ -16,8 +16,9 @@ import (
 // standard-library layout can drift ahead of released Go. On a released
 // toolchain it is a no-op and the test proceeds.
 //
-// runtime.Version() reports "devel go1.NN-<hash> <date>" for such toolchains,
-// versus "go1.NN.P" for a release; the "devel" prefix is the sentinel.
+// runtime.Version() can report either "devel go1.NN-<hash> <date>" or
+// "go1.NN-devel_<hash> <date>" for such toolchains, versus "go1.NN.P" for a
+// release.
 //
 // The optional format/args are logged (like t.Logf) before the skip so call
 // sites keep their diagnostics; the skip message always names the toolchain.
@@ -38,5 +39,6 @@ func SkipIfGoTip(t testing.TB, format string, args ...any) {
 // versionIsGoTip reports whether v, a runtime.Version() string, denotes an
 // unreleased ("devel") toolchain.
 func versionIsGoTip(v string) bool {
-	return strings.HasPrefix(v, "devel")
+	version, _, _ := strings.Cut(v, " ")
+	return version == "devel" || strings.HasPrefix(version, "go") && strings.Contains(version, "-devel")
 }
