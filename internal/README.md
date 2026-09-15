@@ -8,6 +8,10 @@ Contains private methods and functionality used by the library itself. Code that
 
 Handles application security code. This is commonly refer to as "ASM", "Appsec", or "k9 Security". It includes WAF (Web Application Firewall) and Dyngo support. For more information of implementation details, refer to the [README](./appsec/README.md).
 
+### Apps
+
+Standalone test apps used for end-to-end scenarios that unit and integration tests can't cover (agent/backend/UI changes, screenshots, nightly canaries against a real Agent and site). Each subdirectory is one app; `crashtracker` deliberately crashes on request so the nightly run can confirm crash reports keep reaching Error Tracking end to end. For more information, read the [README](./apps/README.md).
+
 ### Config
 
 Handles and controls global configuration values. The values on the config are determined by programmatic APIs, managed declarative configs, Datadog environment variables, Otel environment variables, and local declarative configs, in descending priority order. The functionality for those config providers are in the [provider](./config/provider/) directory. Defaults are defined as a fallback when no source has been configured for the field. 

@@ -5,7 +5,7 @@ name: Test Apps
     inputs:
       scenarios:
         type: string
-        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap","crashtracker/panic"]'
         description: Scenarios to run
       'env: prod':
         type: boolean
@@ -37,7 +37,7 @@ name: Test Apps
     inputs:
       scenarios:
         type: string
-        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap","crashtracker/panic"]'
         description: Scenarios to run
       'env: prod':
         type: boolean
@@ -389,3 +389,67 @@ jobs:
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
+  job-5-0:
+    name: crashtracker/panic (prod)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''crashtracker/panic'') && inputs[''env: prod'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+      - name: Start Agent
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          datadog_site: datadoghq.com
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'crashtracker/panic'
+  job-5-1:
+    name: crashtracker/panic (staging)
+    runs-on: ubuntu-latest
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''crashtracker/panic'') && inputs[''env: staging'']'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go-staging
+      - name: Start Agent
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          datadog_site: datad0g.com
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - name: Run Scenario
+        env:
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
+        run: cd ./internal/apps && ./run-scenario.bash 'crashtracker/panic'
