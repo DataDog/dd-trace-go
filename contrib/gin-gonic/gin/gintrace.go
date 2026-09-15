@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -45,20 +46,17 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
-		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
+		route := c.FullPath()
+		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+		opts = append(opts, tracer.ResourceName(cfg.resourceName(c, route)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+		opts = append(opts, cfg.routeTag(route, c.Request))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			status := c.Writer.Status()
-			if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
-				finishSpans(status, cfg.isStatusError, tracer.WithError(errors.New(c.Errors.String())))
-			}
-			finishSpans(status, cfg.isStatusError)
+			finishSpan(cfg, c, finishSpans)
 		}()
 
 		// pass the span through the request context
@@ -66,7 +64,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// Use AppSec if enabled by user
 		if instr.AppSecEnabled() {
-			useAppSec(c, span)
+			useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
 		}
 
 		// serve the request to the next middleware
@@ -76,6 +74,33 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			span.SetTag("gin.errors", c.Errors.String())
 		}
 	}
+}
+
+func (cfg *config) resourceName(c *gin.Context, route string) string {
+	if cfg.resourceNamer != nil {
+		return cfg.resourceNamer(c)
+	}
+	if cfg.otelEnabled {
+		return httptrace.ServerSpanName(c.Request.Method, route)
+	}
+	return defaultResourceNamer(c)
+}
+
+func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOption {
+	if cfg.otelEnabled {
+		return httptrace.HTTPEndpointTag(route, req)
+	}
+	return tracer.Tag(ext.HTTPRoute, route)
+}
+
+func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
+	status := c.Writer.Status()
+	statusError := cfg.isStatusError(status)
+	var finishOpts []tracer.FinishOption
+	if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
+		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
+	}
+	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
 }
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
