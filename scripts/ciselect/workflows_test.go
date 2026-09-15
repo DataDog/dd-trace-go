@@ -410,3 +410,80 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 		})
 	}
 }
+
+// TestCoverageUploadsRespectRetries pins the guard that keeps a retried run
+// from publishing coverage.
+//
+// gotestsum's --rerun-fails overwrites -coverprofile with the partial profile
+// of the rerun, so a job that retried has a collapsed coverage figure. Both
+// Upload Coverage steps therefore have to skip when retries are on. They run
+// `if: always()`, so dropping the clause does not fail anything: the upload
+// just silently publishes the wrong number against the pull request's SHA.
+// That is the bug this guard exists to prevent from coming back.
+//
+// The RERUN_FAILS env assertion is the other half. Without it the scripts
+// never see the input, so retries would be off while the upload was skipped --
+// the inverse mistake, and equally silent.
+func TestCoverageUploadsRespectRetries(t *testing.T) {
+	_, _, root := testTable(t)
+
+	const (
+		workflow = "unit-integration-tests.yml"
+		stepName = "Upload Coverage to Datadog"
+	)
+	// Both values the scripts treat as "retries off" must appear, or a caller
+	// passing the other one loses its coverage upload while running no retries.
+	wantClauses := []string{
+		"inputs.rerun-fails == ''",
+		"inputs.rerun-fails == '0'",
+	}
+
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, workflow))
+	jobs, _ := doc["jobs"].(map[string]any)
+
+	found := 0
+	for _, jobName := range []string{"test-core", "test-contrib-matrix"} {
+		job, ok := jobs[jobName].(map[string]any)
+		if !ok {
+			t.Errorf("%s: job %q is missing", workflow, jobName)
+			continue
+		}
+		steps, _ := job["steps"].([]any)
+
+		var sawRerunEnv bool
+		for _, raw := range steps {
+			step, _ := raw.(map[string]any)
+			if env, ok := step["env"].(map[string]any); ok {
+				if v, ok := env["RERUN_FAILS"].(string); ok && strings.Contains(v, "inputs.rerun-fails") {
+					sawRerunEnv = true
+				}
+			}
+			name, _ := step["name"].(string)
+			if name != stepName {
+				continue
+			}
+			found++
+			cond, _ := step["if"].(string)
+			if cond == "" {
+				t.Errorf("%s job %q: step %q has no if: condition, so it uploads coverage "+
+					"even from a run that retried", workflow, jobName, stepName)
+				continue
+			}
+			for _, want := range wantClauses {
+				if !strings.Contains(cond, want) {
+					t.Errorf("%s job %q: step %q condition %q is missing %q. A retried run "+
+						"would publish the rerun's partial coverprofile for this SHA.",
+						workflow, jobName, stepName, cond, want)
+				}
+			}
+		}
+		if !sawRerunEnv {
+			t.Errorf("%s job %q never passes inputs.rerun-fails through as RERUN_FAILS, so "+
+				"the test scripts cannot act on it", workflow, jobName)
+		}
+	}
+	if found != 2 {
+		t.Errorf("found %d %q steps in %s, want 2 (one per test job); a renamed or added "+
+			"upload step needs this guard too", found, stepName, workflow)
+	}
+}
