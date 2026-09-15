@@ -186,14 +186,44 @@ func TestTraceAndServeOTelSemantics(t *testing.T) {
 	})
 
 	t.Run("caller resource option", func(t *testing.T) {
+		enabled := true
 		span := serverSpan(t, func() {
 			r := httptest.NewRequest(http.MethodGet, "/trace/123", nil)
 			r.Pattern = "GET /trace/{id}"
-			traceAndServe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), httptest.NewRecorder(), r, &httptrace.ServeConfig{
-				SpanOpts: []tracer.StartSpanOption{tracer.ResourceName("caller-resource")},
-			}, true)
+			TraceAndServe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), httptest.NewRecorder(), r, &httptrace.ServeConfig{
+				SpanOpts:             []tracer.StartSpanOption{tracer.ResourceName("caller-resource")},
+				OTelSemanticsEnabled: &enabled,
+			})
 		})
 		assert.Equal(t, "caller-resource", span.Tag(ext.ResourceName))
+		assert.Equal(t, "/trace/{id}", span.Tag(ext.HTTPRoute))
+	})
+
+	t.Run("explicit true overrides global false", func(t *testing.T) {
+		setOTelSemantics(t, "false")
+		enabled := true
+		span := serverSpan(t, func() {
+			r := httptest.NewRequest(http.MethodGet, "/trace/123", nil)
+			r.Pattern = "GET /trace/{id}"
+			TraceAndServe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), httptest.NewRecorder(), r, &httptrace.ServeConfig{
+				OTelSemanticsEnabled: &enabled,
+			})
+		})
+		assert.Equal(t, "GET /trace/{id}", span.Tag(ext.ResourceName))
+		assert.Equal(t, "/trace/{id}", span.Tag(ext.HTTPRoute))
+	})
+
+	t.Run("explicit false overrides global true", func(t *testing.T) {
+		enabled := false
+		span := serverSpan(t, func() {
+			r := httptest.NewRequest(http.MethodGet, "/trace/123", nil)
+			r.Pattern = "GET /trace/{id}"
+			TraceAndServe(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), httptest.NewRecorder(), r, &httptrace.ServeConfig{
+				Route:                "/trace/{id}",
+				OTelSemanticsEnabled: &enabled,
+			})
+		})
+		assert.Equal(t, "GET", span.Tag(ext.ResourceName))
 		assert.Equal(t, "/trace/{id}", span.Tag(ext.HTTPRoute))
 	})
 

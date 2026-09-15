@@ -35,6 +35,9 @@ type ServeConfig struct {
 	// Route is the low-cardinality route path template selected for the request, if available.
 	// A non-empty Route is recorded as http.route. Route must not contain the raw request path.
 	Route string
+	// OTelSemanticsEnabled selects OpenTelemetry rather than Datadog semantic conventions.
+	// When nil, DD_TRACE_OTEL_SEMANTICS_ENABLED determines the mode.
+	OTelSemanticsEnabled *bool
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
