@@ -232,6 +232,16 @@ func TestOTelSemanticsResourceNamer(t *testing.T) {
 	assert.Equal(t, "/users/:id", span.Tag(ext.HTTPRoute))
 }
 
+func TestOTelSemanticsResourceNamerUnmatchedRoute(t *testing.T) {
+	setGinHTTPConfig(t, "true")
+
+	span := traceGinRequest(t, http.MethodGet, "http://example.com/not-found", http.StatusNotFound, WithResourceNamer(func(*gin.Context) string {
+		return "custom-resource"
+	}))
+	assert.Equal(t, "custom-resource", span.Tag(ext.ResourceName))
+	assert.Nil(t, span.Tag(ext.HTTPRoute))
+}
+
 func TestOTelSemanticsContextPropagation(t *testing.T) {
 	setGinHTTPConfig(t, "true")
 	mt := mocktracer.Start()
