@@ -26,8 +26,11 @@ review spec — the checks and the P0/P1/P2 bar only:
 Do not load `SKILL.md` or `reviewers/report-template.md`. Ignore
 harness-only rules in the files you do load: do not emit `READY TO PUSH` /
 `DO NOT PUSH` / `WAITING ON HUMAN`, and the `_common.md` rule "Never post
-to GitHub" does not apply to you — post findings as review comments. Skip
-a lens that cannot apply to this diff rather than inventing a finding.
+to GitHub" does not apply to you — post findings as review comments. Never
+paste secret values, tokens, credentials, or exploit/reproduction details
+into a review comment or PR description; describe the location and class
+of issue only. Skip a lens that cannot apply to this diff rather than
+inventing a finding.
 
 If this change set is only agent-instruction files (`.agents/`, `.claude/`,
 `.cursor/`, `AGENTS.md`, `CLAUDE.md`), review that prose for broken paths
