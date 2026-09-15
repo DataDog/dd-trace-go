@@ -1567,6 +1567,16 @@ func TestEnvConfig(t *testing.T) {
 		assert.Equal("testing", c.internalConfig.Env())
 	})
 
+	t.Run("DD_ENV takes precedence over stable OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
+		t.Setenv("DD_ENV", "datadog")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=opentelemetry")
+		assert := assert.New(t)
+		c, err := newTestConfig()
+		assert.NoError(err)
+
+		assert.Equal("datadog", c.internalConfig.Env())
+	})
+
 	t.Run("DD_TAGS", func(t *testing.T) {
 		t.Setenv("DD_TAGS", "env:testing")
 		assert := assert.New(t)
