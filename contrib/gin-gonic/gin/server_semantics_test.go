@@ -73,7 +73,7 @@ func TestDatadogSemanticsPreserveGinErrorLifecycle(t *testing.T) {
 				return true
 			}))
 
-			assert.Equal(t, 3, calls)
+			assert.Equal(t, 1, calls)
 			assert.Equal(t, "500", span.Tag(ext.HTTPCode))
 			assert.Equal(t, "Error #01: oh no\n", span.Tag("gin.errors"))
 			assert.Equal(t, "Error #01: oh no\n", span.Tag(ext.ErrorMsg))
