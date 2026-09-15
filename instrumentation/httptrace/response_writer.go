@@ -7,29 +7,53 @@ package httptrace
 
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
-import "net/http"
+import (
+	"bufio"
+	"net"
+	"net/http"
+)
 
 // responseWriter is a small wrapper around an http response writer that will
 // intercept and store the status of a request.
 type responseWriter struct {
 	http.ResponseWriter
-	status int
+	status    int
+	committed bool
 }
 
-// ResetStatusCode resets the status code of the response writer.
+// ResetStatusCode resets the monitored status and committed state so an
+// integration can replace a staged response.
 func ResetStatusCode(w http.ResponseWriter) {
-	if rw, ok := w.(*responseWriter); ok {
-		rw.status = 0
+	for w != nil {
+		if rw, ok := w.(interface{ resetStatusCode() }); ok {
+			rw.resetStatusCode()
+			return
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return
+		}
+		w = unwrapper.Unwrap()
 	}
 }
 
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{w, 0}
+	return &responseWriter{ResponseWriter: w}
 }
 
 // Status returns the status code that was monitored.
 func (w *responseWriter) Status() int {
 	return w.status
+}
+
+// Committed reports whether the response headers were sent.
+func (w *responseWriter) Committed() bool {
+	return w.committed
+}
+
+func (w *responseWriter) resetStatusCode() {
+	w.status = 0
+	w.committed = false
 }
 
 // Write writes the data to the connection as part of an HTTP reply.
@@ -45,14 +69,40 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // WriteHeader sends an HTTP response header with status code.
 // It also sets the status code to the span.
 func (w *responseWriter) WriteHeader(status int) {
-	if w.status != 0 {
+	if w.committed {
 		return
 	}
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
+	w.committed = true
 }
 
 // Unwrap returns the underlying wrapped http.ResponseWriter.
 func (w *responseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+type responseWriterFlusher struct {
+	http.Flusher
+	responseWriter *responseWriter
+}
+
+func (w responseWriterFlusher) Flush() {
+	if !w.responseWriter.Committed() {
+		w.responseWriter.WriteHeader(http.StatusOK)
+	}
+	w.Flusher.Flush()
+}
+
+type responseWriterHijacker struct {
+	http.Hijacker
+	responseWriter *responseWriter
+}
+
+func (w responseWriterHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := w.Hijacker.Hijack()
+	if err == nil {
+		w.responseWriter.committed = true
+	}
+	return conn, rw, err
 }

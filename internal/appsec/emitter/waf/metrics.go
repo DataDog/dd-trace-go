@@ -36,6 +36,7 @@ var changeToWafUpdates sync.Once
 // TODO: add request_excluded to the mix once we have the capability to track it (blocked on libddwaf)
 type RequestMilestones struct {
 	requestBlocked bool
+	blockFailure   bool
 	ruleTriggered  bool
 	wafTimeout     bool
 	rateLimited    bool
@@ -211,8 +212,51 @@ type ContextMetrics struct {
 	// Milestones are the tags of the metric `waf.requests` that will be submitted at the end of the waf context
 	Milestones RequestMilestones
 
+	blockRequested atomic.Bool
+	blockOutcome   atomic.Int32
+
 	// logger is a pre-configured logger with appsec product tags
 	logger *telemetrylog.Logger
+}
+
+const (
+	blockOutcomeUnknown int32 = iota
+	blockOutcomeApplied
+	blockOutcomeFailed
+)
+
+// SetBlockRequested records that the WAF returned a block_request action.
+func (m *ContextMetrics) SetBlockRequested() {
+	m.blockRequested.Store(true)
+}
+
+// SetBlockApplied records that at least one requested block was applied.
+func (m *ContextMetrics) SetBlockApplied() {
+	m.blockOutcome.Store(blockOutcomeApplied)
+}
+
+// SetBlockFailed records a known block failure unless a block was already applied.
+func (m *ContextMetrics) SetBlockFailed() {
+	m.blockOutcome.CompareAndSwap(blockOutcomeUnknown, blockOutcomeFailed)
+}
+
+func (m *ContextMetrics) resolveBlockMilestones() {
+	if !m.blockRequested.Load() {
+		m.Milestones.requestBlocked = false
+		m.Milestones.blockFailure = false
+		return
+	}
+
+	switch m.blockOutcome.Load() {
+	case blockOutcomeFailed:
+		m.Milestones.requestBlocked = false
+		m.Milestones.blockFailure = true
+	default:
+		// Preserve the existing request_blocked behavior when an integration
+		// cannot report whether it applied the block.
+		m.Milestones.requestBlocked = true
+		m.Milestones.blockFailure = false
+	}
 }
 
 // Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle
@@ -223,6 +267,8 @@ type ContextMetrics struct {
 // - `waf.input_truncated` and `waf.truncated_value_size` for the truncations using [libddwaf.Stats.Truncations]
 // - `waf.requests` for the milestones using [ContextMetrics.Milestones]
 func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map[timer.Key]time.Duration) {
+	m.resolveBlockMilestones()
+
 	for scope, value := range timerStats {
 		scope := addresses.Scope(scope)
 		// Add metrics `{waf,rasp}.duration_ext`
@@ -282,6 +328,7 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 	handle, _ := m.wafRequestsCounts.LoadOrCompute(m.Milestones, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", append([]string{
 			"request_blocked:" + strconv.FormatBool(m.Milestones.requestBlocked),
+			"block_failure:" + strconv.FormatBool(m.Milestones.blockFailure),
 			"rule_triggered:" + strconv.FormatBool(m.Milestones.ruleTriggered),
 			"waf_timeout:" + strconv.FormatBool(m.Milestones.wafTimeout),
 			"rate_limited:" + strconv.FormatBool(m.Milestones.rateLimited),
@@ -336,7 +383,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 		}
 	case addresses.WAFScope, "":
 		if tags.requestBlocked {
-			m.Milestones.requestBlocked = true
+			m.SetBlockRequested()
 		}
 		if tags.ruleTriggered {
 			m.Milestones.ruleTriggered = true
