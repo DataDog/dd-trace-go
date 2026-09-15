@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -45,28 +46,13 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		var resource string
-		if cfg.resourceNamerSet {
-			resource = cfg.resourceNamer(c)
-		}
 		route := c.FullPath()
-		if !cfg.resourceNamerSet {
-			if cfg.otelEnabled {
-				resource = httptrace.ServerSpanName(c.Request.Method, route)
-			} else {
-				resource = defaultResourceNamer(c)
-			}
-		}
-		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
-		opts = append(opts, tracer.ResourceName(resource))
+		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+		opts = append(opts, tracer.ResourceName(cfg.resourceName(c, route)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		if cfg.otelEnabled {
-			opts = append(opts, httptrace.HTTPEndpointTag(route, c.Request))
-		} else {
-			opts = append(opts, tracer.Tag(ext.HTTPRoute, route))
-		}
+		opts = append(opts, cfg.routeTag(route, c.Request))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
@@ -88,6 +74,23 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			span.SetTag("gin.errors", c.Errors.String())
 		}
 	}
+}
+
+func (cfg *config) resourceName(c *gin.Context, route string) string {
+	if cfg.resourceNamer != nil {
+		return cfg.resourceNamer(c)
+	}
+	if cfg.otelEnabled {
+		return httptrace.ServerSpanName(c.Request.Method, route)
+	}
+	return defaultResourceNamer(c)
+}
+
+func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOption {
+	if cfg.otelEnabled {
+		return httptrace.HTTPEndpointTag(route, req)
+	}
+	return tracer.Tag(ext.HTTPRoute, route)
 }
 
 func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
