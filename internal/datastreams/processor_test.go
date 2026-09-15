@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -506,6 +507,117 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		ContentLength: -1,
 		Body:          http.NoBody,
 	}, nil
+}
+
+// blockingTransport blocks every RoundTrip until release is closed, so tests
+// can observe the reader goroutine while it's stalled sending to the agent.
+type blockingTransport struct {
+	release chan struct{}
+}
+
+func (t *blockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	<-t.release
+	return &http.Response{
+		StatusCode:    200,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Request:       req,
+		ContentLength: -1,
+		Body:          http.NoBody,
+	}, nil
+}
+
+func TestRecordDropAttribution(t *testing.T) {
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+
+	p.readerState.Store(int32(readerStalledOnAgent))
+	p.recordDrop()
+	assert.Equal(t, int64(1), p.stats.dropped.Load())
+	assert.Equal(t, int64(1), p.stats.droppedAgentStall.Load())
+	assert.Equal(t, int64(0), p.stats.droppedPollStall.Load())
+
+	p.readerState.Store(int32(readerStalledOnEmptyQueue))
+	p.recordDrop()
+	assert.Equal(t, int64(2), p.stats.dropped.Load())
+	assert.Equal(t, int64(1), p.stats.droppedAgentStall.Load())
+	assert.Equal(t, int64(1), p.stats.droppedPollStall.Load())
+
+	p.readerState.Store(int32(readerProcessing))
+	p.recordDrop()
+	assert.Equal(t, int64(3), p.stats.dropped.Load())
+	assert.Equal(t, int64(1), p.stats.droppedAgentStall.Load())
+	assert.Equal(t, int64(1), p.stats.droppedPollStall.Load())
+}
+
+func TestRunMarksReaderStalledOnEmptyQueue(t *testing.T) {
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	p.stop = make(chan struct{})
+	tick := make(chan time.Time)
+	done := make(chan struct{})
+	go func() {
+		p.run(tick)
+		close(done)
+	}()
+
+	assert.Eventually(t, func() bool {
+		return readerState(p.readerState.Load()) == readerStalledOnEmptyQueue
+	}, time.Second, time.Millisecond)
+
+	close(p.stop)
+	<-done
+}
+
+func TestRunMarksReaderStalledOnAgentCall(t *testing.T) {
+	release := make(chan struct{})
+	client := &http.Client{Transport: &blockingTransport{release: release}}
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	// Seed a bucket old enough to be flushed as soon as the tick fires.
+	tp := time.Now().Truncate(bucketDuration).Add(-2 * bucketDuration)
+	p.add(statsPoint{serviceName: "service1", hash: 1, timestamp: tp.UnixNano()})
+
+	p.stop = make(chan struct{})
+	tick := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		p.run(tick)
+		close(done)
+	}()
+	tick <- time.Now()
+
+	assert.Eventually(t, func() bool {
+		return readerState(p.readerState.Load()) == readerStalledOnAgent
+	}, time.Second, time.Millisecond)
+
+	close(release)
+	close(p.stop)
+	<-done
+}
+
+func TestReportStatsEmitsDropStallMetrics(t *testing.T) {
+	statsdClient := &statsdtest.TestStatsdClient{}
+	p := NewProcessor(statsdClient, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	p.stop = make(chan struct{})
+	p.stats.dropped.Store(3)
+	p.stats.droppedAgentStall.Store(2)
+	p.stats.droppedPollStall.Store(1)
+
+	tick := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		p.reportStats(tick)
+		close(done)
+	}()
+	tick <- time.Now()
+
+	require.NoError(t, statsdClient.Wait(assert.New(t), 7, time.Second))
+	close(p.stop)
+	<-done
+
+	counts := statsdClient.Counts()
+	assert.Equal(t, int64(3), counts["datadog.datastreams.processor.dropped_payloads"])
+	assert.Equal(t, int64(2), counts["datadog.datastreams.processor.dropped_payloads_agent_stall"])
+	assert.Equal(t, int64(1), counts["datadog.datastreams.processor.dropped_payloads_poll_stall"])
 }
 
 func BenchmarkSetCheckpoint(b *testing.B) {
