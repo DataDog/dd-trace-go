@@ -3,6 +3,7 @@ go 1.26.0 // Go version must match the lowest supported version, not the highest
 use (
 	.
 	./.github/workflows/apps
+	./_eval
 	./contrib/99designs/gqlgen
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
