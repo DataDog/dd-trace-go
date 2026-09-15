@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -22,7 +23,10 @@ import (
 // productionLogPackagePath is the import path of the root module's internal/log
 // package, whose Error and Warn functions are the adoption surface of this
 // audit.
-const productionLogPackagePath = "github.com/DataDog/dd-trace-go/v2/internal/log"
+const (
+	productionLogPackagePath = "github.com/DataDog/dd-trace-go/v2/internal/log"
+	reportingLogPackagePath  = "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+)
 
 const (
 	levelError = "ERROR"
@@ -44,9 +48,10 @@ type Site struct {
 // tests can run against a fixture module that stubs internal/log; the
 // production value is productionLogPackagePath.
 type scanOptions struct {
-	logPackagePath string
-	exclude        []string
-	platforms      []buildPlatform
+	logPackagePath       string
+	reportingPackagePath string
+	exclude              []string
+	platforms            []buildPlatform
 }
 
 type buildPlatform struct {
@@ -56,8 +61,9 @@ type buildPlatform struct {
 
 func defaultScanOptions() scanOptions {
 	return scanOptions{
-		logPackagePath: productionLogPackagePath,
-		exclude:        defaultExcludes(),
+		logPackagePath:       productionLogPackagePath,
+		reportingPackagePath: reportingLogPackagePath,
+		exclude:              defaultExcludes(),
 		// The repository currently has audited calls in Linux-portable files
 		// and one Windows-only file. Scan both so CI reports the same complete
 		// inventory instead of silently dropping the Windows sites.
@@ -108,7 +114,7 @@ func excluded(path string, patterns []string) bool {
 // appear in more than one load.
 func scan(root string, opts scanOptions) ([]Site, error) {
 	if opts.logPackagePath == "" {
-		return nil, fmt.Errorf("scan: empty log package path")
+		return nil, errors.New("scan: empty log package path")
 	}
 	// go/packages reports absolute file paths even for a relative Dir, so
 	// make the root absolute up front for the filepath.Rel below.
@@ -167,8 +173,15 @@ func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site
 	if errs := packageErrors(pkgs); len(errs) > 0 {
 		return nil, fmt.Errorf("the scanned module did not load cleanly for %s/%s; the audit would be incomplete:\n%v", platform.goos, platform.goarch, errs)
 	}
+	excludedPackages, err := reportingDependencies(pkgs, opts.reportingPackagePath)
+	if err != nil {
+		return nil, err
+	}
 	var sites []Site
 	for _, pkg := range pkgs {
+		if excludedPackages[pkg.PkgPath] {
+			continue
+		}
 		if len(pkg.Syntax) != len(pkg.CompiledGoFiles) {
 			return nil, fmt.Errorf("%s: %d syntax trees for %d compiled files", pkg.PkgPath, len(pkg.Syntax), len(pkg.CompiledGoFiles))
 		}
@@ -188,6 +201,39 @@ func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site
 		}
 	}
 	return sites, nil
+}
+
+// reportingDependencies returns the reporting package and its transitive
+// dependencies. None of these packages can import the reporting package
+// without creating an import cycle, so their log sites cannot adopt the API.
+// An empty reportingPath disables this production-only exclusion for fixtures.
+func reportingDependencies(pkgs []*packages.Package, reportingPath string) (map[string]bool, error) {
+	excluded := make(map[string]bool)
+	if reportingPath == "" {
+		return excluded, nil
+	}
+	var reporting *packages.Package
+	for _, pkg := range pkgs {
+		if pkg.PkgPath == reportingPath {
+			reporting = pkg
+			break
+		}
+	}
+	if reporting == nil {
+		return nil, fmt.Errorf("reporting package %q was not loaded", reportingPath)
+	}
+	var visit func(*packages.Package)
+	visit = func(pkg *packages.Package) {
+		if excluded[pkg.PkgPath] {
+			return
+		}
+		excluded[pkg.PkgPath] = true
+		for _, imported := range pkg.Imports {
+			visit(imported)
+		}
+	}
+	visit(reporting)
+	return excluded, nil
 }
 
 // packageInit is the reported enclosing function for calls outside any

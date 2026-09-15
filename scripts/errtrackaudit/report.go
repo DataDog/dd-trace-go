@@ -126,6 +126,8 @@ func renderJSON(w io.Writer, rep Report) error {
 	return enc.Encode(rep)
 }
 
+var tableCellEscaper = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`)
+
 func renderTable(w io.Writer, rep Report) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for i, g := range rep.Owners {
@@ -136,7 +138,7 @@ func renderTable(w io.Writer, rep Report) error {
 			g.Owner, g.Totals.Sites, g.Totals.Candidate, g.Totals.LikelyIneligible, g.Totals.Ignored)
 		fmt.Fprintf(tw, "  FILE\tLINE\tLEVEL\tCLASSIFICATION\tMESSAGE\n")
 		for _, s := range g.Sites {
-			fmt.Fprintf(tw, "  %s\t%d\t%s\t%s\t%s\n", s.File, s.Line, s.Level, s.Classification, s.Message)
+			fmt.Fprintf(tw, "  %s\t%d\t%s\t%s\t%s\n", s.File, s.Line, s.Level, s.Classification, tableCellEscaper.Replace(s.Message))
 		}
 	}
 	if len(rep.Owners) > 0 {

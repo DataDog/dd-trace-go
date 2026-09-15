@@ -90,6 +90,26 @@ SUMMARY: 3 sites (1 CANDIDATE, 1 LIKELY_INELIGIBLE, 1 ignored) across 2 owners
 	}
 }
 
+func TestRenderTable_EscapesControlCharacters(t *testing.T) {
+	co := mustLoadCodeowners(t, "/internal/ @DataDog/guild\n")
+	rep := buildReport([]Site{{
+		File: "internal/example.go", Line: 1, Package: "internal", Func: "f",
+		Level: levelError, Message: "first\r\nsecond\tcolumn",
+	}}, co)
+	var buf bytes.Buffer
+	if err := renderTable(&buf, rep); err != nil {
+		t.Fatalf("renderTable: %v", err)
+	}
+	if got := buf.String(); !strings.Contains(got, `first\r\nsecond\tcolumn`) {
+		t.Errorf("rendered table did not escape control characters:\n%s", got)
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		if strings.Contains(line, "second") && !strings.Contains(line, "internal/example.go") {
+			t.Errorf("message continuation escaped its table row: %q", line)
+		}
+	}
+}
+
 func TestRenderTable_DeterministicAcrossRuns(t *testing.T) {
 	rep := buildTestReport(t)
 	var a, b bytes.Buffer

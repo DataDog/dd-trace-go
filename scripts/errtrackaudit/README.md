@@ -17,14 +17,11 @@ The audit covers the root module only. The scan loads a single Go module
 `contrib/*` integration modules and the workspace-sibling tooling modules are
 out of scope by construction — their module paths sit outside
 `github.com/DataDog/dd-trace-go/v2/`, so they cannot import the
-`internal/telemetry/log` package at all. Two directories inside the root module
-are excluded because their call sites can never adopt the API:
-
-* `internal/log/` — the logger's own implementation. `internal/telemetry/log`
-  imports `internal/log`, so the reverse edge is a compile-time import cycle.
-* `internal/telemetry/log/` — the reporting API's own implementation:
-  `LogAndReportError` and friends call `internal/log.Error` on the caller's
-  behalf.
+`internal/telemetry/log` package at all. The audit also excludes the reporting package and its transitive dependency
+closure. Those packages cannot import `internal/telemetry/log` without creating
+an import cycle. This removes the logger implementation, the reporting API's
+own implementation, `internal/telemetry`, and other implementation dependencies
+from the migration backlog automatically.
 
 Call sites are identified through type information, not text: an `Error` or
 `Warn` call is audited when its callee resolves to the `internal/log` package

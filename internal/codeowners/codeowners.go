@@ -176,13 +176,10 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 					matches = append(matches, entry)
 					break
 				}
-				patternEnd := strings.Index(value, finalPattern)
-				if patternEnd != -1 {
-					remaining := value[patternEnd+len(finalPattern):]
-					if !strings.Contains(remaining, "/") {
-						matches = append(matches, entry)
-						break
-					}
+				_, remaining, found := strings.Cut(value, finalPattern)
+				if found && !strings.Contains(remaining, "/") {
+					matches = append(matches, entry)
+					break
 				}
 			} else if includeAnythingBefore {
 				if strings.HasSuffix(value, finalPattern) {

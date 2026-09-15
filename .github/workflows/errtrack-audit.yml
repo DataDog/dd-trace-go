@@ -62,7 +62,9 @@ jobs:
           path: out/
           retention-days: 14
       - name: Post or update PR comment
-        if: github.event_name == 'pull_request'
+        # Fork and Dependabot PRs receive a read-only token. Keep the audit and
+        # artifact successful, but skip the comment that would return 403.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
