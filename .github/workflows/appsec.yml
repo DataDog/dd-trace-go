@@ -224,7 +224,7 @@ jobs:
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}.txt coverage-${cgo}-${appsec_enabled_env:-default}-${goexp_label}-${submodule_name}.txt
+          files: coverage-*.txt contrib/*/*/coverage-*.txt
           format: go-coverprofile
 
   # Tests cases were appsec end up being disabled at compilation time
@@ -321,7 +321,7 @@ jobs:
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.txt coverage-${appsec_enabled_env:-default}-${go_tags}.txt
+          files: coverage-*.txt contrib/*/*/coverage-*.txt
           format: go-coverprofile
 
   # Same tests but on the official golang container for linux
