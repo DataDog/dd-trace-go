@@ -122,8 +122,6 @@ aspects:
               var resource string
               if {{ $r }}.__dd_config.resourceNamer != nil {
                 resource = {{ $r }}.__dd_config.resourceNamer({{ $r }}, {{ $req }})
-              } else {
-                resource = instrhttptrace.ServerSpanName({{ $req }}.Method, route)
               }
 
               // This is a temporary workaround/hack to prevent endless recursion via httptrace.TraceAndServe, which
@@ -139,6 +137,7 @@ aspects:
                 SpanOpts: spanOpts,
                 RouteParams: match.Vars,
                 Route: route,
+                OTelSemanticsEnabled: &{{ $r }}.__dd_config.otelEnabled,
               })
               return
             }
