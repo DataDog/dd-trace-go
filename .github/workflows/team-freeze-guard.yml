@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: DataDog/team-freeze-guard@29e92069c40f38088e636f27df70d10c24e647b6  # v0.0.2
+      - uses: DataDog/team-freeze-guard@d28a2e357903b426122feaae225629bd63fcd2c5  # v0.0.5
         with:
           bypass-labels: |
             ci
@@ -40,3 +40,4 @@ jobs:
             dev/testing
             github_actions
           frozen-teams: ""
+          frozen-message: "incident-60559"
