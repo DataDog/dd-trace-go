@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -533,6 +534,74 @@ func TestStatsAdditionalTagsCardinalityLimit(t *testing.T) {
 			assert.Empty(t, logs)
 		})
 	}
+}
+
+func TestDataStreamsIntakeBufferKB(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		envValue string
+		want     int
+		wantWarn string
+	}{
+		{name: "default", want: defaultDataStreamsIntakeBufferKB},
+		{name: "valid", envValue: "8192", want: 8192},
+		{name: "minimum", envValue: "2110", want: minDataStreamsIntakeBufferKB},
+		{name: "below-minimum", envValue: "42", want: minDataStreamsIntakeBufferKB,
+			wantWarn: "raising DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: 42 is below the minimum"},
+		{name: "zero", envValue: "0", want: defaultDataStreamsIntakeBufferKB,
+			wantWarn: "ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: non-positive value"},
+		{name: "negative", envValue: "-1", want: defaultDataStreamsIntakeBufferKB,
+			wantWarn: "ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: non-positive value"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tc.envValue != "" {
+				t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB", tc.envValue)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.want, cfg.DataStreamsIntakeBufferKB())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn != "" {
+				assert.Contains(t, logs, tc.wantWarn)
+				return
+			}
+			assert.Empty(t, logs)
+		})
+	}
+}
+
+func TestSetDataStreamsIntakeBufferKB(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	cfg.SetDataStreamsIntakeBufferKB(8192, telemetry.OriginCode)
+	assert.Equal(t, 8192, cfg.DataStreamsIntakeBufferKB())
+
+	cfg.SetDataStreamsIntakeBufferKB(0, telemetry.OriginCode)
+	assert.Equal(t, 8192, cfg.DataStreamsIntakeBufferKB())
+	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: non-positive value")
+
+	cfg.SetDataStreamsIntakeBufferKB(1, telemetry.OriginCode)
+	assert.Equal(t, minDataStreamsIntakeBufferKB, cfg.DataStreamsIntakeBufferKB())
+	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "raising DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: 1 is below the minimum")
+}
+
+// The floor is expressed in KB here but derives from internal/datastreams'
+// per-entry sizing, so it has to keep buying the 10,000 slots it promises.
+func TestDataStreamsIntakeBufferFloorHoldsTenThousandSlots(t *testing.T) {
+	assert.GreaterOrEqual(t, datastreams.SlotsForKB(minDataStreamsIntakeBufferKB), int64(10000))
+	assert.GreaterOrEqual(t, defaultDataStreamsIntakeBufferKB, minDataStreamsIntakeBufferKB)
 }
 
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {

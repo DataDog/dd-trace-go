@@ -1325,6 +1325,18 @@ func WithStatsComputation(enabled bool) StartOption {
 	}
 }
 
+// WithDataStreamsIntakeBufferSizeKB sets the memory budget, in kibibytes, of
+// the Data Streams Monitoring processor's input ring buffer. The buffer
+// measures what each entry retains and starts overwriting the oldest unread
+// entries once the budget is reached, so raising this value trades memory for
+// tolerance to bursts or a slow agent. This can also be configured by setting
+// DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB. Non-positive values are ignored.
+func WithDataStreamsIntakeBufferSizeKB(kb int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferKB(kb, internalconfig.OriginCode)
+	}
+}
+
 // WithStatsAdditionalTags configures additional tag keys to extract from spans
 // and use as extra aggregation dimensions for client-side stats. For example,
 // setting tags to []string{"region", "tenant_id"} will cause stats to be
