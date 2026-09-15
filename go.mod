@@ -22,7 +22,7 @@ require (
 	github.com/klauspost/compress v1.18.7
 	github.com/linkdata/deadlock v0.5.5
 	github.com/minio/simdjson-go v0.4.5
-	github.com/open-feature/go-sdk v1.17.0
+	github.com/open-feature/go-sdk v1.18.0
 	github.com/puzpuzpuz/xsync/v4 v4.5.0
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0
@@ -108,6 +108,7 @@ require (
 )
 
 retract (
+	v2.12.0-dev // Tags point to a commit orphaned by an accidental squash-merge; superseded by v2.12.0-dev.1
 	[v2.0.0-rc.1, v2.0.0-rc.22]
 	[v2.0.0-beta.1, v2.0.0-beta.11]
 	v2.0.0-20240516153256-8d6fa2bea61d
