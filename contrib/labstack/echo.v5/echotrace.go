@@ -151,18 +151,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if err != nil && !shouldIgnoreError(cfg, err) {
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
-				if echoErr, ok := cfg.translateError(err); ok {
-					if cfg.isStatusError(echoErr.Code) {
-						finishOpts = append(finishOpts, tracer.WithError(err))
-					}
-					echoStatus = echoErr.Code
-
-				} else {
-					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
-					if cfg.isStatusError(500) {
-						finishOpts = append(finishOpts, tracer.WithError(err))
-					}
-					echoStatus = 500
+				echoStatus = statusFromError(cfg, err)
+				if cfg.isStatusError(echoStatus) {
+					finishOpts = append(finishOpts, tracer.WithError(err))
 				}
 			} else if status := responseStatus(c); status > 0 {
 				if cfg.isStatusError(status) {
@@ -202,6 +193,18 @@ func responseStatus(c *echo.Context) int {
 		return r.Status
 	}
 	return 0
+}
+
+// statusFromError reports the HTTP status echo will send for err: the
+// translator if it matches, else [echo.HTTPStatusCoder], else 500.
+func statusFromError(cfg *config, err error) int {
+	if echoErr, ok := cfg.translateError(err); ok && echoErr != nil && echoErr.Code != 0 {
+		return echoErr.Code
+	}
+	if code := echo.StatusCode(err); code != 0 {
+		return code
+	}
+	return http.StatusInternalServerError
 }
 
 func errorFromStatusCode(statusCode int) error {
