@@ -58,9 +58,9 @@ runs:
         unset GOROOT
         echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
 
-    - name: Cache tools
-      id: cache-tools
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: Restore tools cache
+      id: cache-tools-restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.tools-bin }}
         # Key on the resolved toolchain version, not the literal input: `stable`
@@ -73,10 +73,19 @@ runs:
           ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-
 
     - name: Install development tools
-      if: steps.cache-tools.outputs.cache-hit != 'true'
+      if: steps.cache-tools-restore.outputs.cache-hit != 'true'
       shell: bash
       run: |-
         ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}
+
+    # Save after a successful install instead of waiting for the calling job's post phase.
+    # This keeps failed installs out of the cache without discarding tools when later tests fail.
+    - name: Save tools cache
+      if: ${{ success() && steps.cache-tools-restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.tools-bin }}
+        key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
 
     # Cache outcomes are observable during setup, while the API key used to submit
     # metrics is minted later. Expose raw action outputs for classification at submission.
@@ -112,8 +121,9 @@ runs:
             {
               "name": "tools",
               "enabled": "true",
-              "outcome": ${{ toJSON(steps.cache-tools.outcome || '') }},
-              "cache_hit": ${{ toJSON(steps.cache-tools.outputs.cache-hit || '') }}
+              "outcome": ${{ toJSON(steps.cache-tools-restore.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.cache-tools-restore.outputs.cache-hit || '') }},
+              "cache_matched_key": ${{ toJSON(steps.cache-tools-restore.outputs.cache-matched-key || '') }}
             }
           ]
         }
