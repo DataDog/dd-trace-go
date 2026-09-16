@@ -152,9 +152,9 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) OptionFn {
 // This is used for extracting the HTTP response status code.
 //
 // fn only needs to cover error types whose status echo itself cannot resolve.
-// When it returns false, the status is taken from [echo.HTTPStatusCoder] if the
-// error implements it ([echo.HTTPError] and package-level sentinels such as
-// [echo.ErrNotFound]); errors carrying no status are reported as 500.
+// When it returns false or a zero Code, the status is taken from
+// [echo.ResolveResponseStatus] ([echo.HTTPStatusCoder], else 500), unless the
+// response is already committed.
 func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) OptionFn {
 	return func(cfg *config) {
 		cfg.translateError = fn

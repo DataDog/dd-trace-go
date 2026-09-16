@@ -629,29 +629,35 @@ func TestWithErrorTranslator(t *testing.T) {
 // about the application's own error types does not force every other error to
 // a 500: errors echo can resolve a status for keep it.
 func TestWithErrorTranslatorFallback(t *testing.T) {
-	translateError := func(err error) (*echo.HTTPError, bool) {
+	appTranslator := func(err error) (*echo.HTTPError, bool) {
 		if custom, ok := errors.AsType[*testCustomError](err); ok {
 			return echo.NewHTTPError(custom.TestCode, custom.Error()), true
 		}
 		return nil, false
 	}
+	zeroTranslator := func(error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{Code: 0, Message: "unset"}, true
+	}
 
 	for _, tt := range []struct {
-		name     string
-		err      error
-		wantCode string
+		name      string
+		err       error
+		translate func(error) (*echo.HTTPError, bool)
+		wantCode  string
 	}{
-		{name: "translated", err: &testCustomError{TestCode: 401}, wantCode: "401"},
-		{name: "sentinel", err: echo.ErrTooManyRequests, wantCode: "429"},
-		{name: "http-error", err: echo.NewHTTPError(http.StatusBadRequest, "bad"), wantCode: "400"},
-		{name: "unknown", err: errors.New("oh no"), wantCode: "500"},
+		{name: "translated", err: &testCustomError{TestCode: 401}, translate: appTranslator, wantCode: "401"},
+		{name: "sentinel", err: echo.ErrTooManyRequests, translate: appTranslator, wantCode: "429"},
+		{name: "http-error", err: echo.NewHTTPError(http.StatusBadRequest, "bad"), translate: appTranslator, wantCode: "400"},
+		{name: "unknown", err: errors.New("oh no"), translate: appTranslator, wantCode: "500"},
+		{name: "zero-code-sentinel", err: echo.ErrTooManyRequests, translate: zeroTranslator, wantCode: "429"},
+		{name: "zero-code-unknown", err: errors.New("oh no"), translate: zeroTranslator, wantCode: "500"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
 			router := echo.New()
-			router.Use(Middleware(WithErrorTranslator(translateError)))
+			router.Use(Middleware(WithErrorTranslator(tt.translate)))
 			router.GET("/err", func(_ *echo.Context) error { return tt.err })
 
 			r := httptest.NewRequest(http.MethodGet, "/err", nil)
@@ -662,6 +668,33 @@ func TestWithErrorTranslatorFallback(t *testing.T) {
 			assert.Equal(t, tt.wantCode, spans[0].Tag(ext.HTTPCode))
 		})
 	}
+}
+
+// TestCommittedResponseWinsOverError asserts that a handler which writes a
+// response and then returns an error is tagged with the committed status, not
+// the error's status. echo.ResolveResponseStatus gives the committed response
+// precedence, matching the wire status.
+func TestCommittedResponseWinsOverError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := echo.New()
+	router.Use(Middleware())
+	router.GET("/err", func(c *echo.Context) error {
+		if err := c.JSON(http.StatusCreated, map[string]string{"ok": "true"}); err != nil {
+			return err
+		}
+		return errors.New("after commit")
+	})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/err", nil))
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "201", spans[0].Tag(ext.HTTPCode))
+	assert.NotContains(t, spans[0].Tags(), ext.ErrorMsg)
 }
 
 func TestWithErrorCheck(t *testing.T) {
