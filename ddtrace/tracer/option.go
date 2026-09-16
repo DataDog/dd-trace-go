@@ -495,11 +495,6 @@ type agentFeatures struct {
 	// enabled, as indicated by the presence of /v0.7/config in its endpoints.
 	hasRemoteConfig bool
 
-	// remoteConfigSupportKnown reports whether the tracer received conclusive
-	// evidence about Remote Config support. It is false only when /info failed
-	// transiently, in which case attempting RC is safe because its poller retries.
-	remoteConfigSupportKnown bool
-
 	// reachable reports whether the trace-agent was reachable at startup and
 	// responded successfully to the /info endpoint. When false, the agent may
 	// simply be unreachable due to a transient startup issue, so the telemetry
@@ -644,7 +639,6 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		features.featureFlags[flag] = struct{}{}
 	}
 	features.reachable = true
-	features.remoteConfigSupportKnown = true
 	return features, nil
 }
 
@@ -660,12 +654,11 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (agentFeatures, traceProtocolState) {
 	if agentDisabled {
 		// there is no agent; all features off
-		return agentFeatures{remoteConfigSupportKnown: true}, protoV04
+		return agentFeatures{}, protoV04
 	}
 	features, err := fetchAgentFeatures(context.Background(), agentURL, httpClient)
 	if err != nil {
 		if errors.Is(err, errAgentFeaturesNotSupported) {
-			features.remoteConfigSupportKnown = true
 			return features, protoV04
 		}
 		log.Error("%s", err.Error())

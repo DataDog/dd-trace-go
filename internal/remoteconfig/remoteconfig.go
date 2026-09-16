@@ -16,7 +16,6 @@ import (
 	"maps"
 	"math/big"
 	"net/http"
-	"net/url"
 	"reflect"
 	"slices"
 	"sync"
@@ -204,10 +203,6 @@ var (
 
 // newClient creates a new remoteconfig Client
 func newClient(config ClientConfig) (*Client, error) {
-	agentURL, err := url.Parse(config.AgentURL)
-	if err != nil || !agentURL.IsAbs() || agentURL.Host == "" {
-		return nil, errors.New("remoteconfig: AgentURL must be an absolute Agent URL")
-	}
 	repo, err := rc.NewUnverifiedRepository()
 	if err != nil {
 		return nil, err
@@ -219,7 +214,7 @@ func newClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
-		endpoint:     agentURL.JoinPath("v0.7/config").String(),
+		endpoint:     config.AgentURL + "/v0.7/config",
 		repository:   repo,
 		stop:         make(chan struct{}),
 		done:         make(chan struct{}),

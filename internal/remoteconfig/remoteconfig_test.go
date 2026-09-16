@@ -113,18 +113,6 @@ func TestRCClient(t *testing.T) {
 	})
 }
 
-func TestStartRejectsRelativeAgentURL(t *testing.T) {
-	Reset()
-	t.Cleanup(Reset)
-	cfg := DefaultClientConfig()
-	cfg.AgentURL = ""
-
-	err := Start(cfg)
-
-	require.ErrorContains(t, err, "absolute Agent URL")
-	assert.Empty(t, ClientID(), "an invalid endpoint must not start the process-global RC client")
-}
-
 func TestPayloads(t *testing.T) {
 	t.Run("getConfigResponse", func(t *testing.T) {
 

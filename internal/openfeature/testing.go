@@ -11,6 +11,7 @@ import "github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 func ResetForTest() {
 	rcState.Lock()
 	defer rcState.Unlock()
+	rcState.tracerOwned = false
 	rcState.subscribed = false
 	rcState.callback = nil
 	rcState.buffered = nil

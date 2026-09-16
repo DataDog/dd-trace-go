@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func (f ffeRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-func TestFFERemoteConfigStartsWhenAgentInfoUnavailable(t *testing.T) {
+func TestFFERemoteConfigStartsAfterAgentInfoRecovers(t *testing.T) {
 	t.Setenv("DD_APPSEC_ENABLED", "false")
 	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
@@ -35,10 +36,18 @@ func TestFFERemoteConfigStartsWhenAgentInfoUnavailable(t *testing.T) {
 	t.Cleanup(remoteconfig.Reset)
 	t.Cleanup(internalffe.ResetForTest)
 
+	var infoRecovered atomic.Bool
 	rcRequests := make(chan string, 1)
 	httpClient := &http.Client{Transport: ffeRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/info" {
-			return nil, errors.New("connection reset by peer")
+			if !infoRecovered.Load() {
+				return nil, errors.New("connection reset by peer")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"endpoints":["/v0.7/config"]}`)),
+			}, nil
 		}
 		if r.URL.Path == "/v0.7/config" {
 			select {
@@ -62,16 +71,20 @@ func TestFFERemoteConfigStartsWhenAgentInfoUnavailable(t *testing.T) {
 	t.Cleanup(trc.Stop)
 
 	trc.startAppSec()
+	require.Empty(t, remoteconfig.ClientID(), "a transient /info failure should wait for positive Agent capability discovery")
+
+	providerCallback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(providerCallback)
+	require.NoError(t, err)
+	require.True(t, tracerOwnsSubscription, "the provider should wait for the tracer-owned RC client")
+	require.True(t, internalffe.AttachCallback(providerCallback))
+
+	infoRecovered.Store(true)
+	trc.refreshAgentFeatures()
 
 	found, err := remoteconfig.HasProduct(internalffe.FFEProductName)
 	require.NoError(t, err)
-	require.True(t, found, "FFE_FLAGS should be subscribed while Agent capabilities are temporarily unknown")
-
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-		return nil
-	})
-	require.NoError(t, err)
-	require.True(t, tracerOwnsSubscription, "the provider should attach to the tracer's correctly configured RC client")
+	require.True(t, found, "FFE_FLAGS should be subscribed after Agent capability discovery recovers")
 
 	select {
 	case requestURL := <-rcRequests:
@@ -108,10 +121,14 @@ func TestFFERemoteConfigDoesNotStartWhenAgentIsKnownUnsupported(t *testing.T) {
 	)
 	require.NoError(t, err)
 	t.Cleanup(trc.Stop)
-	require.True(t, trc.config.agent.load().remoteConfigSupportKnown)
 
 	trc.startAppSec()
 
+	providerCallback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(providerCallback)
+	require.NoError(t, err)
+	require.True(t, tracerOwnsSubscription, "the provider should not start a fallback client for a known-unsupported Agent")
+	require.True(t, internalffe.AttachCallback(providerCallback))
 	require.Empty(t, remoteconfig.ClientID(), "a conclusive unsupported response should not start RC")
 }
 
@@ -141,6 +158,11 @@ func TestFFERemoteConfigExplicitDisableWinsWhenAgentInfoUnavailable(t *testing.T
 
 	trc.startAppSec()
 
+	providerCallback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(providerCallback)
+	require.NoError(t, err)
+	require.True(t, tracerOwnsSubscription, "the provider should not bypass explicit RC disablement with a fallback client")
+	require.True(t, internalffe.AttachCallback(providerCallback))
 	require.Empty(t, remoteconfig.ClientID(), "explicit RC disablement should prevent startup")
 }
 

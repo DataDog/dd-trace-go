@@ -312,7 +312,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
 			cfg, err := newTestConfig(WithLambdaMode(true), WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Equal(t, agentFeatures{remoteConfigSupportKnown: true}, cfg.agent.load())
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
@@ -328,7 +328,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			defer srv.Close()
 			cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 			require.NoError(t, err)
-			assert.Equal(t, agentFeatures{remoteConfigSupportKnown: true}, cfg.agent.load())
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -363,7 +363,6 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.Equal(t, 2, a.obfuscationVersion)
 		assert.False(t, a.hasTelemetryProxy)
 		assert.True(t, a.reachable)
-		assert.True(t, a.remoteConfigSupportKnown)
 	})
 
 	t.Run("telemetry_proxy", func(t *testing.T) {

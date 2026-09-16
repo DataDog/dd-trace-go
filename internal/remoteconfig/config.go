@@ -18,7 +18,6 @@ import (
 
 const (
 	envPollIntervalSec = "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS"
-	defaultHTTPTimeout = 10 * time.Second
 )
 
 // ClientConfig contains the required values to configure a remoteconfig client
@@ -45,16 +44,9 @@ type ClientConfig struct {
 
 // DefaultClientConfig returns the default remote config client configuration
 func DefaultClientConfig() ClientConfig {
-	agentURL := internal.AgentURLFromEnv()
-	httpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, false)
-	if agentURL.Scheme == "unix" {
-		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)
-		agentURL = internal.UnixDataSocketURL(agentURL.Path)
-	}
 	return ClientConfig{
-		AgentURL:      agentURL.String(),
 		Env:           env.Get("DD_ENV"),
-		HTTP:          httpClient,
+		HTTP:          &http.Client{Timeout: 10 * time.Second},
 		PollInterval:  pollIntervalFromEnv(),
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),

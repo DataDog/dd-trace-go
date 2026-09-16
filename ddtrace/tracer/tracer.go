@@ -36,6 +36,7 @@ import (
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -132,6 +133,13 @@ type tracer struct {
 
 	// stopOnce ensures the tracer is stopped exactly once.
 	stopOnce sync.Once
+
+	// remoteConfigStartOnce ensures Agent capability refreshes can start the
+	// shared RC client after startup without registering products twice.
+	remoteConfigStartOnce sync.Once
+	// remoteConfigDiscoveryEnabled is set by startAppSec once the tracer is
+	// ready for a positive /info capability result to start RC.
+	remoteConfigDiscoveryEnabled atomic.Bool
 
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
@@ -380,14 +388,33 @@ func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
 // production Start path and the inspectable-tracer bootstrap call this method so
 // that WithAppSecEnabled and friends activate identically in both environments.
 func (t *tracer) startAppSec() {
+	cfg := t.remoteConfigClientConfig()
+	if internalffe.RemoteConfigSourceSelected(t.config.internalConfig) {
+		internalffe.ClaimRCSubscription()
+	}
+	t.remoteConfigDiscoveryEnabled.Store(true)
+	t.startRemoteConfigIfSupported(t.config.agent.load(), cfg)
+	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
+	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
+	appsec.Start(appsecopts...)
+}
+
+func (t *tracer) remoteConfigClientConfig() remoteconfig.ClientConfig {
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.internalConfig.AgentURL().String()
 	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.internalConfig.ServiceName()
-	agentFeatures := t.config.agent.load()
-	if agentFeatures.hasRemoteConfig || !agentFeatures.remoteConfigSupportKnown {
+	return cfg
+}
+
+func (t *tracer) startRemoteConfigIfSupported(agentFeatures agentFeatures, cfg remoteconfig.ClientConfig) {
+	if !t.remoteConfigDiscoveryEnabled.Load() || !agentFeatures.hasRemoteConfig {
+		return
+	}
+	t.remoteConfigStartOnce.Do(func() {
 		if err := t.startRemoteConfig(cfg); err != nil {
 			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 				log.Debug("remoteconfig: client not started, remote configuration is disabled")
@@ -395,11 +422,7 @@ func (t *tracer) startAppSec() {
 				log.Warn("Remote config startup error: %s", err.Error())
 			}
 		}
-	}
-	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
-	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
-	appsec.Start(appsecopts...)
+	})
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
@@ -776,6 +799,7 @@ func (t *tracer) refreshAgentFeatures() {
 			f.hasTelemetryProxy = current.hasTelemetryProxy
 			return f
 		})
+		t.startRemoteConfigIfSupported(newFeatures, t.remoteConfigClientConfig())
 	}
 	proto := t.config.effectiveTraceProtocol()
 	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
