@@ -4,12 +4,20 @@ inputs:
   go-version:
     required: true
     description: Go version to setup.
+  cache:
+    required: false
+    default: "true"
+    description: Whether to restore and save Go build and module caches.
   tools-bin:
     required: true
     description: Directory to installs tools to.
   tools-dir:
     required: true
     description: Directory that has the tool definitions.
+outputs:
+  cache-metrics:
+    description: Raw cache observations and filesystem paths as JSON.
+    value: ${{ steps.cache-metrics.outputs.cache-metrics }}
 runs:
   using: "composite"
   steps:
@@ -36,7 +44,7 @@ runs:
       id: setup-go
       with:
         go-version: ${{ inputs.go-version }}
-        cache: true
+        cache: ${{ inputs.cache }}
         check-latest: true
 
     # Callers that run a tool exporting its own GOROOT into $GITHUB_ENV before this
@@ -50,22 +58,75 @@ runs:
         unset GOROOT
         echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
 
-    - name: Cache tools
-      id: cache-tools
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: Restore tools cache
+      id: cache-tools-restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ inputs.tools-bin }}
         # Key on the resolved toolchain version, not the literal input: `stable`
         # silently changes meaning when a new Go release ships, and a cache built
         # against the old release would then feed stale binaries to the new one.
-        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
         # Keep near-misses usable when the base branch moves go.mod/go.sum, which
         # otherwise invalidates the key for every open PR at once.
         restore-keys: |
           ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-
 
     - name: Install development tools
-      if: steps.cache-tools.outputs.cache-hit != 'true'
+      if: steps.cache-tools-restore.outputs.cache-hit != 'true'
       shell: bash
       run: |-
         ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}
+
+    # Save after a successful install instead of waiting for the calling job's post phase.
+    # This keeps failed installs out of the cache without discarding tools when later tests fail.
+    - name: Save tools cache
+      if: ${{ success() && steps.cache-tools-restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.tools-bin }}
+        key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
+
+    # Cache outcomes are observable during setup, while the API key used to submit
+    # metrics is minted later. Expose raw action outputs for classification at submission.
+    - name: Record cache observations
+      id: cache-metrics
+      # Record completed and incomplete operations so the reporting action can omit
+      # skipped, failed, disabled, or unclassifiable restores.
+      if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        paths="$(go env -json GOMODCACHE GOCACHE)"
+        metrics="$(jq -c \
+          --argjson paths "$paths" '
+          .cache_paths = [
+            {name: "go_mod", path: $paths.GOMODCACHE},
+            {name: "go_build", path: $paths.GOCACHE}
+          ]
+        ' <<'JSON'
+        {
+          "runtime": {
+            "name": "go",
+            "version": ${{ toJSON(steps.setup-go.outputs.go-version || '') }}
+          },
+          "restores": [
+            {
+              "name": "setup_go",
+              "enabled": ${{ toJSON(inputs.cache) }},
+              "outcome": ${{ toJSON(steps.setup-go.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.setup-go.outputs.cache-hit || '') }}
+            },
+            {
+              "name": "tools",
+              "enabled": "true",
+              "outcome": ${{ toJSON(steps.cache-tools-restore.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.cache-tools-restore.outputs.cache-hit || '') }},
+              "cache_matched_key": ${{ toJSON(steps.cache-tools-restore.outputs.cache-matched-key || '') }}
+            }
+          ]
+        }
+        JSON
+        )"
+        printf 'cache-metrics=%s\n' "$metrics" >> "$GITHUB_OUTPUT"

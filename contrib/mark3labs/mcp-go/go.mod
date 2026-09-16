@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/mark3labs/mcp-go v0.42.0
 	github.com/stretchr/testify v1.11.1
 )
@@ -79,6 +79,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
@@ -88,3 +89,5 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.
