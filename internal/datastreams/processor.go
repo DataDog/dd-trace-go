@@ -159,7 +159,23 @@ type processorStats struct {
 	flushedBuckets  atomic.Int64
 	flushErrors     atomic.Int64
 	dropped         atomic.Int64
+	// droppedAgentStall and droppedPollStall are subsets of dropped, tracking
+	// (approximately, since the reader's state can change between the sample
+	// and the actual drop) which reader-loop stall coincided with the drop.
+	droppedAgentStall atomic.Int64
+	droppedPollStall  atomic.Int64
 }
+
+// readerState describes what the fastQueue reader goroutine (Processor.run)
+// is doing right now, so a dropped payload can be attributed to why the
+// reader wasn't draining the queue.
+type readerState int32
+
+const (
+	readerProcessing readerState = iota
+	readerStalledOnAgent
+	readerStalledOnEmptyQueue
+)
 
 type partitionKey struct {
 	partition int32
@@ -207,6 +223,7 @@ type Processor struct {
 	stopped              uint64
 	stop                 chan struct{} // closing this channel triggers shutdown
 	flushRequest         chan chan<- struct{}
+	readerState          atomic.Int32
 	stats                processorStats
 	transport            *httpTransport
 	statsd               internal.StatsdClient
@@ -353,27 +370,51 @@ func (p *Processor) flushInput() {
 	}
 }
 
+// sendToAgentStalling wraps sendToAgent, marking the reader as stalled on
+// the agent call for the duration of the (synchronous) HTTP request, since
+// the queue isn't drained while it's in flight.
+func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
+	p.readerState.Store(int32(readerStalledOnAgent))
+	p.sendToAgent(payloads)
+	p.readerState.Store(int32(readerProcessing))
+}
+
 func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
 		case <-p.stop:
 			// drop in flight payloads on the input channel
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
+			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		case now := <-tick:
-			p.sendToAgent(p.flush(now))
+			p.sendToAgentStalling(p.flush(now))
 		case done := <-p.flushRequest:
 			p.flushInput()
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
+			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
 		default:
 			s := p.in.pop()
 			if s == nil {
+				p.readerState.Store(int32(readerStalledOnEmptyQueue))
 				time.Sleep(time.Millisecond * 10)
+				p.readerState.Store(int32(readerProcessing))
 				continue
 			}
 			p.processInput(s)
 		}
+	}
+}
+
+// recordDrop increments the aggregate dropped-payloads counter, plus the
+// counter for whichever reader-loop stall (approximately) coincided with
+// the drop.
+func (p *Processor) recordDrop() {
+	p.stats.dropped.Add(1)
+	switch readerState(p.readerState.Load()) {
+	case readerStalledOnAgent:
+		p.stats.droppedAgentStall.Add(1)
+	case readerStalledOnEmptyQueue:
+		p.stats.droppedPollStall.Add(1)
 	}
 }
 
@@ -386,7 +427,9 @@ func (p *Processor) Start() {
 	p.stop = make(chan struct{})
 	p.flushRequest = make(chan chan<- struct{})
 	p.wg.Go(func() {
-		p.reportStats()
+		tick := time.NewTicker(time.Second * 10)
+		defer tick.Stop()
+		p.reportStats(tick.C)
 	})
 	p.wg.Go(func() {
 		tick := time.NewTicker(bucketDuration)
@@ -416,20 +459,20 @@ func (p *Processor) Stop() {
 	p.wg.Wait()
 }
 
-func (p *Processor) reportStats() {
-	tick := time.NewTicker(time.Second * 10)
-	defer tick.Stop()
+func (p *Processor) reportStats(tick <-chan time.Time) {
 	for {
 		select {
 		case <-p.stop:
 			return
-		case <-tick.C:
+		case <-tick:
 		}
 		p.statsd.Count("datadog.datastreams.processor.payloads_in", p.stats.payloadsIn.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", p.stats.flushedPayloads.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", p.stats.flushedBuckets.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flush_errors", p.stats.flushErrors.Swap(0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.dropped_payloads_agent_stall", p.stats.droppedAgentStall.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.dropped_payloads_poll_stall", p.stats.droppedPollStall.Swap(0), nil, 1)
 	}
 }
 
@@ -529,7 +572,7 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		payloadSize:    params.PayloadSize,
 	}})
 	if dropped {
-		p.stats.dropped.Add(1)
+		p.recordDrop()
 	}
 	return ContextWithPathway(ctx, child)
 }
@@ -548,7 +591,7 @@ func (p *Processor) TrackKafkaCommitOffsetWithCluster(cluster string, group stri
 		timestamp:  p.time().UnixNano(),
 		cluster:    cluster}})
 	if dropped {
-		p.stats.dropped.Add(1)
+		p.recordDrop()
 	}
 }
 
@@ -566,7 +609,7 @@ func (p *Processor) TrackKafkaProduceOffsetWithCluster(cluster string, topic str
 		cluster:    cluster,
 	}})
 	if dropped {
-		p.stats.dropped.Add(1)
+		p.recordDrop()
 	}
 }
 
@@ -581,6 +624,6 @@ func (p *Processor) TrackKafkaHighWatermarkOffset(cluster string, topic string, 
 		cluster:    cluster,
 	}})
 	if dropped {
-		p.stats.dropped.Add(1)
+		p.recordDrop()
 	}
 }
