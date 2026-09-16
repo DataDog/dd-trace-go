@@ -12,6 +12,7 @@ package openfeature
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -73,10 +74,13 @@ func SubscribeRC() error {
 		return nil
 	}
 
+	return subscribeRCLocked()
+}
+
+func subscribeRCLocked() error {
 	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteconfig.FFEFlagEvaluation); err != nil {
 		return err
 	}
-
 	rcState.subscribed = true
 	log.Debug("openfeature: subscribed to RC product %s via tracer", FFEProductName)
 	return nil
@@ -144,7 +148,26 @@ func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription 
 	rcState.Lock()
 	defer rcState.Unlock()
 
-	if rcState.tracerOwned || rcState.subscribed {
+	if rcState.tracerOwned {
+		if !rcState.subscribed {
+			hasProduct, productErr := remoteconfig.HasProduct(FFEProductName)
+			switch {
+			case errors.Is(productErr, remoteconfig.ErrClientNotStarted):
+				// The tracer owns the subscription, but Agent capability discovery
+				// has not started the shared client yet. The caller will attach its
+				// callback and SubscribeRC will register the product after discovery.
+			case productErr != nil:
+				return true, productErr
+			case !hasProduct:
+				if err := subscribeRCLocked(); err != nil {
+					return true, err
+				}
+			}
+		}
+		return true, nil
+	}
+
+	if rcState.subscribed {
 		return true, nil
 	}
 

@@ -132,6 +132,67 @@ func TestFFERemoteConfigDoesNotStartWhenAgentIsKnownUnsupported(t *testing.T) {
 	require.Empty(t, remoteconfig.ClientID(), "a conclusive unsupported response should not start RC")
 }
 
+func TestFFEProviderUsesExistingSharedRCWhileAgentInfoUnavailable(t *testing.T) {
+	t.Setenv("DD_APPSEC_ENABLED", "false")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "60")
+	remoteconfig.Reset()
+	internalffe.ResetForTest()
+	t.Cleanup(remoteconfig.Reset)
+	t.Cleanup(internalffe.ResetForTest)
+
+	rcRequests := make(chan string, 1)
+	httpClient := &http.Client{Transport: ffeRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/info" {
+			return nil, errors.New("connection reset by peer")
+		}
+		if r.URL.Path == "/v0.7/config" {
+			select {
+			case rcRequests <- r.URL.String():
+			default:
+			}
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		}, nil
+	})}
+
+	trc, err := newTracer(
+		WithAgentURL("http://agent.test:8126"),
+		WithHTTPClient(httpClient),
+		withNoopStats(),
+	)
+	require.NoError(t, err)
+	t.Cleanup(trc.Stop)
+
+	trc.startAppSec()
+	require.Empty(t, remoteconfig.ClientID())
+
+	// AppSec remote activation can start the correctly configured shared RC
+	// client independently of Agent capability discovery.
+	require.NoError(t, remoteconfig.Start(trc.remoteConfigClientConfig()))
+
+	providerCallback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(providerCallback)
+	require.NoError(t, err)
+	require.True(t, tracerOwnsSubscription)
+	require.True(t, internalffe.AttachCallback(providerCallback))
+
+	found, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	require.True(t, found, "the tracer should subscribe FFE_FLAGS on the existing shared RC client")
+
+	select {
+	case requestURL := <-rcRequests:
+		require.Equal(t, "http://agent.test:8126/v0.7/config", requestURL)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the existing shared RC client did not poll the tracer's resolved Agent URL")
+	}
+}
+
 func TestFFERemoteConfigExplicitDisableWinsWhenAgentInfoUnavailable(t *testing.T) {
 	t.Setenv("DD_APPSEC_ENABLED", "false")
 	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
