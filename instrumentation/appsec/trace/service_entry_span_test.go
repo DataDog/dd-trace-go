@@ -27,3 +27,24 @@ func TestServiceEntrySpanOperationFinishClearsGLS(t *testing.T) {
 		}
 	}
 }
+
+func TestSetSerializableTagNativeInt(t *testing.T) {
+	ts := TestTagSetter{}
+	op, _ := StartServiceEntrySpanOperation(context.Background(), ts)
+
+	op.SetSerializableTag("int_tag", 200)
+	op.SetSerializableTag("uint_tag", uint(7))
+
+	if _, ok := op.jsonTags["int_tag"]; ok {
+		t.Fatalf("native int tag was JSON-serialized (jsonTags), want direct tag")
+	}
+	if _, ok := op.jsonTags["uint_tag"]; ok {
+		t.Fatalf("native uint tag was JSON-serialized (jsonTags), want direct tag")
+	}
+	if ts["int_tag"] != 200 {
+		t.Fatalf("int_tag not set directly: got %v", ts["int_tag"])
+	}
+	if ts["uint_tag"] != uint(7) {
+		t.Fatalf("uint_tag not set directly: got %v", ts["uint_tag"])
+	}
+}

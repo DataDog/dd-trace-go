@@ -48,9 +48,11 @@ func NewEncodable(contentType string, reader *io.ReadCloser, limit int) (libddwa
 		return nil, errors.New("reader is nil")
 	}
 
+	// Read one byte past the limit so we can distinguish a body that is exactly `limit` bytes
+	// (complete, not truncated) from one that is larger than `limit` (truncated).
 	limitedReader := io.LimitedReader{
 		R: *reader,
-		N: int64(limit),
+		N: int64(limit) + 1,
 	}
 
 	data, err := io.ReadAll(&limitedReader)
@@ -61,7 +63,7 @@ func NewEncodable(contentType string, reader *io.ReadCloser, limit int) (libddwa
 	var newReader io.Reader = bytes.NewReader(data)
 
 	truncated := false
-	if len(data) >= limit {
+	if len(data) > limit {
 		data = data[:limit]
 		newReader = io.MultiReader(newReader, *reader)
 		truncated = true
