@@ -144,6 +144,13 @@ func (p *asyncProducer) AsyncClose() {
 // or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
 // version which is the first version that supports headers. Only spans of
 // successfully published messages have partition and offset tags set.
+//
+// The wrapper follows sarama's channel contract: keep reading Successes and
+// Errors while producing, and keep draining them after Close or AsyncClose
+// until both channels close. Unlike a raw producer, the wrapper does not drain
+// them for you. Do not send on Input concurrently with Close or AsyncClose:
+// the message cannot be delivered once shutdown begins, and the race can panic
+// the wrapper's goroutine.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
@@ -198,7 +205,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				pendingSpan = nil
 			case msg, ok := <-p.Successes():
 				if !ok {
-					// producer was closed, so exit
+					if pendingSpan != nil {
+						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
+					}
 					return
 				}
 				if cfg.dataStreamsEnabled {
@@ -215,7 +224,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
 				if !ok {
-					// producer was closed
+					if pendingSpan != nil {
+						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
+					}
 					return
 				}
 				if spanctx, spanFound := getProducerSpanContext(err.Msg); spanFound {
