@@ -284,6 +284,11 @@ components:
   # --------------------------------------------------- leaf root-module packages
   # No contrib imports these. `dependent-modules` is the measured set of
   # workspace modules that do; depgraph_test.go re-derives it nightly.
+  #
+  # Because these are root-module packages, every entry here keeps
+  # pull-request-tests: ci_test_core.sh picks up what to run with
+  # `go list ./...`, so dropping the gate would stop running a package's own
+  # tests. rules_test.go enforces that for all root-module Go in the table.
   - id: openfeature
     why: >-
       No contrib imports it, but system-tests runs the
@@ -308,6 +313,19 @@ components:
     dependent-modules: []
     gates: [ "@go-hygiene", pull-request-tests ]
 
+  - id: civisibility-fixtures
+    why: >-
+      Sub-programs that the itrbackfillfixture tests run under `go test` to
+      validate ITR coverage backfill. Only the orchestrion/ fixture has its own
+      go.mod: manual/ and internal/mockci/ are root-module packages that
+      test-core compiles and tests directly, and the driver tests are
+      root-module too -- so these paths keep pull-request-tests. Nothing ships
+      them and no weblog or parametric scenario builds them, so the rest of the
+      suite stays off.
+    paths: [ internal/civisibility/integrations/gotesting/fixtures/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
   - id: profiler
     why: profiler/orchestrion.yml is an injected aspect, so orchestrion runs.
     paths: [ profiler/** ]
@@ -318,6 +336,64 @@ components:
     paths: [ llmobs/** ]
     dependent-modules: [ contrib/mark3labs/mcp-go, contrib/modelcontextprotocol/go-sdk ]
     gates: [ "@go-hygiene", pull-request-tests ]
+
+  # ------------------------------------------- submodules under a core directory
+  # Each of these has its own go.mod, so it is not part of the root module and
+  # no root-module package -- and therefore no contrib -- can import it. They
+  # live under internal/ and instrumentation/, which the `core` entry below
+  # claims, so they must come first.
+  #
+  # scripts/ciselect/rules_test.go enforces the structural rule: no directory
+  # with its own go.mod may classify as `core`. A new submodule is a test
+  # failure until it is listed here.
+
+  - id: apps
+    why: >-
+      Soak and benchmark harness, plus the telemetry-errors E2E that
+      unit-integration-tests runs as test-telemetry-errors-e2e. test-apps is
+      schedule-only.
+    paths: [ internal/apps/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: exectracetest
+    why: Execution-trace tests; ci_test_core.sh collects their coverage.
+    paths: [ internal/exectracetest/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: setup-smoke-test
+    why: Referenced only by smoke-tests.yml, which has no pull_request trigger.
+    paths: [ internal/setup-smoke-test/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene" ]
+
+  - id: traceproftest
+    why: Its own module; no CI workflow builds it on the pull request path.
+    paths: [ internal/traceprof/traceproftest/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene" ]
+
+  - id: instrumentation-testmodules
+    why: >-
+      namingschematest and validationtest are matrix members under
+      instrumentation/, so they run in the contrib matrix rather than test-core.
+      testutils/grpc is required by one contrib module, which the matrix's
+      reverse-dependency closure picks up.
+    paths:
+      - instrumentation/internal/namingschematest/**
+      - instrumentation/internal/validationtest/**
+      - instrumentation/testutils/grpc/**
+    module-scoped: true
+    gates: [ "@go-hygiene", pull-request-tests ]
+
+  - id: testcontainers
+    why: >-
+      Also a matrix member, but orchestrion.yml pre-pulls the pinned images from
+      its docker-compose.yaml, so it keeps the orchestrion gate.
+    paths: [ instrumentation/testutils/containers/** ]
+    module-scoped: true
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
 
   # -------------------------------------------------------------------- core
   # Reachable from ~90-100 packages in every contrib module. Measured fan-out:
