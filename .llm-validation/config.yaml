@@ -3,14 +3,14 @@
 # Starter suite for the dd-apm-sdk-review skill. One template case on purpose:
 # cheap enough to re-run while you add the next rule.
 #
-# DataDog/dd-trace-go#4965 (draft) already adds AGENTS.md cases. The platform
-# allows only one YAML under suites/ — fold those cases into
-# suites/dd-apm-sdk-review.yaml when that PR lands, and add the AGENTS.md paths
-# to instruction_files below.
+# Root AGENTS.md is watched so Review Guidelines edits retrigger the job.
+# DataDog/dd-trace-go#4965 (draft) adds AGENTS.md *cases*; fold those into
+# suites/dd-apm-sdk-review.yaml when that PR lands (one YAML under suites/).
 model: claude-sonnet-5
 runs: 2
 
 instruction_files:
+  - AGENTS.md
   - contrib/AGENTS.md
   - .agents/skills/dd-apm-sdk-review/SKILL.md
   - .agents/skills/dd-apm-sdk-review/reviewers/_common.md

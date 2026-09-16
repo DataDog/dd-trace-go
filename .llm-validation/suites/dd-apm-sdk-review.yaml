@@ -4,9 +4,10 @@ version: "0.1"
 # One file on purpose: the platform CLI errors if suites/ has more than one YAML.
 # One starter case — a template. Copy this block to add the next one.
 #
-# These are written as traps, not as obvious bugs: a generic reviewer without
-# the override should miss or mis-classify them. That is what makes the
-# pairwise comparison informative on a first-landing PR (baseline = no skill).
+# The starter case exercises contrib/AGENTS.md § Span Tag Performance. A
+# generic reviewer that never opens that section should miss or mis-classify
+# the aliasing footgun. That is what makes the pairwise comparison informative
+# on a first-landing PR (baseline = no skill).
 cases:
   - id: go-perf-startspanconfig-first
     files:
@@ -15,10 +16,11 @@ cases:
       - .agents/skills/dd-apm-sdk-review/reviewers/_common.md
       - .agents/dd-apm-sdk-review-overrides/reviewers/performance.md
     input: |
-      Apply this repo's performance-review criteria (reviewers/performance.md, its
-      .agents/dd-apm-sdk-review-overrides/reviewers/performance.md override, _common.md, and
-      contrib/AGENTS.md § "Span Tag Performance in Contribs") to the following contrib
-      wrapper. No git checkout available — this snippet is the entire change to review.
+      Apply this repo's performance-review criteria (reviewers/performance.md,
+      _common.md, and contrib/AGENTS.md § "Span Tag Performance in Contribs") to
+      the following contrib wrapper. The performance override only points at
+      that section — open contrib/AGENTS.md; do not invent a narrower rule.
+      No git checkout available — this snippet is the entire change to review.
 
       ```go
       // Cache the static tags once, then overlay the per-request resource.
