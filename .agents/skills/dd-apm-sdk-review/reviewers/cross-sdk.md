@@ -16,7 +16,7 @@ Not relevant: language-internal refactors, build tooling, this repo's test infra
 
 ## Sources, in order of preference
 
-1. **`DataDog/system-tests`** (public). Its shared test suite and `@features.*` markers are the authoritative behavioral contract across SDKs. A change that contradicts a system test is P0.
+1. **`DataDog/system-tests`** (public). Its shared test suite and `@features.*` markers are the authoritative behavioral contract across SDKs. A change that contradicts a system test is P0 **unless this SDK is exempted in `manifests/`** (`missing_feature`, `irrelevant`, `bug`, …). Look up that test’s entry with `gh api` / `gh search code` (this repo does not contain system-tests — do not read the whole manifest). An exemption is not a divergence.
 2. **Sibling public `dd-trace-*` repositories**, read via `gh api` or `gh search code`. Compare the actual implementation in two or three other languages. This is the source that produces citable evidence, so prefer it for anything you intend to report.
 3. **Public Datadog documentation** for customer-facing option names and defaults.
 4. **A cross-repo tracer search tool, if your environment happens to provide one.** Optional and not required: if present it can search the tracer libraries, the shared native library, the system tests, and the Agent's trace pipeline at once. It answers in prose, not citations, so anything you learn this way must be re-verified against a named file in one of the sources above before you may report it. Cite the file, never the tool.
@@ -56,4 +56,4 @@ deprecated alias if it already shipped.
 
 - Do not cite private RFCs, internal URLs, or internal document identifiers if this repository is public; keep your report safe to paste into it.
 - Do not require this SDK to copy another SDK's implementation — only its observable behavior.
-- Do not report a divergence without naming the file in the other SDK that establishes the expected behavior.
+- Do not report a divergence without citing the source that establishes the expected behavior — a named file in another SDK, a `DataDog/system-tests` path, or a public Datadog docs URL.

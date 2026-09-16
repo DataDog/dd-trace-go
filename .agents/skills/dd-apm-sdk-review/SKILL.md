@@ -56,7 +56,10 @@ protect you (the orchestrator) after you have ingested this output.
 #      infer a merge target (default branch, or a closer ancestor branch).
 #    - Local branch with no remote-tracking ref (never pushed): same inference.
 #    - Branch-on-branch with no PR: prefer the closest ancestor branch over the
-#      repo default, and print that so it can be corrected.
+#      repo default, and print that so it can be corrected. A branch that was
+#      merged into HEAD (second parent of a merge commit) is not a stacked
+#      parent — keep the default (or the PR base). Detached HEAD has no
+#      branch name for `gh pr view`; ask rather than guessing.
 #
 #    Pin --repo to a DataDog remote so a fork checkout cannot resolve the
 #    wrong GitHub repository. Do not hardcode a tracer name. `gh pr view --repo`
@@ -84,9 +87,25 @@ ask_merge_target() {
   exit 1
 }
 
+# True if $1 sits on HEAD's first-parent history. Optional $2 stops the walk
+# (the inferred default). A merged-in side branch is an ancestor of HEAD but
+# only as a second parent — reviewing against it drops that merge from the diff.
+on_first_parent_history() {
+  _needle=$1
+  _stop=${2:-}
+  _walk=$(git rev-parse HEAD)
+  while [ -n "$_walk" ]; do
+    [ "$_walk" = "$_needle" ] && return 0
+    [ -n "$_stop" ] && [ "$_walk" = "$_stop" ] && return 1
+    _walk=$(git rev-parse -q --verify "${_walk}^" 2>/dev/null) || return 1
+  done
+  return 1
+}
+
 # Closest ancestor branch (local or on the DataDog remote) that is strictly
-# nearer to HEAD than $1. Skips the current branch and its remote-tracking
-# counterpart so a pushed branch does not pick itself as its parent.
+# nearer to HEAD than $1 and on HEAD's first-parent history. Skips the current
+# branch and its remote-tracking counterpart so a pushed branch does not pick
+# itself as its parent.
 find_closer_ancestor() {
   _default_oid=$1
   _current=$2
@@ -112,6 +131,7 @@ find_closer_ancestor() {
     _oid=$(git rev-parse --verify "$_ref" 2>/dev/null) || continue
     [ "$_oid" != "$(git rev-parse HEAD)" ] || continue
     git merge-base --is-ancestor "$_oid" HEAD 2>/dev/null || continue
+    on_first_parent_history "$_oid" "$_default_oid" || continue
     _ahead=$(git rev-list --count "${_oid}..HEAD" 2>/dev/null) || continue
     if [ "$_ahead" -lt "$_default_ahead" ]; then
       if [ -z "$_best_ahead" ] || [ "$_ahead" -lt "$_best_ahead" ]; then
