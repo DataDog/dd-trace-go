@@ -55,14 +55,14 @@ To add a new integration test, follow these steps:
 
 1. **Create a test case structure**: Implement a new struct that satisfies the [`harness.TestCase`](./internal/harness/harness.go) interface. If adding to an existing package that already has a `TestCase`, use a descriptive name like `TestCaseSomething` to avoid naming conflicts.
 
-   Write one file per distinct calling convention the library supports (function literal vs
-   interface, closure, global convenience function vs explicit construction, value vs pointer
-   config, and so on), each with its own `TestCase`. Auto-instrumentation matches on how code is
-   written, not just which library is called, so a pattern with no dedicated test case can build
-   fine in one form and silently fail to weave, or outright fail to compile, in another. One file
-   per calling convention exercises every join-point matcher and catches build breaks at compile
-   time. See [`contrib/ORCHESTRION.md`](../../../contrib/ORCHESTRION.md#integration-tests) and, for
-   example, `net_http`'s `issue_400.go` and `global_functions.go` in this package.
+   Write one file per test case: a distinct calling convention the library supports (function
+   literal vs interface, closure, global convenience function vs explicit construction, value vs
+   pointer config, and so on), or a regression test for a specific reported issue. Auto-instrumentation
+   matches on how code is written, not just which library is called, so a calling convention with no
+   dedicated test case can build fine in one form and silently fail to weave, or outright fail to
+   compile, in another. See [`contrib/ORCHESTRION.md`](../../../contrib/ORCHESTRION.md#integration-tests)
+   and, for example, `net_http`'s `func_handler.go` and `global_functions.go` (calling conventions) or
+   `issue_400.go` (a regression test) in this package.
 
 2. **Implement the required methods**: Ensure your test case implements all three methods defined by the `harness.TestCase` interface:
    - **`Setup`**: Prepare everything needed for the test, such as starting services (e.g., database servers) or setting up test data. The tracer is not yet started during setup.

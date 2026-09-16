@@ -133,7 +133,8 @@ func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
 
 // OperationName returns the operation name to be set for the given instrumentation component. It
 // backs the legacy DD_TRACE_SPAN_ATTRIBUTE_SCHEMA naming-schema feature; new integrations should not
-// call it and should hardcode operation names as string literals instead. See contrib/INTEGRATIONS.md.
+// call it and should hardcode operation names as string literals instead. See
+// https://github.com/DataDog/dd-trace-go/blob/main/contrib/INTEGRATIONS.md.
 func (i *Instrumentation) OperationName(component Component, opCtx OperationContext) string {
 	op, ok := i.info.naming[component]
 	if !ok {

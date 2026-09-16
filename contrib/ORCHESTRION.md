@@ -96,11 +96,11 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
 
 ## Avoiding circular imports
 
-Orchestrion weaves aspects into every package it compiles. Its only automatic exclusions
-([internal/toolexec/aspect/specialcase.go](https://github.com/DataDog/orchestrion/blob/main/internal/toolexec/aspect/specialcase.go))
-are Orchestrion's own packages and dd-trace-go itself. It does not skip the library you are
-instrumenting, including the package where the matched function is declared. So you must guard
-against the cycle yourself.
+Orchestrion weaves aspects into every package it compiles, including the library you are
+instrumenting and the package where the matched function is declared, with no automatic exclusion
+for it. So you must guard against the cycle yourself. See
+[internal/toolexec/aspect/specialcase.go](https://github.com/DataDog/orchestrion/blob/main/internal/toolexec/aspect/specialcase.go)
+for the current list of special-cased packages.
 
 This matters because libraries call their own constructors internally. `chi.NewRouter` returns
 `chi.NewMux()`, so an aspect matching `chi.NewMux` also matches that call inside package `chi`.

@@ -3,8 +3,8 @@
 This guide covers how to build a new dd-trace-go integration (a "contrib"): a package that
 instruments a third-party or standard library. Instrumentation here means observing the library's
 operations, such as network calls, database queries, and request handling, and producing Datadog
-spans for them, without changing what the library does. For the higher level contrib overview and
-the list of existing integrations, see [README.md](./README.md).
+spans for them, without changing what the library does. For the higher level contrib overview, see
+[README.md](./README.md). It links to the list of supported integrations.
 
 A good integration:
 
