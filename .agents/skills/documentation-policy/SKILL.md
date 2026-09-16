@@ -8,7 +8,7 @@ metadata:
 
 ## Updating Documentation
 
-The root [AGENTS.md](/AGENTS.md) should be short. Only update it if a new scoped `AGENTS.md` file is added, so it can be added to the list with its purpose.
+The root [AGENTS.md](/AGENTS.md) should be short. Only update it if a new scoped `AGENTS.md` file is added, so it can be added to the list with its purpose. Exception: a short routing hook in the root file is allowed when it only points agents at a review contract (for example `.agents/skills/dd-apm-sdk-review/review-without-harness.md`) and does not restate that contract.
 
 Document changes in the nearest existing doc: the package's [Go doc comment](https://go.dev/doc/comment) or `doc.go` for API/behavior, the closest `README.md` (e.g. [`contrib/README.md`](/contrib/README.md)) for an area, or [`FAQ.md`](/FAQ.md)/[`MIGRATING.md`](/MIGRATING.md) for user-facing notes.
 

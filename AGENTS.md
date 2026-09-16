@@ -15,3 +15,12 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 * [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
+
+## Review Guidelines
+
+**Local agent with a skill harness:** Run the [dd-apm-sdk-review](./.agents/skills/dd-apm-sdk-review/) skill on demand when asked. It is not required before every push.
+
+**Reviewer without a skill harness** (for example, GitHub Codex): read and follow
+`.agents/skills/dd-apm-sdk-review/review-without-harness.md`. Do not load `SKILL.md`
+or `reviewers/report-template.md`.
+
