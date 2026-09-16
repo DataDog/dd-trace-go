@@ -27,6 +27,9 @@ set +e
 # rerun overwrites -coverprofile with its partial profile, so any caller that
 # uploads coverage must leave RERUN_FAILS unset. gotestsum still exits non-zero
 # when a test fails every attempt, and keeps each one in the JUnit XML.
+# Only "" and "0" mean off; any other value is passed through verbatim, so a
+# boolean-ish "true" fails gotestsum at flag-parse time rather than disabling
+# retries.
 # ${RERUN_ARGS[@]+...} guards bash 3.2, which treats "${ARR[@]}" on an empty
 # array as unbound under `set -u` and aborts.
 RERUN_ARGS=()
