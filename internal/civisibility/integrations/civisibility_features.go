@@ -204,11 +204,7 @@ func ensureSettingsInitialization(serviceName string) {
 		slowTestRetries.ThirtyS = capEarlyFlakeDetectionRetries(slowTestRetries.ThirtyS, earlyFlakeDetectionMaxRetries)
 		slowTestRetries.FiveM = capEarlyFlakeDetectionRetries(slowTestRetries.FiveM, earlyFlakeDetectionMaxRetries)
 
-		// check if flaky test retries is disabled by env-vars
-		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: flaky test retries was disabled by the environment variable")
-			ciSettings.FlakyTestRetriesEnabled = false
-		}
+		applyFlakyRetryEnabledEnvironmentOverride(ciSettings)
 
 		// check if impacted tests is disabled by env-vars
 		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
@@ -278,6 +274,22 @@ func capEarlyFlakeDetectionRetries(retries, maxRetries int) int {
 		return maxRetries
 	}
 	return retries
+}
+
+func applyFlakyRetryEnabledEnvironmentOverride(ciSettings *net.SettingsResponseData) {
+	if ciSettings == nil {
+		return
+	}
+	enabled, configured := internal.BoolEnvNoDefault(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable)
+	if !configured || enabled == ciSettings.FlakyTestRetriesEnabled {
+		return
+	}
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	log.Warn("civisibility: automatic test retries were %s by the %s environment variable", state, constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable)
+	ciSettings.FlakyTestRetriesEnabled = enabled
 }
 
 func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.SettingsResponseData) {
