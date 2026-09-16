@@ -1,16 +1,40 @@
-# Composite action to report GitHub Actions cache effectiveness to Datadog.
+# Composite action to report cache effectiveness to Datadog.
 #
-# Why this is a separate action rather than part of .github/actions/setup-go: the cache
-# hit/miss outcomes are only observable at restore time, early in the job, but the API key
-# needed to submit them is minted later (dd-sts), and the cache sizes worth recording are
-# the post-build ones. So setup-go stashes its outcomes in the environment and this action
-# does the submitting, alongside the existing dd-ci-upload call near the end of the job.
+# Metrics:
+# - `ci.step.cache.restore` (COUNT). Value: `1`. Tags:
+#   - `outcome`: Cache result: `hit` or `miss`.
+#   - `hit_type`: Match classification.
+#     - `exact`: Requested cache key matched.
+#     - `partial`: Cache restored using a key-prefix match instead of an exact match.
+#     - `unknown`: Exact or partial cache restore; reporter lacked `cache_matched_key`.
+#     - `miss`: Cache miss.
+# - `ci.step.cache.restore.disk_size_bytes` (GAUGE).
+#   Value: Filesystem usage in bytes, e.g. `73400320`; actual cache upload is compressed.
 #
-# Everything here is best-effort. Call it with `continue-on-error: true` and `if: always()`:
-# a metrics failure must never fail a test job.
+# Common tags:
+# - `repository`: Repository name, e.g. `dd-trace-go`.
+# - `os.platform`: Runner operating system, e.g. `linux`.
+# - `os.architecture`: Runner architecture, e.g. `x64`.
+# - `runtime.name`: Runtime name, e.g. `go`.
+# - `runtime.version`: Runtime version, e.g. `1.25.1`.
+# - `ci.pipeline.name`: GitHub workflow name, e.g. `unit-integration-tests`.
+# - `ci.job.name`: GitHub job identifier, e.g. `test`.
+# - `ci.trigger`: GitHub event name, e.g. `pull_request`.
+# - `cache_name`: Low-cardinality logical cache identifier, e.g. `setup_go`, `go_mod`.
+# Tag values must have low cardinality.
+#
+# Metric submission is best-effort. Call this action with `continue-on-error: true`
+# and `if: always()` so reporting cannot change the calling job's result.
 name: 'Cache Metrics'
-description: 'Report GitHub Actions cache hit/miss and cache sizes to Datadog'
+description: 'Report cache outcomes and filesystem sizes to Datadog'
 inputs:
+  cache-metrics:
+    required: true
+    description: Cache measurements and metadata as JSON.
+  measure-sizes:
+    required: false
+    default: "false"
+    description: Whether to report filesystem usage for supplied cache paths; traversing them may be expensive.
   dd-api-key:
     required: true
     description: Datadog API key used to submit the metrics.
@@ -18,119 +42,133 @@ inputs:
     required: false
     default: datadoghq.com
     description: Datadog site to submit metrics to.
-  measure-sizes:
-    required: false
-    default: "false"
-    description: |
-      Whether to walk GOMODCACHE and GOCACHE to report their sizes. Off by default: the walk
-      costs tens of seconds on Windows, which is on the PR critical path. Enable it on
-      main-branch and scheduled runs, where nothing is waiting on the result.
 runs:
   using: "composite"
   steps:
-    - name: Measure Go cache sizes
-      if: inputs.measure-sizes == 'true'
-      shell: bash
-      run: |
-        set -uo pipefail
-        # `go env` prints native paths; on Windows runners this bash is git-bash, which
-        # needs them converted before du can walk them.
-        to_unix_path() {
-          if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi
-        }
-        size_kb() {
-          local p
-          p="$(to_unix_path "$1")"
-          if [[ -d "$p" ]]; then du -sk "$p" 2>/dev/null | awk '{print $1}'; else echo 0; fi
-        }
-        {
-          echo "DD_CACHE_GOMODCACHE_KB=$(size_kb "$(go env GOMODCACHE)")"
-          echo "DD_CACHE_GOCACHE_KB=$(size_kb "$(go env GOCACHE)")"
-        } >> "$GITHUB_ENV"
-
     - name: Submit cache metrics
       shell: bash
       env:
+        CACHE_METRICS: ${{ inputs.cache-metrics }}
         DD_API_KEY: ${{ inputs.dd-api-key }}
         DD_SITE: ${{ inputs.dd-site }}
-        JOB_NAME: ${{ github.job }}
-        WORKFLOW_NAME: ${{ github.workflow }}
-        TRIGGER: ${{ github.event_name }}
-        RUNNER_OS_TAG: ${{ runner.os }}
-        RUNNER_ARCH_TAG: ${{ runner.arch }}
+        MEASURE_SIZES: ${{ inputs.measure-sizes }}
+        CI_JOB_NAME: ${{ github.job }}
+        CI_PIPELINE_NAME: ${{ github.workflow }}
+        CI_TRIGGER: ${{ github.event_name }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
       run: |
-        set -uo pipefail
+        set -euo pipefail
 
         if [[ -z "${DD_API_KEY:-}" ]]; then
-          echo "::notice::No Datadog API key available; skipping cache metrics."
-          exit 0
+          printf 'No Datadog API key available; skipping cache metrics.\n'; exit 0
         fi
 
-        now="$(date +%s)"
+        case ".${DD_SITE:-}" in
+          *.datadoghq.com|*.datadoghq.eu|*.ddog-gov.com) ;;
+          *) printf 'Unsupported Datadog site; skipping cache metrics.\n'; exit 0 ;;
+        esac
 
-        # Workflow and job names contain spaces and punctuation ("Pull Request Tests"),
-        # which Datadog would normalize on ingest anyway. Doing it here keeps the tag
-        # values predictable enough to write dashboard queries against.
-        # -E rather than a GNU-only `\+`: this runs on BSD sed on the macOS runners.
-        norm_tag() {
+        normalize_tag() {
           printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/[^a-z0-9_.-]+/_/g' -e 's/^_//' -e 's/_$//'
         }
 
-        common_tags=(
-          "os:$(norm_tag "${RUNNER_OS_TAG}")"
-          "arch:$(norm_tag "${RUNNER_ARCH_TAG}")"
-          "go_version:${DD_CACHE_GO_VERSION:-unknown}"
-          "workflow:$(norm_tag "${WORKFLOW_NAME}")"
-          "job:$(norm_tag "${JOB_NAME}")"
-          "trigger:$(norm_tag "${TRIGGER}")"
-        )
-
-        series_file="$(mktemp)"
-        echo '[]' > "$series_file"
-
-        add_series() { # metric, type (0=gauge,1=count), value, extra tag...
-          local metric="$1" mtype="$2" value="$3"; shift 3
-          local tags_json
-          tags_json="$(printf '%s\n' "${common_tags[@]}" "$@" | jq -Rsc 'split("\n")|map(select(length>0))')"
-          jq -c \
-            --arg metric "$metric" \
-            --argjson type "$mtype" \
-            --argjson ts "$now" \
-            --argjson value "$value" \
-            --argjson tags "$tags_json" \
-            '. += [{metric: $metric, type: $type, points: [{timestamp: $ts, value: $value}], tags: $tags}]' \
-            "$series_file" > "$series_file.tmp" && mv "$series_file.tmp" "$series_file"
+        size_bytes() {
+          local path="$1" kb
+          if command -v cygpath >/dev/null 2>&1; then
+            path="$(cygpath -u "$path")"
+          fi
+          [[ -d "$path" ]] || return 0
+          kb="$(du -sk "$path" 2>/dev/null | awk 'NR == 1 {print $1}')"
+          [[ "$kb" =~ ^[0-9]+$ ]] || return 0
+          printf '%s' "$((kb * 1024))"
         }
 
-        # One count per cache per job. Summing by outcome gives the hit rate; the cache_name
-        # tag keeps the caches that fail for different reasons distinguishable.
-        for spec in "tools:${DD_CACHE_TOOLS_HIT:-}" "go_mod:${DD_CACHE_GOMOD_HIT:-}"; do
-          cache_name="${spec%%:*}"
-          outcome="${spec#*:}"
-          [[ -z "$outcome" || "$outcome" == "n/a" ]] && continue
-          add_series "dd_trace_go.ci.cache.outcome" 1 1 "cache_name:${cache_name}" "outcome:${outcome}"
-        done
-
-        [[ -n "${DD_CACHE_GOMODCACHE_KB:-}" ]] && \
-          add_series "dd_trace_go.ci.cache.size_bytes" 0 "$(( DD_CACHE_GOMODCACHE_KB * 1024 ))" "cache_name:go_mod"
-        [[ -n "${DD_CACHE_GOCACHE_KB:-}" ]] && \
-          add_series "dd_trace_go.ci.cache.size_bytes" 0 "$(( DD_CACHE_GOCACHE_KB * 1024 ))" "cache_name:go_build"
-
-        if [[ "$(jq 'length' "$series_file")" == "0" ]]; then
-          echo "::notice::No cache metrics to submit."
-          exit 0
+        sizes=""
+        if [[ "${MEASURE_SIZES:-false}" == "true" ]]; then
+          while IFS= read -r -d '' name && IFS= read -r -d '' path; do
+            size="$(size_bytes "$path")"
+            [[ -n "$size" ]] && sizes+="${name}"$'\t'"${size}"$'\n'
+          done < <(jq -j '.cache_paths[] | .name, "\u0000", .path, "\u0000"' <<< "$CACHE_METRICS")
         fi
 
-        payload="$(jq -c '{series: .}' "$series_file")"
-        code="$(curl -sS -o /tmp/dd-metrics-response -w '%{http_code}' \
-          -X POST "https://api.${DD_SITE}/api/v2/series" \
-          -H "DD-API-KEY: ${DD_API_KEY}" \
-          -H "Content-Type: application/json" \
-          -d "$payload" || echo "000")"
+        temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/cache-metrics.XXXXXX")"
+        trap 'rm -rf "$temp_dir"' EXIT
+        payload_file="$temp_dir/payload.json"
+        response_file="$temp_dir/response.txt"
 
-        if [[ "$code" != "202" ]]; then
-          echo "::warning::Cache metric submission returned HTTP ${code}"
-          cat /tmp/dd-metrics-response 2>/dev/null || true
-          exit 0
+        tags="$(jq -cn \
+          --arg repository "$(normalize_tag "${GITHUB_REPOSITORY##*/}")" \
+          --arg os_platform "$(normalize_tag "${RUNNER_OS:-unknown}")" \
+          --arg os_architecture "$(normalize_tag "${RUNNER_ARCH:-unknown}")" \
+          --arg pipeline "$(normalize_tag "${CI_PIPELINE_NAME:-unknown}")" \
+          --arg job "$(normalize_tag "${CI_JOB_NAME:-unknown}")" \
+          --arg trigger "$(normalize_tag "${CI_TRIGGER:-unknown}")" \
+          '["repository:" + (if $repository == "" then "unknown" else $repository end),
+            "os.platform:" + $os_platform,
+            "os.architecture:" + $os_architecture,
+            "ci.pipeline.name:" + $pipeline,
+            "ci.job.name:" + $job,
+            "ci.trigger:" + $trigger]'
+        )"
+
+        # A cache_matched_key field selects exact/partial/miss classification.
+        # Observations without that field use aggregate hit/miss classification.
+        jq -cn \
+          --argjson metrics "$CACHE_METRICS" \
+          --argjson timestamp "$(date +%s)" \
+          --argjson tags "$tags" \
+          --arg sizes "$sizes" '
+          def runtime_tags:
+            ["runtime.name:" + $metrics.runtime.name,
+             "runtime.version:" + (if $metrics.runtime.version == "" then "unknown" else $metrics.runtime.version end)];
+          def count_series($name; $result):
+            {metric: "ci.step.cache.restore", type: 1, interval: 1,
+             points: [{timestamp: $timestamp, value: 1}],
+             tags: ($tags + runtime_tags + ["cache_name:" + $name,
+                    "outcome:" + $result[0], "hit_type:" + $result[1]])};
+          def size_series($measurement):
+            {metric: "ci.step.cache.restore.disk_size_bytes", type: 3,
+             points: [{timestamp: $timestamp, value: ($measurement[1] | tonumber)}],
+             tags: ($tags + runtime_tags + ["cache_name:" + $measurement[0]])};
+          def restore_result:
+            if .enabled != "true" or .outcome != "success" then empty
+            elif has("cache_matched_key") then
+              if .cache_hit == "true" then ["hit", "exact"]
+              elif .cache_hit == "false" or .cache_hit == "" then
+                if .cache_matched_key != "" then ["hit", "partial"] else ["miss", "miss"] end
+              else empty
+              end
+            elif .cache_hit == "true" then ["hit", "unknown"]
+            elif .cache_hit == "false" then ["miss", "miss"]
+            else empty
+            end;
+          {series: ([$metrics.restores[] as $restore |
+                      $restore | restore_result | count_series($restore.name; .)] +
+                    [$sizes | split("\n")[] | select(length > 0) |
+                      split("\t") | size_series(.)])}
+        ' > "$payload_file"
+
+        count="$(jq '.series | length' "$payload_file")"
+        if [[ "$count" == "0" ]]; then
+          printf 'No cache metrics to submit.\n'; exit 0
         fi
-        echo "Submitted $(jq 'length' "$series_file") cache metric series."
+
+        curl_exit=0
+        http_code="$(curl --silent --show-error \
+          --output "$response_file" \
+          --write-out '%{http_code}' \
+          --connect-timeout 3 \
+          --max-time 10 \
+          --request POST "https://api.${DD_SITE}/api/v2/series" \
+          --header "DD-API-KEY: ${DD_API_KEY}" \
+          --header "Content-Type: application/json" \
+          --data-binary "@${payload_file}")" || curl_exit=$?
+
+        if [[ "$curl_exit" -ne 0 || "$http_code" != "202" ]]; then
+          diagnostic="$(head -c 512 "$response_file" 2>/dev/null | tr '\r\n' '  ')"
+          diagnostic="${diagnostic//"$DD_API_KEY"/[REDACTED]}"
+          printf '%s\n' "Cache metric submission failed (curl ${curl_exit}, HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."; exit 0
+        fi
+
+        printf 'Submitted %s cache metric series.\n' "$count"

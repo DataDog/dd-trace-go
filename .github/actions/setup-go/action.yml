@@ -14,6 +14,10 @@ inputs:
   tools-dir:
     required: true
     description: Directory that has the tool definitions.
+outputs:
+  cache-metrics:
+    description: Raw cache observations and filesystem paths as JSON.
+    value: ${{ steps.cache-metrics.outputs.cache-metrics }}
 runs:
   using: "composite"
   steps:
@@ -62,7 +66,7 @@ runs:
         # Key on the resolved toolchain version, not the literal input: `stable`
         # silently changes meaning when a new Go release ships, and a cache built
         # against the old release would then feed stale binaries to the new one.
-        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
         # Keep near-misses usable when the base branch moves go.mod/go.sum, which
         # otherwise invalidates the key for every open PR at once.
         restore-keys: |
@@ -74,24 +78,45 @@ runs:
       run: |-
         ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}
 
-    # Cache outcomes are only observable here, but the sizes worth recording are the
-    # post-build ones, and the API key needed to submit anything is minted later in the
-    # job (dd-sts). So stash the outcomes in the environment and let
-    # .github/actions/cache-metrics do the measuring and submitting near the end of the job.
-    - name: Record cache outcomes
-      # A tools-cache miss that goes on to fail install_tools.sh is worth recording, so
-      # this must not be skipped when an earlier step in the composite failed.
+    # Cache outcomes are observable during setup, while the API key used to submit
+    # metrics is minted later. Expose raw action outputs for classification at submission.
+    - name: Record cache observations
+      id: cache-metrics
+      # Record completed and incomplete operations so the reporting action can omit
+      # skipped, failed, disabled, or unclassifiable restores.
       if: always()
       shell: bash
       run: |
+        set -euo pipefail
+
+        paths="$(go env -json GOMODCACHE GOCACHE)"
+        metrics="$(jq -c \
+          --argjson paths "$paths" '
+          .cache_paths = [
+            {name: "go_mod", path: $paths.GOMODCACHE},
+            {name: "go_build", path: $paths.GOCACHE}
+          ]
+        ' <<'JSON'
         {
-          echo "DD_CACHE_GO_VERSION=${{ steps.setup-go.outputs.go-version }}"
-          echo "DD_CACHE_TOOLS_HIT=${{ steps.cache-tools.outputs.cache-hit == 'true' && 'hit' || 'miss' }}"
-        } >> "$GITHUB_ENV"
-        # setup-go only reports cache-hit when it manages the cache itself; recording
-        # "n/a" rather than "miss" keeps opted-out jobs from looking like misses.
-        if [[ "${{ inputs.cache }}" == "true" ]]; then
-          echo "DD_CACHE_GOMOD_HIT=${{ steps.setup-go.outputs.cache-hit == 'true' && 'hit' || 'miss' }}" >> "$GITHUB_ENV"
-        else
-          echo "DD_CACHE_GOMOD_HIT=n/a" >> "$GITHUB_ENV"
-        fi
+          "runtime": {
+            "name": "go",
+            "version": ${{ toJSON(steps.setup-go.outputs.go-version || '') }}
+          },
+          "restores": [
+            {
+              "name": "setup_go",
+              "enabled": ${{ toJSON(inputs.cache) }},
+              "outcome": ${{ toJSON(steps.setup-go.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.setup-go.outputs.cache-hit || '') }}
+            },
+            {
+              "name": "tools",
+              "enabled": "true",
+              "outcome": ${{ toJSON(steps.cache-tools.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.cache-tools.outputs.cache-hit || '') }}
+            }
+          ]
+        }
+        JSON
+        )"
+        printf 'cache-metrics=%s\n' "$metrics" >> "$GITHUB_OUTPUT"
