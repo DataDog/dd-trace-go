@@ -35,6 +35,10 @@ type TestCase struct {
 	addrs  []string
 }
 
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+}
+
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
@@ -69,6 +73,7 @@ func produceMessage(_ context.Context, t *testing.T, addrs []string, cfg *sarama
 
 	require.NoError(t, err, "failed to create producer")
 	defer func() { assert.NoError(t, producer.Close(), "failed to close producer") }()
+	time.Sleep(time.Second)
 
 	_, _, err = producer.SendMessage(&sarama.ProducerMessage{
 		Topic:     topic,
@@ -90,6 +95,7 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	consumer, err := sarama.NewConsumer(addrs, cfg)
 	require.NoError(t, err, "failed to create consumer")
 	defer func() { assert.NoError(t, consumer.Close(), "failed to close consumer") }()
+	time.Sleep(time.Second)
 
 	partitionConsumer, err := consumer.ConsumePartition(topic, partition, sarama.OffsetOldest)
 	require.NoError(t, err, "failed to create partition consumer")
@@ -120,8 +126,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"service": "kafka",
 			},
 			Meta: map[string]string{
-				"span.kind": "producer",
-				"component": "IBM/sarama",
+				"span.kind":                  "producer",
+				"component":                  "IBM/sarama",
+				"messaging.kafka.cluster_id": "test-cluster",
 			},
 			Children: trace.Traces{
 				{
@@ -131,8 +138,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"service": "kafka",
 					},
 					Meta: map[string]string{
-						"span.kind": "consumer",
-						"component": "IBM/sarama",
+						"span.kind":                  "consumer",
+						"component":                  "IBM/sarama",
+						"messaging.kafka.cluster_id": "test-cluster",
 					},
 				},
 			},

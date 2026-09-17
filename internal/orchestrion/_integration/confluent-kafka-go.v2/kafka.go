@@ -34,6 +34,10 @@ type TestCase struct {
 	addr      []string
 }
 
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+}
+
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
@@ -63,6 +67,7 @@ func (tc *TestCase) produceMessage(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
+	time.Sleep(time.Second)
 	defer func() {
 		<-delivery
 		producer.Close()
@@ -89,6 +94,7 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
+	time.Sleep(time.Second)
 	defer func() {
 		// A nil delivery channel is redirected to the producer's Events() channel
 		// by the instrumentation. Drain the delivery report before Close() so
@@ -122,6 +128,7 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	}
 	c, err := kafka.NewConsumer(cfg)
 	require.NoError(t, err, "failed to create consumer")
+	time.Sleep(time.Second)
 	defer c.Close()
 
 	err = c.Assign([]kafka.TopicPartition{
@@ -154,6 +161,7 @@ func (tc *TestCase) consumeMessageFromNilDeliveryChannel(_ context.Context, t *t
 	}
 	c, err := kafka.NewConsumer(cfg)
 	require.NoError(t, err, "failed to create consumer")
+	time.Sleep(time.Second)
 	defer c.Close()
 
 	err = c.Assign([]kafka.TopicPartition{
@@ -183,9 +191,10 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"resource": "Produce Topic " + topic,
 			},
 			Meta: map[string]string{
-				"span.kind":        "producer",
-				"component":        "confluentinc/confluent-kafka-go/kafka.v2",
-				"messaging.system": "kafka",
+				"span.kind":                  "producer",
+				"component":                  "confluentinc/confluent-kafka-go/kafka.v2",
+				"messaging.system":           "kafka",
+				"messaging.kafka.cluster_id": "test-cluster",
 			},
 			Children: trace.Traces{
 				{
@@ -200,6 +209,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":                         "confluentinc/confluent-kafka-go/kafka.v2",
 						"messaging.system":                  "kafka",
 						"messaging.kafka.bootstrap.servers": "localhost",
+						"messaging.kafka.cluster_id":        "test-cluster",
 					},
 				},
 			},
@@ -211,9 +221,10 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"resource": "Produce Topic " + topic,
 			},
 			Meta: map[string]string{
-				"span.kind":        "producer",
-				"component":        "confluentinc/confluent-kafka-go/kafka.v2",
-				"messaging.system": "kafka",
+				"span.kind":                  "producer",
+				"component":                  "confluentinc/confluent-kafka-go/kafka.v2",
+				"messaging.system":           "kafka",
+				"messaging.kafka.cluster_id": "test-cluster",
 			},
 			Children: trace.Traces{
 				{
@@ -228,6 +239,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":                         "confluentinc/confluent-kafka-go/kafka.v2",
 						"messaging.system":                  "kafka",
 						"messaging.kafka.bootstrap.servers": "localhost",
+						"messaging.kafka.cluster_id":        "test-cluster",
 					},
 				},
 			},
