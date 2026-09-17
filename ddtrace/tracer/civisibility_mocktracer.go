@@ -6,10 +6,20 @@
 package tracer
 
 // setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless
-// the current global tracer can keep ownership and route CI Visibility spans to it.
+// the current global tracer can keep ownership and route it to the appropriate
+// CI Visibility or application delegate.
+//
+// The historical name is retained because tracer.Start already calls this
+// helper. Keeping the handoff here avoids coupling the normal tracer lifecycle
+// to CI Visibility's process-global wrapper.
 func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) {
+	current := getGlobalTracer()
 	if ciVisibilityEnabled {
-		if current, ok := getGlobalTracer().(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && current.SetCIVisibilityTracer(globalTracer) {
+		if setter, ok := current.(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && setter.SetCIVisibilityTracer(globalTracer) {
+			return
+		}
+	} else {
+		if setter, ok := current.(interface{ SetApplicationTracer(Tracer) bool }); ok && setter.SetApplicationTracer(globalTracer) {
 			return
 		}
 	}
@@ -25,6 +35,19 @@ func submitTracerForFinishedChunk(globalTracer Tracer, spans []*Span) Tracer {
 	}); ok {
 		if submitTracer, ok := provider.TracerForFinishedChunk(spans); ok {
 			return submitTracer
+		}
+
+		// A CI span may have been started before a CI-aware mock tracer was
+		// installed, so it is absent from the mock's per-span registry. The span
+		// type is available here without adding ownership state to the core Span.
+		if len(spans) > 0 && isCIVisibilitySpanType(spans[0].spanType) {
+			if ciProvider, ok := globalTracer.(interface {
+				CIVisibilityTracer() Tracer
+			}); ok {
+				if ciTracer := ciProvider.CIVisibilityTracer(); ciTracer != nil {
+					return ciTracer
+				}
+			}
 		}
 		return nil
 	}

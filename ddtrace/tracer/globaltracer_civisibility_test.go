@@ -45,6 +45,19 @@ func (p *preservingTestTracer) SetCIVisibilityTracer(real Tracer) bool {
 	return p.accept
 }
 
+type applicationPreservingTestTracer struct {
+	*preservingTestTracer
+	applicationAccept   bool
+	applicationReceived Tracer
+	applicationSetCalls int
+}
+
+func (p *applicationPreservingTestTracer) SetApplicationTracer(application Tracer) bool {
+	p.applicationSetCalls++
+	p.applicationReceived = application
+	return p.applicationAccept
+}
+
 func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
@@ -70,6 +83,37 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	}
 	if real.stopCnt.Load() != 0 {
 		t.Fatalf("real tracer was stopped %d times", real.stopCnt.Load())
+	}
+}
+
+func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesApplicationTracer(t *testing.T) {
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	current := &applicationPreservingTestTracer{
+		preservingTestTracer: &preservingTestTracer{},
+		applicationAccept:    true,
+	}
+	application := &preservingTestTracer{}
+	setGlobalTracer(current)
+
+	setGlobalTracerPreservingCIVisibilityMockTracer(application, false)
+
+	if got := getGlobalTracer(); got != current {
+		t.Fatalf("global tracer = %T, want preserved tracer", got)
+	}
+	if current.applicationSetCalls != 1 {
+		t.Fatalf("SetApplicationTracer calls = %d, want 1", current.applicationSetCalls)
+	}
+	if current.applicationReceived != application {
+		t.Fatalf("received tracer = %T, want application tracer", current.applicationReceived)
+	}
+	if current.stopCnt.Load() != 0 {
+		t.Fatalf("preserved tracer was stopped %d times", current.stopCnt.Load())
+	}
+	if application.stopCnt.Load() != 0 {
+		t.Fatalf("application tracer was stopped %d times", application.stopCnt.Load())
 	}
 }
 

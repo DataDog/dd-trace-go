@@ -43,7 +43,7 @@ func newCIVisibilityMockTracer() *civisibilitymocktracer {
 	// Repeated mocktracer starts should unwrap the previous CI Visibility mock tracer
 	// and keep its real tracer delegate instead of stacking wrappers.
 	if currentCIVisibilityMockTracer, ok := currentTracer.(*civisibilitymocktracer); ok && currentCIVisibilityMockTracer != nil {
-		currentTracer = currentCIVisibilityMockTracer.realTracer()
+		currentTracer = currentCIVisibilityMockTracer.CIVisibilityTracer()
 	}
 	return &civisibilitymocktracer{
 		mock:      newMockTracer(),
@@ -52,8 +52,8 @@ func newCIVisibilityMockTracer() *civisibilitymocktracer {
 	}
 }
 
-// realTracer returns the currently installed CI Visibility tracer delegate.
-func (t *civisibilitymocktracer) realTracer() tracer.Tracer {
+// CIVisibilityTracer returns the currently installed CI Visibility tracer delegate.
+func (t *civisibilitymocktracer) CIVisibilityTracer() tracer.Tracer {
 	t.realMu.RLock()
 	defer t.realMu.RUnlock()
 	return t.real
@@ -84,6 +84,23 @@ func (t *civisibilitymocktracer) SetCIVisibilityTracer(real tracer.Tracer) bool 
 		stopRealTracerDelegate(old)
 	}
 	return true
+}
+
+// SetApplicationTracer forwards application tracer ownership to the CI
+// Visibility delegate while this wrapper remains process-global. This remains
+// necessary after the user-facing mock has stopped because replacing the
+// wrapper would also stop its CI Visibility delegate.
+func (t *civisibilitymocktracer) SetApplicationTracer(application tracer.Tracer) bool {
+	if application == nil {
+		return false
+	}
+
+	t.realMu.RLock()
+	defer t.realMu.RUnlock()
+	setter, ok := t.real.(interface {
+		SetApplicationTracer(tracer.Tracer) bool
+	})
+	return ok && setter.SetApplicationTracer(application)
 }
 
 // stopRealTracerDelegate stops a tracer owned by civisibilitymocktracer without

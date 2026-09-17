@@ -354,7 +354,7 @@ func TestCIVisibilityMockTracer_WrapsAlreadyStartedCIVisibilityTracer(t *testing
 	if got := getGlobalTracer(); got != cmt {
 		t.Fatalf("global tracer = %T, want CI Visibility mock tracer", got)
 	}
-	if got := cmt.realTracer(); got != realBeforeMock {
+	if got := cmt.CIVisibilityTracer(); got != realBeforeMock {
 		t.Fatalf("real tracer delegate = %T, want already-started tracer", got)
 	}
 
@@ -370,6 +370,46 @@ func TestCIVisibilityMockTracer_WrapsAlreadyStartedCIVisibilityTracer(t *testing
 
 	tracer.Flush()
 	requireTestCycleRequest(t, server)
+}
+
+func TestCIVisibilityMockTracer_RoutesCIVisibilitySpanStartedBeforeMockTracer(t *testing.T) {
+	server := setupCIVisibilityMockTracerIntegrationTest(t, true)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+	ciSpan := tracer.StartSpan("ci.test", tracer.SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpan)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+	civisibility.SetState(civisibility.StateInitialized)
+	mt := Start()
+	_, ok := mt.(*civisibilitymocktracer)
+	require.True(t, ok)
+
+	ciSpan.Finish()
+	assert.Empty(t, mt.FinishedSpans())
+
+	tracer.Flush()
+	requireTestCycleRequest(t, server)
+}
+
+func TestCIVisibilityMockTracer_ReleasesTrackedRealSpanAfterFinish(t *testing.T) {
+	setupCIVisibilityMockTracerIntegrationTest(t, true)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+	civisibility.SetState(civisibility.StateInitialized)
+	mt := Start().(*civisibilitymocktracer)
+
+	ciSpan := tracer.StartSpan("ci.test", tracer.SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpan)
+	ciSpan.Finish()
+	tracer.Flush()
+
+	mt.realSpansMu.Lock()
+	defer mt.realSpansMu.Unlock()
+	require.Empty(t, mt.realSpans)
 }
 
 func TestCIVisibilityMockTracer_StoppedMockTracerIsNotPreserved(t *testing.T) {
@@ -391,6 +431,39 @@ func TestCIVisibilityMockTracer_StoppedMockTracerIsNotPreserved(t *testing.T) {
 	assert.Equal(t, int32(1), previousReal.stopCount.Load())
 }
 
+func TestCIVisibilityMockTracer_StoppedMockTracerPreservesCIThroughApplicationTracerLifecycle(t *testing.T) {
+	server := setupCIVisibilityMockTracerIntegrationTest(t, true)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+	ciTracer := getGlobalTracer()
+	ciSpan := tracer.StartSpan("ci.before.application", tracer.SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpan)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+	civisibility.SetState(civisibility.StateInitialized)
+	mt := Start()
+	cmt, ok := mt.(*civisibilitymocktracer)
+	require.True(t, ok)
+	mt.Stop()
+
+	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+	tracer.Stop()
+
+	if got := getGlobalTracer(); got != ciTracer {
+		t.Fatalf("global tracer = %T, want restored CI Visibility tracer %T", got, ciTracer)
+	}
+
+	ciSpan.Finish()
+	ciSpanAfterApplication := tracer.StartSpan("ci.after.application", tracer.SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpanAfterApplication)
+	ciSpanAfterApplication.Finish()
+	tracer.Flush()
+
+	assert.True(t, cmt.isnoop.Load())
+	requireTestCycleRequest(t, server)
+}
+
 func TestCIVisibilityMockTracer_ReplacingRealTracerStopsPreviousDelegate(t *testing.T) {
 	resetCIVisibilityMockTracerTestState(t)
 
@@ -404,7 +477,7 @@ func TestCIVisibilityMockTracer_ReplacingRealTracerStopsPreviousDelegate(t *test
 
 	assert.Equal(t, int32(1), firstReal.stopCount.Load())
 	assert.Equal(t, int32(0), secondReal.stopCount.Load())
-	if got := cmt.realTracer(); got != secondReal {
+	if got := cmt.CIVisibilityTracer(); got != secondReal {
 		t.Fatalf("real tracer delegate = %T, want second real tracer", got)
 	}
 }
@@ -418,12 +491,12 @@ func TestCIVisibilityMockTracer_RepeatedTracerStartsUpdateRealTracer(t *testing.
 
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
-	firstReal := cmt.realTracer()
+	firstReal := cmt.CIVisibilityTracer()
 
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
-	secondReal := cmt.realTracer()
+	secondReal := cmt.CIVisibilityTracer()
 
 	if got := getGlobalTracer(); got != cmt {
 		t.Fatalf("global tracer = %T, want preserved CI Visibility mock tracer", got)
@@ -484,7 +557,7 @@ func TestCIVisibilityMockTracer_ReplacingOldMockDelegateKeepsGlobal(t *testing.T
 	if got := getGlobalTracer(); got != cmt {
 		t.Fatalf("global tracer = %T, want preserved CI Visibility mock tracer", got)
 	}
-	if got := cmt.realTracer(); got != fakeReal {
+	if got := cmt.CIVisibilityTracer(); got != fakeReal {
 		t.Fatalf("real tracer delegate = %T, want fake real tracer", got)
 	}
 }
@@ -554,5 +627,5 @@ func TestCIVisibilityMockTracer_GlobalStopStopsRealTracerDelegate(t *testing.T) 
 	tracer.Stop()
 
 	assert.Equal(t, int32(1), real.stopCount.Load())
-	assert.IsType(t, &tracer.NoopTracer{}, cmt.realTracer())
+	assert.IsType(t, &tracer.NoopTracer{}, cmt.CIVisibilityTracer())
 }

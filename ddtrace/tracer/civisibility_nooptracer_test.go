@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
@@ -225,6 +227,116 @@ func TestCiVisibilityNoopTracer_Stop(t *testing.T) {
 	assert.NotPanics(t, func() {
 		wrapped.Stop()
 	})
+}
+
+func TestCiVisibilityNoopTracer_PreservesCIVisibilityAcrossApplicationStop(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t)
+	wrapped := wrapWithCiVisibilityNoopTracer(ciTracer)
+	setGlobalTracer(wrapped)
+	civisibility.SetState(civisibility.StateInitialized)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		Stop()
+		civisibility.SetState(civisibility.StateUninitialized)
+	})
+
+	ciSpan := StartSpan("ci.test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpan)
+
+	Stop()
+	require.Same(t, wrapped, getGlobalTracer())
+
+	ciSpan.Finish()
+	require.Eventually(t, func() bool {
+		Flush()
+		return ciTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestCiVisibilityNoopTracer_RoutesApplicationAndCISpansAfterApplicationStart(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t)
+	ciTracerConf := ciTracer.TracerConf()
+	applicationTransport := newDummyTransport()
+	wrapped := wrapWithCiVisibilityNoopTracer(ciTracer)
+	setGlobalTracer(wrapped)
+	civisibility.SetState(civisibility.StateInitialized)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		Stop()
+		civisibility.SetState(civisibility.StateUninitialized)
+	})
+
+	ciSpanBeforeApplicationStart := StartSpan("ci.test.before", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpanBeforeApplicationStart)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+	t.Setenv("DD_TRACE_ENABLED", "true")
+	require.NoError(t, Start(
+		withTransport(applicationTransport),
+		withNoopStats(),
+		WithService("application-service"),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+	))
+	require.Same(t, wrapped, getGlobalTracer())
+	require.Equal(t, ciTracerConf, wrapped.TracerConf())
+
+	ciSpanAfterApplicationStart := StartSpan("ci.test.after", SpanType(constants.SpanTypeTest))
+	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, ciSpanAfterApplicationStart)
+	require.NotNil(t, applicationSpan)
+
+	applicationSpan.Finish()
+	Stop()
+	require.Same(t, wrapped, getGlobalTracer())
+
+	ciSpanBeforeApplicationStart.Finish()
+	ciSpanAfterApplicationStart.Finish()
+	require.Eventually(t, func() bool {
+		Flush()
+		return ciTransport.Len() == 2 && applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestCiVisibilityNoopTracer_StopsDelegatesAtTheirLifecycleBoundaries(t *testing.T) {
+	ciTracer := &preservingTestTracer{}
+	firstApplicationTracer := &preservingTestTracer{}
+	secondApplicationTracer := &preservingTestTracer{}
+	wrapped := wrapWithCiVisibilityNoopTracer(ciTracer)
+	setGlobalTracer(wrapped)
+	civisibility.SetState(civisibility.StateInitialized)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		Stop()
+		civisibility.SetState(civisibility.StateUninitialized)
+	})
+
+	require.True(t, wrapped.SetApplicationTracer(firstApplicationTracer))
+	require.True(t, wrapped.SetApplicationTracer(secondApplicationTracer))
+	require.EqualValues(t, 1, firstApplicationTracer.stopCnt.Load())
+	require.Zero(t, secondApplicationTracer.stopCnt.Load())
+	require.Zero(t, ciTracer.stopCnt.Load())
+
+	Stop()
+	require.Same(t, wrapped, getGlobalTracer())
+	require.EqualValues(t, 1, secondApplicationTracer.stopCnt.Load())
+	require.Zero(t, ciTracer.stopCnt.Load())
+
+	civisibility.SetState(civisibility.StateExiting)
+	Stop()
+	require.IsType(t, &NoopTracer{}, getGlobalTracer())
+	require.EqualValues(t, 1, secondApplicationTracer.stopCnt.Load())
+	require.EqualValues(t, 1, ciTracer.stopCnt.Load())
+}
+
+func newUninstalledTestTracer(t testing.TB) (*tracer, *dummyTransport) {
+	t.Helper()
+	transport := newDummyTransport()
+	tr, err := newTracer(
+		withTransport(transport),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+	)
+	require.NoError(t, err)
+	return tr, transport
 }
 
 func TestCiVisibilityNoopTracer_TracerConf(t *testing.T) {
