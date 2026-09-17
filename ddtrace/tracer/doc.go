@@ -165,6 +165,27 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # Data Streams Monitoring Intake Buffer Size
+//
+// When Data Streams Monitoring is enabled (DD_DATA_STREAMS_ENABLED), the
+// processor buffers incoming checkpoints and Kafka offsets in a fixed-size
+// ring buffer that a single background goroutine drains. If instrumented code
+// produces entries faster than that goroutine consumes them, the buffer fills
+// and new entries overwrite the oldest unread ones. Raise the size to trade
+// memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots; non-positive values are ignored and the default is kept.
+//
+// Overwritten entries are counted by the statsd metric
+// datadog.datastreams.processor.dropped_payloads. The companion metrics
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall attribute a
+// drop to whether the draining goroutine was blocked sending to the agent or
+// idle between polls, which distinguishes a slow agent from writers simply
+// outpacing the reader.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol
