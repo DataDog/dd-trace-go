@@ -30,9 +30,10 @@ const (
 )
 
 type TestCase struct {
-	server *kafka.KafkaContainer
-	cfg    *sarama.Config
-	addrs  []string
+	server    *kafka.KafkaContainer
+	cfg       *sarama.Config
+	addrs     []string
+	clusterID string
 }
 
 func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
@@ -49,6 +50,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.server = container
 	tc.addrs = []string{addr}
+	tc.clusterID = containers.KafkaClusterID(t, container)
 }
 
 func produceMessage(_ context.Context, t *testing.T, addrs []string, cfg *sarama.Config) {
@@ -117,7 +119,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	consumeMessage(t, tc.addrs, tc.cfg)
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -128,7 +130,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Meta: map[string]string{
 				"span.kind":                  "producer",
 				"component":                  "IBM/sarama",
-				"messaging.kafka.cluster_id": "test-cluster",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -140,7 +142,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					Meta: map[string]string{
 						"span.kind":                  "consumer",
 						"component":                  "IBM/sarama",
-						"messaging.kafka.cluster_id": "test-cluster",
+						"messaging.kafka.cluster_id": tc.clusterID,
 					},
 				},
 			},

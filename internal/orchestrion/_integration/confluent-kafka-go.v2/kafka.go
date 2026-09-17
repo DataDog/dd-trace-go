@@ -32,6 +32,7 @@ var (
 type TestCase struct {
 	container *kafkatest.KafkaContainer
 	addr      []string
+	clusterID string
 }
 
 func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
@@ -43,6 +44,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.container = container
 	tc.addr = []string{addr}
+	tc.clusterID = containers.KafkaClusterID(t, container)
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
@@ -181,7 +183,7 @@ func (tc *TestCase) consumeMessageFromNilDeliveryChannel(_ context.Context, t *t
 	require.Equal(t, "key3", string(m.Key))
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -194,7 +196,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"span.kind":                  "producer",
 				"component":                  "confluentinc/confluent-kafka-go/kafka.v2",
 				"messaging.system":           "kafka",
-				"messaging.kafka.cluster_id": "test-cluster",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -209,7 +211,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":                         "confluentinc/confluent-kafka-go/kafka.v2",
 						"messaging.system":                  "kafka",
 						"messaging.kafka.bootstrap.servers": "localhost",
-						"messaging.kafka.cluster_id":        "test-cluster",
+						"messaging.kafka.cluster_id":        tc.clusterID,
 					},
 				},
 			},
@@ -224,7 +226,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"span.kind":                  "producer",
 				"component":                  "confluentinc/confluent-kafka-go/kafka.v2",
 				"messaging.system":           "kafka",
-				"messaging.kafka.cluster_id": "test-cluster",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -239,7 +241,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":                         "confluentinc/confluent-kafka-go/kafka.v2",
 						"messaging.system":                  "kafka",
 						"messaging.kafka.bootstrap.servers": "localhost",
-						"messaging.kafka.cluster_id":        "test-cluster",
+						"messaging.kafka.cluster_id":        tc.clusterID,
 					},
 				},
 			},

@@ -32,8 +32,9 @@ const (
 )
 
 type TestCase struct {
-	kafka *kafkatest.KafkaContainer
-	addr  string
+	kafka     *kafkatest.KafkaContainer
+	addr      string
+	clusterID string
 }
 
 func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
@@ -44,6 +45,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topicA, topicB})
+	tc.clusterID = containers.KafkaClusterID(t, tc.kafka)
 }
 
 func (tc *TestCase) newReader(topic string) *kafka.Reader {
@@ -149,7 +151,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	wg.Wait()
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -233,7 +235,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Meta: map[string]string{
 				"span.kind":                  "producer",
 				"component":                  "segmentio/kafka.go.v0",
-				"messaging.kafka.cluster_id": "test-cluster",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -246,7 +248,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					Meta: map[string]string{
 						"span.kind":                  "consumer",
 						"component":                  "segmentio/kafka.go.v0",
-						"messaging.kafka.cluster_id": "test-cluster",
+						"messaging.kafka.cluster_id": tc.clusterID,
 					},
 				},
 			},
