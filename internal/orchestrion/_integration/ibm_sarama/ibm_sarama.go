@@ -73,7 +73,7 @@ func produceMessage(_ context.Context, t *testing.T, addrs []string, cfg *sarama
 
 	require.NoError(t, err, "failed to create producer")
 	defer func() { assert.NoError(t, producer.Close(), "failed to close producer") }()
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 
 	_, _, err = producer.SendMessage(&sarama.ProducerMessage{
 		Topic:     topic,
@@ -95,7 +95,7 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	consumer, err := sarama.NewConsumer(addrs, cfg)
 	require.NoError(t, err, "failed to create consumer")
 	defer func() { assert.NoError(t, consumer.Close(), "failed to close consumer") }()
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 
 	partitionConsumer, err := consumer.ConsumePartition(topic, partition, sarama.OffsetOldest)
 	require.NoError(t, err, "failed to create partition consumer")

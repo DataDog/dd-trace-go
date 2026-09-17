@@ -67,7 +67,7 @@ func (tc *TestCase) produceMessage(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 	defer func() {
 		<-delivery
 		producer.Close()
@@ -94,7 +94,7 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 	defer func() {
 		// A nil delivery channel is redirected to the producer's Events() channel
 		// by the instrumentation. Drain the delivery report before Close() so
@@ -128,7 +128,7 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	}
 	c, err := kafka.NewConsumer(cfg)
 	require.NoError(t, err, "failed to create consumer")
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 	defer c.Close()
 
 	err = c.Assign([]kafka.TopicPartition{
@@ -161,7 +161,7 @@ func (tc *TestCase) consumeMessageFromNilDeliveryChannel(_ context.Context, t *t
 	}
 	c, err := kafka.NewConsumer(cfg)
 	require.NoError(t, err, "failed to create consumer")
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 	defer c.Close()
 
 	err = c.Assign([]kafka.TopicPartition{

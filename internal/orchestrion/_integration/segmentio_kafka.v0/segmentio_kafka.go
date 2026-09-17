@@ -101,7 +101,7 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 
 			// The cluster ID is fetched asynchronously when the first instrumented
 			// operation initializes the writer tracer.
-			time.Sleep(time.Second)
+			time.Sleep(3 * time.Second)
 			return writer.WriteMessages(ctx, kafka.Message{
 				Topic: topicA,
 				Key:   []byte("Key-A"),
@@ -130,7 +130,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 
 		// Allow the asynchronous metadata request started by the first read to
 		// populate the cluster ID before consuming the second message.
-		time.Sleep(time.Second)
+		time.Sleep(3 * time.Second)
 		m, err = readerA.ReadMessage(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, "Cluster ID message", string(m.Value))
