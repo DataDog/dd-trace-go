@@ -28,6 +28,11 @@ import (
 // system-tests' utils/mocked_backend/ffe.py UFC_ETAG.
 const fakeUFCBackendETag = `"ufc-v1"`
 
+// fakeUFCBackendMalformedETag is the ETag a "malformed_with_etag" response
+// carries. It must differ from fakeUFCBackendETag so a test can assert that
+// the source's held ETag did not advance to it.
+const fakeUFCBackendMalformedETag = `"ufc-malformed"`
+
 const fakeUFCValidBody = `{
 	"data": {
 		"id": "1",
@@ -104,6 +109,14 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"flags": [`))
+	case "malformed_with_etag":
+		// Carries its own distinct ETag so a test can tell "the held ETag did
+		// not advance to this response's ETag" apart from "there was no ETag to
+		// advance to".
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", fakeUFCBackendMalformedETag)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"flags": [`))
 	case "not_modified":
 		w.Header().Set("ETag", fakeUFCBackendETag)
 		w.WriteHeader(http.StatusNotModified)
@@ -144,9 +157,12 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// newTestAgentlessSource builds a source pointed at backend's origin, with
-// retries sped up (no real waiting) unless the test needs otherwise.
-func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
+// newAgentlessSourceOnly builds a source pointed at backend's origin, with
+// retries sped up (no real waiting), but never calls start(). Stop on a
+// source whose run loop never started would otherwise wait out its full
+// context timeout in cleanup, since doneCh would never close: this leaves
+// lifecycle to the caller instead, for tests that drive pollOnce directly.
+func newAgentlessSourceOnly(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
 	t.Helper()
 	src, err := newAgentlessSource(internalffe.Settings{
 		AgentlessBaseURL: backend.server.URL,
@@ -155,6 +171,15 @@ func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval 
 	}, apply)
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
+	return src
+}
+
+// newTestAgentlessSource builds a source pointed at backend's origin, with
+// retries sped up (no real waiting) unless the test needs otherwise, and
+// starts its poll loop.
+func newTestAgentlessSource(t *testing.T, backend *fakeUFCBackend, pollInterval time.Duration, apply func(*universalFlagsConfiguration)) *agentlessSource {
+	t.Helper()
+	src := newAgentlessSourceOnly(t, backend, pollInterval, apply)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -180,73 +205,96 @@ func TestAgentlessSource_StartDoesNotBlock(t *testing.T) {
 	}, 2*time.Second, time.Millisecond, "the first poll must still happen, just asynchronously")
 }
 
+// TestAgentlessSource_ETagNotAdvancedOnParseFailure drives pollOnce directly,
+// rather than start()+Eventually on a request count: the previous version
+// waited for requestsTotal >= 3, then read the backend's single shared
+// lastIfNoneMatch field, which a fourth request (the loop's next tick) could
+// overwrite before the assertion ran, and a request count alone cannot
+// distinguish a request that arrived from one whose response was already
+// processed. Calling pollOnce synchronously removes both races: each call
+// only returns once its request has both arrived and been fully handled, and
+// each backend.status() snapshot is read for the specific request that
+// produced it, not for whatever request happens to be latest.
 func TestAgentlessSource_ETagNotAdvancedOnParseFailure(t *testing.T) {
 	backend := newFakeUFCBackend(t)
-	backend.setResponses("valid", "malformed", "not_modified")
+	// The malformed response carries its own distinct ETag: this test's
+	// contract is that a malformed body never advances the held ETag to a new
+	// value, and a malformed response with no ETag at all could not tell that
+	// apart from correctly not advancing.
+	backend.setResponses("valid", "malformed_with_etag", "not_modified")
 
 	var mu sync.Mutex
 	var applied []*universalFlagsConfiguration
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(c *universalFlagsConfiguration) {
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(c *universalFlagsConfiguration) {
 		mu.Lock()
 		defer mu.Unlock()
 		applied = append(applied, c)
 	})
 
-	src.start()
+	outer, _ := src.pollOnce() // valid: applies configuration and stores the ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
 
-	require.Eventually(t, func() bool {
-		requests, _, _, _ := backend.status()
-		return requests >= 3
-	}, 2*time.Second, time.Millisecond)
+	outer, _ = src.pollOnce() // malformed_with_etag: must not advance the ETag
+	require.Equal(t, pollOutcomeStop, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag(), "a malformed payload must never be acknowledged as received")
 
-	// The third request (after the malformed second response) must still
-	// carry the ETag from the first, valid response: a malformed payload
-	// must never be acknowledged as received.
 	_, _, lastIfNoneMatch, _ := backend.status()
-	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch)
+	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the third request must still carry the ETag from the first, valid response")
+
+	outer, _ = src.pollOnce() // not_modified: confirms the server still recognizes that ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
 
 	mu.Lock()
 	defer mu.Unlock()
 	require.Len(t, applied, 1, "only the first, valid poll should have applied a configuration")
 }
 
+// TestAgentlessSource_ETagAnd304 drives pollOnce directly instead of
+// start()+Eventually: waiting for requestsTotal >= 1 only proves a request
+// arrived, not that its response was processed, and a second request (the
+// loop's next tick) could overwrite the backend's shared lastIfNoneMatch
+// field before either assertion ran.
 func TestAgentlessSource_ETagAnd304(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid", "not_modified")
 
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
-	src.start()
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	require.Eventually(t, func() bool {
-		requests, _, _, _ := backend.status()
-		return requests >= 1
-	}, 2*time.Second, time.Millisecond)
+	outer, _ := src.pollOnce()
+	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Empty(t, lastIfNoneMatch, "the first request must not carry an ETag")
 
-	require.Eventually(t, func() bool {
-		requests, _, _, _ := backend.status()
-		return requests >= 2
-	}, 2*time.Second, time.Millisecond)
-
+	outer, _ = src.pollOnce()
+	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ = backend.status()
-	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch)
+	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the second request must carry the ETag stored from the first")
 }
 
+// TestAgentlessSource_BlankETagClears drives pollOnce directly instead of
+// start()+Eventually on a request count, for the same reason as the two
+// tests above: requestsTotal >= 3 only proves the third request arrived, and
+// a fourth request could overwrite the shared lastIfNoneMatch field before
+// the assertion ran.
 func TestAgentlessSource_BlankETagClears(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid", "valid_no_etag", "valid")
 
-	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
-	src.start()
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	require.Eventually(t, func() bool {
-		requests, _, _, _ := backend.status()
-		return requests >= 3
-	}, 2*time.Second, time.Millisecond)
+	outer, _ := src.pollOnce() // valid: stores the ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
 
+	outer, _ = src.pollOnce() // valid_no_etag: must clear the held ETag
+	require.Equal(t, pollOutcomeSuccess, outer)
+	assert.Empty(t, src.currentETag(), "a blank ETag response must clear the held ETag")
+
+	outer, _ = src.pollOnce() // valid: confirms the cleared ETag reached the request
+	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ := backend.status()
-	assert.Empty(t, lastIfNoneMatch, "a blank ETag response must clear the held ETag")
+	assert.Empty(t, lastIfNoneMatch, "the third request must not carry an ETag, since the second response cleared it")
 }
 
 func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
@@ -306,7 +354,11 @@ func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("throttled")
 
-	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	// This source's run loop never starts, so it must use newAgentlessSourceOnly,
+	// not newTestAgentlessSource: the latter's cleanup calls Stop, which would
+	// wait out its full context timeout for a doneCh that a never-started run
+	// loop can never close.
+	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	outcome, retryAfter := src.pollOnce()
 	assert.Equal(t, pollOutcomeRetryable, outcome)
 	assert.Equal(t, 2*time.Second, retryAfter)

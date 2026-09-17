@@ -992,6 +992,16 @@ func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {
 			return filepath.SkipDir
 		}
 
+		// A .git entry below the root marks a separate checkout — a nested git
+		// worktree (gitlink file) or a submodule. Its modules are not part of this
+		// release, and rewriting their go.mod mutates someone else's branch.
+		if entry.IsDir() && path != root {
+			if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+				slog.Debug("Skipping nested checkout", "path", path)
+				return filepath.SkipDir
+			}
+		}
+
 		if entry.Name() == "go.mod" {
 			m, err := readModule(path)
 			if err != nil {

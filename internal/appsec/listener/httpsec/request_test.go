@@ -24,9 +24,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -446,4 +448,48 @@ func BenchmarkSecurityTestingHeaderTagValues(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestHeadersRemoveCookies(t *testing.T) {
+	h := http.Header{
+		"Cookie":       []string{"session=secret"},
+		"Set-Cookie":   []string{"session=secret; HttpOnly"},
+		"Content-Type": []string{"application/json"},
+	}
+	out := headersRemoveCookies(h)
+	if _, ok := out["cookie"]; ok {
+		t.Fatalf("request cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["set-cookie"]; ok {
+		t.Fatalf("response set-cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["content-type"]; !ok {
+		t.Fatalf("non-cookie headers must be preserved")
+	}
+}
+
+// TestSSRFOnStartNilMetricsNoPanic reproduces the nil-metrics dereference in the SSRF listener's
+// OnStart: when the WAF handle is unavailable (no context, no metrics set), an outbound request still
+// reaches the listener, which must not panic.
+func TestSSRFOnStartNilMetricsNoPanic(t *testing.T) {
+	// Context operation with NO metrics instance and NO WAF context (mirrors the handle==nil path,
+	// where listener/waf.onStart returns before SetMetricsInstance).
+	ctxOp, _ := wafemitter.StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+	t.Cleanup(ctxOp.Finish)
+	require.Nil(t, ctxOp.GetMetricsInstance(), "precondition: metrics must be nil")
+
+	handlerOp := &httpsec.HandlerOperation{
+		Operation:        dyngo.NewOperation(ctxOp),
+		ContextOperation: ctxOp,
+	}
+	rtOp := &httpsec.RoundTripOperation{
+		Operation:           dyngo.NewOperation(handlerOp),
+		SubcontextOperation: handlerOp.NewSubcontextOp(),
+		HandlerOp:           handlerOp,
+	}
+
+	feature := &DownwardRequestFeature{}
+	require.NotPanics(t, func() {
+		feature.OnStart(rtOp, httpsec.RoundTripOperationArgs{URL: "http://example.com", Method: "GET"})
+	})
 }

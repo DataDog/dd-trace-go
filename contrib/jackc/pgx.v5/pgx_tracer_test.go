@@ -453,7 +453,7 @@ func TestWrapTracer(t *testing.T) {
 				return newPoolCreator(cfg)
 			},
 			wantSpans: 15,
-			wantHooks: 13,
+			wantHooks: 14,
 		},
 		{
 			name: "conn",
@@ -464,7 +464,7 @@ func TestWrapTracer(t *testing.T) {
 				return newConnCreator(cfg, nil)
 			},
 			wantSpans: 11,
-			wantHooks: 11, // 13 - 2 pool tracer hooks
+			wantHooks: 11, // 14 - 3 pool tracer hooks
 		},
 	}
 	for _, tc := range testCases {
@@ -797,4 +797,8 @@ func (p *pgxMockTracer) TraceAcquireStart(ctx context.Context, _ *pgxpool.Pool, 
 
 func (p *pgxMockTracer) TraceAcquireEnd(_ context.Context, _ *pgxpool.Pool, _ pgxpool.TraceAcquireEndData) {
 	p.called["pool.acquire.end"] = true
+}
+
+func (p *pgxMockTracer) TraceRelease(_ *pgxpool.Pool, _ pgxpool.TraceReleaseData) {
+	p.called["pool.release"] = true
 }

@@ -57,6 +57,49 @@ type params struct {
 	port   string
 	db     int
 	config *clientConfig
+	// spanCfg holds the tags that are constant for every command issued
+	// through this client (component, span kind, db system, target
+	// host/port/db, analytics rate). It is built once in WrapClient and
+	// merged into each request via WithStartSpanConfig, instead of
+	// rebuilding a Tag() closure per tag on every call.
+	spanCfg *tracer.StartSpanConfig
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every command issued through a client/pipeline with the given
+// static attributes, so per-command calls don't need to rebuild them.
+func newSpanConfig(host, port string, db int, cfg *clientConfig) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeRedis),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.Tag(ext.TargetHost, host),
+		tracer.Tag(ext.TargetPort, port),
+		tracer.Tag(ext.TargetDB, strconv.Itoa(db)),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		tracer.Tag(ext.RedisDatabaseIndex, db),
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
+// startSpan starts a span for a single Redis command using p's static span
+// tags (spanCfg) plus the command-specific resource/raw-command/args-length
+// tags, which vary on every call.
+func (p *params) startSpan(ctx context.Context, resource, raw string, argsLength int) *tracer.Span {
+	tags := map[string]any{
+		ext.ResourceName:    resource,
+		"redis.raw_command": raw,
+		"redis.args_length": strconv.Itoa(argsLength),
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName,
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(p.spanCfg),
+	)
+	return span
 }
 
 // NewClient returns a new Client that is traced with the default tracer under
@@ -85,6 +128,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		db:     opt.DB,
 		config: cfg,
 	}
+	params.spanCfg = newSpanConfig(host, port, opt.DB, cfg)
 	tc := &Client{Client: c, params: params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
@@ -123,22 +167,11 @@ func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
 
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	p := c.params
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeRedis),
-		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
-		tracer.ResourceName("redis"),
-		tracer.Tag(ext.TargetHost, p.host),
-		tracer.Tag(ext.TargetPort, p.port),
-		tracer.Tag(ext.TargetDB, strconv.Itoa(p.db)),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-		tracer.Tag(ext.RedisDatabaseIndex, p.db),
-	}
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-	}
-	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
+	tags := map[string]any{ext.ResourceName: "redis"}
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName,
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(p.spanCfg),
+	)
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
@@ -194,25 +227,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
-			p := tc.params
-			opts := []tracer.StartSpanOption{
-				tracer.SpanType(ext.SpanTypeRedis),
-				instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
-				tracer.ResourceName(parts[0]),
-				tracer.Tag(ext.TargetHost, p.host),
-				tracer.Tag(ext.TargetPort, p.port),
-				tracer.Tag(ext.TargetDB, strconv.Itoa(p.db)),
-				tracer.Tag("redis.raw_command", raw),
-				tracer.Tag("redis.args_length", strconv.Itoa(length)),
-				tracer.Tag(ext.Component, componentName),
-				tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-				tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-				tracer.Tag(ext.RedisDatabaseIndex, p.db),
-			}
-			if !math.IsNaN(p.config.analyticsRate) {
-				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-			}
-			span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
+			span := tc.params.startSpan(ctx, parts[0], raw, length)
 			err := tc.process(cmd)
 			var finishOpts []tracer.FinishOption
 			if err != redis.Nil {

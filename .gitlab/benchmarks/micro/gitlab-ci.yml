@@ -8,14 +8,46 @@ variables:
   BASE_CI_IMAGE_SUFFIX: dd-trace-go-${CI_PIPELINE_ID}
   BASE_CI_IMAGE_CONTAINER_DIR: .gitlab/benchmarks/micro/container
 
-  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/1997785719
-  MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-134225199
+  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/2043583431
+  MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-137170464
 
   # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
   # Known flaky benchmarks
   FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
+
+# Paths that can move a number in the BENCHMARKS lists below.
+#
+# Derived, not guessed: scripts/ciselect/gitlab_test.go locates every function
+# named in a BENCHMARKS variable and fails if its package is not covered here.
+# That is why the list reaches into contrib/ -- BenchmarkGraphQL,
+# BenchmarkHttpServeTrace and BenchmarkStartSpan live in contrib modules, so
+# "a contrib change cannot affect benchmarks" would be wrong.
+#
+# internal/** and ddtrace/** stay broad on purpose. These measure runtime cost,
+# so anything on a hot path counts, and the tracer benchmarks reach most of
+# internal/ transitively.
+.benchmark-changes: &benchmark-changes
+  paths:
+    - .gitlab-ci.yml
+    - .gitlab/benchmarks/**/*
+    - go.mod
+    - go.sum
+    - go.work
+    - go.work.sum
+    - ddtrace/**/*
+    - internal/**/*
+    - instrumentation/**/*
+    - appsec/**/*
+    - llmobs/**/*
+    - openfeature/**/*
+    - contrib/net/http/**/*
+    - contrib/graphql-go/graphql/**/*
+    - contrib/go-redis/redis/**/*
+    - contrib/redis/rueidis/**/*
+    - contrib/valkey-io/valkey-go/**/*
+  compare_to: 'refs/heads/main'
 
 .benchmark-rules: &benchmark-rules
   - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
@@ -27,8 +59,13 @@ variables:
   - if: '$CI_COMMIT_BRANCH == "main"'
     when: always
     interruptible: false
-  - when: always
+  # Development branches only: skip when nothing that could move a benchmark
+  # changed. main and release branches above still run unconditionally, so the
+  # baseline series stays continuous.
+  - changes: *benchmark-changes
+    when: always
     interruptible: true
+  - when: never
 
 .microbenchmarks:
   stage: microbenchmarks
