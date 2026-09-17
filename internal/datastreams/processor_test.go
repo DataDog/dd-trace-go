@@ -964,6 +964,8 @@ func BenchmarkSetCheckpointSlowAgent(b *testing.B) {
 					}
 				}
 
+				elapsed := time.Since(start)
+
 				close(stopFlushing)
 				<-flusherDone
 				p.Stop()
@@ -971,7 +973,7 @@ func BenchmarkSetCheckpointSlowAgent(b *testing.B) {
 				dropped := stats.dropped.Load() + p.stats.dropped.Load()
 				b.ReportMetric(float64(dropped)/float64(pushed), "drops/op")
 				b.ReportMetric(100*float64(dropped)/float64(pushed), "%drops")
-				b.ReportMetric(float64(pushed)/time.Since(start).Seconds(), "pushes/s")
+				b.ReportMetric(float64(pushed)/elapsed.Seconds(), "pushes/s")
 				b.ReportMetric(float64(flushes.Load()), "flushes")
 			})
 		}
@@ -1043,6 +1045,13 @@ func BenchmarkSetCheckpointSustained(b *testing.B) {
 				}
 				wg.Wait()
 				elapsed := time.Since(start)
+				// Flush before Stop so any checkpoints still sitting in the
+				// queue when producers finished get processed rather than
+				// silently discarded: Stop's stop-case flushes only buckets
+				// already built from processed input, not the raw queue, so
+				// without this, leftover backlog would vanish without
+				// incrementing dropped and drops/op would understate loss.
+				p.Flush()
 				p.Stop()
 
 				n := pushed.Load()
