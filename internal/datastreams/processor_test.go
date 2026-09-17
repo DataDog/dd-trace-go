@@ -1020,9 +1020,7 @@ func BenchmarkSetCheckpointSustained(b *testing.B) {
 					if w < b.N%producers {
 						iters++
 					}
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+					wg.Go(func() {
 						start := time.Now()
 						var done int64
 						var timed time.Duration
@@ -1041,7 +1039,7 @@ func BenchmarkSetCheckpointSustained(b *testing.B) {
 						}
 						pushNanos.Add(int64(timed))
 						pushed.Add(done)
-					}()
+					})
 				}
 				wg.Wait()
 				elapsed := time.Since(start)
