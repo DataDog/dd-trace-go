@@ -13,7 +13,7 @@ func NewConsumer(addrs []string, cfg *sarama.Config) (sarama.Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapConsumer(consumer, WithBrokers(addrs)), nil
+	return WrapConsumer(consumer, WithBrokers(addrs), withSaramaConfig(cfg)), nil
 }
 
 // NewConsumerFromClient calls sarama.NewConsumerFromClient and wraps the resulting consumer.
@@ -22,7 +22,7 @@ func NewConsumerFromClient(client sarama.Client) (sarama.Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapConsumer(consumer, WithBrokers(clientBrokerAddresses(client))), nil
+	return WrapConsumer(consumer, WithBrokers(clientBrokerAddresses(client)), withSaramaConfig(client.Config())), nil
 }
 
 // NewSyncProducer calls sarama.NewSyncProducer and wraps the resulting producer.
@@ -68,4 +68,10 @@ func clientBrokerAddresses(client sarama.Client) []string {
 		addrs = append(addrs, broker.Addr())
 	}
 	return addrs
+}
+
+func withSaramaConfig(saramaConfig *sarama.Config) OptionFn {
+	return func(cfg *config) {
+		cfg.saramaConfig = saramaConfig
+	}
 }

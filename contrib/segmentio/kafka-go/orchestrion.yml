@@ -172,10 +172,6 @@ aspects:
               {{ $r }}.__dd_prevSpan.Finish()
               {{ $r }}.__dd_prevSpan = nil
             }
-            if {{ $r }}.__dd_clusterIDFetchStop != nil {
-              {{ $r }}.__dd_clusterIDFetchStop()
-              {{ $r }}.__dd_clusterIDFetchStop = nil
-            }
             defer func() {
               if {{ $err }} != nil {
                 return
@@ -198,6 +194,10 @@ aspects:
             if {{ $r }}.__dd_prevSpan != nil {
               {{ $r }}.__dd_prevSpan.Finish()
               {{ $r }}.__dd_prevSpan = nil
+            }
+            if {{ $r }}.__dd_clusterIDFetchStop != nil {
+              {{ $r }}.__dd_clusterIDFetchStop()
+              {{ $r }}.__dd_clusterIDFetchStop = nil
             }
 
   ## Trace Produce ##
