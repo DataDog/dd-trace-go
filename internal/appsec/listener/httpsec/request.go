@@ -163,7 +163,10 @@ func headersRemoveCookies(headers http.Header) map[string][]string {
 	headersNoCookies := make(http.Header, len(headers))
 	for k, v := range headers {
 		k := strings.ToLower(k)
-		if k == "cookie" {
+		// Exclude request cookies (Cookie) and response cookies (Set-Cookie): this map feeds both
+		// server.request.headers.no_cookies and server.response.headers.no_cookies, and Set-Cookie
+		// carries secret session/auth values that must not reach a "no cookies" address.
+		if k == "cookie" || k == "set-cookie" {
 			continue
 		}
 		headersNoCookies[k] = v
