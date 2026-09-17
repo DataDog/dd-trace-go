@@ -913,7 +913,7 @@ const (
 // caller can, which overruns the queue at every latency including zero, and
 // so measures the consumer's own throughput ceiling rather than the stall.
 func BenchmarkSetCheckpointSlowAgent(b *testing.B) {
-	latencies := []time.Duration{0, time.Millisecond, 10 * time.Millisecond, 100 * time.Millisecond}
+	latencies := []time.Duration{0, time.Millisecond, 10 * time.Millisecond, 100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond}
 	for _, mode := range []struct {
 		name string
 		rate float64 // pushes per second; 0 means push as fast as possible
