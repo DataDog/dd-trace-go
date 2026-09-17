@@ -269,9 +269,9 @@ func Start(opts ...StartOption) error {
 	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
 	globalTracer := Tracer(t)
 	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
-		globalTracer = wrapWithCiVisibilityNoopTracer(t)
+		globalTracer = wrapWithCIVisibilityTracerRouter(t)
 	}
-	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	installGlobalTracerWithCIVisibilityRouter(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}

@@ -8,6 +8,8 @@ package tracer
 import (
 	"sync/atomic"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 )
 
 type preservingTestTracer struct {
@@ -58,7 +60,7 @@ func (p *applicationPreservingTestTracer) SetApplicationTracer(application Trace
 	return p.applicationAccept
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t *testing.T) {
+func TestInstallGlobalTracerWithCIVisibilityRouterPreservesWhenAccepted(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -67,7 +69,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
+	installGlobalTracerWithCIVisibilityRouter(real, true)
 
 	if got := getGlobalTracer(); got != current {
 		t.Fatalf("global tracer = %T, want preserved tracer", got)
@@ -75,8 +77,9 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	if current.setCalls != 1 {
 		t.Fatalf("SetCIVisibilityTracer calls = %d, want 1", current.setCalls)
 	}
-	if current.received != real {
-		t.Fatalf("received tracer = %T, want real tracer", current.received)
+	received, ok := current.received.(*ciVisibilityTracerRouter)
+	if !ok || received.CIVisibilityTracer() != real {
+		t.Fatalf("received tracer = %T, want CI Visibility router around %T", current.received, real)
 	}
 	if current.stopCnt.Load() != 0 {
 		t.Fatalf("preserved tracer was stopped %d times", current.stopCnt.Load())
@@ -86,7 +89,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	}
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesApplicationTracer(t *testing.T) {
+func TestInstallGlobalTracerWithCIVisibilityRouterPreservesApplicationTracer(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -98,7 +101,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesApplicationTrac
 	application := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(application, false)
+	installGlobalTracerWithCIVisibilityRouter(application, false)
 
 	if got := getGlobalTracer(); got != current {
 		t.Fatalf("global tracer = %T, want preserved tracer", got)
@@ -117,7 +120,40 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesApplicationTrac
 	}
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilityDisabled(t *testing.T) {
+func TestInstallGlobalTracerWithCIVisibilityRouterTreatsStartDuringActiveCIVisibilityAsApplication(t *testing.T) {
+	previousState := civisibility.GetState()
+	civisibility.SetState(civisibility.StateInitialized)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+		civisibility.SetState(previousState)
+	})
+
+	current := &applicationPreservingTestTracer{
+		preservingTestTracer: &preservingTestTracer{},
+		applicationAccept:    true,
+	}
+	application := &preservingTestTracer{}
+	setGlobalTracer(current)
+
+	// The environment-backed tracer config still has CI Visibility enabled,
+	// so Start has built the same temporary wrapper used during CI bootstrap.
+	installGlobalTracerWithCIVisibilityRouter(wrapWithCIVisibilityTracerRouter(application), true)
+
+	if got := getGlobalTracer(); got != current {
+		t.Fatalf("global tracer = %T, want preserved CI Visibility owner", got)
+	}
+	if current.setCalls != 0 {
+		t.Fatalf("SetCIVisibilityTracer calls = %d, want 0", current.setCalls)
+	}
+	if current.applicationSetCalls != 1 {
+		t.Fatalf("SetApplicationTracer calls = %d, want 1", current.applicationSetCalls)
+	}
+	if current.applicationReceived != application {
+		t.Fatalf("application tracer = %T, want unwrapped %T", current.applicationReceived, application)
+	}
+}
+
+func TestInstallGlobalTracerWithCIVisibilityRouterFallsBackWhenCIVisibilityDisabled(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -126,7 +162,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilit
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, false)
+	installGlobalTracerWithCIVisibilityRouter(real, false)
 
 	if got := getGlobalTracer(); got != real {
 		t.Fatalf("global tracer = %T, want real tracer", got)
@@ -142,7 +178,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilit
 	}
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenPreserverRejects(t *testing.T) {
+func TestInstallGlobalTracerWithCIVisibilityRouterFallsBackWhenPreserverRejects(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -151,16 +187,18 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenPreserverRe
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
+	installGlobalTracerWithCIVisibilityRouter(real, true)
 
-	if got := getGlobalTracer(); got != real {
-		t.Fatalf("global tracer = %T, want real tracer", got)
+	got, ok := getGlobalTracer().(*ciVisibilityTracerRouter)
+	if !ok || got.CIVisibilityTracer() != real {
+		t.Fatalf("global tracer = %T, want CI Visibility router around %T", getGlobalTracer(), real)
 	}
 	if current.setCalls != 1 {
 		t.Fatalf("SetCIVisibilityTracer calls = %d, want 1", current.setCalls)
 	}
-	if current.received != real {
-		t.Fatalf("received tracer = %T, want real tracer", current.received)
+	received, ok := current.received.(*ciVisibilityTracerRouter)
+	if !ok || received.CIVisibilityTracer() != real {
+		t.Fatalf("received tracer = %T, want CI Visibility router around %T", current.received, real)
 	}
 	if current.stopCnt.Load() != 1 {
 		t.Fatalf("previous tracer stop count = %d, want 1", current.stopCnt.Load())

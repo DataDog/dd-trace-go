@@ -1187,7 +1187,7 @@ func submitChunkWithTracer(tr Tracer, c *chunk) {
 	switch t := tr.(type) {
 	case *tracer:
 		t.submitChunk(c)
-	case *ciVisibilityNoopTracer:
+	case *ciVisibilityTracerRouter:
 		submitChunkWithTracer(t.Tracer, c)
 	}
 }
