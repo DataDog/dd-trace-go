@@ -6,12 +6,11 @@
 package tracer
 
 import (
-	"sync"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -24,8 +23,35 @@ var _ Tracer = (*ciVisibilityNoopTracer)(nil)
 type ciVisibilityNoopTracer struct {
 	Tracer
 
-	applicationMu     sync.RWMutex
+	applicationMu locking.RWMutex
+	// +checklocks:applicationMu
 	applicationTracer Tracer
+}
+
+type ciVisibilitySpanRoute uint8
+
+const (
+	ciVisibilitySpanRouteCI ciVisibilitySpanRoute = iota + 1
+	ciVisibilitySpanRouteApplication
+)
+
+type ciVisibilitySpanRouteKey struct {
+	traceID [16]byte
+	spanID  uint64
+}
+
+type ciVisibilitySpanRouteRegistry struct {
+	mu locking.Mutex
+	// +checklocks:mu
+	routes map[ciVisibilitySpanRouteKey]ciVisibilitySpanRoute
+}
+
+// ciVisibilitySpanRoutes records routing decisions while spans are alive. The
+// immutable trace and span IDs avoid retaining pooled Span values, and the
+// process-wide lifetime lets a replacement CI-aware wrapper finish traces that
+// were started by its predecessor.
+var ciVisibilitySpanRoutes = ciVisibilitySpanRouteRegistry{
+	routes: make(map[ciVisibilitySpanRouteKey]ciVisibilitySpanRoute),
 }
 
 // wrapWithCiVisibilityNoopTracer creates a wrapped version of the Tracer that only accepts CiVisibility spans
@@ -44,7 +70,9 @@ func (t *ciVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSp
 			// If yes, we create the span.
 			// If not, we just behave like a noop tracer.
 			if v, ok := cfg.Tags[ext.SpanType].(string); ok && isCIVisibilitySpanType(v) {
-				return t.Tracer.StartSpan(operationName, []StartSpanOption{useConfig(cfg)}...)
+				span := t.Tracer.StartSpan(operationName, []StartSpanOption{useConfig(cfg)}...)
+				registerCIVisibilitySpanRoute(span, ciVisibilitySpanRouteCI)
+				return span
 			}
 		}
 	}
@@ -53,6 +81,7 @@ func (t *ciVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSp
 	if applicationTracer != nil {
 		span := applicationTracer.StartSpan(operationName, opts...)
 		t.applicationMu.RUnlock()
+		registerCIVisibilitySpanRoute(span, ciVisibilitySpanRouteApplication)
 		return span
 	}
 	t.applicationMu.RUnlock()
@@ -118,10 +147,11 @@ func (t *ciVisibilityNoopTracer) detachApplicationTracer() Tracer {
 // TracerForFinishedChunk routes finished chunks to the tracer that created
 // them. CI Visibility traces and application traces are never mixed.
 func (t *ciVisibilityNoopTracer) TracerForFinishedChunk(spans []*Span) (Tracer, bool) {
-	if len(spans) == 0 {
+	route, ok := takeCIVisibilitySpanRoute(spans)
+	if !ok {
 		return nil, false
 	}
-	if isCIVisibilitySpanType(spans[0].spanType) {
+	if route == ciVisibilitySpanRouteCI {
 		return t.Tracer, true
 	}
 
@@ -156,6 +186,12 @@ func (t *ciVisibilityNoopTracer) Stop() {
 		return
 	}
 
+	if !ciVisibilityActive {
+		// A running CI Visibility session may replace its concrete tracer while
+		// older spans are still in flight. Keep their routes until the session
+		// exits; the replacement wrapper will consume them when they finish.
+		clearCIVisibilitySpanRoutes()
+	}
 	t.Tracer.Stop()
 }
 
@@ -187,6 +223,58 @@ func isCIVisibilitySpanType(spanType string) bool {
 		spanType == constants.SpanTypeTestSuite ||
 		spanType == constants.SpanTypeTestModule ||
 		spanType == constants.SpanTypeTestSession
+}
+
+func ciVisibilitySpanRouteKeyFor(span *Span) (ciVisibilitySpanRouteKey, bool) {
+	if span == nil {
+		return ciVisibilitySpanRouteKey{}, false
+	}
+	context := span.Context()
+	if context == nil {
+		return ciVisibilitySpanRouteKey{}, false
+	}
+	return ciVisibilitySpanRouteKey{
+		traceID: context.TraceIDBytes(),
+		spanID:  context.SpanID(),
+	}, true
+}
+
+func registerCIVisibilitySpanRoute(span *Span, route ciVisibilitySpanRoute) {
+	key, ok := ciVisibilitySpanRouteKeyFor(span)
+	if !ok {
+		return
+	}
+	ciVisibilitySpanRoutes.mu.Lock()
+	ciVisibilitySpanRoutes.routes[key] = route
+	ciVisibilitySpanRoutes.mu.Unlock()
+}
+
+func takeCIVisibilitySpanRoute(spans []*Span) (ciVisibilitySpanRoute, bool) {
+	ciVisibilitySpanRoutes.mu.Lock()
+	defer ciVisibilitySpanRoutes.mu.Unlock()
+
+	var route ciVisibilitySpanRoute
+	for _, span := range spans {
+		key, ok := ciVisibilitySpanRouteKeyFor(span)
+		if !ok {
+			continue
+		}
+		spanRoute, ok := ciVisibilitySpanRoutes.routes[key]
+		if !ok {
+			continue
+		}
+		delete(ciVisibilitySpanRoutes.routes, key)
+		if route == 0 {
+			route = spanRoute
+		}
+	}
+	return route, route != 0
+}
+
+func clearCIVisibilitySpanRoutes() {
+	ciVisibilitySpanRoutes.mu.Lock()
+	clear(ciVisibilitySpanRoutes.routes)
+	ciVisibilitySpanRoutes.mu.Unlock()
 }
 
 func useConfig(config *StartSpanConfig) StartSpanOption {

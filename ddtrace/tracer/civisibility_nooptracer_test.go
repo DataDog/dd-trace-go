@@ -297,6 +297,47 @@ func TestCiVisibilityNoopTracer_RoutesApplicationAndCISpansAfterApplicationStart
 	}, time.Second, 5*time.Millisecond)
 }
 
+func TestCiVisibilityNoopTracer_RoutesSpansStartedByPreviousWrapper(t *testing.T) {
+	firstCITracer, firstTransport := newUninstalledTestTracer(t)
+	secondCITracer, secondTransport := newUninstalledTestTracer(t)
+	firstWrapped := wrapWithCiVisibilityNoopTracer(firstCITracer)
+	secondWrapped := wrapWithCiVisibilityNoopTracer(secondCITracer)
+	firstStopped := false
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		if !firstStopped {
+			firstCITracer.Stop()
+		}
+		secondWrapped.Stop()
+		setGlobalTracer(&NoopTracer{})
+		civisibility.SetState(civisibility.StateUninitialized)
+	})
+
+	firstSpan := firstWrapped.StartSpan("ci.test.first", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, firstSpan)
+	secondSpan := firstWrapped.StartSpan("ci.test.second", SpanType(constants.SpanTypeTest), ChildOf(firstSpan.Context()))
+	require.NotNil(t, secondSpan)
+
+	// A replacement wrapper must still recognize spans created by its predecessor.
+	// This is the lifecycle exercised when mocktracer or CI Visibility restarts
+	// while an older trace is still in flight.
+	setGlobalTracer(secondWrapped)
+	civisibility.SetState(civisibility.StateInitialized)
+	firstWrapped.Stop()
+	firstStopped = true
+	secondSpan.Finish()
+	firstSpan.Finish()
+	require.Eventually(t, func() bool {
+		secondWrapped.Flush()
+		return secondTransport.Len() == 2
+	}, time.Second, 5*time.Millisecond)
+	require.Zero(t, firstTransport.Len())
+
+	// Consuming a chunk removes every registered span route in that chunk.
+	_, ok := takeCIVisibilitySpanRoute([]*Span{firstSpan, secondSpan})
+	require.False(t, ok)
+}
+
 func TestCiVisibilityNoopTracer_StopsDelegatesAtTheirLifecycleBoundaries(t *testing.T) {
 	ciTracer := &preservingTestTracer{}
 	firstApplicationTracer := &preservingTestTracer{}

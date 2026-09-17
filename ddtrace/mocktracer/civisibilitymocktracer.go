@@ -228,14 +228,20 @@ func (t *civisibilitymocktracer) TracerForFinishedChunk(spans []*tracer.Span) (t
 		}
 	}
 	t.realSpansMu.Unlock()
-	if !hasRealSpan {
-		return nil, false
-	}
-
 	t.realMu.RLock()
 	real := t.real
 	t.realMu.RUnlock()
 	if real == nil {
+		return nil, false
+	}
+	if provider, ok := real.(interface {
+		TracerForFinishedChunk([]*tracer.Span) (tracer.Tracer, bool)
+	}); ok {
+		if submitTracer, ok := provider.TracerForFinishedChunk(spans); ok {
+			return submitTracer, true
+		}
+	}
+	if !hasRealSpan {
 		return nil, false
 	}
 	return real, true

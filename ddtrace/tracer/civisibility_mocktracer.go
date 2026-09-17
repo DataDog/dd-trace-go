@@ -36,19 +36,6 @@ func submitTracerForFinishedChunk(globalTracer Tracer, spans []*Span) Tracer {
 		if submitTracer, ok := provider.TracerForFinishedChunk(spans); ok {
 			return submitTracer
 		}
-
-		// A CI span may have been started before a CI-aware mock tracer was
-		// installed, so it is absent from the mock's per-span registry. The span
-		// type is available here without adding ownership state to the core Span.
-		if len(spans) > 0 && isCIVisibilitySpanType(spans[0].spanType) {
-			if ciProvider, ok := globalTracer.(interface {
-				CIVisibilityTracer() Tracer
-			}); ok {
-				if ciTracer := ciProvider.CIVisibilityTracer(); ciTracer != nil {
-					return ciTracer
-				}
-			}
-		}
 		return nil
 	}
 	return globalTracer
