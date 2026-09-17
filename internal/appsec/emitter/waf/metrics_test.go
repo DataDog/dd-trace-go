@@ -16,17 +16,14 @@ func TestResolveBlockMilestones(t *testing.T) {
 	tests := []struct {
 		name           string
 		requested      bool
-		outcomes       []int32
+		failed         bool
 		requestBlocked bool
 		blockFailure   bool
 	}{
 		{name: "not requested"},
-		{name: "not requested but unavailable", outcomes: []int32{blockOutcomeFailed}},
-		{name: "requested outcome unknown", requested: true, requestBlocked: true},
-		{name: "requested and applied", requested: true, outcomes: []int32{blockOutcomeApplied}, requestBlocked: true},
-		{name: "requested and failed", requested: true, outcomes: []int32{blockOutcomeFailed}, blockFailure: true},
-		{name: "failure followed by success", requested: true, outcomes: []int32{blockOutcomeFailed, blockOutcomeApplied}, requestBlocked: true},
-		{name: "success followed by failure", requested: true, outcomes: []int32{blockOutcomeApplied, blockOutcomeFailed}, requestBlocked: true},
+		{name: "not requested but unavailable", failed: true},
+		{name: "requested with no reported outcome", requested: true, requestBlocked: true},
+		{name: "requested and failed", requested: true, failed: true, blockFailure: true},
 	}
 
 	for _, tc := range tests {
@@ -35,13 +32,8 @@ func TestResolveBlockMilestones(t *testing.T) {
 			if tc.requested {
 				metrics.SetBlockRequested()
 			}
-			for _, outcome := range tc.outcomes {
-				switch outcome {
-				case blockOutcomeApplied:
-					metrics.SetBlockApplied()
-				case blockOutcomeFailed:
-					metrics.SetBlockFailed()
-				}
+			if tc.failed {
+				metrics.SetBlockFailed()
 			}
 
 			metrics.resolveBlockMilestones()

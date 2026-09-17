@@ -22,8 +22,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
 
-var errBlockResponseNotSent = errors.New("proxy block response was not sent")
-
 // Processor is a state machine that handles incoming HTTP request and response in a streaming manner,
 // made for proxy external-processing protocols like Envoy's External Processing or HAProxy's SPOP.
 //
@@ -78,20 +76,6 @@ func NewProcessor(config ProcessorConfig, instr *instrumentation.Instrumentation
 	}
 }
 
-func blockResponseError(reqState *RequestState) error {
-	if reqState.fakeResponseWriter == nil {
-		return errBlockResponseNotSent
-	}
-	sent, err := reqState.fakeResponseWriter.blockResponseResult()
-	if err != nil {
-		return fmt.Errorf("error creating block message: %w", err)
-	}
-	if !sent {
-		return errBlockResponseNotSent
-	}
-	return nil
-}
-
 // OnRequestHeaders handles incoming request headers using the [RequestHeaders] interface.
 // It returns a [RequestState] to be used in subsequent calls for the same request/response cycle.
 // If the request is blocked and its response is delivered, or if the message ends the stream, it returns [io.EOF].
@@ -144,7 +128,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	if !mp.BlockingUnavailable && blocked {
 		reqState.BlockAction()
-		if err := blockResponseError(&reqState); err != nil {
+		if err := reqState.fakeResponseWriter.blockResponseError(); err != nil {
 			return reqState, err
 		}
 		return reqState, io.EOF
@@ -179,11 +163,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	reqState.Mu.Lock()
 	defer reqState.Mu.Unlock()
-	if reqState.fakeResponseWriter != nil {
-		reqState.fakeResponseWriter.enableBlockMessages(reqState.Context)
-		defer reqState.fakeResponseWriter.disableBlockMessages()
-	}
-
+	defer reqState.armBlockDelivery(mp.BlockMessageFunc)()
 	if !reqState.State.Ongoing() {
 		return fmt.Errorf("received request body in unexpected state: %v", reqState.State)
 	}
@@ -205,7 +185,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
 		reqState.blockActionLocked()
-		if err := blockResponseError(reqState); err != nil {
+		if err := reqState.fakeResponseWriter.blockResponseError(); err != nil {
 			return err
 		}
 		return io.EOF
@@ -221,11 +201,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) error {
 	reqState.Mu.Lock()
 	defer reqState.Mu.Unlock()
-	if reqState.fakeResponseWriter != nil {
-		reqState.fakeResponseWriter.enableBlockMessages(reqState.Context)
-		defer reqState.fakeResponseWriter.disableBlockMessages()
-	}
-
+	defer reqState.armBlockDelivery(mp.BlockMessageFunc)()
 	if !reqState.State.Request() {
 		return fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
@@ -256,7 +232,7 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 	if res.GetEndOfStream() || !mp.isBodySupported(reqState.wrappedResponseWriter.Header().Get("Content-Type")) {
 		_ = reqState.closeLocked()
 		if !mp.BlockingUnavailable && reqState.State == MessageTypeBlocked {
-			if err := blockResponseError(reqState); err != nil {
+			if err := reqState.fakeResponseWriter.blockResponseError(); err != nil {
 				return err
 			}
 			return io.EOF
@@ -279,11 +255,7 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error {
 	reqState.Mu.Lock()
 	defer reqState.Mu.Unlock()
-	if reqState.fakeResponseWriter != nil {
-		reqState.fakeResponseWriter.enableBlockMessages(reqState.Context)
-		defer reqState.fakeResponseWriter.disableBlockMessages()
-	}
-
+	defer reqState.armBlockDelivery(mp.BlockMessageFunc)()
 	if !reqState.State.Response() {
 		return fmt.Errorf("received response body too early: %v", reqState.State)
 	}
@@ -305,7 +277,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 
 		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
 			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-			if err := blockResponseError(reqState); err != nil {
+			if err := reqState.fakeResponseWriter.blockResponseError(); err != nil {
 				return err
 			}
 			return io.EOF

@@ -28,17 +28,9 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 	hHijacker, okHijacker := w.(http.Hijacker)
 
 	mw := newResponseWriter(w)
-	if okFlusher {
-		hFlusher = responseWriterFlusher{Flusher: hFlusher, responseWriter: mw}
-	}
-	if okHijacker {
-		hHijacker = responseWriterHijacker{Hijacker: hHijacker, responseWriter: mw}
-	}
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
-		Committed() bool
-		resetStatusCode()
 		Unwrap() http.ResponseWriter
 	}
 	switch {

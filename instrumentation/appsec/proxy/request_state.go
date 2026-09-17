@@ -56,15 +56,16 @@ func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, 
 	}
 
 	fakeResponseWriter := newFakeResponseWriter()
-	fakeResponseWriter.setBlockMessageFunc(blockMessageFunc)
-	fakeResponseWriter.enableBlockMessages(request.Context())
+	// BeforeHandle can already block on the request headers, which is delivered
+	// on the request-headers message being processed right now.
+	disarm := fakeResponseWriter.armBlockDelivery(request.Context(), blockMessageFunc)
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
 		ClientIP:  clientIP,
 	}, fakeResponseWriter, request)
-	fakeResponseWriter.disableBlockMessages()
+	disarm()
 
 	var requestBuffer *bodyBuffer
 	if bodyLimit > 0 {
@@ -104,6 +105,17 @@ func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 	return newHeaders, nil
 }
 
+// armBlockDelivery allows AppSec to deliver a block response on the gateway
+// message currently being processed, and returns the matching disarm function.
+// Callers must hold rs.Mu, because integrations resolve the target message from
+// rs.Context, which is swapped for the duration of each message.
+func (rs *RequestState) armBlockDelivery(send func(context.Context, BlockActionOptions) error) func() {
+	if rs.fakeResponseWriter == nil {
+		return func() {}
+	}
+	return rs.fakeResponseWriter.armBlockDelivery(rs.Context, send)
+}
+
 // BlockAction marks the request as blocked and completes it.
 func (rs *RequestState) BlockAction() BlockActionOptions {
 	rs.Mu.Lock()
@@ -134,11 +146,8 @@ func (rs *RequestState) CloseBeforeResponse() {
 	// but that still add appsec data if any
 	op, ok := dyngo.FindOperation[httpsec.HandlerOperation](rs.Context)
 	if ok {
-		// This path closes the request without applying a pending block action.
-		// SetBlockFailed is gated by SetBlockRequested when the metric is resolved.
-		if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
-			metrics.SetBlockFailed()
-		}
+		// There is no in-flight message left to carry a block response, so any
+		// action Finish produces here is reported as a failed block.
 		op.Finish(httpsec.HandlerOperationRes{})
 	}
 

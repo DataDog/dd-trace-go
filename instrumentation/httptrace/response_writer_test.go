@@ -6,51 +6,11 @@
 package httptrace
 
 import (
-	"bufio"
-	"errors"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-type hijackResponseWriter struct {
-	header http.Header
-	err    error
-}
-
-func (w *hijackResponseWriter) Header() http.Header     { return w.header }
-func (*hijackResponseWriter) Write([]byte) (int, error) { return 0, nil }
-func (*hijackResponseWriter) WriteHeader(int)           {}
-func (w *hijackResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return nil, nil, w.err
-}
-
-func TestResponseWriterTracksFlushAndHijack(t *testing.T) {
-	t.Run("flush", func(t *testing.T) {
-		wrapped, monitored := wrapResponseWriter(httptest.NewRecorder())
-		wrapped.(http.Flusher).Flush()
-		assert.True(t, monitored.Committed())
-		assert.Equal(t, http.StatusOK, monitored.Status())
-	})
-
-	t.Run("hijack", func(t *testing.T) {
-		wrapped, monitored := wrapResponseWriter(&hijackResponseWriter{header: make(http.Header)})
-		_, _, err := wrapped.(http.Hijacker).Hijack()
-		assert.NoError(t, err)
-		assert.True(t, monitored.Committed())
-	})
-
-	t.Run("hijack error", func(t *testing.T) {
-		wantErr := errors.New("hijack failed")
-		wrapped, monitored := wrapResponseWriter(&hijackResponseWriter{header: make(http.Header), err: wantErr})
-		_, _, err := wrapped.(http.Hijacker).Hijack()
-		assert.ErrorIs(t, err, wantErr)
-		assert.False(t, monitored.Committed())
-	})
-}
 
 func Test_wrapResponseWriter(t *testing.T) {
 	// there doesn't appear to be an easy way to test http.Pusher support via an http request
@@ -66,21 +26,11 @@ func Test_wrapResponseWriter(t *testing.T) {
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
 
-		var monitored *responseWriter
-		w, monitored = wrapResponseWriter(w)
+		w, _ = wrapResponseWriter(w)
 		_, ok = w.(http.ResponseWriter)
 		assert.True(t, ok)
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
-		committed, ok := w.(interface{ Committed() bool })
-		assert.True(t, ok)
-		assert.False(t, committed.Committed())
-
-		monitored.status = http.StatusCreated
-		monitored.committed = true
-		ResetStatusCode(w)
-		assert.Zero(t, monitored.Status())
-		assert.False(t, monitored.Committed())
 	})
 
 }
