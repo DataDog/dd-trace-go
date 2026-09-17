@@ -224,7 +224,10 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	// checkpoint (the batch start, or the prior query's result) is the closest available
 	// estimate of this query's cost, so the span covers that interval. Attributing the
 	// interval until the next query is read instead would charge each query's cost to the
-	// query queued before it.
+	// query queued before it. The first query's span starts at the batch start, so it also
+	// absorbs the time to write the whole batch to the wire; server-side buffering can
+	// still attribute a batch-wide wait to the first query, since only client read times
+	// are observable.
 	// batchState is stored per-batch in the context so concurrent batches on different pool
 	// connections each track their own checkpoint without racing on shared tracer state.
 	now := time.Now()
@@ -232,12 +235,15 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil {
 		start = bs.lastCheckpoint
 		bs.lastCheckpoint = now
-	}
+	} // else: the hook fired without a traced batch start; the span deliberately
+	// reports as zero-duration rather than guessing an interval it cannot know.
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL,
 		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
 		tracer.StartTime(start),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
+	// FinishTime pins the end exactly at the checkpoint so consecutive query spans
+	// tile the batch span without gaps or overlap.
 	span.Finish(tracer.WithError(data.Err), tracer.FinishTime(now))
 }
 
