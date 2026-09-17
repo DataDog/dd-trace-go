@@ -29,58 +29,39 @@ func assertContentLength(t *testing.T, recorder *httptest.ResponseRecorder) {
 	}
 }
 
-func TestBlockRequestAppliedCallback(t *testing.T) {
+func TestSendActionEventsBlockOutcome(t *testing.T) {
 	op := dyngo.NewRootOperation()
 	var action *BlockHTTP
-	dyngo.OnData(op, func(got *BlockHTTP) {
-		action = got
-	})
+	dyngo.OnData(op, func(got *BlockHTTP) { action = got })
 
-	applied := 0
-	failed := 0
-	cfg := Config{}.WithBlockRequestOutcome(func() { applied++ }, func() { failed++ })
-	SendActionEvents(op, map[string]any{
+	if blocked := SendActionEvents(op, map[string]any{
 		"block_request": map[string]any{"status_code": uint64(http.StatusForbidden)},
-	}, cfg)
-	if action == nil {
+	}); !blocked {
+		t.Fatal("valid block action did not request interruption")
+	}
+	if action == nil || action.Handler == nil {
 		t.Fatal("block_request did not emit BlockHTTP")
 	}
-	if !action.ReportsBlockOutcome() {
-		t.Fatal("configured block_request must report its outcome")
-	}
-	if applied != 0 {
-		t.Fatalf("callback called before action application: %d", applied)
-	}
-	action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	if applied != 1 {
-		t.Fatalf("callback calls = %d, want 1", applied)
+
+	// An action that cannot be built must not claim it can interrupt the request,
+	// so the caller can report the block as failed.
+	if blocked := SendActionEvents(op, map[string]any{
+		"block_request": map[string]any{"status_code": "invalid"},
+	}); blocked {
+		t.Fatal("invalid block action reported that it could interrupt the request")
 	}
 
 	action = nil
-	SendActionEvents(op, map[string]any{
+	if blocked := SendActionEvents(op, map[string]any{
 		"redirect_request": map[string]any{
 			"status_code": uint64(http.StatusFound),
 			"location":    "/redirected",
 		},
-	}, cfg)
-	if action == nil {
+	}); blocked {
+		t.Fatal("redirect_request must not be reported as a block")
+	}
+	if action == nil || action.Handler == nil {
 		t.Fatal("redirect_request did not emit BlockHTTP")
-	}
-	if action.ReportsBlockOutcome() {
-		t.Fatal("redirect_request must not report a block outcome")
-	}
-	action.Handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	if applied != 1 {
-		t.Fatalf("redirect invoked block callback: calls = %d, want 1", applied)
-	}
-
-	if blocked := SendActionEvents(op, map[string]any{
-		"block_request": map[string]any{"status_code": "invalid"},
-	}, cfg); blocked {
-		t.Fatal("invalid block action reported that it could interrupt the request")
-	}
-	if failed != 1 {
-		t.Fatalf("invalid block failure callbacks = %d, want 1", failed)
 	}
 }
 

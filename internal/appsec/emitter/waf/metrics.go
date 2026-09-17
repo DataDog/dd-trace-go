@@ -213,50 +213,29 @@ type ContextMetrics struct {
 	Milestones RequestMilestones
 
 	blockRequested atomic.Bool
-	blockOutcome   atomic.Int32
+	blockFailed    atomic.Bool
 
 	// logger is a pre-configured logger with appsec product tags
 	logger *telemetrylog.Logger
 }
 
-const (
-	blockOutcomeUnknown int32 = iota
-	blockOutcomeApplied
-	blockOutcomeFailed
-)
-
-// SetBlockRequested records that the WAF returned a block_request action.
+// SetBlockRequested records that the WAF returned a WAF-scope block_request action.
 func (m *ContextMetrics) SetBlockRequested() {
 	m.blockRequested.Store(true)
 }
 
-// SetBlockApplied records that at least one requested block was applied.
-func (m *ContextMetrics) SetBlockApplied() {
-	m.blockOutcome.Store(blockOutcomeApplied)
-}
-
-// SetBlockFailed records a known block failure unless a block was already applied.
+// SetBlockFailed records that a requested block could not be enforced.
 func (m *ContextMetrics) SetBlockFailed() {
-	m.blockOutcome.CompareAndSwap(blockOutcomeUnknown, blockOutcomeFailed)
+	m.blockFailed.Store(true)
 }
 
+// resolveBlockMilestones turns the block decision and its enforcement outcome into
+// the `request_blocked` and `block_failure` tags of `waf.requests`.
 func (m *ContextMetrics) resolveBlockMilestones() {
-	if !m.blockRequested.Load() {
-		m.Milestones.requestBlocked = false
-		m.Milestones.blockFailure = false
-		return
-	}
-
-	switch m.blockOutcome.Load() {
-	case blockOutcomeFailed:
-		m.Milestones.requestBlocked = false
-		m.Milestones.blockFailure = true
-	default:
-		// Preserve the existing request_blocked behavior when an integration
-		// cannot report whether it applied the block.
-		m.Milestones.requestBlocked = true
-		m.Milestones.blockFailure = false
-	}
+	// A requested block counts as enforced unless a failure was reported, so an
+	// integration that cannot report its outcome keeps the previous behavior.
+	m.Milestones.blockFailure = m.blockRequested.Load() && m.blockFailed.Load()
+	m.Milestones.requestBlocked = m.blockRequested.Load() && !m.Milestones.blockFailure
 }
 
 // Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle

@@ -47,7 +47,7 @@ func init() {
 		}
 	}
 
-	registerActionHandler("block_request", newBlockAction)
+	registerActionHandler("block_request", withoutConfig(NewBlockAction))
 }
 
 type (
@@ -70,11 +70,9 @@ type (
 		GRPCWrapper
 	}
 
-	// BlockHTTP are actions that interact with an HTTP request flow.
+	// BlockHTTP are actions that interact with an HTTP request flow
 	BlockHTTP struct {
 		http.Handler
-		reportsBlockOutcome bool
-		reportFailure       func()
 	}
 )
 
@@ -122,33 +120,12 @@ func (a *BlockHTTP) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, &events.BlockingSecurityEvent{})
 }
 
-// ReportsBlockOutcome reports whether applying this action updates the
-// waf.requests block outcome through its wrapped handler.
-func (a *BlockHTTP) ReportsBlockOutcome() bool {
-	return a.reportsBlockOutcome
-}
-
-// ReportFailure consumes an unapplied action and reports that its response
-// could not be enforced.
-func (a *BlockHTTP) ReportFailure() {
-	if a.Handler == nil {
-		return
-	}
-	a.Handler = nil
-	if a.reportsBlockOutcome && a.reportFailure != nil {
-		a.reportFailure()
-	}
-}
-
-type blockResponseCommitter interface {
-	AppSecCommitBlockResponse() error
-}
-
-// CommitBlockResponse asks an integration-specific response writer to commit
-// its staged block response. Ordinary HTTP response writers return nil.
+// CommitBlockResponse asks an integration-specific response writer to deliver the
+// block response the handler just staged, and reports whether it got through.
+// Ordinary HTTP response writers write directly and return nil.
 func CommitBlockResponse(w http.ResponseWriter) error {
 	for w != nil {
-		if committer, ok := w.(blockResponseCommitter); ok {
+		if committer, ok := w.(interface{ AppSecCommitBlockResponse() error }); ok {
 			return committer.AppSecCommitBlockResponse()
 		}
 		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
@@ -182,53 +159,21 @@ func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 	return p, nil
 }
 
-// NewBlockAction creates an action for the "block_request" action type.
+// NewBlockAction creates an action for the "block_request" action type
 func NewBlockAction(params map[string]any) []Action {
-	return newBlockAction(params, Config{})
-}
-
-func newBlockAction(params map[string]any, cfg Config) []Action {
 	p, err := blockParamsFromMap(params)
 	if err != nil {
 		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
 	}
-
-	httpAction := newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID)
-	grpcAction := newGRPCBlockRequestAction(p.GRPCStatusCode)
-	if callback := cfg.blockRequestCallback; callback != nil {
-		httpAction.reportsBlockOutcome = true
-		httpAction.reportFailure = callback.failed
-		handler := httpAction.Handler
-		httpAction.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handler.ServeHTTP(w, r)
-			if CommitBlockResponse(w) != nil {
-				if callback.failed != nil {
-					callback.failed()
-				}
-				return
-			}
-			if callback.applied != nil {
-				callback.applied()
-			}
-		})
-
-		grpcWrapper := grpcAction.GRPCWrapper
-		grpcAction.GRPCWrapper = func() (uint32, error) {
-			status, err := grpcWrapper()
-			if callback.applied != nil {
-				callback.applied()
-			}
-			return status, err
-		}
+	return []Action{
+		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
+		newGRPCBlockRequestAction(p.GRPCStatusCode),
 	}
-	return []Action{httpAction, grpcAction}
 }
 
 func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {
-	return &BlockHTTP{
-		Handler: newBlockHandler(status, template, securityResponseID),
-	}
+	return &BlockHTTP{Handler: newBlockHandler(status, template, securityResponseID)}
 }
 
 // newBlockHandler creates, initializes and returns a new BlockRequestAction

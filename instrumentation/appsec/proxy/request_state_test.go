@@ -20,63 +20,63 @@ import (
 func TestFakeResponseWriterReportsBlockMessageFailure(t *testing.T) {
 	wantErr := errors.New("block message failure")
 	writer := newFakeResponseWriter()
-	writer.setBlockMessageFunc(func(context.Context, BlockActionOptions) error {
-		return wantErr
-	})
-	writer.enableBlockMessages(context.Background())
+	writer.armBlockDelivery(context.Background(), func(context.Context, BlockActionOptions) error { return wantErr })
 
 	root := dyngo.NewRootOperation()
 	var action *actions.BlockHTTP
 	dyngo.OnData(root, func(got *actions.BlockHTTP) { action = got })
-	applied := 0
-	failed := 0
-	cfg := actions.Config{}.WithBlockRequestOutcome(func() { applied++ }, func() { failed++ })
-	actions.SendActionEvents(root, map[string]any{"block_request": map[string]any{}}, cfg)
+	actions.SendActionEvents(root, map[string]any{"block_request": map[string]any{}})
 	if action == nil {
 		t.Fatal("block_request did not emit an HTTP action")
 	}
 
 	action.Handler.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/", nil))
-	if applied != 0 || failed != 1 {
-		t.Fatalf("outcome callbacks = (applied %d, failed %d), want (0, 1)", applied, failed)
+	if err := actions.CommitBlockResponse(writer); !errors.Is(err, wantErr) {
+		t.Fatalf("commit error = %v, want %v", err, wantErr)
 	}
-	sent, err := writer.blockResponseResult()
-	if !sent || !errors.Is(err, wantErr) {
-		t.Fatalf("block response result = (%v, %v), want (true, %v)", sent, err, wantErr)
-	}
-}
-
-func TestBlockResponseErrorRequiresDelivery(t *testing.T) {
-	reqState := RequestState{fakeResponseWriter: newFakeResponseWriter()}
-	if err := blockResponseError(&reqState); !errors.Is(err, errBlockResponseNotSent) {
-		t.Fatalf("block response error = %v, want %v", err, errBlockResponseNotSent)
+	if err := writer.blockResponseError(); !errors.Is(err, wantErr) {
+		t.Fatalf("block response error = %v, want %v", err, wantErr)
 	}
 }
 
-func TestFakeResponseWriterRejectsUnavailableCommit(t *testing.T) {
-	t.Run("missing function", func(t *testing.T) {
+func TestFakeResponseWriterRequiresDelivery(t *testing.T) {
+	t.Run("never sent", func(t *testing.T) {
 		writer := newFakeResponseWriter()
-		writer.enableBlockMessages(context.Background())
-		err := writer.AppSecCommitBlockResponse()
-		if !errors.Is(err, errBlockMessageFuncUnavailable) {
-			t.Fatalf("commit error = %v, want %v", err, errBlockMessageFuncUnavailable)
-		}
-		sent, resultErr := writer.blockResponseResult()
-		if sent || !errors.Is(resultErr, errBlockMessageFuncUnavailable) {
-			t.Fatalf("block response result = (%v, %v), want (false, %v)", sent, resultErr, errBlockMessageFuncUnavailable)
+		writer.armBlockDelivery(context.Background(), func(context.Context, BlockActionOptions) error { return nil })
+		if err := writer.blockResponseError(); !errors.Is(err, errBlockResponseNotSent) {
+			t.Fatalf("block response error = %v, want %v", err, errBlockResponseNotSent)
 		}
 	})
 
-	t.Run("outside message processing", func(t *testing.T) {
+	t.Run("no message in flight", func(t *testing.T) {
 		writer := newFakeResponseWriter()
-		writer.setBlockMessageFunc(func(context.Context, BlockActionOptions) error { return nil })
-		err := writer.AppSecCommitBlockResponse()
-		if !errors.Is(err, errBlockResponseNotDeliverable) {
-			t.Fatalf("commit error = %v, want %v", err, errBlockResponseNotDeliverable)
+		// Armed for one message, then disarmed: a later block cannot be delivered.
+		writer.armBlockDelivery(context.Background(), func(context.Context, BlockActionOptions) error { return nil })()
+		if err := writer.AppSecCommitBlockResponse(); !errors.Is(err, errBlockResponseNotSent) {
+			t.Fatalf("commit error = %v, want %v", err, errBlockResponseNotSent)
 		}
-		sent, resultErr := writer.blockResponseResult()
-		if sent || !errors.Is(resultErr, errBlockResponseNotDeliverable) {
-			t.Fatalf("block response result = (%v, %v), want (false, %v)", sent, resultErr, errBlockResponseNotDeliverable)
+		if err := writer.blockResponseError(); !errors.Is(err, errBlockResponseNotSent) {
+			t.Fatalf("block response error = %v, want %v", err, errBlockResponseNotSent)
+		}
+	})
+
+	t.Run("sent once", func(t *testing.T) {
+		calls := 0
+		writer := newFakeResponseWriter()
+		writer.armBlockDelivery(context.Background(), func(context.Context, BlockActionOptions) error {
+			calls++
+			return nil
+		})
+		for range 2 {
+			if err := writer.AppSecCommitBlockResponse(); err != nil {
+				t.Fatalf("commit error = %v, want nil", err)
+			}
+		}
+		if calls != 1 {
+			t.Fatalf("block message deliveries = %d, want 1", calls)
+		}
+		if err := writer.blockResponseError(); err != nil {
+			t.Fatalf("block response error = %v, want nil", err)
 		}
 	})
 }

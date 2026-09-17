@@ -192,18 +192,12 @@ func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
 // Finish completes the HTTP operation and its request context. A tracked block
 // action must be applied before Finish; otherwise it is reported as failed.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) {
-	op.finishOperation(res)
-	if action := op.blockAction.Load(); action != nil && action.ReportsBlockOutcome() {
-		// Direct callers cannot apply an action produced by finishOperation
-		// before finishContext submits request telemetry. An action applied
-		// earlier has already consumed its handler.
-		action.ReportFailure()
-	}
-	op.finishContext()
-}
-
-func (op *HandlerOperation) finishOperation(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
+	// Direct callers cannot apply an action produced by finishOperation before
+	// finishContext submits request telemetry. An action applied earlier has
+	// already consumed its handler.
+	op.reportBlockFailure(op.blockAction.Load())
+	op.finishContext()
 }
 
 func (op *HandlerOperation) finishContext() {
@@ -302,20 +296,21 @@ func responseStarted(w http.ResponseWriter) bool {
 	return ok && res.Status() != 0
 }
 
+// applyBlockAction consumes action and resolves the block outcome it reports.
+// It returns true when the protected handler must not run, which includes the
+// case of a response that can no longer be replaced.
 func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.ResponseWriter, r *http.Request, onBlock []func()) bool {
 	if action == nil || action.Handler == nil {
 		return false
 	}
 
-	handler := action.Handler
-	metrics := op.ContextOperation.GetMetricsInstance()
 	if op.ContextOperation.BlockingUnavailable() {
-		action.ReportFailure()
+		op.reportBlockFailure(action)
 		return false
 	}
 
 	if responseStarted(w) {
-		action.ReportFailure()
+		op.reportBlockFailure(action)
 		// The response can no longer be replaced, but the protected handler
 		// must still be interrupted to prevent application side effects.
 		for _, f := range onBlock {
@@ -324,23 +319,35 @@ func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.Re
 		return true
 	}
 
+	handler := action.Handler
 	action.Handler = nil
 	for _, f := range onBlock {
 		f()
 	}
 
-	if action.ReportsBlockOutcome() && metrics != nil {
-		// Treat a panic while writing the blocking response as a failure. A
-		// successful write below replaces this provisional outcome.
+	handler.ServeHTTP(w, r)
+	if actions.CommitBlockResponse(w) != nil {
+		op.blockFailed()
+		return true
+	}
+	op.ContextOperation.SetRequestBlocked()
+	return true
+}
+
+// reportBlockFailure consumes an action that was never applied and reports that
+// its response could not be enforced.
+func (op *HandlerOperation) reportBlockFailure(action *actions.BlockHTTP) {
+	if action == nil || action.Handler == nil {
+		return
+	}
+	action.Handler = nil
+	op.blockFailed()
+}
+
+func (op *HandlerOperation) blockFailed() {
+	if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
 		metrics.SetBlockFailed()
 	}
-	handler.ServeHTTP(w, r)
-	if !action.ReportsBlockOutcome() && actions.CommitBlockResponse(w) == nil {
-		// Redirects and RASP blocks do not contribute to the WAF-scope block
-		// outcome, but applying them still marks the request as interrupted.
-		op.ContextOperation.SetRequestBlocked()
-	}
-	return true
 }
 
 // BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
@@ -387,7 +394,7 @@ func BeforeHandle(
 		// Finishing the HTTP operation can produce a blocking action from the
 		// response data. Apply or reject that action before finishing the WAF
 		// context, which submits waf.requests.
-		op.finishOperation(HandlerOperationRes{
+		dyngo.FinishOperation(op, HandlerOperationRes{
 			Headers:    opts.ResponseHeaderCopier(w),
 			StatusCode: statusCode,
 		})

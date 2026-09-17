@@ -61,23 +61,17 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
 	metrics := op.GetMetricsInstance()
-	actionConfig := op.actionConfig()
-	if _, blocking := result.Actions["block_request"]; blocking && addrs.TimerKey != addresses.RASPScope {
-		if metrics != nil {
-			metrics.SetBlockRequested()
-		}
-		actionConfig = actionConfig.WithBlockRequestOutcome(func() {
-			op.SetRequestBlocked()
-			if metrics != nil {
-				metrics.SetBlockApplied()
-			}
-		}, func() {
-			if metrics != nil {
-				metrics.SetBlockFailed()
-			}
-		})
+	// Only a WAF-scope block_request contributes to the waf.requests block outcome.
+	_, blockRequested := result.Actions["block_request"]
+	blockRequested = blockRequested && addrs.TimerKey != addresses.RASPScope
+	if blockRequested && metrics != nil {
+		metrics.SetBlockRequested()
 	}
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions, actionConfig)
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
+	if blockRequested && !blocking && metrics != nil {
+		// The action could not be built, so no integration will ever enforce it.
+		metrics.SetBlockFailed()
+	}
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.

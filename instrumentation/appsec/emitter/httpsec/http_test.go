@@ -76,23 +76,20 @@ func TestCommittedResponseStillInterruptsBlockedRequest(t *testing.T) {
 	}
 }
 
-func TestFinishReportsUnappliedBlock(t *testing.T) {
+func TestFinishConsumesUnappliedBlock(t *testing.T) {
 	op, block, _ := StartOperation(context.Background(), HandlerOperationArgs{}, tracelib.NoopTagSetter{})
-	failed := 0
-	cfg := actions.Config{}.WithBlockRequestOutcome(nil, func() { failed++ })
 	if blocked := actions.SendActionEvents(op, map[string]any{
 		"block_request": map[string]any{},
-	}, cfg); !blocked {
+	}); !blocked {
 		t.Fatal("valid block action did not request interruption")
 	}
 	if action := block.Load(); action == nil || action.Handler == nil {
 		t.Fatal("block action was not tracked")
 	}
 
+	// Finish reports the block as failed, which consumes its handler so no later
+	// caller can apply it after the request telemetry was submitted.
 	op.Finish(HandlerOperationRes{})
-	if failed != 1 {
-		t.Fatalf("failed callback count = %d, want 1", failed)
-	}
 	if action := block.Load(); action == nil || action.Handler != nil {
 		t.Fatal("unapplied block action was not consumed")
 	}

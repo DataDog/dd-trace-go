@@ -100,26 +100,21 @@ func (pr PseudoResponse) toNetHTTP(rw http.ResponseWriter) {
 	rw.WriteHeader(pr.StatusCode)
 }
 
-var (
-	errBlockMessageFuncUnavailable = errors.New("proxy block response function is unavailable")
-	errBlockResponseNotDeliverable = errors.New("proxy block response cannot be delivered outside message processing")
-)
-
-type blockMessageState struct {
-	ctx     context.Context
-	send    func(context.Context, BlockActionOptions) error
-	enabled bool
-	sent    bool
-	err     error
-}
-
 type fakeResponseWriter struct {
 	mu      sync.Mutex
 	status  int
 	body    []byte
 	headers http.Header
 
-	blockMessage blockMessageState
+	// sendBlock delivers a staged block response to the gateway. It is only armed
+	// while a gateway message is in flight: outside of one there is nothing to
+	// respond on, and integrations resolve the target message from sendBlockCtx.
+	sendBlock    func(context.Context, BlockActionOptions) error
+	sendBlockCtx context.Context
+	blockArmed   bool
+	// blockSent and blockErr record the outcome of the single sendBlock call.
+	blockSent bool
+	blockErr  error
 }
 
 // Reset resets the fakeResponseWriter to its initial state
@@ -129,8 +124,8 @@ func (w *fakeResponseWriter) Reset() {
 	w.status = 0
 	w.body = nil
 	w.headers = make(http.Header)
-	w.blockMessage.sent = false
-	w.blockMessage.err = nil
+	w.blockSent = false
+	w.blockErr = nil
 }
 
 // Status is not in the [http.ResponseWriter] interface, but it is cast into it by the tracing code
@@ -159,65 +154,61 @@ func (w *fakeResponseWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (w *fakeResponseWriter) setBlockMessageFunc(blockMessageFunc func(context.Context, BlockActionOptions) error) {
+// errBlockResponseNotSent reports a block decision that never reached the gateway.
+var errBlockResponseNotSent = errors.New("proxy block response was not sent")
+
+// armBlockDelivery allows one block response to be delivered on the gateway
+// message that ctx identifies, and returns the matching disarm function.
+func (w *fakeResponseWriter) armBlockDelivery(ctx context.Context, send func(context.Context, BlockActionOptions) error) func() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blockMessage.send = blockMessageFunc
+	w.sendBlock, w.sendBlockCtx, w.blockArmed = send, ctx, true
+	return w.disarmBlockDelivery
 }
 
-func (w *fakeResponseWriter) enableBlockMessages(ctx context.Context) {
+func (w *fakeResponseWriter) disarmBlockDelivery() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blockMessage.ctx = ctx
-	w.blockMessage.enabled = true
+	w.blockArmed = false
 }
 
-func (w *fakeResponseWriter) disableBlockMessages() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.blockMessage.enabled = false
-}
-
-// AppSecCommitBlockResponse constructs the proxy block response once.
+// AppSecCommitBlockResponse delivers the staged block response exactly once. AppSec
+// calls it right after the block handler wrote to this writer, so the delivery
+// outcome is known before the request telemetry is submitted.
 func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
 	w.mu.Lock()
-	if w.blockMessage.sent {
-		err := w.blockMessage.err
-		w.mu.Unlock()
-		return err
-	}
-	if w.blockMessage.send == nil {
-		w.blockMessage.err = errBlockMessageFuncUnavailable
-		w.mu.Unlock()
-		return errBlockMessageFuncUnavailable
-	}
-	if !w.blockMessage.enabled {
-		w.blockMessage.err = errBlockResponseNotDeliverable
-		w.mu.Unlock()
-		return errBlockResponseNotDeliverable
+	if w.blockSent || !w.blockArmed || w.sendBlock == nil {
+		defer w.mu.Unlock()
+		if !w.blockSent {
+			w.blockErr = errBlockResponseNotSent
+		}
+		return w.blockErr
 	}
 
-	w.blockMessage.sent = true
-	blockMessageFunc := w.blockMessage.send
-	ctx := w.blockMessage.ctx
-	opts := BlockActionOptions{
-		StatusCode: w.status,
-		Headers:    w.headers,
-		Body:       w.body,
-	}
+	w.blockSent = true
+	send, ctx := w.sendBlock, w.sendBlockCtx
+	opts := BlockActionOptions{StatusCode: w.status, Headers: w.headers, Body: w.body}
 	w.mu.Unlock()
 
-	err := blockMessageFunc(ctx, opts)
+	err := send(ctx, opts)
+
 	w.mu.Lock()
-	w.blockMessage.err = err
-	w.mu.Unlock()
+	defer w.mu.Unlock()
+	w.blockErr = err
 	return err
 }
 
-func (w *fakeResponseWriter) blockResponseResult() (sent bool, err error) {
+// blockResponseError reports why the staged block response did not reach the gateway.
+func (w *fakeResponseWriter) blockResponseError() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.blockMessage.sent, w.blockMessage.err
+	if w.blockErr != nil {
+		return fmt.Errorf("error creating block message: %w", w.blockErr)
+	}
+	if !w.blockSent {
+		return errBlockResponseNotSent
+	}
+	return nil
 }
 
 var _ http.ResponseWriter = &fakeResponseWriter{}
