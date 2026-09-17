@@ -57,6 +57,13 @@ func NewEncodable(contentType string, reader *io.ReadCloser, limit int) (libddwa
 
 	data, err := io.ReadAll(&limitedReader)
 	if err != nil {
+		// Preserve the stream contract even on a read error: a size-limited reader such as
+		// http.MaxBytesReader returns the consumed prefix alongside its error, so replay those bytes
+		// before returning to avoid handing the caller an already-drained body.
+		*reader = &readerAndCloser{
+			Reader: io.MultiReader(bytes.NewReader(data), *reader),
+			Closer: *reader,
+		}
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 
