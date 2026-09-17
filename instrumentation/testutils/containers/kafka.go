@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -67,7 +68,7 @@ func KafkaClusterID(t testing.TB, container *kafka.KafkaContainer) string {
 	t.Helper()
 	exitCode, output, err := container.Exec(context.Background(), []string{
 		"kafka-cluster", "cluster-id", "--bootstrap-server", "localhost:9092",
-	})
+	}, tcexec.Multiplexed())
 	require.NoError(t, err)
 	require.Zero(t, exitCode)
 	data, err := io.ReadAll(output)
