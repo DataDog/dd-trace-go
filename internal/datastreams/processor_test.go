@@ -12,7 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -846,4 +849,217 @@ func BenchmarkSetCheckpointProcessTags(b *testing.B) {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()
+}
+
+// latencyTransport answers after a fixed delay, standing in for an agent that
+// is slow to accept pipeline stats.
+type latencyTransport struct {
+	noOpTransport
+	latency time.Duration
+}
+
+func (t *latencyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	time.Sleep(t.latency)
+	return t.noOpTransport.RoundTrip(req)
+}
+
+// droppedCounter accumulates the dropped_payloads counts that reportStats
+// swaps out of the processor every 10s, so a benchmark that runs longer than
+// one reporting interval doesn't lose them.
+type droppedCounter struct {
+	statsd.NoOpClientDirect
+	dropped atomic.Int64
+}
+
+func (c *droppedCounter) Count(name string, value int64, _ []string, _ float64) error {
+	if name == "datadog.datastreams.processor.dropped_payloads" {
+		c.dropped.Add(value)
+	}
+	return nil
+}
+
+const (
+	// benchFlushInterval compresses the production flush cadence
+	// (bucketDuration, 10s) so a sub-second benchmark still observes several
+	// agent calls. It is held constant across sub-benchmarks so that agent
+	// latency is the only variable.
+	benchFlushInterval = 20 * time.Millisecond
+
+	// benchPacedRate is the checkpoint rate, in calls per second, of the
+	// "paced" sub-benchmarks. It has to sit comfortably below what the single
+	// run goroutine can consume, so that drops are attributable to the agent
+	// stall rather than to a permanently overflowing queue. At this rate the
+	// queue (defaultQueueSize, 10000) holds roughly 50ms worth of checkpoints,
+	// so loss is expected to begin somewhere between the 10ms and 100ms cases.
+	benchPacedRate = 200_000
+
+	// benchPacingBatch is how many checkpoints are pushed between pacing
+	// sleeps. At benchPacedRate it corresponds to ~1.3ms, which is around the
+	// floor of what time.Sleep can resolve.
+	benchPacingBatch = 256
+)
+
+// BenchmarkSetCheckpointSlowAgent measures checkpoint loss when the agent is
+// slow to respond. (*Processor).run pops the input queue and calls sendToAgent
+// from the same goroutine, so an in-flight agent request stops queue
+// consumption entirely, while fastQueue.push never blocks its caller and
+// silently overwrites unread slots once it wraps. The cost therefore shows up
+// as dropped checkpoints, not as a slower SetCheckpointWithParams: drops/op is
+// the metric of interest here and ns/op is not meaningful (in the paced cases
+// it mostly measures the pacing sleep).
+//
+// The "paced" cases push below the consumer's capacity, isolating the loss
+// caused by the agent stall. The "saturated" cases push as fast as the
+// caller can, which overruns the queue at every latency including zero, and
+// so measures the consumer's own throughput ceiling rather than the stall.
+func BenchmarkSetCheckpointSlowAgent(b *testing.B) {
+	latencies := []time.Duration{0, time.Millisecond, 10 * time.Millisecond, 100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond}
+	for _, mode := range []struct {
+		name string
+		rate float64 // pushes per second; 0 means push as fast as possible
+	}{
+		{"paced", benchPacedRate},
+		{"saturated", 0},
+	} {
+		for _, latency := range latencies {
+			b.Run(mode.name+"/"+latency.String(), func(b *testing.B) {
+				stats := &droppedCounter{}
+				client := &http.Client{Transport: &latencyTransport{latency: latency}}
+				p := NewProcessor(stats, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+				p.Start()
+
+				// Flush from a dedicated goroutine: in production nothing
+				// blocks the caller of SetCheckpoint, the run goroutine merely
+				// stops popping while the agent call is in flight. Calling
+				// p.Flush from the measured loop would serialize the two and
+				// model the wrong thing.
+				stopFlushing := make(chan struct{})
+				flusherDone := make(chan struct{})
+				var flushes atomic.Int64
+				go func() {
+					defer close(flusherDone)
+					tick := time.NewTicker(benchFlushInterval)
+					defer tick.Stop()
+					for {
+						select {
+						case <-stopFlushing:
+							return
+						case <-tick.C:
+							p.Flush()
+							flushes.Add(1)
+						}
+					}
+				}()
+
+				var pushed int64
+				start := time.Now()
+				for b.Loop() {
+					p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+					pushed++
+					if mode.rate > 0 && pushed%benchPacingBatch == 0 {
+						due := time.Duration(float64(pushed) / mode.rate * float64(time.Second))
+						if ahead := due - time.Since(start); ahead > 0 {
+							time.Sleep(ahead)
+						}
+					}
+				}
+
+				elapsed := time.Since(start)
+
+				close(stopFlushing)
+				<-flusherDone
+				p.Stop()
+
+				dropped := stats.dropped.Load() + p.stats.dropped.Load()
+				b.ReportMetric(float64(dropped)/float64(pushed), "drops/op")
+				b.ReportMetric(100*float64(dropped)/float64(pushed), "%drops")
+				b.ReportMetric(float64(pushed)/elapsed.Seconds(), "pushes/s")
+				b.ReportMetric(float64(flushes.Load()), "flushes")
+			})
+		}
+	}
+}
+
+// benchSustainedRates are offered rates the processor's single consumer can
+// keep up with. That is the regime BenchmarkSetCheckpointSlowAgent cannot
+// show: its saturated cases pin the queue full, which leaves the consumer
+// reading the slot the producer is overwriting, and cost there is dominated
+// by the cache line those two fight over rather than by the work a checkpoint
+// actually does.
+var benchSustainedRates = []float64{50_000, 200_000, 1_000_000}
+
+// BenchmarkSetCheckpointSustained reports what one checkpoint costs at a rate
+// the processor keeps up with.
+//
+// Read ns/push, not ns/op: the benchmark timer spans the pacing sleeps too,
+// while ns/push is accumulated only across batches of calls. drops/op is the
+// control -- it has to stay at zero, otherwise the offered rate outran the
+// consumer and the case is measuring saturation after all.
+func BenchmarkSetCheckpointSustained(b *testing.B) {
+	for _, rate := range benchSustainedRates {
+		for _, producers := range []int{1, 8, 64} {
+			name := strconv.Itoa(int(rate)/1000) + "k/s/" + strconv.Itoa(producers) + "-producers"
+			b.Run(name, func(b *testing.B) {
+				stats := &droppedCounter{}
+				client := &http.Client{Transport: &noOpTransport{}}
+				p := NewProcessor(stats, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+				p.Start()
+
+				var pushNanos, pushed atomic.Int64
+				perProducer := rate / float64(producers)
+				// Pace in roughly 1ms units whatever the producer count: with
+				// a fixed batch, a producer's share of a low rate turns into a
+				// sleep of hundreds of milliseconds, and what the timer then
+				// samples is mostly cold caches rather than the call.
+				batchSize := int64(perProducer / 1000)
+				batchSize = max(1, min(int64(benchPacingBatch), batchSize))
+				var wg sync.WaitGroup
+				start := time.Now()
+				for w := range producers {
+					// b.N is split across producers rather than using
+					// b.Loop, which a single goroutine has to own.
+					iters := int64(b.N / producers)
+					if w < b.N%producers {
+						iters++
+					}
+					wg.Go(func() {
+						start := time.Now()
+						var done int64
+						var timed time.Duration
+						for done < iters {
+							batch := min(batchSize, iters-done)
+							t0 := time.Now()
+							for range batch {
+								p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+							}
+							timed += time.Since(t0)
+							done += batch
+							due := time.Duration(float64(done) / perProducer * float64(time.Second))
+							if ahead := due - time.Since(start); ahead > 0 {
+								time.Sleep(ahead)
+							}
+						}
+						pushNanos.Add(int64(timed))
+						pushed.Add(done)
+					})
+				}
+				wg.Wait()
+				elapsed := time.Since(start)
+				// Flush before Stop so any checkpoints still sitting in the
+				// queue when producers finished get processed rather than
+				// silently discarded: Stop's stop-case flushes only buckets
+				// already built from processed input, not the raw queue, so
+				// without this, leftover backlog would vanish without
+				// incrementing dropped and drops/op would understate loss.
+				p.Flush()
+				p.Stop()
+
+				n := pushed.Load()
+				dropped := stats.dropped.Load() + p.stats.dropped.Load()
+				b.ReportMetric(float64(pushNanos.Load())/float64(n), "ns/push")
+				b.ReportMetric(float64(dropped)/float64(n), "drops/op")
+				b.ReportMetric(float64(n)/elapsed.Seconds(), "pushes/s")
+			})
+		}
+	}
 }
