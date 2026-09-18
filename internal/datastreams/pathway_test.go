@@ -23,7 +23,7 @@ func TestPathway(t *testing.T) {
 		processor := Processor{
 			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         newFastQueue(),
+			in:         newFastQueue(defaultQueueSize),
 			service:    "service-1",
 			env:        "env",
 			timeSource: func() time.Time { return start },
@@ -76,7 +76,7 @@ func TestPathway(t *testing.T) {
 		processor := Processor{
 			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         newFastQueue(),
+			in:         newFastQueue(defaultQueueSize),
 			service:    "service-1",
 			env:        "env",
 			timeSource: time.Now,
