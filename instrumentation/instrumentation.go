@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -212,6 +213,13 @@ func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 
 func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 	return globalconfig.AnalyticsRate()
+}
+
+// OTelSemanticsEnabled `true` changes observability data to be emitted
+// according to OpenTelemetry semantic conventions. Datadog conventions
+// are used when `false`.
+func (i *Instrumentation) OTelSemanticsEnabled() bool {
+	return internalconfig.Get().OTelSemanticsEnabled()
 }
 
 func (i *Instrumentation) AppSecEnabled() bool {
