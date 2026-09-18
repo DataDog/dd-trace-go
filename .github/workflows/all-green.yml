@@ -15,27 +15,12 @@ jobs:
       - name: Run Ensure CI Success
         uses: DataDog/ensure-ci-success@b0d931ac77c810490e61964c321103040eef888e
         with:
-          # The delay exists because this action only evaluates checks that
-          # exist when it polls, so it has to outlast GitHub's fan-out of the
-          # triggering event. Measured over 40 recent pull requests, the spread
-          # between the first and last workflow created by one event is 1s at
-          # p50, 6s at p95 and 213s at worst, so 300s keeps a wide margin while
-          # halving the floor on time-to-green. max-retries is raised to keep
-          # the overall ceiling at ~70 minutes (300 + 65*60).
-          #
-          # This matters more now that workflows can be skipped: a docs-only
-          # pull request finishes every check in under a minute, so the delay --
-          # not the tests -- is what a contributor waits for.
-          #
-          # Some workflows subscribe to pull_request event types this one does
-          # not (labeled, edited, milestoned). A label added later creates new
-          # check runs that no all-green run ever evaluates. That is a separate
-          # pre-existing gap; the delay cannot close it.
+          # This action only evaluates checks that exist when it polls, so the
+          # delay has to outlast GitHub's fan-out of the triggering event.
+          # max-retries rises with it to hold the ceiling near 70 minutes.
           initial-delay-seconds: "300"
           max-retries: "65"
-          # polling-interval-seconds is declared by the action but its code reads
-          # `polling-interval`, so setting it has no effect and the interval is
-          # always the 60s default. Left commented out to avoid implying otherwise.
+          # polling-interval-seconds is a no-op: the action reads `polling-interval`.
           # polling-interval-seconds: "60"
           ignored-name-patterns: |
             devflow/merge
