@@ -170,3 +170,15 @@ upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 .PHONY: config-audit
 config-audit: ## Report which DD_* configs are migrated to internal/config
 	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table
+
+DAGGER := $(shell pwd)/bin/dagger
+DAGGER_GO_VERSION ?= 1.27
+DAGGER_PLATFORM ?= linux/amd64
+
+.PHONY: dagger/test-core
+dagger/test-core: ## Run the core test suite through Dagger
+	$(DAGGER) call -m .dagger test-core --source=. --go-version=$(DAGGER_GO_VERSION) --platform=$(DAGGER_PLATFORM) export --path=./tmp/dagger-test-core
+
+.PHONY: dagger/test-contrib
+dagger/test-contrib: ## Run the contrib test suite through Dagger 
+	$(DAGGER) call -m .dagger test-contrib --source=. --go-version=$(DAGGER_GO_VERSION) --platform=$(DAGGER_PLATFORM) --contribs="$(CONTRIBS)" export --path=./tmp/dagger-test-contrib
