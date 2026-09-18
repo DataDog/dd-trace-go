@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	"github.com/stretchr/testify/assert"
@@ -255,4 +256,22 @@ func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
 	// not call StopApp on it.
 	assert.False(t, telemetryClient.Stopped)
 	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
+}
+
+func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	wasEnabled := traceprof.SetProfilerEnabled(true)
+	defer func() {
+		traceprof.SetProfilerEnabled(wasEnabled)
+		telemetry.StopApp()
+	}()
+
+	Stop()
+
+	// Profiler started after the tracer and still shares the client, so Stop
+	// must flush without emitting app-stopped / clearing the global client.
+	assert.NotNil(t, telemetry.GlobalClient())
 }
