@@ -56,7 +56,12 @@ func wrapWithCiVisibilityNoopTracer(tracer Tracer) *ciVisibilityTracerRouter {
 // StartSpan implements Tracer. Start options are evaluated exactly once, then
 // replayed into the selected concrete tracer.
 func (t *ciVisibilityTracerRouter) StartSpan(operationName string, opts ...StartSpanOption) *Span {
-	cfg := NewStartSpanConfig(opts...)
+	cfg := new(StartSpanConfig)
+	for _, opt := range opts {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
 	target := t.tracerForSpanType(startSpanType(cfg))
 	if target == nil {
 		log.Debug("CI Visibility tracer is filtering an application span, so the span will be skipped.")
