@@ -294,7 +294,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 		EndpointResolver: resolver,
 	}
 
-	AppendMiddleware(&awsCfg)
+	AppendMiddleware(&awsCfg, WithDataStreams())
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	sendMessageInput := &sqs.SendMessageInput{
@@ -348,6 +348,57 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracer.TextMapCarrier(traceContext)))
 	require.True(t, ok)
 	assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
+}
+
+func TestAppendMiddlewareSqsWithDataStreams(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	server := mockAWS(200)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg, WithDataStreams())
+
+	queueName := "MyQueueName"
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	sendInput := &sqs.SendMessageInput{
+		MessageBody: aws.String("hello"),
+		QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/" + queueName),
+	}
+	_, err := sqsClient.SendMessage(context.Background(), sendInput)
+	require.NoError(t, err)
+
+	require.NotNil(t, sendInput.MessageAttributes)
+	ddAttr, ok := sendInput.MessageAttributes["_datadog"]
+	require.True(t, ok)
+
+	var carrier map[string]string
+	require.NoError(t, json.Unmarshal([]byte(*ddAttr.StringValue), &carrier))
+	assert.Contains(t, carrier, "x-datadog-trace-id")
+
+	pathwayKey := ""
+	for k := range carrier {
+		if strings.HasPrefix(k, "dd-pathway-ctx") {
+			pathwayKey = k
+			break
+		}
+	}
+	require.NotEmpty(t, pathwayKey, "expected DSM pathway key in carrier, got: %v", carrier)
+	assert.NotEmpty(t, carrier[pathwayKey])
 }
 
 func TestAppendMiddlewareS3ListObjects(t *testing.T) {
