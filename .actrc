@@ -1,0 +1,29 @@
+# Config for `act` (https://github.com/nektos/act), used by `make act/*` and scripts/act.sh.
+# See .github/act/README.md for what act validates, and what it does not, before you rely
+# on it. In particular, act does not test your uncommitted code. Start there.
+
+# Map every runs-on label/group the act-runnable workflows use to the "Medium" runner image
+# (~500MB, act's documented default). Anything not listed here falls back to act's
+# interactive image-size prompt.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P ubuntu-24.04=catthehacker/ubuntu:act-latest
+-P ubuntu-22.04=catthehacker/ubuntu:act-latest
+# Group-based `runs-on: {group: "APM Larger Runners"}` jobs (test-core, test-contrib-matrix,
+# test-contrib) need an explicit mapping too. act matches on the group name, not a label.
+-P APM Larger Runners=catthehacker/ubuntu:act-latest
+
+# CI runs amd64. Under qemu emulation, act's toolcache cannot resolve `node` on PATH 
+# for the emulated architecture. It resolves fine under native arm64. This file does not 
+# force amd64 by default for that reason. Add `--container-architecture linux/amd64` on 
+# the command line yourself if you are hunting an architecture-specific bug, and expect to 
+# hit that failure on Apple Silicon.
+
+# Job containers join the host network namespace, so ports docker-compose publishes (3306,
+# 5432, 6379, 9126, ...) are reachable at localhost the same way they are on a GitHub-hosted
+# runner. This requires Docker Desktop >= 4.34 with host networking enabled on macOS.
+--network host
+
+# Where uploaded artifacts (act's stand-in for actions/upload-artifact and
+# actions/download-artifact, used to pass matrix results between unit-integration-tests.yml
+# jobs) get stored. Without this flag, artifact upload and download steps do nothing.
+--artifact-server-path /tmp/act-artifacts

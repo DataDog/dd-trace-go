@@ -126,6 +126,146 @@ test-deadlock: tools-install ## Run tests with deadlock detection
 test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
 	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
 
+# CI-parity targets. `make test/*` uses the root docker-compose.yaml. CI uses
+# .github/testservices/docker-compose.yaml instead. See "Reproducing CI
+# locally" in CONTRIBUTING.md.
+CI_TEST_RESULTS := /tmp/test-results
+BUILD_TAGS ?=
+CHUNK ?= 1
+JOB ?= core
+SERVICES ?=
+GO_VERSION ?= 1.27
+CI_RUNNER_PLATFORM ?= linux/amd64
+
+# CI's test-core job starts only the datadog-agent service
+# (`docker compose up -d datadog-agent`). Test-contrib starts the full stack.
+# Starting only the services the job needs keeps ci/run faithful to CI and
+# avoids the memory load of 20 containers on a laptop.
+ifeq ($(JOB),core)
+CI_JOB_SERVICES := datadog-agent
+endif
+
+# Five images in CI's stack publish no arm64 manifest at all: elasticsearch:2,
+# elasticsearch:5, elasticsearch:6.8.13, cimg/mysql:8.0, and
+# mssql/server:2019-latest. On Apple Silicon, these run only under emulation.
+# The other images do ship arm64 variants, but those variants do not
+# reproduce CI, because CI runs amd64. scripts/test.sh forces the platform
+# the same way for the root stack.
+ifeq ($(shell uname -s)-$(shell uname -m),Darwin-arm64)
+CI_PLATFORM := DOCKER_DEFAULT_PLATFORM=linux/amd64
+endif
+CI_COMPOSE := $(CI_PLATFORM) COMPOSE_FILE=.github/testservices/docker-compose.yaml COMPOSE_PROJECT_NAME=dd-trace-go-ci
+REQUIRE_JQ = command -v jq > /dev/null || { echo "jq is required (brew install jq)" >&2; exit 1; }
+
+# make ci/core and make ci/contrib run inside this image, so the Go toolchain and OS
+# match CI's linux/amd64 runner, not whatever this host has. scripts/ci_runner_run.sh
+# copies the working tree into the container and back out again. It also runs the test
+# command as a non-root user, matching CI's runner. See scripts/ci_runner_run.sh for why.
+CI_RUNNER_IMAGE := dd-trace-go-ci-runner:go$(GO_VERSION)
+CI_RUNNER_GOMODCACHE := dd-trace-go-ci-runner-gomodcache
+CI_RUNNER_GOCACHE := dd-trace-go-ci-runner-gocache
+CI_RUNNER_RUN = CI_RUNNER_PLATFORM=$(CI_RUNNER_PLATFORM) CI_RUNNER_GOMODCACHE=$(CI_RUNNER_GOMODCACHE) \
+	CI_RUNNER_GOCACHE=$(CI_RUNNER_GOCACHE) CI_TEST_RESULTS=$(CI_TEST_RESULTS) BUILD_TAGS=$(BUILD_TAGS) \
+	./scripts/ci_runner_run.sh
+
+.PHONY: ci/runner/build
+ci/runner/build: ## Build the containerized CI runner image (GO_VERSION=1.26|1.27, default 1.27)
+	@case "$(GO_VERSION)" in \
+	  1.26 | 1.27) ;; \
+	  *) echo "GO_VERSION must be '1.26' or '1.27' (got '$(GO_VERSION)')" >&2; exit 1 ;; \
+	esac
+	docker build --platform $(CI_RUNNER_PLATFORM) -t $(CI_RUNNER_IMAGE) -f scripts/ci-runner/go$(GO_VERSION)/Dockerfile .
+
+.PHONY: ci/cache/clean
+ci/cache/clean: ## Remove the CI runner's Go module and build cache volumes
+	docker volume rm -f $(CI_RUNNER_GOMODCACHE) $(CI_RUNNER_GOCACHE)
+
+.PHONY: ci/run
+ci/run: ## Reproduce a CI job end to end (JOB=core|contrib, CHUNK=n)
+	@case "$(JOB)" in \
+	  core) echo "==> reproducing the test-core job" ;; \
+	  contrib) echo "==> reproducing test-contrib, chunk $(CHUNK)" ;; \
+	  *) echo "JOB must be 'core' or 'contrib' (got '$(JOB)')" >&2; exit 1 ;; \
+	esac
+	@$(MAKE) --no-print-directory ci/services SERVICES="$(CI_JOB_SERVICES)"
+	@trap '$(MAKE) --no-print-directory ci/services/down' EXIT INT TERM; \
+	  $(MAKE) --no-print-directory ci/$(JOB) CHUNK=$(CHUNK) BUILD_TAGS=$(BUILD_TAGS)
+
+.PHONY: ci/services
+ci/services: ## Start CI's service containers (all, or SERVICES="a b")
+	@$(CI_COMPOSE) docker compose up -d --wait --wait-timeout 120 $(SERVICES) || { \
+	  echo "" >&2; \
+	  echo "ci/services failed. The two usual causes:" >&2; \
+	  echo "  'address already in use'         -> a local service holds one of CI's ports; stop it" >&2; \
+	  echo "  'does not provide the platform'  -> a cached image is the wrong arch; make ci/services/pull" >&2; \
+	  exit 1; }
+
+# If you pull an image earlier without a forced platform, Docker caches it
+# as arm64 only. `up` then reports "does not provide the specified platform"
+# and does not fetch the amd64 variant on its own. Re-pulling with the
+# platform forced repairs the local store.
+.PHONY: ci/services/pull
+ci/services/pull: ## Re-pull CI's images at CI's platform (repairs wrong-arch cache)
+	$(CI_COMPOSE) docker compose pull --policy always
+
+.PHONY: ci/services/down
+ci/services/down: ## Stop CI's service containers
+	$(CI_COMPOSE) docker compose down
+
+.PHONY: ci/core
+ci/core: ci/runner/build ## Run CI's test-core entrypoint alone (services must be up)
+	@mkdir -p $(CI_TEST_RESULTS)
+	$(CI_RUNNER_RUN) -e DD_APPSEC_WAF_TIMEOUT=1h -- $(CI_RUNNER_IMAGE) ./scripts/ci_test_core.sh
+
+.PHONY: ci/contrib/chunks
+ci/contrib/chunks: ## List the contrib chunks CI splits test-contrib into
+	@$(REQUIRE_JQ)
+	@go run ./scripts/ci_contrib_matrix.go | jq -r 'to_entries[] | "CHUNK=\(.key + 1)\t\(.value)"'
+
+.PHONY: ci/contrib
+ci/contrib: ci/runner/build ## Run one test-contrib chunk alone (services must be up)
+	@mkdir -p $(CI_TEST_RESULTS)
+	@$(REQUIRE_JQ)
+	@chunk=$$(go run ./scripts/ci_contrib_matrix.go | jq -er ".[$$(($(CHUNK) - 1))]") || \
+		{ echo "no chunk $(CHUNK); run 'make ci/contrib/chunks' for the valid range" >&2; exit 1; }; \
+	$(CI_RUNNER_RUN) -e DD_APPSEC_WAF_TIMEOUT=1m -- $(CI_RUNNER_IMAGE) ./scripts/ci_test_contrib.sh default "$$chunk"
+
+# act targets. These test the last pushed commit, not local changes.
+ACT_STATIC_CHECKS_JOBS := copyright check-github-actions check-modules check-docs check-format check-supported-config checklocks cross-compile
+ACT_EVENT := .github/act/events/pull_request.json
+# act cannot parse dynamic `runs-on:` expression (`${{ ... fromJson(...) ... }}`) for a listing.
+ACT_WORKFLOWS := generate.yml static-checks.yml unit-integration-tests.yml apidiff-check.yml config-audit.yml
+
+.PHONY: act/list
+act/list: ## List jobs in the workflows act can run (see .github/act/README.md)
+	@for wf in $(ACT_WORKFLOWS); do \
+		./scripts/act.sh -W .github/workflows/$$wf -l; \
+	done
+
+.PHONY: act/generate
+act/generate: ## Run generate.yml under act (tests the last pushed commit, see .github/act/README.md)
+	./scripts/act.sh -W .github/workflows/generate.yml -j generate -e $(ACT_EVENT)
+
+.PHONY: act/static-checks
+act/static-checks: ## Run static-checks.yml's jobs under act (excludes reviewdog-wrapped `lint`, use `make lint` for that)
+	@for job in $(ACT_STATIC_CHECKS_JOBS); do \
+		echo "==> act -j $$job"; \
+		./scripts/act.sh -W .github/workflows/static-checks.yml -j $$job -e $(ACT_EVENT) || exit 1; \
+	done
+
+.PHONY: act/core-tests
+act/core-tests: ## Run unit-integration-tests.yml's test-core job under act
+	./scripts/act.sh -W .github/workflows/unit-integration-tests.yml -j test-core \
+		-e $(ACT_EVENT) --input go-version=stable
+
+.PHONY: act/contrib-tests
+act/contrib-tests: ## Run one unit-integration-tests.yml test-contrib-matrix chunk under act (CHUNK=n, see `make ci/contrib/chunks`)
+	@$(REQUIRE_JQ)
+	@chunk=$$(go run ./scripts/ci_contrib_matrix.go | jq -er ".[$$(($(CHUNK) - 1))]") || \
+		{ echo "no chunk $(CHUNK); run 'make ci/contrib/chunks' for the valid range" >&2; exit 1; }; \
+	./scripts/act.sh -W .github/workflows/unit-integration-tests.yml -j test-contrib-matrix \
+		-e $(ACT_EVENT) --input go-version=stable --matrix "chunk:$$chunk"
+
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
