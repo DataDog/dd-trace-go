@@ -16,6 +16,10 @@ import (
 
 var _ Tracer = (*ciVisibilityTracerRouter)(nil)
 
+// ciVisibilityNoopTracer keeps the historical internal name used by the
+// tracer's finished-chunk fallback without changing that general code path.
+type ciVisibilityNoopTracer = ciVisibilityTracerRouter
+
 // ciVisibilityTracerRouter keeps the CI Visibility tracer process-global and
 // routes non-CI spans to a temporary mock, an application tracer, the CI tracer,
 // or nowhere, in that order. The final fallback is controlled by
@@ -28,7 +32,7 @@ type ciVisibilityTracerRouter struct {
 	applicationTracer Tracer
 	// +checklocks:delegatesMu
 	mockTracer Tracer
-
+	// +checklocks:delegatesMu
 	dropApplicationSpans bool
 }
 
@@ -43,6 +47,10 @@ func newCIVisibilityTracerRouter(ciTracer Tracer, dropApplicationSpans bool) *ci
 // ordinary spans unless an application tracer or mock is active.
 func wrapWithCIVisibilityTracerRouter(tracer Tracer) *ciVisibilityTracerRouter {
 	return newCIVisibilityTracerRouter(tracer, true)
+}
+
+func wrapWithCiVisibilityNoopTracer(tracer Tracer) *ciVisibilityTracerRouter {
+	return wrapWithCIVisibilityTracerRouter(tracer)
 }
 
 // StartSpan implements Tracer. Start options are evaluated exactly once, then
@@ -70,6 +78,7 @@ func (t *ciVisibilityTracerRouter) tracerForSpanType(spanType string) Tracer {
 	ciTracer := t.Tracer
 	mockTracer := t.mockTracer
 	applicationTracer := t.applicationTracer
+	dropApplicationSpans := t.dropApplicationSpans
 	t.delegatesMu.RUnlock()
 	if isCIVisibilitySpanType(spanType) {
 		return ciTracer
@@ -80,7 +89,7 @@ func (t *ciVisibilityTracerRouter) tracerForSpanType(spanType string) Tracer {
 	if applicationTracer != nil {
 		return applicationTracer
 	}
-	if !t.dropApplicationSpans {
+	if !dropApplicationSpans {
 		return ciTracer
 	}
 	return nil
@@ -91,9 +100,21 @@ func (t *ciVisibilityTracerRouter) SetCIVisibilityTracer(ciTracer Tracer) bool {
 	if ciTracer == nil {
 		return false
 	}
+	var dropApplicationSpans *bool
+	if router, ok := ciTracer.(*ciVisibilityTracerRouter); ok {
+		concrete, drop := router.ciVisibilityRoutingConfig()
+		ciTracer = concrete
+		if ciTracer == nil {
+			return false
+		}
+		dropApplicationSpans = &drop
+	}
 	t.delegatesMu.Lock()
 	old := t.Tracer
 	t.Tracer = ciTracer
+	if dropApplicationSpans != nil {
+		t.dropApplicationSpans = *dropApplicationSpans
+	}
 	t.delegatesMu.Unlock()
 	if old != nil && old != ciTracer {
 		old.Stop()
@@ -140,6 +161,24 @@ func (t *ciVisibilityTracerRouter) ClearMockTracer(mockTracer Tracer) bool {
 	return true
 }
 
+// DetachMockTracer removes mockTracer and returns the tracer that should become
+// process-global. When no routing remains necessary, ownership of the concrete
+// CI tracer is transferred out of the router without stopping it.
+func (t *ciVisibilityTracerRouter) DetachMockTracer(mockTracer Tracer) (Tracer, bool) {
+	t.delegatesMu.Lock()
+	defer t.delegatesMu.Unlock()
+	if t.mockTracer != mockTracer {
+		return nil, false
+	}
+	t.mockTracer = nil
+	if t.applicationTracer != nil || t.dropApplicationSpans {
+		return t, true
+	}
+	ciTracer := t.Tracer
+	t.Tracer = &NoopTracer{}
+	return ciTracer, ciTracer != nil
+}
+
 func (t *ciVisibilityTracerRouter) detachApplicationTracer() Tracer {
 	t.delegatesMu.Lock()
 	applicationTracer := t.applicationTracer
@@ -157,11 +196,16 @@ func (t *ciVisibilityTracerRouter) detachCIVisibilityTracer() Tracer {
 	return ciTracer
 }
 
-// CIVisibilityTracer returns the concrete CI delegate.
-func (t *ciVisibilityTracerRouter) CIVisibilityTracer() Tracer {
+func (t *ciVisibilityTracerRouter) ciVisibilityTracer() Tracer {
 	t.delegatesMu.RLock()
 	defer t.delegatesMu.RUnlock()
 	return t.Tracer
+}
+
+func (t *ciVisibilityTracerRouter) ciVisibilityRoutingConfig() (Tracer, bool) {
+	t.delegatesMu.RLock()
+	defer t.delegatesMu.RUnlock()
+	return t.Tracer, t.dropApplicationSpans
 }
 
 func (t *ciVisibilityTracerRouter) currentApplicationTracer() Tracer {
@@ -174,14 +218,6 @@ func (t *ciVisibilityTracerRouter) currentMockTracer() Tracer {
 	t.delegatesMu.RLock()
 	defer t.delegatesMu.RUnlock()
 	return t.mockTracer
-}
-
-// SetServiceInfo implements Tracer for the currently active ordinary-span
-// destination.
-func (t *ciVisibilityTracerRouter) SetServiceInfo(service, app, appType string) {
-	if target, ok := t.tracerForSpanType("").(interface{ SetServiceInfo(string, string, string) }); ok {
-		target.SetServiceInfo(service, app, appType)
-	}
 }
 
 // Extract implements Tracer.
@@ -200,10 +236,10 @@ func (t *ciVisibilityTracerRouter) Inject(context *SpanContext, carrier any) err
 	return nil
 }
 
-// FinishSpan forwards mock-created spans to the active mock. CI Visibility and
-// concrete application tracers finalize their spans through the normal path.
+// FinishSpan lets the active mock record spans it created. The mock ignores
+// spans absent from its open-span set, including CI and application spans.
 func (t *ciVisibilityTracerRouter) FinishSpan(span *Span) {
-	if span == nil || isCIVisibilitySpanType(ciVisibilitySpanType(span)) {
+	if span == nil {
 		return
 	}
 	if target, ok := t.currentMockTracer().(interface{ FinishSpan(*Span) }); ok {
@@ -221,7 +257,8 @@ func (t *ciVisibilityTracerRouter) TracerForFinishedChunk(spans []*Span) (Tracer
 	return target, target != nil
 }
 
-// +checklocksignore — Finished chunks contain only spans that can no longer be modified.
+// +checklocksignore — This runs only for finished chunks. spanType is immutable
+// after finish, and the finishing span may already hold Span.mu here.
 func ciVisibilitySpanType(span *Span) string {
 	if span == nil {
 		return ""
@@ -241,6 +278,17 @@ func (t *ciVisibilityTracerRouter) Stop() {
 	state := civisibility.GetState()
 	ciVisibilityActive := state == civisibility.StateInitializing || state == civisibility.StateInitialized
 	if _, replacedByNoop := getGlobalTracer().(*NoopTracer); ciVisibilityActive && replacedByNoop {
+		t.delegatesMu.Lock()
+		if t.mockTracer == nil && !t.dropApplicationSpans {
+			ciTracer := t.Tracer
+			t.Tracer = &NoopTracer{}
+			t.delegatesMu.Unlock()
+			if ciTracer != nil {
+				setGlobalTracer(ciTracer)
+			}
+			return
+		}
+		t.delegatesMu.Unlock()
 		setGlobalTracer(t)
 		return
 	}
@@ -250,17 +298,25 @@ func (t *ciVisibilityTracerRouter) Stop() {
 	}
 }
 
+// Reset lets the router use the internal non-stopping global-tracer handoff.
+// Only an active mock delegate has resettable user-visible state.
+func (t *ciVisibilityTracerRouter) Reset() {
+	if resetter, ok := t.currentMockTracer().(interface{ Reset() }); ok {
+		resetter.Reset()
+	}
+}
+
 // TracerConf implements Tracer and exposes the CI configuration while the
 // router is process-global.
 func (t *ciVisibilityTracerRouter) TracerConf() TracerConf {
-	if ciTracer := t.CIVisibilityTracer(); ciTracer != nil {
+	if ciTracer := t.ciVisibilityTracer(); ciTracer != nil {
 		return ciTracer.TracerConf()
 	}
 	return TracerConf{}
 }
 
 func (t *ciVisibilityTracerRouter) Flush() {
-	ciTracer := t.CIVisibilityTracer()
+	ciTracer := t.ciVisibilityTracer()
 	applicationTracer := t.currentApplicationTracer()
 	mockTracer := t.currentMockTracer()
 	if ciTracer != nil {

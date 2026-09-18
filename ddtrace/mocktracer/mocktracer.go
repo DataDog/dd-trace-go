@@ -66,7 +66,7 @@ func Start() Tracer {
 		// CI Visibility has not started yet, the handle stays global until the CI
 		// router adopts it.
 		t := newCIVisibilityMockTracer()
-		if !t.hasRouter() {
+		if t.currentRouter() == nil {
 			internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
 		}
 		return t

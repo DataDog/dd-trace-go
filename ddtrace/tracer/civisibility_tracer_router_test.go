@@ -25,24 +25,31 @@ type callbackTestTracer struct {
 	startCount  atomic.Int32
 	finishCount atomic.Int32
 	stopCount   atomic.Int32
+	lastConfig  atomic.Pointer[StartSpanConfig]
 }
 
 func (t *callbackTestTracer) StartSpan(_ string, opts ...StartSpanOption) *Span {
 	t.startCount.Add(1)
-	NewStartSpanConfig(opts...)
+	t.lastConfig.Store(NewStartSpanConfig(opts...))
 	if t.onStart != nil {
 		t.onStart()
 	}
-	return nil
+	return &Span{}
 }
 
-func (*callbackTestTracer) SetServiceInfo(_, _, _ string)     {}
 func (*callbackTestTracer) Extract(any) (*SpanContext, error) { return nil, nil }
 func (*callbackTestTracer) Inject(*SpanContext, any) error    { return nil }
 func (*callbackTestTracer) TracerConf() TracerConf            { return TracerConf{} }
 func (*callbackTestTracer) Flush()                            {}
 func (t *callbackTestTracer) Stop()                           { t.stopCount.Add(1) }
 func (t *callbackTestTracer) FinishSpan(*Span)                { t.finishCount.Add(1) }
+
+type resettingTestTracer struct {
+	callbackTestTracer
+	resetCount atomic.Int32
+}
+
+func (t *resettingTestTracer) Reset() { t.resetCount.Add(1) }
 
 func TestCIVisibilityTracerRouterRoutesWithoutPerSpanOwnership(t *testing.T) {
 	ciTracer := &callbackTestTracer{}
@@ -76,165 +83,156 @@ func TestCIVisibilityTracerRouterReplacesCIDelegate(t *testing.T) {
 	require.True(t, router.SetCIVisibilityTracer(second))
 	require.EqualValues(t, 1, first.stopCount.Load())
 	require.Zero(t, second.stopCount.Load())
-	require.Same(t, second, router.CIVisibilityTracer())
+	require.Same(t, second, router.ciVisibilityTracer())
 }
 
-func TestWrapWithCIVisibilityTracerRouter(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
+func TestCIVisibilityTracerRouterReplacesNoopPolicyWithCIDelegate(t *testing.T) {
+	first := &callbackTestTracer{}
+	second := &callbackTestTracer{}
+	router := newCIVisibilityTracerRouter(first, false)
 
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-	assert.NotNil(t, wrapped)
-	assert.Equal(t, tr, wrapped.CIVisibilityTracer())
+	replacement := newCIVisibilityTracerRouter(second, true)
+	require.True(t, router.SetCIVisibilityTracer(replacement))
+	require.Nil(t, router.StartSpan("application.operation"))
+	require.Zero(t, second.startCount.Load())
+
+	replacement = newCIVisibilityTracerRouter(first, false)
+	require.True(t, router.SetCIVisibilityTracer(replacement))
+	require.NotNil(t, router.StartSpan("application.operation"))
+	require.EqualValues(t, 1, first.startCount.Load())
 }
 
-func TestCIVisibilityTracerRouter_StartSpan_CIVisibilitySpanTypes(t *testing.T) {
-	tr, transport, flush, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
+func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
+	t.Run("transfer concrete CI tracer", func(t *testing.T) {
+		ciTracer := &callbackTestTracer{}
+		mockTracer := &callbackTestTracer{}
+		router := newCIVisibilityTracerRouter(ciTracer, false)
+		require.True(t, router.SetMockTracer(mockTracer))
 
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
+		replacement, ok := router.DetachMockTracer(mockTracer)
 
-	testCases := []struct {
-		name     string
-		spanType string
+		require.True(t, ok)
+		require.Same(t, ciTracer, replacement)
+		require.Nil(t, router.currentMockTracer())
+		require.IsType(t, &NoopTracer{}, router.ciVisibilityTracer())
+	})
+
+	t.Run("keep router while noop policy is active", func(t *testing.T) {
+		mockTracer := &callbackTestTracer{}
+		router := newCIVisibilityTracerRouter(&callbackTestTracer{}, true)
+		require.True(t, router.SetMockTracer(mockTracer))
+
+		replacement, ok := router.DetachMockTracer(mockTracer)
+
+		require.True(t, ok)
+		require.Same(t, router, replacement)
+	})
+
+	t.Run("reject stale mock", func(t *testing.T) {
+		activeMock := &callbackTestTracer{}
+		router := newCIVisibilityTracerRouter(&callbackTestTracer{}, false)
+		require.True(t, router.SetMockTracer(activeMock))
+
+		replacement, ok := router.DetachMockTracer(&callbackTestTracer{})
+
+		require.False(t, ok)
+		require.Nil(t, replacement)
+		require.Same(t, activeMock, router.currentMockTracer())
+	})
+}
+
+func TestCIVisibilityTracerRouterResetOnlyResetsActiveMock(t *testing.T) {
+	router := newCIVisibilityTracerRouter(&callbackTestTracer{}, false)
+	mockTracer := &resettingTestTracer{}
+	require.True(t, router.SetMockTracer(mockTracer))
+
+	router.Reset()
+
+	require.EqualValues(t, 1, mockTracer.resetCount.Load())
+}
+
+func TestAttachMockTracerToActiveConcreteCITracer(t *testing.T) {
+	previousState := civisibility.GetState()
+	ciTracer, _ := newUninstalledTestTracer(t)
+	mockTracer := &callbackTestTracer{}
+	civisibility.SetState(civisibility.StateInitialized)
+	setGlobalTracer(ciTracer)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		Stop()
+		civisibility.SetState(previousState)
+	})
+
+	attached := attachMockTracerToCIVisibility(mockTracer)
+
+	router, ok := attached.(*ciVisibilityTracerRouter)
+	require.True(t, ok)
+	require.Same(t, router, getGlobalTracer())
+	require.Same(t, ciTracer, router.ciVisibilityTracer())
+	require.Same(t, mockTracer, router.currentMockTracer())
+}
+
+func TestCIVisibilityTracerRouter_StartSpan_RoutesBySpanType(t *testing.T) {
+	ciTracer := &callbackTestTracer{}
+	router := wrapWithCIVisibilityTracerRouter(ciTracer)
+
+	tests := []struct {
+		name string
+		opts []StartSpanOption
+		want bool
 	}{
-		{"test span", constants.SpanTypeTest},
-		{"test suite span", constants.SpanTypeTestSuite},
-		{"test module span", constants.SpanTypeTestModule},
-		{"test session span", constants.SpanTypeTestSession},
+		{name: "test", opts: []StartSpanOption{SpanType(constants.SpanTypeTest)}, want: true},
+		{name: "test suite", opts: []StartSpanOption{SpanType(constants.SpanTypeTestSuite)}, want: true},
+		{name: "test module", opts: []StartSpanOption{SpanType(constants.SpanTypeTestModule)}, want: true},
+		{name: "test session", opts: []StartSpanOption{SpanType(constants.SpanTypeTestSession)}, want: true},
+		{name: "application", opts: []StartSpanOption{SpanType(ext.SpanTypeWeb)}},
+		{name: "generic span", opts: []StartSpanOption{SpanType(constants.SpanTypeSpan)}},
+		{name: "no span type", opts: []StartSpanOption{ResourceName("resource")}},
+		{name: "no options"},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			span := wrapped.StartSpan("test.operation",
-				SpanType(tc.spanType),
-				ResourceName("test-resource"),
-			)
-
-			// CI Visibility spans should be created
-			require.NotNil(t, span, "expected span to be created for span type %s", tc.spanType)
-
-			// Verify the span has the correct type using AsMap()
-			assert.Equal(t, tc.spanType, span.AsMap()[ext.SpanType])
-
-			span.Finish()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := ciTracer.startCount.Load()
+			span := router.StartSpan("operation", tt.opts...)
+			if tt.want {
+				require.NotNil(t, span)
+				require.EqualValues(t, before+1, ciTracer.startCount.Load())
+				return
+			}
+			assert.Nil(t, span)
+			assert.EqualValues(t, before, ciTracer.startCount.Load())
 		})
 	}
-
-	// Flush and verify all spans were sent
-	flush(len(testCases))
-	assert.Equal(t, len(testCases), transport.Len())
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_NonCIVisibilitySpanTypes(t *testing.T) {
-	tr, transport, flush, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	testCases := []struct {
-		name     string
-		spanType string
-	}{
-		{"web span", "web"},
-		{"db span", "db"},
-		{"cache span", "cache"},
-		{"http span", "http"},
-		{"custom span", "custom"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			span := wrapped.StartSpan("test.operation",
-				SpanType(tc.spanType),
-				ResourceName("test-resource"),
-			)
-
-			// Non-CI Visibility spans should return nil
-			assert.Nil(t, span, "expected nil span for non-CI Visibility span type %s", tc.spanType)
-		})
-	}
-
-	// No spans should be sent since all were no-op
-	flush(-1)
-	assert.Equal(t, 0, transport.Len())
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_NoOptions(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// StartSpan with no options should return nil (noop behavior)
-	span := wrapped.StartSpan("test.operation")
-	assert.Nil(t, span)
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_NoSpanType(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// StartSpan without SpanType should return nil (noop behavior)
-	span := wrapped.StartSpan("test.operation",
-		ResourceName("test-resource"),
-		Tag("custom.tag", "value"),
-	)
-	assert.Nil(t, span)
 }
 
 func TestCIVisibilityTracerRouter_StartSpan_PreservesConfig(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// Create a parent span first
-	parentSpan := tr.StartSpan("parent.operation", SpanType(constants.SpanTypeTestSession))
-	require.NotNil(t, parentSpan)
-
+	ciTracer := &callbackTestTracer{}
+	router := wrapWithCIVisibilityTracerRouter(ciTracer)
+	parent := &SpanContext{spanID: 123}
 	startTime := time.Now().Add(-time.Hour)
+	ctx := context.Background()
+	links := []SpanLink{{TraceID: 123, SpanID: 456}}
 
-	// Create a CI Visibility span with various options
-	span := wrapped.StartSpan("test.operation",
+	require.NotNil(t, router.StartSpan("operation",
 		SpanType(constants.SpanTypeTest),
-		ResourceName("test-resource"),
 		Tag("custom.tag", "custom-value"),
 		StartTime(startTime),
-		ChildOf(parentSpan.Context()),
-	)
+		ChildOf(parent),
+		WithSpanID(999),
+		withContext(ctx),
+		WithSpanLinks(links),
+	))
 
-	require.NotNil(t, span)
-
-	// Verify all configurations are preserved
-	assert.Equal(t, constants.SpanTypeTest, span.AsMap()[ext.SpanType])
-	assert.Equal(t, "custom-value", span.AsMap()["custom.tag"])
-	assert.Equal(t, startTime.UnixNano(), span.start)
-	assert.Equal(t, parentSpan.context.spanID, span.parentID)
-
-	span.Finish()
-	parentSpan.Finish()
-}
-
-func TestCIVisibilityTracerRouter_SetServiceInfo(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// SetServiceInfo should be a no-op and not panic
-	assert.NotPanics(t, func() {
-		wrapped.SetServiceInfo("service", "app", "type")
-	})
+	cfg := ciTracer.lastConfig.Load()
+	require.NotNil(t, cfg)
+	assert.Same(t, parent, cfg.Parent)
+	assert.Equal(t, startTime, cfg.StartTime)
+	assert.Equal(t, constants.SpanTypeTest, cfg.Tags[ext.SpanType])
+	assert.Equal(t, "custom-value", cfg.Tags["custom.tag"])
+	assert.EqualValues(t, 999, cfg.SpanID)
+	assert.Equal(t, ctx, cfg.Context)
+	assert.Equal(t, links, cfg.SpanLinks)
 }
 
 func TestCIVisibilityTracerRouter_Extract(t *testing.T) {
@@ -276,19 +274,6 @@ func TestCIVisibilityTracerRouter_Inject(t *testing.T) {
 	span.Finish()
 }
 
-func TestCIVisibilityTracerRouter_Stop(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// Stop should forward to the wrapped tracer and not panic
-	assert.NotPanics(t, func() {
-		wrapped.Stop()
-	})
-}
-
 func TestCIVisibilityTracerRouter_PreservesCIVisibilityAcrossApplicationStop(t *testing.T) {
 	ciTracer, ciTransport := newUninstalledTestTracer(t)
 	wrapped := wrapWithCIVisibilityTracerRouter(ciTracer)
@@ -311,6 +296,25 @@ func TestCIVisibilityTracerRouter_PreservesCIVisibilityAcrossApplicationStop(t *
 		Flush()
 		return ciTransport.Len() == 1
 	}, time.Second, 5*time.Millisecond)
+}
+
+func TestCIVisibilityTracerRouter_RestoresConcreteCITracerAfterApplicationStop(t *testing.T) {
+	ciTracer, _ := newUninstalledTestTracer(t)
+	applicationTracer := &preservingTestTracer{}
+	setGlobalTracer(ciTracer)
+	civisibility.SetState(civisibility.StateInitialized)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		Stop()
+		civisibility.SetState(civisibility.StateUninitialized)
+	})
+
+	setGlobalTracerPreservingCIVisibilityMockTracer(applicationTracer, false)
+	require.IsType(t, &ciVisibilityTracerRouter{}, getGlobalTracer())
+
+	Stop()
+	require.Same(t, ciTracer, getGlobalTracer())
+	require.EqualValues(t, 1, applicationTracer.stopCnt.Load())
 }
 
 func TestCIVisibilityTracerRouter_RoutesApplicationAndCISpansAfterApplicationStart(t *testing.T) {
@@ -432,118 +436,16 @@ func newUninstalledTestTracer(t testing.TB) (*tracer, *dummyTransport) {
 	return tr, transport
 }
 
-func TestCIVisibilityTracerRouter_TracerConf(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
+func TestUseConfigNil(t *testing.T) {
+	opt := useConfig(nil)
+	cfg := &StartSpanConfig{}
 
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// TracerConf should return the same config as the wrapped tracer
-	wrappedConf := wrapped.TracerConf()
-	tracerConf := tr.TracerConf()
-
-	assert.Equal(t, tracerConf, wrappedConf)
-}
-
-func TestCIVisibilityTracerRouter_Flush(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// Flush should forward to the wrapped tracer and not panic
 	assert.NotPanics(t, func() {
-		wrapped.Flush()
+		opt(cfg)
 	})
-}
-
-func TestUseConfig(t *testing.T) {
-	t.Run("nil config", func(t *testing.T) {
-		opt := useConfig(nil)
-		cfg := &StartSpanConfig{}
-
-		// Should not panic and should not modify cfg
-		assert.NotPanics(t, func() {
-			opt(cfg)
-		})
-		assert.Nil(t, cfg.Parent)
-		assert.True(t, cfg.StartTime.IsZero())
-		assert.Nil(t, cfg.Tags)
-	})
-
-	t.Run("full config", func(t *testing.T) {
-		startTime := time.Now()
-		parent := &SpanContext{}
-		tags := map[string]any{
-			"key": "value",
-		}
-		spanLinks := []SpanLink{
-			{TraceID: 123, SpanID: 456},
-		}
-
-		srcCfg := &StartSpanConfig{
-			Parent:    parent,
-			StartTime: startTime,
-			Tags:      tags,
-			SpanID:    999,
-			SpanLinks: spanLinks,
-		}
-
-		opt := useConfig(srcCfg)
-		dstCfg := &StartSpanConfig{}
-		opt(dstCfg)
-
-		assert.Equal(t, parent, dstCfg.Parent)
-		assert.Equal(t, startTime, dstCfg.StartTime)
-		assert.Equal(t, tags, dstCfg.Tags)
-		assert.Equal(t, uint64(999), dstCfg.SpanID)
-		assert.Equal(t, spanLinks, dstCfg.SpanLinks)
-	})
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_EmptyOptions(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// StartSpan with empty slice of options should return nil
-	span := wrapped.StartSpan("test.operation", []StartSpanOption{}...)
-	assert.Nil(t, span)
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_AllCIVisibilityTypes(t *testing.T) {
-	// Test that all CI Visibility span types are properly recognized
-	tr, transport, flush, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// Create one of each CI Visibility span type
-	testSpan := wrapped.StartSpan("test.span", SpanType(constants.SpanTypeTest))
-	suiteSpan := wrapped.StartSpan("suite.span", SpanType(constants.SpanTypeTestSuite))
-	moduleSpan := wrapped.StartSpan("module.span", SpanType(constants.SpanTypeTestModule))
-	sessionSpan := wrapped.StartSpan("session.span", SpanType(constants.SpanTypeTestSession))
-
-	// All should be non-nil
-	require.NotNil(t, testSpan)
-	require.NotNil(t, suiteSpan)
-	require.NotNil(t, moduleSpan)
-	require.NotNil(t, sessionSpan)
-
-	// Finish all spans
-	testSpan.Finish()
-	suiteSpan.Finish()
-	moduleSpan.Finish()
-	sessionSpan.Finish()
-
-	// Flush and verify
-	flush(4)
-	assert.Equal(t, 4, transport.Len())
+	assert.Nil(t, cfg.Parent)
+	assert.True(t, cfg.StartTime.IsZero())
+	assert.Nil(t, cfg.Tags)
 }
 
 func TestCIVisibilityTracerRouter_MixedSpans(t *testing.T) {
@@ -579,56 +481,6 @@ func TestCIVisibilityTracerRouter_MixedSpans(t *testing.T) {
 	// Only CI spans should be flushed
 	flush(2)
 	assert.Equal(t, 2, transport.Len())
-}
-
-func TestUseConfig_WithContext(t *testing.T) {
-	// Test that useConfig properly copies the Context field
-	ctx := context.Background()
-
-	srcCfg := &StartSpanConfig{
-		Context: ctx,
-	}
-
-	opt := useConfig(srcCfg)
-	dstCfg := &StartSpanConfig{}
-	opt(dstCfg)
-
-	assert.Equal(t, ctx, dstCfg.Context)
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_SpanTypeSpanIsNotCIVisibility(t *testing.T) {
-	// Test that SpanTypeSpan (which is "span") is NOT considered a CI Visibility span type
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	// SpanTypeSpan ("span") should be treated as non-CI Visibility
-	span := wrapped.StartSpan("test.operation", SpanType(constants.SpanTypeSpan))
-	assert.Nil(t, span, "expected nil span for SpanTypeSpan")
-}
-
-func TestCIVisibilityTracerRouter_StartSpan_WithSpanLinks(t *testing.T) {
-	tr, _, _, stop, err := startTestTracer(t)
-	require.NoError(t, err)
-	defer stop()
-
-	wrapped := wrapWithCIVisibilityTracerRouter(tr)
-
-	spanLinks := []SpanLink{
-		{TraceID: 123, TraceIDHigh: 0, SpanID: 456},
-		{TraceID: 789, TraceIDHigh: 0, SpanID: 101},
-	}
-
-	span := wrapped.StartSpan("test.operation",
-		SpanType(constants.SpanTypeTest),
-		WithSpanLinks(spanLinks),
-	)
-
-	require.NotNil(t, span)
-	// The span links should have been passed through via useConfig
-	span.Finish()
 }
 
 func TestCIVisibilityTracerRouter_ChildSpanFiltering(t *testing.T) {
