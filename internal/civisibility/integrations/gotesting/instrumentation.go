@@ -365,6 +365,7 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 func selectAdditionalFeaturePath(
 	meta *additionalFeatureMetadata,
 	flakyRetryCount, remainingFlakyRetryBudget int64,
+	dynamicATREnabled bool,
 	attemptToFixRetryCount int,
 	efdRetryPossible bool,
 	needsMetadataOnly bool,
@@ -423,7 +424,7 @@ func selectAdditionalFeaturePath(
 			}
 		}
 	}
-	if meta.isFlakyTestRetriesEnabled && flakyRetryCount > 0 && remainingFlakyRetryBudget > 0 {
+	if meta.isFlakyTestRetriesEnabled && remainingFlakyRetryBudget > 0 && (flakyRetryCount > 0 || dynamicATREnabled) {
 		reasons |= additionalFeatureReasonFlakyRetry
 	}
 	if reasons == 0 {
@@ -689,6 +690,7 @@ func applyAdditionalFeaturesToTestFunc(
 		&meta,
 		flakyRetryCount,
 		remainingFlakyRetryBudget,
+		integrations.IsDynamicATREnabled(),
 		settings.TestManagement.AttemptToFixRetries,
 		efdHasPossibleRetry(settings),
 		needsMetadataOnly,
