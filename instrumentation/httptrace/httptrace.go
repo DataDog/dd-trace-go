@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -203,7 +204,7 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
-	return urlFromRequest(r, queryString, false)
+	return urlFromRequest(r, queryString, false, r.Host)
 }
 
 // URLFromClientRequest returns the full URL from the HTTP request for client-side spans. If queryString is true, params
@@ -212,7 +213,27 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
-	return urlFromRequest(r, queryString, true)
+	return urlFromRequest(r, queryString, true, r.Host)
+}
+
+// URLFullFromClientRequest returns the OpenTelemetry url.full, identifying which URL
+// the client asked for, the Request.URL, falling back to Request.Host.
+// In contrast, [ServerAddressPortFromClientRequest] returns the resolved
+// destination authority, which can differ (e.g virtual host, reverse proxy).
+// The URL userinfo is replaced with REDACTED:REDACTED.
+func URLFullFromClientRequest(r *http.Request, queryString bool) string {
+	authority := r.URL.Host
+	if authority == "" {
+		authority = r.Host
+	}
+	if authority != "" {
+		authorityURL := url.URL{Host: authority}
+		if r.URL.User != nil {
+			authorityURL.User = url.UserPassword("REDACTED", "REDACTED")
+		}
+		authority = strings.TrimPrefix(authorityURL.String(), "//")
+	}
+	return urlFromRequest(r, queryString, true, authority)
 }
 
 // obfuscateQueryStringConfig holds the settings for one call to ObfuscateQueryString.
@@ -265,7 +286,7 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 	return rawQuery
 }
 
-func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
+func urlFromRequest(r *http.Request, queryString bool, isClient bool, authority string) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
@@ -278,8 +299,8 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 	} else if r.TLS != nil {
 		scheme = "https"
 	}
-	if r.Host != "" {
-		url = scheme + "://" + r.Host + path
+	if authority != "" {
+		url = scheme + "://" + authority + path
 	} else {
 		url = path
 	}
