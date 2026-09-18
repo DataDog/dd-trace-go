@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
@@ -31,10 +32,12 @@ func requireRetryAttemptParallelConflict(t *testing.T, panicData any) {
 }
 
 func TestProcessRetryParityFreshRunnerNormalLifecycle(t *testing.T) {
+	const cleanupDuration = 25 * time.Millisecond
 	var events []string
 	attempt, result, reason := runFreshRetryAttempt(t, func(local *testing.T) {
 		local.Cleanup(func() {
 			require.ErrorIs(t, local.Context().Err(), context.Canceled)
+			time.Sleep(cleanupDuration)
 			events = append(events, "cleanup-1")
 		})
 		local.Cleanup(func() { events = append(events, "cleanup-2") })
@@ -55,7 +58,7 @@ func TestProcessRetryParityFreshRunnerNormalLifecycle(t *testing.T) {
 	require.True(t, result.nativeSignalExecuted)
 	require.Equal(t, retryAttemptCompletionNormal, result.completionPhase)
 	require.Equal(t, retryAttemptNotFailed, result.failureCheckpointPhase)
-	require.Positive(t, result.duration)
+	require.GreaterOrEqual(t, result.duration, cleanupDuration)
 	require.Contains(t, string(result.output), "partial\n")
 }
 

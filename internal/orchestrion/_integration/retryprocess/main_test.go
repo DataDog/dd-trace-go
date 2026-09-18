@@ -97,19 +97,26 @@ func runOrchestrionRetryProcessController(t *testing.T, runFilter string, extraE
 }
 
 type retryProcessChildResult struct {
-	Version      int    `json:"version"`
-	TestName     string `json:"test_name"`
-	Attempt      int    `json:"attempt"`
-	RetryReason  string `json:"retry_reason"`
-	Status       string `json:"status"`
-	Failed       bool   `json:"failed"`
-	Skipped      bool   `json:"skipped"`
-	Panic        bool   `json:"panic"`
-	ErrorType    string `json:"error_type"`
-	ErrorMessage string `json:"error_message"`
-	ErrorStack   string `json:"error_stack"`
-	SkipReason   string `json:"skip_reason"`
-	ResultError  string `json:"result_error"`
+	Version                       int    `json:"version"`
+	TestName                      string `json:"test_name"`
+	Attempt                       int    `json:"attempt"`
+	RetryReason                   string `json:"retry_reason"`
+	Status                        string `json:"status"`
+	DurationNanos                 int64  `json:"duration_nanos"`
+	DurationValid                 bool   `json:"duration_valid"`
+	ObservedActiveDurationNanos   int64  `json:"observed_active_duration_nanos"`
+	ObservedActiveDurationValid   bool   `json:"observed_active_duration_valid"`
+	RootParallel                  bool   `json:"root_parallel"`
+	ParallelPauseStartOffsetNanos *int64 `json:"parallel_pause_start_offset_nanos,omitempty"`
+	ParallelPauseEndOffsetNanos   *int64 `json:"parallel_pause_end_offset_nanos,omitempty"`
+	Failed                        bool   `json:"failed"`
+	Skipped                       bool   `json:"skipped"`
+	Panic                         bool   `json:"panic"`
+	ErrorType                     string `json:"error_type"`
+	ErrorMessage                  string `json:"error_message"`
+	ErrorStack                    string `json:"error_stack"`
+	SkipReason                    string `json:"skip_reason"`
+	ResultError                   string `json:"result_error"`
 }
 
 type orchestrionCountingStringer struct {
@@ -842,11 +849,18 @@ func TestOrchestrionRetryProcessChildModeController(t *testing.T) {
 		t.Fatalf("orchestrion child process failed: %v\n%s", err, output)
 	}
 
-	if result.Version != 1 ||
+	if result.Version != 2 ||
 		result.TestName != "TestOrchestrionRetryProcessSelectedChild" ||
 		result.Attempt != 1 ||
 		result.RetryReason != constants.AutoTestRetriesRetryReason ||
 		result.Status != "pass" ||
+		!result.DurationValid ||
+		result.DurationNanos < 0 ||
+		!result.ObservedActiveDurationValid ||
+		result.ObservedActiveDurationNanos < 0 ||
+		result.RootParallel ||
+		result.ParallelPauseStartOffsetNanos != nil ||
+		result.ParallelPauseEndOffsetNanos != nil ||
 		result.Failed ||
 		result.Skipped {
 		t.Fatalf("unexpected child result: %+v\n%s", result, output)
@@ -1018,11 +1032,18 @@ func TestOrchestrionRetryProcessNoMatchingChildModeController(t *testing.T) {
 		t.Fatalf("orchestrion no-matching child process failed: %v\n%s", err, output)
 	}
 
-	if result.Version != 1 ||
+	if result.Version != 2 ||
 		result.TestName != "TestOrchestrionRetryProcessMissingChild" ||
 		result.Attempt != 1 ||
 		result.RetryReason != constants.AutoTestRetriesRetryReason ||
 		result.Status != "not_run" ||
+		result.DurationValid ||
+		result.DurationNanos != 0 ||
+		result.ObservedActiveDurationValid ||
+		result.ObservedActiveDurationNanos != 0 ||
+		result.RootParallel ||
+		result.ParallelPauseStartOffsetNanos != nil ||
+		result.ParallelPauseEndOffsetNanos != nil ||
 		result.Failed ||
 		result.Skipped {
 		t.Fatalf("unexpected no-matching child result: %+v\n%s", result, output)
