@@ -484,6 +484,55 @@ func TestWrapTracer(t *testing.T) {
 	}
 }
 
+// The WithTrace* options govern dd-trace's own spans, not whether a wrapped tracer's hooks
+// run. pgx and pgxpool find each hook by type-asserting the single tracer they hold, so
+// skipping a delegation removes that hook from every tracer underneath this one.
+func TestWrapTracerForwardsWithTracingDisabled(t *testing.T) {
+	testCases := []struct {
+		name           string
+		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		wantHooks      int
+	}{
+		{
+			name: "pool",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgxpool.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.ConnConfig.Tracer = prev
+				return newPoolCreator(cfg, tracingAllDisabled()...)
+			},
+			wantHooks: 14,
+		},
+		{
+			name: "conn",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgx.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.Tracer = prev
+				return newConnCreator(cfg, nil, tracingAllDisabled()...)
+			},
+			wantHooks: 11, // 14 - 3 pool tracer hooks
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			prevTracer := &pgxMockTracer{
+				called: make(map[string]bool),
+			}
+			runAllOperations(t, tc.newConnCreator(t, prevTracer))
+
+			assert.Len(t, prevTracer.called, tc.wantHooks, "some hook(s) on the previous tracer were not called")
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, "parent", spans[0].OperationName())
+		})
+	}
+}
+
 func TestNewConnInfo(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		assert.Equal(t, connInfo{}, newConnInfo(nil))

@@ -52,6 +52,13 @@ func (c *config) checkStatsdRequired() {
 	}
 }
 
+// measureUseTime reports whether connection use time should be recorded. It rides the same
+// opt-in as the polled pool stats, so callers that did not ask for pool metrics pay nothing
+// on the acquire and release path.
+func (c *config) measureUseTime() bool {
+	return c.poolStats && c.statsdClient != nil
+}
+
 type Option func(*config)
 
 // WithService sets the service name to use for all spans.
@@ -106,6 +113,8 @@ func WithTraceConnect(enabled bool) Option {
 
 // WithPoolStats enables polling of pgxpool.Stat metrics
 // ref: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Stat
+// It also enables the connection use time metric, which pgxpool.Stat does not report and
+// which is measured per release rather than polled.
 // These metrics are submitted to Datadog and are not billed as custom metrics
 func WithPoolStats() Option {
 	return func(cfg *config) {
