@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	"github.com/stretchr/testify/assert"
@@ -231,4 +232,46 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 	handle, ok := telemetryClient.Metrics[key]
 	require.True(t, ok, "expected config.repeat_start_env_diff to be recorded on the active telemetry client")
 	assert.Equal(t, float64(1), handle.Get())
+}
+
+func TestTracerStopFlushesTelemetry(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	Stop()
+
+	assert.Nil(t, telemetry.GlobalClient())
+}
+
+func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	Start()
+	defer globalconfig.SetServiceName("")
+	Stop()
+
+	// Profiler or another product already owns the global client. Stop must
+	// not call StopApp on it.
+	assert.False(t, telemetryClient.Stopped)
+	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
+}
+
+func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	wasEnabled := traceprof.SetProfilerEnabled(true)
+	defer func() {
+		traceprof.SetProfilerEnabled(wasEnabled)
+		telemetry.StopApp()
+	}()
+
+	Stop()
+
+	// Profiler started after the tracer and still shares the client, so Stop
+	// must flush without emitting app-stopped / clearing the global client.
+	assert.NotNil(t, telemetry.GlobalClient())
 }
