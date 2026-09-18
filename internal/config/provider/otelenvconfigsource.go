@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	ddPrefix   = "config_datadog:"
-	otelPrefix = "config_opentelemetry:"
+	ddPrefix                  = "config_datadog:"
+	otelPrefix                = "config_opentelemetry:"
+	deploymentEnvironment     = "deployment.environment"
+	deploymentEnvironmentName = "deployment.environment.name"
 )
 
 type otelEnvConfigSource struct{}
@@ -92,9 +94,9 @@ var otelConfigs = map[string]*otelDDEnv{
 }
 
 var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+	"service.name":        "service",
+	deploymentEnvironment: "env",
+	"service.version":     "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -200,8 +202,27 @@ func mapPropagationStyle(ot string) (string, error) {
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
-	ddTags := make([]string, 0)
+	stableEnvironment := ""
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		if key == deploymentEnvironmentName && stableEnvironment == "" && val != "" {
+			stableEnvironment = val
+		}
+	})
+
+	ddTags := make([]string, 0)
+	stableEnvironmentMapped := false
+	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		if key == deploymentEnvironmentName {
+			if stableEnvironment != "" && !stableEnvironmentMapped && val != "" {
+				ddTags = append([]string{"env" + internal.DDTagsDelimiter + stableEnvironment}, ddTags...)
+				stableEnvironmentMapped = true
+			}
+			return
+		}
+		if key == deploymentEnvironment && stableEnvironment != "" {
+			return
+		}
+
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
