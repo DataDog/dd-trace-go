@@ -9,8 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 )
 
 type preservingTestTracer struct {
