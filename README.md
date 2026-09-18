@@ -95,6 +95,7 @@ Targets:
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
   config-audit         Report which DD_* configs are migrated to internal/config
+  errtrack-audit       Report internal/log Error/Warn sites that may adopt Error Tracking reporting
 ```
 
 **Direct Script Usage**:

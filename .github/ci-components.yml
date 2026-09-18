@@ -93,6 +93,7 @@ workflow-gates:
   code_freeze_end.yml: []
   code_freeze_start.yml: []
   config-audit.yml: []
+  errtrack-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
   dynamic-checks.yml: []
@@ -123,6 +124,7 @@ native-path-filters:
   - build-metrics.yml
   - config-audit.yml
   - dynamic-checks.yml
+  - errtrack-audit.yml
   - ecosystems-label-pr.yml
   - govulncheck.yml
   - sync-cue-actions.yml
