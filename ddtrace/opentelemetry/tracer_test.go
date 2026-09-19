@@ -650,3 +650,35 @@ func Test_otelCtxToDDCtx_SamplingDecision_Priority(t *testing.T) {
 	assert.Equal(t, uint32(1), ctx.SamplingDecision())
 	assert.EqualValues(t, ext.PriorityAutoReject, *ctx.Priority())
 }
+
+func TestSpanFromRemoteOtelContextRestoresDatadogTracestate(t *testing.T) {
+	tr := NewTracerProvider(tracer.WithLogStartup(false)).Tracer("")
+	defer tracer.Stop()
+
+	state, err := oteltrace.ParseTraceState("dd=s:2;o:synthetics;t.dm:-3;p:0123456789abcdef,other=value")
+	require.NoError(t, err)
+	parent := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID:    oteltrace.TraceID{0xAA},
+		SpanID:     oteltrace.SpanID{0x01},
+		TraceFlags: oteltrace.FlagsSampled,
+		TraceState: state,
+		Remote:     true,
+	})
+
+	ctx, span := tr.Start(oteltrace.ContextWithRemoteSpanContext(context.Background(), parent), "child")
+	defer span.End()
+
+	ddSpan, ok := tracer.SpanFromContext(ctx)
+	require.True(t, ok)
+	priority, ok := ddSpan.Context().SamplingPriority()
+	require.True(t, ok)
+	assert.Equal(t, ext.PriorityUserKeep, priority)
+
+	carrier := tracer.TextMapCarrier{}
+	require.NoError(t, tracer.Inject(ddSpan.Context(), carrier))
+	assert.Equal(t, "synthetics", carrier["x-datadog-origin"])
+	assert.Contains(t, carrier["x-datadog-tags"], "_dd.p.dm=-3")
+	assert.Contains(t, carrier["tracestate"], "s:2")
+	assert.Contains(t, carrier["tracestate"], "t.dm:-3")
+	assert.Contains(t, carrier["tracestate"], "other=value")
+}

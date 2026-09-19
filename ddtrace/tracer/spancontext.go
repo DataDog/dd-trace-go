@@ -185,6 +185,12 @@ type spanContextV1Adapter interface {
 
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
+// spanContextWithTracestate is implemented by span contexts from other
+// tracers that carry a W3C tracestate, such as OpenTelemetry span contexts.
+type spanContextWithTracestate interface {
+	Tracestate() string
+}
+
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID.set(c.TraceIDBytes())
@@ -240,6 +246,12 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 		if p := ctxSpl.Priority(); p != nil {
 			sc.setSamplingPriority(int(*p), samplernames.Unknown)
+			// Restore the Datadog sampling priority, decision maker, origin and
+			// propagating tags from the dd= tracestate member, as the W3C
+			// propagator does, before locking the priority.
+			if ts, ok := c.(spanContextWithTracestate); ok {
+				parseTracestate(&sc, ts.Tracestate())
+			}
 			sc.trace.setLocked(true)
 		}
 	}
