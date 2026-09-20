@@ -7,7 +7,9 @@ package tracer
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless the
@@ -20,15 +22,17 @@ func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisi
 	ciVisibilityStarting := ciVisibilityEnabled &&
 		(state == civisibility.StateUninitialized || state == civisibility.StateInitializing)
 	if ciVisibilityStarting {
+		candidate := globalTracer
+		if _, ok := candidate.(*ciVisibilityTracerRouter); !ok {
+			candidate = newCIVisibilityTracerRouter(candidate, false)
+		}
 		if setter, ok := current.(interface{ SetCIVisibilityTracer(Tracer) bool }); ok {
-			candidate := globalTracer
-			if _, ok := candidate.(*ciVisibilityTracerRouter); !ok {
-				candidate = newCIVisibilityTracerRouter(candidate, false)
-			}
 			if setter.SetCIVisibilityTracer(candidate) {
 				return
 			}
 		}
+		setGlobalTracer(candidate)
+		return
 	} else {
 		// DD_CIVISIBILITY_ENABLED remains set after Test Optimization starts. A
 		// later tracer.Start is therefore an application tracer start even though
@@ -50,6 +54,20 @@ func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisi
 	}
 
 	setGlobalTracer(globalTracer)
+}
+
+// startOptionsForCIVisibilityLifecycle keeps later tracer.Start calls aligned
+// with their router role. Once CI Visibility is initialized, a new tracer is an
+// application delegate even when the process-level enablement variable remains
+// set for the test instrumentation.
+func startOptionsForCIVisibilityLifecycle(opts []StartOption) []StartOption {
+	if civisibility.GetState() != civisibility.StateInitialized {
+		return opts
+	}
+	applicationOpts := append([]StartOption(nil), opts...)
+	return append(applicationOpts, func(c *config) {
+		c.internalConfig.SetCIVisibilityEnabled(false, internalconfig.OriginCode)
+	})
 }
 
 func storeCIVisibilityRouterWithoutStoppingCurrent(router *ciVisibilityTracerRouter) {
@@ -86,16 +104,82 @@ func attachMockTracerToCIVisibility(mockTracer Tracer) Tracer {
 	return router
 }
 
-// submitTracerForFinishedChunk returns the concrete tracer that should receive
-// a finished chunk for the current global tracer snapshot.
-func submitTracerForFinishedChunk(globalTracer Tracer, spans []*Span) Tracer {
-	if provider, ok := globalTracer.(interface {
-		TracerForFinishedChunk([]*Span) (Tracer, bool)
-	}); ok {
-		if submitTracer, ok := provider.TracerForFinishedChunk(spans); ok {
-			return submitTracer
-		}
-		return nil
+type ciVisibilityTraceRouter interface {
+	TracerForTrace(string, string) Tracer
+}
+
+type tracerStatsdClientProvider interface {
+	tracerStatsdClient() globalinternal.StatsdClient
+}
+
+func (t *tracer) tracerStatsdClient() globalinternal.StatsdClient {
+	return t.statsd
+}
+
+// tracerStatsdClient returns the client for the active ordinary tracer. Mock
+// tracers do not own tracer health metrics; without an application tracer the
+// CI tracer remains the owner.
+func (t *ciVisibilityTracerRouter) tracerStatsdClient() globalinternal.StatsdClient {
+	t.delegatesMu.RLock()
+	target := t.applicationTracer
+	if target == nil {
+		target = t.Tracer
 	}
-	return globalTracer
+	t.delegatesMu.RUnlock()
+	if provider, ok := target.(tracerStatsdClientProvider); ok {
+		return provider.tracerStatsdClient()
+	}
+	return nil
+}
+
+func statsdClientForTracer(t Tracer) globalinternal.StatsdClient {
+	if provider, ok := t.(tracerStatsdClientProvider); ok {
+		return provider.tracerStatsdClient()
+	}
+	return nil
+}
+
+// concreteTracerForTrace returns the current concrete tracer for the routing
+// type recorded on the local trace. Tracers without CI Visibility routing
+// continue to use the process-global tracer without reading trace metadata.
+func concreteTracerForTrace(globalTracer Tracer, localTrace *trace, fallbackSpanType string) Tracer {
+	router, ok := globalTracer.(ciVisibilityTraceRouter)
+	if !ok {
+		return globalTracer
+	}
+	return concreteTracerForType(router, ciVisibilityTracerType(localTrace), fallbackSpanType)
+}
+
+// concreteTracerForLockedTrace resolves routing while the caller already owns
+// localTrace.mu. Tracers without CI Visibility routing return before reading
+// trace metadata, preserving the normal finish hot path.
+func concreteTracerForLockedTrace(globalTracer Tracer, localTrace *trace, fallbackSpanType string) Tracer {
+	router, ok := globalTracer.(ciVisibilityTraceRouter)
+	if !ok {
+		return globalTracer
+	}
+	var tracerType string
+	if localTrace != nil {
+		tracerType = localTrace.tags[ciVisibilityTracerTypeTag] // +checklocksignore — Caller holds localTrace.mu; checklocks does not propagate locks across this helper.
+	}
+	return concreteTracerForType(router, tracerType, fallbackSpanType)
+}
+
+// concreteTracerForSpan avoids reading span or trace metadata unless CI
+// Visibility routing is active. This keeps the normal tracer hot path
+// unchanged.
+func concreteTracerForSpan(globalTracer Tracer, span *Span) Tracer {
+	router, ok := globalTracer.(ciVisibilityTraceRouter)
+	if !ok || span == nil {
+		return globalTracer
+	}
+	var localTrace *trace
+	if span.context != nil {
+		localTrace = span.context.trace
+	}
+	return concreteTracerForType(router, ciVisibilityTracerType(localTrace), span.spanTypeForRouting())
+}
+
+func concreteTracerForType(router ciVisibilityTraceRouter, tracerType, fallbackSpanType string) Tracer {
+	return router.TracerForTrace(tracerType, fallbackSpanType)
 }

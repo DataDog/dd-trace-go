@@ -460,7 +460,7 @@ func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 		return false
 	}
 
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
 	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
 		return false
 	}
@@ -1055,6 +1055,17 @@ func (s *Span) serializeFFEEvaluations() {
 	}
 }
 
+// spanTypeForRouting returns the current span type for selecting a concrete
+// tracer when the caller does not already hold s.mu.
+func (s *Span) spanTypeForRouting() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.spanType
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -1105,7 +1116,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := concreteTracerForSpan(getGlobalTracer(), s).(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -1172,7 +1183,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
 			return
@@ -1312,7 +1323,13 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		tr := getGlobalTracer()
+		if s.context != nil {
+			// Format can run while finish holds the span lock. Route from the
+			// trace marker without reading span metadata and re-entering that lock.
+			tr = concreteTracerForTrace(tr, s.context.trace, "")
+		}
+		if tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)

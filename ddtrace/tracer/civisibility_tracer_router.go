@@ -6,25 +6,33 @@
 package tracer
 
 import (
+	"maps"
+	"sync/atomic"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 var _ Tracer = (*ciVisibilityTracerRouter)(nil)
 
-// ciVisibilityNoopTracer keeps the historical internal name used by the
-// tracer's finished-chunk fallback without changing that general code path.
-type ciVisibilityNoopTracer = ciVisibilityTracerRouter
+const (
+	ciVisibilityTracerTypeTag         = "_dd.civisibility.tracer_type"
+	ciVisibilityTracerTypeCIApp       = "ciapp"
+	ciVisibilityTracerTypeMock        = "mock"
+	ciVisibilityTracerTypeApplication = "app"
+)
 
 // ciVisibilityTracerRouter keeps the CI Visibility tracer process-global and
 // routes non-CI spans to a temporary mock, an application tracer, the CI tracer,
 // or nowhere, in that order. The final fallback is controlled by
 // DD_CIVISIBILITY_USE_NOOP_TRACER.
 type ciVisibilityTracerRouter struct {
+	// +checklocks:delegatesMu
 	Tracer
 
 	delegatesMu locking.RWMutex
@@ -62,12 +70,21 @@ func (t *ciVisibilityTracerRouter) StartSpan(operationName string, opts ...Start
 			opt(cfg)
 		}
 	}
-	target := t.tracerForSpanType(startSpanType(cfg))
+	spanType := startSpanType(cfg)
+	target, tracerType := t.tracerAndTypeForSpanType(spanType)
 	if target == nil {
 		log.Debug("CI Visibility tracer is filtering an application span, so the span will be skipped.")
 		return nil
 	}
-	return target.StartSpan(operationName, useConfig(cfg))
+	detachParent, markTrace := t.parentRouting(tracerType, cfg.Parent)
+	if detachParent {
+		cfg.Parent = detachedParentContext(cfg.Parent)
+	}
+	span := target.StartSpan(operationName, useConfig(cfg))
+	if markTrace {
+		setCIVisibilityTracerType(span, tracerType)
+	}
+	return span
 }
 
 func startSpanType(cfg *StartSpanConfig) string {
@@ -79,6 +96,11 @@ func startSpanType(cfg *StartSpanConfig) string {
 }
 
 func (t *ciVisibilityTracerRouter) tracerForSpanType(spanType string) Tracer {
+	target, _ := t.tracerAndTypeForSpanType(spanType)
+	return target
+}
+
+func (t *ciVisibilityTracerRouter) tracerAndTypeForSpanType(spanType string) (Tracer, string) {
 	t.delegatesMu.RLock()
 	ciTracer := t.Tracer
 	mockTracer := t.mockTracer
@@ -86,18 +108,158 @@ func (t *ciVisibilityTracerRouter) tracerForSpanType(spanType string) Tracer {
 	dropApplicationSpans := t.dropApplicationSpans
 	t.delegatesMu.RUnlock()
 	if isCIVisibilitySpanType(spanType) {
-		return ciTracer
+		return ciTracer, ciVisibilityTracerTypeCIApp
 	}
 	if mockTracer != nil {
-		return mockTracer
+		return mockTracer, ciVisibilityTracerTypeMock
 	}
 	if applicationTracer != nil {
-		return applicationTracer
+		return applicationTracer, ciVisibilityTracerTypeApplication
 	}
 	if !dropApplicationSpans {
-		return ciTracer
+		return ciTracer, ciVisibilityTracerTypeCIApp
 	}
-	return nil
+	return nil, ""
+}
+
+// parentRouting reports whether the parent must be detached and whether the
+// resulting trace needs a routing marker. A trace which already has the same
+// marker avoids rewriting it and therefore avoids an exclusive trace lock.
+func (t *ciVisibilityTracerRouter) parentRouting(tracerType string, parent *SpanContext) (detach, mark bool) {
+	if parent == nil || parent.trace == nil {
+		return false, true
+	}
+	parentTracerType, fallbackSpanType := ciVisibilityRoutingForContext(parent)
+	if parentTracerType == "" {
+		_, parentTracerType = t.tracerAndTypeForSpanType(fallbackSpanType)
+		mark = true
+	}
+	if parentTracerType == "" || parentTracerType == tracerType {
+		return false, mark
+	}
+	return true, true
+}
+
+func setCIVisibilityTracerType(span *Span, tracerType string) {
+	if span == nil || span.context == nil || span.context.trace == nil || tracerType == "" {
+		return
+	}
+	span.context.trace.setTag(ciVisibilityTracerTypeTag, tracerType)
+}
+
+func ciVisibilityTracerType(t *trace) string {
+	if t == nil {
+		return ""
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tags[ciVisibilityTracerTypeTag]
+}
+
+func ciVisibilityRoutingForContext(context *SpanContext) (tracerType, fallbackSpanType string) {
+	if context == nil || context.trace == nil {
+		return "", ""
+	}
+	tracerType = ciVisibilityTracerType(context.trace)
+	if tracerType == "" && context.trace.root != nil {
+		fallbackSpanType = context.trace.root.spanTypeForRouting()
+	}
+	return tracerType, fallbackSpanType
+}
+
+// detachedParentContext preserves distributed-parent semantics without sharing
+// the local trace buffer across CI Visibility and application transports.
+func detachedParentContext(parent *SpanContext) *SpanContext {
+	detached := &SpanContext{
+		reparentID: parent.reparentID,
+		traceID:    parent.traceID,
+		spanID:     parent.spanID,
+		trace:      detachedPropagationTrace(parent.trace),
+	}
+	detached.errors.Store(parent.errors.Load())
+
+	parent.mu.RLock()
+	detached.baggageOnly = parent.baggageOnly
+	detached.origin = parent.origin
+	detached.spanSnapshot = parent.spanSnapshot
+	if len(parent.baggage) > 0 {
+		detached.baggage = maps.Clone(parent.baggage)
+		atomic.StoreUint32(&detached.hasBaggage, 1)
+	}
+	parent.mu.RUnlock()
+	return detached
+}
+
+func detachedPropagationTrace(source *trace) *trace {
+	detached := newTrace()
+	if source == nil {
+		return detached
+	}
+
+	state := snapshotPropagationTrace(source)
+	if state.hasPriority {
+		detached.setSamplingPriority(state.priority, samplernames.Unknown)
+	}
+	detached.mu.Lock()
+	detached.locked = state.locked
+	detached.dm = state.dm
+	detached.tags = state.tags
+	atomic.StoreUint32((*uint32)(&detached.samplingDecision), uint32(state.samplingDecision))
+	if state.propagatingTags != nil {
+		detached.propagatingTags.Store(state.propagatingTags)
+	}
+	detached.otel = state.otel
+	detached.mu.Unlock()
+	return detached
+}
+
+type propagationTraceState struct {
+	priority         int
+	hasPriority      bool
+	locked           bool
+	dm               uint32
+	samplingDecision samplingDecision
+	propagatingTags  map[string]string
+	tags             map[string]string
+	otel             *otelTraceState
+}
+
+func snapshotPropagationTrace(source *trace) propagationTraceState {
+	source.mu.RLock()
+	defer source.mu.RUnlock()
+	priority, hasPriority := source.samplingPriority()
+
+	state := propagationTraceState{
+		priority:         priority,
+		hasPriority:      hasPriority,
+		locked:           source.locked,
+		dm:               source.dm,
+		samplingDecision: samplingDecision(atomic.LoadUint32((*uint32)(&source.samplingDecision))),
+	}
+	if propagatingTags := source.loadPropagatingTags(); propagatingTags != nil {
+		state.propagatingTags = maps.Clone(propagatingTags)
+	}
+	if source.tags != nil {
+		state.tags = maps.Clone(source.tags)
+		delete(state.tags, ciVisibilityTracerTypeTag)
+	}
+	if source.otel != nil {
+		state.otel = &otelTraceState{
+			rv:                  cloneUint64(source.otel.rv),
+			th:                  cloneUint64(source.otel.th),
+			unknown:             source.otel.unknown,
+			hasUpstreamDecision: source.otel.hasUpstreamDecision,
+		}
+	}
+	return state
+}
+
+func cloneUint64(value *uint64) *uint64 {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 // SetCIVisibilityTracer updates the concrete tracer used for CI test events.
@@ -166,9 +328,9 @@ func (t *ciVisibilityTracerRouter) ClearMockTracer(mockTracer Tracer) bool {
 	return true
 }
 
-// DetachMockTracer removes mockTracer and returns the tracer that should become
-// process-global. When no routing remains necessary, ownership of the concrete
-// CI tracer is transferred out of the router without stopping it.
+// DetachMockTracer removes mockTracer and keeps the router process-global. The
+// router must remain installed for the entire active CI Visibility lifecycle so
+// traces created between delegate changes retain their routing type.
 func (t *ciVisibilityTracerRouter) DetachMockTracer(mockTracer Tracer) (Tracer, bool) {
 	t.delegatesMu.Lock()
 	defer t.delegatesMu.Unlock()
@@ -176,12 +338,7 @@ func (t *ciVisibilityTracerRouter) DetachMockTracer(mockTracer Tracer) (Tracer, 
 		return nil, false
 	}
 	t.mockTracer = nil
-	if t.applicationTracer != nil || t.dropApplicationSpans {
-		return t, true
-	}
-	ciTracer := t.Tracer
-	t.Tracer = &NoopTracer{}
-	return ciTracer, ciTracer != nil
+	return t, true
 }
 
 func (t *ciVisibilityTracerRouter) detachApplicationTracer() Tracer {
@@ -190,6 +347,12 @@ func (t *ciVisibilityTracerRouter) detachApplicationTracer() Tracer {
 	t.applicationTracer = nil
 	t.delegatesMu.Unlock()
 	return applicationTracer
+}
+
+func (t *ciVisibilityTracerRouter) detachActiveMockTracer() {
+	t.delegatesMu.Lock()
+	t.mockTracer = nil
+	t.delegatesMu.Unlock()
 }
 
 func (t *ciVisibilityTracerRouter) detachCIVisibilityTracer() Tracer {
@@ -235,46 +398,46 @@ func (t *ciVisibilityTracerRouter) Extract(carrier any) (*SpanContext, error) {
 
 // Inject implements Tracer.
 func (t *ciVisibilityTracerRouter) Inject(context *SpanContext, carrier any) error {
-	if target := t.tracerForSpanType(""); target != nil {
+	if target := t.tracerForContext(context); target != nil {
 		return target.Inject(context, carrier)
 	}
 	return nil
 }
 
-// FinishSpan lets the active mock record spans it created. The mock ignores
-// spans absent from its open-span set, including CI and application spans.
-func (t *ciVisibilityTracerRouter) FinishSpan(span *Span) {
-	if span == nil {
-		return
-	}
-	if target, ok := t.currentMockTracer().(interface{ FinishSpan(*Span) }); ok {
-		target.FinishSpan(span)
-	}
+func (t *ciVisibilityTracerRouter) tracerForContext(context *SpanContext) Tracer {
+	tracerType, fallbackSpanType := ciVisibilityRoutingForContext(context)
+	return t.TracerForTrace(tracerType, fallbackSpanType)
 }
 
-// TracerForFinishedChunk selects the current destination from the finished
-// span type. It deliberately does not retain a per-span owner or registry.
-func (t *ciVisibilityTracerRouter) TracerForFinishedChunk(spans []*Span) (Tracer, bool) {
-	if len(spans) == 0 {
-		return nil, false
+// TracerForTrace returns the current destination for the tracer type recorded
+// when the local trace was created. Spans which predate the marker fall back to
+// their span type. A no-op destination lets a trace whose delegate disappeared
+// finish bookkeeping without being redirected to a different tracer type.
+func (t *ciVisibilityTracerRouter) TracerForTrace(tracerType, fallbackSpanType string) Tracer {
+	var target Tracer
+	switch tracerType {
+	case ciVisibilityTracerTypeCIApp:
+		target = t.ciVisibilityTracer()
+	case ciVisibilityTracerTypeMock:
+		target = t.currentMockTracer()
+	case ciVisibilityTracerTypeApplication:
+		target = t.currentApplicationTracer()
+	default:
+		target = t.tracerForSpanType(fallbackSpanType)
 	}
-	target := t.tracerForSpanType(ciVisibilitySpanType(spans[0]))
-	return target, target != nil
-}
-
-// +checklocksignore — This runs only for finished chunks. spanType is immutable
-// after finish, and the finishing span may already hold Span.mu here.
-func ciVisibilitySpanType(span *Span) string {
-	if span == nil {
-		return ""
+	if target != nil {
+		return target
 	}
-	return span.spanType
+	return NoopTracer{}
 }
 
 // Stop implements Tracer. Application tracing can stop while CI Visibility
 // remains active; the router restores itself after package-level Stop swaps the
 // global tracer to NoopTracer.
 func (t *ciVisibilityTracerRouter) Stop() {
+	// A package-level Stop ends the current ordinary-tracing session. The mock
+	// owns its own lifecycle, so detach it without stopping the caller's handle.
+	t.detachActiveMockTracer()
 	applicationTracer := t.detachApplicationTracer()
 	if applicationTracer != nil {
 		applicationTracer.Stop()
@@ -283,17 +446,6 @@ func (t *ciVisibilityTracerRouter) Stop() {
 	state := civisibility.GetState()
 	ciVisibilityActive := state == civisibility.StateInitializing || state == civisibility.StateInitialized
 	if _, replacedByNoop := getGlobalTracer().(*NoopTracer); ciVisibilityActive && replacedByNoop {
-		t.delegatesMu.Lock()
-		if t.mockTracer == nil && !t.dropApplicationSpans {
-			ciTracer := t.Tracer
-			t.Tracer = &NoopTracer{}
-			t.delegatesMu.Unlock()
-			if ciTracer != nil {
-				setGlobalTracer(ciTracer)
-			}
-			return
-		}
-		t.delegatesMu.Unlock()
 		setGlobalTracer(t)
 		return
 	}
@@ -311,9 +463,12 @@ func (t *ciVisibilityTracerRouter) Reset() {
 	}
 }
 
-// TracerConf implements Tracer and exposes the CI configuration while the
-// router is process-global.
+// TracerConf implements Tracer. Application tracing is the ordinary-span
+// destination while it is active; otherwise the CI tracer remains authoritative.
 func (t *ciVisibilityTracerRouter) TracerConf() TracerConf {
+	if applicationTracer := t.currentApplicationTracer(); applicationTracer != nil {
+		return applicationTracer.TracerConf()
+	}
 	if ciTracer := t.ciVisibilityTracer(); ciTracer != nil {
 		return ciTracer.TracerConf()
 	}

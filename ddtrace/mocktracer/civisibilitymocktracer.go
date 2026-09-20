@@ -18,12 +18,12 @@ import (
 
 type ciVisibilityRouter interface {
 	tracer.Tracer
+	Reset()
 	SetMockTracer(tracer.Tracer) bool
 	ClearMockTracer(tracer.Tracer) bool
 	DetachMockTracer(tracer.Tracer) (tracer.Tracer, bool)
 	SetApplicationTracer(tracer.Tracer) bool
-	TracerForFinishedChunk([]*tracer.Span) (tracer.Tracer, bool)
-	FinishSpan(*tracer.Span)
+	TracerForTrace(string, string) tracer.Tracer
 }
 
 //go:linkname attachMockTracerToCIVisibility github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.attachMockTracerToCIVisibility
@@ -67,7 +67,9 @@ func (t *civisibilitymocktracer) currentRouter() ciVisibilityRouter {
 }
 
 // SetCIVisibilityTracer adopts a newly started CI router when mocktracer was
-// installed first. The handle remains global only as a transparent adapter.
+// installed first. Once adopted, the router replaces the temporary global
+// handle without stopping it; the handle remains valid for assertions and
+// mock lifecycle control.
 func (t *civisibilitymocktracer) SetCIVisibilityTracer(candidate tracer.Tracer) bool {
 	router, ok := candidate.(ciVisibilityRouter)
 	if !ok || !router.SetMockTracer(t.mock) {
@@ -82,6 +84,9 @@ func (t *civisibilitymocktracer) SetCIVisibilityTracer(candidate tracer.Tracer) 
 	old := t.router
 	t.router = router
 	t.routerMu.Unlock()
+	if getGlobalTracer() == t {
+		internal.StoreGlobalTracer[ciVisibilityRouter, tracer.Tracer](router)
+	}
 	if old != nil && old != router {
 		old.ClearMockTracer(t.mock)
 		old.Stop()
@@ -161,18 +166,14 @@ func (t *civisibilitymocktracer) FinishSpan(span *tracer.Span) {
 	if span == nil {
 		return
 	}
-	if router := t.currentRouter(); router != nil {
-		router.FinishSpan(span)
-		return
-	}
 	t.mock.FinishSpan(span)
 }
 
-func (t *civisibilitymocktracer) TracerForFinishedChunk(spans []*tracer.Span) (tracer.Tracer, bool) {
+func (t *civisibilitymocktracer) TracerForTrace(tracerType, fallbackSpanType string) tracer.Tracer {
 	if router := t.currentRouter(); router != nil {
-		return router.TracerForFinishedChunk(spans)
+		return router.TracerForTrace(tracerType, fallbackSpanType)
 	}
-	return nil, false
+	return t.mock
 }
 
 func (t *civisibilitymocktracer) GetDataStreamsProcessor() *datastreams.Processor {

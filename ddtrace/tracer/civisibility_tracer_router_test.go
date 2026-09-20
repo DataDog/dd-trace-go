@@ -7,6 +7,9 @@ package tracer
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +27,7 @@ import (
 type callbackTestTracer struct {
 	onStart     func()
 	startCount  atomic.Int32
-	finishCount atomic.Int32
+	injectCount atomic.Int32
 	stopCount   atomic.Int32
 	lastConfig  atomic.Pointer[StartSpanConfig]
 }
@@ -38,11 +42,26 @@ func (t *callbackTestTracer) StartSpan(_ string, opts ...StartSpanOption) *Span 
 }
 
 func (*callbackTestTracer) Extract(any) (*SpanContext, error) { return nil, nil }
-func (*callbackTestTracer) Inject(*SpanContext, any) error    { return nil }
-func (*callbackTestTracer) TracerConf() TracerConf            { return TracerConf{} }
-func (*callbackTestTracer) Flush()                            {}
-func (t *callbackTestTracer) Stop()                           { t.stopCount.Add(1) }
-func (t *callbackTestTracer) FinishSpan(*Span)                { t.finishCount.Add(1) }
+func (t *callbackTestTracer) Inject(*SpanContext, any) error {
+	t.injectCount.Add(1)
+	return nil
+}
+func (*callbackTestTracer) TracerConf() TracerConf { return TracerConf{} }
+func (*callbackTestTracer) Flush()                 {}
+func (t *callbackTestTracer) Stop()                { t.stopCount.Add(1) }
+
+type markerPropagator string
+
+func (p markerPropagator) Inject(_ *SpanContext, carrier any) error {
+	writer, ok := carrier.(TextMapWriter)
+	if !ok {
+		return ErrInvalidCarrier
+	}
+	writer.Set("x-test-tracer", string(p))
+	return nil
+}
+
+func (markerPropagator) Extract(any) (*SpanContext, error) { return nil, ErrSpanContextNotFound }
 
 type resettingTestTracer struct {
 	callbackTestTracer
@@ -66,13 +85,68 @@ func TestCIVisibilityTracerRouterRoutesWithoutPerSpanOwnership(t *testing.T) {
 	require.EqualValues(t, 1, mockTracer.startCount.Load())
 	require.Zero(t, applicationTracer.startCount.Load())
 
-	applicationSpan := &Span{spanType: ext.SpanTypeWeb}
-	router.FinishSpan(applicationSpan)
-	require.EqualValues(t, 1, mockTracer.finishCount.Load())
-
 	require.True(t, router.ClearMockTracer(mockTracer))
 	router.StartSpan("application.restored")
 	require.EqualValues(t, 1, applicationTracer.startCount.Load())
+}
+
+func TestSpanTypeForRoutingConcurrentWithSetTag(t *testing.T) {
+	span := &Span{}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			span.SetTag(ext.SpanType, ext.SpanTypeWeb)
+			span.SetTag(ext.SpanType, constants.SpanTypeTest)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for range 10_000 {
+			_ = span.spanTypeForRouting()
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	assert.Equal(t, constants.SpanTypeTest, span.spanTypeForRouting())
+}
+
+func TestConcreteTracerForSpanDoesNotReadMetadataWithoutCIRouter(t *testing.T) {
+	globalTracer := &callbackTestTracer{}
+	localTrace := newTrace()
+	span := &Span{context: &SpanContext{trace: localTrace}}
+	span.mu.Lock()
+	localTrace.mu.Lock()
+
+	done := make(chan Tracer, 1)
+	go func() {
+		done <- concreteTracerForSpan(globalTracer, span)
+	}()
+
+	select {
+	case got := <-done:
+		localTrace.mu.Unlock()
+		span.mu.Unlock()
+		assert.Same(t, globalTracer, got)
+	case <-time.After(time.Second):
+		localTrace.mu.Unlock()
+		span.mu.Unlock()
+		t.Fatal("normal tracer routing read span or trace metadata")
+	}
+}
+
+func TestConcreteTracerForLockedTraceDoesNotReadMetadataWithoutCIRouter(t *testing.T) {
+	globalTracer := &callbackTestTracer{}
+
+	got := concreteTracerForLockedTrace(globalTracer, nil, constants.SpanTypeTest)
+
+	assert.Same(t, globalTracer, got)
 }
 
 func TestCIVisibilityTracerRouterReplacesCIDelegate(t *testing.T) {
@@ -103,7 +177,7 @@ func TestCIVisibilityTracerRouterReplacesNoopPolicyWithCIDelegate(t *testing.T) 
 }
 
 func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
-	t.Run("transfer concrete CI tracer", func(t *testing.T) {
+	t.Run("keep router without other delegates", func(t *testing.T) {
 		ciTracer := &callbackTestTracer{}
 		mockTracer := &callbackTestTracer{}
 		router := newCIVisibilityTracerRouter(ciTracer, false)
@@ -112,9 +186,9 @@ func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
 		replacement, ok := router.DetachMockTracer(mockTracer)
 
 		require.True(t, ok)
-		require.Same(t, ciTracer, replacement)
+		require.Same(t, router, replacement)
 		require.Nil(t, router.currentMockTracer())
-		require.IsType(t, &NoopTracer{}, router.ciVisibilityTracer())
+		require.Same(t, ciTracer, router.ciVisibilityTracer())
 	})
 
 	t.Run("keep router while noop policy is active", func(t *testing.T) {
@@ -270,12 +344,67 @@ func TestCIVisibilityTracerRouter_Inject(t *testing.T) {
 
 	carrier := TextMapCarrier(map[string]string{})
 
-	// Inject should return nil (no error) but not actually inject anything
+	// The trace predates routing markers, so its CI span type selects the CI
+	// tracer and preserves the existing propagation behavior.
 	injectErr := wrapped.Inject(span.Context(), carrier)
 	assert.Nil(t, injectErr)
-	assert.Empty(t, carrier)
+	assert.Equal(t, fmt.Sprint(span.traceID), carrier["x-datadog-trace-id"])
+	assert.Equal(t, fmt.Sprint(span.spanID), carrier["x-datadog-parent-id"])
 
 	span.Finish()
+}
+
+func TestCIVisibilityTracerRouter_InjectUsesTraceRoutingType(t *testing.T) {
+	ciTracer, _ := newUninstalledTestTracer(t, WithPropagator(markerPropagator("ci")), WithSpanPool(false))
+	applicationTracer, _ := newUninstalledTestTracer(t, WithPropagator(markerPropagator("application")), WithSpanPool(false))
+	mockTracer := &callbackTestTracer{}
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	t.Cleanup(func() {
+		ciTracer.Stop()
+		applicationTracer.Stop()
+	})
+
+	ciSpan := router.StartSpan("ci.test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciSpan)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	applicationSpan := router.StartSpan("application.operation")
+	require.NotNil(t, applicationSpan)
+	require.True(t, router.SetMockTracer(mockTracer))
+
+	applicationCarrier := TextMapCarrier{}
+	require.NoError(t, router.Inject(applicationSpan.Context(), applicationCarrier))
+	require.Equal(t, "application", applicationCarrier["x-test-tracer"])
+	require.Zero(t, mockTracer.injectCount.Load())
+
+	ciCarrier := TextMapCarrier{}
+	require.NoError(t, router.Inject(ciSpan.Context(), ciCarrier))
+	require.Equal(t, "ci", ciCarrier["x-test-tracer"])
+	require.Zero(t, mockTracer.injectCount.Load())
+
+	applicationSpan.Finish()
+	ciSpan.Finish()
+}
+
+func TestCIVisibilityTracerRouter_InternalMetricsUseActiveOrdinaryTracer(t *testing.T) {
+	var ciStatsd, applicationStatsd statsdtest.TestStatsdClient
+	ciTracer, _ := newUninstalledTestTracer(t, withStatsdClient(&ciStatsd), WithSpanPool(false))
+	applicationTracer, _ := newUninstalledTestTracer(t, withStatsdClient(&applicationStatsd), WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+		ciTracer.Stop()
+		applicationTracer.Stop()
+	})
+
+	reportAPIErrorsMetric(nil, errors.New("application failure"), tracesAPIPath)
+	require.Len(t, applicationStatsd.GetCallsByName("datadog.tracer.api.errors"), 1)
+	require.Empty(t, ciStatsd.GetCallsByName("datadog.tracer.api.errors"))
+
+	require.Same(t, applicationTracer, router.detachApplicationTracer())
+	reportAPIErrorsMetric(nil, errors.New("ci failure"), tracesAPIPath)
+	require.Len(t, ciStatsd.GetCallsByName("datadog.tracer.api.errors"), 1)
 }
 
 func TestCIVisibilityTracerRouter_PreservesCIVisibilityAcrossApplicationStop(t *testing.T) {
@@ -302,7 +431,7 @@ func TestCIVisibilityTracerRouter_PreservesCIVisibilityAcrossApplicationStop(t *
 	}, time.Second, 5*time.Millisecond)
 }
 
-func TestCIVisibilityTracerRouter_RestoresConcreteCITracerAfterApplicationStop(t *testing.T) {
+func TestCIVisibilityTracerRouter_RestoresRouterAfterApplicationStop(t *testing.T) {
 	ciTracer, _ := newUninstalledTestTracer(t)
 	applicationTracer := &preservingTestTracer{}
 	setGlobalTracer(ciTracer)
@@ -314,18 +443,20 @@ func TestCIVisibilityTracerRouter_RestoresConcreteCITracerAfterApplicationStop(t
 	})
 
 	setGlobalTracerPreservingCIVisibilityMockTracer(applicationTracer, false)
-	require.IsType(t, &ciVisibilityTracerRouter{}, getGlobalTracer())
+	router, ok := getGlobalTracer().(*ciVisibilityTracerRouter)
+	require.True(t, ok)
 
 	Stop()
-	require.Same(t, ciTracer, getGlobalTracer())
+	require.Same(t, router, getGlobalTracer())
+	require.Same(t, ciTracer, router.ciVisibilityTracer())
 	require.EqualValues(t, 1, applicationTracer.stopCnt.Load())
 }
 
 func TestCIVisibilityTracerRouter_RoutesApplicationAndCISpansAfterApplicationStart(t *testing.T) {
 	ciTracer, ciTransport := newUninstalledTestTracer(t)
-	ciTracerConf := ciTracer.TracerConf()
-	applicationTransport := newDummyTransport()
-	wrapped := wrapWithCIVisibilityTracerRouter(ciTracer)
+	firstApplicationTransport := newDummyTransport()
+	secondApplicationTransport := newDummyTransport()
+	wrapped := newCIVisibilityTracerRouter(ciTracer, false)
 	setGlobalTracer(wrapped)
 	civisibility.SetState(civisibility.StateInitialized)
 	t.Cleanup(func() {
@@ -336,17 +467,25 @@ func TestCIVisibilityTracerRouter_RoutesApplicationAndCISpansAfterApplicationSta
 
 	ciSpanBeforeApplicationStart := StartSpan("ci.test.before", SpanType(constants.SpanTypeTest))
 	require.NotNil(t, ciSpanBeforeApplicationStart)
+	applicationSpanBeforeApplicationStart := StartSpan("application.before")
+	require.NotNil(t, applicationSpanBeforeApplicationStart)
 
-	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+	// CI Visibility remains enabled process-wide while application tracing starts.
+	// The later Start must disable it only for the new application tracer.
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 	t.Setenv("DD_TRACE_ENABLED", "true")
 	require.NoError(t, Start(
-		withTransport(applicationTransport),
+		withTransport(firstApplicationTransport),
 		withNoopStats(),
-		WithService("application-service"),
+		WithService("first-application-service"),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
 	))
 	require.Same(t, wrapped, getGlobalTracer())
-	require.Equal(t, ciTracerConf, wrapped.TracerConf())
+	applicationTracer, ok := wrapped.currentApplicationTracer().(*tracer)
+	require.True(t, ok)
+	require.False(t, applicationTracer.config.internalConfig.CIVisibilityEnabled())
+	require.Equal(t, applicationTracer.TracerConf(), wrapped.TracerConf())
+	require.Equal(t, "first-application-service", wrapped.TracerConf().ServiceTag)
 
 	ciSpanAfterApplicationStart := StartSpan("ci.test.after", SpanType(constants.SpanTypeTest))
 	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
@@ -354,6 +493,26 @@ func TestCIVisibilityTracerRouter_RoutesApplicationAndCISpansAfterApplicationSta
 	require.NotNil(t, applicationSpan)
 
 	applicationSpan.Finish()
+	applicationSpanBeforeApplicationStart.Finish()
+	Stop()
+	require.Same(t, wrapped, getGlobalTracer())
+	require.Nil(t, wrapped.currentApplicationTracer())
+
+	applicationSpanBetweenStarts := StartSpan("application.between")
+	require.NotNil(t, applicationSpanBetweenStarts)
+	require.Equal(t, ciVisibilityTracerTypeCIApp, ciVisibilityTracerType(applicationSpanBetweenStarts.context.trace))
+
+	require.NoError(t, Start(
+		withTransport(secondApplicationTransport),
+		withNoopStats(),
+		WithService("second-application-service"),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+	))
+	require.Same(t, wrapped, getGlobalTracer())
+	secondApplicationSpan := StartSpan("application.second")
+	require.NotNil(t, secondApplicationSpan)
+	applicationSpanBetweenStarts.Finish()
+	secondApplicationSpan.Finish()
 	Stop()
 	require.Same(t, wrapped, getGlobalTracer())
 
@@ -361,8 +520,61 @@ func TestCIVisibilityTracerRouter_RoutesApplicationAndCISpansAfterApplicationSta
 	ciSpanAfterApplicationStart.Finish()
 	require.Eventually(t, func() bool {
 		Flush()
-		return ciTransport.Len() == 2 && applicationTransport.Len() == 1
+		return ciTransport.Len() == 4 && firstApplicationTransport.Len() == 1 && secondApplicationTransport.Len() == 1
 	}, time.Second, 5*time.Millisecond)
+}
+
+func TestCIVisibilityTracerRouter_ApplicationSpanUsesApplicationConfig(t *testing.T) {
+	previousState := civisibility.GetState()
+	ciTracer, _ := newUninstalledTestTracer(
+		t,
+		WithEnv("ci-env"),
+		WithServiceVersion("ci-version"),
+		WithSpanPool(false),
+	)
+	applicationTracer, _ := newUninstalledTestTracer(
+		t,
+		WithEnv("application-env"),
+		WithServiceVersion("application-version"),
+		WithSpanPool(false),
+	)
+	applicationAgentFeatures := applicationTracer.config.agent.load()
+	applicationAgentFeatures.metaStructAvailable = true
+	applicationTracer.config.agent.store(applicationAgentFeatures)
+
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		civisibility.SetState(civisibility.StateExiting)
+		setGlobalTracer(&NoopTracer{})
+		civisibility.SetState(previousState)
+	})
+
+	applicationSpan := StartSpan("application.operation")
+	require.NotNil(t, applicationSpan)
+	metaStruct := &testMsgpStruct{A: "application"}
+	require.True(t, applicationSpan.SetMetaStruct("application-meta", metaStruct))
+	require.Same(t, metaStruct, applicationSpan.metaStruct["application-meta"])
+
+	applicationSpan.mu.Lock()
+	formattedCh := make(chan string, 1)
+	go func() {
+		formattedCh <- fmt.Sprintf("%v", applicationSpan)
+	}()
+	var formatted string
+	select {
+	case formatted = <-formattedCh:
+		applicationSpan.mu.Unlock()
+	case <-time.After(time.Second):
+		applicationSpan.mu.Unlock()
+		t.Fatal("formatting an application span blocked while its span lock was held")
+	}
+	require.Contains(t, formatted, "dd.env=application-env")
+	require.Contains(t, formatted, "dd.version=application-version")
+	require.NotContains(t, formatted, "ci-env")
+	require.NotContains(t, formatted, "ci-version")
+	applicationSpan.Finish()
 }
 
 func TestCIVisibilityTracerRouter_ApplicationOptionsRunOnceWithoutDelegateLock(t *testing.T) {
@@ -429,15 +641,366 @@ func TestCIVisibilityTracerRouter_StopsDelegatesAtTheirLifecycleBoundaries(t *te
 	require.EqualValues(t, 1, ciTracer.stopCnt.Load())
 }
 
-func newUninstalledTestTracer(t testing.TB) (*tracer, *dummyTransport) {
+func newUninstalledTestTracer(t testing.TB, opts ...StartOption) (*tracer, *dummyTransport) {
 	t.Helper()
 	transport := newDummyTransport()
-	tr, err := newTracer(
+	opts = append([]StartOption{
 		withTransport(transport),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
-	)
+	}, opts...)
+	tr, err := newTracer(opts...)
 	require.NoError(t, err)
 	return tr, transport
+}
+
+func TestCIVisibilityTracerRouter_SeparatesCrossTracerParentAndUsesApplicationFinalization(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithService("ci-service"), WithSpanPool(false))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(
+		t,
+		WithService("application-service"),
+		WithStatsComputation(true),
+		WithSpanPool(false),
+	)
+	applicationAgentFeatures := applicationTracer.config.agent.load()
+	applicationAgentFeatures.Stats = true
+	applicationAgentFeatures.DropP0s = true
+	applicationTracer.config.agent.store(applicationAgentFeatures)
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	testSpan := StartSpan("test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, testSpan)
+	testSpan.SetTag(ext.ManualKeep, true)
+	testSpan.SetBaggageItem("tenant", "acme")
+	testSpan.context.errors.Store(1)
+	testSpan.context.trace.setTag("trace-tag", "preserved")
+	applicationSpan := StartSpan(
+		"http.request",
+		ChildOf(testSpan.Context()),
+		SpanType(ext.SpanTypeWeb),
+		Tag(keyMeasured, 1),
+		Tag(ext.SpanKind, ext.SpanKindClient),
+	)
+	require.NotNil(t, applicationSpan)
+
+	assert.Equal(t, testSpan.traceID, applicationSpan.traceID)
+	assert.Equal(t, testSpan.spanID, applicationSpan.parentID)
+	assert.NotSame(t, testSpan.context.trace, applicationSpan.context.trace)
+	assert.Same(t, applicationSpan, applicationSpan.context.trace.root)
+	assert.Equal(t, "ci-service", applicationSpan.service)
+	assert.Equal(t, "acme", applicationSpan.BaggageItem("tenant"))
+	assert.EqualValues(t, 1, applicationSpan.context.errors.Load())
+	priority, ok := applicationSpan.context.SamplingPriority()
+	require.True(t, ok)
+	assert.Equal(t, ext.PriorityUserKeep, priority)
+
+	applicationSpan.Finish()
+	baseService, ok := applicationSpan.meta.Get(keyBaseService)
+	require.True(t, ok)
+	assert.Equal(t, "application-service", baseService)
+	assert.NotNil(t, applicationSpan.statSpan)
+	testSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return ciTransport.Len() == 1 && applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	ciTraces := ciTransport.Traces()
+	require.Len(t, ciTraces, 1)
+	require.Len(t, ciTraces[0], 1)
+	assert.Equal(t, "test", ciTraces[0][0].name)
+	applicationTraces := applicationTransport.Traces()
+	require.Len(t, applicationTraces, 1)
+	require.Len(t, applicationTraces[0], 1)
+	assert.Equal(t, "http.request", applicationTraces[0][0].name)
+	traceTag, ok := applicationTraces[0][0].meta.Get("trace-tag")
+	require.True(t, ok)
+	assert.Equal(t, "preserved", traceTag)
+}
+
+func TestCIVisibilityTracerRouter_ApplicationTraceKeepsTracerTypeWhenMockStarts(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, applicationSpan)
+	assert.Equal(t, ciVisibilityTracerTypeApplication, ciVisibilityTracerType(applicationSpan.context.trace))
+
+	// Changing the public span.type tag must not change the tracer type selected
+	// when the trace was created.
+	applicationSpan.SetTag(ext.SpanType, constants.SpanTypeTest)
+	require.True(t, router.SetMockTracer(&callbackTestTracer{}))
+	applicationSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	assert.Zero(t, ciTransport.Len())
+	traces := applicationTransport.Traces()
+	require.Len(t, traces, 1)
+	require.Len(t, traces[0], 1)
+	tracerType, ok := traces[0][0].meta.Get(ciVisibilityTracerTypeTag)
+	require.True(t, ok)
+	assert.Equal(t, ciVisibilityTracerTypeApplication, tracerType)
+}
+
+func TestCIVisibilityTracerRouter_CIAppTraceStaysOnCITracerWhenApplicationStarts(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, applicationSpan)
+	assert.Equal(t, ciVisibilityTracerTypeCIApp, ciVisibilityTracerType(applicationSpan.context.trace))
+
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	applicationSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return ciTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	assert.Zero(t, applicationTransport.Len())
+	traces := ciTransport.Traces()
+	require.Len(t, traces, 1)
+	require.Len(t, traces[0], 1)
+	tracerType, ok := traces[0][0].meta.Get(ciVisibilityTracerTypeTag)
+	require.True(t, ok)
+	assert.Equal(t, ciVisibilityTracerTypeCIApp, tracerType)
+}
+
+func TestCIVisibilityTracerRouter_ApplicationTraceUsesCurrentApplicationTracer(t *testing.T) {
+	ciTracer, _ := newUninstalledTestTracer(t, WithSpanPool(false))
+	firstApplicationTracer, firstApplicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	secondApplicationTracer, secondApplicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(firstApplicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, applicationSpan)
+	require.True(t, router.SetApplicationTracer(secondApplicationTracer))
+	applicationSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return secondApplicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	assert.Zero(t, firstApplicationTransport.Len())
+}
+
+func TestCIVisibilityTracerRouter_TracerTypeSurvivesFinishedPooledParent(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(true))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	testSpan := StartSpan("test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, testSpan)
+	parentContext := testSpan.Context()
+	parentTrace := parentContext.trace
+	traceID := testSpan.traceID
+	parentID := testSpan.spanID
+	testSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return ciTransport.Len() == 1 && testSpan.spanTypeForRouting() == ""
+	}, time.Second, 5*time.Millisecond)
+	assert.Equal(t, ciVisibilityTracerTypeCIApp, ciVisibilityTracerType(parentTrace))
+
+	applicationSpan := StartSpan(
+		"http.request",
+		ChildOf(parentContext),
+		SpanType(ext.SpanTypeWeb),
+	)
+	require.NotNil(t, applicationSpan)
+	assert.NotSame(t, parentTrace, applicationSpan.context.trace)
+	assert.Equal(t, traceID, applicationSpan.traceID)
+	assert.Equal(t, parentID, applicationSpan.parentID)
+	assert.Equal(t, ciVisibilityTracerTypeApplication, ciVisibilityTracerType(applicationSpan.context.trace))
+	applicationSpan.Finish()
+
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+}
+
+func TestCIVisibilityTracerRouter_CompletesTraceWhenApplicationDestinationDisappears(t *testing.T) {
+	applicationTracer, applicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	ciTracer, _ := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := wrapWithCIVisibilityTracerRouter(ciTracer)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+		applicationTracer.Stop()
+	})
+
+	applicationSpan := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, applicationSpan)
+	traceState := applicationSpan.context.trace
+	require.Same(t, applicationTracer, router.detachApplicationTracer())
+
+	target := router.TracerForTrace(ciVisibilityTracerTypeApplication, ext.SpanTypeWeb)
+	assert.IsType(t, NoopTracer{}, target)
+
+	applicationSpan.Finish()
+	traceState.mu.RLock()
+	assert.Empty(t, traceState.spans)
+	assert.Zero(t, traceState.finished)
+	traceState.mu.RUnlock()
+	assert.Zero(t, applicationTransport.Len())
+}
+
+func TestCIVisibilityTracerRouter_PartialFlushUsesApplicationDestination(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(
+		t,
+		WithPartialFlushing(1),
+		WithSpanPool(false),
+	)
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	testSpan := StartSpan("test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, testSpan)
+	testSpan.SetTag(ext.ManualKeep, true)
+	applicationRoot := StartSpan(
+		"http.request",
+		ChildOf(testSpan.Context()),
+		SpanType(ext.SpanTypeWeb),
+	)
+	require.NotNil(t, applicationRoot)
+	applicationChild := StartSpan(
+		"db.query",
+		ChildOf(applicationRoot.Context()),
+		SpanType(ext.SpanTypeSQL),
+	)
+	require.NotNil(t, applicationChild)
+
+	applicationChild.Finish()
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+
+	applicationRoot.Finish()
+	testSpan.Finish()
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return applicationTransport.Len() == 2 && ciTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+
+	applicationTraces := applicationTransport.Traces()
+	require.Len(t, applicationTraces, 2)
+	applicationNames := make([]string, 0, len(applicationTraces))
+	for _, trace := range applicationTraces {
+		require.Len(t, trace, 1)
+		applicationNames = append(applicationNames, trace[0].name)
+	}
+	assert.ElementsMatch(t, []string{"db.query", "http.request"}, applicationNames)
+	ciTraces := ciTransport.Traces()
+	require.Len(t, ciTraces, 1)
+	require.Len(t, ciTraces[0], 1)
+	assert.Equal(t, "test", ciTraces[0][0].name)
+}
+
+func TestCIVisibilityTracerRouter_KeepsCrossTypeSpansTogetherWhenTheyShareCIDestination(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	testSpan := StartSpan("test", SpanType(constants.SpanTypeTest))
+	require.NotNil(t, testSpan)
+	applicationSpan := StartSpan(
+		"http.request",
+		ChildOf(testSpan.Context()),
+		SpanType(ext.SpanTypeWeb),
+	)
+	require.NotNil(t, applicationSpan)
+	assert.Same(t, testSpan.context.trace, applicationSpan.context.trace)
+
+	applicationSpan.Finish()
+	testSpan.Finish()
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return ciTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	traces := ciTransport.Traces()
+	require.Len(t, traces, 1)
+	require.Len(t, traces[0], 2)
+}
+
+func TestCIVisibilityTracerRouter_SeparatesCIChildFromApplicationTrace(t *testing.T) {
+	ciTracer, ciTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	applicationTracer, applicationTransport := newUninstalledTestTracer(t, WithSpanPool(false))
+	router := newCIVisibilityTracerRouter(ciTracer, false)
+	require.True(t, router.SetApplicationTracer(applicationTracer))
+	setGlobalTracer(router)
+	t.Cleanup(func() {
+		setGlobalTracer(&NoopTracer{})
+	})
+
+	applicationParent := StartSpan("http.request", SpanType(ext.SpanTypeWeb))
+	require.NotNil(t, applicationParent)
+	applicationParent.SetBaggageItem("tenant", "test")
+	applicationChild := StartSpan("db.query", ChildOf(applicationParent.Context()), SpanType(ext.SpanTypeSQL))
+	require.NotNil(t, applicationChild)
+	ciChild := StartSpan("test", ChildOf(applicationParent.Context()), SpanType(constants.SpanTypeTest))
+	require.NotNil(t, ciChild)
+
+	assert.Same(t, applicationParent.context.trace, applicationChild.context.trace)
+	assert.NotSame(t, applicationParent.context.trace, ciChild.context.trace)
+	assert.Same(t, ciChild, ciChild.context.trace.root)
+	assert.Equal(t, applicationParent.traceID, ciChild.traceID)
+	assert.Equal(t, applicationParent.spanID, ciChild.parentID)
+	assert.Equal(t, "test", ciChild.BaggageItem("tenant"))
+
+	applicationChild.Finish()
+	applicationParent.Finish()
+	ciChild.Finish()
+	require.Eventually(t, func() bool {
+		router.Flush()
+		return ciTransport.Len() == 1 && applicationTransport.Len() == 1
+	}, time.Second, 5*time.Millisecond)
+	ciTraces := ciTransport.Traces()
+	require.Len(t, ciTraces, 1)
+	require.Len(t, ciTraces[0], 1)
+	assert.Equal(t, "test", ciTraces[0][0].name)
+	applicationTraces := applicationTransport.Traces()
+	require.Len(t, applicationTraces, 1)
+	require.Len(t, applicationTraces[0], 2)
 }
 
 func TestUseConfigNil(t *testing.T) {

@@ -253,6 +253,7 @@ func Start(opts ...StartOption) error {
 
 	defer reportInitTime(time.Now())
 
+	opts = startOptionsForCIVisibilityLifecycle(opts)
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err

@@ -189,8 +189,9 @@ func TestInstallGlobalTracerWithCIVisibilityRouterFallsBackWhenPreserverRejects(
 
 	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
 
-	if got := getGlobalTracer(); got != real {
-		t.Fatalf("global tracer = %T, want concrete CI Visibility tracer %T", got, real)
+	router, ok := getGlobalTracer().(*ciVisibilityTracerRouter)
+	if !ok || router.ciVisibilityTracer() != real {
+		t.Fatalf("global tracer = %T, want CI Visibility router around %T", getGlobalTracer(), real)
 	}
 	if current.setCalls != 1 {
 		t.Fatalf("SetCIVisibilityTracer calls = %d, want 1", current.setCalls)
@@ -207,7 +208,7 @@ func TestInstallGlobalTracerWithCIVisibilityRouterFallsBackWhenPreserverRejects(
 	}
 }
 
-func TestInstallGlobalTracerWithCIVisibilityRouterKeepsConcreteTracerWithoutCoexistence(t *testing.T) {
+func TestInstallGlobalTracerWithCIVisibilityRouterInstallsRouterBeforeCoexistence(t *testing.T) {
 	previousState := civisibility.GetState()
 	civisibility.SetState(civisibility.StateInitializing)
 	t.Cleanup(func() {
@@ -220,7 +221,9 @@ func TestInstallGlobalTracerWithCIVisibilityRouterKeepsConcreteTracerWithoutCoex
 	setGlobalTracer(&NoopTracer{})
 	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
 
-	require.Same(t, real, getGlobalTracer())
+	router, ok := getGlobalTracer().(*ciVisibilityTracerRouter)
+	require.True(t, ok)
+	require.Same(t, real, router.ciVisibilityTracer())
 }
 
 func TestInstallGlobalTracerWithCIVisibilityRouterCreatesRouterForApplicationCoexistence(t *testing.T) {

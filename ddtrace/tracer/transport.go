@@ -257,12 +257,10 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
 		droppedSpans := int(tracerstats.Count(tracerstats.AgentDroppedP0Spans))
-		if tt, ok := t.(*tracer); ok {
-			if stats := tt.statsd; stats != nil {
-				stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
-					[]string{"partial:" + strconv.FormatBool(partialTraces > 0)}, 1)
-				stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
-			}
+		if stats := statsdClientForTracer(t); stats != nil {
+			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+				[]string{"partial:" + strconv.FormatBool(partialTraces > 0)}, 1)
+			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
 		}
 		req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
 		req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
@@ -384,19 +382,19 @@ func isTransientConnError(err error) bool {
 }
 
 func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) {
-	if t, ok := getGlobalTracer().(*tracer); ok {
-		var reason string
-		if err != nil {
-			reason = "network_failure"
-		}
-		if response != nil {
-			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
-		}
-		tags := []string{"reason:" + reason, "endpoint:" + endpoint}
-		t.statsd.Incr("datadog.tracer.api.errors", tags, 1)
-	} else {
+	stats := statsdClientForTracer(getGlobalTracer())
+	if stats == nil {
 		return
 	}
+	var reason string
+	if err != nil {
+		reason = "network_failure"
+	}
+	if response != nil {
+		reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+	}
+	tags := []string{"reason:" + reason, "endpoint:" + endpoint}
+	stats.Incr("datadog.tracer.api.errors", tags, 1)
 }
 
 func (t *httpTransport) endpoint(protocol float64) string {
