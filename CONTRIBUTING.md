@@ -37,7 +37,7 @@ Examples:
 - `fix(ddtrace/tracer): resolve memory leak in span processor`
 
 
-All new code is expected to be covered by tests.
+All new code is expected to be covered by tests. A regression test for a bug fix should fail against the pre-fix code.
 
 ## Continuous Integration on Pull Requests
 
@@ -376,6 +376,10 @@ When possible, prioritize creating or using internal implementations for repetit
 2. Locking: [internal/locking](./internal/locking) instead of `sync.mutex`.
 3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
 4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
+
+### Concurrency and shared state
+
+Any change that touches shared mutable state, adds or modifies a `sync.Once`-guarded teardown path, or calls into user-supplied callbacks (samplers, hooks, options) while holding a lock must include a test exercising the concurrent path under `-race`. When auditing a `sync.Once`-guarded shutdown, check every piece of shared state touched during teardown, not just the first step — a partial guard is a common source of races. Use the `checklocks` tool (see [Lock Analysis](#static-checks-workflow) above and `./scripts/checklocks.sh`) to catch these before review.
 
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
