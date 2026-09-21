@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/miekg/dns v1.1.62
 	github.com/stretchr/testify v1.11.1
@@ -91,3 +91,5 @@ replace github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 => ../../.
 replace github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 => ../../../contrib/miekg/dns
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

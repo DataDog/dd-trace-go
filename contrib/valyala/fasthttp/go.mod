@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fasthttp v1.70.0
 )
@@ -86,3 +86,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

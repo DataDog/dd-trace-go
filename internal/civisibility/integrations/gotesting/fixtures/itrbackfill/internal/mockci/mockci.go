@@ -301,7 +301,7 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 				Suite                   string `json:"suite"`
 				Name                    string `json:"name"`
 				Parameters              string `json:"parameters,omitempty"`
-				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
+				MissingLineCodeCoverage bool   `json:"_is_missing_line_code_coverage,omitempty"`
 			} `json:"attributes"`
 		} `json:"data"`
 	}{}
@@ -320,7 +320,7 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 				Suite                   string `json:"suite"`
 				Name                    string `json:"name"`
 				Parameters              string `json:"parameters,omitempty"`
-				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
+				MissingLineCodeCoverage bool   `json:"_is_missing_line_code_coverage,omitempty"`
 			} `json:"attributes"`
 		}{ID: test.Name, Type: "test"}
 		item.Attributes.Suite = test.Suite

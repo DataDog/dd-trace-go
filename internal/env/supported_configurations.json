@@ -46,7 +46,7 @@
     "DD_APIM_CALLOUT_TLS": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
@@ -305,9 +305,9 @@
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
-        "default": "true"
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
@@ -497,6 +497,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS": [
+      {
+        "implementation": "B",
+        "type": "int",
+        "default": "10000"
       }
     ],
     "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
@@ -727,7 +734,7 @@
     "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
@@ -1295,6 +1302,13 @@
         "implementation": "A",
         "type": "string",
         "default": ""
+      }
+    ],
+    "DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [

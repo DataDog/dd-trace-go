@@ -115,13 +115,15 @@ func (s *agentlessSource) start() {
 	go s.run()
 }
 
-// Stop signals the poll loop to exit and waits for it to finish, or for ctx
-// to expire.
-func (s *agentlessSource) Stop(ctx context.Context) {
+// Stop signals the poll loop to exit and waits for it to finish. It returns
+// ctx.Err() if ctx expires first, leaving the loop still draining.
+func (s *agentlessSource) Stop(ctx context.Context) error {
 	s.stopOnce.Do(func() { close(s.stopCh) })
 	select {
 	case <-s.doneCh:
+		return nil
 	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
