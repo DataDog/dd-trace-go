@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v5"
 
@@ -30,14 +31,14 @@ import (
 func Enabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started
+	return activeAppSec != nil && activeAppSec.started.Load()
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
+	return activeAppSec != nil && activeAppSec.started.Load() && activeAppSec.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -160,7 +161,9 @@ type appsec struct {
 	cfg        *config.Config
 	features   []listener.Feature
 	featuresMu sync.Mutex
-	started    bool
+	// started is read by Enabled/RASPEnabled (under mu) and written by start()/stop(), which the
+	// remote-config client invokes from its own goroutine without holding mu; it must be atomic.
+	started atomic.Bool
 }
 
 func newAppSec(cfg *config.Config) *appsec {
@@ -192,7 +195,7 @@ func (a *appsec) start() error {
 	a.enableRASP()
 
 	status.MarkEnabled()
-	a.started = true
+	a.started.Store(true)
 	log.Info("appsec: up and running")
 
 	// TODO: log the config like the APM tracer does but we first need to define
@@ -203,11 +206,11 @@ func (a *appsec) start() error {
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
-	if !a.started {
+	if !a.started.Load() {
 		return
 	}
 
-	a.started = false
+	a.started.Store(false)
 	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()

@@ -17,7 +17,94 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
+
+type evaluatorTestProvider struct {
+	of.NoopProvider
+	evaluations chan of.FlattenedContext
+}
+
+func (evaluatorTestProvider) Metadata() of.Metadata {
+	return of.Metadata{Name: datadogProviderName}
+}
+
+func (provider evaluatorTestProvider) ObjectEvaluation(_ context.Context, _ string, _ any, evaluationContext of.FlattenedContext) of.InterfaceResolutionDetail {
+	provider.evaluations <- evaluationContext
+	return of.InterfaceResolutionDetail{Value: map[string]any{"value": "ok"}}
+}
+
+type waitingEvaluatorTestProvider struct {
+	evaluatorTestProvider
+	started chan<- struct{}
+	ready   <-chan struct{}
+}
+
+func (provider waitingEvaluatorTestProvider) Init(of.EvaluationContext) error {
+	close(provider.started)
+	<-provider.ready
+	return nil
+}
+
+func (waitingEvaluatorTestProvider) Shutdown() {}
+
+func TestRegisteredEvaluatorUsesDefaultDatadogProvider(t *testing.T) {
+	of.Shutdown()
+	provider := evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)}
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := evaluate(context.Background(), "flag", "alice", map[string]any{"tier": "gold"})
+	if err != nil || value.(map[string]any)["value"] != "ok" {
+		t.Fatalf("value=%#v err=%v", value, err)
+	}
+	evaluationContext := <-provider.evaluations
+	if evaluationContext[of.TargetingKey] != "alice" || evaluationContext["tier"] != "gold" {
+		t.Fatalf("evaluation context=%#v", evaluationContext)
+	}
+}
+
+func TestRegisteredEvaluatorWaitsForProvider(t *testing.T) {
+	of.Shutdown()
+	started := make(chan struct{})
+	ready := make(chan struct{})
+	provider := waitingEvaluatorTestProvider{
+		evaluatorTestProvider: evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)},
+		started:               started,
+		ready:                 ready,
+	}
+	if err := of.SetProvider(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+	<-started
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := evaluate(canceled, "flag", "alice", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error=%v, want context canceled", err)
+	}
+	select {
+	case <-provider.evaluations:
+		t.Fatal("flag evaluated before provider was ready")
+	default:
+	}
+	close(ready)
+	if _, err := evaluate(context.Background(), "flag", "alice", nil); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestEvaluateShard(t *testing.T) {
 	t.Run("targeting key hashes to correct shard", func(t *testing.T) {
