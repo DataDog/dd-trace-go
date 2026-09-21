@@ -208,6 +208,10 @@ type ContextMetrics struct {
 	// This map is built statically when ContextMetrics is created and readonly after that.
 	SumDurations map[addresses.Scope]map[timer.Key]*atomic.Int64
 
+	// milestonesMu guards Milestones, which is written by concurrent WAF-scope runs
+	// (go-libddwaf permits concurrent Context.Run via subcontexts/downstream requests)
+	// and read/written by Submit at the end of the context lifecycle.
+	milestonesMu sync.Mutex
 	// Milestones are the tags of the metric `waf.requests` that will be submitted at the end of the waf context
 	Milestones RequestMilestones
 
@@ -271,7 +275,9 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 	}
 
 	if !truncations.IsEmpty() {
+		m.milestonesMu.Lock()
 		m.Milestones.inputTruncated = true
+		m.milestonesMu.Unlock()
 	}
 
 	m.incWafRequestsCounts()
@@ -279,14 +285,17 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 
 // incWafRequestsCounts increments the `waf.requests` metric with the current milestones and creates a new metric handle if it does not exist
 func (m *ContextMetrics) incWafRequestsCounts() {
-	handle, _ := m.wafRequestsCounts.LoadOrCompute(m.Milestones, func() (telemetry.MetricHandle, bool) {
+	m.milestonesMu.Lock()
+	milestones := m.Milestones
+	m.milestonesMu.Unlock()
+	handle, _ := m.wafRequestsCounts.LoadOrCompute(milestones, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", append([]string{
-			"request_blocked:" + strconv.FormatBool(m.Milestones.requestBlocked),
-			"rule_triggered:" + strconv.FormatBool(m.Milestones.ruleTriggered),
-			"waf_timeout:" + strconv.FormatBool(m.Milestones.wafTimeout),
-			"rate_limited:" + strconv.FormatBool(m.Milestones.rateLimited),
-			"waf_error:" + strconv.FormatBool(m.Milestones.wafError),
-			"input_truncated:" + strconv.FormatBool(m.Milestones.inputTruncated),
+			"request_blocked:" + strconv.FormatBool(milestones.requestBlocked),
+			"rule_triggered:" + strconv.FormatBool(milestones.ruleTriggered),
+			"waf_timeout:" + strconv.FormatBool(milestones.wafTimeout),
+			"rate_limited:" + strconv.FormatBool(milestones.rateLimited),
+			"waf_error:" + strconv.FormatBool(milestones.wafError),
+			"input_truncated:" + strconv.FormatBool(milestones.inputTruncated),
 		}, m.baseTags...)), false
 	})
 
@@ -335,6 +344,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 			m.SumRASPTimeouts[ruleType].Add(1)
 		}
 	case addresses.WAFScope, "":
+		m.milestonesMu.Lock()
 		if tags.requestBlocked {
 			m.Milestones.requestBlocked = true
 		}
@@ -343,13 +353,16 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 		}
 		if tags.wafTimeout {
 			m.Milestones.wafTimeout = true
-			m.SumWAFTimeouts.Add(1)
 		}
 		if tags.rateLimited {
 			m.Milestones.rateLimited = true
 		}
 		if tags.wafError {
 			m.Milestones.wafError = true
+		}
+		m.milestonesMu.Unlock()
+		if tags.wafTimeout {
+			m.SumWAFTimeouts.Add(1)
 		}
 	default:
 		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.TimerKey)))
