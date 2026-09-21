@@ -540,6 +540,31 @@ func TestCIVisibilityMockTracer_WrapsAlreadyStartedCIVisibilityTracer(t *testing
 	}
 }
 
+func TestCIVisibilityMockTracer_PreservesLegacyFinishContract(t *testing.T) {
+	for _, useNoop := range []bool{false, true} {
+		t.Run(boolString(useNoop), func(t *testing.T) {
+			setupCIVisibilityMockTracerIntegrationTest(t, useNoop)
+
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+			civisibility.SetState(civisibility.StateInitialized)
+
+			mt := Start()
+			t.Cleanup(mt.Stop)
+			span := tracer.StartSpan("legacy.application")
+			require.NotNil(t, span)
+
+			require.NotPanics(t, func() {
+				global := getGlobalTracer().(Tracer)
+				global.FinishSpan(span)
+				span.Finish()
+			})
+			require.Len(t, mt.FinishedSpans(), 1)
+		})
+	}
+}
+
 func TestCIVisibilityMockTracer_StoppingStaleMockKeepsActiveMock(t *testing.T) {
 	for _, useNoop := range []bool{false, true} {
 		t.Run(boolString(useNoop), func(t *testing.T) {
