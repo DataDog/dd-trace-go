@@ -108,7 +108,7 @@ func TestAppendMiddleware(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -186,7 +186,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -264,7 +264,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -415,7 +415,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/MyBucketName", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -524,7 +524,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -623,7 +623,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -711,7 +711,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -804,7 +804,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1096,7 +1096,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server.URL+"/", s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1201,6 +1201,18 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 	_, err := sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
 	assert.NoError(t, err)
 
+}
+
+// assertHTTPURL compares the http.url span tag against want, ignoring a trailing
+// slash. The AWS SDK's exact path serialization is an internal detail that shifts
+// across releases -- smithy-go v1.28.2 made JoinPath preserve a trailing slash,
+// which turned the S3 ListObjects path from "/Bucket" into "/Bucket/" -- so these
+// tests assert the URL the tracer reports without coupling to that detail.
+func assertHTTPURL(t *testing.T, want string, span *mocktracer.Span) {
+	t.Helper()
+	got, ok := span.Tag(ext.HTTPURL).(string)
+	require.True(t, ok, "http.url tag missing or not a string")
+	assert.Equal(t, strings.TrimSuffix(want, "/"), strings.TrimSuffix(got, "/"))
 }
 
 func mockAWS(statusCode int) *httptest.Server {
@@ -1339,7 +1351,7 @@ func TestHTTPCredentials(t *testing.T) {
 	spans := mt.FinishedSpans()
 
 	s := spans[0]
-	assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+	assertHTTPURL(t, server.URL+"/", s)
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "mypassword")
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "myuser")
 	// Make sure we haven't modified the outgoing request, and the server still
