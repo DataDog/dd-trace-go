@@ -126,10 +126,8 @@ func (t *ciVisibilityTracerRouter) tracerStatsdClient() globalinternal.StatsdCli
 		target = t.Tracer
 	}
 	t.delegatesMu.RUnlock()
-	if provider, ok := target.(tracerStatsdClientProvider); ok {
-		return provider.tracerStatsdClient()
-	}
-	return nil
+	// Delegate calls stay outside delegatesMu so they can re-enter the router.
+	return statsdClientForTracer(target)
 }
 
 func statsdClientForTracer(t Tracer) globalinternal.StatsdClient {
@@ -140,8 +138,14 @@ func statsdClientForTracer(t Tracer) globalinternal.StatsdClient {
 }
 
 // concreteTracerForTrace returns the current concrete tracer for the routing
-// type recorded on the local trace. Tracers without CI Visibility routing
-// continue to use the process-global tracer without reading trace metadata.
+// type recorded on the local trace. The caller must not hold localTrace.mu:
+// this helper takes and releases its read lock to read the routing marker.
+// It never locks the span, so Span.finish can call it while holding span.mu.
+//
+// Keep it separate from concreteTracerForLockedTrace: re-locking a trace already
+// locked by the caller can deadlock, while skipping the lock here would race.
+// Tracers without CI Visibility routing use the process-global tracer without
+// reading trace metadata or acquiring either metadata lock.
 func concreteTracerForTrace(globalTracer Tracer, localTrace *trace, fallbackSpanType string) Tracer {
 	router, ok := globalTracer.(ciVisibilityTraceRouter)
 	if !ok {
@@ -152,7 +156,8 @@ func concreteTracerForTrace(globalTracer Tracer, localTrace *trace, fallbackSpan
 
 // concreteTracerForSpanContext routes without reading mutable span fields.
 // Format can run while finish holds the span lock, so it must not fall back to
-// reading the span type and re-enter that lock.
+// reading the span type and re-enter that lock. Like concreteTracerForTrace,
+// it requires the caller not to hold context.trace.mu.
 func concreteTracerForSpanContext(globalTracer Tracer, context *SpanContext) Tracer {
 	if context == nil {
 		return globalTracer
@@ -161,8 +166,12 @@ func concreteTracerForSpanContext(globalTracer Tracer, context *SpanContext) Tra
 }
 
 // concreteTracerForLockedTrace resolves routing while the caller already owns
-// localTrace.mu. Tracers without CI Visibility routing return before reading
-// trace metadata, preserving the normal finish hot path.
+// localTrace.mu. It neither acquires nor releases that lock and never locks a
+// span. trace.finishedOneLocked calls it with span.mu then trace.mu held, passing
+// the span type read under span.mu; calling concreteTracerForTrace there would
+// try to re-lock trace.mu and deadlock.
+// Tracers without CI Visibility routing return before reading trace metadata,
+// preserving the normal finish hot path.
 func concreteTracerForLockedTrace(globalTracer Tracer, localTrace *trace, fallbackSpanType string) Tracer {
 	router, ok := globalTracer.(ciVisibilityTraceRouter)
 	if !ok {
@@ -177,7 +186,9 @@ func concreteTracerForLockedTrace(globalTracer Tracer, localTrace *trace, fallba
 
 // concreteTracerForSpan avoids reading span or trace metadata unless CI
 // Visibility routing is active. This keeps the normal tracer hot path
-// unchanged.
+// unchanged. The caller must hold neither span.mu nor span.context.trace.mu.
+// With CI routing active, each metadata read takes and releases its own read
+// lock; neither is held by this helper when it asks the router for a delegate.
 func concreteTracerForSpan(globalTracer Tracer, span *Span) Tracer {
 	router, ok := globalTracer.(ciVisibilityTraceRouter)
 	if !ok || span == nil {
