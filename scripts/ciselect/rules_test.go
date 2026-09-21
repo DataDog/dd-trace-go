@@ -205,6 +205,14 @@ var classifyCases = []classifyCase{
 		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
+		// The public otelc/ package mirrors orchestrion/: it holds real
+		// root-module code, so it keeps unit tests as well as the otelc gate.
+		name:    "the public otelc package keeps both gates",
+		files:   []string{"otelc/all/otel.instrumentation.go"},
+		want:    []string{"pull-request-tests", "otelc", "static-lint"},
+		notWant: []string{"system-tests", "orchestrion", "parametric-tests"},
+	},
+	{
 		name:    "an unknown root-level file runs everything",
 		files:   []string{"BRAND_NEW_THING"},
 		wantAll: true,
