@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -348,8 +349,8 @@ func TestCIVisibilityTracerRouter_Inject(t *testing.T) {
 	// tracer and preserves the existing propagation behavior.
 	injectErr := wrapped.Inject(span.Context(), carrier)
 	assert.Nil(t, injectErr)
-	assert.Equal(t, fmt.Sprint(span.traceID), carrier["x-datadog-trace-id"])
-	assert.Equal(t, fmt.Sprint(span.spanID), carrier["x-datadog-parent-id"])
+	assert.Equal(t, strconv.FormatUint(span.traceID, 10), carrier["x-datadog-trace-id"])
+	assert.Equal(t, strconv.FormatUint(span.spanID, 10), carrier["x-datadog-parent-id"])
 
 	span.Finish()
 }
