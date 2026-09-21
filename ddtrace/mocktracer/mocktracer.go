@@ -61,15 +61,7 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	if ciVisibilityActiveForMockTracer() && !civisibility.IsTestMode() {
-		// If CI Visibility is enabled (and we are not in a CI Visibility testing
-		// mode), register the mock as a temporary ordinary-span override. When
-		// CI Visibility has not started yet, the handle stays global until the CI
-		// router adopts it.
-		t := newCIVisibilityMockTracer()
-		if t.currentRouter() == nil {
-			internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
-		}
-		return t
+		return startCIVisibilityMockTracer()
 	}
 
 	var t tracer.Tracer = newMockTracer()

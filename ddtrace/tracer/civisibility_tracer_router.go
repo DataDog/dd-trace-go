@@ -318,6 +318,7 @@ func (t *ciVisibilityTracerRouter) SetMockTracer(mockTracer Tracer) bool {
 }
 
 // ClearMockTracer removes mockTracer only if it is still the active override.
+// The router remains process-global throughout the active CI Visibility lifecycle.
 func (t *ciVisibilityTracerRouter) ClearMockTracer(mockTracer Tracer) bool {
 	t.delegatesMu.Lock()
 	defer t.delegatesMu.Unlock()
@@ -326,19 +327,6 @@ func (t *ciVisibilityTracerRouter) ClearMockTracer(mockTracer Tracer) bool {
 	}
 	t.mockTracer = nil
 	return true
-}
-
-// DetachMockTracer removes mockTracer and keeps the router process-global. The
-// router must remain installed for the entire active CI Visibility lifecycle so
-// traces created between delegate changes retain their routing type.
-func (t *ciVisibilityTracerRouter) DetachMockTracer(mockTracer Tracer) (Tracer, bool) {
-	t.delegatesMu.Lock()
-	defer t.delegatesMu.Unlock()
-	if t.mockTracer != mockTracer {
-		return nil, false
-	}
-	t.mockTracer = nil
-	return t, true
 }
 
 func (t *ciVisibilityTracerRouter) detachApplicationTracer() Tracer {

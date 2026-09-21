@@ -147,7 +147,17 @@ func concreteTracerForTrace(globalTracer Tracer, localTrace *trace, fallbackSpan
 	if !ok {
 		return globalTracer
 	}
-	return concreteTracerForType(router, ciVisibilityTracerType(localTrace), fallbackSpanType)
+	return router.TracerForTrace(ciVisibilityTracerType(localTrace), fallbackSpanType)
+}
+
+// concreteTracerForSpanContext routes without reading mutable span fields.
+// Format can run while finish holds the span lock, so it must not fall back to
+// reading the span type and re-enter that lock.
+func concreteTracerForSpanContext(globalTracer Tracer, context *SpanContext) Tracer {
+	if context == nil {
+		return globalTracer
+	}
+	return concreteTracerForTrace(globalTracer, context.trace, "")
 }
 
 // concreteTracerForLockedTrace resolves routing while the caller already owns
@@ -162,7 +172,7 @@ func concreteTracerForLockedTrace(globalTracer Tracer, localTrace *trace, fallba
 	if localTrace != nil {
 		tracerType = localTrace.tags[ciVisibilityTracerTypeTag] // +checklocksignore — Caller holds localTrace.mu; checklocks does not propagate locks across this helper.
 	}
-	return concreteTracerForType(router, tracerType, fallbackSpanType)
+	return router.TracerForTrace(tracerType, fallbackSpanType)
 }
 
 // concreteTracerForSpan avoids reading span or trace metadata unless CI
@@ -177,9 +187,16 @@ func concreteTracerForSpan(globalTracer Tracer, span *Span) Tracer {
 	if span.context != nil {
 		localTrace = span.context.trace
 	}
-	return concreteTracerForType(router, ciVisibilityTracerType(localTrace), span.spanTypeForRouting())
+	return router.TracerForTrace(ciVisibilityTracerType(localTrace), span.spanTypeForRouting())
 }
 
-func concreteTracerForType(router ciVisibilityTraceRouter, tracerType, fallbackSpanType string) Tracer {
-	return router.TracerForTrace(tracerType, fallbackSpanType)
+// spanTypeForRouting returns the current span type for selecting a concrete
+// tracer when the caller does not already hold s.mu.
+func (s *Span) spanTypeForRouting() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.spanType
 }

@@ -1055,17 +1055,6 @@ func (s *Span) serializeFFEEvaluations() {
 	}
 }
 
-// spanTypeForRouting returns the current span type for selecting a concrete
-// tracer when the caller does not already hold s.mu.
-func (s *Span) spanTypeForRouting() string {
-	if s == nil {
-		return ""
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.spanType
-}
-
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -1323,13 +1312,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		tr := getGlobalTracer()
-		if s.context != nil {
-			// Format can run while finish holds the span lock. Route from the
-			// trace marker without reading span metadata and re-entering that lock.
-			tr = concreteTracerForTrace(tr, s.context.trace, "")
-		}
-		if tr != nil {
+		if tr := concreteTracerForSpanContext(getGlobalTracer(), s.context); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)

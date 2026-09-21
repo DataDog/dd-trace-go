@@ -118,23 +118,27 @@ func TestSpanTypeForRoutingConcurrentWithSetTag(t *testing.T) {
 	assert.Equal(t, constants.SpanTypeTest, span.spanTypeForRouting())
 }
 
-func TestConcreteTracerForSpanDoesNotReadMetadataWithoutCIRouter(t *testing.T) {
+func TestConcreteTracerResolversDoNotReadMetadataWithoutCIRouter(t *testing.T) {
 	globalTracer := &callbackTestTracer{}
 	localTrace := newTrace()
 	span := &Span{context: &SpanContext{trace: localTrace}}
 	span.mu.Lock()
 	localTrace.mu.Lock()
 
-	done := make(chan Tracer, 1)
+	done := make(chan [2]Tracer, 1)
 	go func() {
-		done <- concreteTracerForSpan(globalTracer, span)
+		done <- [2]Tracer{
+			concreteTracerForSpan(globalTracer, span),
+			concreteTracerForSpanContext(globalTracer, span.context),
+		}
 	}()
 
 	select {
 	case got := <-done:
 		localTrace.mu.Unlock()
 		span.mu.Unlock()
-		assert.Same(t, globalTracer, got)
+		assert.Same(t, globalTracer, got[0])
+		assert.Same(t, globalTracer, got[1])
 	case <-time.After(time.Second):
 		localTrace.mu.Unlock()
 		span.mu.Unlock()
@@ -177,19 +181,17 @@ func TestCIVisibilityTracerRouterReplacesNoopPolicyWithCIDelegate(t *testing.T) 
 	require.EqualValues(t, 1, first.startCount.Load())
 }
 
-func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
+func TestCIVisibilityTracerRouterClearMockTracer(t *testing.T) {
 	t.Run("keep router without other delegates", func(t *testing.T) {
 		ciTracer := &callbackTestTracer{}
 		mockTracer := &callbackTestTracer{}
 		router := newCIVisibilityTracerRouter(ciTracer, false)
 		require.True(t, router.SetMockTracer(mockTracer))
 
-		replacement, ok := router.DetachMockTracer(mockTracer)
-
-		require.True(t, ok)
-		require.Same(t, router, replacement)
+		require.True(t, router.ClearMockTracer(mockTracer))
 		require.Nil(t, router.currentMockTracer())
 		require.Same(t, ciTracer, router.ciVisibilityTracer())
+		require.False(t, router.ClearMockTracer(mockTracer))
 	})
 
 	t.Run("keep router while noop policy is active", func(t *testing.T) {
@@ -197,10 +199,10 @@ func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
 		router := newCIVisibilityTracerRouter(&callbackTestTracer{}, true)
 		require.True(t, router.SetMockTracer(mockTracer))
 
-		replacement, ok := router.DetachMockTracer(mockTracer)
-
-		require.True(t, ok)
-		require.Same(t, router, replacement)
+		require.True(t, router.ClearMockTracer(mockTracer))
+		require.Nil(t, router.currentMockTracer())
+		require.Nil(t, router.StartSpan("application.operation"))
+		require.NotNil(t, router.StartSpan("ci.test", SpanType(constants.SpanTypeTest)))
 	})
 
 	t.Run("reject stale mock", func(t *testing.T) {
@@ -208,10 +210,7 @@ func TestCIVisibilityTracerRouterDetachMockTracer(t *testing.T) {
 		router := newCIVisibilityTracerRouter(&callbackTestTracer{}, false)
 		require.True(t, router.SetMockTracer(activeMock))
 
-		replacement, ok := router.DetachMockTracer(&callbackTestTracer{})
-
-		require.False(t, ok)
-		require.Nil(t, replacement)
+		require.False(t, router.ClearMockTracer(&callbackTestTracer{}))
 		require.Same(t, activeMock, router.currentMockTracer())
 	})
 }

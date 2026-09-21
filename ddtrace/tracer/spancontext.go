@@ -1028,7 +1028,8 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 	tr := concreteTracerForLockedTrace(getGlobalTracer(), t, s.spanType)
 	if tr == nil {
-		tr = NoopTracer{}
+		t.mu.Unlock()
+		return
 	}
 	tc := tr.TracerConf()
 	setPeerService(s, tc)

@@ -168,7 +168,6 @@ func (t *countingTracer) Flush() { t.flushCount.Add(1) }
 // covered by the tracer package's tests.
 type ciVisibilityRouterAdapter struct {
 	tracer.Tracer
-	detached            tracer.Tracer
 	rejectMock          bool
 	setMockCount        atomic.Int32
 	clearMockCount      atomic.Int32
@@ -184,12 +183,6 @@ func (t *ciVisibilityRouterAdapter) SetMockTracer(tracer.Tracer) bool {
 func (t *ciVisibilityRouterAdapter) ClearMockTracer(tracer.Tracer) bool {
 	t.clearMockCount.Add(1)
 	return true
-}
-func (t *ciVisibilityRouterAdapter) DetachMockTracer(tracer.Tracer) (tracer.Tracer, bool) {
-	if t.detached != nil {
-		return t.detached, true
-	}
-	return t, true
 }
 func (t *ciVisibilityRouterAdapter) SetApplicationTracer(tracer.Tracer) bool {
 	t.setApplicationCount.Add(1)
@@ -220,7 +213,6 @@ func (nilSpanTracer) Flush()                                                   {
 func (nilSpanTracer) Stop()                                                    {}
 func (nilSpanTracer) SetMockTracer(tracer.Tracer) bool                         { return true }
 func (nilSpanTracer) ClearMockTracer(tracer.Tracer) bool                       { return true }
-func (t nilSpanTracer) DetachMockTracer(tracer.Tracer) (tracer.Tracer, bool)   { return t, true }
 func (nilSpanTracer) SetApplicationTracer(tracer.Tracer) bool                  { return true }
 func (nilSpanTracer) TracerForTrace(string, string) tracer.Tracer              { return nil }
 
@@ -549,6 +541,38 @@ func TestCIVisibilityMockTracer_WrapsAlreadyStartedCIVisibilityTracer(t *testing
 	}
 }
 
+func TestCIVisibilityMockTracer_StoppingStaleMockKeepsActiveMock(t *testing.T) {
+	for _, useNoop := range []bool{false, true} {
+		t.Run(boolString(useNoop), func(t *testing.T) {
+			server := setupCIVisibilityMockTracerIntegrationTest(t, useNoop)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+			civisibility.SetState(civisibility.StateInitialized)
+			router := getGlobalTracer()
+
+			first := Start()
+			t.Cleanup(first.Stop)
+			second := Start()
+			t.Cleanup(second.Stop)
+			first.Stop()
+			first.Stop()
+
+			require.Same(t, router, getGlobalTracer())
+			span := tracer.StartSpan("application.active-mock")
+			require.NotNil(t, span)
+			span.Finish()
+			require.Empty(t, first.FinishedSpans())
+			require.Len(t, second.FinishedSpans(), 1)
+
+			ciSpan := tracer.StartSpan("ci.after.stale-mock.stop", tracer.SpanType(constants.SpanTypeTest))
+			require.NotNil(t, ciSpan)
+			ciSpan.Finish()
+			require.Len(t, second.FinishedSpans(), 1)
+			requireTestCycleRequest(t, server)
+		})
+	}
+}
+
 func TestCIVisibilityMockTracer_RoutesSpansStartedBeforeMockTracerToCITracer(t *testing.T) {
 	server := setupCIVisibilityMockTracerIntegrationTest(t, false)
 
@@ -808,15 +832,12 @@ func TestCIVisibilityMockTracer_GlobalStopStopsRealTracerDelegate(t *testing.T) 
 	assert.Nil(t, cmt.StartSpan("ci.after.stop", tracer.SpanType(constants.SpanTypeTest)))
 }
 
-func TestCIVisibilityMockTracer_StopStopsTransferredCITracerAfterCIExit(t *testing.T) {
+func TestCIVisibilityMockTracer_StopStopsCIRouterAfterCIExit(t *testing.T) {
 	resetCIVisibilityMockTracerTestState(t)
 	civisibility.SetState(civisibility.StateExiting)
 
 	ciTracer := &countingTracer{}
-	router := &ciVisibilityRouterAdapter{
-		Tracer:   &countingTracer{},
-		detached: ciTracer,
-	}
+	router := &ciVisibilityRouterAdapter{Tracer: ciTracer}
 	cmt := &civisibilitymocktracer{
 		mock:   newMockTracer(),
 		router: router,
@@ -876,10 +897,7 @@ func TestCIVisibilityMockTracer_StopDoesNotReplaceUnrelatedGlobalTracer(t *testi
 	civisibility.SetState(civisibility.StateInitialized)
 
 	ciTracer := &countingTracer{}
-	router := &ciVisibilityRouterAdapter{
-		Tracer:   &countingTracer{},
-		detached: ciTracer,
-	}
+	router := &ciVisibilityRouterAdapter{Tracer: ciTracer}
 	cmt := &civisibilitymocktracer{
 		mock:   newMockTracer(),
 		router: router,

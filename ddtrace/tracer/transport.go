@@ -382,19 +382,19 @@ func isTransientConnError(err error) bool {
 }
 
 func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) {
-	stats := statsdClientForTracer(getGlobalTracer())
-	if stats == nil {
+	if stats := statsdClientForTracer(getGlobalTracer()); stats != nil {
+		var reason string
+		if err != nil {
+			reason = "network_failure"
+		}
+		if response != nil {
+			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+		}
+		tags := []string{"reason:" + reason, "endpoint:" + endpoint}
+		stats.Incr("datadog.tracer.api.errors", tags, 1)
+	} else {
 		return
 	}
-	var reason string
-	if err != nil {
-		reason = "network_failure"
-	}
-	if response != nil {
-		reason = fmt.Sprintf("server_response_%d", response.StatusCode)
-	}
-	tags := []string{"reason:" + reason, "endpoint:" + endpoint}
-	stats.Incr("datadog.tracer.api.errors", tags, 1)
 }
 
 func (t *httpTransport) endpoint(protocol float64) string {

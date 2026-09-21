@@ -21,7 +21,6 @@ type ciVisibilityRouter interface {
 	Reset()
 	SetMockTracer(tracer.Tracer) bool
 	ClearMockTracer(tracer.Tracer) bool
-	DetachMockTracer(tracer.Tracer) (tracer.Tracer, bool)
 	SetApplicationTracer(tracer.Tracer) bool
 	TracerForTrace(string, string) tracer.Tracer
 }
@@ -45,6 +44,16 @@ var (
 	_ tracer.Tracer = (*civisibilitymocktracer)(nil)
 	_ Tracer        = (*civisibilitymocktracer)(nil)
 )
+
+// startCIVisibilityMockTracer keeps routing in the CI router when available.
+// Before CI starts, the handle stays global until the router adopts it.
+func startCIVisibilityMockTracer() *civisibilitymocktracer {
+	t := newCIVisibilityMockTracer()
+	if t.currentRouter() == nil {
+		internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
+	}
+	return t
+}
 
 func newCIVisibilityMockTracer() *civisibilitymocktracer {
 	t := &civisibilitymocktracer{mock: newMockTracer()}
@@ -111,32 +120,16 @@ func (t *civisibilitymocktracer) Stop() {
 	state := civisibility.GetState()
 	ciVisibilityActive := state == civisibility.StateInitializing || state == civisibility.StateInitialized
 	current := getGlobalTracer()
-	replacement := tracer.Tracer(router)
 	if router != nil {
-		if detached, detachedOK := router.DetachMockTracer(t.mock); detachedOK {
-			replacement = detached
-		}
+		router.ClearMockTracer(t.mock)
 	}
-	if ciVisibilityActive && replacement != nil {
-		switch current {
-		case t:
+	if ciVisibilityActive && router != nil {
+		if current == t {
 			// SetGlobalTracer invokes Stop on the old handle. The CAS above
 			// makes that recursive call a no-op.
-			internal.SetGlobalTracer(replacement)
-		case tracer.Tracer(router):
-			if replacement != current {
-				internal.SetGlobalTracer(replacement)
-			}
-		default:
-			if _, replacedByNoop := current.(*tracer.NoopTracer); replacedByNoop {
-				if replacement == tracer.Tracer(router) {
-					router.Stop()
-				} else {
-					internal.SetGlobalTracer(replacement)
-				}
-			} else {
-				replacement.Stop()
-			}
+			internal.SetGlobalTracer(tracer.Tracer(router))
+		} else if current != tracer.Tracer(router) {
+			router.Stop()
 		}
 		return
 	}
@@ -144,8 +137,8 @@ func (t *civisibilitymocktracer) Stop() {
 	if current == t || current == tracer.Tracer(router) {
 		internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
 	}
-	if replacement != nil && replacement != current {
-		replacement.Stop()
+	if router != nil && tracer.Tracer(router) != current {
+		router.Stop()
 	}
 }
 
