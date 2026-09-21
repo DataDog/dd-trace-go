@@ -326,7 +326,6 @@ func runtimePromptMessages(value any) ([]PromptMessage, error) {
 	}
 	return copies, nil
 }
-
 func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {
 	if template.Text != "" && template.Messages != nil {
 		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")

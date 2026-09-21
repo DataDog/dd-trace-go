@@ -5,8 +5,8 @@ go 1.26.0
 godebug x509negativeserial=1
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jmoiron/sqlx v1.3.5
@@ -91,3 +91,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../database/sql
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

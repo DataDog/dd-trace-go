@@ -150,7 +150,6 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 		t.Fatalf("restored template %#v, err %v", restored, err)
 	}
 }
-
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
 	prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, PromptTemplate{
 		Text: `{{double}} {single} | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`,
