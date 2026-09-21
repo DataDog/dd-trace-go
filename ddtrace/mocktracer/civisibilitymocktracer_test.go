@@ -467,7 +467,7 @@ func TestCIVisibilityMockTracer_SentDSMBacklogs(t *testing.T) {
 	assert.Nil(t, cmt.SentDSMBacklogs(), "Should return nil after stop")
 }
 
-func TestCIVisibilityMockTracer_InstallsRouterGloballyWhenCIStartsAfterMockTracer(t *testing.T) {
+func TestCIVisibilityMockTracer_KeepsMockHandleGlobalWhenCIStartsAfterMockTracer(t *testing.T) {
 	for _, useNoop := range []bool{true, false} {
 		t.Run(boolString(useNoop), func(t *testing.T) {
 			server := setupCIVisibilityMockTracerIntegrationTest(t, useNoop)
@@ -483,8 +483,7 @@ func TestCIVisibilityMockTracer_InstallsRouterGloballyWhenCIStartsAfterMockTrace
 
 			router := cmt.currentRouter()
 			require.NotNil(t, router)
-			require.Same(t, tracer.Tracer(router), getGlobalTracer())
-			require.NotSame(t, mt, getGlobalTracer())
+			require.Same(t, mt, getGlobalTracer())
 
 			normalSpan := tracer.StartSpan("app.operation")
 			require.NotNil(t, normalSpan)
@@ -520,7 +519,7 @@ func TestCIVisibilityMockTracer_WrapsAlreadyStartedCIVisibilityTracer(t *testing
 			require.True(t, ok)
 			router := cmt.currentRouter()
 			require.NotNil(t, router)
-			require.Same(t, tracer.Tracer(router), getGlobalTracer())
+			require.Same(t, mt, getGlobalTracer())
 
 			normalSpan := tracer.StartSpan("app.operation")
 			require.NotNil(t, normalSpan)
@@ -557,7 +556,8 @@ func TestCIVisibilityMockTracer_StoppingStaleMockKeepsActiveMock(t *testing.T) {
 			first.Stop()
 			first.Stop()
 
-			require.Same(t, router, getGlobalTracer())
+			require.Same(t, second, getGlobalTracer())
+			require.Same(t, router, tracer.Tracer(second.(*civisibilitymocktracer).currentRouter()))
 			span := tracer.StartSpan("application.active-mock")
 			require.NotNil(t, span)
 			span.Finish()
@@ -696,7 +696,7 @@ func TestCIVisibilityMockTracer_RepeatedTracerStartsKeepMockRouting(t *testing.T
 
 	mt := Start()
 	t.Cleanup(mt.Stop)
-	cmt, ok := mt.(*civisibilitymocktracer)
+	_, ok := mt.(*civisibilitymocktracer)
 	require.True(t, ok)
 
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
@@ -706,7 +706,7 @@ func TestCIVisibilityMockTracer_RepeatedTracerStartsKeepMockRouting(t *testing.T
 	require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
 
-	require.Same(t, tracer.Tracer(cmt.currentRouter()), getGlobalTracer())
+	require.Same(t, mt, getGlobalTracer())
 	normalSpan := tracer.StartSpan("app.operation")
 	require.NotNil(t, normalSpan)
 	normalSpan.Finish()
@@ -742,7 +742,7 @@ func TestCIVisibilityMockTracer_EarlyRealSpanFinishKeepsSubmitRouting(t *testing
 	requireTestCycleRequest(t, server)
 }
 
-func TestCIVisibilityMockTracer_ReplacingOldMockDelegateInstallsRouterGlobally(t *testing.T) {
+func TestCIVisibilityMockTracer_ReplacingOldMockDelegateKeepsHandleGlobal(t *testing.T) {
 	resetCIVisibilityMockTracerTestState(t)
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "parent")
 
@@ -758,7 +758,7 @@ func TestCIVisibilityMockTracer_ReplacingOldMockDelegateInstallsRouterGlobally(t
 
 	fakeReal := &countingTracer{}
 	require.True(t, cmt.SetCIVisibilityTracer(adaptCIVisibilityRouter(fakeReal)))
-	require.Same(t, tracer.Tracer(cmt.currentRouter()), getGlobalTracer())
+	require.Same(t, cmt, getGlobalTracer())
 	cmt.StartSpan("ci.test", tracer.SpanType(constants.SpanTypeTest))
 	assert.EqualValues(t, 1, fakeReal.startCount.Load())
 }
