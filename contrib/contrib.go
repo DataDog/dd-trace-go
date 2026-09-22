@@ -38,7 +38,9 @@
 //   - [contrib/envoyproxy/go-control-plane/v2]
 //   - [contrib/gin-gonic/gin/v2]
 //   - [contrib/globalsign/mgo/v2]
+//   - [contrib/go-chi/chi.v5/otelc/v2]
 //   - [contrib/go-chi/chi.v5/v2]
+//   - [contrib/go-chi/chi/otelc/v2]
 //   - [contrib/go-chi/chi/v2]
 //   - [contrib/go-pg/pg.v10/v2]
 //   - [contrib/go-redis/redis.v7/v2]
@@ -107,7 +109,9 @@
 // [contrib/envoyproxy/go-control-plane/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 // [contrib/gin-gonic/gin/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 // [contrib/globalsign/mgo/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2
+// [contrib/go-chi/chi.v5/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2
 // [contrib/go-chi/chi.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+// [contrib/go-chi/chi/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2
 // [contrib/go-chi/chi/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 // [contrib/go-pg/pg.v10/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 // [contrib/go-redis/redis.v7/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2
