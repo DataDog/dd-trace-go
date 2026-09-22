@@ -70,6 +70,7 @@
 //   - [contrib/mark3labs/mcp-go/v2]
 //   - [contrib/miekg/dns/v2]
 //   - [contrib/modelcontextprotocol/go-sdk/v2]
+//   - [contrib/net/http/otelc/v2]
 //   - [contrib/net/http/v2]
 //   - [contrib/olivere/elastic.v5/v2]
 //   - [contrib/redis/go-redis.v9/v2]
@@ -139,6 +140,7 @@
 // [contrib/mark3labs/mcp-go/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2
 // [contrib/miekg/dns/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2
 // [contrib/modelcontextprotocol/go-sdk/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/modelcontextprotocol/go-sdk/v2
+// [contrib/net/http/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2
 // [contrib/net/http/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2
 // [contrib/olivere/elastic.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2
 // [contrib/redis/go-redis.v9/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
