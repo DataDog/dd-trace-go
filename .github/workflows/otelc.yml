@@ -37,7 +37,7 @@ env:
   # template variable, added after that release in
   # open-telemetry/opentelemetry-go-compile-instrumentation#1194. Move back to a
   # tag once one ships with it.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260904142222-f25f662b469d' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
 
 jobs:
   go-versions-matrix:
