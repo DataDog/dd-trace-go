@@ -11,9 +11,16 @@ set -euo pipefail
 # custom measures and tags on the current CI job span using datadog-ci.
 #
 # Environment variables:
-#   METRICS_FILE        Path to metrics JSON file (required)
-#   DATADOG_API_KEY     Datadog API key (required)
-#   DATADOG_SITE        Datadog site (default: datadoghq.com)
+#   METRICS_FILE         Path to metrics JSON file (required)
+#   DATADOG_API_KEY      Datadog API key (required)
+#   DATADOG_SITE         Datadog site (default: datadoghq.com)
+#   GO_MOD_CACHE_HIT     actions/cache hit flag for go modules ('true'/'false', optional)
+#   GSA_CACHE_HIT        actions/cache hit flag for go-size-analyzer ('true'/'false', optional)
+#   DATADOG_CI_CACHE_HIT actions/cache hit flag for datadog-ci ('true'/'false', optional)
+#
+# Set cache flags are published as ci.cache.<name>.hit measures (1 = restored
+# from the actions cache, 0 = cold download) so cache utilization can be
+# tracked in CI Visibility.
 #
 # Usage: scripts/publish_build_metrics.sh
 
@@ -92,6 +99,32 @@ for i in "${!DEP_KEYS[@]}"; do
   # Publish dependency size bytes by rank (0 = single largest dependency in this build)
   MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
 done
+
+# Cache utilization: 1 = restored from the actions cache (no network), 0 = cold
+# download. An unset flag means the cache step didn't run for this job (e.g. gsa
+# only in standard mode), so no measure is published for that cache.
+cache_hit_measure() {
+  case "$1" in
+    true) echo 1 ;;
+    false) echo 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+CACHE_REPORTS=()
+if cache_hit=$(cache_hit_measure "${GO_MOD_CACHE_HIT:-}"); then
+  MEASURE_ARGS+=(--measures "ci.cache.go_modules.hit:${cache_hit}")
+  CACHE_REPORTS+=("go_modules=${cache_hit}")
+fi
+if cache_hit=$(cache_hit_measure "${GSA_CACHE_HIT:-}"); then
+  MEASURE_ARGS+=(--measures "ci.cache.gsa.hit:${cache_hit}")
+  CACHE_REPORTS+=("gsa=${cache_hit}")
+fi
+if cache_hit=$(cache_hit_measure "${DATADOG_CI_CACHE_HIT:-}"); then
+  MEASURE_ARGS+=(--measures "ci.cache.datadog_ci.hit:${cache_hit}")
+  CACHE_REPORTS+=("datadog_ci=${cache_hit}")
+fi
+message "  Cache utilization: ${CACHE_REPORTS[*]:-none reported}"
 
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
   "${MEASURE_ARGS[@]}" ||
