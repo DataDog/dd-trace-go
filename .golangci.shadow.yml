@@ -1,0 +1,69 @@
+# Dedicated golangci-lint config for the incremental variable-shadowing check.
+#
+# Why this file is separate from .golangci.yml: govet's `shadow` analyzer is
+# disabled there (see the comment on that line) because the existing codebase
+# carries ~50 pre-existing shadowing findings that haven't been triaged and
+# fixed one by one. Enabling `shadow` in the main config would fail every PR
+# on pre-existing code it never touched.
+#
+# Instead, this config is run as a *second*, separate golangci-lint pass in CI
+# (see the "golangci-lint (shadowed variables, new code only)" step in
+# .github/workflows/static-checks.yml), reported through reviewdog with
+# `filter_mode: added` so only findings on lines the PR actually adds can fail
+# the build. Pre-existing shadowing elsewhere in the tree is scanned (govet has
+# no incremental mode of its own) but never surfaces as a failure, so this
+# check can be enabled today without a large fixup pass, while still stopping
+# new instances of the same bug class from landing.
+#
+# Motivating case: a PR (see the accepted fix in
+# "fix(ddtrace/tracer): stop variable shadowing in newHighCardinalitySpanList")
+# found that an inner `for i := range 50` silently shadowed an outer loop's `i`
+# in a benchmark helper, so the benchmark measured the wrong thing (writing
+# only 50 distinct tag keys instead of one set per span) for an extended
+# period without any test failure -- variable shadowing compiles cleanly and
+# produces no runtime error, which is exactly the kind of silent, mechanically
+# detectable bug class a linter should catch instead of relying on a reviewer
+# noticing it by eye.
+#
+# Local verification: run `make lint/shadow`, which mirrors the CI check's
+# intent by scoping reported issues to commits not yet on the base branch
+# (golangci-lint's own `--new-from-rev=main` diff filter, the local equivalent
+# of the `filter_mode: added` scoping reviewdog applies in CI).
+version: "2"
+run:
+  build-tags:
+    - goexperiment.synctest
+linters:
+  default: none
+  enable:
+    - govet
+  settings:
+    govet:
+      enable-all: false
+      enable:
+        - shadow
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DataDog/dd-trace-go/v2
