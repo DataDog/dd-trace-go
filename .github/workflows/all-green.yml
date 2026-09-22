@@ -15,9 +15,13 @@ jobs:
       - name: Run Ensure CI Success
         uses: DataDog/ensure-ci-success@b0d931ac77c810490e61964c321103040eef888e
         with:
-          initial-delay-seconds: "600"
-          max-retries: "60"
-          # polling-interval-seconds: "60" # Default
+          # This action only evaluates checks that exist when it polls, so the
+          # delay has to outlast GitHub's fan-out of the triggering event.
+          # max-retries rises with it to hold the ceiling near 70 minutes.
+          initial-delay-seconds: "300"
+          max-retries: "65"
+          # polling-interval-seconds is a no-op: the action reads `polling-interval`.
+          # polling-interval-seconds: "60"
           ignored-name-patterns: |
             devflow/merge
             devflow/mergegate
