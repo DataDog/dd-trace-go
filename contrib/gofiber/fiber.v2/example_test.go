@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/gofiber/fiber/v2"
+	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
 )
 
 func Example() {
@@ -23,6 +24,9 @@ func Example() {
 
 	// Install tracing and AppSec route guards before registering endpoints.
 	fibertrace.Wrap(router)
+
+	// Recovery must run inside tracing so AppSec sees the rendered error.
+	router.Use(fiberrecover.New())
 
 	// Set up some endpoints.
 	router.Get("/", func(c *fiber.Ctx) error {

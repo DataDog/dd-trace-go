@@ -47,6 +47,18 @@ side effects. Orchestrion uses `Wrap` automatically. Parsed bodies still require
 an explicit `appsec.MonitorParsedHTTPBody(c.UserContext(), body)` call; there is
 no automatic `BodyParser` hook.
 
+Register panic-recovery middleware immediately after `Wrap`, or immediately
+after `Middleware` when using the older API, before other middleware and routes.
+Recovery then runs inside the monitored handler chain, so
+the configured error handler renders the response before the WAF inspects it.
+Recovery registered before tracing runs too late: AppSec cannot inspect its
+final response or prevent it from overwriting a pending block. That ordering
+is not supported for AppSec panic handling. Tracing does not install or replace
+recovery, and unrecovered panics still propagate. Custom recovery callbacks
+remain under application control. With AppSec disabled, Fiber still renders
+returned errors after tracing returns; the span's status can describe the
+pre-error response rather than the final wire status. This behavior is unchanged.
+
 The Fiber contrib tests cover parsing, error responses, blocking, and connection
 reuse. The Orchestrion Fiber case verifies blocking without manual middleware.
 The AppSec CI matrix includes Fiber, and `BenchmarkFiberMiddleware` measures

@@ -17,6 +17,36 @@
       ],
       "transformers": [],
       "on_match": ["block"]
+    },
+    {
+      "id": "fiber-block-panic-response",
+      "name": "Block a rendered panic response",
+      "tags": { "type": "security_scanner", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [{ "address": "server.response.status" }],
+            "regex": "^500$"
+          }
+        },
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [{ "address": "server.response.headers.no_cookies", "key_path": ["x-panic-recovered"] }],
+            "regex": "^yes$"
+          }
+        },
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [{ "address": "server.request.path_params", "key_path": ["value"] }],
+            "regex": "^benign$"
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
     }
   ]
 }

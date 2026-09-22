@@ -26,6 +26,11 @@ type wrappedRequestKey struct{}
 // owns its span and options; mounted apps do not add another span. If its
 // WithIgnoreRequest option skips a request, mounted apps also skip monitoring.
 //
+// Register panic-recovery middleware immediately after Wrap, before other
+// middleware and routes. AppSec can then inspect the rendered error response
+// and preserve pending blocks. Wrap does not install
+// recovery itself; without it, handler panics still propagate.
+//
 // Route guards inspect Fiber's matched path parameters before calling that
 // route's user handlers. Global Middleware alone cannot provide this protection.
 //

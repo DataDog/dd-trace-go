@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 
@@ -407,18 +406,17 @@ func TestAppSecLateBlocking(t *testing.T) {
 	}
 }
 
-func TestAppSecPanic(t *testing.T) {
+func TestAppSecUnrecoveredPanic(t *testing.T) {
 	testutils.StartAppSec(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	router := fiber.New()
-	router.Use(recover.New())
-	router.Use(Middleware())
+	router := Wrap(fiber.New())
 	router.Use(func(*fiber.Ctx) error { panic("handler panic") })
-	res, err := router.Test(httptest.NewRequest("GET", "/../../../secret.txt", nil))
-	require.NoError(t, err)
-	defer res.Body.Close()
-	require.Equal(t, http.StatusInternalServerError, res.StatusCode)
+	var fctx fasthttp.RequestCtx
+	fctx.Request.Header.SetMethod("GET")
+	fctx.Request.SetRequestURI("/../../../secret.txt")
+	// Call on this goroutine so the test can catch the unchanged panic value.
+	require.PanicsWithValue(t, "handler panic", func() { router.Handler()(&fctx) })
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	event, ok := spans[0].Tag("_dd.appsec.json").(string)

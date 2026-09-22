@@ -82,8 +82,9 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		ResponseHeaderCopier: func(http.ResponseWriter) http.Header { return responseHeaders(fctx) },
 	})
 	// afterHandle reports the response to the WAF and writes any pending
-	// blocking response. It is called explicitly below, and deferred as well so
-	// that a panicking handler still gets its span tagged.
+	// blocking response. The defer also releases monitoring state on an
+	// unrecovered panic. Recovery must run inside next for the WAF to inspect
+	// the rendered error response before finishing.
 	finish := sync.OnceFunc(afterHandle)
 	defer finish()
 

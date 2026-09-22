@@ -498,8 +498,8 @@ A few things to keep in mind:
   `scripts`, and `tools`).
 - Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
   entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
-- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
-  group is measured and tracked but does not gate the PR.
+- Every benchmark group must appear in the `pr-performance-gates` job's `needs` list, so the gate waits for all
+  result uploads. When adding a group, update that list; `go test ./scripts/ciselect/` checks this requirement.
 - A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
   starts gating it from the next PR onward.
 

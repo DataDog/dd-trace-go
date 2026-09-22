@@ -29,8 +29,9 @@ Execution flow on each PR:
    commit and the baseline (`main`) for each benchmark in `BENCHMARKS`.
 3. The `analyze_microbenchmarks` step parses results and uploads them to S3
    and the BP API.
-4. The `pr-performance-gates` job evaluates regressions against
-   `pr-gate.thresholds.yml` and posts a PR comment.
+4. The `pr-performance-gates` job waits for every benchmark group to finish its
+   result uploads, evaluates regressions against `pr-gate.thresholds.yml`, and
+   posts a PR comment.
 
 # How to add a new microbenchmark
 
@@ -48,7 +49,9 @@ Execution flow on each PR:
 3. In order to run benchmark in CI, register the benchmark name in `gitlab-ci.yml` by appending it to the
    `BENCHMARKS` variable of one of the `microbenchmarks-N` jobs (pipe-separated).
    Keep at most **44 scenarios per group** when using **CPUS_PER_BENCHMARK=1** (one CPU core per scenario, and cores 0-3 are reserved for kernel & background tasks). If a group is full, add it to another group or create a new
-   `microbenchmarks-N` job that extends `.microbenchmarks`.
+   `microbenchmarks-N` job that extends `.microbenchmarks`. Add each new group to
+   the `pr-performance-gates` job's `needs` list. Run `go test ./scripts/ciselect/`
+   from the repository root to check that no group is missing.
 
 You can test the pipeline locally (see below) before opening a PR. 
 

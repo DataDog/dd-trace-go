@@ -36,6 +36,12 @@ func init() {
 // earlier middleware. The original error is recorded on the span unless the
 // response is blocked; then the block is reported instead.
 //
+// Register panic-recovery middleware immediately after this middleware, before
+// other middleware and routes, so it runs inside the monitored handler chain.
+// Recovery outside it happens too late for
+// AppSec to inspect the rendered error response or preserve a pending block.
+// This middleware does not recover panics itself.
+//
 // Use [Wrap] for whole-app instrumentation. A global Middleware runs before
 // Fiber matches the endpoint and can only check its path parameters afterward;
 // it cannot prevent handler side effects from a path-parameter attack.
