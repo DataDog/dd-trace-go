@@ -89,7 +89,12 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		c.SetUserContext(ctx)
 
 		// pass the execution down the line
-		err := c.Next()
+		var err error
+		if instr.AppSecEnabled() {
+			err = useAppSec(c, span, c.Next)
+		} else {
+			err = c.Next()
+		}
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(c))
 		span.SetTag(ext.HTTPRoute, c.Route().Path)
