@@ -197,27 +197,66 @@ func TestClassifyRestore(t *testing.T) {
 	emptyKey := ""
 	oldKey := "k-1"
 	cases := []struct {
-		name string
-		obs  *restoreObs
-		want string
+		name     string
+		obs      *restoreObs
+		provider string
+		want     string
 	}{
-		{"exact hit", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "true"}, "exact"},
-		{"prefix restore", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false", CacheMatchedKey: &oldKey}, "prefix"},
-		{"cold miss", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false", CacheMatchedKey: &emptyKey}, "cold_miss"},
-		{"disabled", &restoreObs{Enabled: "false", Outcome: "success", CacheHit: "true"}, "disabled"},
-		{"error", &restoreObs{Enabled: "true", Outcome: "failure", CacheHit: "true"}, "error"},
-		{"no observation", nil, "unknown"},
-		{"empty outcome", &restoreObs{Enabled: "true", Outcome: "", CacheHit: "true"}, "unknown"},
-		{"ambiguous cache hit", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "weird"}, "unknown"},
-		{"github miss boolean", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false"}, "cold_miss"},
+		{"exact hit", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "true"}, "github-cache", "exact"},
+		{"prefix restore", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false", CacheMatchedKey: &oldKey}, "github-cache", "prefix"},
+		{"cold miss", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false", CacheMatchedKey: &emptyKey}, "github-cache", "cold_miss"},
+		{"disabled", &restoreObs{Enabled: "false", Outcome: "success", CacheHit: "true"}, "github-cache", "disabled"},
+		{"error", &restoreObs{Enabled: "true", Outcome: "failure", CacheHit: "true"}, "github-cache", "error"},
+		{"no observation", nil, "github-cache", "unknown"},
+		{"empty outcome", &restoreObs{Enabled: "true", Outcome: "", CacheHit: "true"}, "github-cache", "unknown"},
+		{"ambiguous cache hit", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "weird"}, "github-cache", "unknown"},
+		{"github miss boolean", &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false"}, "github-cache", "cold_miss"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyRestore(tc.obs); got != tc.want {
+			if got := classifyRestore(tc.obs, tc.provider); got != tc.want {
 				t.Fatalf("classifyRestore = %q, want %q", got, tc.want)
 			}
 		})
 	}
+}
+
+// The cloudx provider exposes only the underlying exact-hit boolean: a
+// `false` is ambiguous between a prefix restore and a cold miss and must
+// stay unknown until completed-log evidence classifies it.
+func TestClassifyRestoreCloudx(t *testing.T) {
+	cases := []struct {
+		name string
+		hit  string
+		want string
+	}{
+		{"true is an exact hit", "true", "exact"},
+		{"false is ambiguous", "false", "unknown"},
+		{"empty is ambiguous", "", "unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obs := &restoreObs{Enabled: "true", Outcome: "success", CacheHit: tc.hit}
+			if got := classifyRestore(obs, "cloudx"); got != tc.want {
+				t.Fatalf("classifyRestore = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	t.Run("disabled", func(t *testing.T) {
+		obs := &restoreObs{Enabled: "false", Outcome: "success", CacheHit: "true"}
+		if got := classifyRestore(obs, "cloudx"); got != "disabled" {
+			t.Fatalf("classifyRestore = %q, want disabled", got)
+		}
+	})
+	t.Run("tools entry keeps actions/cache semantics under cloudx", func(t *testing.T) {
+		// Merged observations carry the tools restore alongside the cloudx
+		// build-cache restore; the tools entry must keep github semantics.
+		oldKey := "k-1"
+		obs := &restoreObs{Enabled: "true", Outcome: "success", CacheHit: "false", CacheMatchedKey: &oldKey}
+		if got := classifyRestore(obs, "cloudx"); got != "prefix" {
+			t.Fatalf("classifyRestore = %q, want prefix", got)
+		}
+	})
 }
 
 // ---- save classification -----------------------------------------------------
@@ -331,6 +370,23 @@ func TestParseLog(t *testing.T) {
 	t.Run("missing logs yield unknown", func(t *testing.T) {
 		if parseLog("") != nil {
 			t.Fatal("empty log should return nil evidence")
+		}
+	})
+	t.Run("last observation line wins", func(t *testing.T) {
+		// One job may print a partial observation first and a merged
+		// superset later; the collector must keep the last one.
+		runtimeObs := observationJSON("true", "success", "false", nil)
+		wrapperObs := strings.Replace(observationJSON("true", "success", "true", nil),
+			"unit-core", "unit-contrib", 1)
+		lines := append(baseLogLines("cache-observation:"+runtimeObs),
+			logLine("2026-09-13T11:37:11.0000000Z", "cache-observation:"+wrapperObs))
+		logText := joinLines(lines, postLogLines(defaultSkipMarker))
+		ev := parseLog(logText)
+		if ev == nil || ev.observation == nil {
+			t.Fatal("missing observation")
+		}
+		if ev.observation.Workload != "unit-contrib" {
+			t.Fatalf("workload = %q, want the last (merged) record", ev.observation.Workload)
 		}
 	})
 	t.Run("secret lines are not propagated", func(t *testing.T) {

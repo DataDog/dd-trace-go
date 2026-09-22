@@ -75,9 +75,12 @@ type restoreClassification struct {
 
 // classifyRestore classifies one restore observation from provider outputs.
 // Ambiguous evidence is "unknown", never a guessed hit or miss. For the
-// GitHub provider cache_hit is an exact-hit boolean and a non-empty
+// github-cache provider cache_hit is an exact-hit boolean and a non-empty
 // cache_matched_key alongside cache_hit != true marks a prefix restore.
-func classifyRestore(obs *restoreObs) string {
+// For the cloudx provider a `false` cache_hit is ambiguous between a
+// prefix restore and a cold miss and stays unknown until completed-log
+// evidence classifies it; only a `true` (an exact hit) is unambiguous.
+func classifyRestore(obs *restoreObs, provider string) string {
 	if obs == nil {
 		return "unknown"
 	}
@@ -92,6 +95,15 @@ func classifyRestore(obs *restoreObs) string {
 		return "error"
 	}
 	hit := strings.ToLower(obs.CacheHit)
+	// CloudX semantics apply only to the isolated build/module cache entry,
+	// which never carries a matched key; the tools entry keeps its
+	// actions/cache semantics even inside a merged cloudx observation.
+	if provider == "cloudx" && obs.CacheMatchedKey == nil {
+		if hit == "true" {
+			return "exact"
+		}
+		return "unknown"
+	}
 	if obs.CacheMatchedKey != nil {
 		switch {
 		case hit == "true":
@@ -186,12 +198,14 @@ func parseLog(text string) *logEvidence {
 			havePost = true
 		}
 		last = when
-		if observation == nil {
-			if om := cacheObsRe.FindStringSubmatch(rest); om != nil {
-				var obs cacheObservation
-				if json.Unmarshal([]byte(om[1]), &obs) == nil {
-					observation = &obs
-				}
+		// A job may print more than one cache-observation record; a
+		// later merged record (for example one that folds the tools
+		// restore into the build-cache observation) supersedes an
+		// earlier partial one. Keep the LAST observation in the log.
+		if om := cacheObsRe.FindStringSubmatch(rest); om != nil {
+			var obs cacheObservation
+			if json.Unmarshal([]byte(om[1]), &obs) == nil {
+				observation = &obs
 			}
 		}
 	}

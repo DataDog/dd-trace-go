@@ -126,7 +126,8 @@ runs:
           --arg trigger "$(normalize_tag "${CI_TRIGGER:-unknown}")" \
           --arg provider "$provider_tag" \
           --arg workload "$workload_tag" \
-          '["repository:" + (if $repository == "" then "unknown" else $repository end),
+          '["repository:" + (if $repository == ""
+            then "unknown" else $repository end),
             "os.platform:" + $os_platform,
             "os.architecture:" + $os_architecture,
             "ci.pipeline.name:" + $pipeline,
@@ -138,6 +139,10 @@ runs:
 
         # A cache_matched_key field selects exact/partial/miss classification.
         # Observations without that field use aggregate hit/miss classification.
+        # CloudX observations are counted only when their raw cache-hit is
+        # `true` (an exact hit); a `false` is ambiguous between a prefix
+        # restore and a cold miss, and no count is guessed for it — the
+        # offline collector's completed-log classification is the authority.
         jq -cn \
           --argjson metrics "$CACHE_METRICS" \
           --argjson timestamp "$(date +%s)" \
@@ -145,7 +150,8 @@ runs:
           --arg sizes "$sizes" '
           def runtime_tags:
             ["runtime.name:" + $metrics.runtime.name,
-             "runtime.version:" + (if $metrics.runtime.version == "" then "unknown" else $metrics.runtime.version end)];
+             "runtime.version:" + (if $metrics.runtime.version == ""
+             then "unknown" else $metrics.runtime.version end)];
           def count_series($name; $result):
             {metric: "ci.step.cache.restore", type: 1, interval: 1,
              points: [{timestamp: $timestamp, value: 1}],
@@ -153,15 +159,20 @@ runs:
                     "outcome:" + $result[0], "hit_type:" + $result[1]])};
           def size_series($measurement):
             {metric: "ci.cache.disk_size_bytes", type: 3,
-             points: [{timestamp: $timestamp, value: ($measurement[1] | tonumber)}],
+             points: [{timestamp: $timestamp,
+                      value: ($measurement[1] | tonumber)}],
              tags: ($tags + runtime_tags + ["cache_name:" + $measurement[0],
                     "phase:end_of_job"])};
           def restore_result:
             if .enabled != "true" or .outcome != "success" then empty
+            elif $metrics.provider == "cloudx"
+                 and (has("cache_matched_key") | not) then
+              if .cache_hit == "true" then ["hit", "exact"] else empty end
             elif has("cache_matched_key") then
               if .cache_hit == "true" then ["hit", "exact"]
               elif .cache_hit == "false" or .cache_hit == "" then
-                if .cache_matched_key != "" then ["hit", "partial"] else ["miss", "miss"] end
+                if .cache_matched_key != ""
+                then ["hit", "partial"] else ["miss", "miss"] end
               else empty
               end
             elif .cache_hit == "true" then ["hit", "unknown"]
@@ -169,7 +180,8 @@ runs:
             else empty
             end;
           {series: ([$metrics.restores[] as $restore |
-                      $restore | restore_result | count_series($restore.name; .)] +
+                      $restore | restore_result
+                      | count_series($restore.name; .)] +
                     [$sizes | split("\n")[] | select(length > 0) |
                       split("\t") | size_series(.)])}
         ' > "$payload_file"
@@ -191,9 +203,13 @@ runs:
           --data-binary "@${payload_file}")" || curl_exit=$?
 
         if [[ "$curl_exit" -ne 0 || "$http_code" != "202" ]]; then
-          diagnostic="$(head -c 512 "$response_file" 2>/dev/null | tr '\r\n' '  ')"
+          diagnostic="$(head -c 512 "$response_file" 2>/dev/null)"
+          diagnostic="$(printf '%s' "$diagnostic" | tr '\r\n' '  ')"
           diagnostic="${diagnostic//"$DD_API_KEY"/[REDACTED]}"
-          printf '%s\n' "Cache metric submission failed (curl ${curl_exit}, HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."; exit 0
+          failure="Cache metric submission failed (curl ${curl_exit}"
+          failure+=", HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."
+          printf '%s\n' "$failure"
+          exit 0
         fi
 
         printf 'Submitted %s cache metric series.\n' "$count"

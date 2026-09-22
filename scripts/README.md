@@ -227,8 +227,13 @@ delay, and the exact accepted check-name exclusions) live in the doc
 comment of `scripts/citiming/main.go` and are the report contract.
 
 Restores are classified from the structured `cache-observation:` record
-that `.github/actions/setup-go` prints into every job log: exact, prefix,
-cold_miss, disabled, error, or unknown. Saves are classified per event from
+that the Go setup actions print into every job log (when a job emits
+several records, the collector keeps the last one): exact, prefix,
+cold_miss, disabled, error, or unknown. For isolated-cache providers a
+raw cache-hit of `false` is ambiguous between a prefix restore and a
+cold miss, so it classifies as `unknown` and the Datadog reporter counts
+only unambiguous exact hits; completed-log classification in this tool
+remains the authority. Saves are classified per event from
 completed log markers (`Cache saved with key:`, `Cache hit occurred on the
 primary key ... not saving cache`, reservation conflicts, failures); a
 successful job never counts as a successful save on its own.
