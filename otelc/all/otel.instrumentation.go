@@ -21,4 +21,7 @@ import (
 
 	// go-chi/chi (v4) middleware attachment.
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
+
+	// go-chi/chi.v5 middleware attachment.
+	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2"
 )
