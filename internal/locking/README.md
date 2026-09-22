@@ -76,7 +76,7 @@ The assert package provides runtime verification of lock states using TryLock-ba
 
 This approach works consistently without external dependencies in default and debug builds.
 
-**Note**: When building with `deadlock` tag, these assertion functions become no-ops. The go-deadlock library provides comprehensive runtime deadlock detection, and attempting to use TryLock on already-held locks triggers false positives in go-deadlock's recursive locking detection. In deadlock builds, rely on go-deadlock's built-in verification instead of these assertions.
+**Note**: The `deadlock` build does not use TryLock for these assertions, because calling TryLock on an already-held lock trips `linkdata/deadlock`'s recursive-locking detection. Instead, [`assert_deadlock.go`](./assert/assert_deadlock.go) reaches the embedded `sync.Mutex`/`sync.RWMutex` through `reflect` and `unsafe` and delegates to [`go-mutexasserts`](https://github.com/trailofbits/go-mutexasserts). The assertions still hold under that tag -- they are not no-ops. The trade-off is that this depends on the upstream field being named `mu`: if it is ever renamed, the assertions panic with `could not find mu field in deadlock.Mutex` instead of failing silently.
 
 #### Static vs Runtime Analysis
 
@@ -243,6 +243,10 @@ go test -tags=deadlock ./internal/locking
 
 ### Integration Tests
 
+The longer `-timeout` is not optional: the detector serialises all lock traffic
+through a single global mutex, so the same package takes noticeably longer than
+under `debug`.
+
 ```shell
 # Test tracer components with deadlock detection
 go test -v -timeout=300s -tags=deadlock ./ddtrace/tracer
@@ -259,7 +263,7 @@ go test -v -timeout=300s -tags=debug,deadlock ./...
 |---------------------|-----------|---------|
 | Default (`!deadlock && !debug`) | `assert_sync_test.go` | TryLock assertions with sync.Mutex type aliases |
 | Debug (`debug && !deadlock`) | `assert_debug_test.go` | TryLock assertions in debug mode |
-| Deadlock (`deadlock`) | `assert_test.go` | Assertions with go-deadlock wrapper |
+| Deadlock (`deadlock`) | `assert_test.go` | Assertions with the `linkdata/deadlock` wrapper |
 | Debug+Deadlock (`debug && deadlock`) | `assert_debug_deadlock_test.go` | Combined debug and deadlock features |
 
 ### CI Integration
@@ -292,10 +296,53 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 
 ## Performance Considerations
 
-- **Zero Overhead**: In the default build, type aliases ensure no performance penalty
-- **Debugging Mode**: Deadlock detection adds runtime overhead, use only in testing
-- **Memory Usage**: Default build has identical memory footprint to `sync` types
-- **Static Analysis**: Full compatibility with existing static analysis tools
+### Default build (`!deadlock`)
+
+- **Zero Overhead**: type aliases mean no wrapper and no indirection
+- **Memory Usage**: identical footprint to the `sync` types
+- **Static Analysis**: full compatibility with existing static analysis tools
+
+### Deadlock build (`deadlock`) -- testing only
+
+The cost here is larger than "adds runtime overhead" suggests, in three ways:
+
+- **Every** `Lock`/`RLock` captures a 50-frame stack trace, on the uncontended
+  fast path, as two allocations.
+- All lock traffic in the process serialises through a single global mutex
+  inside the detector, so this build does not scale with cores. Before the cap
+  below, `ddtrace/tracer` took 1.7x the wall time of a `debug` build of the same
+  package.
+- Each *contended* acquisition also spawns a goroutine and a timer that live
+  until the lock is acquired.
+
+The part that surprises people is **retention**. The detector tracks lock
+ordering in a process-global map keyed by pairs of mutex *addresses*. This
+package embeds its mutexes by value, so those addresses are interior pointers
+into the enclosing object, and a tracked entry keeps that whole object
+reachable. dd-trace-go allocates a mutex per `Span`, `spanContext`, `trace` and
+tracer, so object churn becomes retention. Measured on `ddtrace/tracer`:
+
+| peak RSS, `-race` | `-tags=debug` | `-tags=deadlock`, 64Ki cap | `-tags=deadlock`, bounded |
+|---|---|---|---|
+| `TestTracerCleanStop`, single run | 0.11GB | 4.84GB | 1.34GB |
+| whole package, median | 4.04GB | 24.81GB | 4.42GB |
+
+The third column is two changes together. [`mutex_deadlock.go`](./mutex_deadlock.go)
+lowers `deadlock.Opts.MaxMapSize` from the upstream 64Ki default, which does most
+of it (`TestTracerCleanStop` 4.84GB -> 1.42GB on its own). Do not set it to `0`
+-- that skips the detector's `preLock` entirely, which is where both
+recursive-locking and inconsistent-lock-order detection live, leaving only the
+30s wait-timeout check.
+
+The rest comes from two `ddtrace/tracer` tests that now carry their own bounds,
+commented in place: `TestTracerCleanStop` scales its iteration count by build
+tag, and `TestOTLPWriterConcurrentAddAndWait` bounds its adders, its in-flight
+send window, and whether the test server retains payloads. That last one was
+independently pathological -- 0.50GB to 13.70GB across identical runs.
+
+`GOMEMLIMIT` does not substitute for this. The memory above is live, not
+collector lag, so a soft limit is exceeded rather than enforced -- with
+`GOMEMLIMIT=1GiB` the GC goal was observed tracking to ~10GB.
 
 ## Dependencies
 
