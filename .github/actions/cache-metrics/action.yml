@@ -139,10 +139,14 @@ runs:
 
         # A cache_matched_key field selects exact/partial/miss classification.
         # Observations without that field use aggregate hit/miss classification.
-        # CloudX observations are counted only when their raw cache-hit is
-        # `true` (an exact hit); a `false` is ambiguous between a prefix
-        # restore and a cold miss, and no count is guessed for it — the
-        # offline collector's completed-log classification is the authority.
+        # For the isolated-cache provider a `false` cache-hit is ambiguous
+        # between a prefix restore and a cold miss. The count series keeps
+        # the contract it has always had: for the setup_go cache, `miss`
+        # has meant "not an exact hit" since this action's first release
+        # (actions/setup-go also reports false for restore-key matches),
+        # so a false emits miss and every successful restore stays counted
+        # and dashboards remain continuous. The precise exact/prefix/cold
+        # split stays with the offline collector in scripts/citiming.
         jq -cn \
           --argjson metrics "$CACHE_METRICS" \
           --argjson timestamp "$(date +%s)" \
@@ -167,7 +171,8 @@ runs:
             if .enabled != "true" or .outcome != "success" then empty
             elif $metrics.provider == "cloudx"
                  and (has("cache_matched_key") | not) then
-              if .cache_hit == "true" then ["hit", "exact"] else empty end
+              if .cache_hit == "true"
+              then ["hit", "exact"] else ["miss", "miss"] end
             elif has("cache_matched_key") then
               if .cache_hit == "true" then ["hit", "exact"]
               elif .cache_hit == "false" or .cache_hit == "" then

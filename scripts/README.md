@@ -231,18 +231,23 @@ that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
 cold_miss, disabled, error, or unknown. For isolated-cache providers a
 raw cache-hit of `false` is ambiguous between a prefix restore and a
-cold miss, so it classifies as `unknown` and the Datadog reporter counts
-only unambiguous exact hits; completed-log classification in this tool
-remains the authority. Saves are classified per event from
+cold miss, so the collector classifies it as `unknown`. The Datadog
+count series keeps the contract it has always had, where `miss` means
+"not an exact hit" (actions/setup-go already reported false for
+restore-key matches), so every successful restore stays counted and
+existing dashboards remain continuous. The precise exact/prefix/cold
+split remains with completed-log classification in this tool. Saves are classified per event from
 completed log markers (`Cache saved with key:`, `Cache hit occurred on the
 primary key ... not saving cache`, reservation conflicts, failures); a
 successful job never counts as a successful save on its own.
 
 The filesystem sizes published by `.github/actions/cache-metrics` are
 end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
-with `phase:end_of_job` (the former `ci.step.cache.restore.disk_size_bytes`
-name was misleading and is retired). Compressed cache-service storage is
-measured from the cache API's `size_in_bytes` in `cache_snapshot.json`.
+with `phase:end_of_job` (the former
+`ci.step.cache.restore.disk_size_bytes` name was misleading and is
+retired; dashboards querying the old name must move to the new one at
+merge time). Compressed cache-service storage is measured from the
+cache API's `size_in_bytes` in `cache_snapshot.json`.
 
 Tests live in `scripts/citiming/citiming_test.go`:
 
