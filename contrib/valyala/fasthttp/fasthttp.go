@@ -64,7 +64,20 @@ func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		}
 		span := StartSpanFromContext(fctx, "http.request", spanOpts...)
 		defer span.Finish()
-		h(fctx)
+
+		// AppSec must see the response before the span is finished, so its
+		// afterHandle is deferred after span.Finish to run ahead of it.
+		handled := false
+		if instr.AppSecEnabled() {
+			var afterHandle func()
+			afterHandle, handled = beforeHandle(fctx, span)
+			if afterHandle != nil {
+				defer afterHandle()
+			}
+		}
+		if !handled {
+			h(fctx)
+		}
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
 		status := fctx.Response.StatusCode()
 		if cfg.isStatusError(status) {
