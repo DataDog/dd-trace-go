@@ -144,13 +144,6 @@ func (p *asyncProducer) AsyncClose() {
 // or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
 // version which is the first version that supports headers. Only spans of
 // successfully published messages have partition and offset tags set.
-//
-// The wrapper follows sarama's channel contract: keep reading Successes and
-// Errors while producing, and keep draining them after Close or AsyncClose
-// until both channels close. Unlike a raw producer, the wrapper does not drain
-// them for you. Do not send on Input concurrently with Close or AsyncClose:
-// the message cannot be delivered once shutdown begins, and the race can panic
-// the wrapper's goroutine.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
@@ -180,15 +173,17 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {
-			var input <-chan *sarama.ProducerMessage
-			var output chan<- *sarama.ProducerMessage
+			var inputFromCaller <-chan *sarama.ProducerMessage
+			var inputToSarama chan<- *sarama.ProducerMessage
+			// Nil channels disable select cases. Keep pending sends in this select so
+			// result handling can unblock Sarama instead of deadlocking the wrapper.
 			if pendingMsg == nil {
-				input = wrapped.input
+				inputFromCaller = wrapped.input
 			} else {
-				output = p.Input()
+				inputToSarama = p.Input()
 			}
 			select {
-			case msg := <-input:
+			case msg := <-inputFromCaller:
 				span := startProducerSpan(cfg, spanCfg, saramaConfig.Version, msg)
 				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
 				if saramaConfig.Producer.Return.Successes {
@@ -197,14 +192,19 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				}
 				pendingMsg = msg
 				pendingSpan = span
-			case output <- pendingMsg:
+			// Send the pending message without blocking result handling.
+			case inputToSarama <- pendingMsg:
 				if !saramaConfig.Producer.Return.Successes {
+					// if returning successes isn't enabled, we just finish the
+					// span right away because there's no way to know when it will
+					// be done
 					pendingSpan.Finish()
 				}
 				pendingMsg = nil
 				pendingSpan = nil
 			case msg, ok := <-p.Successes():
 				if !ok {
+					// The producer closed before it accepted the pending message.
 					if pendingSpan != nil {
 						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
 					}
@@ -224,6 +224,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
 				if !ok {
+					// The producer closed before it accepted the pending message.
 					if pendingSpan != nil {
 						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
 					}
