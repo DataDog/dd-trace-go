@@ -52,11 +52,10 @@ jobs:
           persist-credentials: false
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-matrix
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -90,11 +89,14 @@ jobs:
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-integration
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "instrumentation":"otelc",
+             "workspace":"off"}
 
       - name: Install development tools
         run: make tools-install
@@ -210,11 +212,13 @@ jobs:
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-external-app
+          variant: |-
+            {"instrumentation":"otelc",
+             "workspace":"off"}
 
       - name: Install otelc binary
         shell: bash

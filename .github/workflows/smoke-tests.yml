@@ -50,13 +50,20 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
+          check-latest: "true"
           workload: smoke-setup
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Compile dd-trace-go with updated dependencies (sandboxed)
         # go get -u executes dependency code from the network. Keep those
@@ -124,14 +131,21 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
+          check-latest: "true"
           workload: smoke-deps-update
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Capture trusted commit SHA
         # Pinned before any sandboxed step so we can re-checkout this exact
         # commit after the sandbox runs. Anything that escapes the sandbox
@@ -247,7 +261,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
 
   smoke-test-tracer:
@@ -261,14 +275,21 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
+          check-latest: "true"
           workload: smoke-tracer
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run tests
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -299,7 +320,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
 
   check-gen-files:
@@ -318,13 +339,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
+          check-latest: "true"
           workload: smoke-gen
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run generate scripts and check diff
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -449,11 +478,17 @@ jobs:
       # failure when it has not yet caught up with a just-pushed commit.
       GOSUMDB: "off"
     steps:
+      # No checkout: this job simulates an external consumer building
+      # against the module proxy, so the repository must not influence
+      # resolution. A local action needs the repo in the workspace, so
+      # this one step keeps the official remote setup-go.
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26" # lowest supported version, so this checks the floor
+          cache: true
+          cache-dependency-path: '**/go.mod'
       - name: Resolve orchestrion/all as an external consumer would
         id: resolve
         run: |-

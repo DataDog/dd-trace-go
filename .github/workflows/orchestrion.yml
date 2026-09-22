@@ -72,12 +72,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: orchestrion-generate
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run generator
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -102,11 +111,10 @@ jobs:
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: orchestrion-matrix
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -185,15 +193,23 @@ jobs:
           repository: DataDog/orchestrion
           ref: ${{ inputs.orchestrion-version }}
 
+      # Local action references resolve from the workspace, and this
+      # repository is checked out beneath dd-trace-go/ (the dd-ci-upload
+      # reference below works because a later step re-checks out the
+      # default repository at the workspace root before the uploads).
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./dd-trace-go/.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: |-
-            ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
-            ${{ github.workspace }}/orchestrion/all/go.mod
+          workload: orchestrion-integration
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "mode":"${{ matrix.mode }}",
+             "instrumentation":"orchestrion",
+             "version":"${{ inputs.orchestrion-version || 'pinned' }}",
+             "coverage":"${{ inputs.collect-coverage && 'atomic' || 'none' }}",
+             "workspace":"off"}
 
       - name: Install development tools
         run: make -C ${{ github.workspace }}/dd-trace-go tools-install
