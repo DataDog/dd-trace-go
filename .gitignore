@@ -38,6 +38,3 @@ coverage-*.txt
 /.claude/*
 !/.claude/commands/
 !/.claude/settings.json
-
-# Python bytecode from scripts/ci_timing_test.py runs
-__pycache__/

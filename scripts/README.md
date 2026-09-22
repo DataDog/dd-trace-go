@@ -147,12 +147,14 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 ```
 
 **Options:**
+
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
 - `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
+
 ```json
 {
   "sample": "net_http",
@@ -183,6 +185,7 @@ export DATADOG_SITE=datadoghq.com
 ```
 
 **Required environment variables:**
+
 - `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
@@ -193,11 +196,12 @@ Scripts for measuring CI durations and Go build-cache behaviour from
 completed GitHub Actions runs. GitHub completed-run data is the source of
 truth; Datadog series are secondary.
 
-### ci_timing.py
+### citiming
 
-Collects deduplicated observations (one record per run, attempt, and job)
-plus one PR feedback record per PR revision, and compares two collected
-windows using baseline-frozen strata and baseline-frequency weights.
+`go run ./scripts/citiming` collects deduplicated observations (one record
+per run, attempt, and job) plus one PR feedback record per PR revision,
+and compares two collected windows using baseline-frozen strata and
+baseline-frequency weights.
 
 Collection requires an authenticated `gh` with read access to workflow
 runs, jobs, logs, check runs, and the cache API. Raw job logs are input
@@ -207,14 +211,14 @@ data only: they are never executed or republished in full.
 # Collect one window of completed runs (daily cadence during measurement
 # programs; collects logs before they expire). Evidence stays outside the
 # source tree.
-python3 scripts/ci_timing.py collect \
+go run ./scripts/citiming collect \
   --repo DataDog/dd-trace-go \
   --since 2026-09-14 --until 2026-09-20 \
   --output-dir /tmp/ci-timing/baseline-week-1 \
   --events pull_request --cache-snapshot
 
 # Compare two windows (offline, no API access needed).
-python3 scripts/ci_timing.py compare \
+go run ./scripts/citiming compare \
   --baseline /tmp/ci-timing/baseline-week-1 \
   --candidate /tmp/ci-timing/candidate-week-1 \
   --output-dir /tmp/ci-timing/comparison
@@ -222,8 +226,8 @@ python3 scripts/ci_timing.py compare \
 
 Metric definitions (job wall time including post steps, post time, restore
 and save result classification, PR feedback time including the all-green
-delay, and the exact accepted check-name exclusions) live in the module
-docstring of `scripts/ci_timing.py` and are the report contract.
+delay, and the exact accepted check-name exclusions) live in the doc
+comment of `scripts/citiming/main.go` and are the report contract.
 
 Restores are classified from the structured `cache-observation:` record
 that `.github/actions/setup-go` prints into every job log: exact, prefix,
@@ -238,15 +242,10 @@ with `phase:end_of_job` (the former `ci.step.cache.restore.disk_size_bytes`
 name was misleading and is retired). Compressed cache-service storage is
 measured from the cache API's `size_in_bytes` in `cache_snapshot.json`.
 
-### ci_timing_test.py
-
-Fixture-based unittest suite covering restore and save classification
-(including ambiguous and missing evidence), pagination, rerun attempts,
-skipped jobs, post-job timing, weighted-median math, duplicate collection,
-and secret handling:
+Tests live in `scripts/citiming/citiming_test.go`:
 
 ```bash
-python3 -m unittest discover -s scripts -p 'ci_timing_*.py'
+go test -race -count=1 ./scripts/citiming/
 ```
 
 ### Weekly review procedure
