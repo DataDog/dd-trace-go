@@ -15,6 +15,7 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+      - 'contrib/gofiber/fiber.v2/**'
       - '**/go.mod'
   push:
     branches:
@@ -35,6 +36,7 @@ env:
   SUBMODULES: >-
     ./contrib/database/sql
     ./contrib/gin-gonic/gin
+    ./contrib/gofiber/fiber.v2
     ./contrib/google.golang.org/grpc
     ./contrib/net/http
     ./contrib/gorilla/mux

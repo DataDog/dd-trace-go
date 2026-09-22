@@ -101,6 +101,10 @@ func TestAppSec(t *testing.T) {
 		res, err := router.Test(req)
 		require.NoError(t, err)
 		defer res.Body.Close()
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Body!\n", string(body))
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
@@ -170,6 +174,14 @@ func TestAppSecBlocking(t *testing.T) {
 
 		require.Equal(t, http.StatusForbidden, res.StatusCode)
 		require.Equal(t, "text/html", res.Header.Get("Content-Type"))
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), "<!DOCTYPE html>")
+		require.NotContains(t, string(body), "Hello World!")
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		require.Equal(t, "403", spans[0].Tag("http.status_code"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.json"))
 	})
 
 	// The body is only seen once the handler has run and written its own

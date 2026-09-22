@@ -1,0 +1,29 @@
+{
+  "version": "2.2",
+  "metadata": { "rules_version": "1.0" },
+  "rules": [
+    {
+      "id": "fiber-blocked-ip",
+      "name": "Block the Fiber test client",
+      "tags": { "type": "block_ip", "category": "security_response" },
+      "conditions": [
+        {
+          "operator": "ip_match",
+          "parameters": {
+            "inputs": [{ "address": "http.client_ip" }],
+            "data": "blocked_ips"
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    }
+  ],
+  "rules_data": [
+    {
+      "id": "blocked_ips",
+      "type": "ip_with_expiration",
+      "data": [{ "value": "1.2.3.4" }]
+    }
+  ]
+}

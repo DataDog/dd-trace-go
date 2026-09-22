@@ -30,6 +30,11 @@ func init() {
 }
 
 // Middleware returns middleware that will trace incoming requests.
+// With AppSec enabled, pending blocks take priority over the error handler.
+// Other returned errors are rendered through the application's error handler
+// before the WAF inspects the response. Handled errors are not returned to
+// earlier middleware. The original error is recorded on the span unless the
+// response is blocked; then the block is reported instead.
 func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	cfg := new(config)
 	defaults(cfg)
@@ -90,8 +95,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 
 		// pass the execution down the line
 		var err error
+		var handledResponse bool
 		if instr.AppSecEnabled() {
-			err = useAppSec(c, span, c.Next)
+			err, handledResponse = useAppSec(c, span, c.Next)
 		} else {
 			err = c.Next()
 		}
@@ -113,6 +119,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		} else if cfg.isStatusError(status) {
 			// mark 5xx server error
 			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
+		if handledResponse {
+			return nil
 		}
 		return err
 	}

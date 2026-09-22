@@ -10,28 +10,25 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
 const appsecFramework = "github.com/gofiber/fiber/v2"
 
-// useAppSec runs next under AppSec monitoring, adapting fiber's fasthttp-backed
-// context to the net/http shaped entry point in httpsec. The returned error is
-// next's, except when AppSec decided to block: the blocking response is written
-// here and a nil error is returned so that fiber does not render another one
-// over it.
-func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) error {
+// useAppSec runs next under AppSec monitoring. It returns the handler error for
+// span tagging and whether the response is already handled. A block suppresses
+// the handler error so Fiber cannot replace the blocking response.
+func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error, handledResponse bool) {
 	fctx := c.Context()
-	req, err := convertRequest(c.UserContext(), fctx)
-	if err != nil {
-		instr.Logger().Debug("gofiber/fiber.v2: appsec monitoring skipped for this request: %s", err.Error())
-		return next()
-	}
+	req := convertRequest(c.UserContext(), fctx)
 
 	w := &responseWriter{fctx: fctx}
 	_, tr, afterHandle, handled := httpsec.BeforeHandle(w, req, span, &httpsec.Config{
@@ -49,13 +46,20 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) error {
 	defer finish()
 
 	if handled {
-		return nil
+		return nil, true
 	}
 
 	// Make the operation reachable from the handler chain so that the AppSec
 	// SDK (appsec.MonitorParsedHTTPBody and friends) can find it.
 	ctx := tr.Context()
 	c.SetUserContext(ctx)
+
+	// A late block must take priority over Fiber's error handler, including
+	// when the application ignores a blocking SDK error and returns another one.
+	var blocked atomic.Bool
+	if op, ok := dyngo.FindOperation[httpsec.HandlerOperation](ctx); ok {
+		dyngo.OnData(op, func(*actions.BlockHTTP) { blocked.Store(true) })
+	}
 
 	err = next()
 
@@ -68,27 +72,47 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) error {
 		}
 	}
 
+	if err != nil && !blocked.Load() {
+		// Fiber normally renders errors after middleware returns. Render here
+		// so the WAF can inspect the final status and headers, then prevent a
+		// second call to the error handler in Fiber's outer request handler.
+		if c.App().ErrorHandler(c, err) != nil {
+			_ = c.SendStatus(http.StatusInternalServerError)
+		}
+		handledResponse = true
+	}
+
 	finish()
 	if w.wroteHeader {
-		// AppSec replaced the response, so drop whatever error the handler
-		// returned rather than letting fiber's error handler overwrite it.
-		return nil
+		return nil, true
 	}
-	return err
+	return err, handledResponse
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp
 // one. The body is deliberately left out: the WAF entry point never reads it,
 // and copying it in would force the whole body to be buffered on every request.
-func convertRequest(ctx context.Context, fctx *fasthttp.RequestCtx) (*http.Request, error) {
+func convertRequest(ctx context.Context, fctx *fasthttp.RequestCtx) *http.Request {
 	// String conversions here are all copies of fasthttp's zero-copy views into
 	// the connection buffer, which is reused for a later request. AppSec puts
 	// these values on the span, which outlives the request, so aliasing them
 	// would let a subsequent request corrupt a reported attack.
 	requestURI := string(fctx.RequestURI())
-	u, err := url.ParseRequestURI(requestURI)
-	if err != nil {
-		return nil, err
+	uri := fctx.URI()
+	// Use the same query parser as Fiber. net/url drops parameters containing
+	// semicolons or invalid escapes that fasthttp accepts. Re-encoding keeps
+	// those values intact when httpsec calls URL.Query(). Never reject the raw
+	// path here: doing so would let a malformed escape disable all monitoring.
+	// URL contains normalized values; raw-target inspection must use RequestURI.
+	query := make(url.Values)
+	for k, v := range fctx.QueryArgs().All() {
+		query.Add(string(k), string(v))
+	}
+	u := &url.URL{
+		Scheme:   string(uri.Scheme()),
+		Host:     string(uri.Host()),
+		Path:     string(uri.Path()),
+		RawQuery: query.Encode(),
 	}
 
 	header := make(http.Header, fctx.Request.Header.Len())
@@ -104,7 +128,7 @@ func convertRequest(ctx context.Context, fctx *fasthttp.RequestCtx) (*http.Reque
 		RemoteAddr: fctx.RemoteAddr().String(),
 		Header:     header,
 	}
-	return req.WithContext(ctx), nil
+	return req.WithContext(ctx)
 }
 
 func responseHeaders(fctx *fasthttp.RequestCtx) http.Header {

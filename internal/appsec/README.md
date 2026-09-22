@@ -9,6 +9,31 @@ Most of the work is to forward information to the module `github.com/DataDog/go-
 connect the different parts of the application and the WAF engine while keeping up to date the various sources of
 configuration that the WAF engine uses.
 
+### Fiber request monitoring
+
+The Fiber v2 middleware starts the WAF operation before the handler chain. It
+keeps the raw request target for WAF inspection and uses fasthttp's parsed query
+values. Invalid escapes and semicolons must not disable monitoring or remove
+values that the application can read.
+
+With AppSec enabled, the middleware renders returned errors through Fiber's
+configured error handler before it reports the response to the WAF. The error
+handler runs once when needed. The original error is recorded on the span
+unless AppSec blocks the response; then the block is reported instead.
+Earlier middleware receives `nil` from `c.Next()` for these handled errors;
+error logging or counting belongs in the configured error handler. With AppSec
+disabled, error propagation is unchanged. A pending block takes priority over
+the error handler and replaces the handler's
+body and headers. Route parameters are available only after the handler chain,
+so a path-parameter block cannot prevent handler side effects. Parsed bodies
+require an explicit `appsec.MonitorParsedHTTPBody(c.UserContext(), body)` call;
+Orchestrion currently inserts the middleware, not a `BodyParser` hook.
+
+The Fiber contrib tests cover parsing, error responses, blocking, and connection
+reuse. The Orchestrion Fiber case verifies blocking without manual middleware.
+The AppSec CI matrix includes Fiber, and `BenchmarkFiberMiddleware` measures
+requests with AppSec off and on.
+
 ### Instrumentation Gateway: Dyngo
 
 Having the customer (or orchestrion) instrument their code is the hardest part of the job. That's why we want to provide
