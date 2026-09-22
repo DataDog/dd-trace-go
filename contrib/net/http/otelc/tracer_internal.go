@@ -34,6 +34,14 @@ var tracerInternalIndex = sync.OnceValue(func() int {
 
 // isTracerInternal reports whether transport belongs to dd-trace-go itself.
 // Tracing those would make every flush produce the spans the next flush sends.
+//
+// FIXME: this returns false in an application that imports nothing from
+// dd-trace-go, which is the zero-touch case otelc exists for. otelc plans which
+// packages to instrument from a dry run of the uninstrumented build, and only
+// then generates the otelc.runtime.go that pulls dd-trace-go in, so the rules
+// that mark these transports never run and the flush loop above is real. The
+// foundation's GLS rules and enable_otelc_flag are skipped for the same reason.
+// Not fixable here; it needs otelc to plan after injection.
 func isTracerInternal(transport *http.Transport) bool {
 	index := tracerInternalIndex()
 	if index < 0 || transport == nil {
