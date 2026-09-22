@@ -49,6 +49,7 @@
 //   - [contrib/go.uber.org/zap/v2]
 //   - [contrib/gocql/gocql/v2]
 //   - [contrib/gofiber/fiber.v2/v2]
+//   - [contrib/gomodule/redigo/otelc/v2]
 //   - [contrib/gomodule/redigo/v2]
 //   - [contrib/google.golang.org/api/v2]
 //   - [contrib/google.golang.org/grpc/v2]
@@ -118,6 +119,7 @@
 // [contrib/go.uber.org/zap/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
 // [contrib/gocql/gocql/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2
 // [contrib/gofiber/fiber.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
+// [contrib/gomodule/redigo/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2
 // [contrib/gomodule/redigo/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
 // [contrib/google.golang.org/api/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2
 // [contrib/google.golang.org/grpc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
