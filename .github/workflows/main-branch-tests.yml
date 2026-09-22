@@ -10,6 +10,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   schedule: # nightly
     - cron: "0 0 * * *"
