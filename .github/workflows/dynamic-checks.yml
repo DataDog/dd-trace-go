@@ -92,9 +92,11 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Setup Go and development tools
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
+          workload: dynamic-locking
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -133,6 +135,17 @@ jobs:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
           files: internal/locking/coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt
           format: go-coverprofile
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # No pull request ever waits on this workflow's jobs directly, but
+          # keep the walk off the pull_request path for consistency.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
 
   # Summary job to ensure all dynamic checks pass
   dynamic-checks-summary:

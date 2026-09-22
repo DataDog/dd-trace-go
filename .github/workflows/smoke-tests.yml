@@ -54,6 +54,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
+          workload: smoke-setup
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -124,9 +125,11 @@ jobs:
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
       - name: Setup Go and development tools
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
+          workload: smoke-deps-update
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Capture trusted commit SHA
@@ -233,6 +236,14 @@ jobs:
           files: coverage-contrib-merged.txt
           format: go-coverprofile
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+
   smoke-test-tracer:
     name: Test dd-trace-go
     runs-on: ubuntu-latest
@@ -245,9 +256,11 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
       - name: Setup Go and development tools
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
+          workload: smoke-tracer
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run tests
@@ -275,6 +288,14 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.26,arch:${{ runner.arch }},os:${{ runner.os }}
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
     runs-on: ubuntu-latest
@@ -295,6 +316,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
+          workload: smoke-gen
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
@@ -422,6 +444,7 @@ jobs:
       GOSUMDB: "off"
     steps:
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26" # lowest supported version, so this checks the floor

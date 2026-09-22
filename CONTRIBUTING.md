@@ -211,6 +211,35 @@ If a PR sits open for more than a month awaiting work or replies by the author, 
 
 We provide several utility scripts in the `scripts/` directory to help with common development tasks:
 
+### CI Timing Scripts
+
+#### `scripts/ci_timing.py`
+
+Collects CI timing and Go build-cache observations from completed GitHub
+Actions runs (authenticated `gh` reads only) and compares two collected
+windows using baseline-frozen workload strata. It backs the cache-migration
+measurement program: GitHub completed-run data is the acceptance source of
+truth, Datadog series are secondary.
+
+```bash
+# Collect a measurement window (run daily while a program is active).
+python3 scripts/ci_timing.py collect --repo DataDog/dd-trace-go \
+  --since 2026-09-14 --until 2026-09-20 --events pull_request \
+  --output-dir /tmp/ci-timing/week-1 --cache-snapshot
+
+# Compare two windows offline.
+python3 scripts/ci_timing.py compare --baseline /tmp/ci-timing/week-1 \
+  --candidate /tmp/ci-timing/week-2 --output-dir /tmp/ci-timing/cmp
+
+# Fixture-based tests.
+python3 -m unittest discover -s scripts -p 'ci_timing_*.py'
+```
+
+Metric definitions, accepted check-name exclusions for PR feedback time,
+and the weekly review procedure (sample minimums, stratum separation, no
+run triggering to reach counts) are documented in `scripts/README.md` and
+in the module docstring.
+
 ### Code Quality Scripts
 
 #### `make lint`

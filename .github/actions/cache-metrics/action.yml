@@ -8,15 +8,26 @@
 #     - `partial`: Cache restored using a key-prefix match instead of an exact match.
 #     - `unknown`: Exact or partial cache restore; reporter lacked `cache_matched_key`.
 #     - `miss`: Cache miss.
-# - `ci.step.cache.restore.disk_size_bytes` (GAUGE).
+# - `ci.cache.disk_size_bytes` (GAUGE).
 #   Value: Filesystem usage in bytes, e.g. `73400320`; actual cache upload is compressed.
+#   Measured near the end of the calling job's main phase, NOT immediately after
+#   restore, so it is tagged `phase:end_of_job`.
+#
+#   Series transition: until this change these values were published as
+#   `ci.step.cache.restore.disk_size_bytes`, whose name wrongly implied they
+#   were restore-time sizes. That series is retired; queries must move to
+#   `ci.cache.disk_size_bytes` with `phase:end_of_job`. Compressed
+#   cache-service storage consumption is measured from the cache API's
+#   `size_in_bytes` by scripts/ci_timing.py, not from this action.
 #
 # Common tags:
 # - `repository`: Repository name, e.g. `dd-trace-go`.
 # - `os.platform`: Runner operating system, e.g. `linux`.
 # - `os.architecture`: Runner architecture, e.g. `x64`.
 # - `runtime.name`: Runtime name, e.g. `go`.
-# - `runtime.version`: Runtime version, e.g. `1.25.1`.
+# - `runtime.version`: Resolved runtime version, e.g. `1.25.1`.
+# - `provider`: Cache provider, e.g. `github-cache` or `cloudx`.
+# - `workload`: Logical workload family, e.g. `unit-core`, `multi-os`.
 # - `ci.pipeline.name`: GitHub workflow name, e.g. `unit-integration-tests`.
 # - `ci.job.name`: GitHub job identifier, e.g. `test`.
 # - `ci.trigger`: GitHub event name, e.g. `pull_request`.
@@ -25,6 +36,8 @@
 #
 # Metric submission is best-effort. Call this action with `continue-on-error: true`
 # and `if: always()` so reporting cannot change the calling job's result.
+# Without a Datadog API key the action is a no-op: the structured observation
+# itself is already mirrored into the job log by .github/actions/setup-go.
 name: 'Cache Metrics'
 description: 'Report cache outcomes and filesystem sizes to Datadog'
 inputs:
@@ -36,8 +49,11 @@ inputs:
     default: "false"
     description: Whether to report filesystem usage for supplied cache paths; traversing them may be expensive.
   dd-api-key:
-    required: true
-    description: Datadog API key used to submit the metrics.
+    required: false
+    default: ""
+    description: >-
+      Datadog API key used to submit the metrics. When empty, submission is
+      skipped; the raw observation stays available in the job log.
   dd-site:
     required: false
     default: datadoghq.com
@@ -97,6 +113,10 @@ runs:
         payload_file="$temp_dir/payload.json"
         response_file="$temp_dir/response.txt"
 
+        provider_raw="$(jq -r '.provider // empty' <<<"$CACHE_METRICS")"
+        workload_raw="$(jq -r '.workload // empty' <<<"$CACHE_METRICS")"
+        provider_tag="$(normalize_tag "${provider_raw:-github-cache}")"
+        workload_tag="$(normalize_tag "${workload_raw:-unknown}")"
         tags="$(jq -cn \
           --arg repository "$(normalize_tag "${GITHUB_REPOSITORY##*/}")" \
           --arg os_platform "$(normalize_tag "${RUNNER_OS:-unknown}")" \
@@ -104,12 +124,16 @@ runs:
           --arg pipeline "$(normalize_tag "${CI_PIPELINE_NAME:-unknown}")" \
           --arg job "$(normalize_tag "${CI_JOB_NAME:-unknown}")" \
           --arg trigger "$(normalize_tag "${CI_TRIGGER:-unknown}")" \
+          --arg provider "$provider_tag" \
+          --arg workload "$workload_tag" \
           '["repository:" + (if $repository == "" then "unknown" else $repository end),
             "os.platform:" + $os_platform,
             "os.architecture:" + $os_architecture,
             "ci.pipeline.name:" + $pipeline,
             "ci.job.name:" + $job,
-            "ci.trigger:" + $trigger]'
+            "ci.trigger:" + $trigger,
+            "provider:" + $provider,
+            "workload:" + $workload]'
         )"
 
         # A cache_matched_key field selects exact/partial/miss classification.
@@ -128,9 +152,10 @@ runs:
              tags: ($tags + runtime_tags + ["cache_name:" + $name,
                     "outcome:" + $result[0], "hit_type:" + $result[1]])};
           def size_series($measurement):
-            {metric: "ci.step.cache.restore.disk_size_bytes", type: 3,
+            {metric: "ci.cache.disk_size_bytes", type: 3,
              points: [{timestamp: $timestamp, value: ($measurement[1] | tonumber)}],
-             tags: ($tags + runtime_tags + ["cache_name:" + $measurement[0]])};
+             tags: ($tags + runtime_tags + ["cache_name:" + $measurement[0],
+                    "phase:end_of_job"])};
           def restore_result:
             if .enabled != "true" or .outcome != "success" then empty
             elif has("cache_matched_key") then
