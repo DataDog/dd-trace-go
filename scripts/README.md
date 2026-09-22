@@ -147,14 +147,12 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 ```
 
 **Options:**
-
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
 - `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
-
 ```json
 {
   "sample": "net_http",
@@ -185,7 +183,6 @@ export DATADOG_SITE=datadoghq.com
 ```
 
 **Required environment variables:**
-
 - `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
