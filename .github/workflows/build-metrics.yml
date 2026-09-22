@@ -279,9 +279,14 @@ jobs:
           DATADOG_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           DATADOG_SITE: datadoghq.com
           METRICS_FILE: ${{ runner.temp }}/metrics.json
-          # Cache-hit outputs ('true'/'false', unset when the step didn't
-          # run); published as ci.cache.*.hit measures by the script below.
+          # Per-cache step outcome and hit flags, published as ci.cache.*.hit
+          # measures by the script below. actions/cache emits an empty
+          # cache-hit on a miss, so the outcome separates misses from skipped
+          # steps (gsa in orchestrion mode).
+          GO_MOD_CACHE_OUTCOME: ${{ steps.go-mod-cache.outcome }}
           GO_MOD_CACHE_HIT: ${{ steps.go-mod-cache.outputs.cache-hit }}
+          GSA_CACHE_OUTCOME: ${{ steps.gsa-cache.outcome }}
           GSA_CACHE_HIT: ${{ steps.gsa-cache.outputs.cache-hit }}
+          DATADOG_CI_CACHE_OUTCOME: ${{ steps.dd-ci-cli-cache.outcome }}
           DATADOG_CI_CACHE_HIT: ${{ steps.dd-ci-cli-cache.outputs.cache-hit }}
         run: ./scripts/publish_build_metrics.sh
