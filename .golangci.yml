@@ -20,7 +20,19 @@ linters:
     - revive
     # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
     # - loggercheck # TODO: Enable this once we've migrated to structured logging.
-    # - unused # TODO: Enable this once we've fixed all the unused issues.
+    # - unused # TODO: Enable this repo-wide once we've fixed all the pre-existing
+    #   unused issues. Until then, `unused` is enforced diff-scoped only: the
+    #   "golangci-lint (unused, new code only)" step in
+    #   .github/workflows/static-checks.yml runs `golangci-lint --disable-all
+    #   --enable=unused` and reports through reviewdog with
+    #   filter_mode: added, so only unused identifiers introduced or touched
+    #   by the current PR fail the build. That step exists because reviewers
+    #   have had to manually flag unused fields/methods left over from
+    #   abandoned approaches (e.g. an exported helper and its backing field
+    #   added for one code path, then orphaned when the implementation
+    #   changed) -- a pattern `unused` catches mechanically with a very low
+    #   false-positive rate, without requiring the whole codebase to be
+    #   cleaned up first.
   exclusions:
     generated: lax
     presets:
@@ -117,7 +129,7 @@ linters:
           arguments:
             - [""] # AllowList
             - [""] # DenyList
-            # NOTICE: Allowlisting "utils" package name, doesn't work. Needs investigation.
+            # NOTICE: Allowlisting !utils package name, doesn't work. Needs investigation.
             - - skip-package-name-checks: true # Extra parameter
 
 formatters:
