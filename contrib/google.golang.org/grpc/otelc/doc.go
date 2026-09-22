@@ -13,3 +13,7 @@
 // grpc interceptors at call sites and need no hook functions, but the module
 // stays separate to match the convention.
 package otelc
+
+import (
+	_ "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
+)
