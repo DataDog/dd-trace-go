@@ -10,3 +10,7 @@
 // otelc/all can name it directly, the same as every other contrib's otelc
 // package.
 package otelc
+
+import (
+	_ "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
+)
