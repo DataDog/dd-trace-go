@@ -236,8 +236,14 @@ jobs:
           files: coverage-contrib-merged.txt
           format: go-coverprofile
 
+      # The sandboxed contrib step may have modified the workspace; the
+      # trusted re-checkout and artifact restore gate every other
+      # post-sandbox step, and this local action must be no different:
+      # loading action code from a tampered workspace with id-token
+      # write available would let attacker-controlled steps request an
+      # OIDC token even though the guarded dd-sts step never ran.
       - name: Report cache metrics to Datadog
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:

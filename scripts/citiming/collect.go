@@ -446,6 +446,21 @@ func collectPRFeedback(c client, runs []run, collectedAt string) []prFeedback {
 				relevant = append(relevant, chk)
 			}
 		}
+		// Defer revisions whose checks have not all completed: a
+		// revision enters the run list as soon as any workflow
+		// finishes, while later checks may still be pending. Freezing
+		// the feedback time now would understate it; the next daily
+		// collection retries the revision.
+		complete := true
+		for _, chk := range relevant {
+			if chk.CompletedAt == "" {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
 		var created, last string
 		for _, r := range group {
 			if created == "" || (r.CreatedAt != "" && r.CreatedAt < created) {
@@ -542,12 +557,12 @@ const schemaVersion = 1
 
 // loadObservations reads an existing store: job observations by dedup key and
 // the set of already-recorded PR feedback revisions.
-func loadObservations(dir string) (map[jobKey]jobObservation, map[prKey]bool, error) {
+func loadObservations(dir string) (map[jobKey]jobObservation, map[prKey]prFeedback, error) {
 	jobs := map[jobKey]jobObservation{}
-	prs := map[prKey]bool{}
+	feedback := map[prKey]prFeedback{}
 	data, err := os.ReadFile(dir + "/observations.jsonl")
 	if os.IsNotExist(err) {
-		return jobs, prs, nil
+		return jobs, feedback, nil
 	}
 	if err != nil {
 		return nil, nil, err
@@ -574,39 +589,49 @@ func loadObservations(dir string) (map[jobKey]jobObservation, map[prKey]bool, er
 			if json.Unmarshal([]byte(line), &rec) != nil {
 				continue
 			}
-			prs[prKey{rec.PR, rec.HeadSHA}] = true
+			feedback[prKey{rec.PR, rec.HeadSHA}] = rec
 		}
 	}
-	return jobs, prs, nil
+	return jobs, feedback, nil
 }
 
-// writeObservations merges new records into the store file.
-func writeObservations(path string, jobs map[jobKey]jobObservation, newJobs []jobObservation, newFeedback []prFeedback) error {
-	if jobs == nil {
-		jobs = map[jobKey]jobObservation{}
-	}
-	for _, rec := range newJobs {
-		jobs[jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}] = rec
-	}
-	var buf bytes.Buffer
-	keys := make([]jobKey, 0, len(jobs))
+// writeStore serializes the merged observation store: job
+// observations keyed by (run, attempt, job) and PR feedback keyed by
+// (PR, head SHA). Both maps are the complete merged state; callers
+// merge freshly collected records over previously stored ones so an
+// overlapping collection refreshes re-observed records (correcting,
+// for example, a superseded attempt's latest flag after a rerun)
+// instead of dropping or duplicating them.
+func writeStore(path string, jobs map[jobKey]jobObservation,
+	feedback map[prKey]prFeedback) error {
+
+	jobKeys := make([]jobKey, 0, len(jobs))
 	for k := range jobs {
-		keys = append(keys, k)
+		jobKeys = append(jobKeys, k)
 	}
-	slices.SortFunc(keys, func(a, b jobKey) int {
-		return cmp.Compare(a.runID, b.runID)
+	slices.SortFunc(jobKeys, func(a, b jobKey) int {
+		return cmp.Or(cmp.Compare(a.runID, b.runID),
+			cmp.Compare(a.attempt, b.attempt),
+			cmp.Compare(a.jobID, b.jobID))
 	})
-	for _, k := range keys {
-		rec := jobs[k]
-		line, err := json.Marshal(rec)
+	fbKeys := make([]prKey, 0, len(feedback))
+	for k := range feedback {
+		fbKeys = append(fbKeys, k)
+	}
+	slices.SortFunc(fbKeys, func(a, b prKey) int {
+		return cmp.Or(cmp.Compare(a.pr, b.pr), cmp.Compare(a.sha, b.sha))
+	})
+	var buf bytes.Buffer
+	for _, k := range jobKeys {
+		line, err := json.Marshal(jobs[k])
 		if err != nil {
 			return err
 		}
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
-	for _, rec := range newFeedback {
-		line, err := json.Marshal(rec)
+	for _, k := range fbKeys {
+		line, err := json.Marshal(feedback[k])
 		if err != nil {
 			return err
 		}
@@ -686,37 +711,45 @@ func cmdCollect(args []string) error {
 	fmt.Fprintf(os.Stdout, "  %d job observations, %d pr feedback records\n",
 		len(records), len(feedback))
 
-	existingJobs, existingPRs, err := loadObservations(*outputDir)
+	existingJobs, existingFeedback, err := loadObservations(*outputDir)
 	if err != nil {
 		return err
 	}
-	newJobs := make([]jobObservation, 0, len(records))
+	added, refreshed := 0, 0
 	for _, rec := range records {
-		if _, ok := existingJobs[jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}]; ok {
-			continue
+		key := jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}
+		if _, ok := existingJobs[key]; ok {
+			refreshed++
+		} else {
+			added++
 		}
-		newJobs = append(newJobs, rec)
+		existingJobs[key] = rec
 	}
-	newFeedback := make([]prFeedback, 0, len(feedback))
+	fbAdded, fbRefreshed := 0, 0
 	for _, rec := range feedback {
-		if existingPRs[prKey{rec.PR, rec.HeadSHA}] {
-			continue
+		key := prKey{rec.PR, rec.HeadSHA}
+		if _, ok := existingFeedback[key]; ok {
+			fbRefreshed++
+		} else {
+			fbAdded++
 		}
-		newFeedback = append(newFeedback, rec)
+		existingFeedback[key] = rec
 	}
 	storePath := *outputDir + "/observations.jsonl"
-	if err := writeObservations(storePath, existingJobs, newJobs, newFeedback); err != nil {
+	if err := writeStore(storePath, existingJobs, existingFeedback); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "  wrote %d new records to %s\n",
-		len(newJobs)+len(newFeedback), storePath)
+	fmt.Fprintf(os.Stdout,
+		"  store: %d added, %d refreshed; feedback %d added, %d refreshed -> %s\n",
+		added, refreshed, fbAdded, fbRefreshed, storePath)
 
 	if *snapshot {
 		snap, err := collectCacheSnapshot(c, collectedAt)
 		if err != nil {
 			return err
 		}
-		snapPath := *outputDir + "/cache_snapshot.json"
+		snapPath := *outputDir + "/cache_snapshot_" +
+			sanitizeTimestamp(collectedAt) + ".json"
 		data, err := json.MarshalIndent(snap, "", "  ")
 		if err != nil {
 			return err
@@ -728,11 +761,20 @@ func cmdCollect(args []string) error {
 			snap.Usage.ActiveCachesCount, snap.Usage.ActiveCachesSizeInBytes, snapPath)
 	}
 
-	all := existingJobs
-	for _, rec := range newJobs {
-		all[jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}] = rec
-	}
-	return writeSummary(*outputDir, all)
+	return writeSummary(*outputDir, existingJobs)
+}
+
+// sanitizeTimestamp renders a collection timestamp as a filename-safe
+// stamp, e.g. 2026-09-22T16:17:00Z -> 20260922T161700Z, so daily
+// snapshots do not overwrite each other and a week keeps every day's
+// inventory.
+func sanitizeTimestamp(ts string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == ':' {
+			return -1
+		}
+		return r
+	}, ts)
 }
 
 func splitSet(value string) map[string]bool {

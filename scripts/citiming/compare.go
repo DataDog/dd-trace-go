@@ -22,9 +22,27 @@ import (
 // baseline window: each baseline stratum's frequency is its weight and
 // observations within a stratum are equal. This stops a change in the job
 // mix from manufacturing an improvement.
+// minRunSamples and minRevisions are the acceptance minima from the
+// measurement plan: a workload comparison needs at least five
+// independent successful first-attempt run IDs per stratum per window,
+// and PR feedback needs five comparable revisions per window.
+const (
+	minRunSamples = 5
+	minRevisions  = 5
+)
+
+// stratum is one frozen comparison cell. The logical job name carries
+// the matrix dimensions (e.g. "test-contrib-matrix (chunk 3/6)"), so
+// matrix variants with the same workload family do not collapse into
+// one stratum: a reshuffled chunk selection or a different build tag
+// must not be able to manufacture an improvement by changing which
+// work runs. Strata and weights come from the baseline window: each
+// baseline stratum's frequency is its weight and observations within
+// a stratum are equal.
 type stratum struct {
 	workflow string
 	workload string
+	logical  string
 	os       string
 	arch     string
 	goVer    string
@@ -38,6 +56,7 @@ func stratify(rec jobObservation) stratum {
 	return stratum{
 		workflow: rec.Run.WorkflowFile,
 		workload: family,
+		logical:  rec.Job.LogicalName,
 		os:       rec.Job.RunnerOS,
 		arch:     rec.Job.RunnerArch,
 		goVer:    rec.Workload.ResolvedGoVersion,
@@ -49,6 +68,7 @@ func sortStrata(values []stratum) {
 		return cmp.Or(
 			cmp.Compare(a.workflow, b.workflow),
 			cmp.Compare(a.workload, b.workload),
+			cmp.Compare(a.logical, b.logical),
 			cmp.Compare(a.os, b.os),
 			cmp.Compare(a.arch, b.arch),
 			cmp.Compare(a.goVer, b.goVer),
@@ -186,9 +206,41 @@ type feedbackRow struct {
 // perfValues splits successful first attempts from everything else.
 // Skipped jobs are absent work, not zero-duration successes; failures and
 // retries are reported separately, never in the performance table.
-func perfValues(records []jobObservation) (values map[stratum][]float64, failures map[stratum][]string) {
-	values = map[stratum][]float64{}
-	failures = map[stratum][]string{}
+// perfSplit splits successful first attempts from everything else
+// and aggregates the cache evidence alongside the durations. Skipped
+// jobs are absent work, not zero-duration successes; failures and
+// retries are reported separately, never in the performance table.
+type perfSplit struct {
+	values   map[stratum][]float64
+	runIDs   map[stratum]map[int64]bool
+	cache    map[stratum]*cacheAgg
+	failures map[stratum][]string
+}
+
+// cacheAgg summarizes one stratum's successful first attempts: restore
+// classification counts, save failures, and post-phase durations.
+type cacheAgg struct {
+	restores int
+	exact    int
+	unknown  int
+	saveErrs int
+	post     []float64
+}
+
+// nonExact counts restores that were neither exact hits nor
+// unclassifiable: prefix restores, cold misses, disabled caches and
+// errors all mean the workload was not served from an exact snapshot.
+func (a *cacheAgg) nonExact() int {
+	return a.restores - a.exact - a.unknown
+}
+
+func perfValues(records []jobObservation) perfSplit {
+	split := perfSplit{
+		values:   map[stratum][]float64{},
+		runIDs:   map[stratum]map[int64]bool{},
+		cache:    map[stratum]*cacheAgg{},
+		failures: map[stratum][]string{},
+	}
 	for _, rec := range records {
 		if rec.Run.Attempt != 1 || !rec.Run.LatestAttempt {
 			continue
@@ -196,12 +248,103 @@ func perfValues(records []jobObservation) (values map[stratum][]float64, failure
 		key := stratify(rec)
 		switch {
 		case rec.Job.Conclusion == "success" && rec.Job.Seconds != nil:
-			values[key] = append(values[key], *rec.Job.Seconds)
+			split.values[key] = append(split.values[key], *rec.Job.Seconds)
+			if split.runIDs[key] == nil {
+				split.runIDs[key] = map[int64]bool{}
+			}
+			split.runIDs[key][rec.Run.ID] = true
+			agg := split.cache[key]
+			if agg == nil {
+				agg = &cacheAgg{}
+				split.cache[key] = agg
+			}
+			for _, r := range rec.Cache.Restores {
+				agg.restores++
+				switch r.Result {
+				case "exact":
+					agg.exact++
+				case "unknown":
+					agg.unknown++
+				}
+			}
+			for _, s := range rec.Cache.Saves {
+				if s == "error" || s == "conflict" {
+					agg.saveErrs++
+				}
+			}
+			if rec.Cache.PostSeconds != nil {
+				agg.post = append(agg.post, *rec.Cache.PostSeconds)
+			}
 		case rec.Job.Conclusion != "skipped" && rec.Job.Conclusion != "":
-			failures[key] = append(failures[key], rec.Job.Conclusion)
+			split.failures[key] = append(split.failures[key], rec.Job.Conclusion)
 		}
 	}
-	return values, failures
+	return split
+}
+
+// feedbackRevisionCounts counts stored revisions per selection
+// signature, including records whose feedback time is not measurable
+// yet; the sample minimum applies to revisions, not just durations.
+func feedbackRevisionCounts(records []prFeedback) map[string]int {
+	counts := map[string]int{}
+	for _, rec := range records {
+		counts[rec.SelectionSignature]++
+	}
+	return counts
+}
+
+// underSampleRow names a stratum that fell below the distinct-run
+// minimum in one of the windows.
+type underSampleRow struct {
+	stratum  stratum
+	baseRuns int
+	candRuns int
+}
+
+// cacheRow carries the cache evidence for one stratum from both
+// windows into the reports.
+type cacheRow struct {
+	stratum stratum
+	baseRestores, baseNonExact, baseUnknown,
+	baseSaveErrs int
+	candRestores, candNonExact, candUnknown,
+	candSaveErrs int
+	basePostP50, candPostP50 *float64
+}
+
+func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
+	keys := map[stratum]bool{}
+	for k := range base.cache {
+		keys[k] = true
+	}
+	for k := range cand.cache {
+		keys[k] = true
+	}
+	list := make([]stratum, 0, len(keys))
+	for k := range keys {
+		list = append(list, k)
+	}
+	sortStrata(list)
+	rows := make([]cacheRow, 0, len(list))
+	for _, k := range list {
+		row := cacheRow{stratum: k}
+		if a := base.cache[k]; a != nil {
+			row.baseRestores = a.restores
+			row.baseNonExact = a.nonExact()
+			row.baseUnknown = a.unknown
+			row.baseSaveErrs = a.saveErrs
+			row.basePostP50 = median(a.post)
+		}
+		if a := cand.cache[k]; a != nil {
+			row.candRestores = a.restores
+			row.candNonExact = a.nonExact()
+			row.candUnknown = a.unknown
+			row.candSaveErrs = a.saveErrs
+			row.candPostP50 = median(a.post)
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func feedbackBySignature(records []prFeedback) map[string][]float64 {
@@ -218,6 +361,7 @@ func feedbackBySignature(records []prFeedback) map[string][]float64 {
 type comparisonRow struct {
 	stratum              stratum
 	baselineN, candN     int
+	baseRuns, candRuns   int
 	baselineP50, baseP95 *float64
 	candP50, candP95     *float64
 }
@@ -243,11 +387,15 @@ func cmdCompare(args []string) error {
 		return err
 	}
 
-	baseVals, baseFail := perfValues(baseline.jobs)
-	candVals, candFail := perfValues(candidate.jobs)
+	baseSplit := perfValues(baseline.jobs)
+	candSplit := perfValues(candidate.jobs)
+	baseVals, baseFail := baseSplit.values, baseSplit.failures
+	candVals, candFail := candSplit.values, candSplit.failures
 
 	var weightedBase, weightedCand []weightedValue
 	rows := make([]comparisonRow, 0, len(baseVals))
+	var missing []stratum
+	var underSampled []underSampleRow
 	for _, key := range sortedKeys(baseVals) {
 		b := slices.Clone(baseVals[key])
 		slices.Sort(b)
@@ -267,21 +415,60 @@ func cmdCompare(args []string) error {
 			stratum:     key,
 			baselineN:   len(b),
 			candN:       len(c),
+			baseRuns:    len(baseSplit.runIDs[key]),
+			candRuns:    len(candSplit.runIDs[key]),
 			baselineP50: percentile(b, 0.50),
 			baseP95:     percentile(b, 0.95),
 			candP50:     percentile(c, 0.50),
 			candP95:     percentile(c, 0.95),
 		})
+		if len(c) == 0 {
+			missing = append(missing, key)
+			continue
+		}
+		// Matrix jobs from a single run must not stand in for the
+		// five independent run IDs the acceptance criteria require.
+		if len(baseSplit.runIDs[key]) < minRunSamples ||
+			len(candSplit.runIDs[key]) < minRunSamples {
+			underSampled = append(underSampled, underSampleRow{
+				stratum:  key,
+				baseRuns: len(baseSplit.runIDs[key]),
+				candRuns: len(candSplit.runIDs[key]),
+			})
+		}
 	}
 
 	baseWMed := weightedMedian(weightedBase)
 	candWMed := weightedMedian(weightedCand)
 	improvement := improvementOf(baseWMed, candWMed)
 
+	var reasons []string
+	if len(baseVals) == 0 {
+		reasons = append(reasons, "no baseline observations")
+	}
+	if len(missing) > 0 {
+		reasons = append(reasons, fmt.Sprintf(
+			"%d baseline strata have no candidate observations", len(missing)))
+	}
+	if len(underSampled) > 0 {
+		reasons = append(reasons, fmt.Sprintf(
+			"%d strata are below the minimum of %d distinct run IDs in a window",
+			len(underSampled), minRunSamples))
+	}
+	// A missing or under-sampled stratum keeps its baseline weight, so
+	// computing the aggregate anyway could report a false improvement;
+	// refuse it and let the report name what is missing.
+	if len(reasons) > 0 {
+		improvement = nil
+	}
+
 	baseFB := feedbackBySignature(baseline.feedback)
 	candFB := feedbackBySignature(candidate.feedback)
+	baseFBRevs := feedbackRevisionCounts(baseline.feedback)
+	candFBRevs := feedbackRevisionCounts(candidate.feedback)
 	var fbBase, fbCand []weightedValue
 	fbRows := make([]feedbackRow, 0, len(baseFB))
+	var fbMissing, fbUnder []string
 	for _, sig := range sortedSigKeys(baseFB) {
 		b := slices.Clone(baseFB[sig])
 		slices.Sort(b)
@@ -303,28 +490,94 @@ func cmdCompare(args []string) error {
 			baseP50: percentile(b, 0.50),
 			candP50: percentile(c, 0.50),
 		})
+		if len(c) == 0 {
+			fbMissing = append(fbMissing, sig)
+			continue
+		}
+		if baseFBRevs[sig] < minRevisions || candFBRevs[sig] < minRevisions {
+			fbUnder = append(fbUnder, fmt.Sprintf(
+				"%s: %d baseline, %d candidate revisions (minimum %d)",
+				sig, baseFBRevs[sig], candFBRevs[sig], minRevisions))
+		}
 	}
 	fbBaseWMed := weightedMedian(fbBase)
 	fbCandWMed := weightedMedian(fbCand)
 	fbImprovement := improvementOf(fbBaseWMed, fbCandWMed)
+	if len(fbMissing) > 0 || len(fbUnder) > 0 {
+		fbImprovement = nil
+	}
+
+	cacheRows := cacheBehaviorRows(baseSplit, candSplit)
 
 	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
 		return err
 	}
-	if err := writeComparisonCSV(*outputDir, rows, fbRows); err != nil {
+	if err := writeComparisonCSV(*outputDir, rows, cacheRows, fbRows); err != nil {
 		return err
 	}
-	report := renderReport(rows, baseVals, candVals, baseWMed, candWMed, improvement,
-		baseFail, candFail, fbRows, fbBaseWMed, fbCandWMed, fbImprovement)
+	data := reportData{
+		rows:         rows,
+		missing:      missing,
+		underSampled: underSampled,
+		cacheRows:    cacheRows,
+		baseWMed:     baseWMed,
+		candWMed:     candWMed,
+		improvement:  improvement,
+		reasons:      reasons,
+		baseFail:     baseFail,
+		candFail:     candFail,
+		strataKeys: strataKeyUnion(strataKeySet(baseVals),
+			strataKeySet(candVals), strataKeySet(baseFail),
+			strataKeySet(candFail)),
+		fbRows:        fbRows,
+		fbMissing:     fbMissing,
+		fbUnder:       fbUnder,
+		fbBaseWMed:    fbBaseWMed,
+		fbCandWMed:    fbCandWMed,
+		fbImprovement: fbImprovement,
+	}
+	report := renderReport(data)
 	if err := os.WriteFile(*outputDir+"/comparison.md", []byte(report), 0o644); err != nil {
 		return err
 	}
 	fmt.Fprint(os.Stdout, report)
 	fmt.Fprintf(os.Stdout, "\nWrote %s/comparison.md and %s/comparison.csv\n", *outputDir, *outputDir)
 	if improvement == nil {
-		return errors.New("no comparable candidate data; comparison not computable")
+		msg := "comparison not computable"
+		if len(reasons) > 0 {
+			msg += ": " + strings.Join(reasons, "; ")
+		}
+		return errors.New(msg)
 	}
 	return nil
+}
+
+// strataKeyUnion returns every stratum that appears in any of the
+// success or failure maps, so strata whose jobs all failed stay
+// visible in the report instead of vanishing because they never
+// produced a timing sample.
+// strataKeySet extracts the key set of any stratum-keyed map.
+func strataKeySet[V any](m map[stratum]V) map[stratum]bool {
+	s := make(map[stratum]bool, len(m))
+	for k := range m {
+		s[k] = true
+	}
+	return s
+}
+
+func strataKeyUnion(sets ...map[stratum]bool) []stratum {
+	seen := map[stratum]bool{}
+	for _, s := range sets {
+		for k := range s {
+			seen[k] = true
+		}
+	}
+	keys := make([]stratum, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sortStrata(keys)
+	return keys
 }
 
 func improvementOf(base, cand *float64) *float64 {
@@ -353,25 +606,62 @@ func sortedSigKeys(values map[string][]float64) []string {
 	return keys
 }
 
-func writeComparisonCSV(dir string, rows []comparisonRow, fbRows []feedbackRow) error {
+// reportData bundles everything the rendered report needs.
+type reportData struct {
+	rows                   []comparisonRow
+	missing                []stratum
+	underSampled           []underSampleRow
+	cacheRows              []cacheRow
+	baseWMed, candWMed     *float64
+	improvement            *float64
+	reasons                []string
+	baseFail, candFail     map[stratum][]string
+	strataKeys             []stratum
+	fbRows                 []feedbackRow
+	fbMissing, fbUnder     []string
+	fbBaseWMed, fbCandWMed *float64
+	fbImprovement          *float64
+}
+
+func writeComparisonCSV(dir string, rows []comparisonRow,
+	cacheRows []cacheRow, fbRows []feedbackRow) error {
+
+	cacheByStratum := map[stratum]cacheRow{}
+	for _, row := range cacheRows {
+		cacheByStratum[row.stratum] = row
+	}
 	f, err := os.Create(dir + "/comparison.csv")
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	w := newCSVWriter(f)
-	w.write("workflow_file", "workload", "os", "arch", "go_version",
-		"baseline_n", "candidate_n", "baseline_p50_s", "baseline_p95_s",
-		"candidate_p50_s", "candidate_p95_s")
+	w.write("workflow_file", "workload", "job", "os", "arch", "go_version",
+		"baseline_n", "candidate_n",
+		"baseline_runs", "candidate_runs",
+		"baseline_p50_s", "baseline_p95_s",
+		"candidate_p50_s", "candidate_p95_s",
+		"baseline_restore_non_exact", "baseline_restore_unknown",
+		"baseline_save_errors", "baseline_post_p50_s",
+		"candidate_restore_non_exact", "candidate_restore_unknown",
+		"candidate_save_errors", "candidate_post_p50_s")
 	for _, row := range rows {
-		w.write(row.stratum.workflow, row.stratum.workload, row.stratum.os,
+		c := cacheByStratum[row.stratum]
+		w.write(row.stratum.workflow, row.stratum.workload,
+			row.stratum.logical, row.stratum.os,
 			row.stratum.arch, row.stratum.goVer,
 			strconv.Itoa(row.baselineN), strconv.Itoa(row.candN),
+			strconv.Itoa(row.baseRuns), strconv.Itoa(row.candRuns),
 			fmtSeconds(row.baselineP50), fmtSeconds(row.baseP95),
-			fmtSeconds(row.candP50), fmtSeconds(row.candP95))
+			fmtSeconds(row.candP50), fmtSeconds(row.candP95),
+			strconv.Itoa(c.baseNonExact), strconv.Itoa(c.baseUnknown),
+			strconv.Itoa(c.baseSaveErrs), fmtSeconds(c.basePostP50),
+			strconv.Itoa(c.candNonExact), strconv.Itoa(c.candUnknown),
+			strconv.Itoa(c.candSaveErrs), fmtSeconds(c.candPostP50))
 	}
 	w.write("")
-	w.write("pr_signature", "baseline_n", "candidate_n", "baseline_p50_s", "candidate_p50_s")
+	w.write("pr_signature", "baseline_n", "candidate_n",
+		"baseline_p50_s", "candidate_p50_s")
 	for _, row := range fbRows {
 		w.write(row.sig, strconv.Itoa(row.baseN), strconv.Itoa(row.candN),
 			fmtSeconds(row.baseP50), fmtSeconds(row.candP50))
@@ -379,68 +669,102 @@ func writeComparisonCSV(dir string, rows []comparisonRow, fbRows []feedbackRow) 
 	return w.err()
 }
 
-func renderReport(rows []comparisonRow, baseVals, candVals map[stratum][]float64,
-	baseWMed, candWMed, improvement *float64, baseFail, candFail map[stratum][]string,
-	fbRows []feedbackRow, fbBaseWMed, fbCandWMed, fbImprovement *float64) string {
-
+func renderReport(d reportData) string {
 	var b strings.Builder
 	b.WriteString("# CI timing comparison\n\n")
 	b.WriteString("Strata and weights are frozen from the baseline window. Only\n")
 	b.WriteString("successful first attempts feed the performance table; failures and\n")
-	b.WriteString("retries are reported separately below.\n\n")
+	b.WriteString("retries are reported separately below. The aggregate is refused\n")
+	b.WriteString("while any baseline stratum lacks candidate data or sits below the\n")
+	b.WriteString("sample minimum: extend the observation window instead of\n")
+	b.WriteString("accepting an under-sampled result.\n\n")
 	b.WriteString("## Job duration\n\n")
-	b.WriteString("| workflow | workload | os | go | base n | cand n | base p50 | cand p50 | base p95 | cand p95 |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
-	for _, row := range rows {
+	b.WriteString("| workflow | workload | job | os | go | base n | cand n | base p50 | cand p50 | base p95 | cand p95 |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|\n")
+	for _, row := range d.rows {
 		s := row.stratum
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %d | %d | %s | %s | %s | %s |\n",
-			s.workflow, s.workload, s.os, orNA(s.goVer),
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %d | %d | %s | %s | %s | %s |\n",
+			s.workflow, s.workload, s.logical, s.os, orNA(s.goVer),
 			row.baselineN, row.candN,
 			fmtSeconds(row.baselineP50), fmtSeconds(row.candP50),
 			fmtSeconds(row.baseP95), fmtSeconds(row.candP95))
 	}
-	fmt.Fprintf(&b, "\n- baseline weighted median: %s s\n", fmtSeconds(baseWMed))
-	fmt.Fprintf(&b, "- candidate weighted median: %s s\n", fmtSeconds(candWMed))
-	fmt.Fprintf(&b, "- **improvement: %s%%**\n", pct(improvement))
-
-	var missing []stratum
-	for _, key := range sortedKeys(baseVals) {
-		if len(candVals[key]) == 0 {
-			missing = append(missing, key)
-		}
+	fmt.Fprintf(&b, "\n- baseline weighted median: %s s\n", fmtSeconds(d.baseWMed))
+	fmt.Fprintf(&b, "- candidate weighted median: %s s\n", fmtSeconds(d.candWMed))
+	fmt.Fprintf(&b, "- **improvement: %s%%**\n", pct(d.improvement))
+	if len(d.reasons) > 0 {
+		b.WriteString("- aggregate refused: ")
+		b.WriteString(strings.Join(d.reasons, "; "))
+		b.WriteString("\n")
 	}
-	if len(missing) > 0 {
+
+	if len(d.missing) > 0 {
 		b.WriteString("\n## Missing coverage\n\n")
 		b.WriteString("Baseline strata with no candidate observations:\n")
-		for _, key := range missing {
-			fmt.Fprintf(&b, "- %s / %s / %s / %s\n", key.workflow, key.workload, key.os, key.goVer)
+		for _, key := range d.missing {
+			fmt.Fprintf(&b, "- %s / %s / %s / %s / %s\n",
+				key.workflow, key.workload, key.logical, key.os, key.goVer)
 		}
 	}
 
-	if len(baseFail) > 0 || len(candFail) > 0 {
-		b.WriteString("\n## Non-success outcomes (first attempts)\n\n")
-		for _, key := range sortedKeys(baseVals) {
-			fmt.Fprintf(&b, "- %s / %s: baseline %d, candidate %d\n",
-				key.workflow, key.workload,
-				len(baseFail[key]), len(candFail[key]))
+	if len(d.underSampled) > 0 {
+		b.WriteString("\n## Under-sampled strata\n\n")
+		fmt.Fprintf(&b, "Below the minimum of %d distinct run IDs in a window:\n",
+			minRunSamples)
+		for _, u := range d.underSampled {
+			fmt.Fprintf(&b, "- %s / %s / %s: %d baseline, %d candidate runs\n",
+				u.stratum.workflow, u.stratum.workload, u.stratum.logical,
+				u.baseRuns, u.candRuns)
 		}
+	}
+
+	if len(d.baseFail) > 0 || len(d.candFail) > 0 {
+		b.WriteString("\n## Non-success outcomes (first attempts)\n\n")
+		for _, key := range d.strataKeys {
+			fmt.Fprintf(&b, "- %s / %s / %s: baseline %d, candidate %d\n",
+				key.workflow, key.workload, key.logical,
+				len(d.baseFail[key]), len(d.candFail[key]))
+		}
+	}
+
+	b.WriteString("\n## Cache behavior\n\n")
+	b.WriteString("Restores that were not exact hits and unknown\n")
+	b.WriteString("classifications, save errors, and post-phase p50 from the\n")
+	b.WriteString("successful first attempts of each stratum.\n\n")
+	b.WriteString("| workload | job | os | restores b (non-exact/unknown) | restores c | save errors b/c | post p50 b/c |\n")
+	b.WriteString("|---|---|---|---|---|---|---|\n")
+	for _, row := range d.cacheRows {
+		s := row.stratum
+		fmt.Fprintf(&b, "| %s | %s | %s | %d (%d/%d) | %d (%d/%d) | %d/%d | %s/%s |\n",
+			s.workload, s.logical, s.os,
+			row.baseRestores, row.baseNonExact, row.baseUnknown,
+			row.candRestores, row.candNonExact, row.candUnknown,
+			row.baseSaveErrs, row.candSaveErrs,
+			fmtSeconds(row.basePostP50), fmtSeconds(row.candPostP50))
 	}
 
 	b.WriteString("\n## PR feedback time\n\n")
 	b.WriteString("| signature | base n | cand n | base p50 s | cand p50 s |\n")
 	b.WriteString("|---|---|---|---|---|\n")
-	for _, row := range fbRows {
+	for _, row := range d.fbRows {
 		fmt.Fprintf(&b, "| %s | %d | %d | %s | %s |\n",
 			row.sig, row.baseN, row.candN,
 			fmtSeconds(row.baseP50), fmtSeconds(row.candP50))
 	}
-	fmt.Fprintf(&b, "\n- baseline weighted median: %s s\n", fmtSeconds(fbBaseWMed))
-	fmt.Fprintf(&b, "- candidate weighted median: %s s\n", fmtSeconds(fbCandWMed))
-	fmt.Fprintf(&b, "- **improvement: %s%%**\n", pct(fbImprovement))
+	fmt.Fprintf(&b, "\n- baseline weighted median: %s s\n", fmtSeconds(d.fbBaseWMed))
+	fmt.Fprintf(&b, "- candidate weighted median: %s s\n", fmtSeconds(d.fbCandWMed))
+	fmt.Fprintf(&b, "- **improvement: %s%%**\n", pct(d.fbImprovement))
+	if len(d.fbMissing) > 0 {
+		fmt.Fprintf(&b, "- feedback refused: %d baseline signatures have no candidate revisions\n",
+			len(d.fbMissing))
+	}
+	for _, note := range d.fbUnder {
+		fmt.Fprintf(&b, "- feedback under-sampled: %s\n", note)
+	}
 	b.WriteString("\nWeekly observations demonstrate operational improvement, not\n")
-	b.WriteString("randomized causal proof. A workload comparison needs at least five\n")
-	b.WriteString("independent successful first-attempt run IDs per stratum per window;\n")
-	b.WriteString("PR feedback needs five comparable PR revisions per window.\n")
+	b.WriteString("randomized causal proof. A workload comparison needs at least\n")
+	fmt.Fprintf(&b, "%d independent successful first-attempt run IDs per stratum per\n", minRunSamples)
+	fmt.Fprintf(&b, "window; PR feedback needs %d comparable PR revisions per window.\n", minRevisions)
 	return b.String()
 }
 

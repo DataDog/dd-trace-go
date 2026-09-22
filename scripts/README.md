@@ -247,7 +247,8 @@ with `phase:end_of_job` (the former
 `ci.step.cache.restore.disk_size_bytes` name was misleading and is
 retired; dashboards querying the old name must move to the new one at
 merge time). Compressed cache-service storage is measured from the
-cache API's `size_in_bytes` in `cache_snapshot.json`.
+cache API's `size_in_bytes` in the dated
+`cache_snapshot_<timestamp>.json` files, one per daily collection.
 
 Tests live in `scripts/citiming/citiming_test.go`:
 
@@ -265,7 +266,12 @@ go test -race -count=1 ./scripts/citiming/
    feedback. Extend the window rather than triggering runs to reach a
    count.
 3. Do not pool different runner classes, Go patch versions, build modes, or
-   contrib module selections; the compare tool keeps strata separate.
+   contrib module selections; the compare tool keeps strata separate,
+   including the matrix dimensions recorded in each job name, and it
+   refuses the weighted aggregate while any baseline stratum lacks
+   candidate observations or sits below the five-distinct-run minimum
+   (PR feedback: five distinct revisions per signature per window),
+   naming every affected stratum so the window can be extended.
 4. Record failures, retries, cancellations, and unknown classifications
    from the reports; skipped jobs are absent work, not zero durations.
 5. Publish aggregates and run URLs in the PR description, never raw logs.
