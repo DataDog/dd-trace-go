@@ -17,6 +17,22 @@
       ],
       "transformers": [],
       "on_match": ["block"]
+    },
+    {
+      "id": "fiber-blocked-path",
+      "name": "Block the Fiber test path parameter",
+      "tags": { "type": "test_attack", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "phrase_match",
+          "parameters": {
+            "inputs": [{ "address": "server.request.path_params" }],
+            "list": ["$globals"]
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
     }
   ],
   "rules_data": [

@@ -35,12 +35,20 @@ func init() {
 // before the WAF inspects the response. Handled errors are not returned to
 // earlier middleware. The original error is recorded on the span unless the
 // response is blocked; then the block is reported instead.
+//
+// Use [Wrap] for whole-app instrumentation. A global Middleware runs before
+// Fiber matches the endpoint and can only check its path parameters afterward;
+// it cannot prevent handler side effects from a path-parameter attack.
 func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
+	return middleware(cfg)
+}
+
+func middleware(cfg *config) fiber.Handler {
 	instr.Logger().Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		if cfg.ignoreRequest(c) {

@@ -35,7 +35,7 @@ func BenchmarkFiberMiddleware(b *testing.B) {
 			}
 
 			router := fiber.New()
-			router.Use(Middleware())
+			Wrap(router)
 			router.Get("/items/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
 			handler := router.Handler()
 			var request fasthttp.Request

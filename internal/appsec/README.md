@@ -23,11 +23,29 @@ unless AppSec blocks the response; then the block is reported instead.
 Earlier middleware receives `nil` from `c.Next()` for these handled errors;
 error logging or counting belongs in the configured error handler. With AppSec
 disabled, error propagation is unchanged. A pending block takes priority over
-the error handler and replaces the handler's
-body and headers. Route parameters are available only after the handler chain,
-so a path-parameter block cannot prevent handler side effects. Parsed bodies
-require an explicit `appsec.MonitorParsedHTTPBody(c.UserContext(), body)` call;
-Orchestrion currently inserts the middleware, not a `BodyParser` hook.
+the error handler and replaces the handler's body and headers.
+
+Use `fibertrace.Wrap(app, opts...)` before registering routes or middleware, and
+wrap each mounted app. Without a child app's own `Wrap` call, its parameters are
+checked only after its handlers return, so a block cannot prevent their side
+effects. `Wrap` installs route guards during setup. Fiber's matcher
+supplies the parameters to these guards before they call user handlers, so a
+path-parameter block prevents those handlers from running. Consecutive route
+registrations can share a handler chain; every appended handler is guarded.
+Repeated `Wrap` calls apply options without adding another middleware. Mounted
+apps share the first wrapped app's request span and options. This includes
+`WithIgnoreRequest`: if the first app ignores the request, mounted apps also
+skip tracing and AppSec. Calls to `Wrap` on the same app must not run concurrently,
+and all route registration must finish before serving requests. A block in a
+parameterized group middleware reports that group's route; the endpoint has not
+been reached yet.
+
+Use `Wrap` instead of `app.Use(fibertrace.Middleware())`; do not install both.
+The older global `Middleware` form remains compatible, but it can only report
+endpoint parameters after the handler chain and cannot prevent those handler
+side effects. Orchestrion uses `Wrap` automatically. Parsed bodies still require
+an explicit `appsec.MonitorParsedHTTPBody(c.UserContext(), body)` call; there is
+no automatic `BodyParser` hook.
 
 The Fiber contrib tests cover parsing, error responses, blocking, and connection
 reuse. The Orchestrion Fiber case verifies blocking without manual middleware.

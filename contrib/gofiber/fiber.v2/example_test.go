@@ -21,8 +21,8 @@ func Example() {
 	// Create a fiber v2 Router
 	router := fiber.New()
 
-	// Use the tracer middleware with the default service name "fiber".
-	router.Use(fibertrace.Middleware())
+	// Install tracing and AppSec route guards before registering endpoints.
+	fibertrace.Wrap(router)
 
 	// Set up some endpoints.
 	router.Get("/", func(c *fiber.Ctx) error {
@@ -41,8 +41,8 @@ func Example_withServiceName() {
 	// Create a fiber v2 Router
 	router := fiber.New()
 
-	// Use the tracer middleware with your desired service name.
-	router.Use(fibertrace.Middleware(fibertrace.WithService("fiber")))
+	// Install tracing and AppSec route guards with your desired service name.
+	fibertrace.Wrap(router, fibertrace.WithService("fiber"))
 
 	// Set up some endpoints.
 	router.Get("/", func(c *fiber.Ctx) error {

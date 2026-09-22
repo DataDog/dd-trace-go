@@ -42,6 +42,12 @@ func (tc *TestCaseAppSec) Setup(_ context.Context, t *testing.T) {
 		tc.handled.Add(1)
 		return c.SendString("allowed")
 	})
+	child := fiber.New(fiber.Config{DisableStartupMessage: true})
+	child.Get("/params/:value", func(c *fiber.Ctx) error {
+		tc.handled.Add(1)
+		return c.SendString("allowed")
+	})
+	tc.App.Mount("/child", child)
 	ln := net.FreeListener(t)
 	tc.addr = ln.Addr().String()
 	go func() { assert.NoError(t, tc.App.Listener(ln)) }()
@@ -71,28 +77,52 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	require.Equal(t, "allowed", string(body))
 	require.Equal(t, int32(1), tc.handled.Load())
+
+	res, err = http.Get("http://" + tc.addr + "/child/params/$globals")
+	require.NoError(t, err)
+	body, err = io.ReadAll(res.Body)
+	require.NoError(t, res.Body.Close())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+	require.Contains(t, string(body), "You've been blocked")
+	require.Equal(t, int32(1), tc.handled.Load(), "the path block must prevent handler side effects")
+
+	res, err = http.Get("http://" + tc.addr + "/child/params/benign")
+	require.NoError(t, err)
+	body, err = io.ReadAll(res.Body)
+	require.NoError(t, res.Body.Close())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	require.Equal(t, "allowed", string(body))
+	require.Equal(t, int32(2), tc.handled.Load())
 }
 
 func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
-	traces := make(trace.Traces, 0, 2)
-	for _, blocked := range []bool{true, false} {
-		resource, status := "GET /protected", "200"
+	traces := make(trace.Traces, 0, 4)
+	for _, request := range []struct {
+		clientResource, serverResource, status string
+		blocked                                bool
+	}{
+		// An IP block occurs before Fiber selects the endpoint route.
+		{"GET /protected", "GET /", "403", true},
+		{"GET /protected", "GET /protected", "200", false},
+		{"GET /child/params/$globals", "GET /child/params/:value", "403", true},
+		{"GET /child/params/benign", "GET /child/params/:value", "200", false},
+	} {
 		meta := map[string]string{
 			"component": "gofiber/fiber.v2",
 			"span.kind": "server",
 		}
-		if blocked {
-			// The WAF blocks before Fiber selects the endpoint route.
-			resource, status = "GET /", "403"
+		if request.blocked {
 			meta["appsec.blocked"] = "true"
 		}
-		meta["http.status_code"] = status
+		meta["http.status_code"] = request.status
 		traces = append(traces, &trace.Trace{
-			Tags: map[string]any{"name": "http.request", "resource": "GET /protected"},
-			Meta: map[string]string{"component": "net/http", "span.kind": "client", "http.status_code": status},
+			Tags: map[string]any{"name": "http.request", "resource": request.clientResource},
+			Meta: map[string]string{"component": "net/http", "span.kind": "client", "http.status_code": request.status},
 			Children: trace.Traces{{
 				// A direct child also checks that fasthttp did not add another span.
-				Tags: map[string]any{"name": "http.request", "resource": resource, "type": "web"},
+				Tags: map[string]any{"name": "http.request", "resource": request.serverResource, "type": "web"},
 				Meta: meta,
 			}},
 		})

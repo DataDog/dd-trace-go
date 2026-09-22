@@ -7,8 +7,10 @@ package fiber
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +24,46 @@ import (
 )
 
 const appsecFramework = "github.com/gofiber/fiber/v2"
+
+type appsecRequestKey struct{}
+
+type appsecRequest struct {
+	ctx     context.Context
+	blocked atomic.Bool
+	route   *fiber.Route
+	params  map[string]string
+}
+
+// guardRouteParams runs after Fiber's matcher has set the route and parameters,
+// but before the user handler. Every handler is guarded so an ignored blocking
+// error followed by another c.Next() cannot enter a later handler.
+func guardRouteParams(next fiber.Handler) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		request, ok := c.Locals(appsecRequestKey{}).(*appsecRequest)
+		if !ok {
+			return next(c)
+		}
+		if request.blocked.Load() {
+			return nil
+		}
+		route := c.Route()
+		if len(route.Params) != 0 {
+			params := c.AllParams()
+			if route != request.route || !maps.Equal(params, request.params) {
+				// Fiber can reuse its path buffer on RestartRouting. Keep a copy
+				// so changed parameters on the same route still reach the WAF.
+				for key, value := range params {
+					params[key] = strings.Clone(value)
+				}
+				request.route, request.params = route, params
+				if err := httpsec.RouteMatched(request.ctx, route.Path, params); err != nil {
+					return err
+				}
+			}
+		}
+		return next(c)
+	}
+}
 
 // useAppSec runs next under AppSec monitoring. It returns the handler error for
 // span tagging and whether the response is already handled. A block suppresses
@@ -56,23 +98,25 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 
 	// A late block must take priority over Fiber's error handler, including
 	// when the application ignores a blocking SDK error and returns another one.
-	var blocked atomic.Bool
+	request := &appsecRequest{ctx: ctx}
+	previous := c.Locals(appsecRequestKey{})
+	c.Locals(appsecRequestKey{}, request)
+	defer c.Locals(appsecRequestKey{}, previous)
 	if op, ok := dyngo.FindOperation[httpsec.HandlerOperation](ctx); ok {
-		dyngo.OnData(op, func(*actions.BlockHTTP) { blocked.Store(true) })
+		dyngo.OnData(op, func(*actions.BlockHTTP) { request.blocked.Store(true) })
 	}
 
 	err = next()
 
-	// Fiber only matches the route while walking the handler chain, so the
-	// route and its parameters reach the WAF here rather than at operation
-	// start. A block decided this late is served by afterHandle.
-	if route := c.Route(); route != nil && route.Path != "" {
+	// Wrap's route guards already report parameters before user code. Keep
+	// this fallback for global Middleware users and routes without parameters.
+	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route {
 		if blockErr := httpsec.RouteMatched(ctx, route.Path, c.AllParams()); blockErr != nil {
 			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
 	}
 
-	if err != nil && !blocked.Load() {
+	if err != nil && !request.blocked.Load() {
 		// Fiber normally renders errors after middleware returns. Render here
 		// so the WAF can inspect the final status and headers, then prevent a
 		// second call to the error handler in Fiber's outer request handler.
@@ -158,6 +202,9 @@ func (w *responseWriter) WriteHeader(status int) {
 	if w.wroteHeader {
 		return
 	}
+	// Request-phase blocks are written before OnBlock runs. Clear any response
+	// prepared by earlier middleware before copying the block's headers/body.
+	w.discardHandlerResponse()
 	w.wroteHeader = true
 	for k, values := range w.header {
 		for _, v := range values {
@@ -189,5 +236,19 @@ func (w *responseWriter) discardHandlerResponse() {
 		return
 	}
 	w.fctx.Response.ResetBody()
-	w.fctx.Response.Header.Reset()
+	// Reset would also clear fasthttp's connection and header-format settings,
+	// including its private noDefaultDate flag. Delete only the header values.
+	header := &w.fctx.Response.Header
+	closeConnection := header.ConnectionClose()
+	keys := make([]string, 0, header.Len())
+	for key := range header.All() {
+		keys = append(keys, string(key))
+	}
+	for _, key := range keys {
+		header.Del(key)
+	}
+	header.SetStatusMessage(nil)
+	if closeConnection {
+		header.SetConnectionClose()
+	}
 }

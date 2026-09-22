@@ -22,7 +22,7 @@ import (
 
 func newAppSecRouter() *fiber.App {
 	router := fiber.New()
-	router.Use(Middleware())
+	Wrap(router)
 	router.All("/", func(c *fiber.Ctx) error {
 		return c.SendString("Hello World!\n")
 	})
@@ -69,8 +69,8 @@ func TestAppSec(t *testing.T) {
 	})
 
 	// A security scanner attack in a route parameter (appsec rule crs-913-120).
-	// Fiber only matches the route while walking the handler chain, so this
-	// exercises the path parameters being reported after the handler ran.
+	// Wrap installs a guard that reports parameters after route matching,
+	// before the user handler runs.
 	t.Run("path-params", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()

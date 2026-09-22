@@ -218,6 +218,90 @@ func TestAppSecOuterMiddlewareErrors(t *testing.T) {
 	}
 }
 
+func TestAppSecEarlyBlockReplacesExistingResponse(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	testutils.StartAppSec(t)
+	for _, contentType := range []string{"application/json", "text/html"} {
+		t.Run(contentType, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			var calls atomic.Int32
+			var headerSettingsPreserved atomic.Bool
+			router := fiber.New(fiber.Config{
+				DisableDefaultDate:        true,
+				DisableDefaultContentType: true,
+				DisableHeaderNormalizing:  true,
+			})
+			router.Use(func(c *fiber.Ctx) error {
+				c.Context().SetConnectionClose()
+				c.Status(http.StatusAccepted)
+				c.Context().Response.Header.SetStatusMessage([]byte("must-not-escape"))
+				c.Set("Content-Type", "text/plain")
+				c.Set("X-Before-Tracing", "must not escape")
+				c.Cookie(&fiber.Cookie{Name: "session", Value: "must-not-escape"})
+				c.Cookie(&fiber.Cookie{Name: "second-session", Value: "must-not-escape"})
+				if _, err := c.WriteString("existing response prefix:"); err != nil {
+					return err
+				}
+				err := c.Next()
+				var headers fasthttp.ResponseHeader
+				c.Context().Response.Header.CopyTo(&headers)
+				headers.Del("Content-Type")
+				headerSettingsPreserved.Store(headers.DisableNormalizing() && len(headers.ContentType()) == 0)
+				return err
+			})
+			router.Use(Middleware())
+			router.Get("/", func(c *fiber.Ctx) error {
+				calls.Add(1)
+				_, err := c.WriteString("allowed")
+				return err
+			})
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Header.Set("X-Forwarded-For", "1.2.3.4")
+			req.Header.Set("Accept", contentType)
+			res, err := router.Test(req)
+			require.NoError(t, err)
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, res.Body.Close())
+			require.NoError(t, err)
+			require.Equal(t, http.StatusForbidden, res.StatusCode)
+			require.Zero(t, calls.Load())
+			require.Equal(t, contentType, res.Header.Get("Content-Type"))
+			require.Equal(t, "403 Forbidden", res.Status)
+			require.Empty(t, res.Header.Get("Date"))
+			require.True(t, res.Close)
+			require.True(t, headerSettingsPreserved.Load())
+			require.Empty(t, res.Header.Get("X-Before-Tracing"))
+			require.Empty(t, res.Header.Values("Set-Cookie"))
+			require.NotContains(t, string(body), "existing response prefix:")
+			require.Contains(t, string(body), "You've been blocked")
+			if contentType == "application/json" {
+				require.True(t, json.Valid(body))
+			} else {
+				require.Contains(t, string(body), "<!DOCTYPE html>")
+			}
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			require.Equal(t, "403", spans[0].Tag("http.status_code"))
+
+			req.Header.Del("X-Forwarded-For")
+			headerSettingsPreserved.Store(false)
+			res, err = router.Test(req)
+			require.NoError(t, err)
+			body, err = io.ReadAll(res.Body)
+			require.NoError(t, res.Body.Close())
+			require.NoError(t, err)
+			require.Equal(t, http.StatusAccepted, res.StatusCode)
+			require.Equal(t, int32(1), calls.Load())
+			require.Equal(t, "existing response prefix:allowed", string(body))
+			require.Equal(t, "202 must-not-escape", res.Status)
+			require.True(t, headerSettingsPreserved.Load())
+			require.Equal(t, "must not escape", res.Header.Get("X-Before-Tracing"))
+			require.Len(t, res.Header.Values("Set-Cookie"), 2)
+		})
+	}
+}
+
 func TestAppSecBlocksRenderedError(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/response-blocking.json")
 	testutils.StartAppSec(t)
