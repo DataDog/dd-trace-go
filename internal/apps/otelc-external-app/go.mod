@@ -6,7 +6,7 @@ go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 )
 
 require (
