@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,29 +100,29 @@ func TestASMFeaturesCallback(t *testing.T) {
 			if tc.startBefore {
 				require.NoError(t, a.start())
 			}
-			require.Equal(t, tc.startBefore, a.started)
+			require.Equal(t, tc.startBefore, a.started.Load())
 			a.handleASMFeatures(tc.update)
-			require.Equal(t, tc.startedAfter, a.started)
+			require.Equal(t, tc.startedAfter, a.started.Load())
 		})
 	}
 
 	t.Run("enabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.True(t, a.started)
+		require.True(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.True(t, a.started)
+		require.True(t, a.started.Load())
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 	})
 }
 
@@ -743,7 +745,8 @@ func TestWafRCUpdate(t *testing.T) {
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := config.NewStartConfig().NewConfig()
 		require.NoError(t, err)
-		appsec := appsec{cfg: cfg, started: true}
+		appsec := appsec{cfg: cfg}
+		appsec.started.Store(true)
 
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
@@ -797,4 +800,42 @@ type RulesFragment struct {
 	CustomRules   []any                   `json:"custom_rules,omitempty"`
 	Processors    []any                   `json:"processors,omitempty"`
 	Scanners      []any                   `json:"scanners,omitempty"`
+}
+
+// TestStartedFieldConcurrentAccess reproduces the data race between the remote-config goroutine
+// toggling appsec.started (via start()/stop()) and the mutex-guarded Enabled()/RASPEnabled() readers.
+// Run with -race.
+func TestStartedFieldConcurrentAccess(t *testing.T) {
+	a := &appsec{cfg: &config.Config{RASP: true}}
+	mu.Lock()
+	prev := activeAppSec
+	activeAppSec = a
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		activeAppSec = prev
+		mu.Unlock()
+	})
+
+	var done atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(2)
+	// Writer: mimics the RC goroutine flipping started without holding mu (appsec.go start/stop).
+	go func() {
+		defer wg.Done()
+		for !done.Load() {
+			a.started.Store(true)
+			a.started.Store(false)
+		}
+	}()
+	// Reader: the real public API paths, guarded only by mu.
+	go func() {
+		defer wg.Done()
+		for range 200000 {
+			_ = Enabled()
+			_ = RASPEnabled()
+		}
+		done.Store(true)
+	}()
+	wg.Wait()
 }

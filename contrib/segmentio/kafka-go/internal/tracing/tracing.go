@@ -23,27 +23,45 @@ import (
 
 const componentName = "segmentio/kafka.go.v0"
 
-func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message consumed through a Tracer with the
+// given config, so per-message calls don't need to rebuild them.
+func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
-		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
-		tracer.Tag("offset", msg.GetOffset()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, msg.GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.kafkaCfg.BootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
-	if tr.ClusterID() != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
-	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
+func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
+	// Partition, offset, topic, and the Kafka cluster ID (fetched
+	// asynchronously in the background after the Tracer is created, see
+	// startFetchClusterID in the calling kafka-go package) are genuinely
+	// per-message/mutable, so they stay dynamic instead of moving into the
+	// static consumerSpanCfg base.
+	tags := map[string]any{
+		ext.ResourceName:             "Consume Topic " + msg.GetTopic(),
+		ext.MessagingKafkaPartition:  msg.GetPartition(),
+		"offset":                     msg.GetOffset(),
+		ext.MessagingDestinationName: msg.GetTopic(),
+	}
+	if tr.ClusterID() != "" {
+		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(tr.consumerSpanCfg),
 	}
 	// kafka supports headers, so try to extract a span context
 	carrier := NewMessageCarrier(msg)
@@ -58,29 +76,48 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 	return span
 }
 
+// newProducerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message produced through a Tracer with the
+// given config, so per-message calls don't need to rebuild them.
+func newProducerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(tr.producerServiceName, tr.serviceSource),
+		tracer.SpanType(ext.SpanTypeMessageProducer),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+	}
+	if tr.kafkaCfg.BootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
+	}
+	if !math.IsNaN(tr.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
 func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Message, spanOpts ...tracer.StartSpanOption) *tracer.Span {
 	topic := writer.GetTopic()
 	if topic == "" {
 		topic = msg.GetTopic()
 	}
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(tr.producerServiceName, tr.serviceSource),
-		tracer.ResourceName("Produce Topic " + topic),
-		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, topic),
-	}
-	if tr.kafkaCfg.BootstrapServers != "" {
-		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
+	// Topic and the Kafka cluster ID (fetched asynchronously in the
+	// background after the Tracer is created, see startFetchClusterID in the
+	// calling kafka-go package) are genuinely per-message/mutable, so they
+	// stay dynamic instead of moving into the static producerSpanCfg base.
+	tags := map[string]any{
+		ext.ResourceName:             "Produce Topic " + topic,
+		ext.MessagingDestinationName: topic,
 	}
 	if tr.ClusterID() != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
+		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
 	}
-	if !math.IsNaN(tr.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(tr.producerSpanCfg),
 	}
+	// spanOpts is caller-supplied and must run last so it can override any
+	// tag above, exactly as it did in the pre-migration option list.
 	opts = append(opts, spanOpts...)
 	carrier := NewMessageCarrier(msg)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)

@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
 	github.com/mattn/go-sqlite3 v1.14.22
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9
@@ -70,7 +70,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
@@ -81,3 +81,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

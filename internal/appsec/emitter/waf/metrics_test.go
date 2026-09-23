@@ -6,10 +6,14 @@
 package waf
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 )
 
 func TestUpdateClosestToZero(t *testing.T) {
@@ -47,4 +51,27 @@ func TestUpdateClosestToZero(t *testing.T) {
 		updateClosestToZero(&target, -127)
 		require.Equal(t, int32(-127), target.Load())
 	})
+}
+
+// TestRegisterWafRunMilestonesRace exercises concurrent WAF-scope RegisterWafRun calls (which the
+// go-libddwaf Context permits for a single request via parallel subcontext/downstream runs) together
+// with Submit, which reads the same Milestones. Run with -race.
+func TestRegisterWafRunMilestonesRace(t *testing.T) {
+	hm := NewMetricsInstance(nil, "test")
+	m := hm.NewContextMetrics()
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			m.RegisterWafRun(
+				addresses.RunAddressData{TimerKey: addresses.WAFScope},
+				nil,
+				RequestMilestones{ruleTriggered: true, requestBlocked: true, wafTimeout: true, rateLimited: true, wafError: true},
+			)
+		})
+	}
+	wg.Go(func() {
+		m.Submit(libddwaf.Truncations{}, nil)
+	})
+	wg.Wait()
 }

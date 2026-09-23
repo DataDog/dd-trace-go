@@ -46,7 +46,7 @@
     "DD_APIM_CALLOUT_TLS": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "false"
       }
     ],
@@ -305,9 +305,9 @@
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
-        "default": "true"
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
@@ -497,6 +497,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS": [
+      {
+        "implementation": "B",
+        "type": "int",
+        "default": "10000"
       }
     ],
     "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
@@ -724,6 +731,13 @@
         "default": null
       }
     ],
+    "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [
       {
         "implementation": "C",
@@ -750,6 +764,40 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_CACHE_DIR": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_CACHE_TTL": [
+      {
+        "implementation": "B",
+        "type": "decimal",
+        "default": "60",
+        "aliases": [
+          "DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS"
+        ]
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_TIMEOUT": [
+      {
+        "implementation": "B",
+        "type": "decimal",
+        "default": "5.0",
+        "aliases": [
+          "DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS"
+        ]
       }
     ],
     "DD_LOGGING_RATE": [
@@ -1254,6 +1302,13 @@
         "implementation": "A",
         "type": "string",
         "default": ""
+      }
+    ],
+    "DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [

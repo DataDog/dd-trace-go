@@ -1354,8 +1354,9 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request path
-		if r.URL.Path != exposureEndpoint {
-			t.Errorf("unexpected path: expected %s, got %s", exposureEndpoint, r.URL.Path)
+		wantPath := joinEVPPath(evpProxyV2Path, exposureEndpoint)
+		if r.URL.Path != wantPath {
+			t.Errorf("unexpected path: expected %s, got %s", wantPath, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -1545,7 +1546,7 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	var mu sync.Mutex
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == exposureEndpoint {
+		if r.URL.Path == joinEVPPath(evpProxyV2Path, exposureEndpoint) {
 			mu.Lock()
 			flushCount++
 			mu.Unlock()
@@ -1618,7 +1619,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	var mu sync.Mutex
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == exposureEndpoint {
+		if r.URL.Path == joinEVPPath(evpProxyV2Path, exposureEndpoint) {
 			mu.Lock()
 			receivedCount++
 			mu.Unlock()
@@ -1759,7 +1760,7 @@ func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
 	var mu sync.Mutex
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == exposureEndpoint {
+		if r.URL.Path == joinEVPPath(evpProxyV2Path, exposureEndpoint) {
 			var payload exposurePayload
 			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
 				mu.Lock()

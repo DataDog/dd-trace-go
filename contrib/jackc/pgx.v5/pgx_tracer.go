@@ -61,6 +61,7 @@ type allPgxTracers interface {
 	pgx.PrepareTracer
 	pgx.CopyFromTracer
 	pgxpool.AcquireTracer
+	pgxpool.ReleaseTracer
 }
 
 type wrappedPgxTracer struct {
@@ -70,6 +71,7 @@ type wrappedPgxTracer struct {
 	prepare     pgx.PrepareTracer
 	copyFrom    pgx.CopyFromTracer
 	poolAcquire pgxpool.AcquireTracer
+	poolRelease pgxpool.ReleaseTracer
 }
 
 // connInfo holds the subset of connection config fields needed for span tags.
@@ -156,6 +158,9 @@ func newPgxTracer(connConfig *pgx.ConnConfig, poolName string, perConnInfo bool,
 		}
 		if poolAcquireTr, ok := prev.(pgxpool.AcquireTracer); ok {
 			tr.wrapped.poolAcquire = poolAcquireTr
+		}
+		if poolReleaseTr, ok := prev.(pgxpool.ReleaseTracer); ok {
+			tr.wrapped.poolRelease = poolReleaseTr
 		}
 	}
 
@@ -354,6 +359,15 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
 	}
 	t.finishSpan(ctx, data.Err)
+}
+
+// TraceRelease forwards to the wrapped tracer and starts no span of its own: a release carries no
+// context to parent one from. Without this method pgxpool's lone type assertion on the outermost
+// tracer fails, and every wrapped ReleaseTracer stops being called.
+func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
+	if t.wrapped.poolRelease != nil {
+		t.wrapped.poolRelease.TraceRelease(pool, data)
+	}
 }
 
 // connInfoFor returns the metadata to tag a connection-scoped span with. It uses the

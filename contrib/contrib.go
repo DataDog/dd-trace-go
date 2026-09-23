@@ -28,6 +28,7 @@
 //   - [contrib/bradfitz/gomemcache/v2]
 //   - [contrib/cloud.google.com/go/pubsub.v1/v2]
 //   - [contrib/cloud.google.com/go/pubsub.v2/v2]
+//   - [contrib/cloudevents/sdk-go.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka/v2]
 //   - [contrib/database/sql/v2]
@@ -96,6 +97,7 @@
 // [contrib/bradfitz/gomemcache/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2
 // [contrib/cloud.google.com/go/pubsub.v1/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
 // [contrib/cloud.google.com/go/pubsub.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
+// [contrib/cloudevents/sdk-go.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2
 // [contrib/database/sql/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/database/sql/v2
