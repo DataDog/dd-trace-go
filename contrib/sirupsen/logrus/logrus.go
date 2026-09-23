@@ -9,6 +9,8 @@ package logrus
 import (
 	"github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2/internal/tracing"
 
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
+
 	"github.com/sirupsen/logrus"
 )
 
