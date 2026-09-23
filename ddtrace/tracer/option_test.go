@@ -403,7 +403,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
-func TestAgentOptionsUpdateDerivedOTLPTraceURL(t *testing.T) {
+func TestOTelSemanticsConfigResolvesStartOptions(t *testing.T) {
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
 
 	tests := []struct {
@@ -424,9 +424,10 @@ func TestAgentOptionsUpdateDerivedOTLPTraceURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := newTestConfig(tt.opt)
+			cfg, err := newTestConfig(tt.opt, WithPeerServiceDefaults(true))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, cfg.internalConfig.OTLPTraceURL())
+			assert.False(t, cfg.internalConfig.PeerServiceDefaultsEnabled())
 		})
 	}
 }

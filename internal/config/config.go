@@ -677,9 +677,6 @@ func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin, product ...Pro
 		return
 	}
 	c.agentURL = u
-	if c.otelSemanticsEnabled && c.otlpTraceURLDerivedFromAgent {
-		c.otlpTraceURL = resolveOTLPTraceURL(u, "")
-	}
 	if u != nil {
 		configtelemetry.Report("DD_TRACE_AGENT_URL", u.String(), origin)
 	}
@@ -1489,11 +1486,6 @@ func (c *Config) PeerServiceDefaultsEnabled() bool {
 func (c *Config) SetPeerServiceDefaultsEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.otelSemanticsEnabled && enabled {
-		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
-		configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
-		return
-	}
 	c.peerServiceDefaultsEnabled = enabled
 	configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", enabled, origin)
 }
@@ -1658,6 +1650,20 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 	c.applyOTelSemanticsOverrides()
 }
 
+// ResolveOTelSemanticsConfig recomputes configuration values that depend on
+// other values set at different stages of configuration.
+func (c *Config) ResolveOTelSemanticsConfig() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.otelSemanticsEnabled {
+		return
+	}
+	if c.otlpTraceURLDerivedFromAgent {
+		c.otlpTraceURL = resolveOTLPTraceURL(c.agentURL, "")
+	}
+	c.disableAutomaticPeerService()
+}
+
 // applyOTelSemanticsOverrides applies settings required by OpenTelemetry
 // semantic conventions after their raw values have been resolved.
 // The caller must hold c.mu after configuration initialization.
@@ -1675,11 +1681,18 @@ func (c *Config) applyOTelSemanticsOverrides() {
 		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0")
 		configtelemetry.Report("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0", telemetry.OriginCalculated)
 	}
-	if c.peerServiceDefaultsEnabled {
-		c.peerServiceDefaultsEnabled = false
-		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
-		configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
+	c.disableAutomaticPeerService()
+}
+
+// disableAutomaticPeerService disables automatic peer.service calculation as required by OTel semantics.
+// The caller must hold c.mu after configuration initialization.
+func (c *Config) disableAutomaticPeerService() {
+	if !c.peerServiceDefaultsEnabled {
+		return
 	}
+	c.peerServiceDefaultsEnabled = false
+	telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
+	configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
 }
 
 // RequestedTraceProtocol returns the Datadog trace protocol version to use for

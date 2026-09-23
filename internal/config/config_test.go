@@ -645,14 +645,17 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 		assert.Equal(t, original, cfg.OTLPTraceURL())
 	})
 
-	t.Run("semantic OTLP export follows programmatic agent URL", func(t *testing.T) {
+	t.Run("semantic OTLP export follows resolved agent URL", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
 
 		cfg := Get()
+		original := cfg.OTLPTraceURL()
 		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		assert.Equal(t, original, cfg.OTLPTraceURL())
 
+		cfg.ResolveOTelSemanticsConfig()
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
 }
@@ -913,13 +916,16 @@ func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
 		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
 	})
 
-	t.Run("programmatic peer defaults cannot re-enable", func(t *testing.T) {
+	t.Run("resolution overrides programmatic peer defaults", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
 
 		cfg := Get()
 		cfg.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCode)
+		assert.True(t, cfg.PeerServiceDefaultsEnabled())
+
+		cfg.ResolveOTelSemanticsConfig()
 		assert.False(t, cfg.PeerServiceDefaultsEnabled())
 	})
 }
