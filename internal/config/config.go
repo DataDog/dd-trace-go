@@ -630,14 +630,6 @@ func Get() *Config {
 	return instance
 }
 
-// New returns a new configuration loaded from the current configuration sources without
-// replacing the global configuration instance.
-func New() *Config {
-	mu.Lock()
-	defer mu.Unlock()
-	return loadConfig()
-}
-
 // CreateNew returns a new global configuration instance.
 // This function should be used when we need to create a new configuration instance.
 // It build a new configuration instance and override the existing one

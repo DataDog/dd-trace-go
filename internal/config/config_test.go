@@ -29,22 +29,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
-func TestNew(t *testing.T) {
-	resetGlobalState()
-	defer resetGlobalState()
-
-	global := Get()
-	require.False(t, global.Debug())
-
-	t.Setenv("DD_TRACE_DEBUG", "true")
-	fresh := New()
-
-	assert.NotSame(t, global, fresh)
-	assert.True(t, fresh.Debug())
-	assert.Same(t, global, Get())
-	assert.False(t, Get().Debug())
-}
-
 func TestGet(t *testing.T) {
 	t.Run("returns non-nil config", func(t *testing.T) {
 		resetGlobalState()

@@ -51,6 +51,13 @@ type TestCase struct {
 	AssertOpV1        AssertSpansFn
 }
 
+func loadTracerConfig(t *testing.T, opts ...tracer.StartOption) {
+	t.Helper()
+	opts = append(opts, tracer.WithTestDefaults(nil))
+	require.NoError(t, tracer.Start(opts...))
+	t.Cleanup(tracer.Stop)
+}
+
 func RunTest(t *testing.T, tc TestCase) {
 	if _, ok := env.Lookup("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
@@ -61,21 +68,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v0_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v0_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.DDService)
 			})
 			t.Run("v0_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, tc.WantServiceNameV0.ServiceOverride)
 			})
@@ -83,7 +90,7 @@ func RunTest(t *testing.T, tc TestCase) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
 				t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				// in this setup, we should always have DD_SERVICE even if using schema v0
 				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
@@ -91,9 +98,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v0_dd_service_remove_integration_service_names_tracer_option", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
-				// this option is equivalent to setting the environment variable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED
-				tracer.WithGlobalServiceName(true)(nil)
+				loadTracerConfig(t, tracer.WithGlobalServiceName(true))
 
 				spans := tc.GenSpans(t, "")
 				// in this setup, we should always have DD_SERVICE even if using schema v0
@@ -104,21 +109,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v1_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v1_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
 			})
 			t.Run("v1_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, RepeatString(TestServiceOverride, len(tc.WantServiceNameV0.ServiceOverride)))
 			})
@@ -127,13 +132,13 @@ func RunTest(t *testing.T, tc TestCase) {
 		t.Run("SpanName", func(t *testing.T) {
 			t.Run("v0", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV0(t, spans)
 			})
 			t.Run("v1", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV1(t, spans)
 			})
@@ -144,14 +149,14 @@ func RunTest(t *testing.T, tc TestCase) {
 				t.Run("defaults", func(t *testing.T) {
 					t.Setenv("DD_SERVICE", "")
 					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-					instrumentation.ReloadConfig()
+					loadTracerConfig(t)
 					spans := tc.GenSpans(t, "")
 					assertServiceSource(t, spans, tc.WantServiceSource.Defaults)
 				})
 				t.Run("service_override", func(t *testing.T) {
 					t.Setenv("DD_SERVICE", "")
 					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-					instrumentation.ReloadConfig()
+					loadTracerConfig(t)
 					spans := tc.GenSpans(t, TestServiceOverride)
 					assertServiceSource(t, spans, tc.WantServiceSource.ServiceOverride)
 				})

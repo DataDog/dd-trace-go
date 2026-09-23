@@ -12,7 +12,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 )
 
@@ -48,12 +47,6 @@ func LoadFromConfig(cfg *internalconfig.Config) {
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
 	SetRemoveIntegrationServiceNames(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
-}
-
-// ReloadConfig is used to reload the configuration in tests.
-func ReloadConfig() {
-	LoadFromConfig(internalconfig.New())
-	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
 }
 
 // GetConfig returns the naming schema config.
