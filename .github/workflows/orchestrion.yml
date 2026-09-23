@@ -22,6 +22,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   schedule: # nightly
     - cron: "0 0 * * *"
@@ -355,6 +356,7 @@ jobs:
           clean: false
       - name: Get Datadog credentials
         id: dd-sts
+        if: always()
         continue-on-error: true
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:

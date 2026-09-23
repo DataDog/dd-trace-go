@@ -52,6 +52,10 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 }
 
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
+	if os.Getenv("GO_CMD") == "gotip" {
+		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
+	}
+
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)

@@ -1131,6 +1131,8 @@ func TestSpanAnnotate(t *testing.T) {
 				Prompt: &llmobs.Prompt{
 					ID:                  "my-prompt",
 					Version:             "1.0.0",
+					PromptUUID:          "prompt-uuid",
+					PromptVersionUUID:   "version-uuid",
 					Label:               "production",
 					Template:            "Hello {{name}}!",
 					Variables:           map[string]string{"name": "World"},
@@ -1145,6 +1147,8 @@ func TestSpanAnnotate(t *testing.T) {
 					"prompt": map[string]any{
 						"id":                        "my-prompt",
 						"version":                   "1.0.0",
+						"prompt_uuid":               "prompt-uuid",
+						"prompt_version_uuid":       "version-uuid",
 						"label":                     "production",
 						"template":                  "Hello {{name}}!",
 						"variables":                 map[string]any{"name": "World"},
