@@ -441,9 +441,7 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
-	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	cfg.otelSemanticsEnabled = otelSemantics
-	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", otelSemantics, otelSemanticsOrigin)
+	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
