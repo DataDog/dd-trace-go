@@ -21,6 +21,10 @@ func TestRouterParallel(t *testing.T) {
 	harness.Run(t, new(TestCaseRouterParallel))
 }
 
+func TestRouterRoot(t *testing.T) {
+	harness.Run(t, new(TestCaseRouterRoot))
+}
+
 func TestSubrouter(t *testing.T) {
 	harness.Run(t, new(TestCaseSubrouter))
 }
