@@ -8,6 +8,8 @@ package pgx
 import (
 	"context"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -106,6 +108,14 @@ type pgxTracer struct {
 	// a copy of the base config and can rewrite host, port, database or user per
 	// connection, so the snapshot cannot be trusted for connection-scoped spans.
 	perConnInfo bool
+
+	acquiredMu sync.Mutex
+	// acquiredAt maps each checked-out connection to the time it left the pool, so that
+	// TraceRelease can report how long it was held. pgx exposes no per-connection storage
+	// and hands the release hook the same *pgx.Conn as the acquire hook, so the pointer is
+	// the key. An entry is added on a successful acquire and removed on release, which
+	// bounds the map by the pool's MaxConns. Nil unless the metric is enabled.
+	acquiredAt map[*pgx.Conn]time.Time // +checklocks:acquiredMu
 }
 
 var (
@@ -141,6 +151,9 @@ func newPgxTracer(connConfig *pgx.ConnConfig, poolName string, perConnInfo bool,
 		cfg:         cfg,
 		connInfo:    newConnInfo(connConfig),
 		perConnInfo: perConnInfo,
+	}
+	if cfg.measureUseTime() {
+		tr.acquiredAt = make(map[*pgx.Conn]time.Time)
 	}
 	if prev := connConfig.Tracer; prev != nil {
 		tr.wrapped.query = prev
@@ -182,11 +195,11 @@ func defaultPoolName(connConfig *pgx.ConnConfig) string {
 }
 
 func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	if !t.cfg.traceQuery {
-		return ctx
-	}
 	if t.wrapped.query != nil {
 		ctx = t.wrapped.query.TraceQueryStart(ctx, conn, data)
+	}
+	if !t.cfg.traceQuery {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.query", opts...)
@@ -194,11 +207,11 @@ func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pg
 }
 
 func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
-	if !t.cfg.traceQuery {
-		return
-	}
 	if t.wrapped.query != nil {
 		t.wrapped.query.TraceQueryEnd(ctx, conn, data)
+	}
+	if !t.cfg.traceQuery {
+		return
 	}
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
@@ -208,11 +221,11 @@ func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 }
 
 func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
-	if !t.cfg.traceBatch {
-		return ctx
-	}
 	if t.wrapped.batch != nil {
 		ctx = t.wrapped.batch.TraceBatchStart(ctx, conn, data)
+	}
+	if !t.cfg.traceBatch {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeBatch, "",
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
@@ -223,11 +236,11 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 }
 
 func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
-	if !t.cfg.traceBatch {
-		return
-	}
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchQuery(ctx, conn, data)
+	}
+	if !t.cfg.traceBatch {
+		return
 	}
 	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or
 	// timestamp information about when the actual operation started or finished.
@@ -250,11 +263,11 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 }
 
 func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
-	if !t.cfg.traceBatch {
-		return
-	}
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchEnd(ctx, conn, data)
+	}
+	if !t.cfg.traceBatch {
+		return
 	}
 	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil && bs.prevQuery != nil {
 		bs.prevQuery.finish()
@@ -264,11 +277,11 @@ func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 }
 
 func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromStartData) context.Context {
-	if !t.cfg.traceCopyFrom {
-		return ctx
-	}
 	if t.wrapped.copyFrom != nil {
 		ctx = t.wrapped.copyFrom.TraceCopyFromStart(ctx, conn, data)
+	}
+	if !t.cfg.traceCopyFrom {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeCopyFrom, "",
 		tracer.Tag(tagCopyFromTables, data.TableName),
@@ -279,21 +292,21 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 }
 
 func (t *pgxTracer) TraceCopyFromEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromEndData) {
-	if !t.cfg.traceCopyFrom {
-		return
-	}
 	if t.wrapped.copyFrom != nil {
 		t.wrapped.copyFrom.TraceCopyFromEnd(ctx, conn, data)
+	}
+	if !t.cfg.traceCopyFrom {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
-	if !t.cfg.tracePrepare {
-		return ctx
-	}
 	if t.wrapped.prepare != nil {
 		ctx = t.wrapped.prepare.TracePrepareStart(ctx, conn, data)
+	}
+	if !t.cfg.tracePrepare {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypePrepare, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
@@ -301,21 +314,21 @@ func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data 
 }
 
 func (t *pgxTracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
-	if !t.cfg.tracePrepare {
-		return
-	}
 	if t.wrapped.prepare != nil {
 		t.wrapped.prepare.TracePrepareEnd(ctx, conn, data)
+	}
+	if !t.cfg.tracePrepare {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
-	if !t.cfg.traceConnect {
-		return ctx
-	}
 	if t.wrapped.connect != nil {
 		ctx = t.wrapped.connect.TraceConnectStart(ctx, data)
+	}
+	if !t.cfg.traceConnect {
+		return ctx
 	}
 	// data.ConnConfig is the config this connection is actually being established with,
 	// handed over by pgx without copying, so it is both free to read and already
@@ -327,21 +340,21 @@ func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnect
 }
 
 func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {
-	if !t.cfg.traceConnect {
-		return
-	}
 	if t.wrapped.connect != nil {
 		t.wrapped.connect.TraceConnectEnd(ctx, data)
+	}
+	if !t.cfg.traceConnect {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
-	if !t.cfg.traceAcquire {
-		return ctx
-	}
 	if t.wrapped.poolAcquire != nil {
 		ctx = t.wrapped.poolAcquire.TraceAcquireStart(ctx, pool, data)
+	}
+	if !t.cfg.traceAcquire {
+		return ctx
 	}
 	// Acquire is scoped to the pool, not to a single connection: this span previously
 	// read pool.Config(), which returns the same base config the snapshot was taken
@@ -352,22 +365,43 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, d
 }
 
 func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
-	if !t.cfg.traceAcquire {
-		return
-	}
 	if t.wrapped.poolAcquire != nil {
 		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
+	}
+	// A failed acquire never took a connection out of the pool, so no release follows it
+	// and there is nothing to time.
+	if data.Err == nil && data.Conn != nil && t.cfg.measureUseTime() {
+		t.acquiredMu.Lock()
+		t.acquiredAt[data.Conn] = time.Now()
+		t.acquiredMu.Unlock()
+	}
+	if !t.cfg.traceAcquire {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
-// TraceRelease forwards to the wrapped tracer and starts no span of its own: a release carries no
-// context to parent one from. Without this method pgxpool's lone type assertion on the outermost
-// tracer fails, and every wrapped ReleaseTracer stops being called.
+// TraceRelease reports how long the connection was held and forwards to the wrapped tracer.
+// It starts no span of its own: a release carries no context to parent one from. Without this
+// method pgxpool's lone type assertion on the outermost tracer fails, and every wrapped
+// ReleaseTracer stops being called.
 func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
 	if t.wrapped.poolRelease != nil {
 		t.wrapped.poolRelease.TraceRelease(pool, data)
 	}
+	if data.Conn == nil || !t.cfg.measureUseTime() {
+		return
+	}
+	t.acquiredMu.Lock()
+	acquiredAt, ok := t.acquiredAt[data.Conn]
+	delete(t.acquiredAt, data.Conn)
+	t.acquiredMu.Unlock()
+	// AcquireAllIdle hands out connections without running the acquire hooks, so a release
+	// can arrive for a connection that was never timed.
+	if !ok {
+		return
+	}
+	t.cfg.statsdClient.Timing(ConnectionUseTime, time.Since(acquiredAt), statsTags(t.cfg), 1)
 }
 
 // connInfoFor returns the metadata to tag a connection-scoped span with. It uses the
