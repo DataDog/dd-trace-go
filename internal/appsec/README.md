@@ -212,6 +212,12 @@ All currently available features are the following ones:
 | WAF Context            | Setup of the request scoped context system of the WAF  |
 | Tracing                | Bridge between the tracer and AppSec features          |
 
+### AppSec state checks
+
+`Enabled` and `RASPEnabled` load the active AppSec instance and its started state
+atomically. Query hooks do not take the lifecycle mutex. Instance replacement
+remains serialized, and remote activation updates the instance's atomic state.
+
 ### SQL monitoring in pgx
 
 The native `contrib/jackc/pgx.v5` integration emits monitoring-only SQL operations
@@ -222,11 +228,27 @@ AppSec and RASP are enabled.
 
 These operations retain WAF events, stack traces, and evaluation metrics, but
 suppress blocking and redirect actions: pgx tracing hooks cannot abort execution.
+A suppressed blocking or redirect action counts as `block:failure` in
+`rasp.rule.match`, not as a blocked request. A match without such an action counts
+as `block:irrelevant`.
+
+Transaction control statements also pass through `Exec` and are evaluated.
+`Begin` plus `Commit` or `Rollback` adds two evaluations when given the request
+context, even with no user SQL statements. The hooks cannot distinguish generated
+transaction commands from SQL supplied by the caller; no SQL text is excluded.
+
 This does not change protection in other integrations. The instrumented
 `database/sql` execution path marks the context passed to its driver after its
-own security check, so the nested pgx hook skips duplicate evaluation. The marker
-does not affect subsequent calls using the original request context, or pgx used
-through uninstrumented `database/sql`.
+own security check, so the nested pgx hook skips duplicate evaluation. It adds the
+marker only when the context has a parent security operation. It also marks
+other drivers, since registered driver names can be aliases. The marker does not affect subsequent calls using the original request
+context, or pgx used through uninstrumented `database/sql`.
+
+Prepared statements through `database/sql` do not run that blocking check. With
+the pgx hooks installed, their SQL text is monitored at execution but is not
+blocked. Thus, the same injected SQL can be blocked by a direct
+`ExecContext`/`QueryContext` call and only reported by a prepared statement.
+Blocking on the prepared-statement path is outside this change.
 
 Monitoring examines SQL supplied at query/batch start, before pgx rewrites queries
 or resolves prepared statement names. It does not interpolate bound parameters,

@@ -39,19 +39,23 @@ func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 	return emitSQLOperation(ctx, query, driver, false)
 }
 
-type monitoringDisabledKey struct{}
+type sqlOperationCheckedKey struct{}
 
-// WithSQLMonitoringDisabled marks a driver call already checked by an outer SQL
+// WithSQLOperationChecked marks a driver call already checked by an outer SQL
 // integration. Only pass the returned context to that call, not subsequent queries.
-func WithSQLMonitoringDisabled(ctx context.Context) context.Context {
-	return context.WithValue(ctx, monitoringDisabledKey{}, true)
+// Without a parent security operation, it returns ctx unchanged.
+func WithSQLOperationChecked(ctx context.Context) context.Context {
+	if parent, _ := dyngo.FromContext(ctx); parent == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, sqlOperationCheckedKey{}, true)
 }
 
 // MonitorSQLOperation reports SQL injection attempts without interrupting execution.
 // An outer SQL integration can suppress duplicate monitoring with
-// WithSQLMonitoringDisabled while retaining its own blocking behavior.
+// WithSQLOperationChecked while retaining its own blocking behavior.
 func MonitorSQLOperation(ctx context.Context, query, driver string) {
-	if disabled, _ := ctx.Value(monitoringDisabledKey{}).(bool); disabled {
+	if checked, _ := ctx.Value(sqlOperationCheckedKey{}).(bool); checked {
 		return
 	}
 	_ = emitSQLOperation(ctx, query, driver, true)

@@ -63,7 +63,10 @@ func checkQuerySecurity(ctx context.Context, query, driver string) (context.Cont
 		return ctx, nil
 	}
 	err := sqlsec.ProtectSQLOperation(ctx, query, driver)
-	return sqlsec.WithSQLMonitoringDisabled(ctx), err
+	if err == nil {
+		ctx = sqlsec.WithSQLOperationChecked(ctx)
+	}
+	return ctx, err
 }
 
 // WrappedConn returns the wrapped connection object.

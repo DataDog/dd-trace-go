@@ -6,7 +6,9 @@
 package sql
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"log"
 	"math/rand"
@@ -19,11 +21,113 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	_ "modernc.org/sqlite"
 )
+
+func TestSQLSecurityCheckedContext(t *testing.T) {
+	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	testutils.StartAppSec(t)
+	ctx := context.Background()
+	for _, name := range []string{"pgx", "mysql", "sqlserver", "custom-driver-name"} {
+		checked, err := checkQuerySecurity(ctx, "SELECT 1", name)
+		require.NoError(t, err)
+		require.Equal(t, ctx, checked, "background calls must not allocate a marker")
+		require.Zero(t, testing.AllocsPerRun(100, func() {
+			_, _ = checkQuerySecurity(ctx, "SELECT 1", name)
+		}))
+	}
+
+	parent := dyngo.NewRootOperation()
+	ctx = dyngo.RegisterOperation(ctx, parent)
+	var calls []sqlsec.SQLOperationArgs
+	dyngo.On(parent, func(_ *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) { calls = append(calls, args) })
+	checked, err := checkQuerySecurity(ctx, "SELECT 1", "pgx")
+	require.NoError(t, err)
+	sqlsec.MonitorSQLOperation(checked, "/* dbm */ SELECT 1", "postgresql")
+	require.Len(t, calls, 1)
+	require.False(t, calls[0].MonitorOnly)
+	_, err = checkQuerySecurity(ctx, "SELECT 1", "pgx")
+	require.NoError(t, err)
+	require.Len(t, calls, 2)
+}
+
+// monitoringSQLDriver models the native monitoring hooks without an integration dependency.
+// Only the context-aware methods used below are implemented.
+type monitoringSQLDriver struct {
+	driver.Conn
+}
+
+func (*monitoringSQLDriver) ExecContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+	sqlsec.MonitorSQLOperation(ctx, query, "postgresql")
+	return driver.RowsAffected(1), nil
+}
+
+func (*monitoringSQLDriver) QueryContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	sqlsec.MonitorSQLOperation(ctx, query, "postgresql")
+	return nil, nil
+}
+
+type monitoringSQLStmt struct {
+	driver.Stmt
+	query string
+}
+
+func (s *monitoringSQLStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	return (&monitoringSQLDriver{}).ExecContext(ctx, s.query, args)
+}
+
+func (s *monitoringSQLStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	return (&monitoringSQLDriver{}).QueryContext(ctx, s.query, args)
+}
+
+func TestSQLSecurityNativeMonitoring(t *testing.T) {
+	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	testutils.StartAppSec(t)
+	cfg := new(config)
+	defaults(cfg, "pgx", nil)
+	params := &traceParams{cfg: cfg, driverName: "pgx", spanCfg: newSpanConfig(cfg, "pgx")}
+	conn := &TracedConn{Conn: &monitoringSQLDriver{}, traceParams: params}
+	for _, query := range []string{"SELECT 1", "injected SQL"} {
+		for _, operation := range []string{"exec", "query", "prepared-exec", "prepared-query"} {
+			t.Run(query+"/"+operation, func(t *testing.T) {
+				parent := dyngo.NewRootOperation()
+				ctx := dyngo.RegisterOperation(context.Background(), parent)
+				var calls []sqlsec.SQLOperationArgs
+				dyngo.On(parent, func(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
+					calls = append(calls, args)
+					if args.Query == "injected SQL" && !args.MonitorOnly {
+						dyngo.EmitData(op, &events.BlockingSecurityEvent{})
+					}
+				})
+				stmt := &tracedStmt{Stmt: &monitoringSQLStmt{query: query}, traceParams: params, ctx: ctx, query: query}
+				var err error
+				switch operation {
+				case "exec":
+					_, err = conn.ExecContext(ctx, query, nil)
+				case "query":
+					_, err = conn.QueryContext(ctx, query, nil)
+				case "prepared-exec":
+					_, err = stmt.ExecContext(ctx, nil)
+				case "prepared-query":
+					_, err = stmt.QueryContext(ctx, nil)
+				}
+				prepared := operation == "prepared-exec" || operation == "prepared-query"
+				if query == "injected SQL" && !prepared {
+					require.True(t, events.IsSecurityError(err))
+				} else {
+					require.NoError(t, err)
+				}
+				require.Len(t, calls, 1, "nested monitoring must not duplicate the outer check")
+				require.Equal(t, prepared, calls[0].MonitorOnly)
+			})
+		}
+	}
+}
 
 func prepareSQLDB(nbEntries int) (*sql.DB, error) {
 	const tables = `

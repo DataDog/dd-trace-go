@@ -7,24 +7,33 @@ package pgx
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -801,4 +810,235 @@ func (p *pgxMockTracer) TraceAcquireEnd(_ context.Context, _ *pgxpool.Pool, _ pg
 
 func (p *pgxMockTracer) TraceRelease(_ *pgxpool.Pool, _ pgxpool.TraceReleaseData) {
 	p.called["pool.release"] = true
+}
+
+const sqlInjection = "' OR 1 = 1 --"
+const injectedQuery = "SELECT 1 WHERE 'safe' = '" + sqlInjection + "'"
+
+type sqlClient interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	SendBatch(context.Context, *pgx.Batch) pgx.BatchResults
+}
+
+func startSQLAppSec(t *testing.T, enabled bool) {
+	t.Helper()
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/rasp.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	if enabled {
+		t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	} else {
+		t.Setenv("DD_APPSEC_RASP_ENABLED", "false")
+	}
+	testutils.StartAppSec(t)
+}
+
+func sqlRequest(t *testing.T, run func(context.Context), status int) *mocktracer.Span {
+	t.Helper()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := httptracemock.NewServeMux()
+	mux.HandleFunc("/query", func(_ http.ResponseWriter, r *http.Request) {
+		run(r.Context())
+	})
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/query?input="+url.QueryEscape(sqlInjection), nil))
+	require.Equal(t, status, w.Code)
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() == "http.request" {
+			return span
+		}
+	}
+	t.Fatal("missing HTTP span")
+	return nil
+}
+
+func TestRASPSQLMonitoring(t *testing.T) {
+	startSQLAppSec(t, true)
+	for _, traceEnabled := range []bool{true, false} {
+		opts := []Option{WithTraceQuery(traceEnabled), WithTraceBatch(traceEnabled)}
+		conn, err := Connect(context.Background(), postgresDSN, opts...)
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close(context.Background()) })
+		pool, err := NewPool(context.Background(), postgresDSN, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+		tx, err := pool.Begin(context.Background())
+		require.NoError(t, err)
+		t.Cleanup(func() { tx.Rollback(context.Background()) })
+		for name, client := range map[string]sqlClient{"conn": conn, "pool": pool, "tx": tx} {
+			for operation, run := range map[string]func(*testing.T, context.Context){
+				"exec": func(t *testing.T, ctx context.Context) {
+					tag, err := client.Exec(ctx, injectedQuery)
+					require.NoError(t, err)
+					require.EqualValues(t, 1, tag.RowsAffected())
+				},
+				"query": func(t *testing.T, ctx context.Context) {
+					rows, err := client.Query(ctx, injectedQuery)
+					require.NoError(t, err)
+					defer rows.Close()
+					require.True(t, rows.Next())
+					require.NoError(t, rows.Err())
+				},
+				"query-row": func(t *testing.T, ctx context.Context) {
+					var value int
+					require.NoError(t, client.QueryRow(ctx, injectedQuery).Scan(&value))
+					require.Equal(t, 1, value)
+				},
+				"batch": func(t *testing.T, ctx context.Context) {
+					batch := &pgx.Batch{}
+					batch.Queue(injectedQuery)
+					br := client.SendBatch(ctx, batch)
+					var value int
+					require.NoError(t, br.QueryRow().Scan(&value))
+					require.NoError(t, br.Close())
+					require.Equal(t, 1, value)
+				},
+			} {
+				t.Run(name+"/"+operation+"/tracing="+strconv.FormatBool(traceEnabled), func(t *testing.T) {
+					span := sqlRequest(t, func(ctx context.Context) { run(t, ctx) }, http.StatusOK)
+					require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+					require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+					require.Nil(t, span.Tag("appsec.blocked"))
+				})
+			}
+		}
+	}
+}
+
+func TestRASPSQLMonitoringParameterized(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		var value string
+		require.NoError(t, conn.QueryRow(ctx, "SELECT $1::text", sqlInjection).Scan(&value))
+		require.Equal(t, sqlInjection, value)
+	}, http.StatusOK)
+	require.Nil(t, span.Tag("_dd.appsec.json"))
+	require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringDisabled(t *testing.T) {
+	startSQLAppSec(t, false)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		_, err := conn.Exec(ctx, injectedQuery)
+		require.NoError(t, err)
+	}, http.StatusOK)
+	require.Nil(t, span.Tag("_dd.appsec.json"))
+	require.Nil(t, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringBatchStatements(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		batch := &pgx.Batch{}
+		batch.Queue("SELECT 1")
+		batch.Queue(injectedQuery)
+		batch.Queue(injectedQuery)
+		br := conn.SendBatch(ctx, batch)
+		defer br.Close()
+		for range 3 {
+			var value int
+			require.NoError(t, br.QueryRow().Scan(&value))
+			require.Equal(t, 1, value)
+		}
+		require.NoError(t, br.Close())
+	}, http.StatusOK)
+	require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+	require.EqualValues(t, 3, span.Tag("_dd.appsec.rasp.rule.eval"))
+	require.Nil(t, span.Tag("appsec.blocked"))
+}
+
+func TestRASPSQLMonitoringCheckedOperation(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		// Model an outer integration that checked SQL before adding DBM comments.
+		require.NoError(t, sqlsec.ProtectSQLOperation(ctx, "SELECT 1", "pgx"))
+		checked := sqlsec.WithSQLOperationChecked(ctx)
+		_, err := conn.Exec(checked, "/* dbm */ SELECT 1")
+		require.NoError(t, err)
+		require.NoError(t, sqlsec.ProtectSQLOperation(ctx, "SELECT 1", "pgx"))
+		checked = sqlsec.WithSQLOperationChecked(ctx)
+		rows, err := conn.Query(checked, "/* dbm */ SELECT 1")
+		require.NoError(t, err)
+		rows.Close()
+		require.NoError(t, rows.Err())
+		// The marker must not suppress another call with the original context.
+		_, err = conn.Exec(ctx, "SELECT 1")
+		require.NoError(t, err)
+	}, http.StatusOK)
+	require.EqualValues(t, 3, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringDatabaseSQLPrepared(t *testing.T) {
+	startSQLAppSec(t, true)
+	cfg, err := pgx.ParseConfig(postgresDSN)
+	require.NoError(t, err)
+	cfg.Tracer = wrapPgxTracer(cfg)
+	db := sql.OpenDB(stdlib.GetConnector(*cfg))
+	defer db.Close()
+	for _, operation := range []string{"exec", "query"} {
+		t.Run(operation, func(t *testing.T) {
+			span := sqlRequest(t, func(ctx context.Context) {
+				stmt, err := db.PrepareContext(ctx, injectedQuery)
+				require.NoError(t, err)
+				defer stmt.Close()
+				if operation == "exec" {
+					result, err := stmt.ExecContext(ctx)
+					require.NoError(t, err)
+					count, err := result.RowsAffected()
+					require.NoError(t, err)
+					require.EqualValues(t, 1, count)
+				} else {
+					var value int
+					require.NoError(t, stmt.QueryRowContext(ctx).Scan(&value))
+					require.Equal(t, 1, value)
+				}
+			}, http.StatusOK)
+			require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+			require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+			require.Nil(t, span.Tag("appsec.blocked"))
+		})
+	}
+}
+
+func TestRASPSQLMonitoringTransactionControl(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	for _, commit := range []bool{true, false} {
+		t.Run("commit="+strconv.FormatBool(commit), func(t *testing.T) {
+			span := sqlRequest(t, func(ctx context.Context) {
+				tx, err := conn.Begin(ctx)
+				require.NoError(t, err)
+				defer tx.Rollback(context.Background())
+				if commit {
+					_, err = tx.Exec(ctx, "SELECT 1")
+					require.NoError(t, err)
+					require.NoError(t, tx.Commit(ctx))
+				} else {
+					require.NoError(t, tx.Rollback(ctx))
+				}
+			}, http.StatusOK)
+			expected := 2
+			if commit {
+				expected = 3
+			}
+			require.EqualValues(t, expected, span.Tag("_dd.appsec.rasp.rule.eval"))
+			require.Nil(t, span.Tag("_dd.appsec.json"))
+		})
+	}
 }

@@ -31,7 +31,7 @@ func TestSQLMonitoringScope(t *testing.T) {
 	require.Equal(t, []SQLOperationArgs{{Query: "SELECT 1", Driver: "postgresql", MonitorOnly: true}}, received)
 
 	// A marker applies to the nested driver call, including when DBM adds comments.
-	marked := WithSQLMonitoringDisabled(ctx)
+	marked := WithSQLOperationChecked(ctx)
 	MonitorSQLOperation(marked, "/* dbm */ SELECT 1", "postgresql")
 	require.Len(t, received, 1)
 	MonitorSQLOperation(ctx, "SELECT 1", "postgresql")
@@ -40,12 +40,20 @@ func TestSQLMonitoringScope(t *testing.T) {
 	require.False(t, received[2].MonitorOnly, "monitoring suppression must not disable protection")
 }
 
+func TestWithSQLOperationCheckedWithoutParent(t *testing.T) {
+	ctx := context.Background()
+	require.Equal(t, ctx, WithSQLOperationChecked(ctx))
+	require.Zero(t, testing.AllocsPerRun(100, func() {
+		WithSQLOperationChecked(ctx)
+	}))
+}
+
 func BenchmarkMonitorSQLOperation(b *testing.B) {
 	parent := dyngo.NewRootOperation()
 	ctx := dyngo.RegisterOperation(context.Background(), parent)
 	for name, ctx := range map[string]context.Context{
 		"native":          ctx,
-		"already-checked": WithSQLMonitoringDisabled(ctx),
+		"already-checked": WithSQLOperationChecked(ctx),
 	} {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()

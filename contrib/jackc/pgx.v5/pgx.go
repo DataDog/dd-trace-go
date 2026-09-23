@@ -10,8 +10,12 @@
 // cannot block SQL execution; its tracing hooks cannot return an error.
 //
 // Queries already checked by Datadog's database/sql integration are not evaluated
-// again, and that integration retains its blocking behavior. Monitoring requires
-// forwarding the instrumented incoming request context to the database call.
+// again, and direct ExecContext/QueryContext calls retain their blocking behavior.
+// Prepared statements through database/sql do not run that blocking check: when
+// the pgx hooks are installed, they are monitored but cannot be blocked.
+// Monitoring requires the instrumented incoming request context. It also evaluates
+// transaction control statements sent by pgx through Exec: Begin plus Commit or
+// Rollback adds two evaluations, even with no user SQL statements.
 // The hooks see SQL before pgx query rewriting and prepared-statement name lookup;
 // SQL produced by custom QueryRewriters and execution by statement name are not
 // fully covered. Bound parameter values are not interpolated into the SQL.

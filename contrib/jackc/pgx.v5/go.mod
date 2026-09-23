@@ -3,7 +3,6 @@ module github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/stretchr/testify v1.11.1
@@ -88,7 +87,5 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../database/sql
 
 retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

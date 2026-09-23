@@ -18,6 +18,9 @@ import (
 	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -337,4 +340,111 @@ func countRuleID(ruleIDs []string, id string) int {
 		}
 	}
 	return count
+}
+
+type actionRunner struct{ action string }
+
+func (r actionRunner) Run(context.Context, libddwaf.RunAddressData) (libddwaf.Result, error) {
+	actions := map[string]any{"generate_stack": map[string]any{"stack_id": "sql-stack"}}
+	if r.action != "" {
+		actions[r.action] = map[string]any{}
+	}
+	return libddwaf.Result{
+		Events:  []any{"SQL injection"},
+		Actions: actions,
+		Keep:    true,
+	}, nil
+}
+
+func TestRunWAFMonitorOnlyMetrics(t *testing.T) {
+	for _, action := range []string{"block_request", "redirect_request", ""} {
+		t.Run(action, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			op.SetSupportedAddresses(config.NewAddressSet([]string{addresses.ServerDBStatementAddr, addresses.ServerDBTypeAddr}))
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+			op.SetMetricsInstance(metrics)
+			op.runWAF(op, actionRunner{action}, addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build(), true)
+			require.EqualValues(t, 1, metrics.SumRASPCalls.Load())
+			require.False(t, metrics.Milestones.requestBlocked)
+			for _, outcome := range []string{"failure", "irrelevant", "success"} {
+				var want float64
+				if (action != "" && outcome == "failure") || (action == "" && outcome == "irrelevant") {
+					want = 1
+				}
+				tags := []string{"block:" + outcome, "rule_type:sql_injection", "waf_version:" + libddwaf.Version(), "event_rules_version:test"}
+				require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get(), outcome)
+			}
+		})
+	}
+}
+
+func TestSubcontextOperationMonitorOnlyBlockFailure(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+	client := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(client)()
+	op, _, metrics := newSubcontextTestOperation(t)
+	seedRequestContext(t, op)
+	var blocks, stacks int
+	dyngo.OnData(op, func(*events.BlockingSecurityEvent) { blocks++ })
+	dyngo.OnData(op, func(*actions.StackTraceAction) { stacks++ })
+	sub := op.NewSubcontextOp()
+	sub.RunMonitorOnly(op, ssrfRequestRunData())
+	sub.Close()
+	require.Zero(t, blocks)
+	require.Positive(t, stacks)
+	require.Contains(t, eventRuleIDs(op.Events()), "rasp-934-100")
+	require.False(t, metrics.Milestones.requestBlocked)
+	for _, outcome := range []string{"failure", "success", "irrelevant"} {
+		tags := []string{"block:" + outcome, "rule_type:ssrf", "rule_variant:request", "waf_version:" + libddwaf.Version(), "event_rules_version:1.99.0"}
+		var want float64
+		if outcome == "failure" {
+			want = 1
+		}
+		require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get())
+	}
+	sub = op.NewSubcontextOp()
+	sub.Run(op, ssrfRequestRunData())
+	sub.Close()
+	require.Positive(t, blocks)
+	require.EqualValues(t, 2, metrics.SumRASPCalls.Load())
+	tags := []string{"block:success", "rule_type:ssrf", "rule_variant:request", "waf_version:" + libddwaf.Version(), "event_rules_version:1.99.0"}
+	require.EqualValues(t, 1, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get())
+}
+
+func TestRunWAFMonitorOnlyActions(t *testing.T) {
+	for _, action := range []string{"block_request", "redirect_request"} {
+		t.Run(action, func(t *testing.T) {
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			metrics := &ContextMetrics{}
+			op.SetMetricsInstance(metrics)
+			var blocks, stacks, securityEvents int
+			dyngo.OnData(op, func(*events.BlockingSecurityEvent) { blocks++ })
+			dyngo.OnData(op, func(*actions.StackTraceAction) { stacks++ })
+			dyngo.OnData(op, func(*SecurityEvent) { securityEvents++ })
+			op.runWAF(op, actionRunner{action}, addresses.RunAddressData{}, true)
+			require.Zero(t, blocks)
+			require.Equal(t, 1, stacks)
+			require.Equal(t, 1, securityEvents)
+			require.Equal(t, []any{"SQL injection"}, op.Events())
+			require.False(t, metrics.Milestones.requestBlocked)
+
+			// Monitoring does not alter the rules or suppress subsequent protection.
+			op.runWAF(op, actionRunner{action}, addresses.RunAddressData{}, false)
+			require.Positive(t, blocks)
+			require.Equal(t, 2, stacks)
+			require.Equal(t, 2, securityEvents)
+			if action == "block_request" {
+				require.True(t, metrics.Milestones.requestBlocked)
+			}
+		})
+	}
 }

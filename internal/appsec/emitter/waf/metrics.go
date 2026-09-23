@@ -35,12 +35,14 @@ var changeToWafUpdates sync.Once
 // this struct can be modified concurrently.
 // TODO: add request_excluded to the mix once we have the capability to track it (blocked on libddwaf)
 type RequestMilestones struct {
-	requestBlocked bool
-	ruleTriggered  bool
-	wafTimeout     bool
-	rateLimited    bool
-	wafError       bool
-	inputTruncated bool
+	// blockingSuppressed is used only for the per-run RASP block outcome.
+	blockingSuppressed bool
+	requestBlocked     bool
+	ruleTriggered      bool
+	wafTimeout         bool
+	rateLimited        bool
+	wafError           bool
+	inputTruncated     bool
 }
 
 // raspMetricKey is used as a cache key for the metrics having tags depending on the RASP rule type
@@ -330,6 +332,8 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 			blockTag := "block:irrelevant"
 			if tags.requestBlocked {
 				blockTag = "block:success"
+			} else if tags.blockingSuppressed {
+				blockTag = "block:failure"
 			}
 
 			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() (telemetry.MetricHandle, bool) {

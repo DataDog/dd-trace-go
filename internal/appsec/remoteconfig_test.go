@@ -138,7 +138,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
-		require.NotNil(t, activeAppSec)
+		require.NotNil(t, activeAppSec.Load())
 		require.False(t, Enabled())
 		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
 		require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "false")
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
-		require.Nil(t, activeAppSec)
+		require.Nil(t, activeAppSec.Load())
 		require.False(t, Enabled())
 	})
 
@@ -198,7 +198,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 				defer Stop()
-				require.Nil(t, activeAppSec)
+				require.Nil(t, activeAppSec.Load())
 				require.False(t, Enabled())
 			})
 		}
@@ -244,7 +244,7 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 			}
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 			defer Stop()
-			if !Enabled() && activeAppSec == nil {
+			if !Enabled() && activeAppSec.Load() == nil {
 				t.Skip()
 			}
 
@@ -287,7 +287,7 @@ func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
 			}
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
 			defer Stop()
-			if !Enabled() && activeAppSec == nil {
+			if !Enabled() && activeAppSec.Load() == nil {
 				t.Skip()
 			}
 
@@ -435,7 +435,7 @@ func TestOnRCUpdate(t *testing.T) {
 
 				// Craft and process the RC updates
 				updates := craftRCUpdates(tc.edits)
-				statuses := activeAppSec.onRCRulesUpdate(updates)
+				statuses := activeAppSec.Load().onRCRulesUpdate(updates)
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
@@ -444,7 +444,7 @@ func TestOnRCUpdate(t *testing.T) {
 					expected = append(expected, path)
 				}
 				slices.Sort(expected)
-				actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+				actual := activeAppSec.Load().cfg.WAFManager.ConfigPaths("")
 				slices.Sort(actual)
 				require.Equal(t, expected, actual)
 			})
@@ -515,12 +515,12 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}, activeAppSec.Load().cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
 
-			statuses := activeAppSec.onRCRulesUpdate(updates)
+			statuses := activeAppSec.Load().onRCRulesUpdate(updates)
 			require.Equal(t, tc.statuses, statuses)
 
 			// Compare rulesets base paths to make sure the updates were processed correctly
@@ -530,7 +530,7 @@ func TestOnRCUpdate(t *testing.T) {
 			} else {
 				expected = append([]string{"obfuscator/config"}, expected...)
 			}
-			actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+			actual := activeAppSec.Load().cfg.WAFManager.ConfigPaths("")
 			slices.Sort(expected)
 			slices.Sort(actual)
 			require.Equal(t, expected, actual)
@@ -572,7 +572,7 @@ func TestOnRCUpdate(t *testing.T) {
 			}
 			productUpdates[path] = data
 		}
-		status := activeAppSec.onRCRulesUpdate(rcRulesUpdate)
+		status := activeAppSec.Load().onRCRulesUpdate(rcRulesUpdate)
 		for path, status := range status {
 			assert.Equal(t, state.ApplyStatus{State: state.ApplyStateAcknowledged}, status, "did not acknowledge update to %s", path)
 		}
@@ -580,7 +580,7 @@ func TestOnRCUpdate(t *testing.T) {
 		// At this point, ASM should be fully enabled
 		require.True(t, Enabled())
 
-		handle, _ := activeAppSec.cfg.WAFManager.NewHandle()
+		handle, _ := activeAppSec.Load().cfg.WAFManager.NewHandle()
 		require.NotNil(t, handle)
 		defer handle.Close()
 
@@ -625,20 +625,20 @@ func TestOnRCUpdate(t *testing.T) {
 
 		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 		// Activate appsec
-		status := activeAppSec.handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
+		status := activeAppSec.Load().handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
 		require.True(t, Enabled())
 		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
 		// Deactivate appsec
-		status = activeAppSec.handleASMFeatures(map[string][]byte{"features/config": nil})
+		status = activeAppSec.Load().handleASMFeatures(map[string][]byte{"features/config": nil})
 		require.False(t, Enabled())
 		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
-		status = activeAppSec.onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
+		status = activeAppSec.Load().onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
 			state.ProductASMDD: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
 		})
 		require.Equal(t, map[string]state.ApplyStatus{"irrelevant/config": {State: state.ApplyStateUnacknowledged}}, status)
-		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
+		require.NotContains(t, activeAppSec.Load().cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
 	})
 }
 
@@ -719,7 +719,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				t.Skip("AppSec needs to be enabled for this test")
 			}
 
-			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
+			statuses := activeAppSec.Load().onRCRulesUpdate(tc.updates)
 			require.Equal(t, tc.expected, statuses)
 		})
 	}
@@ -802,24 +802,104 @@ type RulesFragment struct {
 	Scanners      []any                   `json:"scanners,omitempty"`
 }
 
-// TestStartedFieldConcurrentAccess reproduces the data race between the remote-config goroutine
-// toggling appsec.started (via start()/stop()) and the mutex-guarded Enabled()/RASPEnabled() readers.
-// Run with -race.
+func TestActiveAppSecState(t *testing.T) {
+	previous := activeAppSec.Swap(nil)
+	t.Cleanup(func() { activeAppSec.Store(previous) })
+	require.False(t, Enabled())
+	require.False(t, RASPEnabled())
+	for _, rasp := range []bool{false, true} {
+		a := newAppSec(&config.Config{RASP: rasp})
+		activeAppSec.Store(a)
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+		a.started.Store(true)
+		require.True(t, Enabled())
+		require.Equal(t, rasp, RASPEnabled())
+		a.started.Store(false)
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+	}
+}
+
+func TestAppSecStateDoesNotTakeLifecycleLock(t *testing.T) {
+	a := newAppSec(&config.Config{RASP: true})
+	a.started.Store(true)
+	previous := activeAppSec.Swap(a)
+	t.Cleanup(func() { activeAppSec.Store(previous) })
+
+	mu.Lock()
+	done := make(chan struct{})
+	defer func() {
+		mu.Unlock()
+		<-done
+	}()
+	var enabled, raspEnabled bool
+	go func() {
+		enabled, raspEnabled = Enabled(), RASPEnabled()
+		close(done)
+	}()
+	select {
+	case <-done:
+		require.True(t, enabled)
+		require.True(t, raspEnabled)
+	case <-time.After(time.Second):
+		t.Fatal("AppSec state reads waited for the lifecycle lock")
+	}
+}
+
+func TestAppSecLifecycleConcurrentReaders(t *testing.T) {
+	if supported, _ := libddwaf.Usable(); !supported {
+		t.Skip("WAF cannot be used")
+	}
+	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	done := make(chan struct{})
+	var readers sync.WaitGroup
+	t.Cleanup(func() {
+		close(done)
+		readers.Wait()
+		Stop()
+	})
+	for range 4 {
+		readers.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					_ = Enabled()
+					_ = RASPEnabled()
+				}
+			}
+		})
+	}
+	for range 5 {
+		Start(config.WithEnablementMode(config.ForcedOn))
+		require.True(t, Enabled())
+		require.True(t, RASPEnabled())
+		Stop()
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+	}
+}
+
+// TestStartedFieldConcurrentAccess exercises instance replacement and remote
+// activation while Enabled and RASPEnabled read the state. Run with -race.
 func TestStartedFieldConcurrentAccess(t *testing.T) {
 	a := &appsec{cfg: &config.Config{RASP: true}}
-	mu.Lock()
-	prev := activeAppSec
-	activeAppSec = a
-	mu.Unlock()
-	t.Cleanup(func() {
-		mu.Lock()
-		activeAppSec = prev
-		mu.Unlock()
-	})
+	prev := activeAppSec.Swap(a)
+	t.Cleanup(func() { activeAppSec.Store(prev) })
 
 	var done atomic.Bool
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	// Replace the active instance while readers also observe remote activation.
+	go func() {
+		defer wg.Done()
+		for !done.Load() {
+			activeAppSec.Store(nil)
+			activeAppSec.Store(a)
+		}
+	}()
 	// Writer: mimics the RC goroutine flipping started without holding mu (appsec.go start/stop).
 	go func() {
 		defer wg.Done()
@@ -828,7 +908,7 @@ func TestStartedFieldConcurrentAccess(t *testing.T) {
 			a.started.Store(false)
 		}
 	}()
-	// Reader: the real public API paths, guarded only by mu.
+	// Reader: the public API paths use atomic loads.
 	go func() {
 		defer wg.Done()
 		for range 200000 {
