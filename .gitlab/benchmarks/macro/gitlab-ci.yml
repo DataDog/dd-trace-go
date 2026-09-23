@@ -102,6 +102,8 @@ variables:
 #
 
 go-oldstable-baseline:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -111,6 +113,8 @@ go-oldstable-baseline:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-oldstable-only-trace:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -120,6 +124,8 @@ go-oldstable-only-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-oldstable-only-trace-with-runtime-metrics:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -130,6 +136,8 @@ go-oldstable-only-trace-with-runtime-metrics:
     DD_RUNTIME_METRICS_ENABLED: "true"
 
 go-oldstable-only-profile:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -139,6 +147,8 @@ go-oldstable-only-profile:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-oldstable-profile-trace:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -148,6 +158,8 @@ go-oldstable-profile-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-oldstable-trace-asm:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -157,6 +169,8 @@ go-oldstable-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-oldstable-profile-trace-asm:
+  rules:
+    - when: always
   extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -166,6 +180,8 @@ go-oldstable-profile-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-baseline:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -175,6 +191,8 @@ go-stable-baseline:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-only-trace:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -184,6 +202,8 @@ go-stable-only-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-only-trace-with-runtime-metrics:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -194,6 +214,8 @@ go-stable-only-trace-with-runtime-metrics:
     DD_RUNTIME_METRICS_ENABLED: "true"
 
 go-stable-only-profile:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -203,6 +225,8 @@ go-stable-only-profile:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-profile-trace:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -212,6 +236,8 @@ go-stable-profile-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-trace-asm:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -221,6 +247,8 @@ go-stable-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go-stable-profile-trace-asm:
+  rules:
+    - when: always
   extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
@@ -321,6 +349,8 @@ notify-slo-breaches:
 
 # Scenario with external processor, webserver without tracer
 se-ext_proc-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
@@ -329,6 +359,8 @@ se-ext_proc-appsec:
     TRACER: false
 
 se-ext_proc-body-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
@@ -336,6 +368,8 @@ se-ext_proc-body-appsec:
     TRACER: false
 
 se-ext_proc-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
@@ -344,6 +378,8 @@ se-ext_proc-only-tracing:
     TRACER: false
 
 se-ext_proc-body-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
@@ -352,6 +388,8 @@ se-ext_proc-body-only-tracing:
 
 # Scenarios without external processor, webserver with tracer
 se-tracer-no-ext_proc-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: false
@@ -360,6 +398,8 @@ se-tracer-no-ext_proc-appsec:
     TRACER: true
 
 se-tracer-no-ext_proc-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: false
@@ -369,6 +409,8 @@ se-tracer-no-ext_proc-only-tracing:
 
 # Scenario without tracer, only direct connection through envoy to the webserver
 se-no-tracer-no-ext_proc:
+  rules:
+    - when: always
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: false
@@ -417,6 +459,8 @@ se-no-tracer-no-ext_proc:
 
 # Scenario with SPOA, webserver without tracer
 haproxy-spoa-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: true
@@ -425,6 +469,8 @@ haproxy-spoa-appsec:
     TRACER: false
 
 haproxy-spoa-body-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: true
@@ -432,6 +478,8 @@ haproxy-spoa-body-appsec:
     TRACER: false
 
 haproxy-spoa-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: true
@@ -440,6 +488,8 @@ haproxy-spoa-only-tracing:
     TRACER: false
 
 haproxy-spoa-body-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: true
@@ -448,6 +498,8 @@ haproxy-spoa-body-only-tracing:
 
 # Scenarios without SPOA, webserver with tracer
 haproxy-tracer-no-spoa-appsec:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: false
@@ -456,6 +508,8 @@ haproxy-tracer-no-spoa-appsec:
     TRACER: true
 
 haproxy-tracer-no-spoa-only-tracing:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: false
@@ -465,6 +519,8 @@ haproxy-tracer-no-spoa-only-tracing:
 
 # Scenario without tracer, only direct connection through HAProxy to the webserver
 haproxy-no-tracer-no-spoa:
+  rules:
+    - when: always
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: false

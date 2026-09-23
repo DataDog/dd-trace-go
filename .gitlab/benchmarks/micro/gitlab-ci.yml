@@ -106,6 +106,8 @@ variables:
 # parallel:matrix can't be used, because of bug https://gitlab.com/gitlab-org/gitlab/-/work_items/285853#note_2781385941
 # Because CI job names can't be larger than 255 characters, Gitlab pipeline generation will fail.
 microbenchmarks-1:
+  rules:
+    - when: always
   extends: .microbenchmarks
   variables:
     BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkAgentTraceWriter|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
@@ -114,6 +116,8 @@ microbenchmarks-1:
     GROUP_ID: "group-1"
 
 microbenchmarks-2:
+  rules:
+    - when: always
   extends: .microbenchmarks
   variables:
     BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkContextWithSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext"
@@ -122,6 +126,8 @@ microbenchmarks-2:
     GROUP_ID: "group-2"
 
 microbenchmarks-3:
+  rules:
+    - when: always
   extends: .microbenchmarks
   variables:
     BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations|BenchmarkLLMObsExportSubmitSpans"
