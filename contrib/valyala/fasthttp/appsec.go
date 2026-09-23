@@ -11,37 +11,47 @@ import (
 
 	"github.com/valyala/fasthttp"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
 const appsecFramework = "github.com/valyala/fasthttp"
 
-// beforeHandle runs the AppSec request-start logic for fctx, adapting it to the
-// net/http shaped entry point in httpsec. It returns an afterHandle function,
-// which must run once the handler is done and before the span is finished, and
-// a handled boolean reporting whether AppSec already wrote a blocking response,
-// in which case the wrapped handler must not run.
-//
-// Both return values are zero when the request could not be adapted, meaning
-// AppSec is skipped for it.
-func beforeHandle(fctx *fasthttp.RequestCtx, span trace.TagSetter) (afterHandle func(), handled bool) {
+type appsecHandler struct {
+	writer  *responseWriter
+	op      dyngo.Operation
+	finish  func()
+	restore func()
+}
+
+// beforeHandle keeps operation cleanup separate from response processing. A
+// timeout can finish the operation while its worker still uses the context.
+func beforeHandle(fctx *fasthttp.RequestCtx, span trace.TagSetter) (*appsecHandler, bool) {
 	req, err := convertRequest(fctx)
 	if err != nil {
 		instr.Logger().Debug("contrib/valyala/fasthttp: appsec monitoring skipped for this request: %s", err.Error())
 		return nil, false
 	}
 
-	w := &responseWriter{fctx: fctx}
-	_, _, afterHandle, handled = httpsec.BeforeHandle(w, req, span, &httpsec.Config{
-		Framework: appsecFramework,
-		OnBlock:   []func(){w.discardHandlerResponse},
-		// The wrapped handler writes to the fasthttp response directly rather
-		// than through w, so the headers AppSec reports have to be read back
-		// from there instead of from w.
-		ResponseHeaderCopier: func(http.ResponseWriter) http.Header { return responseHeaders(fctx) },
+	w := &responseWriter{response: &fctx.Response}
+	_, req, finish, handled := httpsec.BeforeHandle(w, req, span, &httpsec.Config{
+		Framework:            appsecFramework,
+		OnBlock:              []func(){w.discardHandlerResponse},
+		ResponseHeaderCopier: func(http.ResponseWriter) http.Header { return responseHeaders(w.response) },
 	})
-	return afterHandle, handled
+	key := dyngo.ContextKey()
+	previous := fctx.UserValue(key)
+	op, _ := dyngo.FromContext(req.Context())
+	fctx.SetUserValue(key, op)
+	return &appsecHandler{
+		writer: w,
+		op:     op,
+		finish: finish,
+		restore: func() {
+			restoreUserValue(fctx, key, previous)
+		},
+	}, handled
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp
@@ -74,9 +84,9 @@ func convertRequest(fctx *fasthttp.RequestCtx) (*http.Request, error) {
 	return req.WithContext(fctx), nil
 }
 
-func responseHeaders(fctx *fasthttp.RequestCtx) http.Header {
-	header := make(http.Header, fctx.Response.Header.Len())
-	for k, v := range fctx.Response.Header.All() {
+func responseHeaders(response *fasthttp.Response) http.Header {
+	header := make(http.Header, response.Header.Len())
+	for k, v := range response.Header.All() {
 		header.Add(string(k), string(v))
 	}
 	return header
@@ -85,7 +95,7 @@ func responseHeaders(fctx *fasthttp.RequestCtx) http.Header {
 // responseWriter adapts a fasthttp response to the net/http interface AppSec
 // needs in order to write a blocking response.
 type responseWriter struct {
-	fctx        *fasthttp.RequestCtx
+	response    *fasthttp.Response
 	header      http.Header
 	wroteHeader bool
 }
@@ -104,15 +114,15 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.wroteHeader = true
 	for k, values := range w.header {
 		for _, v := range values {
-			w.fctx.Response.Header.Add(k, v)
+			w.response.Header.Add(k, v)
 		}
 	}
-	w.fctx.Response.SetStatusCode(status)
+	w.response.SetStatusCode(status)
 }
 
 func (w *responseWriter) Write(b []byte) (int, error) {
 	w.WriteHeader(http.StatusOK)
-	w.fctx.Response.AppendBody(b)
+	w.response.AppendBody(b)
 	return len(b), nil
 }
 
@@ -120,7 +130,7 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // code. The wrapped handler bypasses this writer, so the value comes from the
 // fasthttp response rather than from what was written here.
 func (w *responseWriter) Status() int {
-	return w.fctx.Response.StatusCode()
+	return w.response.StatusCode()
 }
 
 // discardHandlerResponse drops whatever the handler already wrote so that a
@@ -131,6 +141,6 @@ func (w *responseWriter) discardHandlerResponse() {
 	if w.wroteHeader {
 		return
 	}
-	w.fctx.Response.ResetBody()
-	w.fctx.Response.Header.Reset()
+	w.response.ResetBody()
+	w.response.Header.Reset()
 }
