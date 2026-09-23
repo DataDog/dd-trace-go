@@ -20,8 +20,7 @@
 //     "cache-observation:" record emitted by .github/actions/setup-go:
 //     exact, prefix, cold_miss, disabled, error, or unknown.
 //   - save result: classification per save event from job log markers:
-//     saved, exact_key_skip, conflict, error; the job-level aggregate keeps
-//     errors over conflicts over successes. A successful job does not prove
+//     saved, exact_key_skip, conflict, error. A successful job does not prove
 //     a successful save.
 //   - PR feedback time: earliest workflow-run created_at for a PR revision
 //     to the completion of the last non-ignored check run on that revision,

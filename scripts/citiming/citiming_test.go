@@ -312,27 +312,6 @@ func TestClassifySaves(t *testing.T) {
 	})
 }
 
-func TestAggregateSave(t *testing.T) {
-	cases := []struct {
-		name  string
-		saves []string
-		want  string
-	}{
-		{"error dominates", []string{"saved", "error", "exact_key_skip"}, "error"},
-		{"conflict over saved", []string{"saved", "conflict"}, "conflict"},
-		{"saved", []string{"saved", "exact_key_skip"}, "saved"},
-		{"exact key skip only", []string{"exact_key_skip"}, "exact_key_skip"},
-		{"no evidence is unknown", nil, "unknown"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := aggregateSave(tc.saves); got != tc.want {
-				t.Fatalf("aggregateSave = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 // ---- log parsing --------------------------------------------------------------
 
 func TestParseLog(t *testing.T) {
@@ -349,8 +328,8 @@ func TestParseLog(t *testing.T) {
 		if ev.observation == nil || ev.observation.Workload != "unit-core" {
 			t.Fatalf("observation workload = %+v", ev.observation)
 		}
-		if ev.saveResult != "exact_key_skip" {
-			t.Fatalf("saveResult = %q", ev.saveResult)
+		if len(ev.saves) != 1 || ev.saves[0] != "exact_key_skip" {
+			t.Fatalf("saves = %v, want [exact_key_skip]", ev.saves)
 		}
 	})
 	t.Run("BOM first line", func(t *testing.T) {
@@ -432,8 +411,8 @@ func TestCollectRun(t *testing.T) {
 		if len(rec.Cache.Restores) != 1 || rec.Cache.Restores[0].Result != "exact" {
 			t.Fatalf("restores = %+v", rec.Cache.Restores)
 		}
-		if rec.Cache.SaveResult != "exact_key_skip" {
-			t.Fatalf("save result = %q", rec.Cache.SaveResult)
+		if len(rec.Cache.Saves) != 1 || rec.Cache.Saves[0] != "exact_key_skip" {
+			t.Fatalf("saves = %v, want [exact_key_skip]", rec.Cache.Saves)
 		}
 	})
 	t.Run("rerun attempts recorded", func(t *testing.T) {
@@ -478,7 +457,7 @@ func TestCollectRun(t *testing.T) {
 		if rec.HasLogs {
 			t.Fatal("record must mark missing logs")
 		}
-		if rec.Cache.SaveResult != "unknown" || len(rec.Cache.Restores) != 0 {
+		if len(rec.Cache.Saves) != 0 || len(rec.Cache.Restores) != 0 {
 			t.Fatalf("cache = %+v", rec.Cache)
 		}
 		if rec.Workload.Family != "" {
@@ -756,7 +735,6 @@ func jobRecord(workflow, family string, id int64, seconds *float64, conclusion s
 		Cache: cacheMeta{
 			Restores:    []restoreClassification{{Name: "setup_go", Result: "exact"}},
 			Saves:       []string{"saved"},
-			SaveResult:  "saved",
 			PostSeconds: &post,
 		},
 	}
@@ -926,6 +904,45 @@ func TestComparePRFeedbackImprovement(t *testing.T) {
 	if !strings.Contains(string(report), "PR feedback time") ||
 		!strings.Contains(string(report), "improvement: 20.0%") {
 		t.Fatalf("report must show PR feedback improvement:\n%s", report)
+	}
+}
+
+func TestComparePRFeedbackNeedsMeasuredRevisions(t *testing.T) {
+	baseDir := t.TempDir()
+	candDir := t.TempDir()
+	outDir := t.TempDir()
+	base := make([]jobObservation, 0, minRunSamples)
+	cand := make([]jobObservation, 0, minRunSamples)
+	baseFB := make([]prFeedback, 0, minRevisions)
+	candFB := make([]prFeedback, 0, minRevisions)
+	for i := range minRunSamples {
+		base = append(base, jobRecord("w.yml", "A", int64(i+1), secondsPtr(100), "success"))
+		cand = append(cand, jobRecord("w.yml", "A", int64(100+i), secondsPtr(50), "success"))
+	}
+	for i := range minRevisions {
+		var baseSeconds, candSeconds *float64
+		if i == 0 {
+			baseSeconds, candSeconds = secondsPtr(3000), secondsPtr(2400)
+		}
+		baseFB = append(baseFB, prFeedback{Kind: "pr_feedback", Schema: schemaVersion,
+			PR: 1, HeadSHA: fmt.Sprintf("base-%d", i),
+			SelectionSignature: "same", Seconds: baseSeconds})
+		candFB = append(candFB, prFeedback{Kind: "pr_feedback", Schema: schemaVersion,
+			PR: 1, HeadSHA: fmt.Sprintf("cand-%d", i),
+			SelectionSignature: "same", Seconds: candSeconds})
+	}
+	writeTestStore(t, baseDir, base, baseFB)
+	writeTestStore(t, candDir, cand, candFB)
+	if err := cmdCompare([]string{"--baseline", baseDir, "--candidate", candDir, "--output-dir", outDir}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(outDir, "comparison.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(report), "feedback under-sampled: same: 1 baseline, 1 candidate revisions") ||
+		!strings.Contains(string(report), "- **improvement: n/a%**") {
+		t.Fatalf("missing feedback durations must refuse the feedback aggregate:\n%s", report)
 	}
 }
 
