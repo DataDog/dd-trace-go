@@ -72,11 +72,6 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-// ReloadConfig reloads config read from environment variables. This is useful for tests.
-func ReloadConfig() {
-	namingschema.ReloadConfig()
-}
-
 // Version returns the version of the dd-trace-go package.
 func Version() string {
 	return version.Tag
