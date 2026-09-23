@@ -887,7 +887,7 @@ func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
 		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
 		assert.False(t, cfg.PeerServiceDefaultsEnabled())
 		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
-			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == true && c.Origin == telemetry.OriginEnvVar
+			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == "true" && c.Origin == telemetry.OriginEnvVar
 		}))
 		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
 		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
