@@ -306,8 +306,9 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 
 The cost here is larger than "adds runtime overhead" suggests, in three ways:
 
-- **Every** `Lock`/`RLock` captures a 50-frame stack trace, on the uncontended
-  fast path, as two allocations.
+- **Every** `Lock`/`RLock` captures up to 50 stack frames, even on the
+  uncontended fast path. In Go 1.27, the temporary 50-element slice stays on
+  the stack; the copied slice retained by the detector allocates on the heap.
 - All lock traffic in the process serialises through a single global mutex
   inside the detector, so this build does not scale with cores. Before the cap
   below, `ddtrace/tracer` took 1.7x the wall time of a `debug` build of the same
@@ -332,7 +333,12 @@ lowers `deadlock.Opts.MaxMapSize` from the upstream 64Ki default, which does mos
 of it (`TestTracerCleanStop` 4.84GB -> 1.42GB on its own). Do not set it to `0`
 -- that skips the detector's `preLock` entirely, which is where both
 recursive-locking and inconsistent-lock-order detection live, leaving only the
-30s wait-timeout check.
+30s wait-timeout check. This cap trades detection history for lower memory:
+upstream clears the *whole* order map at 4096 entries, rather than evicting
+one old entry. An inverted acquisition after that clear can miss an earlier
+ordering. `TestMutexDetectsLockOrderInversion` verifies detection within the
+current window; passing `TestPartialFlushSpanLockOrderingCycle` alone cannot
+prove the detector is enabled, since it expects no inversion.
 
 The rest comes from two `ddtrace/tracer` tests that now carry their own bounds,
 commented in place: `TestTracerCleanStop` scales its iteration count by build

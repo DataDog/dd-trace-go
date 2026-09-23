@@ -348,12 +348,10 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"
 
-          # Sample memory alongside the tests. When this job is killed by a runner
-          # shutdown (exit 143) the step log is all the evidence that survives, and
-          # it carried nothing about resource headroom -- which is why a long run of
-          # identical failures stayed un-diagnosable. The peak notice also makes the
-          # two build_tags variants of this job comparable within a single workflow
-          # run, since they are otherwise identical.
+          # Sample host memory alongside the tests. A runner shutdown can prevent
+          # the EXIT notice from running, so print the running peak on each sample
+          # as well. These host-wide readings show headroom, not the test process's
+          # RSS; compare the build_tags variants on their separate runners.
           mem_total_mib() { awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo; }
           mem_used_mib() {
             awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print int((t-a)/1024)}' /proc/meminfo
@@ -362,14 +360,16 @@ jobs:
           peak_file="$(mktemp)"
           printf '0\n' >"$peak_file"
           (
+            peak_used=0
             while :; do
               used="$(mem_used_mib)"
-              if [ "$used" -gt "$(cat "$peak_file")" ]; then
-                printf '%s\n' "$used" >"$peak_file"
+              if (( used > peak_used )); then
+                peak_used="$used"
+                printf '%s\n' "$peak_used" >"$peak_file"
               fi
-              printf 'mem-sample used=%sMiB load=%s\n' \
-                "$used" "$(cut -d ' ' -f 1-3 /proc/loadavg)"
-              sleep 15
+              printf 'mem-sample used=%sMiB peak_used=%sMiB total=%sMiB load=%s\n' \
+                "$used" "$peak_used" "$(mem_total_mib)" "$(cut -d ' ' -f 1-3 /proc/loadavg)"
+              sleep 5
             done
           ) &
           sampler_pid=$!
