@@ -13,5 +13,7 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
+  * [internal/appsec/AGENTS.md](./internal/appsec/AGENTS.md) -- for updating AppSec-specific internals
+  * [internal/civisibility/AGENTS.md](./internal/civisibility/AGENTS.md) -- for updating CI Visibility-specific internals
 * [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates

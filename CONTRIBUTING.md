@@ -134,8 +134,8 @@ This is neccessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 
-Some benchmarks run automatically on new PR commits, with results commented into the PR. See [benchmarks-and-debugging.md](./docs/benchmarks-and-debugging.md) for how to add a new benchmark and how the gating groups work.
+Some benchmarks run automatically on new PR commits, with results commented into the PR. See [ci-workflows.md](./docs/ci-workflows.md#benchmarks) for how to add a new benchmark and how the gating groups work.
 
 ### Goroutine Leaks
 
-Some core packages use [uber-go/goleak](https://github.com/uber-go/goleak) to detect goroutine leaks. See [benchmarks-and-debugging.md](./docs/benchmarks-and-debugging.md) for how to isolate and debug a leak, including CI-only leaks and unhelpful stack traces.
+Some core packages use [uber-go/goleak](https://github.com/uber-go/goleak) to detect goroutine leaks. See [debugging.md](./docs/debugging.md) for how to isolate and debug a leak, including CI-only leaks and unhelpful stack traces.
