@@ -8,14 +8,12 @@
 package namingschema
 
 import (
-	"strings"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Version represents the available naming schema versions.
@@ -40,10 +38,6 @@ var (
 )
 
 func LoadFromEnv() {
-	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := parseVersionStr(schemaVersionStr); !ok {
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
-	}
 	LoadFromConfig(internalconfig.Get())
 }
 
@@ -79,18 +73,6 @@ func GetVersion() Version {
 // setVersion sets the global naming schema version used for this application.
 func setVersion(v Version) {
 	activeNamingSchema.Store(int32(v))
-}
-
-// parseVersionStr attempts to parse the version string.
-func parseVersionStr(v string) (Version, bool) {
-	switch strings.ToLower(v) {
-	case "", "v0":
-		return SchemaV0, true
-	case "v1":
-		return SchemaV1, true
-	default:
-		return SchemaV0, false
-	}
 }
 
 func getRemoveIntegrationServiceNames() bool {

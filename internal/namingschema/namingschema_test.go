@@ -94,7 +94,7 @@ func TestNamingSchema(t *testing.T) {
 		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)
 		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
-		const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, setting to default of v0"
+		const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, ignoring"
 		assert.Equal(t, 1, strings.Count(strings.Join(tp.Logs(), "\n"), warning))
 	})
 
