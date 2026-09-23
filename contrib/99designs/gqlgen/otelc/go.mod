@@ -1,15 +1,12 @@
-module github.com/DataDog/dd-trace-go/otelc/all/v2
+module github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2
 
 go 1.26.0
 
-replace github.com/DataDog/dd-trace-go/v2 => ../..
+replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ./..
 
-replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 
-require (
-	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
-)
+require github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-00010101000000-000000000000
 
 require (
 	github.com/99designs/gqlgen v0.17.92 // indirect
@@ -23,7 +20,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
@@ -84,5 +81,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
