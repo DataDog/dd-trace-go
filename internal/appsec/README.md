@@ -211,3 +211,24 @@ All currently available features are the following ones:
 | User Security          | User blocking and login failures/success events        |
 | WAF Context            | Setup of the request scoped context system of the WAF  |
 | Tracing                | Bridge between the tracer and AppSec features          |
+
+### SQL monitoring in pgx
+
+The native `contrib/jackc/pgx.v5` integration emits monitoring-only SQL operations
+for `Query`, `QueryRow`, `Exec`, and each statement in `SendBatch`. Pools and
+transactions use the same hooks. Monitoring uses the incoming request's security
+context and remains enabled when query/batch APM spans are disabled, provided
+AppSec and RASP are enabled.
+
+These operations retain WAF events, stack traces, and evaluation metrics, but
+suppress blocking and redirect actions: pgx tracing hooks cannot abort execution.
+This does not change protection in other integrations. The instrumented
+`database/sql` execution path marks the context passed to its driver after its
+own security check, so the nested pgx hook skips duplicate evaluation. The marker
+does not affect subsequent calls using the original request context, or pgx used
+through uninstrumented `database/sql`.
+
+Monitoring examines SQL supplied at query/batch start, before pgx rewrites queries
+or resolves prepared statement names. It does not interpolate bound parameters,
+and does not provide complete coverage for custom query rewriters or execution by
+prepared statement name. Direct `pgconn` calls bypass these pgx hooks.

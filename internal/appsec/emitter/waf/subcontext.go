@@ -37,12 +37,22 @@ func (op *ContextOperation) NewSubcontextOp() *SubcontextOperation {
 }
 
 func (sub *SubcontextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.RunAddressData) {
+	sub.run(eventReceiver, addrs, false)
+}
+
+// RunMonitorOnly retains events, stack traces, and metrics without applying
+// blocking or redirect actions, for integrations unable to interrupt execution.
+func (sub *SubcontextOperation) RunMonitorOnly(eventReceiver dyngo.Operation, addrs addresses.RunAddressData) {
+	sub.run(eventReceiver, addrs, true)
+}
+
+func (sub *SubcontextOperation) run(eventReceiver dyngo.Operation, addrs addresses.RunAddressData, monitorOnly bool) {
 	if sub.subcontext == nil {
 		sub.contextOp.skipRASPRuleAfterRequest(addrs)
 		return
 	}
 
-	sub.contextOp.runWAF(eventReceiver, sub.subcontext, addrs)
+	sub.contextOp.runWAF(eventReceiver, sub.subcontext, addrs, monitorOnly)
 }
 
 func (sub *SubcontextOperation) Close() {
