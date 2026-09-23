@@ -114,7 +114,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all contrib/net/http contrib/net/http/otelc; do
+          for dir in internal/orchestrion/_integration otelc/all contrib/net/http contrib/net/http/otelc contrib/database/sql/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -133,7 +133,9 @@ jobs:
             ${PREFIX}/gls \
             ${PREFIX}/gls-leak \
             ${PREFIX}/otelc-autostart \
-            ${PREFIX}/net_http"
+            ${PREFIX}/net_http \
+            ${PREFIX}/sql \
+            ${PREFIX}/sql_register"
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
@@ -218,7 +220,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/apps/otelc-external-app otelc/all contrib/net/http contrib/net/http/otelc; do
+          for dir in internal/apps/otelc-external-app otelc/all contrib/net/http contrib/net/http/otelc contrib/database/sql/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
