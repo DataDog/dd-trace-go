@@ -10,6 +10,9 @@ package locking
 import (
 	"sync"
 	"testing"
+
+	"github.com/linkdata/deadlock"
+	"github.com/stretchr/testify/require"
 )
 
 // TestMutexInterface verifies that locking.Mutex satisfies sync.Locker interface
@@ -43,4 +46,23 @@ func TestRWMutexInterface(t *testing.T) {
 	rl := m.RLocker()
 	rl.Lock()   // This is actually RLock
 	rl.Unlock() // This is actually RUnlock
+}
+
+func TestMutexDetectsLockOrderInversion(t *testing.T) {
+	deadlock.Opts.ReadLocked(func() {
+		require.Equal(t, 4096, deadlock.Opts.MaxMapSize)
+	})
+
+	var first, second Mutex
+	first.Lock()
+	second.Lock()
+	second.Unlock()
+	first.Unlock()
+
+	second.Lock()
+	defer second.Unlock()
+	require.PanicsWithValue(t, "deadlock detected", func() {
+		first.Lock()
+		first.Unlock()
+	})
 }
