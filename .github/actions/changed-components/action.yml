@@ -28,6 +28,9 @@ outputs:
   orchestrion:
     description: "Orchestrion integration tests"
     value: ${{ steps.classify.outputs.orchestrion }}
+  otelc:
+    description: "OTelc integration tests"
+    value: ${{ steps.classify.outputs.otelc }}
   parametric-tests:
     description: "APM parametric tests"
     value: ${{ steps.classify.outputs.parametric-tests }}
@@ -129,6 +132,7 @@ runs:
             codeql \
             generate \
             orchestrion \
+            otelc \
             parametric-tests \
             pull-request-tests \
             static-actions \
