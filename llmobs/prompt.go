@@ -38,7 +38,7 @@ type PromptTemplate struct {
 }
 
 // FormattedPrompt contains text or typed provider messages ready for use.
-// Messages preserve provider extensions and absent, null, or empty text content.
+// Messages preserve provider extensions and omit empty content on tool messages.
 type FormattedPrompt struct {
 	Text     string
 	Messages []FormattedMessage

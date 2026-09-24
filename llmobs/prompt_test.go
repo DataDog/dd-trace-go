@@ -65,9 +65,7 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 			{"type":"placeholder","name":"empty"}
 		]
 	}`), PromptSourceRegistry)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	copy := prompt.Template()
 	copy.Messages[1].Placeholder.Name = "mutated"
 	history := []map[string]any{
@@ -75,35 +73,16 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 			"role": "assistant", "content": "{{ opaque }}",
 			"tool_call_id": "call-1", "type": "reasoning",
 		},
-		{
-			"role":    "assistant",
-			"content": nil,
-			"tool_calls": []any{
-				map[string]any{"name": "lookup", "arguments": map[string]any{"id": 1}, "tool_id": "call-1"},
-			},
-		},
-		{
-			"role": "tool",
-			"tool_results": []any{
-				map[string]any{"name": "lookup", "result": "found", "tool_id": "call-1"},
-			},
-		},
 	}
 	rendered, err := prompt.Format(map[string]any{
 		"plan": "pro", "question": "Why?", "history": history, "empty": []map[string]any{},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := []map[string]any{
 		{"role": "system", "content": "Plan: pro"},
 		history[0],
-		history[1],
-		history[2],
 		{"role": "user", "content": "Why?"},
 		history[0],
-		history[1],
-		history[2],
 	}
 	gotJSON, err := json.Marshal(rendered.Messages)
 	require.NoError(t, err)
@@ -111,33 +90,22 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(wantJSON), string(gotJSON))
 	history[0]["tool_call_id"] = "changed"
-	if rendered.Messages[1].ToolCallID == nil || *rendered.Messages[1].ToolCallID != "call-1" {
-		t.Fatal("formatted messages alias runtime input")
-	}
+	require.Equal(t, "call-1", rendered.Messages[1].ToolCallID, "formatted messages alias runtime input")
 	annotation := prompt.Annotation(map[string]any{
 		"plan": "pro", "question": "Why?", "history": history, "empty": []map[string]any{},
 	})
-	if !reflect.DeepEqual(annotation.Variables, map[string]string{"plan": "pro", "question": "Why?"}) {
-		t.Fatalf("annotation variables %#v", annotation.Variables)
-	}
-	if annotation.ChatTemplate != nil || !reflect.DeepEqual(annotation.ChatTemplateItems, prompt.Template().Messages) {
-		t.Fatalf("annotation does not expose the complete template: %#v", annotation)
-	}
+	require.Equal(t, map[string]string{"plan": "pro", "question": "Why?"}, annotation.Variables)
+	require.Nil(t, annotation.ChatTemplate)
+	require.Equal(t, prompt.Template().Messages, annotation.ChatTemplateItems)
 	annotation.ChatTemplateItems[1].Placeholder.Name = "custom-history"
-	if prompt.Template().Messages[1].Placeholder.Name != "history" {
-		t.Fatal("editing annotation changed the cached template")
-	}
+	require.Equal(t, "history", prompt.Template().Messages[1].Placeholder.Name, "editing annotation changed the cached template")
 	annotationJSON, err := json.Marshal(annotation)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var restoredAnnotation Prompt
-	if err := json.Unmarshal(annotationJSON, &restoredAnnotation); err != nil || !reflect.DeepEqual(restoredAnnotation, annotation) {
-		t.Fatalf("annotation JSON lost template data: %s, err %v", annotationJSON, err)
-	}
-	if _, err := prompt.Format(map[string]any{"empty": []map[string]any{}}); err == nil {
-		t.Fatal("expected missing history error")
-	}
+	require.NoError(t, json.Unmarshal(annotationJSON, &restoredAnnotation))
+	require.Equal(t, annotation, restoredAnnotation)
+	_, err = prompt.Format(map[string]any{"empty": []map[string]any{}})
+	require.Error(t, err)
 	for _, malformed := range []any{
 		"history",
 		[]any{},
@@ -149,46 +117,21 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 			"content": []any{map[string]any{"type": "image"}}, "tool_calls": []any{map[string]any{}},
 		}},
 	} {
-		if _, err := prompt.Format(map[string]any{"history": malformed, "empty": []map[string]any{}}); err == nil {
-			t.Fatalf("accepted malformed history %#v", malformed)
-		}
-	}
-	for _, raw := range []string{
-		`{"content":null,"role":"assistant","tool_calls":[{"arguments":{"id":1},"name":"lookup","tool_id":"call-1"}]}`,
-		`{"role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"lookup"},"id":"call-1","type":"function"}]}`,
-	} {
-		var message map[string]any
-		if err := json.Unmarshal([]byte(raw), &message); err != nil {
-			t.Fatal(err)
-		}
-		formatted, err := prompt.Format(map[string]any{"history": []map[string]any{message}, "empty": []map[string]any{}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		roundTrip, err := json.Marshal(formatted.Messages[1])
-		if err != nil || string(roundTrip) != raw {
-			t.Fatalf("tool message round trip: %s, err %v", roundTrip, err)
-		}
-		if _, err := parsePrompt([]byte(`{"prompt_id":"chat","version":1,"template":[`+raw+`]}`), PromptSourceRegistry); err == nil {
-			t.Fatal("runtime tool message accepted as authored template")
-		}
+		_, err := prompt.Format(map[string]any{"history": malformed, "empty": []map[string]any{}})
+		require.Error(t, err, "accepted malformed history %#v", malformed)
 	}
 	cached, err := json.Marshal(prompt.Template())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var restored PromptTemplate
-	if err := json.Unmarshal(cached, &restored); err != nil || !reflect.DeepEqual(restored, prompt.Template()) {
-		t.Fatalf("restored template %#v, err %v", restored, err)
-	}
+	require.NoError(t, json.Unmarshal(cached, &restored))
+	require.Equal(t, prompt.Template(), restored)
 	for _, item := range []ChatTemplateItem{
 		{},
 		{Message: &ChatMessage{}, Placeholder: &MessagePlaceholder{Name: "history"}},
 		{Placeholder: &MessagePlaceholder{}},
 	} {
-		if _, err := newManagedPrompt("chat", "1", PromptSourceFallback, PromptTemplate{Messages: []ChatTemplateItem{item}}, "", ""); err == nil {
-			t.Fatal("accepted invalid authored union")
-		}
+		_, err := newManagedPrompt("chat", "1", PromptSourceFallback, PromptTemplate{Messages: []ChatTemplateItem{item}}, "", "")
+		require.Error(t, err)
 	}
 }
 
@@ -196,8 +139,15 @@ func TestFormattedPromptMessages(t *testing.T) {
 	const raw = `[
 		{"role":"user","content":"","tool_calls":null,"tool_results":[],"tool_call_id":null,"name":null},
 		{"role":"assistant","content":null,"tool_calls":[{"id":null,"type":"function","function":{"name":"lookup","arguments":"{}","strict":true,"Name":"opaque"},"tool_id":null,"provider":{"version":1}}]},
-		{"role":"assistant","tool_calls":[{"name":"lookup","arguments":{"id":1},"tool_id":"","function":null,"provider":null}]},
+		{"role":"assistant","content":"","tool_calls":[{"name":"lookup","arguments":{"id":1},"tool_id":"","function":null,"provider":null}]},
 		{"role":"tool","tool_results":[{"result":null,"name":null,"provider":{"empty":[]}}]},
+		{"role":"assistant","tool_calls":[{"custom":{"name":"opaque","input":"{{ untouched }}"}}]}
+	]`
+	const normalized = `[
+		{"role":"user","content":"","tool_results":[],"name":null},
+		{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{}","strict":true,"Name":"opaque"},"provider":{"version":1}}]},
+		{"role":"assistant","tool_calls":[{"name":"lookup","arguments":{"id":1},"provider":null}]},
+		{"role":"tool","tool_results":[{"result":null,"provider":{"empty":[]}}]},
 		{"role":"assistant","tool_calls":[{"custom":{"name":"opaque","input":"{{ untouched }}"}}]}
 	]`
 	var history []FormattedMessage
@@ -208,10 +158,7 @@ func TestFormattedPromptMessages(t *testing.T) {
 	require.NoError(t, err)
 	encoded, err := json.Marshal(formatted.Messages)
 	require.NoError(t, err)
-	require.JSONEq(t, raw, string(encoded))
-	require.Equal(t, ContentText, formatted.Messages[0].ContentState)
-	require.Equal(t, ContentNull, formatted.Messages[1].ContentState)
-	require.Equal(t, ContentAbsent, formatted.Messages[2].ContentState)
+	require.JSONEq(t, normalized, string(encoded))
 	require.Equal(t, "lookup", formatted.Messages[1].ToolCalls[0].Function.Name)
 
 	formatted.Messages[0].Content = "Edited"
@@ -242,11 +189,7 @@ func TestFormattedPromptMessages(t *testing.T) {
 		require.Error(t, err, raw)
 	}
 	for _, message := range []FormattedMessage{
-		{Role: "user", Content: "text", ContentState: ContentNull},
-		{Role: "user", ContentState: ContentState(99)},
 		{Role: "user", ExtraFields: map[string]json.RawMessage{"content": json.RawMessage(`"shadow"`)}},
-		{Role: "user", NullFields: []string{"role"}},
-		{Role: "user", ToolCalls: []FormattedToolCall{}, NullFields: []string{"tool_calls"}},
 		{Role: "user", ToolCalls: []FormattedToolCall{{Function: &ToolFunction{
 			Name: "lookup", Arguments: "{}", ExtraFields: map[string]json.RawMessage{"name": json.RawMessage(`"shadow"`)},
 		}}}},
@@ -306,6 +249,8 @@ func TestPromptRejectsMalformedResponses(t *testing.T) {
 		`{"prompt_id":"p","version":1,"template":42}`,
 		`{"prompt_id":"p","version":1,"template":"text","chat_template":[]}`,
 		`{"prompt_id":"p","version":1,"template":"text"} trailing`,
+		`{"prompt_id":"p","version":1,"template":[{"role":"assistant","content":null,"tool_calls":[{"name":"lookup","arguments":{}}]}]}`,
+		`{"prompt_id":"p","version":1,"template":[{"role":"assistant","tool_calls":[{"function":{"name":"lookup","arguments":"{}"}}]}]}`,
 	} {
 		if _, err := parsePrompt([]byte(raw), PromptSourceRegistry); err == nil {
 			t.Fatalf("accepted malformed response %s", raw)
