@@ -34,11 +34,11 @@ func TestSQLSecurityCheckedContext(t *testing.T) {
 	testutils.StartAppSec(t)
 	ctx := context.Background()
 	for _, name := range []string{"pgx", "mysql", "sqlserver", "custom-driver-name"} {
-		checked, err := checkQuerySecurity(ctx, "SELECT 1", name)
+		checked, err := checkQuerySecurityWithContext(ctx, "SELECT 1", name)
 		require.NoError(t, err)
 		require.Equal(t, ctx, checked, "background calls must not allocate a marker")
 		require.Zero(t, testing.AllocsPerRun(100, func() {
-			_, _ = checkQuerySecurity(ctx, "SELECT 1", name)
+			_, _ = checkQuerySecurityWithContext(ctx, "SELECT 1", name)
 		}))
 	}
 
@@ -46,12 +46,12 @@ func TestSQLSecurityCheckedContext(t *testing.T) {
 	ctx = dyngo.RegisterOperation(ctx, parent)
 	var calls []sqlsec.SQLOperationArgs
 	dyngo.On(parent, func(_ *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) { calls = append(calls, args) })
-	checked, err := checkQuerySecurity(ctx, "SELECT 1", "pgx")
+	checked, err := checkQuerySecurityWithContext(ctx, "SELECT 1", "pgx")
 	require.NoError(t, err)
 	sqlsec.MonitorSQLOperation(checked, "/* dbm */ SELECT 1", "postgresql")
 	require.Len(t, calls, 1)
 	require.False(t, calls[0].MonitorOnly)
-	_, err = checkQuerySecurity(ctx, "SELECT 1", "pgx")
+	_, err = checkQuerySecurityWithContext(ctx, "SELECT 1", "pgx")
 	require.NoError(t, err)
 	require.Len(t, calls, 2)
 }

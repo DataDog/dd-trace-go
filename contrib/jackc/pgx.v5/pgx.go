@@ -3,24 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package pgx instruments pgx connections and pools with tracing and SQL injection
-// monitoring. With AppSec and RASP enabled, SQL passed to Query, QueryRow, Exec,
-// and SendBatch is evaluated in the incoming request's security context, even when
-// query or batch tracing is disabled. Native pgx monitoring reports attacks but
-// cannot block SQL execution; its tracing hooks cannot return an error.
-//
-// Queries already checked by Datadog's database/sql integration are not evaluated
-// again, and direct ExecContext/QueryContext calls retain their blocking behavior.
-// Prepared statements through database/sql do not run that blocking check: when
-// the pgx hooks are installed, they are monitored but cannot be blocked.
-// Monitoring requires the instrumented incoming request context. It also evaluates
-// transaction control statements sent by pgx through Exec: Begin plus Commit or
-// Rollback adds two evaluations, even with no user SQL statements.
-// The hooks see SQL before pgx query rewriting and prepared-statement name lookup;
-// SQL produced by custom QueryRewriters and execution by statement name are not
-// fully covered. Bound parameter values are not interpolated into the SQL.
-// Calls made through Conn.PgConn() bypass the QueryTracer and BatchTracer hooks,
-// so this integration does not monitor them.
+// Package pgx provides tracing for pgx v5 connections and pools. When AppSec
+// and RASP are enabled, it also monitors SQL for SQL injection, but it cannot
+// block it. See the README of this package for details and limitations.
 package pgx
 
 import (
