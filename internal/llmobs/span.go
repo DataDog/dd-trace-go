@@ -57,10 +57,10 @@ type Prompt struct {
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string `json:"label,omitempty"`
 	// Template is the prompt template string.
-	// A nonempty ChatTemplate or ChatTemplateItems takes precedence over Template.
+	// Mutually exclusive with ChatTemplate; if both are set, Template is dropped and ChatTemplate is used.
 	Template string `json:"template,omitempty"`
 	// ChatTemplate is a list of messages forming the prompt.
-	// Takes precedence over Template; a nonempty ChatTemplateItems takes precedence over this field.
+	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
 	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
 	// ChatTemplateItems is the complete ordered template, including message placeholders.
 	// Set this instead of ChatTemplate for mixed templates. When nonempty, it takes
