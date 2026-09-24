@@ -51,6 +51,8 @@ variables:
       - platform/artifacts/
     expire_in: 3 months
   variables:
+    # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
+    FLAKY_BENCHMARKS_REGEX: ""
     DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     # Used to build the SUT
@@ -301,6 +303,8 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
+    # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
+    FLAKY_BENCHMARKS_REGEX: ""
     GO_VERSION: "1.27.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-se"
     SERVICE_EXTENSION: "true"
@@ -397,6 +401,8 @@ se-no-tracer-no-ext_proc:
       - platform/artifacts-haproxy_spoa/
     expire_in: 3 months
   variables:
+    # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
+    FLAKY_BENCHMARKS_REGEX: ""
     GO_VERSION: "1.27.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-haproxy_spoa"
     HAPROXY_SPOA: "true"
