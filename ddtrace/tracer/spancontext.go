@@ -978,8 +978,8 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	if pTags := processtags.GlobalTags().String(); pTags != "" {
 		s.setMetaLocked(keyProcessTags, pTags)
 	}
-	// v1 payloads carry keySDKOTLPExport as a payload attribute instead.
-	if tr, ok := getGlobalTracer().(*tracer); ok && tr.nativeV04Export() {
+	// OTLP exports declare keySDKOTLPExport=true on the resource instead.
+	if tr, ok := getGlobalTracer().(*tracer); ok && !tr.otlpExportMode {
 		s.setMetaLocked(keySDKOTLPExport, "false")
 	}
 }

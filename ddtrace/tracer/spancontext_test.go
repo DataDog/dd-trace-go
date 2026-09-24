@@ -550,10 +550,12 @@ func TestOTLPExportMarkerOnChunks(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		protocol float64
+		otlp     bool
 		want     bool
 	}{
 		{name: "v0.4", protocol: traceProtocolV04, want: true},
-		{name: "v1", protocol: traceProtocolV1, want: false},
+		{name: "v1", protocol: traceProtocolV1, want: true},
+		{name: "otlp", protocol: traceProtocolV04, otlp: true, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tracer, transport, flush, stop, err := startTestTracer(t)
@@ -564,6 +566,7 @@ func TestOTLPExportMarkerOnChunks(t *testing.T) {
 				tracer.config.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
 			}
 			require.Equal(t, tc.protocol, tracer.config.effectiveTraceProtocol())
+			tracer.otlpExportMode = tc.otlp
 
 			// child0 and child1 are partially flushed as one chunk; root and
 			// child2 follow as a second chunk.
@@ -585,34 +588,6 @@ func TestOTLPExportMarkerOnChunks(t *testing.T) {
 				}
 				assert.False(t, chunk[1].meta.Has(keySDKOTLPExport), "chunk %d second span", i)
 			}
-		})
-	}
-}
-
-func TestNativeV04Export(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		configure func(*config)
-		v1        bool
-		want      bool
-	}{
-		{name: "agent v0.4", configure: func(*config) {}, want: true},
-		{name: "agent v1", configure: func(*config) {}, v1: true, want: false},
-		{name: "otlp", configure: func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) }},
-		{name: "log to stdout", configure: func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) }, want: true},
-		{name: "ci visibility", configure: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) }, want: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tr, err := newUnstartedTracer(tc.configure)
-			require.NoError(t, err)
-			defer tr.Stop()
-			state, proto := protoV04, traceProtocolV04
-			if tc.v1 {
-				state, proto = protoV1, traceProtocolV1
-			}
-			setTraceProtocolStateForTest(tr.config, state)
-			tr.config.internalConfig.SetTraceProtocol(proto, internalconfig.OriginCode)
-			assert.Equal(t, tc.want, tr.nativeV04Export())
 		})
 	}
 }

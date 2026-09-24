@@ -25,8 +25,8 @@ const maxAttributesCount = 128
 
 const (
 	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
-	// attribute) or the native Datadog encoding ("false": on the first span of each v0.4 chunk,
-	// or as a v1 payload attribute).
+	// attribute) or the native Datadog encoding ("false": on the first span of each chunk, and
+	// as a v1 payload attribute).
 	keySDKOTLPExport = "_dd.sdk.otlp_export"
 	// keySDKSemantics is an OTLP resource attribute declaring the semantic conventions applied
 	// by the tracer: "otel" or "datadog".
@@ -37,14 +37,20 @@ const (
 // Resource construction
 // -----------------------------------------------------------------------------
 
-// buildBaseResourceAttrs returns the telemetry.sdk.* and service.* resource attributes
-// shared by both trace and metrics OTLP exports.
-func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.KeyValue {
+// buildBaseResourceAttrs returns the telemetry.sdk.*, service.* and SDK adoption
+// resource attributes shared by both trace and metrics OTLP exports.
+func buildBaseResourceAttrs(serviceName, svcVersion, env string, otelSemantics bool) []*otlpcommon.KeyValue {
+	semantics := "datadog"
+	if otelSemantics {
+		semantics = "otel"
+	}
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("service.name", otlpStringValue(serviceName)),
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
 		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
+		otlpKeyValue(keySDKSemantics, otlpStringValue(semantics)),
 	}
 	if env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
@@ -61,15 +67,9 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	semantics := "datadog"
-	if cfg.OTelSemanticsEnabled() {
-		semantics = "otel"
+	return &otlpresource.Resource{
+		Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env(), cfg.OTelSemanticsEnabled()),
 	}
-	attrs := append(buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env()),
-		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
-		otlpKeyValue(keySDKSemantics, otlpStringValue(semantics)),
-	)
-	return &otlpresource.Resource{Attributes: attrs}
 }
 
 // -----------------------------------------------------------------------------
@@ -201,9 +201,7 @@ func getSpanKind(s *Span) string { v, _ := s.meta.Get(ext.SpanKind); return v }
 // addAttribute appends a key-value pair to attrs and returns true if there is
 // still room for more attributes.
 func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.AnyValue) bool {
-	// The SDK adoption markers are resource-scoped and tracer-owned; a user or
-	// global tag with the same key must not contradict them.
-	if val != nil && key != keySDKOTLPExport && key != keySDKSemantics {
+	if val != nil {
 		*attrs = append(*attrs, &otlpcommon.KeyValue{Key: key, Value: val})
 	}
 	return len(*attrs) < maxAttributesCount

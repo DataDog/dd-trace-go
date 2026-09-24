@@ -1350,13 +1350,6 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 	return ctx, err
 }
 
-// nativeV04Export reports whether finished chunks are currently encoded in the
-// native v0.4 format. The effective protocol can move between v0.4 and v1 at
-// runtime, so this is re-evaluated for every chunk rather than cached.
-func (t *tracer) nativeV04Export() bool {
-	return !t.otlpExportMode && t.config.effectiveTraceProtocol() == traceProtocolV04
-}
-
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	// canDropP0s is a pure alias of canComputeStats (see its doc comment);

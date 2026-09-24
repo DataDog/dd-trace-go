@@ -117,19 +117,6 @@ func TestConvertSpan(t *testing.T) {
 	assert.Equal(t, 42.5, attrs["metric.key"])
 }
 
-func TestConvertSpanOmitsAdoptionMarkers(t *testing.T) {
-	for _, otelSemantics := range []bool{false, true} {
-		s := newSpan("op", "svc", "res", 100, 200, 0)
-		s.meta.Set(keySDKOTLPExport, "false")
-		s.meta.Set(keySDKSemantics, "otel")
-		s.metrics[keySDKOTLPExport] = 1
-
-		attrs := keyValuesToMap(convertSpan(s, "svc", otelSemantics).Attributes)
-		assert.NotContains(t, attrs, keySDKOTLPExport)
-		assert.NotContains(t, attrs, keySDKSemantics)
-	}
-}
-
 func TestConvertSpanParentSpanId(t *testing.T) {
 	t.Run("set when parent_id is non-zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 50)
