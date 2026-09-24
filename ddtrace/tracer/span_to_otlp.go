@@ -51,7 +51,15 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	return &otlpresource.Resource{Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env())}
+	semantics := "datadog"
+	if cfg.OTelSemanticsEnabled() {
+		semantics = "otel"
+	}
+	attrs := append(buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env()),
+		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
+		otlpKeyValue(keySDKSemantics, otlpStringValue(semantics)),
+	)
+	return &otlpresource.Resource{Attributes: attrs}
 }
 
 // -----------------------------------------------------------------------------
@@ -183,7 +191,9 @@ func getSpanKind(s *Span) string { v, _ := s.meta.Get(ext.SpanKind); return v }
 // addAttribute appends a key-value pair to attrs and returns true if there is
 // still room for more attributes.
 func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.AnyValue) bool {
-	if val != nil {
+	// The SDK adoption markers are resource-scoped and tracer-owned; a user or
+	// global tag with the same key must not contradict them.
+	if val != nil && key != keySDKOTLPExport && key != keySDKSemantics {
 		*attrs = append(*attrs, &otlpcommon.KeyValue{Key: key, Value: val})
 	}
 	return len(*attrs) < maxAttributesCount

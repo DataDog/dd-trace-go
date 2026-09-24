@@ -46,6 +46,23 @@ func TestBuildResource(t *testing.T) {
 		assert.Equal(t, version.Tag, attrs["telemetry.sdk.version"])
 	})
 
+	t.Run("adoption markers", func(t *testing.T) {
+		for _, tc := range []struct {
+			otelSemantics bool
+			want          string
+		}{
+			{otelSemantics: true, want: "otel"},
+			{otelSemantics: false, want: "datadog"},
+		} {
+			cfg := internalconfig.CreateNew()
+			cfg.SetOTelSemanticsEnabled(tc.otelSemantics, internalconfig.OriginCode)
+
+			attrs := keyValuesToMap(buildResource(cfg).Attributes)
+			assert.Equal(t, "true", attrs[keySDKOTLPExport])
+			assert.Equal(t, tc.want, attrs[keySDKSemantics])
+		}
+	})
+
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
 		cfg := internalconfig.CreateNew()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)
@@ -98,6 +115,19 @@ func TestConvertSpan(t *testing.T) {
 	attrs := keyValuesToMap(otlp.Attributes)
 	assert.Equal(t, "meta.val", attrs["meta.key"])
 	assert.Equal(t, 42.5, attrs["metric.key"])
+}
+
+func TestConvertSpanOmitsAdoptionMarkers(t *testing.T) {
+	for _, otelSemantics := range []bool{false, true} {
+		s := newSpan("op", "svc", "res", 100, 200, 0)
+		s.meta.Set(keySDKOTLPExport, "false")
+		s.meta.Set(keySDKSemantics, "otel")
+		s.metrics[keySDKOTLPExport] = 1
+
+		attrs := keyValuesToMap(convertSpan(s, "svc", otelSemantics).Attributes)
+		assert.NotContains(t, attrs, keySDKOTLPExport)
+		assert.NotContains(t, attrs, keySDKSemantics)
+	}
 }
 
 func TestConvertSpanParentSpanId(t *testing.T) {

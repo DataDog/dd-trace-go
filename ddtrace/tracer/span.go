@@ -1485,6 +1485,12 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keySDKOTLPExport declares whether the payload was exported over OTLP ("true") or the native
+	// Datadog encoding ("false"). It is payload-scoped: written once per payload, not per span.
+	keySDKOTLPExport = "_dd.sdk.otlp_export"
+	// keySDKSemantics is an OTLP resource attribute declaring the semantic conventions applied
+	// by the tracer: "otel" or "datadog".
+	keySDKSemantics = "datadog.sdk.semantics"
 	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
 	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
 	keyKnuthSamplingRate = "_dd.p.ksr"

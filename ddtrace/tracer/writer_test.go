@@ -806,7 +806,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 		stats, err = p.push(trace2)
 		assert.NoError(err)
 
-		assert.Equal(1812, stats.size, "v0.4 payload size should be > 0 immediately after push()")
+		assert.Equal(1838, stats.size, "v0.4 payload size should be > 0 immediately after push()")
 		assert.Equal(2, stats.itemCount, "should have 2 traces")
 	})
 }

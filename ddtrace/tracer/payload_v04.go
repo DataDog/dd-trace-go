@@ -61,6 +61,10 @@ type payloadV04 struct {
 	// sizeHint is a hint for how large buf should be to avoid slice growth
 	// overhead in a steady state.
 	sizeHint int
+
+	// otlpExportMarked reports whether keySDKOTLPExport has been written to
+	// a span of this payload.
+	otlpExportMarked bool
 }
 
 var _ io.Reader = (*payloadV04)(nil)
@@ -107,6 +111,7 @@ func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	growTo := max(len(t)*pushSizeHintPerSpan, p.sizeHint)
 	p.sizeHint = 0
 	p.buf.Grow(growTo)
+	marked := !p.otlpExportMarked && markOTLPExport(t)
 	// msgp.Encode serializes all of t into p.buf synchronously before push
 	// returns, so tracer.processOutChunk's traceWriter.add(...) call always
 	// completes encoding before releaseSpans clears and recycles these spans.
@@ -115,8 +120,24 @@ func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}
+	p.otlpExportMarked = p.otlpExportMarked || marked
 	p.recordItem()
 	return p.stats(), nil
+}
+
+// markOTLPExport sets the payload-scoped keySDKOTLPExport tag on the first
+// span of t, reporting whether a span was found.
+func markOTLPExport(t spanList) bool {
+	for _, s := range t {
+		if s == nil {
+			continue
+		}
+		s.mu.Lock()
+		s.meta.Set(keySDKOTLPExport, "false")
+		s.mu.Unlock()
+		return true
+	}
+	return false
 }
 
 // itemCount returns the number of items available in the stream.
@@ -147,6 +168,7 @@ func (p *payloadV04) clear() {
 	atomic.StoreUint32(&p.count, 0)
 	p.off = 8
 	p.sizeHint = 0
+	p.otlpExportMarked = false
 }
 
 // grow ensures the buffer can accommodate n more bytes. Before the first push
