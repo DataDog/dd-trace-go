@@ -36,103 +36,14 @@ transport_tracer_internal_field:
           - name: DD__tracer_internal
             type: bool
 
-# Aspect Transport.DD__tracer_internal=true, one rule per package because a
-# point selector cannot be given alternatives. Marking these keeps the tracer's
+# Aspect Transport.DD__tracer_internal=true. Marking these keeps the tracer's
 # own HTTP clients untraced; without it every flush produces the spans the next
-# flush sends. Same package list as ../orchestrion.client.yml, including the
-# four that carry no Transport literal today.
-transport_tracer_internal_ddtrace_tracer:
-  target: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal:
-  target: github.com/DataDog/dd-trace-go/v2/internal
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_openfeature:
-  target: github.com/DataDog/dd-trace-go/v2/openfeature
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal_hostname_httputils:
-  target: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal_remoteconfig:
-  target: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal_telemetry_internal:
-  target: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal_civisibility_utils_net:
-  target: github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_instrumentation_httpmem:
-  target: github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_profiler:
-  target: github.com/DataDog/dd-trace-go/v2/profiler
-  where:
-    struct_literal: net/http.Transport
-  do:
-    - set_fields:
-        field:
-          - name: DD__tracer_internal
-            value: "true"
-
-transport_tracer_internal_internal_llmobs_config:
-  target: github.com/DataDog/dd-trace-go/v2/internal/llmobs/config
+# flush sends. Same package list as ../orchestrion.client.yml.
+#
+# TODO: generate these paths automatically so when a new package is added we
+# don't need to manually update this list and the orchestrion.client.yml one.
+transport_tracer_internal:
+  target: "github.com/DataDog/dd-trace-go/v2/{ddtrace/tracer,internal,openfeature,internal/hostname/httputils,internal/remoteconfig,internal/telemetry/internal,internal/civisibility/utils/net,instrumentation/httpmem,profiler,internal/llmobs/config}"
   where:
     struct_literal: net/http.Transport
   do:
@@ -157,6 +68,22 @@ transport_round_trip:
         before: BeforeRoundTrip
         after: AfterRoundTrip
         path: github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2
+
+# Skips the hooks above for the tracer's own transports. A hook compiles
+# against the real net/http, where DD__tracer_internal does not exist, so this
+# check runs in net/http itself and returns before the hooks run.
+transport_round_trip_tracer_internal:
+  target: net/http
+  where:
+    func: RoundTrip
+    recv: "*Transport"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $t := .Receiver -}}
+          if {{ $t }}.DD__tracer_internal {
+            return {{ $t }}.roundTrip({{ .FuncArgument 0 }})
+          }
 
 # ---------------------------------------------------------------------------
 # Client: the package-level shorthands

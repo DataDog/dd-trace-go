@@ -10,11 +10,32 @@ package otelc
 import (
 	"net"
 	"net/http"
+	_ "unsafe" // for go:linkname
 
 	"go.opentelemetry.io/otelc/pkg/hook"
 
-	nethttptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2/compiletime"
+	// Links in ../internal/orchestrion, which the declarations below point at.
+	_ "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 )
+
+type afterRoundTrip = func(*http.Response, error) (*http.Response, error)
+
+// roundTripState carries what BeforeRoundTrip produced across to
+// AfterRoundTrip. A typed struct rather than SetKeyData keeps this to one small
+// allocation per request.
+type roundTripState struct {
+	after afterRoundTrip
+	err   error
+}
+
+// The hook module cannot import ../internal/orchestrion, so it links to it the
+// way ../orchestrion.client.yml and ../orchestrion.server.yml do.
+//
+//go:linkname observeRoundTrip github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion.ObserveRoundTrip
+func observeRoundTrip(*http.Request) (*http.Request, afterRoundTrip, error)
+
+//go:linkname wrapHandler github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion.WrapHandler
+func wrapHandler(http.Handler) http.Handler
 
 // Parameter indices as otelc numbers them: a method's receiver is 0 and the
 // declared parameters follow.
@@ -33,27 +54,29 @@ func BeforeServe(_ hook.HookContext, srv *http.Server, _ net.Listener) {
 		return
 	}
 	if srv.Handler == nil {
-		srv.Handler = nethttptrace.WrapHandler(http.DefaultServeMux)
+		srv.Handler = wrapHandler(http.DefaultServeMux)
 		return
 	}
-	srv.Handler = nethttptrace.WrapHandler(srv.Handler)
+	srv.Handler = wrapHandler(srv.Handler)
 }
 
 // BeforeRoundTrip starts the client span and swaps in the request carrying the
 // propagation headers, the port of the Transport.RoundTrip aspect.
-func BeforeRoundTrip(ctx hook.HookContext, transport *http.Transport, req *http.Request) {
-	if req == nil || isTracerInternal(transport) {
+func BeforeRoundTrip(ctx hook.HookContext, _ *http.Transport, req *http.Request) {
+	if req == nil {
 		return
 	}
 
-	traced, after, err := nethttptrace.ObserveRoundTrip(req)
+	traced, after, err := observeRoundTrip(req)
 	if err != nil {
-		// Orchestrion returns (nil, err) without reaching the transport.
+		// AppSec blocked the request: skip the real round trip and return the
+		// error from AfterRoundTrip.
 		ctx.SetSkipCall(true)
 		ctx.SetData(&roundTripState{err: err})
 		return
 	}
 
+	// Replace the original request with the traced one.
 	ctx.SetParam(roundTripRequestParam, traced)
 	ctx.SetData(&roundTripState{after: after})
 }
@@ -76,12 +99,4 @@ func AfterRoundTrip(ctx hook.HookContext, resp *http.Response, err error) {
 	resp, err = state.after(resp, err)
 	ctx.SetReturnVal(roundTripResponseResult, resp)
 	ctx.SetReturnVal(roundTripErrorResult, err)
-}
-
-// roundTripState carries what BeforeRoundTrip produced across to
-// AfterRoundTrip. A typed struct rather than SetKeyData keeps this to one small
-// allocation per request.
-type roundTripState struct {
-	after nethttptrace.AfterRoundTrip
-	err   error
 }
