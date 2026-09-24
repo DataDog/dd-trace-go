@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -36,11 +37,11 @@ type PromptTemplate struct {
 	Messages []ChatTemplateItem
 }
 
-// FormattedPrompt contains text or provider message objects ready for use.
-// Message objects preserve the supplied provider fields without conversion.
+// FormattedPrompt contains text or typed provider messages ready for use.
+// Messages preserve provider extensions and absent, null, or empty text content.
 type FormattedPrompt struct {
 	Text     string
-	Messages []map[string]any
+	Messages []FormattedMessage
 }
 
 // PromptFallback is used when a managed prompt cannot be fetched.
@@ -115,10 +116,10 @@ func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error
 	if p.template.Messages == nil {
 		return FormattedPrompt{Text: render(p.template.Text)}, nil
 	}
-	messages := make([]map[string]any, 0, len(p.template.Messages))
+	messages := make([]FormattedMessage, 0, len(p.template.Messages))
 	for _, item := range p.template.Messages {
 		if message := item.Message; message != nil {
-			messages = append(messages, map[string]any{"role": message.Role, "content": render(message.Content)})
+			messages = append(messages, FormattedMessage{Role: message.Role, Content: render(message.Content)})
 			continue
 		}
 		name := item.Placeholder.Name
@@ -247,40 +248,21 @@ func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	return copy
 }
 
-func runtimePromptMessages(value any) ([]map[string]any, error) {
-	messages, ok := value.([]map[string]any)
-	if !ok {
+func runtimePromptMessages(value any) ([]FormattedMessage, error) {
+	switch value.(type) {
+	case []map[string]any, []FormattedMessage:
+	default:
 		return nil, errors.New("expected a message list")
 	}
-	copies := make([]map[string]any, len(messages))
-	for i, message := range messages {
-		if message["type"] == "placeholder" {
-			return nil, errors.New("runtime messages cannot contain placeholders")
-		}
-		if _, ok := message["role"].(string); !ok {
-			return nil, errors.New("runtime message role must be a string")
-		}
-		if content := message["content"]; content != nil {
-			if _, ok := content.(string); !ok {
-				return nil, errors.New("runtime message content must be a string or null")
-			}
-		} else if !hasPromptToolItems(message["tool_calls"]) && !hasPromptToolItems(message["tool_results"]) {
-			return nil, errors.New("runtime message must contain text or tool content")
-		}
-		copies[i] = maps.Clone(message)
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
 	}
-	return copies, nil
-}
-
-func hasPromptToolItems(value any) bool {
-	switch items := value.(type) {
-	case []any:
-		return len(items) > 0
-	case []map[string]any:
-		return len(items) > 0
-	default:
-		return false
+	var messages []FormattedMessage
+	if err := json.Unmarshal(data, &messages); err != nil {
+		return nil, err
 	}
+	return messages, nil
 }
 
 func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {

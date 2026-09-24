@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPromptTextAndChat(t *testing.T) {
@@ -41,7 +43,7 @@ func TestPromptTextAndChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(rendered.Messages, []map[string]any{{"role": "", "content": "Hi Ada"}}) {
+	if !reflect.DeepEqual(rendered.Messages, []FormattedMessage{{Role: "", Content: "Hi Ada"}}) {
 		t.Fatalf("rendered %#v", rendered)
 	}
 	if chat.Version() != "2" || chat.Source() != PromptSourceFeatureFlag || chat.ID() != "chat" {
@@ -103,11 +105,13 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 		history[1],
 		history[2],
 	}
-	if !reflect.DeepEqual(rendered.Messages, want) {
-		t.Fatalf("rendered %#v, want %#v", rendered.Messages, want)
-	}
+	gotJSON, err := json.Marshal(rendered.Messages)
+	require.NoError(t, err)
+	wantJSON, err := json.Marshal(want)
+	require.NoError(t, err)
+	require.JSONEq(t, string(wantJSON), string(gotJSON))
 	history[0]["tool_call_id"] = "changed"
-	if rendered.Messages[1]["tool_call_id"] != "call-1" {
+	if rendered.Messages[1].ToolCallID == nil || *rendered.Messages[1].ToolCallID != "call-1" {
 		t.Fatal("formatted messages alias runtime input")
 	}
 	annotation := prompt.Annotation(map[string]any{
@@ -185,6 +189,70 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 		if _, err := newManagedPrompt("chat", "1", PromptSourceFallback, PromptTemplate{Messages: []ChatTemplateItem{item}}, "", ""); err == nil {
 			t.Fatal("accepted invalid authored union")
 		}
+	}
+}
+
+func TestFormattedPromptMessages(t *testing.T) {
+	const raw = `[
+		{"role":"user","content":"","tool_calls":null,"tool_results":[],"tool_call_id":null,"name":null},
+		{"role":"assistant","content":null,"tool_calls":[{"id":null,"type":"function","function":{"name":"lookup","arguments":"{}","strict":true,"Name":"opaque"},"tool_id":null,"provider":{"version":1}}]},
+		{"role":"assistant","tool_calls":[{"name":"lookup","arguments":{"id":1},"tool_id":"","function":null,"provider":null}]},
+		{"role":"tool","tool_results":[{"result":null,"name":null,"provider":{"empty":[]}}]},
+		{"role":"assistant","tool_calls":[{"custom":{"name":"opaque","input":"{{ untouched }}"}}]}
+	]`
+	var history []FormattedMessage
+	require.NoError(t, json.Unmarshal([]byte(raw), &history))
+	prompt, err := parsePrompt([]byte(`{"prompt_id":"tools","version":1,"template":[{"type":"placeholder","name":"history"}]}`), PromptSourceRegistry)
+	require.NoError(t, err)
+	formatted, err := prompt.Format(map[string]any{"history": history})
+	require.NoError(t, err)
+	encoded, err := json.Marshal(formatted.Messages)
+	require.NoError(t, err)
+	require.JSONEq(t, raw, string(encoded))
+	require.Equal(t, ContentText, formatted.Messages[0].ContentState)
+	require.Equal(t, ContentNull, formatted.Messages[1].ContentState)
+	require.Equal(t, ContentAbsent, formatted.Messages[2].ContentState)
+	require.Equal(t, "lookup", formatted.Messages[1].ToolCalls[0].Function.Name)
+
+	formatted.Messages[0].Content = "Edited"
+	formatted.Messages[1].ToolCalls[0].Function.Name = "edited_lookup"
+	formatted.Messages[2].ToolCalls[0].Arguments = json.RawMessage(`{"id":2}`)
+	formatted.Messages[3].ToolResults[0].Result = json.RawMessage(`{"found":true}`)
+	encoded, err = json.Marshal(formatted.Messages)
+	require.NoError(t, err)
+	var decoded []map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.Equal(t, "Edited", decoded[0]["content"])
+	require.Equal(t, "edited_lookup", decoded[1]["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["name"])
+	require.Equal(t, map[string]any{"id": float64(2)}, decoded[2]["tool_calls"].([]any)[0].(map[string]any)["arguments"])
+	require.Equal(t, map[string]any{"found": true}, decoded[3]["tool_results"].([]any)[0].(map[string]any)["result"])
+	require.Equal(t, "lookup", history[1].ToolCalls[0].Function.Name, "formatting must not alias typed input")
+
+	for _, raw := range []string{
+		`{"role":"assistant","tool_calls":[null]}`,
+		`{"role":"assistant","tool_calls":[123]}`,
+		`{"role":"assistant","tool_calls":[{"function":{"name":"lookup"}}]}`,
+		`{"role":"assistant","tool_calls":[{"function":{"name":null,"arguments":"{}"}}]}`,
+		`{"role":"assistant","tool_calls":[{"name":42}]}`,
+		`{"role":"tool","tool_results":["bad"]}`,
+	} {
+		var message map[string]any
+		require.NoError(t, json.Unmarshal([]byte(raw), &message))
+		_, err := prompt.Format(map[string]any{"history": []map[string]any{message}})
+		require.Error(t, err, raw)
+	}
+	for _, message := range []FormattedMessage{
+		{Role: "user", Content: "text", ContentState: ContentNull},
+		{Role: "user", ContentState: ContentState(99)},
+		{Role: "user", ExtraFields: map[string]json.RawMessage{"content": json.RawMessage(`"shadow"`)}},
+		{Role: "user", NullFields: []string{"role"}},
+		{Role: "user", ToolCalls: []FormattedToolCall{}, NullFields: []string{"tool_calls"}},
+		{Role: "user", ToolCalls: []FormattedToolCall{{Function: &ToolFunction{
+			Name: "lookup", Arguments: "{}", ExtraFields: map[string]json.RawMessage{"name": json.RawMessage(`"shadow"`)},
+		}}}},
+	} {
+		_, err := prompt.Format(map[string]any{"history": []FormattedMessage{message}})
+		require.Error(t, err)
 	}
 }
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
