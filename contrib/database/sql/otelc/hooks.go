@@ -15,9 +15,36 @@ import (
 	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 )
 
+type registration struct {
+	name string
+	drv  driver.Driver
+}
+
+// Drivers call database/sql.Register from their own init(), and the hooks
+// reach this package through //go:linkname, which gives Go no reason to
+// initialize it, or the contrib, first. Until init runs, registrations are
+// queued and the other hooks do nothing. Neither variable has an initializer,
+// so both are usable before init.
+var (
+	ready   bool
+	pending []registration
+)
+
+func init() {
+	for _, r := range pending {
+		sqltrace.Register(r.name, r.drv)
+	}
+	pending = nil
+	ready = true
+}
+
 func AfterRegister(ictx hook.HookContext) {
 	name, _ := ictx.GetParam(0).(string)
 	drv, _ := ictx.GetParam(1).(driver.Driver)
+	if !ready {
+		pending = append(pending, registration{name, drv})
+		return
+	}
 	sqltrace.Register(name, drv)
 }
 
@@ -27,7 +54,7 @@ type openResult struct {
 }
 
 func BeforeOpen(ictx hook.HookContext, driverName, dataSourceName string) {
-	if calledByContrib() {
+	if !ready || calledByContrib() {
 		return
 	}
 	ictx.SetSkipCall(true)
@@ -43,7 +70,7 @@ func AfterOpen(ictx hook.HookContext, _ *sql.DB, _ error) {
 }
 
 func BeforeOpenDB(ictx hook.HookContext, c driver.Connector) {
-	if calledByContrib() {
+	if !ready || calledByContrib() {
 		return
 	}
 	ictx.SetSkipCall(true)

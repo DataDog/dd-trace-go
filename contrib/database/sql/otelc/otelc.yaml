@@ -9,6 +9,8 @@
 # definitions instead, so they also see the contrib's own calls to the same
 # functions. hooks.go leaves those alone, as orchestrion does.
 
+# Drivers call database/sql.Register from their own init(), possibly before
+# this package and the contrib are initialized. hooks.go queues those.
 sql_register:
   target: database/sql
   where:
@@ -17,20 +19,6 @@ sql_register:
     - inject_hooks:
         after: AfterRegister
         path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
-
-# Drivers call database/sql.Register from their own init(). The hook above
-# reaches the contrib through //go:linkname, which gives Go no reason to
-# initialize the contrib first. Importing the contrib into every caller does,
-# like the import orchestrion's call-site rewrite adds.
-sql_register_init_order:
-  target: "**"
-  where:
-    function_call: database/sql.Register
-  do:
-    - wrap_call:
-        replace: "{{ . }}"
-  imports:
-    _: github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 
 # SetReturnVal only works from an after hook, so the before hook passes the
 # contrib's result to it through SetData.
