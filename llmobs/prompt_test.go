@@ -33,21 +33,21 @@ func TestPromptTextAndChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := chat.Template()
-	original.Messages[0].Content = "mutated"
-	if got := chat.Template().Messages[0].Content; got != "Hi {{ name }}" {
+	original.Messages[0].Message.Content = "mutated"
+	if got := chat.Template().Messages[0].Message.Content; got != "Hi {{ name }}" {
 		t.Fatalf("cached prompt mutated: %q", got)
 	}
 	rendered, err := chat.Format(map[string]any{"name": "Ada"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(rendered.Messages, []PromptMessage{{Role: "", Content: "Hi Ada"}}) {
+	if !reflect.DeepEqual(rendered.Messages, []map[string]any{{"role": "", "content": "Hi Ada"}}) {
 		t.Fatalf("rendered %#v", rendered)
 	}
 	if chat.Version() != "2" || chat.Source() != PromptSourceFeatureFlag || chat.ID() != "chat" {
 		t.Fatalf("metadata: %#v", chat)
 	}
-	if _, err := newManagedPrompt("bad", "1", PromptSourceFallback, PromptTemplate{Text: "x", Messages: []PromptMessage{}}, "", ""); err == nil {
+	if _, err := newManagedPrompt("bad", "1", PromptSourceFallback, PromptTemplate{Text: "x", Messages: []ChatTemplateItem{}}, "", ""); err == nil {
 		t.Fatal("expected ambiguous template error")
 	}
 }
@@ -66,70 +66,71 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := []PromptMessage{
+	copy := prompt.Template()
+	copy.Messages[1].Placeholder.Name = "mutated"
+	history := []map[string]any{
 		{
-			Role: "assistant", Content: "{{ opaque }}",
-			AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"},
+			"role": "assistant", "content": "{{ opaque }}",
+			"tool_call_id": "call-1", "type": "reasoning",
 		},
 		{
-			Role: "assistant",
-			AdditionalFields: map[string]any{
-				"content": nil,
-				"tool_calls": []any{
-					map[string]any{"name": "lookup", "arguments": map[string]any{"id": 1}, "tool_id": "call-1"},
-				},
+			"role":    "assistant",
+			"content": nil,
+			"tool_calls": []any{
+				map[string]any{"name": "lookup", "arguments": map[string]any{"id": 1}, "tool_id": "call-1"},
 			},
 		},
 		{
-			Role: "tool",
-			AdditionalFields: map[string]any{
-				"tool_results": []any{
-					map[string]any{"name": "lookup", "result": "found", "tool_id": "call-1"},
-				},
+			"role": "tool",
+			"tool_results": []any{
+				map[string]any{"name": "lookup", "result": "found", "tool_id": "call-1"},
 			},
 		},
 	}
 	rendered, err := prompt.Format(map[string]any{
-		"plan": "pro", "question": "Why?", "history": history, "empty": []PromptMessage{},
+		"plan": "pro", "question": "Why?", "history": history, "empty": []map[string]any{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []PromptMessage{
-		{Role: "system", Content: "Plan: pro"},
-		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+	want := []map[string]any{
+		{"role": "system", "content": "Plan: pro"},
+		history[0],
 		history[1],
 		history[2],
-		{Role: "user", Content: "Why?"},
-		{Role: "assistant", Content: "{{ opaque }}", AdditionalFields: map[string]any{"tool_call_id": "call-1", "type": "reasoning"}},
+		{"role": "user", "content": "Why?"},
+		history[0],
 		history[1],
 		history[2],
 	}
 	if !reflect.DeepEqual(rendered.Messages, want) {
 		t.Fatalf("rendered %#v, want %#v", rendered.Messages, want)
 	}
-	history[0].AdditionalFields["tool_call_id"] = "changed"
-	if rendered.Messages[1].AdditionalFields["tool_call_id"] != "call-1" {
+	history[0]["tool_call_id"] = "changed"
+	if rendered.Messages[1]["tool_call_id"] != "call-1" {
 		t.Fatal("formatted messages alias runtime input")
 	}
 	annotation := prompt.Annotation(map[string]any{
-		"plan": "pro", "question": "Why?", "history": history, "empty": []PromptMessage{},
+		"plan": "pro", "question": "Why?", "history": history, "empty": []map[string]any{},
 	})
 	if !reflect.DeepEqual(annotation.Variables, map[string]string{"plan": "pro", "question": "Why?"}) {
 		t.Fatalf("annotation variables %#v", annotation.Variables)
 	}
-	if _, err := prompt.Format(map[string]any{"empty": []PromptMessage{}}); err == nil {
+	if _, err := prompt.Format(map[string]any{"empty": []map[string]any{}}); err == nil {
 		t.Fatal("expected missing history error")
 	}
 	for _, malformed := range []any{
 		"history",
 		[]any{},
-		[]PromptMessage{{Type: "placeholder", Name: "nested"}},
-		[]PromptMessage{{Role: "assistant", AdditionalFields: map[string]any{
+		[]map[string]any{nil},
+		[]map[string]any{{"role": 1, "content": "hello"}},
+		[]map[string]any{{"role": "assistant"}},
+		[]map[string]any{{"type": "placeholder", "name": "nested"}},
+		[]map[string]any{{"role": "assistant",
 			"content": []any{map[string]any{"type": "image"}}, "tool_calls": []any{map[string]any{}},
-		}}},
+		}},
 	} {
-		if _, err := prompt.Format(map[string]any{"history": malformed, "empty": []PromptMessage{}}); err == nil {
+		if _, err := prompt.Format(map[string]any{"history": malformed, "empty": []map[string]any{}}); err == nil {
 			t.Fatalf("accepted malformed history %#v", malformed)
 		}
 	}
@@ -145,11 +146,11 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 		string(encoded),
 		`{"role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"lookup"},"id":"call-1","type":"function"}]}`,
 	} {
-		var message PromptMessage
+		var message map[string]any
 		if err := json.Unmarshal([]byte(raw), &message); err != nil {
 			t.Fatal(err)
 		}
-		formatted, err := prompt.Format(map[string]any{"history": []PromptMessage{message}, "empty": []PromptMessage{}})
+		formatted, err := prompt.Format(map[string]any{"history": []map[string]any{message}, "empty": []map[string]any{}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -160,15 +161,6 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 		if _, err := parsePrompt([]byte(`{"prompt_id":"chat","version":1,"template":[`+raw+`]}`), PromptSourceRegistry); err == nil {
 			t.Fatal("runtime tool message accepted as authored template")
 		}
-		if _, err := newManagedPrompt("chat", "1", PromptSourceCache, PromptTemplate{Messages: []PromptMessage{message}}, "", ""); err == nil {
-			t.Fatal("runtime tool message accepted as cached template")
-		}
-		if message.omitContent {
-			message.Content = "Added text"
-			if promptMessageMap(message)["content"] != "Added text" {
-				t.Fatal("decoded message ignores added content")
-			}
-		}
 	}
 	cached, err := json.Marshal(prompt.Template())
 	if err != nil {
@@ -177,6 +169,15 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	var restored PromptTemplate
 	if err := json.Unmarshal(cached, &restored); err != nil || !reflect.DeepEqual(restored, prompt.Template()) {
 		t.Fatalf("restored template %#v, err %v", restored, err)
+	}
+	for _, item := range []ChatTemplateItem{
+		{},
+		{Message: &ChatMessage{}, Placeholder: &MessagePlaceholder{Name: "history"}},
+		{Placeholder: &MessagePlaceholder{}},
+	} {
+		if _, err := newManagedPrompt("chat", "1", PromptSourceFallback, PromptTemplate{Messages: []ChatTemplateItem{item}}, "", ""); err == nil {
+			t.Fatal("accepted invalid authored union")
+		}
 	}
 }
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
@@ -217,7 +218,7 @@ func TestPromptPrefersChatToEmptyText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(prompt.Template().Messages, []PromptMessage{{Role: "user", Content: "hello"}}) {
+	if !reflect.DeepEqual(prompt.Template().Messages, []ChatTemplateItem{{Message: &ChatMessage{Role: "user", Content: "hello"}}}) {
 		t.Fatalf("template %#v", prompt.Template())
 	}
 }

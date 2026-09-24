@@ -469,7 +469,7 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 		value, exists = data["chat_template"]
 	}
 	if !exists || value == nil {
-		return PromptTemplate{Messages: []PromptMessage{}}, nil
+		return PromptTemplate{Messages: []ChatTemplateItem{}}, nil
 	}
 	if text, ok := value.(string); ok {
 		return PromptTemplate{Text: text}, nil
@@ -478,13 +478,13 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 	if !ok {
 		return PromptTemplate{}, errors.New("invalid prompt response: template must be text or messages")
 	}
-	messages := make([]PromptMessage, len(items))
+	messages := make([]ChatTemplateItem, len(items))
 	for i, item := range items {
 		fields, ok := item.(map[string]any)
 		if !ok {
 			return PromptTemplate{}, errors.New("invalid prompt response: invalid chat message")
 		}
-		message, err := promptMessage(fields)
+		message, err := chatTemplateItem(fields)
 		if err != nil {
 			return PromptTemplate{}, fmt.Errorf("invalid prompt response: %w", err)
 		}
