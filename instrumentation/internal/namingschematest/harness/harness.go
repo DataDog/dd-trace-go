@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -53,6 +54,7 @@ type TestCase struct {
 
 func loadTracerConfig(t *testing.T, opts ...tracer.StartOption) {
 	t.Helper()
+	testutils.SetGlobalServiceName(t, "")
 	opts = append(opts, tracer.WithTestDefaults(nil))
 	require.NoError(t, tracer.Start(opts...))
 	t.Cleanup(tracer.Stop)
