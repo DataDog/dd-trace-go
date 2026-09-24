@@ -60,11 +60,11 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
-	var blockingSuppressed bool
+	var blockFailure bool
 	if monitorOnly {
 		_, block := result.Actions["block_request"]
 		_, redirect := result.Actions["redirect_request"]
-		blockingSuppressed = block || redirect
+		blockFailure = block || redirect
 		// Observational hooks cannot stop the sink operation. Do not block the
 		// enclosing request or count it as blocked when the operation still runs.
 		delete(result.Actions, "block_request")
@@ -85,12 +85,12 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	if metrics := op.GetMetricsInstance(); metrics != nil {
 		metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
-			requestBlocked:     blocking,
-			blockingSuppressed: blockingSuppressed,
-			ruleTriggered:      result.HasEvents(),
-			wafTimeout:         wafTimeout,
-			rateLimited:        rateLimited,
-			wafError:           err != nil && !wafTimeout,
+			requestBlocked: blocking,
+			blockFailure:   blockFailure,
+			ruleTriggered:  result.HasEvents(),
+			wafTimeout:     wafTimeout,
+			rateLimited:    rateLimited,
+			wafError:       err != nil && !wafTimeout,
 		})
 	}
 }
