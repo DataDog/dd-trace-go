@@ -94,6 +94,25 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	typed, err := prompt.Format(variables)
 	require.NoError(t, err)
 	require.Equal(t, rendered, typed)
+	type historyMessages []ChatMessage
+	for _, input := range []any{
+		[]ChatMessage{{Role: "user", Content: "Hello"}},
+		historyMessages{{Role: "user", Content: "Hello"}},
+		[]LLMMessage{{Role: "user", Content: "Hello"}},
+		[1]ChatMessage{{Role: "user", Content: "Hello"}},
+		[]any{map[string]any{"role": "user", "content": "Hello"}},
+	} {
+		variables["history"] = input
+		result, err := prompt.Format(variables)
+		require.NoError(t, err, "history type %T", input)
+		require.Equal(t, FormattedMessage{Role: "user", Content: "Hello"}, result.Messages[1])
+	}
+	for _, empty := range []any{[]any{}, []ChatMessage(nil)} {
+		variables["history"] = empty
+		result, err := prompt.Format(variables)
+		require.NoError(t, err)
+		require.Equal(t, []FormattedMessage{rendered.Messages[0], rendered.Messages[2]}, result.Messages)
+	}
 	history[0]["tool_call_id"] = "changed"
 	require.Equal(t, "call-1", rendered.Messages[1].ToolCallID, "formatted messages alias runtime input")
 	annotation := prompt.Annotation(map[string]any{
@@ -112,8 +131,9 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	_, err = prompt.Format(map[string]any{"empty": []map[string]any{}})
 	require.Error(t, err)
 	for _, malformed := range []any{
+		nil,
 		"history",
-		[]any{},
+		map[string]any{"role": "user", "content": "Hello"},
 		[]map[string]any{nil},
 		[]map[string]any{{"role": 1, "content": "hello"}},
 		[]map[string]any{{"role": "assistant"}},

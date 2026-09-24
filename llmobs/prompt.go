@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -87,6 +88,8 @@ var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s
 
 // Format renders supplied variables. Missing text variables remain unchanged;
 // missing or malformed message-placeholder values return an error.
+// Placeholder values accept slices or arrays that JSON-encode as text/tool messages;
+// nil slices expand to no messages. Provider-specific schemas are not converted.
 func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error) {
 	render := func(s string) string {
 		var rendered strings.Builder
@@ -247,9 +250,8 @@ func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 }
 
 func runtimePromptMessages(value any) ([]FormattedMessage, error) {
-	switch value.(type) {
-	case []map[string]any, []FormattedMessage:
-	default:
+	kind := reflect.ValueOf(value).Kind()
+	if kind != reflect.Slice && kind != reflect.Array {
 		return nil, errors.New("expected a message list")
 	}
 	data, err := json.Marshal(value)
