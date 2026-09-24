@@ -212,6 +212,9 @@ func TestPromptRejectsMalformedResponses(t *testing.T) {
 		`{"prompt_id":"p","version":1,"template":42}`,
 		`{"prompt_id":"p","version":1,"template":"text","chat_template":[]}`,
 		`{"prompt_id":"p","version":1,"template":"text"} trailing`,
+		`{"prompt_id":"p","version":1,"template":[{"type":"placeholder","name":"history","role":"user","content":"Hello"}]}`,
+		`{"prompt_id":"p","version":1,"template":[{"type":"placeholder","name":"history","content":null}]}`,
+		`{"prompt_id":"p","version":1,"template":[{"type":"placeholder","name":"history","tool_calls":[]}]}`,
 		`{"prompt_id":"p","version":1,"template":[{"role":"assistant","content":null,"tool_calls":[{"name":"lookup","arguments":{}}]}]}`,
 		`{"prompt_id":"p","version":1,"template":[{"role":"assistant","tool_calls":[{"function":{"name":"lookup","arguments":"{}"}}]}]}`,
 	} {

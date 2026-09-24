@@ -70,6 +70,9 @@ func ParseChatTemplateItem(fields map[string]any) (ChatTemplateItem, error) {
 		if !ok || name == "" {
 			return ChatTemplateItem{}, errors.New("message placeholder name must be a non-empty string")
 		}
+		if len(fields) != 2 {
+			return ChatTemplateItem{}, errors.New("message placeholder must contain only type and name")
+		}
 		return ChatTemplateItem{Placeholder: &MessagePlaceholder{Name: name}}, nil
 	}
 	role, roleOK := fields["role"].(string)
