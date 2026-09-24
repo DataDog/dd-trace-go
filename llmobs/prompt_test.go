@@ -40,7 +40,7 @@ func TestPromptTextAndChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(rendered.Messages, []PromptMessage{{Role: "", Content: "Hi Ada"}}) {
+	if !reflect.DeepEqual(rendered.Messages, []FormattedMessage{{Role: "", Content: "Hi Ada"}}) {
 		t.Fatalf("rendered %#v", rendered)
 	}
 	if chat.Version() != "2" || chat.Source() != PromptSourceFeatureFlag || chat.ID() != "chat" {
