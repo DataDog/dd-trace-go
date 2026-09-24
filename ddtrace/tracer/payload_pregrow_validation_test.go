@@ -23,9 +23,7 @@ import (
 func mkTraceKB(kb int) spanList {
 	s := newBasicSpan("pregrow.span")
 	s.start = fixedTime
-	// Padding goes in resource rather than meta so that meta holds at most the
-	// payload-scoped _dd.sdk.otlp_export entry and encodes deterministically.
-	s.resource = strings.Repeat("x", kb*1024)
+	s.meta.Set("data", strings.Repeat("x", kb*1024))
 	return spanList{s}
 }
 

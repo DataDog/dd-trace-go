@@ -1486,7 +1486,7 @@ const (
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
 	// keySDKOTLPExport declares whether the payload was exported over OTLP ("true") or the native
-	// Datadog encoding ("false"). It is payload-scoped: written once per payload, not per span.
+	// Datadog encoding ("false"). v0.4 sets it on the first span of each chunk, v1 as a payload attribute.
 	keySDKOTLPExport = "_dd.sdk.otlp_export"
 	// keySDKSemantics is an OTLP resource attribute declaring the semantic conventions applied
 	// by the tracer: "otel" or "datadog".

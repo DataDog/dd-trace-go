@@ -139,40 +139,6 @@ func TestPayloadV04Decode(t *testing.T) {
 	}
 }
 
-func TestPayloadV04OTLPExportMarker(t *testing.T) {
-	p := newPayload(traceProtocolV04)
-	_, err := p.push(newSpanList(3))
-	require.NoError(t, err)
-	_, err = p.push(newSpanList(2))
-	require.NoError(t, err)
-
-	var got spanLists
-	require.NoError(t, msgp.Decode(p, &got))
-	require.Len(t, got, 2)
-
-	v, ok := got[0][0].meta.Get(keySDKOTLPExport)
-	assert.True(t, ok, "first span of the first chunk must carry the marker")
-	assert.Equal(t, "false", v)
-	for i, chunk := range got {
-		for j, s := range chunk {
-			if i == 0 && j == 0 {
-				continue
-			}
-			assert.False(t, s.meta.Has(keySDKOTLPExport), "chunk %d span %d must not carry the marker", i, j)
-		}
-	}
-
-	t.Run("rewritten after clear", func(t *testing.T) {
-		p.clear()
-		_, err := p.push(newSpanList(1))
-		require.NoError(t, err)
-		var got spanLists
-		require.NoError(t, msgp.Decode(p, &got))
-		v, _ := got[0][0].meta.Get(keySDKOTLPExport)
-		assert.Equal(t, "false", v)
-	})
-}
-
 func TestPayloadV1OTLPExportMarker(t *testing.T) {
 	p := newPayloadV1()
 	_, err := p.push(newSpanList(3))

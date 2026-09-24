@@ -543,6 +543,80 @@ func TestPartialFlush(t *testing.T) {
 
 }
 
+func TestOTLPExportMarkerOnChunks(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	for _, tc := range []struct {
+		name     string
+		protocol float64
+		want     bool
+	}{
+		{name: "v0.4", protocol: traceProtocolV04, want: true},
+		{name: "v1", protocol: traceProtocolV1, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			require.NoError(t, err)
+			defer stop()
+			if tc.protocol == traceProtocolV1 {
+				setTraceProtocolStateForTest(tracer.config, protoV1)
+				tracer.config.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
+			}
+			require.Equal(t, tc.protocol, tracer.config.effectiveTraceProtocol())
+
+			// child0 and child1 are partially flushed as one chunk; root and
+			// child2 follow as a second chunk.
+			root := tracer.StartSpan("root")
+			for i := range 3 {
+				tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())).Finish()
+			}
+			root.Finish()
+			flush(2)
+
+			chunks := transport.Traces()
+			require.Len(t, chunks, 2)
+			for i, chunk := range chunks {
+				require.Len(t, chunk, 2)
+				v, ok := chunk[0].meta.Get(keySDKOTLPExport)
+				assert.Equal(t, tc.want, ok, "chunk %d first span", i)
+				if tc.want {
+					assert.Equal(t, "false", v)
+				}
+				assert.False(t, chunk[1].meta.Has(keySDKOTLPExport), "chunk %d second span", i)
+			}
+		})
+	}
+}
+
+func TestNativeV04Export(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		configure func(*config)
+		v1        bool
+		want      bool
+	}{
+		{name: "agent v0.4", configure: func(*config) {}, want: true},
+		{name: "agent v1", configure: func(*config) {}, v1: true, want: false},
+		{name: "otlp", configure: func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) }},
+		{name: "log to stdout", configure: func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) }},
+		{name: "ci visibility", configure: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(tc.configure)
+			require.NoError(t, err)
+			defer tr.Stop()
+			state, proto := protoV04, traceProtocolV04
+			if tc.v1 {
+				state, proto = protoV1, traceProtocolV1
+			}
+			setTraceProtocolStateForTest(tr.config, state)
+			tr.config.internalConfig.SetTraceProtocol(proto, internalconfig.OriginCode)
+			assert.Equal(t, tc.want, tr.nativeV04Export())
+		})
+	}
+}
+
 func TestSpanTracePushNoFinish(t *testing.T) {
 	defer setupteardown(2, 5)()
 

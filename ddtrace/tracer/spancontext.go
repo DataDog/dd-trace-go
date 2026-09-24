@@ -978,6 +978,10 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	if pTags := processtags.GlobalTags().String(); pTags != "" {
 		s.setMetaLocked(keyProcessTags, pTags)
 	}
+	// v1 payloads carry keySDKOTLPExport as a payload attribute instead.
+	if tr, ok := getGlobalTracer().(*tracer); ok && tr.nativeV04Export() {
+		s.setMetaLocked(keySDKOTLPExport, "false")
+	}
 }
 
 // updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
