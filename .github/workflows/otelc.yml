@@ -33,6 +33,22 @@ env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
   OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
+  # Modules otelc reads, tidied by both jobs next to the application each one
+  # builds. Each migrated contrib adds its module and its hook module here.
+  OTELC_MODULES: >-
+    otelc/all
+    contrib/net/http
+    contrib/net/http/otelc
+  # Suites under internal/orchestrion/_integration that run with otelc. Listed
+  # explicitly: directory names do not map mechanically onto contrib paths
+  # (_integration/redigo lives at contrib/gomodule/redigo), so this cannot be
+  # discovered. Each migrated contrib adds its suite here.
+  OTELC_TEST_PACKAGES: >-
+    otelc
+    gls
+    gls-leak
+    otelc-autostart
+    net_http
 
 jobs:
   go-versions-matrix:
@@ -114,7 +130,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all contrib/net/http contrib/net/http/otelc; do
+          for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -124,16 +140,12 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           otelc version
 
-          # Listed explicitly: _integration directory names do not map mechanically
-          # onto contrib paths (_integration/redigo lives at contrib/gomodule/redigo),
-          # so this cannot be discovered. Each migrated contrib adds its package here.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          export PACKAGE_NAMES="\
-            ${PREFIX}/otelc \
-            ${PREFIX}/gls \
-            ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart \
-            ${PREFIX}/net_http"
+          PACKAGE_NAMES=""
+          for pkg in ${OTELC_TEST_PACKAGES}; do
+            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+          done
+          export PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
@@ -218,7 +230,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/apps/otelc-external-app otelc/all contrib/net/http contrib/net/http/otelc; do
+          for dir in internal/apps/otelc-external-app ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
