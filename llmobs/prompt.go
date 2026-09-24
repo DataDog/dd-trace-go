@@ -164,11 +164,9 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 	} else if len(placeholderNames) > 0 {
 		annotation.ChatTemplateItems = p.Template().Messages
 	} else {
-		annotation.ChatTemplate = make([]LLMMessage, 0, len(p.template.Messages))
-		for _, item := range p.template.Messages {
-			if message := item.Message; message != nil {
-				annotation.ChatTemplate = append(annotation.ChatTemplate, LLMMessage{Role: message.Role, Content: message.Content})
-			}
+		annotation.ChatTemplate = make([]LLMMessage, len(p.template.Messages))
+		for i, item := range p.template.Messages {
+			annotation.ChatTemplate[i] = LLMMessage{Role: item.Message.Role, Content: item.Message.Content}
 		}
 	}
 	return annotation
