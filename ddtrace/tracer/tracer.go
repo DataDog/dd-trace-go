@@ -112,10 +112,6 @@ type tracer struct {
 	// once at startup; OTLP carries span events natively (see serializeSpanEvents).
 	otlpExportMode bool
 
-	// agentExport reports whether the agent trace writer was selected at startup,
-	// as opposed to the CI Visibility, log or OTLP writers.
-	agentExport bool
-
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled. In OTLP export mode this is a noopConcentrator.
 	stats statsConcentrator
@@ -555,7 +551,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// It cannot be derived from internalConfig.OTLPExportMode() alone: CI Visibility
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
-	var otlpExportMode, agentExport bool
+	var otlpExportMode bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -568,7 +564,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		otlpExportMode = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
-		agentExport = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
@@ -595,7 +590,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	t = &tracer{
 		config:           c,
 		otlpExportMode:   otlpExportMode,
-		agentExport:      agentExport,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
@@ -1356,11 +1350,11 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 	return ctx, err
 }
 
-// nativeV04Export reports whether finished chunks are currently sent to the
-// agent as v0.4 payloads. The effective protocol can move between v0.4 and v1
-// at runtime, so this is re-evaluated for every chunk rather than cached.
+// nativeV04Export reports whether finished chunks are currently encoded in the
+// native v0.4 format. The effective protocol can move between v0.4 and v1 at
+// runtime, so this is re-evaluated for every chunk rather than cached.
 func (t *tracer) nativeV04Export() bool {
-	return t.agentExport && t.config.effectiveTraceProtocol() == traceProtocolV04
+	return !t.otlpExportMode && t.config.effectiveTraceProtocol() == traceProtocolV04
 }
 
 func (t *tracer) TracerConf() TracerConf {

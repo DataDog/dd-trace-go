@@ -23,6 +23,16 @@ import (
 // See https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#attribute-limits
 const maxAttributesCount = 128
 
+const (
+	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
+	// attribute) or the native Datadog encoding ("false": on the first span of each v0.4 chunk,
+	// or as a v1 payload attribute).
+	keySDKOTLPExport = "_dd.sdk.otlp_export"
+	// keySDKSemantics is an OTLP resource attribute declaring the semantic conventions applied
+	// by the tracer: "otel" or "datadog".
+	keySDKSemantics = "datadog.sdk.semantics"
+)
+
 // -----------------------------------------------------------------------------
 // Resource construction
 // -----------------------------------------------------------------------------

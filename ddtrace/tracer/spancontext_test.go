@@ -599,8 +599,8 @@ func TestNativeV04Export(t *testing.T) {
 		{name: "agent v0.4", configure: func(*config) {}, want: true},
 		{name: "agent v1", configure: func(*config) {}, v1: true, want: false},
 		{name: "otlp", configure: func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) }},
-		{name: "log to stdout", configure: func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) }},
-		{name: "ci visibility", configure: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) }},
+		{name: "log to stdout", configure: func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) }, want: true},
+		{name: "ci visibility", configure: func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) }, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr, err := newUnstartedTracer(tc.configure)
