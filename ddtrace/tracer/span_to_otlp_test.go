@@ -59,7 +59,7 @@ func TestBuildResource(t *testing.T) {
 
 			attrs := keyValuesToMap(buildResource(cfg).Attributes)
 			assert.Equal(t, "true", attrs[keySDKOTLPExport])
-			assert.Equal(t, tc.want, attrs[keySDKSemantics])
+			assert.Equal(t, tc.want, attrs["datadog.sdk.semantics"])
 		}
 	})
 

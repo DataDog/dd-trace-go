@@ -23,16 +23,6 @@ import (
 // See https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#attribute-limits
 const maxAttributesCount = 128
 
-const (
-	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
-	// attribute) or the native Datadog encoding ("false": on the first span of each chunk, and
-	// as a v1 payload attribute).
-	keySDKOTLPExport = "_dd.sdk.otlp_export"
-	// keySDKSemantics is an OTLP resource attribute declaring the semantic conventions applied
-	// by the tracer: "otel" or "datadog".
-	keySDKSemantics = "datadog.sdk.semantics"
-)
-
 // -----------------------------------------------------------------------------
 // Resource construction
 // -----------------------------------------------------------------------------
@@ -50,7 +40,7 @@ func buildBaseResourceAttrs(serviceName, svcVersion, env string, otelSemantics b
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
 		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
 		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
-		otlpKeyValue(keySDKSemantics, otlpStringValue(semantics)),
+		otlpKeyValue("datadog.sdk.semantics", otlpStringValue(semantics)),
 	}
 	if env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
