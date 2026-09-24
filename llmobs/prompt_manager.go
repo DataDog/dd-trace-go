@@ -24,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -484,7 +485,7 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 		if !ok {
 			return PromptTemplate{}, errors.New("invalid prompt response: invalid chat message")
 		}
-		message, err := chatTemplateItem(fields)
+		message, err := illmobs.ParseChatTemplateItem(fields)
 		if err != nil {
 			return PromptTemplate{}, fmt.Errorf("invalid prompt response: %w", err)
 		}

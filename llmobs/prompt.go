@@ -7,7 +7,6 @@ package llmobs
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -22,56 +21,13 @@ import (
 var ErrPromptAuth = errors.New("llmobs: DD_API_KEY is required for prompt operations")
 
 // ChatMessage is an authored text message.
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
+type ChatMessage = illmobs.ChatMessage
 
 // MessagePlaceholder inserts a named list of runtime messages into a template.
-type MessagePlaceholder struct {
-	Name string `json:"name"`
-}
+type MessagePlaceholder = illmobs.MessagePlaceholder
 
 // ChatTemplateItem contains exactly one authored message or placeholder.
-type ChatTemplateItem struct {
-	Message     *ChatMessage
-	Placeholder *MessagePlaceholder
-}
-
-func (item ChatTemplateItem) validate() error {
-	if (item.Message == nil) == (item.Placeholder == nil) {
-		return errors.New("chat template item must contain exactly one message or placeholder")
-	}
-	if item.Placeholder != nil && item.Placeholder.Name == "" {
-		return errors.New("message placeholder name must be a non-empty string")
-	}
-	return nil
-}
-
-// MarshalJSON encodes the existing message or placeholder wire representation.
-func (item ChatTemplateItem) MarshalJSON() ([]byte, error) {
-	if err := item.validate(); err != nil {
-		return nil, err
-	}
-	if item.Message != nil {
-		return json.Marshal(item.Message)
-	}
-	return json.Marshal(map[string]string{"type": "placeholder", "name": item.Placeholder.Name})
-}
-
-// UnmarshalJSON decodes an authored message or placeholder.
-func (item *ChatTemplateItem) UnmarshalJSON(data []byte) error {
-	var fields map[string]any
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	decoded, err := chatTemplateItem(fields)
-	if err != nil {
-		return err
-	}
-	*item = decoded
-	return nil
-}
+type ChatTemplateItem = illmobs.ChatTemplateItem
 
 // PromptTemplate is either text or chat content. A non-nil Messages slice,
 // including an empty slice, identifies a chat template.
@@ -181,6 +137,7 @@ func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error
 
 // Annotation converts the managed prompt to the existing explicit span annotation shape.
 // Pass the result to WithAnnotatedPrompt; formatting never tracks prompts automatically.
+// Templates containing placeholders use ChatTemplateItems instead of ChatTemplate.
 func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 	annotation := Prompt{
 		ID:                p.id,
@@ -203,15 +160,14 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 	}
 	if p.template.Messages == nil {
 		annotation.Template = p.template.Text
+	} else if len(placeholderNames) > 0 {
+		annotation.ChatTemplateItems = p.Template().Messages
 	} else {
 		annotation.ChatTemplate = make([]LLMMessage, 0, len(p.template.Messages))
 		for _, item := range p.template.Messages {
 			if message := item.Message; message != nil {
 				annotation.ChatTemplate = append(annotation.ChatTemplate, LLMMessage{Role: message.Role, Content: message.Content})
 			}
-		}
-		if len(placeholderNames) > 0 {
-			annotation = illmobs.WithManagedPromptChatTemplate(annotation, p.Template().Messages)
 		}
 	}
 	return annotation
@@ -291,22 +247,6 @@ func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	return copy
 }
 
-func chatTemplateItem(fields map[string]any) (ChatTemplateItem, error) {
-	if messageType, _ := fields["type"].(string); messageType == "placeholder" {
-		name, ok := fields["name"].(string)
-		if !ok || name == "" {
-			return ChatTemplateItem{}, errors.New("message placeholder name must be a non-empty string")
-		}
-		return ChatTemplateItem{Placeholder: &MessagePlaceholder{Name: name}}, nil
-	}
-	role, roleOK := fields["role"].(string)
-	content, contentOK := fields["content"].(string)
-	if !roleOK || !contentOK {
-		return ChatTemplateItem{}, errors.New("message role and content must be strings")
-	}
-	return ChatTemplateItem{Message: &ChatMessage{Role: role, Content: content}}, nil
-}
-
 func runtimePromptMessages(value any) ([]map[string]any, error) {
 	messages, ok := value.([]map[string]any)
 	if !ok {
@@ -348,7 +288,7 @@ func newManagedPrompt(id, version string, source PromptSource, template PromptTe
 		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")
 	}
 	for _, message := range template.Messages {
-		if err := message.validate(); err != nil {
+		if err := illmobs.ValidateChatTemplateItem(message); err != nil {
 			return nil, fmt.Errorf("llmobs: invalid prompt template: %w", err)
 		}
 	}

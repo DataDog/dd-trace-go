@@ -57,11 +57,16 @@ type Prompt struct {
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string `json:"label,omitempty"`
 	// Template is the prompt template string.
-	// Mutually exclusive with ChatTemplate; if both are set, Template is dropped and ChatTemplate is used.
+	// A nonempty ChatTemplate or ChatTemplateItems takes precedence over Template.
 	Template string `json:"template,omitempty"`
 	// ChatTemplate is a list of messages forming the prompt.
-	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
+	// Takes precedence over Template; a nonempty ChatTemplateItems takes precedence over this field.
 	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
+	// ChatTemplateItems is the complete ordered template, including message placeholders.
+	// Set this instead of ChatTemplate for mixed templates. When nonempty, it takes
+	// precedence over ChatTemplate and Template. The SDK emits it as chat_template;
+	// direct JSON encoding of Prompt retains the chat_template_items field.
+	ChatTemplateItems []ChatTemplateItem `json:"chat_template_items,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
 	// Tags contains custom tags for the prompt.
@@ -69,14 +74,7 @@ type Prompt struct {
 	// RAGContextVariables specifies which variables contain RAG context.
 	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
-	RAGQueryVariables   []string `json:"_dd_query_variable_keys,omitempty"`
-	managedChatTemplate any
-}
-
-// WithManagedPromptChatTemplate preserves authored structural items for managed-prompt annotation.
-func WithManagedPromptChatTemplate(prompt Prompt, template any) Prompt {
-	prompt.managedChatTemplate = template
-	return prompt
+	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
 }
 
 // promptPayload is the JSON encoding shape for Prompt.
@@ -89,13 +87,14 @@ type promptPayload struct {
 
 func (p promptPayload) MarshalJSON() ([]byte, error) {
 	type alias promptPayload
-	chatTemplate := p.managedChatTemplate
-	if chatTemplate == nil && len(p.ChatTemplate) > 0 {
-		chatTemplate = p.ChatTemplate
+	if len(p.ChatTemplateItems) == 0 {
+		return json.Marshal(alias(p))
 	}
+	chatTemplate := p.ChatTemplateItems
+	p.ChatTemplateItems = nil
 	return json.Marshal(struct {
 		*alias
-		ChatTemplate any `json:"chat_template,omitempty"`
+		ChatTemplate []ChatTemplateItem `json:"chat_template,omitempty"`
 	}{alias: (*alias)(&p), ChatTemplate: chatTemplate})
 }
 
@@ -406,8 +405,8 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.ID == "" {
 				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
 			}
-			if a.Prompt.Template != "" && len(a.Prompt.ChatTemplate) > 0 {
-				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate")
+			if a.Prompt.Template != "" && (len(a.Prompt.ChatTemplate) > 0 || len(a.Prompt.ChatTemplateItems) > 0) {
+				log.Warn("llmobs: both text and chat templates were provided in the prompt; Template will be dropped in favour of the chat template")
 				a.Prompt.Template = ""
 			}
 			s.llmCtx.prompt = a.Prompt

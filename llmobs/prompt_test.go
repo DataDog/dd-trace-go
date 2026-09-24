@@ -116,6 +116,21 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	if !reflect.DeepEqual(annotation.Variables, map[string]string{"plan": "pro", "question": "Why?"}) {
 		t.Fatalf("annotation variables %#v", annotation.Variables)
 	}
+	if annotation.ChatTemplate != nil || !reflect.DeepEqual(annotation.ChatTemplateItems, prompt.Template().Messages) {
+		t.Fatalf("annotation does not expose the complete template: %#v", annotation)
+	}
+	annotation.ChatTemplateItems[1].Placeholder.Name = "custom-history"
+	if prompt.Template().Messages[1].Placeholder.Name != "history" {
+		t.Fatal("editing annotation changed the cached template")
+	}
+	annotationJSON, err := json.Marshal(annotation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restoredAnnotation Prompt
+	if err := json.Unmarshal(annotationJSON, &restoredAnnotation); err != nil || !reflect.DeepEqual(restoredAnnotation, annotation) {
+		t.Fatalf("annotation JSON lost template data: %s, err %v", annotationJSON, err)
+	}
 	if _, err := prompt.Format(map[string]any{"empty": []map[string]any{}}); err == nil {
 		t.Fatal("expected missing history error")
 	}

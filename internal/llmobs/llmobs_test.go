@@ -1216,23 +1216,25 @@ func TestSpanAnnotate(t *testing.T) {
 			name: "llm-span-with-managed-prompt-message-placeholder",
 			kind: llmobs.SpanKindLLM,
 			annotations: llmobs.SpanAnnotations{
-				Prompt: func() *llmobs.Prompt {
-					prompt := llmobs.WithManagedPromptChatTemplate(llmobs.Prompt{
-						ID:        "managed-chat-prompt",
-						Variables: map[string]string{"question": "What is Go?"},
-					}, []map[string]any{
-						{"role": "system", "content": "Be concise."},
-						{"type": "placeholder", "name": "history"},
-						{"role": "user", "content": "{{question}}"},
-					})
-					return &prompt
-				}(),
+				Prompt: &llmobs.Prompt{
+					ID:           "managed-chat-prompt",
+					Template:     "superseded text template",
+					ChatTemplate: []llmobs.LLMMessage{{Role: "user", Content: "superseded chat template"}},
+					ChatTemplateItems: []llmobs.ChatTemplateItem{
+						{Message: &llmobs.ChatMessage{Role: "system", Content: "Be concise."}},
+						{Placeholder: &llmobs.MessagePlaceholder{Name: "history"}},
+						{Message: &llmobs.ChatMessage{Role: "user", Content: "{{question}}"}},
+					},
+					Variables: map[string]string{"question": "What is Go?"},
+					Tags:      map[string]string{"variant": "candidate"},
+				},
 			},
 			wantMeta: map[string]any{
 				"span.kind": "llm",
 				"input": map[string]any{
 					"prompt": map[string]any{
-						"id": "managed-chat-prompt",
+						"id":   "managed-chat-prompt",
+						"tags": map[string]any{"variant": "candidate"},
 						"chat_template": []any{
 							map[string]any{"role": "system", "content": "Be concise."},
 							map[string]any{"type": "placeholder", "name": "history"},
