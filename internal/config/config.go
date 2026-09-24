@@ -1664,6 +1664,14 @@ func (c *Config) ResolveOTelSemanticsConfig() {
 	c.disableAutomaticPeerService()
 }
 
+// TODO: Consider a mechanism for declaring rules and dependencies between
+// settings. provider.Provider resolves configuration sources independently for
+// each key, but modes such as OTel semantics require specific effective values
+// across several settings. tracer.StartOption values can change their inputs
+// after loadConfig returns. A resolver could apply declared rules in loadConfig
+// and again after all tracer.StartOption values have been applied, centralizing
+// conflict warnings and telemetry reported with telemetry.OriginCalculated.
+
 // applyOTelSemanticsOverrides applies settings required by OpenTelemetry
 // semantic conventions after their raw values have been resolved.
 // The caller must hold c.mu after configuration initialization.
