@@ -152,7 +152,17 @@ Prefer hooks; inject raw code only when it must run inside the target package.
   assume this whenever spans go missing without an error.
 - `inject_hooks` gives no init-ordering guarantee. The trampoline links through
   `//go:linkname` and creates no import edge, so hooking a function that other packages call from
-  their own `init()` can run the hook before the hook module's own `init()`.
+  their own `init()` can run the hook before the hook module's own `init()`. The contrib may not
+  be initialized either, and the resulting panic is swallowed (see above). Queue those calls in
+  package variables with no initializer, which are usable before `init()`, and replay them from
+  the hook module's `init()`, which runs after the contrib's because it imports it
+  (`contrib/database/sql/otelc/hooks.go`). Do not add an import edge with a `wrap_call` rule
+  instead; see the next item.
+- A glob `target:` such as `**` makes otelc re-print every file of every package it matches, even
+  where the rule changes nothing. Imports otelc injects elsewhere are resolved against a separate
+  build, so a package that is both re-printed and imported that way can fail at link time with
+  `fingerprint mismatch`. Seen only on the macOS CI jobs, not locally and not on Linux or Windows.
+  Keep glob targets as narrow as the rule allows.
 - `target: $root` never matches `package main`, whose compile-time import path is the literal
   string `main`. A call-site rule that must fire there needs a `$root` rule and a `main` rule.
 - Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the same commit as `OTELC_VERSION`, not
