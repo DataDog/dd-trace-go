@@ -92,11 +92,6 @@ func (m *FormattedMessage) UnmarshalJSON(data []byte) error {
 	} else if len(decoded.ToolCalls) == 0 && len(decoded.ToolResults) == 0 {
 		return errors.New("runtime message must contain text or tool content")
 	}
-	var kind string
-	_ = json.Unmarshal(decoded.ExtraFields["type"], &kind)
-	if kind == "placeholder" {
-		return errors.New("runtime messages cannot contain placeholders")
-	}
 	*m = decoded
 	return nil
 }

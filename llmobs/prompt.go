@@ -262,6 +262,13 @@ func runtimePromptMessages(value any) ([]FormattedMessage, error) {
 	if err := json.Unmarshal(data, &messages); err != nil {
 		return nil, err
 	}
+	for _, message := range messages {
+		var kind string
+		_ = json.Unmarshal(message.ExtraFields["type"], &kind)
+		if kind == "placeholder" {
+			return nil, errors.New("runtime messages cannot contain placeholders")
+		}
+	}
 	return messages, nil
 }
 
