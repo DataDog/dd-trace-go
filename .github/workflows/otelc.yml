@@ -34,15 +34,12 @@ env:
   # this at a fork.
   OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
-  # builds. Each migrated contrib adds its module and its hook module here.
+  # builds.
   OTELC_MODULES: >-
     otelc/all
     contrib/net/http
     contrib/net/http/otelc
-  # Suites under internal/orchestrion/_integration that run with otelc. Listed
-  # explicitly: directory names do not map mechanically onto contrib paths
-  # (_integration/redigo lives at contrib/gomodule/redigo), so this cannot be
-  # discovered. Each migrated contrib adds its suite here.
+  # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
     gls
