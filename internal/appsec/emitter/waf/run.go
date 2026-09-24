@@ -62,9 +62,9 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	rateLimited := op.AddEvents(result.Events...)
 	var blockFailure bool
 	if monitorOnly {
-		_, block := result.Actions["block_request"]
-		_, redirect := result.Actions["redirect_request"]
-		blockFailure = block || redirect
+		// Only block_request is a block outcome. A redirect is block:irrelevant on
+		// the normal path, so it stays block:irrelevant when it is suppressed.
+		_, blockFailure = result.Actions["block_request"]
 		// Observational hooks cannot stop the sink operation. Do not block the
 		// enclosing request or count it as blocked when the operation still runs.
 		delete(result.Actions, "block_request")

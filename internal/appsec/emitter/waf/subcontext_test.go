@@ -8,6 +8,7 @@ package waf
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -357,8 +358,21 @@ func (r actionRunner) Run(context.Context, libddwaf.RunAddressData) (libddwaf.Re
 }
 
 func TestRunWAFMonitorOnlyMetrics(t *testing.T) {
-	for _, action := range []string{"block_request", "redirect_request", ""} {
-		t.Run(action, func(t *testing.T) {
+	// wantOutcome is the rasp.rule.match block tag for each mode. A redirect is
+	// block:irrelevant in both modes, so monitor-only does not change its outcome.
+	for _, tc := range []struct {
+		action      string
+		monitorOnly bool
+		wantOutcome string
+	}{
+		{action: "block_request", monitorOnly: true, wantOutcome: "failure"},
+		{action: "block_request", monitorOnly: false, wantOutcome: "success"},
+		{action: "redirect_request", monitorOnly: true, wantOutcome: "irrelevant"},
+		{action: "redirect_request", monitorOnly: false, wantOutcome: "irrelevant"},
+		{action: "", monitorOnly: true, wantOutcome: "irrelevant"},
+		{action: "", monitorOnly: false, wantOutcome: "irrelevant"},
+	} {
+		t.Run(fmt.Sprintf("%s/monitorOnly=%t", tc.action, tc.monitorOnly), func(t *testing.T) {
 			client := new(telemetrytest.RecordClient)
 			defer telemetry.MockClient(client)()
 			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
@@ -368,12 +382,14 @@ func TestRunWAFMonitorOnlyMetrics(t *testing.T) {
 			handleMetrics := NewMetricsInstance(nil, "test")
 			metrics := handleMetrics.NewContextMetrics()
 			op.SetMetricsInstance(metrics)
-			op.runWAF(op, actionRunner{action}, addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build(), true)
+			op.runWAF(op, actionRunner{tc.action}, addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build(), tc.monitorOnly)
 			require.EqualValues(t, 1, metrics.SumRASPCalls.Load())
-			require.False(t, metrics.Milestones.requestBlocked)
+			if tc.monitorOnly {
+				require.False(t, metrics.Milestones.requestBlocked)
+			}
 			for _, outcome := range []string{"failure", "irrelevant", "success"} {
 				var want float64
-				if (action != "" && outcome == "failure") || (action == "" && outcome == "irrelevant") {
+				if outcome == tc.wantOutcome {
 					want = 1
 				}
 				tags := []string{"block:" + outcome, "rule_type:sql_injection", "waf_version:" + libddwaf.Version(), "event_rules_version:test"}

@@ -129,6 +129,63 @@ func TestSQLSecurityNativeMonitoring(t *testing.T) {
 	}
 }
 
+// legacySQLDriver implements only the legacy driver.Execer and driver.Queryer
+// interfaces, which do not accept a context.
+type legacySQLDriver struct {
+	driver.Conn
+	calls int
+}
+
+func (d *legacySQLDriver) Exec(string, []driver.Value) (driver.Result, error) {
+	d.calls++
+	return driver.RowsAffected(1), nil
+}
+
+func (d *legacySQLDriver) Query(string, []driver.Value) (driver.Rows, error) {
+	d.calls++
+	return nil, nil
+}
+
+func TestSQLSecurityLegacyInterfaces(t *testing.T) {
+	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	testutils.StartAppSec(t)
+	cfg := new(config)
+	defaults(cfg, "pgx", nil)
+	params := &traceParams{cfg: cfg, driverName: "pgx", spanCfg: newSpanConfig(cfg, "pgx")}
+	for _, query := range []string{"SELECT 1", "injected SQL"} {
+		for _, operation := range []string{"exec", "query"} {
+			t.Run(query+"/"+operation, func(t *testing.T) {
+				legacy := &legacySQLDriver{}
+				conn := &TracedConn{Conn: legacy, traceParams: params}
+				parent := dyngo.NewRootOperation()
+				ctx := dyngo.RegisterOperation(context.Background(), parent)
+				var calls []sqlsec.SQLOperationArgs
+				dyngo.On(parent, func(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
+					calls = append(calls, args)
+					if args.Query == "injected SQL" {
+						dyngo.EmitData(op, &events.BlockingSecurityEvent{})
+					}
+				})
+				var err error
+				if operation == "exec" {
+					_, err = conn.ExecContext(ctx, query, nil)
+				} else {
+					_, err = conn.QueryContext(ctx, query, nil)
+				}
+				require.Len(t, calls, 1)
+				require.False(t, calls[0].MonitorOnly)
+				if query == "injected SQL" {
+					require.True(t, events.IsSecurityError(err))
+					require.Zero(t, legacy.calls, "blocked query reached the driver")
+				} else {
+					require.NoError(t, err)
+					require.Equal(t, 1, legacy.calls)
+				}
+			})
+		}
+	}
+}
+
 func prepareSQLDB(nbEntries int) (*sql.DB, error) {
 	const tables = `
 CREATE TABLE user (

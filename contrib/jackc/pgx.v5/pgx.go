@@ -19,6 +19,8 @@
 // The hooks see SQL before pgx query rewriting and prepared-statement name lookup;
 // SQL produced by custom QueryRewriters and execution by statement name are not
 // fully covered. Bound parameter values are not interpolated into the SQL.
+// Calls made through Conn.PgConn() bypass the QueryTracer and BatchTracer hooks,
+// so this integration does not monitor them.
 package pgx
 
 import (

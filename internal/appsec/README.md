@@ -221,16 +221,19 @@ remains serialized, and remote activation updates the instance's atomic state.
 ### SQL monitoring in pgx
 
 The native `contrib/jackc/pgx.v5` integration emits monitoring-only SQL operations
-for `Query`, `QueryRow`, `Exec`, and each statement in `SendBatch`. Pools and
+for `Query`, `QueryRow`, `Exec`, and each queued query in `SendBatch`. A queued
+query is one evaluation: in simple-protocol mode it can contain several SQL
+statements, and it can also be a prepared statement name. Pools and
 transactions use the same hooks. Monitoring uses the incoming request's security
 context and remains enabled when query/batch APM spans are disabled, provided
 AppSec and RASP are enabled.
 
 These operations retain WAF events, stack traces, and evaluation metrics, but
 suppress blocking and redirect actions: pgx tracing hooks cannot abort execution.
-A suppressed blocking or redirect action counts as `block:failure` in
-`rasp.rule.match`, not as a blocked request. A match without such an action counts
-as `block:irrelevant`.
+A suppressed blocking action counts as `block:failure` in `rasp.rule.match`, not
+as a blocked request. A suppressed redirect action counts as `block:irrelevant`,
+the same as on the normal path. A match without either action also counts as
+`block:irrelevant`.
 
 Transaction control statements also pass through `Exec` and are evaluated.
 `Begin` plus `Commit` or `Rollback` adds two evaluations when given the request
@@ -253,4 +256,5 @@ Blocking on the prepared-statement path is outside this change.
 Monitoring examines SQL supplied at query/batch start, before pgx rewrites queries
 or resolves prepared statement names. It does not interpolate bound parameters,
 and does not provide complete coverage for custom query rewriters or execution by
-prepared statement name. Direct `pgconn` calls bypass these pgx hooks.
+prepared statement name. Direct `pgconn` calls, including calls through
+`Conn.PgConn()`, bypass these pgx hooks.

@@ -57,7 +57,10 @@ type TracedConn struct {
 }
 
 // checkQuerySecurity runs ASM RASP SQLi checks on the query to verify if it can safely be run.
-// If it's unsafe to run, an *events.BlockingSecurityEvent is returned
+// If it's unsafe to run, an *events.BlockingSecurityEvent is returned.
+// On success, the returned context marks the query as checked, so a nested
+// driver integration does not evaluate it again. Only pass it to a driver
+// method that accepts a context.
 func checkQuerySecurity(ctx context.Context, query, driver string) (context.Context, error) {
 	if !instr.AppSecRASPEnabled() {
 		return ctx, nil
@@ -67,6 +70,16 @@ func checkQuerySecurity(ctx context.Context, query, driver string) (context.Cont
 		ctx = sqlsec.WithSQLOperationChecked(ctx)
 	}
 	return ctx, err
+}
+
+// checkLegacyQuerySecurity runs the same checks as checkQuerySecurity for the
+// legacy driver.Execer and driver.Queryer interfaces. These interfaces do not
+// accept a context, so it does not create the checked marker.
+func checkLegacyQuerySecurity(ctx context.Context, query, driver string) error {
+	if !instr.AppSecRASPEnabled() {
+		return nil
+	}
+	return sqlsec.ProtectSQLOperation(ctx, query, driver)
 }
 
 // WrappedConn returns the wrapped connection object.
@@ -168,7 +181,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		cquery, spanID, baseHash := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
-		if ctx, err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+		if err = checkLegacyQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
 			r, err = execer.Exec(cquery, dargs)
 		}
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode, baseHash), tracer.WithSpanID(spanID))...)
@@ -216,7 +229,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		cquery, spanID, baseHash := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
-		if ctx, err = checkQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
+		if err = checkLegacyQuerySecurity(ctx, query, tc.driverName); !events.IsSecurityError(err) {
 			rows, err = queryer.Query(cquery, dargs)
 		}
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode, baseHash), tracer.WithSpanID(spanID))...)
