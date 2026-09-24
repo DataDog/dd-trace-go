@@ -141,6 +141,35 @@ func TestPromptMessagePlaceholders(t *testing.T) {
 	if err != nil || string(encoded) != `{"content":null,"role":"assistant","tool_calls":[{"arguments":{"id":1},"name":"lookup","tool_id":"call-1"}]}` {
 		t.Fatalf("encoded tool-call message %s, err %v", encoded, err)
 	}
+	for _, raw := range []string{
+		string(encoded),
+		`{"role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"lookup"},"id":"call-1","type":"function"}]}`,
+	} {
+		var message PromptMessage
+		if err := json.Unmarshal([]byte(raw), &message); err != nil {
+			t.Fatal(err)
+		}
+		formatted, err := prompt.Format(map[string]any{"history": []PromptMessage{message}, "empty": []PromptMessage{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		roundTrip, err := json.Marshal(formatted.Messages[1])
+		if err != nil || string(roundTrip) != raw {
+			t.Fatalf("tool message round trip: %s, err %v", roundTrip, err)
+		}
+		if _, err := parsePrompt([]byte(`{"prompt_id":"chat","version":1,"template":[`+raw+`]}`), PromptSourceRegistry); err == nil {
+			t.Fatal("runtime tool message accepted as authored template")
+		}
+		if _, err := newManagedPrompt("chat", "1", PromptSourceCache, PromptTemplate{Messages: []PromptMessage{message}}, "", ""); err == nil {
+			t.Fatal("runtime tool message accepted as cached template")
+		}
+		if message.omitContent {
+			message.Content = "Added text"
+			if promptMessageMap(message)["content"] != "Added text" {
+				t.Fatal("decoded message ignores added content")
+			}
+		}
+	}
 	cached, err := json.Marshal(prompt.Template())
 	if err != nil {
 		t.Fatal(err)

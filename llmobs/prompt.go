@@ -23,13 +23,15 @@ var ErrPromptAuth = errors.New("llmobs: DD_API_KEY is required for prompt operat
 
 // PromptMessage is one message in a managed chat prompt.
 type PromptMessage struct {
-	Role    string
+	Role string
+	// Content is the text value; an explicit null is preserved in AdditionalFields.
 	Content string
 	// Type and Name represent an authored message placeholder when Type is "placeholder".
 	Type string
 	Name string
 	// AdditionalFields preserves provider-specific runtime message fields without interpreting them.
 	AdditionalFields map[string]any
+	omitContent      bool
 }
 
 // MarshalJSON preserves provider-specific message fields at their original level.
@@ -42,6 +44,16 @@ func (m *PromptMessage) UnmarshalJSON(data []byte) error {
 	var fields map[string]any
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
+	}
+	if role, ok := fields["role"].(string); ok && fields["content"] == nil && fields["type"] != "placeholder" {
+		calls, _ := fields["tool_calls"].([]any)
+		results, _ := fields["tool_results"].([]any)
+		if len(calls) > 0 || len(results) > 0 {
+			_, hasContent := fields["content"]
+			delete(fields, "role")
+			*m = PromptMessage{Role: role, AdditionalFields: fields, omitContent: !hasContent}
+			return nil
+		}
 	}
 	message, err := promptMessage(fields)
 	if err != nil {
@@ -184,7 +196,9 @@ func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
 				annotation.ChatTemplate = append(annotation.ChatTemplate, LLMMessage{Role: message.Role, Content: message.Content})
 			}
 		}
-		annotation = illmobs.WithManagedPromptChatTemplate(annotation, authored)
+		if len(placeholderNames) > 0 {
+			annotation = illmobs.WithManagedPromptChatTemplate(annotation, authored)
+		}
 	}
 	return annotation
 }
@@ -300,7 +314,7 @@ func promptMessageMap(message PromptMessage) map[string]any {
 		delete(fields, "content")
 	} else {
 		fields["role"] = message.Role
-		if _, ok := fields["content"]; !ok {
+		if _, ok := fields["content"]; !ok && (!message.omitContent || message.Content != "") {
 			fields["content"] = message.Content
 		}
 	}
@@ -329,6 +343,11 @@ func runtimePromptMessages(value any) ([]PromptMessage, error) {
 func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {
 	if template.Text != "" && template.Messages != nil {
 		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")
+	}
+	for _, message := range template.Messages {
+		if _, err := promptMessage(promptMessageMap(message)); err != nil {
+			return nil, fmt.Errorf("llmobs: invalid prompt template: %w", err)
+		}
 	}
 	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
 }
