@@ -486,7 +486,6 @@ func loadConfig() *Config {
 	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
 	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
-	maxDurationSeconds := math.Nextafter(float64(math.MaxInt64)/float64(time.Second), 0)
 	cfg.llmObsPromptsCacheTTL = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_CACHE_TTL", 60, func(value float64) bool {
 		return !math.IsNaN(value) && !math.IsInf(value, 0) && (value <= 0 || value <= maxDurationSeconds)
 	}) * float64(time.Second))
