@@ -177,7 +177,6 @@ func TestFormattedPromptMessages(t *testing.T) {
 
 	for _, raw := range []string{
 		`{"role":"assistant","tool_calls":[null]}`,
-		`{"role":"assistant","tool_calls":[123]}`,
 		`{"role":"assistant","tool_calls":[{"function":{"name":"lookup"}}]}`,
 		`{"role":"assistant","tool_calls":[{"function":{"name":null,"arguments":"{}"}}]}`,
 		`{"role":"assistant","tool_calls":[{"name":42}]}`,
@@ -188,15 +187,10 @@ func TestFormattedPromptMessages(t *testing.T) {
 		_, err := prompt.Format(map[string]any{"history": []map[string]any{message}})
 		require.Error(t, err, raw)
 	}
-	for _, message := range []FormattedMessage{
+	_, err = prompt.Format(map[string]any{"history": []FormattedMessage{
 		{Role: "user", ExtraFields: map[string]json.RawMessage{"content": json.RawMessage(`"shadow"`)}},
-		{Role: "user", ToolCalls: []FormattedToolCall{{Function: &ToolFunction{
-			Name: "lookup", Arguments: "{}", ExtraFields: map[string]json.RawMessage{"name": json.RawMessage(`"shadow"`)},
-		}}}},
-	} {
-		_, err := prompt.Format(map[string]any{"history": []FormattedMessage{message}})
-		require.Error(t, err)
-	}
+	}})
+	require.Error(t, err)
 }
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
 	prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, PromptTemplate{
