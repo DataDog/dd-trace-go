@@ -24,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -469,7 +470,7 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 		value, exists = data["chat_template"]
 	}
 	if !exists || value == nil {
-		return PromptTemplate{Messages: []PromptMessage{}}, nil
+		return PromptTemplate{Messages: []ChatTemplateItem{}}, nil
 	}
 	if text, ok := value.(string); ok {
 		return PromptTemplate{Text: text}, nil
@@ -478,18 +479,17 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 	if !ok {
 		return PromptTemplate{}, errors.New("invalid prompt response: template must be text or messages")
 	}
-	messages := make([]PromptMessage, len(items))
+	messages := make([]ChatTemplateItem, len(items))
 	for i, item := range items {
-		message, ok := item.(map[string]any)
+		fields, ok := item.(map[string]any)
 		if !ok {
 			return PromptTemplate{}, errors.New("invalid prompt response: invalid chat message")
 		}
-		role, roleOK := message["role"].(string)
-		content, contentOK := message["content"].(string)
-		if !roleOK || !contentOK {
-			return PromptTemplate{}, errors.New("invalid prompt response: chat role and content must be strings")
+		message, err := illmobs.ParseChatTemplateItem(fields)
+		if err != nil {
+			return PromptTemplate{}, fmt.Errorf("invalid prompt response: %w", err)
 		}
-		messages[i] = PromptMessage{Role: role, Content: content}
+		messages[i] = message
 	}
 	return PromptTemplate{Messages: messages}, nil
 }

@@ -142,7 +142,7 @@ type (
 
 	// Prompt represents a structured prompt template used with LLM spans.
 	// Template and ChatTemplate are mutually exclusive; if both are set, Template is dropped
-	// and ChatTemplate is used.
+	// and ChatTemplate is used. Nonempty ChatTemplateItems takes precedence over both.
 	Prompt = illmobs.Prompt
 
 	// ToolDefinition represents the definition of a tool/function that an LLM can call.

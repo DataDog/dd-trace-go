@@ -148,7 +148,7 @@ func TestGetPromptOptions(t *testing.T) {
 	defer func() { globalPromptManager = previous }()
 
 	attributes := map[string]any{"tier": "gold"}
-	messages := []PromptMessage{{Role: "user", Content: "Hello {name}"}}
+	messages := []ChatTemplateItem{{Message: &ChatMessage{Role: "user", Content: "Hello {name}"}}}
 	var evaluatedKey, evaluatedTarget string
 	var evaluatedAttributes map[string]any
 	type requestResult struct {
@@ -172,7 +172,7 @@ func TestGetPromptOptions(t *testing.T) {
 		evaluate: func(_ context.Context, key, targetingKey string, got map[string]any) (any, error) {
 			evaluatedKey, evaluatedTarget, evaluatedAttributes = key, targetingKey, got
 			attributes["tier"] = "mutated"
-			messages[0].Content = "mutated"
+			messages[0].Message.Content = "mutated"
 			return nil, errors.New("missing")
 		},
 	})
@@ -191,7 +191,7 @@ func TestGetPromptOptions(t *testing.T) {
 	if evaluatedKey != "__llmobs__.prompt.greeting" || evaluatedTarget != "user-1" || evaluatedAttributes["tier"] != "gold" {
 		t.Fatalf("evaluation key=%q target=%q attributes=%#v", evaluatedKey, evaluatedTarget, evaluatedAttributes)
 	}
-	if got := prompt.Template().Messages[0].Content; got != "Hello {name}" {
+	if got := prompt.Template().Messages[0].Message.Content; got != "Hello {name}" {
 		t.Fatalf("fallback mutated: %q", got)
 	}
 	if !strings.Contains(string(request.body), `"targeting_key":"user-1"`) || !strings.Contains(string(request.body), `"tier":"gold"`) {

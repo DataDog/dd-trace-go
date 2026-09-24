@@ -62,6 +62,11 @@ type Prompt struct {
 	// ChatTemplate is a list of messages forming the prompt.
 	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
 	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
+	// ChatTemplateItems is the complete ordered template, including message placeholders.
+	// Set this instead of ChatTemplate for mixed templates. When nonempty, it takes
+	// precedence over ChatTemplate and Template. The SDK emits it as chat_template;
+	// direct JSON encoding of Prompt retains the chat_template_items field.
+	ChatTemplateItems []ChatTemplateItem `json:"chat_template_items,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
 	// Tags contains custom tags for the prompt.
@@ -78,6 +83,19 @@ type Prompt struct {
 type promptPayload struct {
 	Prompt
 	MLApp string `json:"ml_app,omitempty"`
+}
+
+func (p promptPayload) MarshalJSON() ([]byte, error) {
+	type alias promptPayload
+	if len(p.ChatTemplateItems) == 0 {
+		return json.Marshal(alias(p))
+	}
+	chatTemplate := p.ChatTemplateItems
+	p.ChatTemplateItems = nil
+	return json.Marshal(struct {
+		*alias
+		ChatTemplate []ChatTemplateItem `json:"chat_template,omitempty"`
+	}{alias: (*alias)(&p), ChatTemplate: chatTemplate})
 }
 
 // ToolDefinition represents a tool definition for LLM spans.
@@ -387,8 +405,8 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.ID == "" {
 				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
 			}
-			if a.Prompt.Template != "" && len(a.Prompt.ChatTemplate) > 0 {
-				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate")
+			if a.Prompt.Template != "" && (len(a.Prompt.ChatTemplate) > 0 || len(a.Prompt.ChatTemplateItems) > 0) {
+				log.Warn("llmobs: both text and chat templates were provided in the prompt; Template will be dropped in favour of the chat template")
 				a.Prompt.Template = ""
 			}
 			s.llmCtx.prompt = a.Prompt

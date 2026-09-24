@@ -1213,6 +1213,42 @@ func TestSpanAnnotate(t *testing.T) {
 			},
 		},
 		{
+			name: "llm-span-with-managed-prompt-message-placeholder",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					ID:           "managed-chat-prompt",
+					Template:     "superseded text template",
+					ChatTemplate: []llmobs.LLMMessage{{Role: "user", Content: "superseded chat template"}},
+					ChatTemplateItems: []llmobs.ChatTemplateItem{
+						{Message: &llmobs.ChatMessage{Role: "system", Content: "Be concise."}},
+						{Placeholder: &llmobs.MessagePlaceholder{Name: "history"}},
+						{Message: &llmobs.ChatMessage{Role: "user", Content: "{{question}}"}},
+					},
+					Variables: map[string]string{"question": "What is Go?"},
+					Tags:      map[string]string{"variant": "candidate"},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id":   "managed-chat-prompt",
+						"tags": map[string]any{"variant": "candidate"},
+						"chat_template": []any{
+							map[string]any{"role": "system", "content": "Be concise."},
+							map[string]any{"type": "placeholder", "name": "history"},
+							map[string]any{"role": "user", "content": "{{question}}"},
+						},
+						"variables":                 map[string]any{"question": "What is Go?"},
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"question"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
+		{
 			name: "llm-span-with-prompt-both-template-and-chat-template",
 			kind: llmobs.SpanKindLLM,
 			annotations: llmobs.SpanAnnotations{
