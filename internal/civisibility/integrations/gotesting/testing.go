@@ -98,8 +98,12 @@ type (
 	testingMInstrumentationClaim struct {
 		tests                map[string]func(*testing.T)
 		benchmarks           map[string]func(*testing.B)
+		fuzzTargets          map[string]func(*testing.F)
+		examples             map[string]func()
 		testDescriptors      *[]testing.InternalTest
 		benchmarkDescriptors *[]testing.InternalBenchmark
+		fuzzDescriptors      *[]testing.InternalFuzzTarget
+		exampleDescriptors   *[]testing.InternalExample
 		retired              bool
 		stickyExitCode       int
 		deferredFailure      bool
@@ -373,6 +377,8 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	// Instrument the internal tests for CI visibility.
 	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
+	ddm.instrumentInternalFuzzTargets(getInternalFuzzTargetArray(m), claim)
+	ddm.instrumentInternalExamples(getInternalExampleArray(m), claim)
 
 	// Instrument the internal benchmarks for CI visibility.
 	for _, v := range os.Args {
@@ -909,6 +915,8 @@ func restoreTestingMWorkloads(m *testing.M, claim *testingMInstrumentationClaim)
 	}
 	restoreTestingMTests(claim.testDescriptors, claim.tests)
 	restoreTestingMBenchmarks(claim.benchmarkDescriptors, claim.benchmarks)
+	restoreTestingMFuzzTargets(claim.fuzzDescriptors, claim.fuzzTargets)
+	restoreTestingMExamples(claim.exampleDescriptors, claim.examples)
 }
 
 func retireTestingMInstrumentation(m *testing.M, claim *testingMInstrumentationClaim) {
@@ -945,6 +953,28 @@ func restoreTestingMBenchmarks(benchmarks *[]testing.InternalBenchmark, original
 	for idx := range *benchmarks {
 		if original, ok := originals[(*benchmarks)[idx].Name]; ok {
 			(*benchmarks)[idx].F = original
+		}
+	}
+}
+
+func restoreTestingMFuzzTargets(fuzzTargets *[]testing.InternalFuzzTarget, originals map[string]func(*testing.F)) {
+	if fuzzTargets == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *fuzzTargets {
+		if original, ok := originals[(*fuzzTargets)[idx].Name]; ok {
+			(*fuzzTargets)[idx].Fn = original
+		}
+	}
+}
+
+func restoreTestingMExamples(examples *[]testing.InternalExample, originals map[string]func()) {
+	if examples == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *examples {
+		if original, ok := originals[(*examples)[idx].Name]; ok {
+			(*examples)[idx].F = original
 		}
 	}
 }
