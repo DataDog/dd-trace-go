@@ -1,6 +1,6 @@
 services:
   aerospike:
-    image: aerospike:ce-8.1.2.4_1@sha256:fb172169a3b0c217563a4c7eb88ef117c4d24ac64a3a66ad99a18c0dca36bd8c
+    image: aerospike:ce-8.1.2.5_1@sha256:de6efea0692dfc91f1f5b993b333a5c82040d5a7c282a643492f8bbc626a7aa4
     ports:
       - "3000:3000"
   cassandra:
@@ -13,7 +13,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:26@sha256:66aec17cd21a956029b83f083b813073859e8355dc1a00e55df6ba02f0e32345
+    image: mysql:26@sha256:45abdd9b4144660b5c93a5b7d0ebb21e024f0ba9851ecb4ab43bf83c6bf83592
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -22,7 +22,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+    image: postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -30,7 +30,7 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:2b5b581621126574f3d1f75e78d3eebe8d05aedb59ad0cfdf9aa42cb0634d726
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
@@ -41,7 +41,7 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    image: redis:8-alpine@sha256:bd999b5cfee25fb24b8320a31fddbd69f462df44c8138c66e369582937beebc0
     ports:
       - "6379:6379"
   valkey:
@@ -71,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:9020a0ab30021380250128096108602f93a98d04d03c99a03cf9b72c5213497b
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -83,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:9020a0ab30021380250128096108602f93a98d04d03c99a03cf9b72c5213497b
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -95,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:9020a0ab30021380250128096108602f93a98d04d03c99a03cf9b72c5213497b
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -108,7 +108,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:3e915817a38ad113551851015d56a0e50f83fb587bcbbb1ae703dc157b112538
+    image: registry.datadoghq.com/agent:latest@sha256:29baa94e0a1abcadf43b2b2a002ad4406b3c05a46b8cae29ae1803a663795b59
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -128,11 +128,11 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27017:27017"
   memcached:
@@ -140,7 +140,7 @@ services:
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:8.3.1@sha256:1e333105535e20a573d5d99048de4bdb484017e0a63b660dcbba3925208195f4
+    image: confluentinc/confluent-local:8.3.2@sha256:2d623f09f1cc46a38b3ace3ee055016617b8f749db1596440bd9ecbe57601d3f
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
