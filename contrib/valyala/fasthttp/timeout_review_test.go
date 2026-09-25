@@ -187,17 +187,20 @@ func TestTimeoutExchangeKeepsQueuedReply(t *testing.T) {
 			events:  make(chan timeoutEvent),
 			stopped: make(chan struct{}),
 		}
-		result := make(chan *timeoutReply, 1)
-		go func() { result <- layer.exchange(timeoutEvent{}) }()
+		var started *handlerScope
+		result := make(chan bool, 1)
+		go func() { result <- layer.exchange(timeoutEvent{started: &started}) }()
 		// Let the worker block on its send before the owner receives it.
 		runtime.Gosched()
 		event := <-layer.events
-		want := &timeoutReply{scope: &handlerScope{handled: true}}
-		event.reply <- want
+		want := &handlerScope{handled: true}
+		*event.started = want
+		event.reply <- struct{}{}
 		// With one processor, the owner closes stopped before the worker
 		// resumes. Both channels are then ready, but the reply must win.
 		layer.stop()
-		require.Same(t, want, <-result)
+		require.True(t, <-result)
+		require.Same(t, want, started)
 	}
 }
 
@@ -224,5 +227,116 @@ func TestWithTimeoutConcurrencyRequiresPositiveLimit(t *testing.T) {
 		require.PanicsWithValue(t, "fasthttp: timeout concurrency must be positive", func() {
 			WithTimeoutConcurrency(limit)
 		})
+	}
+}
+
+// A resource namer can read a route that the handler stores, as with
+// WrapHandler alone, when the request completes before its deadline.
+func TestTimeoutHandlerResourceAfterHandler(t *testing.T) {
+	namer := WithResourceNamer(func(ctx *fasthttp.RequestCtx) string {
+		if route, ok := ctx.UserValue("route").(string); ok {
+			return route
+		}
+		return "unset"
+	})
+	route := func(name string) fasthttp.RequestHandler {
+		return func(ctx *fasthttp.RequestCtx) { ctx.SetUserValue("route", name) }
+	}
+	for _, tc := range []struct {
+		name      string
+		handler   fasthttp.RequestHandler
+		resources []string
+	}{
+		{"wrap-outside", WrapHandler(TimeoutHandler(route("/outer"), time.Second, "timeout"), namer), []string{"/outer"}},
+		{"wrap-inside", TimeoutHandler(WrapHandler(route("/inner"), namer), time.Second, "timeout"), []string{"/inner"}},
+		{"nested-scope", TimeoutHandler(WrapHandler(func(ctx *fasthttp.RequestCtx) {
+			WrapHandler(route("/nested"), namer)(ctx)
+			ctx.SetUserValue("route", "/root")
+		}, namer), time.Second, "timeout"), []string{"/nested", "/root"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			tc.handler(timeoutReviewContext())
+			spans := timeoutServerSpans(mt)
+			require.Len(t, spans, len(tc.resources))
+			for i, resource := range tc.resources {
+				require.Equal(t, resource, spans[i].Tag(ext.ResourceName))
+			}
+		})
+	}
+
+	for _, order := range []string{"wrap-inside", "wrap-outside"} {
+		t.Run("timed-out/"+order, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			release := make(chan struct{})
+			exited := make(chan (<-chan struct{}), 1)
+			app := func(ctx *fasthttp.RequestCtx) {
+				exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
+				// The deadline passes after this change. The span must keep
+				// the resource from before the handler started.
+				ctx.SetUserValue("route", "/late")
+				<-release
+			}
+			ctx := timeoutReviewContext()
+			if order == "wrap-inside" {
+				TimeoutHandler(WrapHandler(app, namer), 10*time.Millisecond, "timeout")(ctx)
+			} else {
+				// The route set before the timeout wrapper is the fallback.
+				WrapHandler(func(ctx *fasthttp.RequestCtx) {
+					ctx.SetUserValue("route", "/early")
+					TimeoutHandler(app, 10*time.Millisecond, "timeout")(ctx)
+				}, namer)(ctx)
+			}
+			spans := timeoutServerSpans(mt)
+			require.Len(t, spans, 1)
+			if order == "wrap-inside" {
+				require.Equal(t, "unset", spans[0].Tag(ext.ResourceName))
+			} else {
+				require.Equal(t, "/early", spans[0].Tag(ext.ResourceName))
+			}
+			close(release)
+			waitTimeoutWorker(t, <-exited)
+			require.Len(t, timeoutServerSpans(mt), 1)
+		})
+	}
+}
+
+// Removing an inner deadline must not end the request at that deadline.
+func TestTimeoutHandlerRemovedInnerDeadline(t *testing.T) {
+	inner := TimeoutHandler(func(*fasthttp.RequestCtx) {}, 20*time.Millisecond, "inner timeout")
+	ctx := timeoutReviewContext()
+	TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+		inner(ctx)
+		time.Sleep(60 * time.Millisecond)
+		ctx.SetStatusCode(http.StatusCreated)
+	}, 5*time.Second, "outer timeout")(ctx)
+	require.Nil(t, ctx.LastTimeoutErrorResponse())
+	require.Equal(t, http.StatusCreated, ctx.Response.StatusCode())
+}
+
+// A timer from the pool must not end a later request early. Each first request
+// times out, so its timer expires before it goes back to the pool.
+func TestTimeoutHandlerPooledTimer(t *testing.T) {
+	for range 50 {
+		release := make(chan struct{})
+		exited := make(chan (<-chan struct{}), 1)
+		ctx := timeoutReviewContext()
+		TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+			exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
+			<-release
+		}, time.Millisecond, "timeout")(ctx)
+		require.NotNil(t, ctx.LastTimeoutErrorResponse())
+		close(release)
+		waitTimeoutWorker(t, <-exited)
+
+		ctx = timeoutReviewContext()
+		TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+			time.Sleep(2 * time.Millisecond)
+			ctx.SetStatusCode(http.StatusCreated)
+		}, 5*time.Second, "timeout")(ctx)
+		require.Nil(t, ctx.LastTimeoutErrorResponse())
+		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode())
 	}
 }

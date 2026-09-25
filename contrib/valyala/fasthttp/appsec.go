@@ -6,6 +6,7 @@
 package fasthttp
 
 import (
+	"iter"
 	"net/http"
 	"net/url"
 
@@ -28,15 +29,15 @@ type appsecHandler struct {
 // beforeHandle keeps operation cleanup separate from response processing. A
 // timeout can finish the operation while its worker still uses the context.
 func beforeHandle(fctx *fasthttp.RequestCtx, span trace.TagSetter) (*appsecHandler, bool) {
-	req, err := convertRequest(fctx)
-	if err != nil {
-		instr.Logger().Debug("contrib/valyala/fasthttp: appsec monitoring skipped for this request: %s", err.Error())
-		return nil, false
-	}
-
+	req := convertRequest(fctx)
 	w := &responseWriter{response: &fctx.Response}
 	_, req, finish, handled := httpsec.BeforeHandle(w, req, span, &httpsec.Config{
-		Framework:            appsecFramework,
+		Framework: appsecFramework,
+		// net/http parses cookies and queries differently from fasthttp. It
+		// rejects some that fasthttp gives to the handler, so the WAF would
+		// not see them.
+		Cookies:              collectArgs(fctx.Request.Header.Cookies()),
+		QueryParams:          collectArgs(fctx.QueryArgs().All()),
 		OnBlock:              []func(){w.discardHandlerResponse},
 		ResponseHeaderCopier: func(http.ResponseWriter) http.Header { return responseHeaders(w.response) },
 	})
@@ -57,17 +58,17 @@ func beforeHandle(fctx *fasthttp.RequestCtx, span trace.TagSetter) (*appsecHandl
 // convertRequest builds the net/http request AppSec expects out of a fasthttp
 // one. The body is deliberately left out: the WAF entry point never reads it,
 // and copying it in would force the whole body to be buffered on every request.
-func convertRequest(fctx *fasthttp.RequestCtx) (*http.Request, error) {
+//
+// The URL comes from the request target that fasthttp accepted, not from
+// url.ParseRequestURI. That function rejects targets which fasthttp serves,
+// such as "/%GG". If it were used, AppSec would not inspect such a request
+// while the handler still runs.
+func convertRequest(fctx *fasthttp.RequestCtx) *http.Request {
 	// String conversions here are all copies of fasthttp's zero-copy views into
 	// the connection buffer, which is reused for a later request. AppSec puts
 	// these values on the span, which outlives the request, so aliasing them
 	// would let a subsequent request corrupt a reported attack.
-	requestURI := string(fctx.RequestURI())
-	u, err := url.ParseRequestURI(requestURI)
-	if err != nil {
-		return nil, err
-	}
-
+	uri := fctx.URI()
 	header := make(http.Header, fctx.Request.Header.Len())
 	for k, v := range fctx.Request.Header.All() {
 		header.Add(string(k), string(v))
@@ -75,13 +76,28 @@ func convertRequest(fctx *fasthttp.RequestCtx) (*http.Request, error) {
 
 	req := &http.Request{
 		Method:     string(fctx.Method()),
-		URL:        u,
-		RequestURI: requestURI,
+		URL:        &url.URL{Path: string(uri.Path()), RawQuery: string(uri.QueryString())},
+		RequestURI: string(fctx.RequestURI()),
 		Host:       string(fctx.Host()),
 		RemoteAddr: fctx.RemoteAddr().String(),
 		Header:     header,
 	}
-	return req.WithContext(fctx), nil
+	return req.WithContext(fctx)
+}
+
+// collectArgs copies fasthttp's decoded key/value pairs. It returns nil if
+// there are no pairs. AppSec then parses the request with net/http, which can
+// only find more values, not fewer.
+func collectArgs(all iter.Seq2[[]byte, []byte]) map[string][]string {
+	var values map[string][]string
+	for k, v := range all {
+		if values == nil {
+			values = make(map[string][]string)
+		}
+		key := string(k)
+		values[key] = append(values[key], string(v))
+	}
+	return values
 }
 
 func responseHeaders(response *fasthttp.Response) http.Header {

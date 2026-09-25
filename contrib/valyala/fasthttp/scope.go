@@ -112,9 +112,10 @@ func (s *handlerScope) finish() {
 	defer s.restore()
 	defer s.finishSpan(&s.ctx.Response)
 	defer s.finishAppSec(&s.ctx.Response)
-	if !s.resourceSet {
-		s.setResource()
-	}
+	// A completed timeout layer can have set a resource before the handler
+	// ran. Its worker has exited, so set the resource again from the final
+	// context.
+	s.setResource()
 }
 
 func restoreUserValue(ctx *fasthttp.RequestCtx, key, previous any) {

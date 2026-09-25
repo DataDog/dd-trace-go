@@ -64,7 +64,10 @@ Important behavior:
   returns. The first traced scope in the worker covers the whole timeout handler.
   Later traced calls in that worker are children of that request scope.
 - Custom resource namers run before the handler starts, while the worker is
-  paused. They must not depend on values that the handler sets later.
+  paused, and again after the handler returns. A request that completes before
+  its deadline gets the resource from the second call, as with `WrapHandler`
+  alone. A request that times out keeps the resource from the first call, so
+  it cannot include values that the handler sets later.
 - The worker limit defaults to `fasthttp.DefaultConcurrency`, independently of
   `fasthttp.Server.Concurrency`. Set it with `WithTimeoutConcurrency`; timed-out
   workers retain their slots until they exit. Requests above the limit receive

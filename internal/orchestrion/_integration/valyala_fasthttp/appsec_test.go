@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +21,8 @@ import (
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
+
+	fasthttptrace "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
@@ -32,7 +35,8 @@ type appsecTestLogger struct{ *testing.T }
 
 func (l appsecTestLogger) Log(msg string) { l.T.Log(msg) }
 
-func TestAppSec(t *testing.T) {
+func startAppSec(t *testing.T) (tracer.Tracer, agenttest.Agent) {
+	t.Helper()
 	require.True(t, built.WithOrchestrion, "this test must be run with orchestrion enabled")
 	if runtime.GOOS == "windows" {
 		t.Skip("appsec does not support Windows")
@@ -52,13 +56,14 @@ func TestAppSec(t *testing.T) {
 		tracer.WithAppSecEnabled(true),
 	)
 	require.NoError(t, err)
+	return tr, agent
+}
 
-	var handlerCalls atomic.Int32
-	// Leave the handler unwrapped: only Orchestrion should install AppSec.
-	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
-		handlerCalls.Add(1)
-		ctx.SetBodyString("handler response")
-	}}
+// startServer serves handler without a tracing wrapper, so that only
+// Orchestrion can install one.
+func startServer(t *testing.T, handler fasthttp.RequestHandler) string {
+	t.Helper()
+	srv := &fasthttp.Server{Handler: handler}
 	ln := net.FreeListener(t)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
@@ -72,6 +77,17 @@ func TestAppSec(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("server did not stop:", ctx.Err())
 		}
+	})
+	return "http://" + ln.Addr().String()
+}
+
+func TestAppSec(t *testing.T) {
+	tr, agent := startAppSec(t)
+
+	var handlerCalls atomic.Int32
+	addr := startServer(t, func(ctx *fasthttp.RequestCtx) {
+		handlerCalls.Add(1)
+		ctx.SetBodyString("handler response")
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -104,7 +120,7 @@ func TestAppSec(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			handlerCalls.Store(0)
-			req, err := http.NewRequest(http.MethodGet, "http://"+ln.Addr().String()+"/"+tc.name, nil)
+			req, err := http.NewRequest(http.MethodGet, addr+"/"+tc.name, nil)
 			require.NoError(t, err)
 			for key, value := range tc.headers {
 				req.Header.Set(key, value)
@@ -160,4 +176,81 @@ func TestAppSec(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAppSecTimeout checks the order that Orchestrion produces with this
+// integration's timeout wrapper: the Orchestrion tracing wrapper outside, and
+// the timeout wrapper inside. The worker continues after the deadline.
+func TestAppSecTimeout(t *testing.T) {
+	tr, agent := startAppSec(t)
+
+	release := make(chan struct{})
+	workerDone := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWorker := func() { releaseOnce.Do(func() { close(release) }) }
+	// With one worker slot, a later request succeeds only after the timed-out
+	// worker has exited and its wrapper has cleaned up.
+	addr := startServer(t, fasthttptrace.TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+		if string(ctx.Path()) != "/timeout" {
+			ctx.SetBodyString("next response")
+			return
+		}
+		defer close(workerDone)
+		<-release
+		ctx.SetBodyString("late handler response")
+	}, 50*time.Millisecond, "request timed out", fasthttptrace.WithTimeoutConcurrency(1)))
+	// Cleanups run in reverse order: release the worker before the server stops.
+	t.Cleanup(releaseWorker)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
+	req, err := http.NewRequest(http.MethodGet, addr+"/timeout", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "<script>alert(1)</script>")
+	res, err := client.Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusRequestTimeout, res.StatusCode)
+	require.Equal(t, "request timed out", string(body))
+
+	// The span and AppSec monitoring end at the deadline, while the worker
+	// still runs.
+	tr.Flush()
+	serverSpan := agenttest.With().
+		Operation("http.request").
+		Resource("GET /timeout").
+		Tag("component", "valyala/fasthttp").
+		Tag("span.kind", "server")
+	span := agent.RequireSpan(t, serverSpan)
+	require.Equal(t, strconv.Itoa(http.StatusRequestTimeout), span.Meta["http.status_code"])
+	require.Equal(t, "true", span.Meta["appsec.event"])
+	require.Contains(t, span.Meta["_dd.appsec.json"], "crs-941-110")
+
+	releaseWorker()
+	select {
+	case <-workerDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout worker did not finish")
+	}
+	require.Eventually(t, func() bool {
+		res, err := client.Get(addr + "/next")
+		if err != nil {
+			return false
+		}
+		defer res.Body.Close()
+		_, _ = io.Copy(io.Discard, res.Body)
+		return res.StatusCode == http.StatusOK
+	}, 10*time.Second, 10*time.Millisecond, "the timed-out worker must release its slot")
+
+	tr.Flush()
+	agent.RequireSpan(t, agenttest.With().Operation("http.request").Resource("GET /next"))
+	require.Nil(t, agent.FindSpan(agenttest.With().
+		Operation("http.request").
+		Tag("component", "valyala/fasthttp").
+		Tag("span.kind", "server").
+		Condition("another span for the timed-out request", func(other *agenttest.Span) bool {
+			return other.SpanID != span.SpanID && other.TraceID == span.TraceID
+		})), "a timed-out request must produce exactly one fasthttp server span")
 }

@@ -27,7 +27,8 @@ import (
 // response-body, and RASP checks made afterward do not run the WAF.
 // Nested timeout handlers share one worker; the earliest active deadline wins.
 // The first traced scope covers the whole worker, including subsequent traced calls.
-// Resource namers run before h starts, while the worker is paused.
+// Resource namers run before h starts, while the worker is paused, and again
+// after h returns. A timed-out request keeps the resource from the first call.
 // The worker limit defaults to fasthttp.DefaultConcurrency and is separate from
 // Server.Concurrency. Use WithTimeoutConcurrency to change it. Excess requests
 // receive 429. A non-positive timeout disables this wrapper.
@@ -72,10 +73,11 @@ func timeoutWithCodeHandler(h fasthttp.RequestHandler, timeout time.Duration, ms
 	}
 	workers := make(chan struct{}, concurrency)
 	return func(ctx *fasthttp.RequestCtx) {
-		deadline := &timeoutDeadline{at: time.Now().Add(timeout), message: msg, status: statusCode}
+		deadline := timeoutDeadline{at: time.Now().Add(timeout), message: msg, status: statusCode}
 		if layer, ok := ctx.UserValue(timeoutContextKey{}).(*timeoutLayer); ok {
-			if layer.exchange(timeoutEvent{deadline: deadline, addDeadline: true}) != nil {
-				defer layer.exchange(timeoutEvent{deadline: deadline})
+			nested := &deadline
+			if layer.exchange(timeoutEvent{deadline: nested, addDeadline: true}) {
+				defer layer.exchange(timeoutEvent{deadline: nested})
 			}
 			h(ctx)
 			return
@@ -111,18 +113,17 @@ type timeoutEvent struct {
 	scope       *handlerScope
 	deadline    *timeoutDeadline
 	addDeadline bool
-	reply       chan *timeoutReply
-}
-
-type timeoutReply struct {
-	scope *handlerScope
+	// started receives the scope that the owner starts for a cfg event. The
+	// owner writes it before it sends the reply.
+	started **handlerScope
+	reply   chan struct{}
 }
 
 type timeoutLayer struct {
-	ctx          *fasthttp.RequestCtx
-	events       chan timeoutEvent
+	ctx    *fasthttp.RequestCtx
+	events chan timeoutEvent
+	// Closing stopped also releases the worker after it has closed workerDone.
 	stopped      chan struct{}
-	release      chan struct{}
 	workerDone   chan struct{}
 	workerExited chan struct{}
 
@@ -139,31 +140,39 @@ type timeoutLayer struct {
 	response           fasthttp.Response
 	stopOnce           sync.Once
 
+	// Storage for the usual number of deadlines and scopes. These fields avoid
+	// allocations for each request.
+	firstDeadline timeoutDeadline
+	deadlineBuf   [1]*timeoutDeadline
+	scopeBuf      [2]*handlerScope
+
 	// Written by the worker before closing workerDone.
 	panicValue any
 	panicked   bool
 }
 
-func newTimeoutLayer(ctx *fasthttp.RequestCtx, deadline *timeoutDeadline) *timeoutLayer {
+func newTimeoutLayer(ctx *fasthttp.RequestCtx, deadline timeoutDeadline) *timeoutLayer {
 	layer := &timeoutLayer{
-		ctx:          ctx,
-		events:       make(chan timeoutEvent),
-		stopped:      make(chan struct{}),
-		release:      make(chan struct{}),
-		workerDone:   make(chan struct{}),
-		workerExited: make(chan struct{}),
-		deadlines:    []*timeoutDeadline{deadline},
+		ctx:           ctx,
+		events:        make(chan timeoutEvent),
+		stopped:       make(chan struct{}),
+		workerDone:    make(chan struct{}),
+		workerExited:  make(chan struct{}),
+		firstDeadline: deadline,
 	}
+	layer.deadlineBuf[0] = &layer.firstDeadline
+	layer.deadlines = layer.deadlineBuf[:]
+	layer.scopes = layer.scopeBuf[:0]
 	for scope, _ := ctx.UserValue(handlerScopeKey{}).(*handlerScope); scope != nil; scope = scope.parent {
 		layer.scopes = append(layer.scopes, scope)
 	}
 	for i, j := 0, len(layer.scopes)-1; i < j; i, j = i+1, j-1 {
 		layer.scopes[i], layer.scopes[j] = layer.scopes[j], layer.scopes[i]
 	}
+	// A timed-out request uses these resources. No worker runs yet, so the
+	// resource namers can read the context safely.
 	for _, scope := range layer.scopes {
-		if !scope.resourceSet {
-			scope.setResource()
-		}
+		scope.setResource()
 	}
 	for _, scope := range layer.scopes {
 		scope.layer = layer
@@ -177,39 +186,40 @@ func (l *timeoutLayer) stop() {
 	l.stopOnce.Do(func() { close(l.stopped) })
 }
 
-func (l *timeoutLayer) exchange(event timeoutEvent) *timeoutReply {
-	event.reply = make(chan *timeoutReply, 1)
+// exchange sends event to the owner and waits for its reply. It returns false
+// if the owner stopped before it replied.
+func (l *timeoutLayer) exchange(event timeoutEvent) bool {
+	event.reply = make(chan struct{}, 1)
 	select {
 	case l.events <- event:
 	case <-l.stopped:
-		return nil
+		return false
 	}
 	select {
-	case reply := <-event.reply:
-		return reply
+	case <-event.reply:
+		return true
 	case <-l.stopped:
 		// The owner may have queued a block decision before the timeout.
 		// It sends replies before closing stopped; do not discard that reply.
 		select {
-		case reply := <-event.reply:
-			return reply
+		case <-event.reply:
+			return true
 		default:
-			return nil
+			return false
 		}
 	}
 }
 
 func (l *timeoutLayer) wrapHandler(ctx *fasthttp.RequestCtx, h fasthttp.RequestHandler, cfg *config) {
-	reply := l.exchange(timeoutEvent{cfg: cfg})
-	if reply == nil {
+	var scope *handlerScope
+	if !l.exchange(timeoutEvent{cfg: cfg, started: &scope}) {
 		if !l.aborted {
 			h(ctx)
 		}
 		return
 	}
-	scope := reply.scope
 	defer func() {
-		if l.exchange(timeoutEvent{scope: scope}) == nil {
+		if !l.exchange(timeoutEvent{scope: scope}) {
 			// The owner has finished against a detached response. Only this
 			// worker may now change the live context's user values.
 			scope.restore()
@@ -253,7 +263,7 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 			l.panicValue = recover()
 			l.panicked = !returned
 			close(l.workerDone)
-			<-l.release
+			<-l.stopped
 			if l.timedOut {
 				for _, scope := range slices.Backward(l.scopes) {
 					scope.restore()
@@ -271,14 +281,14 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 		returned = true
 	}()
 	defer func() {
-		close(l.release)
+		// Stopping also releases the worker.
+		l.stop()
 		if !l.timedOut {
 			// The handler has returned. Release its worker slot before a
 			// caller can reuse this wrapper for another request.
 			<-l.workerExited
 		}
 	}()
-	defer l.stop()
 	completed := false
 	defer func() {
 		if !completed {
@@ -286,8 +296,8 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 		}
 	}()
 
-	timer := time.NewTimer(time.Until(l.earliestDeadline().at))
-	defer timer.Stop()
+	timer := acquireTimer(time.Until(l.earliestDeadline().at))
+	defer releaseTimer(timer)
 	for {
 		select {
 		case event := <-l.events:
@@ -305,9 +315,13 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 					l.blockedResponse = new(fasthttp.Response)
 					l.ctx.Response.CopyTo(l.blockedResponse)
 				}
-				event.reply <- &timeoutReply{scope: scope}
+				*event.started = scope
+				event.reply <- struct{}{}
 			case event.scope != nil:
 				if event.scope != l.rootWorker {
+					// The worker waits for this reply, so the resource namer
+					// can read what the handler stored in the context.
+					event.scope.setResource()
 					l.finishScope(event.scope, &l.ctx.Response, true)
 					// Finished nested scopes must not accumulate in a long request.
 					for i, scope := range l.scopes {
@@ -319,7 +333,7 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 						}
 					}
 				}
-				event.reply <- &timeoutReply{}
+				event.reply <- struct{}{}
 			case event.deadline != nil:
 				if event.addDeadline {
 					l.deadlines = append(l.deadlines, event.deadline)
@@ -332,12 +346,13 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 					}
 				}
 				timer.Reset(time.Until(l.earliestDeadline().at))
-				event.reply <- &timeoutReply{}
+				event.reply <- struct{}{}
 			}
 		case <-l.workerDone:
 			l.workerPanicHandled = true
 			// No application code can now access the live response or values.
 			if l.rootWorker != nil {
+				l.rootWorker.setResource()
 				l.rootWorker.finishAppSec(&l.ctx.Response)
 				l.rootWorker.restore()
 			}
@@ -415,5 +430,31 @@ func (l *timeoutLayer) finishOuter(scope *handlerScope) {
 	if l.timedOut {
 		return
 	}
+	// The worker has exited, so the resource namer can read what the handler
+	// stored in the context.
+	scope.setResource()
 	l.finishScope(scope, &l.ctx.Response, true)
+}
+
+var timerPool sync.Pool
+
+func acquireTimer(d time.Duration) *time.Timer {
+	if timer, ok := timerPool.Get().(*time.Timer); ok {
+		timer.Reset(d)
+		return timer
+	}
+	return time.NewTimer(d)
+}
+
+// releaseTimer puts timer back in the pool. A timer from the pool must not
+// deliver a value from its previous use. Since Go 1.23, Stop guarantees this.
+// The drain is for programs that set GODEBUG=asynctimerchan=1.
+func releaseTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timerPool.Put(timer)
 }

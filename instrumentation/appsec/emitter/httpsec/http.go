@@ -292,6 +292,14 @@ func BeforeHandle(
 	}
 
 	clientIP := clientIdentity(opts, r)
+	cookies := opts.Cookies
+	if cookies == nil {
+		cookies = makeCookies(r.Cookies())
+	}
+	queryParams := opts.QueryParams
+	if queryParams == nil {
+		queryParams = r.URL.Query()
+	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
@@ -302,8 +310,8 @@ func BeforeHandle(
 		RemoteAddr:   r.RemoteAddr,
 		ClientIP:     clientIP,
 		Headers:      r.Header,
-		Cookies:      makeCookies(r.Cookies()),
-		QueryParams:  r.URL.Query(),
+		Cookies:      cookies,
+		QueryParams:  queryParams,
 		PathParams:   opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
