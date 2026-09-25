@@ -67,9 +67,11 @@ inputs:
     default: ""
     description: >-
       JSON object describing the workload variant (runner class, sorted module
-      selection, build tags, workspace/instrumentation/coverage mode). Sorted
-      and hashed by this action into the cache-key digest. Omit for jobs
-      whose family alone identifies the workload.
+      selection, build tags, workspace/instrumentation/coverage mode). The
+      module selection may be a JSON array or a space-separated string;
+      either form is canonicalized (sorted) and hashed by this action into the
+      cache-key digest. Omit for jobs whose family alone identifies the
+      workload.
 outputs:
   go-version:
     description: The resolved, exact Go version installed.
@@ -126,11 +128,20 @@ runs:
 
         # Canonicalize: sort object keys, sort the module list. Two callers
         # describing the same variant must hash identically regardless of the
-        # order their expressions produced.
+        # order their expressions produced. Matrix-driven callers pass the
+        # module selection as a space-separated string (GitHub matrix values
+        # cannot be arrays), so sort tokens there too.
         canonical="$(printf '{"variant":%s}' "${VARIANT:-{\}}" \
           | jq -cS '
             if (.variant | has("modules"))
-            then .variant.modules |= sort
+            then .variant.modules |=
+              (if type == "string" then
+                 split(" ") | map(select(length > 0)) | sort | join(" ")
+               elif type == "array" then
+                 sort
+               else
+                 .
+               end)
             else .
             end
           ')"
