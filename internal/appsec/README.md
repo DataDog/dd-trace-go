@@ -211,3 +211,15 @@ All currently available features are the following ones:
 | User Security          | User blocking and login failures/success events        |
 | WAF Context            | Setup of the request scoped context system of the WAF  |
 | Tracing                | Bridge between the tracer and AppSec features          |
+
+### AppSec state checks
+
+`Enabled` and `RASPEnabled` load the active AppSec instance and its started state
+atomically. Query hooks do not take the lifecycle mutex. Instance replacement
+remains serialized, and remote activation updates the instance's atomic state.
+
+### SQL monitoring in pgx
+
+The native pgx integration only monitors SQL; it cannot block it. See
+[contrib/jackc/pgx.v5/README.md](../../contrib/jackc/pgx.v5/README.md#appsec-sql-injection-monitoring)
+for its behavior and limitations.

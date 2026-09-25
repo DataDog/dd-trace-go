@@ -29,8 +29,7 @@ const (
 	// CIVisibilityTestSessionNameEnvironmentVariable indicate the test session name to be used on CI Visibility payloads
 	CIVisibilityTestSessionNameEnvironmentVariable = "DD_TEST_SESSION_NAME"
 
-	// CIVisibilityFlakyRetryEnabledEnvironmentVariable kill-switch that allows to explicitly disable retries even if the remote setting is enabled.
-	// This environment variable should be set to "0" or "false" to disable the flaky retry feature.
+	// CIVisibilityFlakyRetryEnabledEnvironmentVariable overrides the remote automatic test retries setting when explicitly set.
 	CIVisibilityFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED"
 
 	// CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable overrides the remote EFD setting when explicitly set.

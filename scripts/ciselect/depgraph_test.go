@@ -72,6 +72,12 @@ func TestDependentModulesAreAccurate(t *testing.T) {
 			if dir == "." {
 				continue
 			}
+			// A component that *is* a submodule reaches its own packages, which
+			// would otherwise read as depending on itself. dependent-modules
+			// means "other workspace modules that reach into this component".
+			if c.claims(dir) {
+				continue
+			}
 			for pkg := range importers[dir] {
 				if matchesAnyPrefix(pkg, prefixes) {
 					measured = append(measured, dir)
