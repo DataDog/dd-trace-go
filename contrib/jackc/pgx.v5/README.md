@@ -34,6 +34,11 @@ other drivers, since registered driver names can be aliases. The marker does not
 affect subsequent calls using the original request context, or pgx used through
 uninstrumented `database/sql`.
 
+The marker applies to the full driver call, not only to the SQL string that
+`database/sql` checked. A custom driver that wraps pgx and sends more SQL with the
+same context therefore skips pgx monitoring for that extra SQL. The standard pgx
+`database/sql` driver sends only the input SQL, so it is not affected.
+
 Prepared statements through `database/sql` do not run that blocking check. With
 the pgx hooks installed, their SQL text is monitored at execution but is not
 blocked. Thus, the same injected SQL can be blocked by a direct
