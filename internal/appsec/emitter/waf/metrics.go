@@ -236,14 +236,20 @@ func (m *ContextMetrics) SetBlockFailed() {
 // resolveBlockMilestones turns the block decision and its enforcement outcome into
 // the `request_blocked` and `block_failure` tags of `waf.requests`.
 func (m *ContextMetrics) resolveBlockMilestones() {
+	m.milestonesMu.Lock()
+	defer m.milestonesMu.Unlock()
+	m.resolveBlockMilestonesLocked()
+}
+
+// resolveBlockMilestonesLocked is [ContextMetrics.resolveBlockMilestones] for a
+// caller that holds milestonesMu.
+func (m *ContextMetrics) resolveBlockMilestonesLocked() {
 	// A requested block counts as enforced unless a failure was reported, so an
 	// integration that cannot report its outcome keeps the previous behavior.
 	blockRequested := m.blockRequested.Load()
 	blockFailure := blockRequested && m.blockFailed.Load()
-	m.milestonesMu.Lock()
 	m.Milestones.blockFailure = blockFailure
 	m.Milestones.requestBlocked = blockRequested && !blockFailure
-	m.milestonesMu.Unlock()
 }
 
 // Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle
@@ -254,8 +260,6 @@ func (m *ContextMetrics) resolveBlockMilestones() {
 // - `waf.input_truncated` and `waf.truncated_value_size` for the truncations using [libddwaf.Stats.Truncations]
 // - `waf.requests` for the milestones using [ContextMetrics.Milestones]
 func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map[timer.Key]time.Duration) {
-	m.resolveBlockMilestones()
-
 	for scope, value := range timerStats {
 		scope := addresses.Scope(scope)
 		// Add metrics `{waf,rasp}.duration_ext`
@@ -315,6 +319,10 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 // incWafRequestsCounts increments the `waf.requests` metric with the current milestones and creates a new metric handle if it does not exist
 func (m *ContextMetrics) incWafRequestsCounts() {
 	m.milestonesMu.Lock()
+	// Resolve the block outcome in the same critical section as the snapshot, so
+	// that a block reported earlier in Submit is not lost from the tags. The
+	// snapshot is the cutoff: an outcome reported after it is not included.
+	m.resolveBlockMilestonesLocked()
 	milestones := m.Milestones
 	m.milestonesMu.Unlock()
 	handle, _ := m.wafRequestsCounts.LoadOrCompute(milestones, func() (telemetry.MetricHandle, bool) {

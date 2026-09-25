@@ -6,14 +6,19 @@
 package waf
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveBlockMilestones(t *testing.T) {
@@ -107,4 +112,100 @@ func TestRegisterWafRunMilestonesRace(t *testing.T) {
 		m.Submit(libddwaf.Truncations{}, nil)
 	})
 	wg.Wait()
+}
+
+// pausingHandle is a metric handle that stops Submit until the test releases it.
+type pausingHandle struct {
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (h pausingHandle) Submit(float64) {
+	h.entered <- struct{}{}
+	<-h.release
+}
+
+func (pausingHandle) Get() float64 { return 0 }
+
+// TestSubmitIncludesBlockOutcomeReportedDuringSubmit checks that a block outcome
+// reported while Submit runs, before the waf.requests snapshot, is in the
+// emitted tags.
+func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		failed bool
+	}{
+		{name: "enforced"},
+		{name: "failed", failed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			hm := NewMetricsInstance(nil, "test")
+			// entered is buffered, so the handle never blocks on it.
+			entered := make(chan struct{}, 1)
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			releaseSubmit := func() { releaseOnce.Do(func() { close(release) }) }
+			// Submit sends waf.duration_ext before the waf.requests snapshot.
+			hm.externalTimerDistributions[addresses.WAFScope] = pausingHandle{entered: entered, release: release}
+			m := hm.NewContextMetrics()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				m.Submit(libddwaf.Truncations{}, map[timer.Key]time.Duration{timer.Key(addresses.WAFScope): time.Microsecond})
+			}()
+			// waitSubmit waits for Submit to return, at most once. The wait has a
+			// limit, so that a stalled Submit fails the test instead of blocking it.
+			var waitOnce sync.Once
+			var returned bool
+			waitSubmit := func() bool {
+				waitOnce.Do(func() {
+					select {
+					case <-done:
+						returned = true
+					case <-time.After(10 * time.Second):
+						t.Error("Submit did not return after it was released")
+					}
+				})
+				return returned
+			}
+			// If the test stops early, release Submit and wait for it before the
+			// mock telemetry client is restored.
+			defer func() {
+				releaseSubmit()
+				waitSubmit()
+			}()
+
+			select {
+			case <-entered:
+			case <-done:
+				t.Fatal("Submit returned without sending waf.duration_ext")
+			case <-time.After(10 * time.Second):
+				t.Fatal("Submit did not send waf.duration_ext")
+			}
+			m.SetBlockRequested()
+			if tc.failed {
+				m.SetBlockFailed()
+			}
+			releaseSubmit()
+			if !waitSubmit() {
+				t.FailNow()
+			}
+
+			tags := []string{
+				"request_blocked:" + strconv.FormatBool(!tc.failed),
+				"block_failure:" + strconv.FormatBool(tc.failed),
+				"rule_triggered:false",
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"input_truncated:false",
+				"event_rules_version:test",
+				"waf_version:" + libddwaf.Version(),
+			}
+			require.EqualValues(t, 1, client.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
+		})
+	}
 }
