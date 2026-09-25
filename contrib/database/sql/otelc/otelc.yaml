@@ -1,0 +1,43 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Orchestrion rewrites call sites. These rules hook the database/sql function
+# definitions instead, so they also see the contrib's own calls to the same
+# functions. hooks.go leaves those alone, as orchestrion does.
+
+# Drivers call database/sql.Register from their own init(), possibly before
+# this package and the contrib are initialized. hooks.go queues those.
+sql_register:
+  target: database/sql
+  where:
+    func: Register
+  do:
+    - inject_hooks:
+        after: AfterRegister
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
+
+# SetReturnVal only works from an after hook, so the before hook passes the
+# contrib's result to it through SetData.
+sql_open:
+  target: database/sql
+  where:
+    func: Open
+  do:
+    - inject_hooks:
+        before: BeforeOpen
+        after: AfterOpen
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
+
+sql_opendb:
+  target: database/sql
+  where:
+    func: OpenDB
+  do:
+    - inject_hooks:
+        before: BeforeOpenDB
+        after: AfterOpenDB
+        path: github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2

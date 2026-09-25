@@ -39,6 +39,7 @@ env:
     otelc/all
     contrib/net/http
     contrib/net/http/otelc
+    contrib/database/sql/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -46,6 +47,8 @@ env:
     gls-leak
     otelc-autostart
     net_http
+    sql
+    sql_register
 
 jobs:
   go-versions-matrix:
