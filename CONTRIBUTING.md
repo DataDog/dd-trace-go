@@ -386,6 +386,22 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+#### fasthttp timeout instrumentation
+
+The `contrib/valyala/fasthttp` integration provides `TimeoutHandler` and
+`TimeoutWithCodeHandler` for instrumented handlers. They support either order
+with `WrapHandler`, including Orchestrion's automatic server wrapper. Unlike the
+native fasthttp timeout wrappers, they coordinate response monitoring and
+context cleanup with the worker that can continue after a timeout. See the
+[integration README](contrib/valyala/fasthttp/README.md) for usage, worker limits,
+and resource-namer timing.
+
+Run the timeout regression tests with the race detector:
+
+```shell
+go test -race ./contrib/valyala/fasthttp/... -run '^TestTimeout'
+```
+
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.

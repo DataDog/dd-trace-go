@@ -7,6 +7,24 @@ You can use the tags below to reduce the size of your binaries (note that some t
 - `grpcnotrace` ([only for gRPC users](https://github.com/grpc/grpc-go/pull/6954)): disables gRPC's built-in `golang.org/x/net/trace` debug tracing endpoints (avoids the `reflect.MethodByName` dependency).
 - `nomsgpack` ([only for Gin users](https://github.com/gin-gonic/gin/blob/master/docs/doc.md#build-without-msgpack-rendering-feature)): disables msgpack binding/rendering support in Gin; msgpack-based request/response handling will not be available (dd-trace-go's msgpack usage is unaffected).
 
+## Which timeout handlers should an instrumented fasthttp server use?
+
+Use `TimeoutHandler` or `TimeoutWithCodeHandler` from
+`github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2`, rather than the native
+fasthttp timeout functions. This also applies when Orchestrion adds the tracing
+wrapper automatically. Native timeout functions can return while their worker
+still changes the request context; they do not coordinate that access with
+tracing and AppSec cleanup.
+
+The Datadog timeout functions support either order with `WrapHandler`. Set their
+worker limit with `WithTimeoutConcurrency`; the limit does not inherit
+`fasthttp.Server.Concurrency`. Monitoring ends when the request times out, so
+body checks and RASP checks made by a worker that continues afterward do not run
+the WAF. Keep experimental span pooling disabled: these wrappers do not support
+`tracer.WithSpanPool(true)`, because late work can attach spans to another
+request's trace. See the [integration README](contrib/valyala/fasthttp/README.md)
+for the complete behavior and examples.
+
 ## Why do client integration spans not use the global service name?
 Integrations that are considered *clients* (http clients, grpc clients, sql clients) do **not** use the globally-configured service name by default. This is by design and is a product-level decision that spans across all the languages' tracers. This is likely to segregate the time spent actually doing the work of the service from the time waiting for another service (i.e. waiting on a web server to return a response). If you want client spans to use the global service name, enable either `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`, or start the tracer with `tracer.WithGlobalServiceName(true)`.
 

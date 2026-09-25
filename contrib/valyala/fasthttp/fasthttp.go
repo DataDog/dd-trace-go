@@ -7,9 +7,6 @@
 package fasthttp // import "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/valyala/fasthttp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -25,7 +22,9 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageValyalaFastHTTP)
 }
 
-// WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
+// WrapHandler wraps a fasthttp.RequestHandler with tracing and AppSec middleware.
+// For timeouts, use this package's TimeoutHandler or TimeoutWithCodeHandler.
+// They support both wrapper orders and coordinate cleanup with the worker.
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	return wrapHandler(h, opts...)
 }
@@ -48,29 +47,15 @@ func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			h(fctx)
 			return
 		}
-		spanOpts := []tracer.StartSpanOption{
-			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		if layer, ok := fctx.UserValue(timeoutContextKey{}).(*timeoutLayer); ok {
+			layer.wrapHandler(fctx, h, cfg)
+			return
 		}
-		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
-		fcc := &HTTPHeadersCarrier{
-			ReqHeader: &fctx.Request.Header,
+		scope := startHandlerScope(fctx, cfg)
+		defer scope.finish()
+		if !scope.handled {
+			h(fctx)
 		}
-		if sctx, err := tracer.Extract(fcc); err == nil {
-			// If there are span links as a result of context extraction, add them as a StartSpanOption
-			if sctx != nil && sctx.SpanLinks() != nil {
-				spanOpts = append(spanOpts, tracer.WithSpanLinks(sctx.SpanLinks()))
-			}
-			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
-		}
-		span := StartSpanFromContext(fctx, "http.request", spanOpts...)
-		defer span.Finish()
-		h(fctx)
-		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
-		status := fctx.Response.StatusCode()
-		if cfg.isStatusError(status) {
-			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, fasthttp.StatusMessage(status)))
-		}
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	}
 }
 

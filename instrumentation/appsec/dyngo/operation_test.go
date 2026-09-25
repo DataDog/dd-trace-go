@@ -707,6 +707,17 @@ func testFindOperation[T any, O interface {
 	}
 }
 
+func TestContextKey(t *testing.T) {
+	op := dyngo.NewOperation(nil)
+	ctx := dyngo.RegisterOperation(context.Background(), op)
+	require.Same(t, op, ctx.Value(dyngo.ContextKey()))
+
+	copied := context.WithValue(context.Background(), dyngo.ContextKey(), ctx.Value(dyngo.ContextKey()))
+	got, found := dyngo.FromContext(copied)
+	require.True(t, found)
+	require.Same(t, op, got)
+}
+
 func TestFindOperation(t *testing.T) {
 	root := dyngo.NewOperation(nil)
 	type Op1 struct{ dyngo.Operation }

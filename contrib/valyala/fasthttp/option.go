@@ -69,7 +69,10 @@ func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
 }
 
 // WithResourceNamer specifies a function which will be used to
-// obtain the resource name for a given request
+// obtain the resource name for a given request. When the request completes, it
+// runs after the handler returns. With this package's timeout wrappers, it also
+// runs before the handler starts. A request that times out gets only that first
+// call, so its resource cannot include values that the handler sets later.
 func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn
