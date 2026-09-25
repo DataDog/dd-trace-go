@@ -641,14 +641,8 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 	if params.ServiceOverride != "" {
 		service = params.ServiceOverride
 	}
-	var processTags []string
-	var containerTagsHash string
-	if pTags := processtags.GlobalTags(); pTags != nil {
-		processTags = pTags.Slice()
-		containerTagsHash = processtags.ContainerTagsHash()
-	}
 	child := Pathway{
-		hash:         p.hashCache.get(service, p.env, edgeTags, processTags, containerTagsHash, parentHash),
+		hash:         p.hashCache.get(service, p.env, edgeTags, parentHash),
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
 	}

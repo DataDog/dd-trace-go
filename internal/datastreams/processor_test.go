@@ -325,9 +325,8 @@ func TestSetCheckpoint(t *testing.T) {
 		env:        "env",
 		timeSource: time.Now,
 	}
-	processTags := processtags.GlobalTags().Slice()
-	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, processTags, ""), 0)
-	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, processTags, ""), hash1)
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}), hash1)
 
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
@@ -346,6 +345,8 @@ func TestSetCheckpoint(t *testing.T) {
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
+// TestSetCheckpointProcessTags guards DSM2-335: process tags being present must not change
+// the pathway hash, since they are agent/process metadata unrelated to pathway topology.
 func TestSetCheckpointProcessTags(t *testing.T) {
 	processtags.Reload()
 	pTags := processtags.GlobalTags().Slice()
@@ -359,8 +360,8 @@ func TestSetCheckpointProcessTags(t *testing.T) {
 		env:        "env",
 		timeSource: time.Now,
 	}
-	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, pTags, ""), 0)
-	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, pTags, ""), hash1)
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}), hash1)
 
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
@@ -379,6 +380,8 @@ func TestSetCheckpointProcessTags(t *testing.T) {
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
+// TestSetCheckpointContainerTagsHash guards DSM2-335: the agent-reported container-tags
+// hash (which changes on every rolling deploy) must not change the pathway hash.
 func TestSetCheckpointContainerTagsHash(t *testing.T) {
 	t.Cleanup(func() {
 		processtags.SetContainerTagsHash("")
@@ -397,8 +400,8 @@ func TestSetCheckpointContainerTagsHash(t *testing.T) {
 		env:        "env",
 		timeSource: time.Now,
 	}
-	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, pTags, "container-tags-hash"), 0)
-	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, pTags, "container-tags-hash"), hash1)
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}), hash1)
 
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
@@ -411,32 +414,6 @@ func TestSetCheckpointContainerTagsHash(t *testing.T) {
 	assert.Equal(t, hash2, statsPt2.hash)
 	assert.Equal(t, hash1, statsPt2.parentHash)
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
-}
-
-func TestSetCheckpointContainerTagsHashRequiresProcessTags(t *testing.T) {
-	t.Cleanup(func() {
-		processtags.SetContainerTagsHash("")
-		processtags.Reload()
-	})
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
-	processtags.SetContainerTagsHash("container-tags-hash")
-
-	processor := Processor{
-		hashCache:  newHashCache(),
-		stopped:    1,
-		in:         newFastQueue(),
-		service:    "service-1",
-		env:        "env",
-		timeSource: time.Now,
-	}
-	expectedHash := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, nil, ""), 0)
-
-	pathway, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka"))
-	statsPt := processor.in.pop().point
-
-	assert.Equal(t, expectedHash, statsPt.hash)
-	assert.Equal(t, expectedHash, pathway.GetHash())
 }
 
 func TestKafkaLag(t *testing.T) {
