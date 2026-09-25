@@ -8,7 +8,7 @@ metadata:
 
 ## Updating Documentation
 
-The root [AGENTS.md](/AGENTS.md) should be short. Only update it if a new scoped `AGENTS.md` file is added, so it can be added to the list with its purpose.
+The root [AGENTS.md](/AGENTS.md) should be short. Only update it if a new scoped `AGENTS.md` file is added, so it can be added to the list with its purpose, or to add a one-line routing pointer for agents that cannot invoke skills directly. A routing pointer must not restate or duplicate rules that live elsewhere — it may only direct the reader to the file that owns them.
 
 Document changes in the nearest existing doc: the package's [Go doc comment](https://go.dev/doc/comment) or `doc.go` for API/behavior, the closest `README.md` (e.g. [`contrib/README.md`](/contrib/README.md)) for an area, or [`FAQ.md`](/FAQ.md)/[`MIGRATING.md`](/MIGRATING.md) for user-facing notes.
 
