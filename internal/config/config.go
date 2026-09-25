@@ -155,6 +155,12 @@ type Config struct {
 	// Configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT.
 	statsOriginCardinalityLimit  int
 	dataStreamsMonitoringEnabled bool
+	// dataStreamsIntakeBufferKB is the memory budget, in kibibytes, of the Data
+	// Streams Monitoring processor's input ring buffer. The buffer measures
+	// what it holds and starts overwriting the oldest entries once the budget
+	// is reached.
+	// Configured via DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB.
+	dataStreamsIntakeBufferKB int
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -425,6 +431,14 @@ func loadConfig() *Config {
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dataStreamsIntakeBufferKB = p.GetInt("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB", defaultDataStreamsIntakeBufferKB)
+	if cfg.dataStreamsIntakeBufferKB <= 0 {
+		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: non-positive value %d, using default %d", cfg.dataStreamsIntakeBufferKB, defaultDataStreamsIntakeBufferKB)
+		cfg.dataStreamsIntakeBufferKB = defaultDataStreamsIntakeBufferKB
+	} else if cfg.dataStreamsIntakeBufferKB < minDataStreamsIntakeBufferKB {
+		log.Warn("raising DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: %d is below the minimum %d", cfg.dataStreamsIntakeBufferKB, minDataStreamsIntakeBufferKB)
+		cfg.dataStreamsIntakeBufferKB = minDataStreamsIntakeBufferKB
+	}
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
@@ -839,6 +853,30 @@ func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.
 	}
 	c.dataStreamsMonitoringEnabled = enabled
 	configtelemetry.Report("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
+
+func (c *Config) DataStreamsIntakeBufferKB() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsIntakeBufferKB
+}
+
+func (c *Config) SetDataStreamsIntakeBufferKB(kb int, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if kb <= 0 {
+		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: non-positive value %d", kb)
+		return
+	}
+	if kb < minDataStreamsIntakeBufferKB {
+		log.Warn("raising DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB: %d is below the minimum %d", kb, minDataStreamsIntakeBufferKB)
+		kb = minDataStreamsIntakeBufferKB
+	}
+	if c.checkProductConflict("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB", origin, kb, product...) {
+		return
+	}
+	c.dataStreamsIntakeBufferKB = kb
+	configtelemetry.Report("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE_KB", kb, origin)
 }
 
 func (c *Config) LogStartup() bool {
