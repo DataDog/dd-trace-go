@@ -47,6 +47,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_AGENTLESS_URL":                                           {},
 	"DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER":                           {},
 	"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED":                     {},
+	"DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS":                                     {},
+	"DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED":                                     {},
 	"DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED":                           {},
 	"DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES":                       {},
 	"DD_CIVISIBILITY_ENABLED":                                                 {},
