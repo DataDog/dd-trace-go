@@ -18,45 +18,70 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 	defaultLocalhost := "http://localhost:4318/v1/traces"
 
 	t.Run("valid http endpoint used when set", func(t *testing.T) {
-		got := resolveOTLPTraceURL(httpAgent, "http://traces-collector:4318/v1/traces")
+		got := resolveOTLPTraceURL(httpAgent, "http://traces-collector:4318/v1/traces", "")
 		assert.Equal(t, "http://traces-collector:4318/v1/traces", got)
 	})
 
 	t.Run("valid https endpoint used when set", func(t *testing.T) {
-		got := resolveOTLPTraceURL(httpAgent, "https://traces-collector:4318/v1/traces")
+		got := resolveOTLPTraceURL(httpAgent, "https://traces-collector:4318/v1/traces", "")
 		assert.Equal(t, "https://traces-collector:4318/v1/traces", got)
 	})
 
 	t.Run("unsupported scheme falls back to default", func(t *testing.T) {
-		got := resolveOTLPTraceURL(httpAgent, "grpc://traces-collector:4317")
+		got := resolveOTLPTraceURL(httpAgent, "grpc://traces-collector:4317", "")
 		assert.Equal(t, defaultWithAgent, got)
 	})
 
 	t.Run("missing scheme falls back to default", func(t *testing.T) {
-		got := resolveOTLPTraceURL(httpAgent, "traces-collector:4318/v1/traces")
+		got := resolveOTLPTraceURL(httpAgent, "traces-collector:4318/v1/traces", "")
 		assert.Equal(t, defaultWithAgent, got)
 	})
 
 	t.Run("default uses agent host with OTLP port", func(t *testing.T) {
-		got := resolveOTLPTraceURL(httpAgent, "")
+		got := resolveOTLPTraceURL(httpAgent, "", "")
 		assert.Equal(t, defaultWithAgent, got)
 	})
 
 	t.Run("default with nil agent URL uses localhost", func(t *testing.T) {
-		got := resolveOTLPTraceURL(nil, "")
+		got := resolveOTLPTraceURL(nil, "", "")
 		assert.Equal(t, defaultLocalhost, got)
 	})
 
 	t.Run("default with unix socket agent uses localhost", func(t *testing.T) {
 		unixAgent := &url.URL{Scheme: "unix", Path: "/var/run/datadog/apm.socket"}
-		got := resolveOTLPTraceURL(unixAgent, "")
+		got := resolveOTLPTraceURL(unixAgent, "", "")
 		assert.Equal(t, defaultLocalhost, got)
 	})
 
 	t.Run("IPv6 agent host is bracketed in default URL", func(t *testing.T) {
 		ipv6Agent := &url.URL{Scheme: "http", Host: "[::1]:8126"}
-		got := resolveOTLPTraceURL(ipv6Agent, "")
+		got := resolveOTLPTraceURL(ipv6Agent, "", "")
 		assert.Equal(t, "http://[::1]:4318/v1/traces", got)
+	})
+
+	t.Run("falls back to general OTLP endpoint when traces-specific one is unset", func(t *testing.T) {
+		got := resolveOTLPTraceURL(httpAgent, "", "http://general-collector:4318")
+		assert.Equal(t, "http://general-collector:4318/v1/traces", got)
+	})
+
+	t.Run("general OTLP endpoint with existing /v1/traces path is not duplicated", func(t *testing.T) {
+		got := resolveOTLPTraceURL(httpAgent, "", "http://general-collector:4318/v1/traces")
+		assert.Equal(t, "http://general-collector:4318/v1/traces", got)
+	})
+
+	t.Run("general OTLP endpoint with trailing slash", func(t *testing.T) {
+		got := resolveOTLPTraceURL(httpAgent, "", "http://general-collector:4318/")
+		assert.Equal(t, "http://general-collector:4318/v1/traces", got)
+	})
+
+	t.Run("traces-specific endpoint takes priority over general endpoint", func(t *testing.T) {
+		got := resolveOTLPTraceURL(httpAgent, "http://traces-collector:4318/v1/traces", "http://general-collector:4318")
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", got)
+	})
+
+	t.Run("unsupported scheme in general endpoint falls back to default", func(t *testing.T) {
+		got := resolveOTLPTraceURL(httpAgent, "", "grpc://general-collector:4317")
+		assert.Equal(t, defaultWithAgent, got)
 	})
 }
 

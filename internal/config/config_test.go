@@ -632,6 +632,31 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT used when traces-specific one is unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes priority over OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://general-collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
 }
 
 func TestOTLPHeaders(t *testing.T) {

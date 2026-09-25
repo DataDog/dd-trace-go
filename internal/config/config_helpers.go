@@ -372,13 +372,25 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
-// else derives a default from agentURL host + port 4318 + /v1/traces.
-// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
-func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
+// resolveOTLPTraceURL resolves the OTLP trace endpoint using the following priority:
+//  1. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, used as-is.
+//  2. OTEL_EXPORTER_OTLP_ENDPOINT, with the /v1/traces path appended if not already present.
+//  3. agentURL host + default OTLP port 4318 + /v1/traces.
+//
+// A user-provided endpoint is validated: it must be a parseable URL with an http or https scheme.
+// If validation fails, the next endpoint in the priority order is used instead.
+func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint, otlpEndpoint string) string {
 	if otlpTracesEndpoint != "" {
 		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
 			return otlpTracesEndpoint
+		}
+	} else if otlpEndpoint != "" {
+		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint); ok {
+			u.Path = strings.TrimRight(u.Path, "/")
+			if !strings.HasSuffix(u.Path, otlpTracesPath) {
+				u.Path += otlpTracesPath
+			}
+			return u.String()
 		}
 	}
 	host := internal.DefaultAgentHostname
