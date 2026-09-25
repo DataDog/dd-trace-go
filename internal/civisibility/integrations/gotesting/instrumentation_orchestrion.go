@@ -125,6 +125,10 @@ func instrumentTestingBuiltWithOrchestrion() {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	return instrumentTestingTFuncWithSource(f, nil, true)
+}
+
+func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Func, additionalFeatures bool) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {
 		return f
@@ -141,10 +145,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 	log.Debug("instrumentTestingTFunc: instrumenting test function")
 
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+	if sourceFunc == nil {
+		fReflect := reflect.Indirect(reflect.ValueOf(f))
+		sourceFunc = runtime.FuncForPC(fReflect.Pointer())
+	}
+	moduleName, suiteName := utils.GetModuleAndSuiteName(sourceFunc.Entry())
+	originalFunc := sourceFunc
 
 	// Avoid instrumenting twice
 	metadata := getInstrumentationMetadata(originalFunc)
@@ -321,8 +327,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			bodyReturned = true
 		}
 
-		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
-		wrappedFunc(t)
+		if additionalFeatures {
+			wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
+			wrappedFunc(t)
+		} else {
+			runSubtest(t)
+		}
 	}
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
