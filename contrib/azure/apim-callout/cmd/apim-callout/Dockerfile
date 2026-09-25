@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.27.1-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS builder
+FROM golang:1.27.1-alpine@sha256:4cb7ac979db5fcc41cae44b2227ba5ab8a51e8807f40d9ba4dee20a0ad960b5b AS builder
 ENV CGO_ENABLED=1
 
 WORKDIR /app
@@ -11,7 +11,7 @@ RUN apk add --no-cache --update git build-base
 RUN go build -tags=appsec -o ./contrib/azure/apim-callout/cmd/apim-callout/apim-callout ./contrib/azure/apim-callout/cmd/apim-callout
 
 # Base runtime stage (shared between production and e2e)
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime-base
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS runtime-base
 
 RUN apk --no-cache add ca-certificates tzdata libc6-compat libgcc libstdc++
 WORKDIR /app
