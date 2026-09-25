@@ -22,6 +22,9 @@ import (
 // known to the contrib before the application opens a database. OpenDB only
 // gets a connector, so the contrib names the driver from its registry, and
 // falls back to the driver's Go type when the driver is not registered.
+//
+// It lives in its own package because any database/sql.Open in the same test
+// binary also registers the driver, which would hide a failure here.
 type TestCase struct {
 	*sql.DB
 }

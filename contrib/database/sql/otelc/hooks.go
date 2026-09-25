@@ -9,11 +9,25 @@ package otelc
 import (
 	"database/sql"
 	"database/sql/driver"
+	_ "unsafe" // for go:linkname
 
 	"go.opentelemetry.io/otelc/pkg/hook"
 
 	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 )
+
+// The contrib's own Open and OpenDB call database/sql.Open and OpenDB, which
+// are hooked here, so the hooks use these instead of calling back into them.
+// See ../otelc.go.
+//
+//go:linkname wrapConnector github.com/DataDog/dd-trace-go/contrib/database/sql/v2.otelcWrapConnector
+func wrapConnector(driver.Connector) (driver.Connector, bool)
+
+//go:linkname startDBStats github.com/DataDog/dd-trace-go/contrib/database/sql/v2.otelcStartDBStats
+func startDBStats(driver.Connector, *sql.DB)
+
+//go:linkname isRegistered github.com/DataDog/dd-trace-go/contrib/database/sql/v2.otelcIsRegistered
+func isRegistered(string) bool
 
 type registration struct {
 	name string
@@ -54,7 +68,10 @@ type openResult struct {
 }
 
 func BeforeOpen(ictx hook.HookContext, driverName, dataSourceName string) {
-	if !ready || calledByContrib() {
+	// The contrib opens a driver it does not know yet with database/sql.Open,
+	// which would land here again. Those still get traced by the OpenDB hook,
+	// just without the tags the contrib reads from the DSN.
+	if !ready || !isRegistered(driverName) {
 		return
 	}
 	ictx.SetSkipCall(true)
@@ -70,15 +87,21 @@ func AfterOpen(ictx hook.HookContext, _ *sql.DB, _ error) {
 }
 
 func BeforeOpenDB(ictx hook.HookContext, c driver.Connector) {
-	if !ready || calledByContrib() {
+	if !ready {
 		return
 	}
-	ictx.SetSkipCall(true)
-	ictx.SetData(sqltrace.OpenDB(c))
+	traced, wrapped := wrapConnector(c)
+	if !wrapped {
+		// The contrib's own OpenDB passes a connector it already traces.
+		return
+	}
+	// Replace the original connector with the traced one.
+	ictx.SetParam(0, traced)
+	ictx.SetData(traced)
 }
 
-func AfterOpenDB(ictx hook.HookContext, _ *sql.DB) {
-	if db, ok := ictx.GetData().(*sql.DB); ok {
-		ictx.SetReturnVal(0, db)
+func AfterOpenDB(ictx hook.HookContext, db *sql.DB) {
+	if traced, ok := ictx.GetData().(driver.Connector); ok && db != nil {
+		startDBStats(traced, db)
 	}
 }
