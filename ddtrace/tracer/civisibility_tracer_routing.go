@@ -70,6 +70,25 @@ func startOptionsForCIVisibilityLifecycle(opts []StartOption) []StartOption {
 	})
 }
 
+// stopGlobalTracerPreservingCIVisibility keeps CI spans routable while an
+// application delegate drains. The global tracer may be the router itself or
+// its public mock handle; both support clearing the application delegate.
+func stopGlobalTracerPreservingCIVisibility() {
+	state := civisibility.GetState()
+	if state == civisibility.StateInitializing || state == civisibility.StateInitialized {
+		current := getGlobalTracer()
+		if setter, ok := current.(interface{ SetApplicationTracer(Tracer) bool }); ok && setter.SetApplicationTracer(nil) {
+			// The router must stay alive if a new mock adopts it while the
+			// application drains. Only stop the captured public mock handle.
+			if _, isRouter := current.(*ciVisibilityTracerRouter); !isRouter {
+				current.Stop()
+			}
+			return
+		}
+	}
+	setGlobalTracer(&NoopTracer{})
+}
+
 func storeCIVisibilityRouterWithoutStoppingCurrent(router *ciVisibilityTracerRouter) {
 	internal.StoreGlobalTracer[*ciVisibilityTracerRouter, Tracer](router)
 }

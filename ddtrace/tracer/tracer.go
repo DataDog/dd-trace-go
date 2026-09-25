@@ -458,7 +458,7 @@ func Stop() {
 	defer startStopMu.Unlock()
 
 	llmobs.Stop()
-	setGlobalTracer(&NoopTracer{})
+	stopGlobalTracerPreservingCIVisibility()
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }

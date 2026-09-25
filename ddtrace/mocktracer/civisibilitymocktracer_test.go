@@ -130,6 +130,7 @@ func requireTestCycleRequest(t *testing.T, server *ciVisibilityMockTracerTestSer
 }
 
 type countingTracer struct {
+	onStop       func()
 	startCount   atomic.Int32
 	stopCount    atomic.Int32
 	extractCount atomic.Int32
@@ -155,6 +156,9 @@ func (t *countingTracer) Inject(_ *tracer.SpanContext, _ any) error {
 
 func (t *countingTracer) Stop() {
 	t.stopCount.Add(1)
+	if t.onStop != nil {
+		t.onStop()
+	}
 }
 
 func (*countingTracer) TracerConf() tracer.TracerConf {
@@ -934,6 +938,86 @@ func TestCIVisibilityMockTracer_StopDoesNotReplaceUnrelatedGlobalTracer(t *testi
 
 	assert.Same(t, tracer.Tracer(unrelated), getGlobalTracer())
 	assert.EqualValues(t, 1, ciTracer.stopCount.Load())
+}
+
+func TestCIVisibilityMockTracer_PackageStopKeepsCIReachableDuringApplicationShutdown(t *testing.T) {
+	for _, mockStart := range []string{"none", "before-ci", "after-ci", "during-stop", "replace-during-stop"} {
+		t.Run(mockStart, func(t *testing.T) {
+			server := setupCIVisibilityMockTracerIntegrationTest(t, true)
+			if mockStart == "before-ci" {
+				mt := Start()
+				t.Cleanup(mt.Stop)
+			}
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+			civisibility.SetState(civisibility.StateInitialized)
+			if mockStart == "after-ci" || mockStart == "replace-during-stop" {
+				mt := Start()
+				t.Cleanup(mt.Stop)
+			}
+
+			stopping := make(chan struct{})
+			release := make(chan struct{})
+			stopped := make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			application := &countingTracer{onStop: func() {
+				close(stopping)
+				<-release
+			}}
+			setter, ok := getGlobalTracer().(interface{ SetApplicationTracer(tracer.Tracer) bool })
+			require.True(t, ok)
+			require.True(t, setter.SetApplicationTracer(application))
+			before := tracer.StartSpan("ci.before.stop", tracer.SpanType(constants.SpanTypeTest))
+			require.NotNil(t, before)
+			go func() {
+				tracer.Stop()
+				close(stopped)
+			}()
+			defer func() {
+				unblock()
+				<-stopped
+			}()
+			select {
+			case <-stopping:
+			case <-time.After(5 * time.Second):
+				t.Fatal("application shutdown did not start")
+			}
+
+			var newMock Tracer
+			if mockStart == "during-stop" || mockStart == "replace-during-stop" {
+				newMock = Start()
+				t.Cleanup(newMock.Stop)
+			}
+
+			before.Finish()
+			during := tracer.StartSpan("ci.during.stop", tracer.SpanType(constants.SpanTypeTest))
+			require.NotNil(t, during, "CI spans must remain available while application Stop blocks")
+			during.Finish()
+			require.Eventually(t, func() bool {
+				tracer.Flush()
+				return server.pathBodyContains("/api/v2/citestcycle", "ci.before.stop") &&
+					server.pathBodyContains("/api/v2/citestcycle", "ci.during.stop")
+			}, 5*time.Second, 10*time.Millisecond)
+
+			unblock()
+			<-stopped
+			require.EqualValues(t, 1, application.stopCount.Load())
+			after := tracer.StartSpan("ci.after.stop", tracer.SpanType(constants.SpanTypeTest))
+			require.NotNil(t, after, "CI spans must remain available after application Stop completes")
+			after.Finish()
+			require.Eventually(t, func() bool {
+				tracer.Flush()
+				return server.pathBodyContains("/api/v2/citestcycle", "ci.after.stop")
+			}, 5*time.Second, 10*time.Millisecond)
+			if newMock != nil {
+				span := tracer.StartSpan("application.new-mock")
+				require.NotNil(t, span, "application Stop must preserve the mock started during shutdown")
+				span.Finish()
+				require.Len(t, newMock.FinishedSpans(), 1)
+				assert.Equal(t, "application.new-mock", newMock.FinishedSpans()[0].OperationName())
+			}
+		})
+	}
 }
 
 func TestCIVisibilityMockTracer_PackageStopDetachesApplicationWhenMockStartedBeforeCI(t *testing.T) {

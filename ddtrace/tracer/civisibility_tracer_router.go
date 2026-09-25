@@ -290,11 +290,8 @@ func (t *ciVisibilityTracerRouter) SetCIVisibilityTracer(ciTracer Tracer) bool {
 }
 
 // SetApplicationTracer installs the tracer used for ordinary application
-// spans when no mock override is active.
+// spans when no mock override is active. A nil tracer clears the delegate.
 func (t *ciVisibilityTracerRouter) SetApplicationTracer(applicationTracer Tracer) bool {
-	if applicationTracer == nil {
-		return false
-	}
 	t.delegatesMu.Lock()
 	old := t.applicationTracer
 	t.applicationTracer = applicationTracer
@@ -419,12 +416,11 @@ func (t *ciVisibilityTracerRouter) TracerForTrace(tracerType, fallbackSpanType s
 	return NoopTracer{}
 }
 
-// Stop implements Tracer. Application tracing can stop while CI Visibility
-// remains active; the router restores itself after package-level Stop swaps the
-// global tracer to NoopTracer.
+// Stop implements Tracer. If CI Visibility is still active and the router is
+// replaced by NoopTracer, it restores itself to keep CI events routable.
 func (t *ciVisibilityTracerRouter) Stop() {
-	// A package-level Stop ends the current ordinary-tracing session. The mock
-	// owns its own lifecycle, so detach it without stopping the caller's handle.
+	// The mock owns its own lifecycle, so detach it without stopping the
+	// caller's handle.
 	t.detachActiveMockTracer()
 	applicationTracer := t.detachApplicationTracer()
 	if applicationTracer != nil {
