@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -182,6 +183,9 @@ func defaultPoolName(connConfig *pgx.ConnConfig) string {
 }
 
 func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	if instr.AppSecRASPEnabled() {
+		sqlsec.MonitorSQLOperation(ctx, data.SQL, ext.DBSystemPostgreSQL)
+	}
 	if !t.cfg.traceQuery {
 		return ctx
 	}
@@ -208,6 +212,11 @@ func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 }
 
 func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
+	if instr.AppSecRASPEnabled() {
+		for _, query := range data.Batch.QueuedQueries {
+			sqlsec.MonitorSQLOperation(ctx, query.SQL, ext.DBSystemPostgreSQL)
+		}
+	}
 	if !t.cfg.traceBatch {
 		return ctx
 	}

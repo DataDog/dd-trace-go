@@ -25,6 +25,7 @@ gates:
   - pull-request-tests
   - system-tests
   - orchestrion
+  - otelc
   - parametric-tests
   - codeql
   - generate
@@ -55,6 +56,7 @@ groups:
     - pull-request-tests
     - system-tests
     - orchestrion
+    - otelc
     - parametric-tests
     - static-actions
     - static-docs
@@ -71,6 +73,7 @@ workflow-gates:
   main-branch-tests.yml: [ pull-request-tests ]
   system-tests.yml: [ system-tests ]
   orchestrion.yml: [ orchestrion ]
+  otelc.yml: [ otelc ]
   parametric-tests.yml: [ parametric-tests ]
   codeql-analysis.yml: [ codeql ]
   generate.yml: [ generate ]
@@ -281,6 +284,12 @@ components:
     paths: [ orchestrion/** ]
     dependent-modules: []
     gates: [ "@go-hygiene", orchestrion, pull-request-tests ]
+
+  - id: otelc-public
+    why: Top-level otelc/ and otelc/all; no contrib imports them.
+    paths: [ otelc/** ]
+    dependent-modules: []
+    gates: [ "@go-hygiene", otelc, pull-request-tests ]
 
   # --------------------------------------------------- leaf root-module packages
   # No contrib imports these. `dependent-modules` is the measured set of

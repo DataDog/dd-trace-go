@@ -31,7 +31,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.R
 		return
 	}
 
-	op.runWAF(eventReceiver, ctx, addrs)
+	op.runWAF(eventReceiver, ctx, addrs, false)
 }
 
 func (op *ContextOperation) skipRASPRuleAfterRequest(addrs addresses.RunAddressData) {
@@ -43,7 +43,7 @@ func (op *ContextOperation) skipRASPRuleAfterRequest(addrs addresses.RunAddressD
 	}
 }
 
-func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwaf.Runner, addrs addresses.RunAddressData) {
+func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwaf.Runner, addrs addresses.RunAddressData, monitorOnly bool) {
 	// Remove unsupported addresses in case the listener was registered but some addresses are still unsupported
 	// Technically the WAF does this step for us but doing this check before calling the WAF makes us skip encoding huge
 	// values that may be discarded by the WAF afterward.
@@ -60,6 +60,16 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
+	var blockFailure bool
+	if monitorOnly {
+		// Only block_request is a block outcome. A redirect is block:irrelevant on
+		// the normal path, so it stays block:irrelevant when it is suppressed.
+		_, blockFailure = result.Actions["block_request"]
+		// Observational hooks cannot stop the sink operation. Do not block the
+		// enclosing request or count it as blocked when the operation still runs.
+		delete(result.Actions, "block_request")
+		delete(result.Actions, "redirect_request")
+	}
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
 	op.AbsorbDerivatives(result.Derivatives)
 
@@ -76,6 +86,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,
+			blockFailure:   blockFailure,
 			ruleTriggered:  result.HasEvents(),
 			wafTimeout:     wafTimeout,
 			rateLimited:    rateLimited,

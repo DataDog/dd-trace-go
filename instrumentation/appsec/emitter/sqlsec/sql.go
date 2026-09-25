@@ -26,6 +26,8 @@ type (
 		Query string
 		// Driver corresponds to the addres `server.db.system`
 		Driver string
+		// MonitorOnly reports attacks without applying blocking or redirect actions.
+		MonitorOnly bool
 	}
 	SQLOperationRes struct{}
 )
@@ -34,9 +36,36 @@ func (SQLOperationArgs) IsArgOf(*SQLOperation)   {}
 func (SQLOperationRes) IsResultOf(*SQLOperation) {}
 
 func ProtectSQLOperation(ctx context.Context, query, driver string) error {
+	return emitSQLOperation(ctx, query, driver, false)
+}
+
+type sqlOperationCheckedKey struct{}
+
+// WithSQLOperationChecked marks a driver call already checked by an outer SQL
+// integration. Only pass the returned context to that call, not subsequent queries.
+// Without a parent security operation, it returns ctx unchanged.
+func WithSQLOperationChecked(ctx context.Context) context.Context {
+	if parent, _ := dyngo.FromContext(ctx); parent == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, sqlOperationCheckedKey{}, true)
+}
+
+// MonitorSQLOperation reports SQL injection attempts without interrupting execution.
+// An outer SQL integration can suppress duplicate monitoring with
+// WithSQLOperationChecked while retaining its own blocking behavior.
+func MonitorSQLOperation(ctx context.Context, query, driver string) {
+	if checked, _ := ctx.Value(sqlOperationCheckedKey{}).(bool); checked {
+		return
+	}
+	_ = emitSQLOperation(ctx, query, driver, true)
+}
+
+func emitSQLOperation(ctx context.Context, query, driver string, monitorOnly bool) error {
 	opArgs := SQLOperationArgs{
-		Query:  query,
-		Driver: driver,
+		Query:       query,
+		Driver:      driver,
+		MonitorOnly: monitorOnly,
 	}
 
 	parent, _ := dyngo.FromContext(ctx)
@@ -55,9 +84,11 @@ func ProtectSQLOperation(ctx context.Context, query, driver string) error {
 
 	var err *events.BlockingSecurityEvent
 	// TODO: move the data listener as a setup function of SQLsec.StartSQLOperation(ars, <setup>)
-	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
-		err = e
-	})
+	if !monitorOnly {
+		dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
+			err = e
+		})
+	}
 
 	dyngo.StartOperation(op, opArgs)
 	dyngo.FinishOperation(op, SQLOperationRes{})
