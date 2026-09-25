@@ -185,3 +185,13 @@ func (t *table) allGates() []string {
 	sort.Strings(out)
 	return out
 }
+
+// claims reports whether dir is inside this component's own paths.
+func (c *component) claims(dir string) bool {
+	for _, p := range c.patterns {
+		if p.match(dir) || p.match(dir+"/go.mod") {
+			return true
+		}
+	}
+	return false
+}
