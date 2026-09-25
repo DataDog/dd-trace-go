@@ -29,8 +29,9 @@ func init() {
 		// prunes the map short of hitting the cap, so at the default a test that
 		// starts/stops the tracer thousands of times retains all of them: measured
 		// at 4.84GB with the default cap vs 0.11GB without the deadlock tag on
-		// TestTracerCleanStop. Lower the cap so retention scales with the lock
-		// pairs the code can actually express, not with object churn.
+		// TestTracerCleanStop. Lower the cap so the detector retains fewer
+		// pointers to short-lived objects. Upstream clears the entire order map
+		// at the cap, so older lock-order evidence can be lost sooner.
 		//
 		// Do not set this to 0: preLock (lockorder.go) is skipped entirely when
 		// MaxMapSize is 0, which disables both recursive-locking and
