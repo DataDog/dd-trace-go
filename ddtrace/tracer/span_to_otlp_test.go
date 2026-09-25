@@ -46,6 +46,23 @@ func TestBuildResource(t *testing.T) {
 		assert.Equal(t, version.Tag, attrs["telemetry.sdk.version"])
 	})
 
+	t.Run("adoption markers", func(t *testing.T) {
+		for _, tc := range []struct {
+			otelSemantics bool
+			want          string
+		}{
+			{otelSemantics: true, want: "otel"},
+			{otelSemantics: false, want: "datadog"},
+		} {
+			cfg := internalconfig.CreateNew()
+			cfg.SetOTelSemanticsEnabled(tc.otelSemantics, internalconfig.OriginCode)
+
+			attrs := keyValuesToMap(buildResource(cfg).Attributes)
+			assert.Equal(t, "true", attrs[keySDKOTLPExport])
+			assert.Equal(t, tc.want, attrs["datadog.sdk.semantics"])
+		}
+	})
+
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
 		cfg := internalconfig.CreateNew()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)

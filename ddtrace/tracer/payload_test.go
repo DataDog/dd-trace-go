@@ -139,6 +139,30 @@ func TestPayloadV04Decode(t *testing.T) {
 	}
 }
 
+func TestPayloadV1OTLPExportMarker(t *testing.T) {
+	p := newPayloadV1()
+	_, err := p.push(newSpanList(3))
+	require.NoError(t, err)
+	_, err = p.push(newSpanList(2))
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(p)
+	require.NoError(t, err)
+
+	got := newPayloadV1()
+	_, err = bytes.NewBuffer(encoded).WriteTo(got)
+	require.NoError(t, err)
+	_, err = got.decodeBuffer()
+	require.NoError(t, err)
+
+	require.Contains(t, got.attributes, keySDKOTLPExport)
+	assert.Equal(t, "false", got.attributes[keySDKOTLPExport].value)
+	for i, c := range got.chunks {
+		for j, s := range c.spans {
+			assert.False(t, s.meta.Has(keySDKOTLPExport), "chunk %d span %d must not carry the marker", i, j)
+		}
+	}
+}
+
 // Helper to get the expected trace ID for a span before it can be GC'd
 func expectedTraceID(s *Span) (out [16]byte) {
 	ctx := s.Context()

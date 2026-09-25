@@ -235,6 +235,9 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// Append process tags to the payload attributes
 	// if there are attributes available, set them in our bitmap and increment
 	// the number of fields.
+	if atomic.LoadUint32(&p.count) == 0 {
+		p.attributes[keySDKOTLPExport] = anyValue{valueType: StringValueType, value: "false"}
+	}
 	p.setProcessTags()
 	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
