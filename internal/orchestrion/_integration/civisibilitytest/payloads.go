@@ -439,6 +439,20 @@ func (e Events) CheckEventsByMetricAndValue(metricName string, metricValue float
 	return result
 }
 
+// CheckEventsByMetricName returns events containing the given metric and panics if the count does not match.
+func (e Events) CheckEventsByMetricName(metricName string, count int) Events {
+	var result Events
+	for _, event := range e {
+		if _, ok := event.Content.Metrics[metricName]; ok {
+			result = append(result, event)
+		}
+	}
+	if len(result) != count {
+		panic(fmt.Sprintf("expected exactly %d event(s) with metric %s, got %d", count, metricName, len(result)))
+	}
+	return result
+}
+
 // Except returns events whose resource does not appear in any provided event collection.
 func (e Events) Except(groups ...Events) Events {
 	var filtered Events

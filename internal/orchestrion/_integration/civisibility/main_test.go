@@ -15,9 +15,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
 
 var ciVisibilityPayloads mockPayloads
@@ -54,7 +57,7 @@ func TestMain(m *testing.M) {
 		CheckEventsByResourceName("testing_test.go", 1)
 
 	// test events
-	testEvents := events.CheckEventsByType("test", 14)
+	testEvents := events.CheckEventsByType("test", 15)
 	normalTests := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestNormal", 1).
 		CheckEventsByTagAndValue("test.status", "pass", 1)
@@ -105,6 +108,12 @@ func TestMain(m *testing.M) {
 	testWithParallelSubtestsChild3 := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestWithParallelSubTests/Sub3", 1).
 		CheckEventsByTagAndValue("test.status", "pass", 1)
+	parallelSkip := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestParallelSkip", 1).
+		CheckEventsByTagAndValue("test.status", "skip", 1).
+		CheckEventsByTagAndValue("test.skip_reason", "parallel skip", 1)
+
+	validateParallelTimingPayload(events, testEvents)
 
 	// remaining must be 0
 	testEvents.
@@ -122,11 +131,83 @@ func TestMain(m *testing.M) {
 			testWithParallelSubtests,
 			testWithParallelSubtestsChild1,
 			testWithParallelSubtestsChild2,
-			testWithParallelSubtestsChild3).
+			testWithParallelSubtestsChild3,
+			parallelSkip).
 		HasCount(0)
 
 	// All previous checks will cause panic if they fail so we can safely exit with 0 here
 	os.Exit(0)
+}
+
+func validateParallelTimingPayload(events, testEvents mockEvents) {
+	parallelTests := make(map[uint64]mockEvent, 5)
+	for _, event := range testEvents {
+		active, ok := event.Content.Metrics[constants.TestActiveDuration]
+		if !ok || active < 0 {
+			panic(fmt.Sprintf("test event is missing a valid %s metric: %+v", constants.TestActiveDuration, event))
+		}
+		isParallel, ok := event.Content.Meta[constants.TestIsParallel]
+		if !ok || (isParallel != "true" && isParallel != "false") {
+			panic(fmt.Sprintf("test event is missing a valid %s tag: %+v", constants.TestIsParallel, event))
+		}
+
+		_, hasStart := event.Content.Metrics[constants.TestParallelPauseStartOffset]
+		_, hasEnd := event.Content.Metrics[constants.TestParallelPauseEndOffset]
+		_, hasDuration := event.Content.Metrics[constants.TestParallelPauseDuration]
+		if isParallel == "false" {
+			if hasStart || hasEnd || hasDuration {
+				panic(fmt.Sprintf("non-parallel test event has parallel pause metrics: %+v", event))
+			}
+			continue
+		}
+		if !hasStart || !hasEnd || !hasDuration {
+			panic(fmt.Sprintf("parallel test event is missing pause metrics: %+v", event))
+		}
+		parallelTests[event.Content.SpanID] = event
+	}
+	if len(parallelTests) != 5 {
+		panic(fmt.Sprintf("expected exactly 5 parallel test events, got %d", len(parallelTests)))
+	}
+
+	waits := events.GetEventsByResourceName("testing.T.Parallel").CheckEventsByType("span", len(parallelTests))
+	for _, wait := range waits {
+		if wait.Content.Name != "testing.parallel.wait" || wait.Content.Type != "" ||
+			wait.Content.Meta["component"] != "go-testing" || wait.Content.Meta["test.parallel.wait"] != "true" {
+			panic(fmt.Sprintf("unexpected parallel wait event: %+v", wait))
+		}
+		parent, ok := parallelTests[wait.Content.ParentID]
+		if !ok || wait.Content.TraceID != parent.Content.TraceID {
+			panic(fmt.Sprintf("parallel wait event has no test parent in its trace: %+v", wait))
+		}
+		delete(parallelTests, wait.Content.ParentID)
+
+		startOffset := parent.Content.Metrics[constants.TestParallelPauseStartOffset]
+		endOffset := parent.Content.Metrics[constants.TestParallelPauseEndOffset]
+		pauseDuration := parent.Content.Metrics[constants.TestParallelPauseDuration]
+		activeDuration := parent.Content.Metrics[constants.TestActiveDuration]
+		if startOffset < 0 || endOffset < startOffset || pauseDuration != endOffset-startOffset {
+			panic(fmt.Sprintf("invalid parallel timing metrics: %+v", parent))
+		}
+		if wait.Content.Start != parent.Content.Start+uint64(startOffset) || float64(wait.Content.Duration) != pauseDuration {
+			panic(fmt.Sprintf("parallel wait event does not match its parent metrics: wait=%+v parent=%+v", wait, parent))
+		}
+		if activeDuration+pauseDuration > float64(parent.Content.Duration)+float64(time.Millisecond) {
+			panic(fmt.Sprintf("parallel active and pause durations exceed wall time: %+v", parent))
+		}
+
+		switch parent.Content.Resource {
+		case "testing_test.go.TestWithParallelSubTests/Sub1",
+			"testing_test.go.TestWithParallelSubTests/Sub2",
+			"testing_test.go.TestWithParallelSubTests/Sub3":
+			minimumPause := float64(parallelPayloadBlockerDuration - 25*time.Millisecond)
+			if pauseDuration < minimumPause || float64(parent.Content.Duration)-activeDuration < minimumPause {
+				panic(fmt.Sprintf("parallel child timing includes the serial blocker: %+v", parent))
+			}
+		}
+	}
+	if len(parallelTests) != 0 {
+		panic(fmt.Sprintf("parallel test events are missing wait children: %+v", parallelTests))
+	}
 }
 
 func enableCiVisibilityEndpointMock() *httptest.Server {

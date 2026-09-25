@@ -8,62 +8,39 @@
 package gotesting
 
 import (
-	"math/bits"
-	"reflect"
 	"time"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
-
-var (
-	retryAttemptKernel32                  = windows.NewLazySystemDLL("kernel32.dll")
-	retryAttemptQueryPerformanceCounter   = retryAttemptKernel32.NewProc("QueryPerformanceCounter")
-	retryAttemptQueryPerformanceFrequency = retryAttemptKernel32.NewProc("QueryPerformanceFrequency")
-)
-
-func retryAttemptPerformanceValue(proc *windows.LazyProc) (int64, bool) {
-	var value int64
-	ok, _, _ := proc.Call(uintptr(unsafe.Pointer(&value)))
-	return value, ok != 0
-}
 
 func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
-	if base == nil || !field.available {
+	layout := getTestingInternalsLayout()
+	if base == nil || !field.available || layout == nil || !layout.parallelTimingOK {
 		return
 	}
-	counter, ok := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
+	counter, ok := testingClockNow()
 	if !ok {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
-	now := value.FieldByName("now")
-	if now.IsValid() && now.CanAddr() && now.Kind() == reflect.Int64 {
-		reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().SetInt(counter)
-	}
+	*(*int64)(unsafe.Add(base, field.offset+layout.parallelNow.offset)) = counter
 }
 
 func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout) {
 	field := layout.common.start.unsafeField
-	if base == nil || !field.available {
+	if base == nil || !field.available || !layout.parallelTimingOK {
 		return
 	}
-	now, counterOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
-	frequency, frequencyOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceFrequency)
-	if !counterOK || !frequencyOK || frequency <= 0 {
+	now, counterOK := testingClockNow()
+	frequency := testingClockFrequency()
+	if !counterOK || frequency <= 0 {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
-	startedField := value.FieldByName("now")
-	if !startedField.IsValid() || !startedField.CanAddr() || startedField.Kind() != reflect.Int64 {
-		return
-	}
-	started := reflect.NewAt(startedField.Type(), unsafe.Pointer(startedField.UnsafeAddr())).Elem().Int()
+	started := *(*int64)(unsafe.Add(base, field.offset+layout.parallelNow.offset))
 	if now <= started {
 		return
 	}
-	hi, lo := bits.Mul64(uint64(now-started), uint64(time.Second)/uint64(time.Nanosecond))
-	elapsedNanoseconds, _ := bits.Div64(hi, lo, uint64(frequency))
-	elapsed := time.Duration(elapsedNanoseconds)
+	elapsed, ok := testingClockDuration(now-started, frequency)
+	if !ok {
+		return
+	}
 	*fieldPtr[time.Duration](base, layout.common.duration) += elapsed
 }

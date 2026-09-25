@@ -1160,8 +1160,7 @@ func validateProcessRetrySubtreeResultEnvelope(result processRetryResult, expect
 		!processRetryJSONStringFits(result.SuiteName, processRetryErrorMessageMaxBytes) {
 		return fmt.Errorf("%w: invalid subtree root identity", errProcessRetryResultInvalid)
 	}
-	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano ||
-		result.DurationNanos != result.FinishUnixNano-result.StartUnixNano {
+	if result.StartUnixNano == 0 || result.FinishUnixNano < result.StartUnixNano {
 		return fmt.Errorf("%w: invalid subtree root timing (%d,%d,%d)", errProcessRetryResultInvalid, result.StartUnixNano, result.FinishUnixNano, result.DurationNanos)
 	}
 	if result.OutputTruncated && result.OutputTail == "" {
