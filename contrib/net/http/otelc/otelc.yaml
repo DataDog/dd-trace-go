@@ -1,0 +1,253 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.server.yml and ../orchestrion.client.yml.
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+
+# Aspect Server.Serve. Covers ListenAndServe, ListenAndServeTLS and http.Serve
+# too, since all of them funnel through here.
+server_serve:
+  target: net/http
+  where:
+    func: Serve
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServe
+        path: github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2
+
+# ---------------------------------------------------------------------------
+# Client: the tracer's own transports
+# ---------------------------------------------------------------------------
+
+# Aspect Transport.DD__tracer_internal.
+transport_tracer_internal_field:
+  target: net/http
+  where:
+    struct: Transport
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: DD__tracer_internal
+            type: bool
+
+# Aspect Transport.DD__tracer_internal=true. Marking these keeps the tracer's
+# own HTTP clients untraced; without it every flush produces the spans the next
+# flush sends. Same package list as ../orchestrion.client.yml.
+#
+# TODO: generate these paths automatically so when a new package is added we
+# don't need to manually update this list and the orchestrion.client.yml one.
+transport_tracer_internal:
+  target: "github.com/DataDog/dd-trace-go/v2/{ddtrace/tracer,internal,openfeature,internal/hostname/httputils,internal/remoteconfig,internal/telemetry/internal,internal/civisibility/utils/net,instrumentation/httpmem,profiler,internal/llmobs/config}"
+  where:
+    struct_literal: net/http.Transport
+  do:
+    - set_fields:
+        field:
+          - name: DD__tracer_internal
+            value: "true"
+
+# ---------------------------------------------------------------------------
+# Client: the round trip itself
+# ---------------------------------------------------------------------------
+
+# Aspect Transport.RoundTrip. Paired hooks rather than before-only: the error
+# path replaces both return values, and only the after trampoline binds those.
+transport_round_trip:
+  target: net/http
+  where:
+    func: RoundTrip
+    recv: "*Transport"
+  do:
+    - inject_hooks:
+        before: BeforeRoundTrip
+        after: AfterRoundTrip
+        path: github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2
+
+# Skips the hooks above for the tracer's own transports. A hook compiles
+# against the real net/http, where DD__tracer_internal does not exist, so this
+# check runs in net/http itself and returns before the hooks run.
+transport_round_trip_tracer_internal:
+  target: net/http
+  where:
+    func: RoundTrip
+    recv: "*Transport"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $t := .Receiver -}}
+          if {{ $t }}.DD__tracer_internal {
+            return {{ $t }}.roundTrip({{ .FuncArgument 0 }})
+          }
+
+# ---------------------------------------------------------------------------
+# Client: the package-level shorthands
+# ---------------------------------------------------------------------------
+
+# Aspect Get|Head|Post|PostForm. The shorthands build their own request with
+# context.Background(), so the span the RoundTrip hook creates has no parent to
+# attach to. Rewriting the call site to ./client threads in whichever
+# context.Context or *http.Request the calling function already has, which is
+# the only route that survives crossing a goroutine, since GLS does not.
+#
+# Two targets per function, and neither is "everything but net/http", which no
+# selector can express (IDMPL-724). $root is every package of the module being
+# built, but never package main, whose compile-time import path is the literal
+# "main". Call sites inside third-party dependencies are not rewritten; their
+# spans still exist, they just parent through GLS.
+client_get_root:
+  target: "$root"
+  where:
+    function_call: net/http.Get
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Get({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Get({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_get_main:
+  target: "main"
+  where:
+    function_call: net/http.Get
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Get({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Get({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_head_root:
+  target: "$root"
+  where:
+    function_call: net/http.Head
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Head({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Head({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_head_main:
+  target: "main"
+  where:
+    function_call: net/http.Head
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Head({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Head({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_post_root:
+  target: "$root"
+  where:
+    function_call: net/http.Post
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Post({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Post({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_post_main:
+  target: "main"
+  where:
+    function_call: net/http.Post
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.Post({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.Post({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_postform_root:
+  target: "$root"
+  where:
+    function_call: net/http.PostForm
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.PostForm({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.PostForm({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+
+client_postform_main:
+  target: "main"
+  where:
+    function_call: net/http.PostForm
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            __dd_ddtrace_client.PostForm({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else if $req -}}
+            __dd_ddtrace_client.PostForm({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
