@@ -39,12 +39,26 @@ runs:
       if: steps.dd-ci-cli-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" --output datadog-ci    
+        base="https://github.com/DataDog/datadog-ci/releases/latest/download"
+        curl -L --fail "${base}/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" \
+          --output datadog-ci
         chmod +x datadog-ci
 
     - name: Add CodeOwners to JUnit files
       shell: bash
-      run: go run ./.github/actions/add-codeowners/codeowners.go "${{ inputs.path }}"
+      # The add-codeowners helper lives in a sibling action directory and
+      # needs the repository's module context for `go run`, so execute from
+      # the repository root the action lives in — not the caller's working
+      # directory, which is not a Go module in every job (the orchestrion
+      # integration tests check out this repository beneath dd-trace-go/).
+      working-directory: ${{ github.action_path }}/../../..
+      run: |-
+        dir="${{ inputs.path }}"
+        # Trim a trailing path separator: a trailing backslash would escape
+        # the closing quote in Git Bash on Windows and break this command.
+        dir="${dir%/}"
+        dir="${dir%\\}"
+        go run ./.github/actions/add-codeowners/codeowners.go "${dir:-.}"
 
     - name: Upload the JUnit files
       shell: bash
