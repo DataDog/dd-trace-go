@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -432,6 +433,64 @@ func TestSubcontextOperationMonitorOnlyBlockFailure(t *testing.T) {
 	require.EqualValues(t, 2, metrics.SumRASPCalls.Load())
 	tags := []string{"block:success", "rule_type:ssrf", "rule_variant:request", "waf_version:" + libddwaf.Version(), "event_rules_version:1.99.0"}
 	require.EqualValues(t, 1, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get())
+}
+
+// TestRunWAFMonitorOnlyWAFRequests checks the emitted waf.requests tags. A
+// monitor-only block must not count as a requested block, so it must not report
+// block_failure:true or hide a later real block of the same request.
+func TestRunWAFMonitorOnlyWAFRequests(t *testing.T) {
+	wafRequestsTags := func(requestBlocked, blockFailure bool) []string {
+		return []string{
+			"request_blocked:" + strconv.FormatBool(requestBlocked),
+			"block_failure:" + strconv.FormatBool(blockFailure),
+			"rule_triggered:true",
+			"waf_timeout:false",
+			"rate_limited:false",
+			"waf_error:false",
+			"input_truncated:false",
+			"event_rules_version:test",
+			"waf_version:" + libddwaf.Version(),
+		}
+	}
+
+	for _, tc := range []struct {
+		name           string
+		laterRealBlock bool
+	}{
+		{name: "monitor-only block"},
+		{name: "monitor-only block then real block", laterRealBlock: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+			op.SetMetricsInstance(metrics)
+
+			addrs := addresses.RunAddressData{TimerKey: addresses.WAFScope}
+			op.runWAF(op, actionRunner{"block_request"}, addrs, true)
+			if tc.laterRealBlock {
+				op.runWAF(op, actionRunner{"block_request"}, addrs, false)
+			}
+			metrics.Submit(libddwaf.Truncations{}, nil)
+
+			for _, outcome := range []struct{ requestBlocked, blockFailure bool }{
+				{false, false},
+				{true, false},
+				{false, true},
+			} {
+				var want float64
+				if outcome.requestBlocked == tc.laterRealBlock && !outcome.blockFailure {
+					want = 1
+				}
+				tags := wafRequestsTags(outcome.requestBlocked, outcome.blockFailure)
+				require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get(), tags)
+			}
+		})
+	}
 }
 
 func TestRunWAFMonitorOnlyActions(t *testing.T) {

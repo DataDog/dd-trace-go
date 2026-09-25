@@ -223,3 +223,34 @@ remains serialized, and remote activation updates the instance's atomic state.
 The native pgx integration only monitors SQL; it cannot block it. See
 [contrib/jackc/pgx.v5/README.md](../../contrib/jackc/pgx.v5/README.md#appsec-sql-injection-monitoring)
 for its behavior and limitations.
+
+### Block outcome telemetry
+
+The `waf.requests` metric has one data point for each WAF context. Two of its
+tags show the block outcome of the request:
+
+| `request_blocked` | `block_failure` | Meaning                                              |
+|-------------------|-----------------|------------------------------------------------------|
+| `false`           | `false`         | No WAF-scope `block_request` action was returned.    |
+| `true`            | `false`         | A block was requested and enforced.                  |
+| `false`           | `true`          | A block was requested, but it could not be enforced. |
+
+The `ContextMetrics` type in `emitter/waf/metrics.go` records the outcome:
+
+- `runWAF` calls `SetBlockRequested` when the WAF returns a WAF-scope
+  `block_request` action. RASP-scope actions do not change these tags.
+- `SetBlockFailed` records that the block was not enforced. `runWAF` calls it
+  when the action cannot be built. Integrations call it when they cannot deliver
+  the block response, for example because the response has already started.
+- `Submit` resolves the two tags at the end of the WAF context. A requested
+  block counts as enforced unless a failure was reported. Thus, an integration
+  that does not report its outcome keeps the previous behavior.
+
+RASP rules report their block outcome on `rasp.rule.match` with the
+`block:success`, `block:failure`, or `block:irrelevant` tag.
+
+A monitor-only run (`SubcontextOperation.RunMonitorOnly`, used by the pgx SQL
+monitoring) removes the `block_request` and `redirect_request` actions. It
+reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
+does not count as a requested block on `waf.requests`, so it cannot hide a
+later block of the same request.
