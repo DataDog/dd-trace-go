@@ -21,7 +21,42 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
-func TestResolveBlockMilestones(t *testing.T) {
+// wafRequestsTags returns the tags of a waf.requests metric that the "test"
+// metrics instance emits with the given milestones.
+func wafRequestsTags(requestBlocked, blockFailure, ruleTriggered bool) []string {
+	return []string{
+		"request_blocked:" + strconv.FormatBool(requestBlocked),
+		"block_failure:" + strconv.FormatBool(blockFailure),
+		"rule_triggered:" + strconv.FormatBool(ruleTriggered),
+		"waf_timeout:false",
+		"rate_limited:false",
+		"waf_error:false",
+		"input_truncated:false",
+		"event_rules_version:test",
+		"waf_version:" + libddwaf.Version(),
+	}
+}
+
+// requireBlockOutcome checks that client recorded exactly one waf.requests
+// count, with the given block outcome.
+func requireBlockOutcome(t *testing.T, client *telemetrytest.RecordClient, ruleTriggered, requestBlocked, blockFailure bool) {
+	t.Helper()
+	for _, outcome := range []struct{ requestBlocked, blockFailure bool }{
+		{false, false},
+		{true, false},
+		{false, true},
+		{true, true},
+	} {
+		var want float64
+		if outcome.requestBlocked == requestBlocked && outcome.blockFailure == blockFailure {
+			want = 1
+		}
+		tags := wafRequestsTags(outcome.requestBlocked, outcome.blockFailure, ruleTriggered)
+		require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get(), tags)
+	}
+}
+
+func TestSubmitBlockOutcome(t *testing.T) {
 	tests := []struct {
 		name           string
 		requested      bool
@@ -41,7 +76,10 @@ func TestResolveBlockMilestones(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			metrics := new(ContextMetrics)
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
 			if tc.requested {
 				metrics.SetBlockRequested()
 			}
@@ -52,11 +90,9 @@ func TestResolveBlockMilestones(t *testing.T) {
 				metrics.SetBlockApplied()
 			}
 
-			metrics.resolveBlockMilestones()
+			metrics.Submit(libddwaf.Truncations{}, nil)
 
-			require.Equal(t, tc.requestBlocked, metrics.Milestones.requestBlocked)
-			require.Equal(t, tc.blockFailure, metrics.Milestones.blockFailure)
-			require.False(t, metrics.Milestones.requestBlocked && metrics.Milestones.blockFailure)
+			requireBlockOutcome(t, client, false, tc.requestBlocked, tc.blockFailure)
 		})
 	}
 }
@@ -201,18 +237,7 @@ func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
 				t.FailNow()
 			}
 
-			tags := []string{
-				"request_blocked:" + strconv.FormatBool(!tc.failed),
-				"block_failure:" + strconv.FormatBool(tc.failed),
-				"rule_triggered:false",
-				"waf_timeout:false",
-				"rate_limited:false",
-				"waf_error:false",
-				"input_truncated:false",
-				"event_rules_version:test",
-				"waf_version:" + libddwaf.Version(),
-			}
-			require.EqualValues(t, 1, client.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
+			requireBlockOutcome(t, client, false, !tc.failed, tc.failed)
 		})
 	}
 }

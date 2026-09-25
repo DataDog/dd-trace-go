@@ -28,6 +28,11 @@ type (
 		// StackTraceDepth is the maximum number of frames captured by a stack-trace
 		// action. A non-positive value uses the default depth.
 		StackTraceDepth int
+		// ReportBlockOutcome marks the HTTP block that a block_request action
+		// creates as the block whose outcome the waf.requests metric reports.
+		// Set it only for WAF-scope runs that can block the request. It has no
+		// effect on other action types.
+		ReportBlockOutcome bool
 	}
 )
 

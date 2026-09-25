@@ -240,17 +240,10 @@ func (m *ContextMetrics) SetBlockApplied() {
 	m.blockApplied.Store(true)
 }
 
-// resolveBlockMilestones turns the block decision and its enforcement outcome into
-// the `request_blocked` and `block_failure` tags of `waf.requests`.
+// resolveBlockMilestones turns the block decision and its enforcement outcome
+// into the `request_blocked` and `block_failure` tags of `waf.requests`. The
+// caller must hold milestonesMu.
 func (m *ContextMetrics) resolveBlockMilestones() {
-	m.milestonesMu.Lock()
-	defer m.milestonesMu.Unlock()
-	m.resolveBlockMilestonesLocked()
-}
-
-// resolveBlockMilestonesLocked is [ContextMetrics.resolveBlockMilestones] for a
-// caller that holds milestonesMu.
-func (m *ContextMetrics) resolveBlockMilestonesLocked() {
 	// A requested block counts as enforced unless a failure was reported, so an
 	// integration that cannot report its outcome keeps the previous behavior.
 	// When a block response was applied, the request was blocked: a failure
@@ -331,7 +324,7 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 	// Resolve the block outcome in the same critical section as the snapshot, so
 	// that a block reported earlier in Submit is not lost from the tags. The
 	// snapshot is the cutoff: an outcome reported after it is not included.
-	m.resolveBlockMilestonesLocked()
+	m.resolveBlockMilestones()
 	milestones := m.Milestones
 	m.milestonesMu.Unlock()
 	handle, _ := m.wafRequestsCounts.LoadOrCompute(milestones, func() (telemetry.MetricHandle, bool) {

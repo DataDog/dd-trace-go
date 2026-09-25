@@ -327,7 +327,7 @@ func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.Re
 	delivered := false
 	defer func() {
 		if !delivered {
-			op.blockFailed()
+			op.blockFailed(action)
 		}
 	}()
 
@@ -340,7 +340,7 @@ func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.Re
 		return true
 	}
 	delivered = true
-	op.blockApplied()
+	op.blockApplied(action)
 	op.ContextOperation.SetRequestBlocked()
 	return true
 }
@@ -352,19 +352,41 @@ func (op *HandlerOperation) reportBlockFailure(action *actions.BlockHTTP) {
 		return
 	}
 	action.Handler = nil
-	op.blockFailed()
+	op.blockFailed(action)
 }
 
-func (op *HandlerOperation) blockFailed() {
+// blockFailed reports that the response of action was not delivered. Only the
+// action that reports the waf.requests block outcome changes the metrics.
+func (op *HandlerOperation) blockFailed(action *actions.BlockHTTP) {
+	if !action.ReportsBlockOutcome() {
+		return
+	}
 	if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
 		metrics.SetBlockFailed()
 	}
 }
 
-// blockApplied reports that a block response was delivered to the client.
-func (op *HandlerOperation) blockApplied() {
+// blockApplied reports that the response of action was delivered to the client.
+// Only the action that reports the waf.requests block outcome changes the
+// metrics, so that a redirect or a RASP block cannot hide a failed WAF block.
+func (op *HandlerOperation) blockApplied(action *actions.BlockHTTP) {
+	if !action.ReportsBlockOutcome() {
+		return
+	}
 	if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
 		metrics.SetBlockApplied()
+	}
+}
+
+// handlerResult returns the response data that finishes the handler operation.
+func handlerResult(w http.ResponseWriter, opts *Config) HandlerOperationRes {
+	var statusCode int
+	if res, ok := w.(interface{ Status() int }); ok {
+		statusCode = res.Status()
+	}
+	return HandlerOperationRes{
+		Headers:    opts.ResponseHeaderCopier(w),
+		StatusCode: statusCode,
 	}
 }
 
@@ -404,24 +426,16 @@ func BeforeHandle(
 	tr := r.WithContext(ctx)
 
 	afterHandle := func() {
-		var statusCode int
-		if res, ok := w.(interface{ Status() int }); ok {
-			statusCode = res.Status()
-		}
-
 		// Finishing the HTTP operation can produce a blocking action from the
 		// response data. Apply or reject that action before finishing the WAF
 		// context, which submits waf.requests.
-		dyngo.FinishOperation(op, HandlerOperationRes{
-			Headers:    opts.ResponseHeaderCopier(w),
-			StatusCode: statusCode,
-		})
+		dyngo.FinishOperation(op, handlerResult(w, opts))
 		defer op.finishContext()
 
 		applyBlockAction(op, blockAtomic.Load(), w, tr, opts.OnBlock)
 	}
 
-	handled := applyBlockAction(op, blockAtomic.Load(), w, tr, opts.OnBlock)
+	handled := applyEarlyBlockAction(op, blockAtomic.Load(), w, tr, opts)
 
 	// We register a handler for cases that would require us to write the blocking response before any more code
 	// from a specific framework (like Gin) is executed that would write another (wrong) response here.
@@ -430,6 +444,26 @@ func BeforeHandle(
 	})
 
 	return w, tr, afterHandle, handled
+}
+
+// applyEarlyBlockAction applies a block action that the request data produced
+// before the caller receives afterHandle. If the block panics, the caller
+// cannot run afterHandle, so this function finishes the operation and its WAF
+// context before the panic continues. The request telemetry is then submitted.
+func applyEarlyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.ResponseWriter, r *http.Request, opts *Config) bool {
+	completed := false
+	defer func() {
+		if !completed {
+			// Do not read the response here: the response writer or the header
+			// copier can be the cause of the panic, and a second panic would
+			// stop the finalization and replace the original panic. The
+			// response only contains the partial block response.
+			op.Finish(HandlerOperationRes{})
+		}
+	}()
+	handled := applyBlockAction(op, action, w, r, opts.OnBlock)
+	completed = true
+	return handled
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and

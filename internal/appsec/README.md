@@ -245,6 +245,15 @@ The `ContextMetrics` type in `emitter/waf/metrics.go` records the outcome:
   because a block callback or the block response panicked.
 - `SetBlockApplied` records that a block response was applied. The HTTP
   integration calls it when the block response was delivered.
+- The HTTP integration reports a failure or an application only for the block
+  that the WAF-scope `block_request` created. `runWAF` marks that block with
+  `actions.Config.ReportBlockOutcome`, and `BlockHTTP.ReportsBlockOutcome`
+  returns true for it. A redirect or a RASP-scope block uses the same
+  `BlockHTTP` type, but its outcome does not change these tags. Thus, an
+  applied redirect cannot hide a WAF block that failed.
+- If a block panics before `httpsec.BeforeHandle` returns, the caller cannot
+  run `afterHandle`. `BeforeHandle` then finishes the operation and the WAF
+  context before the panic continues, so `waf.requests` is still submitted.
 - `Submit` resolves the two tags at the end of the WAF context. A requested
   block counts as enforced unless a failure was reported. Thus, an integration
   that does not report its outcome keeps the previous behavior. An applied block

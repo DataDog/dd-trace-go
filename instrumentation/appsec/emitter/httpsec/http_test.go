@@ -14,6 +14,7 @@ import (
 
 	"github.com/DataDog/go-libddwaf/v5"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	appsecwaf "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
@@ -32,16 +33,10 @@ func (*panickingResponseWriter) Write([]byte) (int, error) { panic("write failed
 
 func (*panickingResponseWriter) WriteHeader(int) { panic("write failed") }
 
-// newBlockMetricsOperation returns a handler operation with request metrics in
-// which the WAF requested a block.
-func newBlockMetricsOperation() (*HandlerOperation, *appsecwaf.ContextMetrics) {
-	contextOp, _ := appsecwaf.StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
-	handleMetrics := appsecwaf.NewMetricsInstance(nil, "test")
-	metrics := handleMetrics.NewContextMetrics()
-	contextOp.SetMetricsInstance(metrics)
-	metrics.SetBlockRequested()
-	return &HandlerOperation{ContextOperation: contextOp}, metrics
-}
+// headerPanickingResponseWriter panics when its headers are read.
+type headerPanickingResponseWriter struct{ panickingResponseWriter }
+
+func (*headerPanickingResponseWriter) Header() http.Header { panic("header failed") }
 
 // wafRequestsCount returns the waf.requests count with the given block outcome.
 func wafRequestsCount(client *telemetrytest.RecordClient, requestBlocked, blockFailure bool) float64 {
@@ -58,87 +53,215 @@ func wafRequestsCount(client *telemetrytest.RecordClient, requestBlocked, blockF
 	}).Get()
 }
 
-func newBlockAction() *actions.BlockHTTP {
-	return actions.NewBlockAction(map[string]any{})[0].(*actions.BlockHTTP)
+// requireBlockOutcome checks that client recorded exactly one waf.requests
+// count, with the given block outcome.
+func requireBlockOutcome(t *testing.T, client *telemetrytest.RecordClient, requestBlocked, blockFailure bool) {
+	t.Helper()
+	for _, outcome := range []struct{ requestBlocked, blockFailure bool }{
+		{false, false},
+		{true, false},
+		{false, true},
+		{true, true},
+	} {
+		var want float64
+		if outcome.requestBlocked == requestBlocked && outcome.blockFailure == blockFailure {
+			want = 1
+		}
+		if got := wafRequestsCount(client, outcome.requestBlocked, outcome.blockFailure); got != want {
+			t.Errorf("waf.requests request_blocked:%v block_failure:%v = %v, want %v", outcome.requestBlocked, outcome.blockFailure, got, want)
+		}
+	}
+}
+
+// wafAction describes an action that the test WAF returns.
+type wafAction struct {
+	// actionType is the WAF action type, such as block_request.
+	actionType string
+	// params are the WAF action parameters.
+	params map[string]any
+	// reported is true for a WAF-scope block_request, whose outcome is the
+	// waf.requests block outcome. It is false for a redirect or a RASP block.
+	reported bool
+}
+
+var (
+	wafBlock    = wafAction{actionType: "block_request", params: map[string]any{}, reported: true}
+	raspBlock   = wafAction{actionType: "block_request", params: map[string]any{}}
+	wafRedirect = wafAction{actionType: "redirect_request", params: map[string]any{"location": "/blocked"}}
+)
+
+// emit sends the action like the WAF listener does when the WAF returns it.
+func (a wafAction) emit(t *testing.T, op *HandlerOperation) {
+	t.Helper()
+	if a.reported {
+		op.ContextOperation.GetMetricsInstance().SetBlockRequested()
+	}
+	if !actions.SendActionEvents(op, map[string]any{a.actionType: a.params}, actions.Config{ReportBlockOutcome: a.reported}) && a.actionType == "block_request" {
+		t.Fatalf("%s action was not built", a.actionType)
+	}
+}
+
+// blockTest serves one request through WrapHandler. The test WAF returns
+// onRequest when the request starts, and onResponse when the handler finishes.
+// Like the WAF listener, it submits the request metrics when the WAF context
+// finishes.
+type blockTest struct {
+	onRequest  []wafAction
+	onResponse []wafAction
+	onBlock    []func()
+}
+
+// serve serves a request on w. It returns true when the protected handler ran,
+// and the value of the panic that the request raised, if any.
+func (bt blockTest) serve(t *testing.T, w http.ResponseWriter) (handlerRan bool, panicked any) {
+	t.Helper()
+	root := dyngo.NewRootOperation()
+	dyngo.SwapRootOperation(root)
+	t.Cleanup(func() { dyngo.SwapRootOperation(nil) })
+
+	contextFinished := false
+	dyngo.On(root, func(op *appsecwaf.ContextOperation, _ appsecwaf.ContextArgs) {
+		handleMetrics := appsecwaf.NewMetricsInstance(nil, "test")
+		op.SetMetricsInstance(handleMetrics.NewContextMetrics())
+	})
+	dyngo.OnFinish(root, func(op *appsecwaf.ContextOperation, _ appsecwaf.ContextRes) {
+		contextFinished = true
+		op.GetMetricsInstance().Submit(libddwaf.Truncations{}, nil)
+	})
+	dyngo.On(root, func(op *HandlerOperation, _ HandlerOperationArgs) {
+		for _, a := range bt.onRequest {
+			a.emit(t, op)
+		}
+	})
+	dyngo.OnFinish(root, func(op *HandlerOperation, _ HandlerOperationRes) {
+		for _, a := range bt.onResponse {
+			a.emit(t, op)
+		}
+	})
+
+	handler := WrapHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		handlerRan = true
+	}), tracelib.NoopTagSetter{}, &Config{OnBlock: bt.onBlock})
+	func() {
+		defer func() { panicked = recover() }()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	}()
+
+	if !contextFinished {
+		t.Fatal("the WAF context was not finished, so the request metrics were not submitted")
+	}
+	return handlerRan, panicked
 }
 
 // TestAppliedBlockHasPrecedenceOverLaterFailure checks that a block that was
-// applied is still reported as blocked when a later action fails.
+// applied is still reported as blocked when a later block fails.
 func TestAppliedBlockHasPrecedenceOverLaterFailure(t *testing.T) {
 	client := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(client)()
-	op, metrics := newBlockMetricsOperation()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	if !applyBlockAction(op, newBlockAction(), httptest.NewRecorder(), req, nil) {
-		t.Fatal("first block was not applied")
+	// The response-data block arrives after the request block response was sent.
+	w := &committedResponseWriter{header: make(http.Header)}
+	handlerRan, panicked := blockTest{onRequest: []wafAction{wafBlock}, onResponse: []wafAction{wafBlock}}.serve(t, w)
+	if panicked != nil {
+		t.Fatalf("unexpected panic: %v", panicked)
 	}
-	// Simulate a later block action that arrives after the response was sent.
-	started := &committedResponseWriter{header: make(http.Header), status: http.StatusForbidden, committed: true}
-	applyBlockAction(op, newBlockAction(), started, req, nil)
-	metrics.Submit(libddwaf.Truncations{}, nil)
+	if handlerRan {
+		t.Fatal("the blocked handler ran")
+	}
+	if w.status != http.StatusForbidden {
+		t.Fatalf("response status = %d, want %d", w.status, http.StatusForbidden)
+	}
 
-	if got := wafRequestsCount(client, true, false); got != 1 {
-		t.Fatalf("waf.requests request_blocked:true block_failure:false = %v, want 1", got)
-	}
-	if got := wafRequestsCount(client, false, true); got != 0 {
-		t.Fatalf("waf.requests request_blocked:false block_failure:true = %v, want 0", got)
+	requireBlockOutcome(t, client, true, false)
+}
+
+// TestOtherBlockDoesNotHideFailedWAFBlock checks that a redirect or a RASP
+// block that was applied does not report a later WAF block as applied when
+// that WAF block fails.
+func TestOtherBlockDoesNotHideFailedWAFBlock(t *testing.T) {
+	for name, applied := range map[string]wafAction{"redirect": wafRedirect, "rasp block": raspBlock} {
+		t.Run(name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+
+			// The WAF block arrives after the first response was sent, so it fails.
+			w := &committedResponseWriter{header: make(http.Header)}
+			handlerRan, panicked := blockTest{onRequest: []wafAction{applied}, onResponse: []wafAction{wafBlock}}.serve(t, w)
+			if panicked != nil {
+				t.Fatalf("unexpected panic: %v", panicked)
+			}
+			if handlerRan {
+				t.Fatal("the blocked handler ran")
+			}
+
+			requireBlockOutcome(t, client, false, true)
+		})
 	}
 }
 
-// TestPanickingBlockCallbackReportsFailure checks that a block callback that
-// panics is reported as failed, and that the panic is not hidden.
-func TestPanickingBlockCallbackReportsFailure(t *testing.T) {
-	client := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(client)()
-	op, metrics := newBlockMetricsOperation()
-	action := newBlockAction()
+// TestPanickingEarlyBlockFinishesRequest checks that a request block that
+// panics is reported as failed, that the request metrics are still submitted,
+// and that the panic is not hidden.
+func TestPanickingEarlyBlockFinishesRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		w         http.ResponseWriter
+		onBlock   []func()
+		wantPanic string
+	}{
+		{
+			name:      "block callback",
+			w:         httptest.NewRecorder(),
+			onBlock:   []func(){func() { panic("callback failed") }},
+			wantPanic: "callback failed",
+		},
+		{
+			name:      "block response",
+			w:         &panickingResponseWriter{header: make(http.Header)},
+			wantPanic: "write failed",
+		},
+		{
+			// The finalization must not read the headers again.
+			name:      "block response headers",
+			w:         &headerPanickingResponseWriter{},
+			wantPanic: "header failed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
 
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Fatal("the block callback panic was not propagated")
+			handlerRan, panicked := blockTest{onRequest: []wafAction{wafBlock}, onBlock: tc.onBlock}.serve(t, tc.w)
+			if panicked != tc.wantPanic {
+				t.Fatalf("recovered panic = %v, want %q", panicked, tc.wantPanic)
 			}
-		}()
-		applyBlockAction(op, action, httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil), []func(){func() { panic("callback failed") }})
-	}()
-	if action.Handler != nil {
-		t.Fatal("block action was not consumed")
-	}
-	metrics.Submit(libddwaf.Truncations{}, nil)
+			if handlerRan {
+				t.Fatal("the blocked handler ran")
+			}
 
-	if got := wafRequestsCount(client, false, true); got != 1 {
-		t.Fatalf("waf.requests request_blocked:false block_failure:true = %v, want 1", got)
+			requireBlockOutcome(t, client, false, true)
+		})
 	}
 }
 
-// TestPanickingBlockResponseReportsFailure checks that a block response that
-// panics is reported as failed, and that the panic is not hidden.
-func TestPanickingBlockResponseReportsFailure(t *testing.T) {
+// TestPanickingLateBlockFinishesRequest checks the same for a block that the
+// response data produced, which afterHandle applies.
+func TestPanickingLateBlockFinishesRequest(t *testing.T) {
 	client := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(client)()
-	op, metrics := newBlockMetricsOperation()
-	action := newBlockAction()
 
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Fatal("the block response panic was not propagated")
-			}
-		}()
-		applyBlockAction(op, action, &panickingResponseWriter{header: make(http.Header)}, httptest.NewRequest(http.MethodGet, "/", nil), nil)
-	}()
-	if action.Handler != nil {
-		t.Fatal("block action was not consumed")
+	handlerRan, panicked := blockTest{
+		onResponse: []wafAction{wafBlock},
+		onBlock:    []func(){func() { panic("callback failed") }},
+	}.serve(t, httptest.NewRecorder())
+	if panicked != "callback failed" {
+		t.Fatalf("recovered panic = %v, want %q", panicked, "callback failed")
 	}
-	metrics.Submit(libddwaf.Truncations{}, nil)
+	if !handlerRan {
+		t.Fatal("the handler did not run before the response block")
+	}
 
-	if got := wafRequestsCount(client, false, true); got != 1 {
-		t.Fatalf("waf.requests request_blocked:false block_failure:true = %v, want 1", got)
-	}
-	if got := wafRequestsCount(client, true, false); got != 0 {
-		t.Fatalf("waf.requests request_blocked:true block_failure:false = %v, want 0", got)
-	}
+	requireBlockOutcome(t, client, false, true)
 }
 
 type committedResponseWriter struct {

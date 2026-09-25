@@ -79,7 +79,11 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		delete(result.Actions, "block_request")
 		delete(result.Actions, "redirect_request")
 	}
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
+	cfg := op.actionConfig()
+	// Only the block that can change the waf.requests block outcome reports its
+	// enforcement result. Redirects and RASP-scope blocks do not.
+	cfg.ReportBlockOutcome = addrs.TimerKey != addresses.RASPScope && !monitorOnly
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, cfg)
 	if blockRequested && !blocking && metrics != nil {
 		// The action could not be built, so no integration will ever enforce it.
 		metrics.SetBlockFailed()
