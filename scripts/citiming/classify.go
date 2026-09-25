@@ -8,7 +8,6 @@ package main
 import (
 	"encoding/json"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -147,32 +146,11 @@ func classifySaves(body string) []string {
 	return saves
 }
 
-// aggregateSave reduces per-event save results to one job-level label.
-// Errors dominate conflicts, conflicts dominate successes: a job that saved
-// one cache but lost another to a reservation conflict is more usefully
-// reported as a conflict. An empty list stays "unknown" — a successful job
-// does not prove a successful save.
-func aggregateSave(saves []string) string {
-	for _, result := range []string{"error", "conflict"} {
-		if slices.Contains(saves, result) {
-			return result
-		}
-	}
-	if slices.Contains(saves, "saved") {
-		return "saved"
-	}
-	if slices.Contains(saves, "exact_key_skip") {
-		return "exact_key_skip"
-	}
-	return "unknown"
-}
-
 // logEvidence is everything extracted from one job's log.
 type logEvidence struct {
 	observation *cacheObservation
 	postSeconds *float64
 	saves       []string
-	saveResult  string
 }
 
 // parseLog extracts cache evidence from one job's log.
@@ -215,7 +193,6 @@ func parseLog(text string) *logEvidence {
 		ev.postSeconds = &secs
 	}
 	ev.saves = classifySaves(text)
-	ev.saveResult = aggregateSave(ev.saves)
 	return ev
 }
 

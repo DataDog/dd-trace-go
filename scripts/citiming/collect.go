@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -196,7 +195,6 @@ type workloadMeta struct {
 type cacheMeta struct {
 	Restores    []restoreClassification `json:"restores"`
 	Saves       []string                `json:"saves"`
-	SaveResult  string                  `json:"save_result"`
 	PostSeconds *float64                `json:"post_seconds"`
 }
 
@@ -357,10 +355,9 @@ func buildJobRecord(c client, r run, attempt, latest int, j job, collectedAt str
 		pr = &r.PullRequest[0].Number
 	}
 
-	cache := cacheMeta{Restores: restores, SaveResult: "unknown"}
+	cache := cacheMeta{Restores: restores}
 	if ev != nil {
 		cache.Saves = ev.saves
-		cache.SaveResult = ev.saveResult
 		cache.PostSeconds = ev.postSeconds
 	}
 
@@ -761,7 +758,7 @@ func cmdCollect(args []string) error {
 			snap.Usage.ActiveCachesCount, snap.Usage.ActiveCachesSizeInBytes, snapPath)
 	}
 
-	return writeSummary(*outputDir, existingJobs)
+	return nil
 }
 
 // sanitizeTimestamp renders a collection timestamp as a filename-safe
@@ -793,35 +790,3 @@ func nowUTC() string {
 
 // timeNow is a seam for tests.
 var timeNow = time.Now
-
-// writeSummary writes the per-workload CSV over successful first attempts.
-func writeSummary(dir string, jobs map[jobKey]jobObservation) error {
-	groups := map[stratum][]float64{}
-	for _, rec := range jobs {
-		if rec.Run.Attempt != 1 || !rec.Run.LatestAttempt || rec.Job.Conclusion != "success" || rec.Job.Seconds == nil {
-			continue
-		}
-		s := stratify(rec)
-		groups[s] = append(groups[s], *rec.Job.Seconds)
-	}
-	path := dir + "/summary.csv"
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	w := newCSVWriter(f)
-	w.write("workflow_file", "workload", "os", "arch", "go_version",
-		"successful_first_attempts", "median_seconds")
-	keys := make([]stratum, 0, len(groups))
-	for s := range groups {
-		keys = append(keys, s)
-	}
-	sortStrata(keys)
-	for _, s := range keys {
-		w.write(s.workflow, s.workload, s.os, s.arch, s.goVer,
-			strconv.Itoa(len(groups[s])), fmtSeconds(median(groups[s])))
-	}
-	fmt.Fprintf(os.Stdout, "  summary -> %s\n", path)
-	return w.err()
-}

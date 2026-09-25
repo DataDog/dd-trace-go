@@ -229,7 +229,7 @@ comment of `scripts/citiming/main.go` and are the report contract.
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
-cold_miss, disabled, error, or unknown. For isolated-cache providers a
+`cold_miss`, disabled, error, or unknown. For isolated-cache providers a
 raw cache-hit of `false` is ambiguous between a prefix restore and a
 cold miss, so the collector classifies it as `unknown`. The Datadog
 count series keeps the contract it has always had, where `miss` means
@@ -246,9 +246,9 @@ end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
 with `phase:end_of_job` (the former
 `ci.step.cache.restore.disk_size_bytes` name was misleading and is
 retired; dashboards querying the old name must move to the new one at
-merge time). Compressed cache-service storage is measured from the
-cache API's `size_in_bytes` in the dated
-`cache_snapshot_<timestamp>.json` files, one per daily collection.
+merge time). Compressed cache-service storage comes from the cache API
+`size_in_bytes` field in dated `cache_snapshot_<timestamp>.json` files,
+one per daily collection.
 
 Tests live in `scripts/citiming/citiming_test.go`:
 
@@ -262,15 +262,15 @@ go test -race -count=1 ./scripts/citiming/
    `--cache-snapshot`.
 2. Compare only windows with the same frozen workload strata; a comparison
    needs at least five independent successful first-attempt run IDs per
-   stratum per window, and five comparable PR revisions per window for PR
-   feedback. Extend the window rather than triggering runs to reach a
+   stratum per window, and five PR revisions with measured feedback times
+   per window. Extend the window rather than triggering runs to reach a
    count.
 3. Do not pool different runner classes, Go patch versions, build modes, or
    contrib module selections; the compare tool keeps strata separate,
    including the matrix dimensions recorded in each job name, and it
    refuses the weighted aggregate while any baseline stratum lacks
    candidate observations or sits below the five-distinct-run minimum
-   (PR feedback: five distinct revisions per signature per window),
+   (PR feedback: five measured revisions per signature per window),
    naming every affected stratum so the window can be extended.
 4. Record failures, retries, cancellations, and unknown classifications
    from the reports; skipped jobs are absent work, not zero durations.

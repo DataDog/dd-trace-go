@@ -282,17 +282,6 @@ func perfValues(records []jobObservation) perfSplit {
 	return split
 }
 
-// feedbackRevisionCounts counts stored revisions per selection
-// signature, including records whose feedback time is not measurable
-// yet; the sample minimum applies to revisions, not just durations.
-func feedbackRevisionCounts(records []prFeedback) map[string]int {
-	counts := map[string]int{}
-	for _, rec := range records {
-		counts[rec.SelectionSignature]++
-	}
-	return counts
-}
-
 // underSampleRow names a stratum that fell below the distinct-run
 // minimum in one of the windows.
 type underSampleRow struct {
@@ -464,8 +453,6 @@ func cmdCompare(args []string) error {
 
 	baseFB := feedbackBySignature(baseline.feedback)
 	candFB := feedbackBySignature(candidate.feedback)
-	baseFBRevs := feedbackRevisionCounts(baseline.feedback)
-	candFBRevs := feedbackRevisionCounts(candidate.feedback)
 	var fbBase, fbCand []weightedValue
 	fbRows := make([]feedbackRow, 0, len(baseFB))
 	var fbMissing, fbUnder []string
@@ -494,10 +481,12 @@ func cmdCompare(args []string) error {
 			fbMissing = append(fbMissing, sig)
 			continue
 		}
-		if baseFBRevs[sig] < minRevisions || candFBRevs[sig] < minRevisions {
+		// The sample minimum applies to measured revisions: feedback
+		// records without a duration cannot support the median.
+		if len(b) < minRevisions || len(c) < minRevisions {
 			fbUnder = append(fbUnder, fmt.Sprintf(
 				"%s: %d baseline, %d candidate revisions (minimum %d)",
-				sig, baseFBRevs[sig], candFBRevs[sig], minRevisions))
+				sig, len(b), len(c), minRevisions))
 		}
 	}
 	fbBaseWMed := weightedMedian(fbBase)
