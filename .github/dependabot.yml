@@ -17,6 +17,7 @@ updates:
       - "/.github/actions/dd-ci-upload"
       - "/.github/actions/pr-status-updater"
       - "/.github/actions/setup-go"
+      - "/.github/actions/tools-cache"
       - "/.github/actions/supported_configurations_validation"
     schedule:
       interval: "weekly"

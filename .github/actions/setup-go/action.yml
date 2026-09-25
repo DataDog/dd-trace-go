@@ -1,46 +1,95 @@
-name: 'Setup Go'
-description: 'Setup Go and Development tools for running tests'
+# The minimal Go setup action: selects the toolchain and manages the
+# isolated build/module caches.
+#
+# WHEN TO USE: any job that needs the Go toolchain. Jobs that also run
+# the repository's development tools (gotestsum, golangci-lint, ...)
+# should add .github/actions/tools-cache after this action; it caches
+# the tool binaries and is fully independent of this action.
+#
+# Compatibility layer between the repository's cache policy and the
+# isolated-cache provider.
+#
+# Contract (mirrors the semantics the tools wrapper had before the migration):
+#   1. Select the Go toolchain with the repository's pinned official
+#      actions/setup-go, with caching disabled there (this action owns the
+#      build/module cache instead).
+#   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
+#      for cache paths, so stale GOROOT values exported by earlier tools
+#      cannot redirect GOCACHE/GOMODCACHE.
+#   3. With caching enabled, hand the RESOLVED, exact Go version to the
+#      isolated-cache provider (cloudx-io/setup-go, pinned). Its nested
+#      installer must find that exact version already on disk; if it ever
+#      downloads one, that is a bug to investigate, not normal behaviour.
+#   4. With caching disabled, the provider is never invoked: no restore, no
+#      trimming, no save.
+#
+# Cache key shape: ddtg-cx1-<family>-<variant digest>. The digest is the first
+# 16 hex characters of SHA-256 over the caller's variant description,
+# canonicalized by this action (object keys and the `modules` list sorted).
+# Callers must describe the workload itself — runner class, module selection,
+# build tags, workspace/instrumentation/coverage mode — and never the workflow
+# title, SHA, run ID, or branch: the provider already keys on branch/run
+# identity, OS/architecture and Go version. Identical nightly and PR workloads
+# must therefore pass identical family+variant so default-branch seeding
+# stays possible.
+#
+# Observability: emits the same structured `cache-observation:` record as the
+# pre-migration action, so scripts/citiming keeps working unchanged. The
+# provider's raw cache-hit boolean is recorded but NOT exposed as an output:
+# for this provider a `false` is ambiguous between a prefix restore and a
+# cold miss, and callers must not treat it as the old hit/miss semantics.
+name: 'Setup Go runtime'
+description: 'Select Go, then isolate and refresh the build and module caches'
 inputs:
   go-version:
     required: true
-    description: Go version to setup.
+    description: Go version to setup; may be a semantic alias.
   cache:
     required: false
     default: "true"
     description: Whether to restore and save Go build and module caches.
-  tools-bin:
-    required: true
-    description: Directory to installs tools to.
-  tools-dir:
-    required: true
-    description: Directory that has the tool definitions.
+  check-latest:
+    required: false
+    default: "false"
+    description: >-
+      Whether to check for the latest available patch release matching the
+      requested version. The tools wrapper passes "true" (its historical
+      behaviour); direct callers keep the setup-go default.
   workload:
     required: false
     default: ""
     description: >-
-      Logical workload family the job belongs to, e.g. unit-core or
-      dynamic-locking. Defaults to the job name. Recorded as a low-cardinality
-      tag on cache metrics and inside the structured cache observation, so
-      timing reports can group comparable workloads instead of raw job names.
+      Logical workload family (e.g. unit-core, orchestrion-integration) used
+      as the cache-key family and in cache observations. Defaults to the job
+      name.
+  variant:
+    required: false
+    default: ""
+    description: >-
+      JSON object describing the workload variant (runner class, sorted module
+      selection, build tags, workspace/instrumentation/coverage mode). The
+      module selection may be a JSON array or a space-separated string;
+      either form is canonicalized (sorted) and hashed by this action into the
+      cache-key digest. Omit for jobs whose family alone identifies the
+      workload.
 outputs:
+  go-version:
+    description: The resolved, exact Go version installed.
+    value: ${{ steps.select-go.outputs.go-version }}
+  cache-key-prefix:
+    description: The computed provider cache-key prefix (evidence only).
+    value: ${{ steps.cache-key.outputs.prefix }}
   cache-metrics:
-    description: Raw cache observations and filesystem paths as JSON.
+    description: Raw cache observations and cache paths as JSON.
     value: ${{ steps.cache-metrics.outputs.cache-metrics }}
 runs:
   using: "composite"
   steps:
-    # Make transient module-proxy failures survivable for every step that follows in the job.
-    #
-    # The separator is load-bearing. Go's default is `https://proxy.golang.org,direct`, and with a
-    # comma the go command falls through to the next entry ONLY on 404/410 — a 5xx, a timeout, a
-    # TLS error or a dropped HTTP/2 stream is fatal and `direct` is never tried
-    # (cmd/go/internal/modfetch/proxy.go: fallBackOnError is set only for `|`). With a pipe it
-    # falls through on any error. cmd/go has no retry of its own (golang/go#28194), so this and
-    # apps/go-retry.sh are the only two lines of defence.
-    #
-    # Written to GITHUB_ENV rather than the action's `env:` because a composite action's env does
-    # not reach the calling job's later steps. Set only when unset, so a workflow or step that
-    # deliberately pins GOPROXY (e.g. GOPROXY=direct for a single command) still wins.
+    # Make transient module-proxy failures survivable for every step that
+    # follows in the job. The separator is load-bearing: with a comma the go
+    # command falls through to `direct` ONLY on 404/410, while with a pipe it
+    # falls through on any error. Set only when unset, so a workflow or step
+    # that deliberately pins GOPROXY still wins.
     - name: Configure GOPROXY fallback
       shell: bash
       run: |
@@ -48,63 +97,87 @@ runs:
           echo 'GOPROXY=https://proxy.golang.org|direct' >> "$GITHUB_ENV"
         fi
 
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      id: setup-go
+    - name: Select Go toolchain
+      id: select-go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version: ${{ inputs.go-version }}
-        cache: ${{ inputs.cache }}
-        check-latest: true
+        cache: false
+        check-latest: ${{ inputs.check-latest }}
 
-    # Callers that run a tool exporting its own GOROOT into $GITHUB_ENV before this
-    # action (e.g. reviewdog/action-golangci-lint installs a different Go release)
-    # leave a stale GOROOT behind that overrides the toolchain selected above. Re-align
-    # GOROOT with the toolchain actions/setup-go just selected so the `go` binary on
-    # PATH and its tool directory always come from the same tree.
+    # Callers that run a tool exporting its own GOROOT into $GITHUB_ENV before
+    # this action (e.g. reviewdog/action-golangci-lint installs a different Go
+    # release) leave a stale GOROOT behind that overrides the toolchain
+    # selected above. Re-align GOROOT so the `go` binary on PATH and its tool
+    # directory always come from the same tree, BEFORE the provider asks
+    # `go env` for the cache paths.
     - name: Align GOROOT with the selected toolchain
       shell: bash
       run: |
         unset GOROOT
         echo "GOROOT=$(go env GOROOT)" >> "$GITHUB_ENV"
 
-    - name: Restore tools cache
-      id: cache-tools-restore
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ inputs.tools-bin }}
-        # Key on the resolved toolchain version, not the literal input: `stable`
-        # silently changes meaning when a new Go release ships, and a cache built
-        # against the old release would then feed stale binaries to the new one.
-        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
-        # Keep near-misses usable when the base branch moves go.mod/go.sum, which
-        # otherwise invalidates the key for every open PR at once.
-        restore-keys: |
-          ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin }}-
-
-    - name: Install development tools
-      if: steps.cache-tools-restore.outputs.cache-hit != 'true'
+    - name: Compute cache key prefix
+      id: cache-key
       shell: bash
-      run: |-
-        ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}
+      env:
+        VARIANT: ${{ inputs.variant }}
+        FAMILY: ${{ inputs.workload || github.job }}
+      run: |
+        set -euo pipefail
 
-    # Save after a successful install instead of waiting for the calling job's post phase.
-    # This keeps failed installs out of the cache without discarding tools when later tests fail.
-    - name: Save tools cache
-      if: ${{ success() && steps.cache-tools-restore.outputs.cache-hit != 'true' }}
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # Canonicalize: sort object keys, sort the module list. Two callers
+        # describing the same variant must hash identically regardless of the
+        # order their expressions produced. Matrix-driven callers pass the
+        # module selection as a space-separated string (GitHub matrix values
+        # cannot be arrays), so sort tokens there too.
+        canonical="$(printf '{"variant":%s}' "${VARIANT:-{\}}" \
+          | jq -cS '
+            if (.variant | has("modules"))
+            then .variant.modules |=
+              (if type == "string" then
+                 split(" ") | map(select(length > 0)) | sort | join(" ")
+               elif type == "array" then
+                 sort
+               else
+                 .
+               end)
+            else .
+            end
+          ')"
+
+        # openssl is the one hasher present on the Linux, macOS and Windows
+        # (Git Bash) runner images alike.
+        digest="$(printf '%s' "$canonical" \
+          | openssl dgst -sha256 | awk '{print $NF}' | cut -c1-16)"
+
+        prefix="ddtg-cx1-${FAMILY}-${digest}"
+        printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
+        printf 'Computed cache key prefix: %s\n' "$prefix"
+
+    # The provider caches GOCACHE and GOMODCACHE together, trims GOCACHE to
+    # the job's working set before saving, and restores branch-aware with a
+    # default-branch fallback. max-staleness-hours keeps the documented
+    # allowance for Go's mtime-touch granularity; no other tuning.
+    - name: Isolate and refresh Go build caches
+      id: cloudx
+      if: ${{ inputs.cache == 'true' }}
+      uses: cloudx-io/setup-go@8b45cf394acf101459db0d47aa9735a4fe5eea63 # v1.0.0
       with:
-        path: ${{ inputs.tools-bin }}
-        key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
+        go-version: ${{ steps.select-go.outputs.go-version }}
+        cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
+        max-staleness-hours: "2"
+        # Verified to expand to go.mod, go.sum and go.work files only in this
+        # repository; a single glob is the provider's supported form.
+        cache-dependency-path: "**/go.*"
 
-    # Cache outcomes are observable during setup, while the API key used to submit
-    # metrics is minted later. Expose raw action outputs for classification at
-    # submission, and mirror the same observation to the job log as one
-    # structured record so jobs without Datadog credentials stay measurable:
-    # scripts/ci_timing.py reads `cache-observation:` lines from completed job
-    # logs. Keep the record non-secret and single-line.
+    # Mirror the pre-migration observation record. The restore entry carries
+    # the provider step's outcome and its raw cache-hit boolean for offline
+    # classification; a `false` from this provider is ambiguous between a
+    # prefix restore and a cold miss, and scripts/citiming classifies it as
+    # `unknown` until completed logs prove otherwise.
     - name: Record cache observations
       id: cache-metrics
-      # Record completed and incomplete operations so the reporting action can omit
-      # skipped, failed, disabled, or unclassifiable restores.
       if: always()
       shell: bash
       run: |
@@ -119,28 +192,21 @@ runs:
             {name: "go_mod", path: ($paths.GOMODCACHE // null)},
             {name: "go_build", path: ($paths.GOCACHE // null)}
           ]
-        ' <<'JSON'
+        ' <<JSON
         {
-          "provider": "github-cache",
+          "provider": "cloudx",
           "workload": ${{ toJSON(inputs.workload || github.job) }},
           "runtime": {
             "name": "go",
             "requested": ${{ toJSON(inputs.go-version) }},
-            "version": ${{ toJSON(steps.setup-go.outputs.go-version || '') }}
+            "version": ${{ toJSON(steps.select-go.outputs.go-version || '') }}
           },
           "restores": [
             {
               "name": "setup_go",
               "enabled": ${{ toJSON(inputs.cache) }},
-              "outcome": ${{ toJSON(steps.setup-go.outcome || '') }},
-              "cache_hit": ${{ toJSON(steps.setup-go.outputs.cache-hit || '') }}
-            },
-            {
-              "name": "tools",
-              "enabled": "true",
-              "outcome": ${{ toJSON(steps.cache-tools-restore.outcome || '') }},
-              "cache_hit": ${{ toJSON(steps.cache-tools-restore.outputs.cache-hit || '') }},
-              "cache_matched_key": ${{ toJSON(steps.cache-tools-restore.outputs.cache-matched-key || '') }}
+              "outcome": ${{ toJSON(steps.cloudx.outcome || '') }},
+              "cache_hit": ${{ toJSON(steps.cloudx.outputs.cache-hit || '') }}
             }
           ]
         }

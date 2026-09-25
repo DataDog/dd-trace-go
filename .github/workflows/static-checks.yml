@@ -86,12 +86,20 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-warm-tools-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
     needs: [changes, warm-tools-cache]
@@ -103,12 +111,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-copyright
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Copyright
         run: |
           go run ./scripts/check_copyright.go
@@ -127,12 +144,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-github-actions
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Lint GitHub Actions workflows
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -158,12 +184,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-modules
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run fixmodules
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -181,12 +216,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-docs
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Update documentation
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -204,12 +248,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-format
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Format
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -257,13 +310,21 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
+          check-latest: "true"
+          workload: static-lint
           cache: "false"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
@@ -312,12 +373,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-checklocks
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run checklocks
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"

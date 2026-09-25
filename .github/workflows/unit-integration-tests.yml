@@ -118,14 +118,25 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d
 
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          check-latest: "true"
           workload: unit-contrib
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":${{ toJson(matrix.chunk) }},
+             "tags":"${{ inputs.build_tags || 'standard' }}",
+             "coverage":"contrib"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -164,7 +175,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           # Walking GOMODCACHE/GOCACHE adds wall clock, so only do it where no pull
           # request is waiting on the result.
@@ -323,14 +334,25 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d datadog-agent
 
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          check-latest: "true"
           workload: unit-core
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["core"],
+             "tags":"${{ inputs.build_tags || 'standard' }}",
+             "coverage":"core"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -379,7 +401,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           # Walking GOMODCACHE/GOCACHE adds wall clock; skip it when a
           # pull request is waiting on the result.
@@ -417,13 +439,24 @@ jobs:
           clean: false
           submodules: recursive
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          check-latest: "true"
           workload: unit-telemetry
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["internal/apps/telemetry-errors"],
+             "coverage":"none"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Test telemetry-errors seccomp E2E
         working-directory: internal/apps

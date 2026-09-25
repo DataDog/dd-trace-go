@@ -1,0 +1,137 @@
+# Development-tool binary cache, decoupled from the Go toolchain setup.
+#
+# WHEN TO USE: directly after .github/actions/setup-go, in jobs that run
+# the repository's development tools (gotestsum, golangci-lint, ...) —
+# anything installed by scripts/install_tools.sh. Jobs that only need the
+# toolchain and the build/module caches use setup-go alone.
+#
+# The two actions are independent: this one needs only the resolved Go
+# version for its cache key and, optionally, the observation record that
+# setup-go emits, which the tools restore is merged into so each job
+# keeps a single structured cache-observation record.
+#
+# A tool binary depends on exactly: the runner OS and architecture, the
+# resolved Go toolchain version, the tools' own module manifests and
+# binary list, and the install script. The key hashes only those. The previous key hashed
+# every go.mod/go.sum in the repository (101 modules), so any dependency
+# bump anywhere invalidated every tools cache, and it keyed on
+# runner.os alone, which could collide across architectures.
+#
+# There is deliberately no restore-keys ladder: the install step only
+# skips on an exact hit, so a near-miss ladder would restore stale
+# binaries that the install immediately rebuilds — pure download waste.
+# A miss is cheap anyway: setup-go's isolated module cache already
+# restored the modules these tools build from, so installing is
+# compilation only, no network.
+name: 'Tools cache'
+description: 'Restore or install the repository development tool binaries'
+inputs:
+  go-version:
+    required: true
+    description: >-
+      The resolved, exact Go version; pass setup-go's go-version output.
+  tools-bin:
+    required: false
+    default: ""
+    description: >-
+      Directory for the tool binaries. Defaults to bin/ under the
+      workspace.
+  cache-metrics:
+    required: false
+    default: ""
+    description: >-
+      Optional prior cache-observation record (setup-go's cache-metrics
+      output); the tools restore is merged into it so the job keeps one
+      record.
+outputs:
+  cache-metrics:
+    description: Raw cache observations as JSON.
+    value: ${{ steps.cache-metrics.outputs.cache-metrics }}
+runs:
+  using: "composite"
+  steps:
+    - name: Restore tools cache
+      id: cache-tools-restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.tools-bin || format('{0}/bin', github.workspace) }}
+        # Key on the resolved toolchain version, not the literal input:
+        # `stable` silently changes meaning when a new Go release ships.
+        key: ${{ runner.os }}-${{ runner.arch }}-go-${{ inputs.go-version }}-tools-${{ hashFiles('_tools/go.mod', '_tools/go.sum', '_tools/tools.go', 'scripts/install_tools.sh') }}
+
+    - name: Install development tools
+      if: steps.cache-tools-restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        BIN_DIR: ${{ inputs.tools-bin }}
+      run: |-
+        tools_bin="${BIN_DIR:-$(pwd)/bin}"
+        # bash's $(pwd) is a POSIX path on every runner, sidestepping the
+        # Windows backslash mangling that callers previously normalized
+        # around.
+        ./scripts/install_tools.sh \
+          --tools-dir "$(pwd)/_tools" \
+          --bin-dir "$tools_bin"
+
+    # Save after a successful install instead of waiting for the calling
+    # job's post phase. This keeps failed installs out of the cache
+    # without discarding tools when later tests fail.
+    - name: Save tools cache
+      if: success() && steps.cache-tools-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.tools-bin || format('{0}/bin', github.workspace) }}
+        key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
+
+    # Additive convenience: later steps find the binaries on PATH. Jobs
+    # that also export the path manually are unaffected.
+    - name: Add tools to PATH
+      if: always()
+      shell: bash
+      env:
+        BIN_DIR: ${{ inputs.tools-bin }}
+      run: |
+        tools_bin="${BIN_DIR:-$(pwd)/bin}"
+        echo "$tools_bin" >> "$GITHUB_PATH"
+
+    # Merge the tools restore into the setup record (or emit a
+    # standalone one) so the job log keeps a single structured
+    # cache-observation record; the collector keeps the last record in
+    # the log.
+    - name: Record cache observations
+      id: cache-metrics
+      if: always()
+      shell: bash
+      env:
+        BASE_METRICS: ${{ inputs.cache-metrics }}
+      run: |
+        set -euo pipefail
+
+        if [[ -n "$BASE_METRICS" ]]; then
+          base="$BASE_METRICS"
+        else
+          # Standalone use without a prior setup record.
+          base="$(jq -cn \
+            --arg workload "${{ github.job }}" \
+            --arg version "${{ inputs.go-version }}" \
+            '{provider: "github-cache", workload: $workload,
+              runtime: {name: "go", requested: "", version: $version},
+              restores: []}')"
+        fi
+
+        tools_outcome="${{ steps.cache-tools-restore.outcome || '' }}"
+        tools_hit="${{ steps.cache-tools-restore.outputs.cache-hit || '' }}"
+        tools_key="${{ steps.cache-tools-restore.outputs.cache-matched-key }}"
+        tools_entry="$(jq -cn \
+          --arg outcome "$tools_outcome" \
+          --arg hit "$tools_hit" \
+          --arg matched "$tools_key" \
+          '{name: "tools", enabled: "true", outcome: $outcome,
+            cache_hit: $hit, cache_matched_key: $matched}')"
+
+        metrics="$(jq -c \
+          --argjson tools "$tools_entry" '
+          .restores += [$tools]
+        ' <<<"$base")"
+        printf 'cache-metrics=%s\n' "$metrics" >> "$GITHUB_OUTPUT"
+        printf 'cache-observation:%s\n' "$metrics"
