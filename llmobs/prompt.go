@@ -79,6 +79,7 @@ func (p *ManagedPrompt) Config() map[string]any {
 	return config
 }
 
+// Match double braces first; preserve surrounding braces such as the closing object in {"age": {age}}.
 var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
 // Format renders supplied variables and leaves missing placeholders unchanged.
@@ -87,9 +88,6 @@ func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error)
 		var rendered strings.Builder
 		last := 0
 		for _, match := range promptVariablePattern.FindAllStringSubmatchIndex(s, -1) {
-			if match[0] > 0 && s[match[0]-1] == '{' || match[1] < len(s) && s[match[1]] == '}' {
-				continue
-			}
 			start, end := match[2], match[3]
 			if start == -1 {
 				start, end = match[4], match[5]
