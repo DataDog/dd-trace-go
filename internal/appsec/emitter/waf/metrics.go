@@ -218,6 +218,7 @@ type ContextMetrics struct {
 
 	blockRequested atomic.Bool
 	blockFailed    atomic.Bool
+	blockApplied   atomic.Bool
 
 	// logger is a pre-configured logger with appsec product tags
 	logger *telemetrylog.Logger
@@ -233,6 +234,12 @@ func (m *ContextMetrics) SetBlockFailed() {
 	m.blockFailed.Store(true)
 }
 
+// SetBlockApplied records that a block response was applied to the request.
+// An applied block has precedence over a failure that another action reports.
+func (m *ContextMetrics) SetBlockApplied() {
+	m.blockApplied.Store(true)
+}
+
 // resolveBlockMilestones turns the block decision and its enforcement outcome into
 // the `request_blocked` and `block_failure` tags of `waf.requests`.
 func (m *ContextMetrics) resolveBlockMilestones() {
@@ -246,8 +253,10 @@ func (m *ContextMetrics) resolveBlockMilestones() {
 func (m *ContextMetrics) resolveBlockMilestonesLocked() {
 	// A requested block counts as enforced unless a failure was reported, so an
 	// integration that cannot report its outcome keeps the previous behavior.
+	// When a block response was applied, the request was blocked: a failure
+	// that a later action reports does not change this.
 	blockRequested := m.blockRequested.Load()
-	blockFailure := blockRequested && m.blockFailed.Load()
+	blockFailure := blockRequested && m.blockFailed.Load() && !m.blockApplied.Load()
 	m.Milestones.blockFailure = blockFailure
 	m.Milestones.requestBlocked = blockRequested && !blockFailure
 }

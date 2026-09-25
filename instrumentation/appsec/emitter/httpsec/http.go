@@ -193,9 +193,9 @@ func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
 // action must be applied before Finish; otherwise it is reported as failed.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
-	// Direct callers cannot apply an action produced by finishOperation before
-	// finishContext submits request telemetry. An action applied earlier has
-	// already consumed its handler.
+	// Direct callers cannot apply an action that the response-data WAF run in
+	// dyngo.FinishOperation produces before finishContext submits request
+	// telemetry. An action applied earlier has already consumed its handler.
 	op.reportBlockFailure(op.blockAction.Load())
 	op.finishContext()
 }
@@ -321,15 +321,26 @@ func applyBlockAction(op *HandlerOperation, action *actions.BlockHTTP, w http.Re
 
 	handler := action.Handler
 	action.Handler = nil
+	// The handler is consumed, so no later caller can report this block. Report
+	// it as failed unless its response is delivered, also when a block callback
+	// or the block response panics.
+	delivered := false
+	defer func() {
+		if !delivered {
+			op.blockFailed()
+		}
+	}()
+
 	for _, f := range onBlock {
 		f()
 	}
 
 	handler.ServeHTTP(w, r)
 	if actions.CommitBlockResponse(w) != nil {
-		op.blockFailed()
 		return true
 	}
+	delivered = true
+	op.blockApplied()
 	op.ContextOperation.SetRequestBlocked()
 	return true
 }
@@ -347,6 +358,13 @@ func (op *HandlerOperation) reportBlockFailure(action *actions.BlockHTTP) {
 func (op *HandlerOperation) blockFailed() {
 	if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
 		metrics.SetBlockFailed()
+	}
+}
+
+// blockApplied reports that a block response was delivered to the client.
+func (op *HandlerOperation) blockApplied() {
+	if metrics := op.ContextOperation.GetMetricsInstance(); metrics != nil {
+		metrics.SetBlockApplied()
 	}
 }
 

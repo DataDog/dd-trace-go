@@ -241,10 +241,14 @@ The `ContextMetrics` type in `emitter/waf/metrics.go` records the outcome:
   `block_request` action. RASP-scope actions do not change these tags.
 - `SetBlockFailed` records that the block was not enforced. `runWAF` calls it
   when the action cannot be built. Integrations call it when they cannot deliver
-  the block response, for example because the response has already started.
+  the block response, for example because the response has already started, or
+  because a block callback or the block response panicked.
+- `SetBlockApplied` records that a block response was applied. The HTTP
+  integration calls it when the block response was delivered.
 - `Submit` resolves the two tags at the end of the WAF context. A requested
   block counts as enforced unless a failure was reported. Thus, an integration
-  that does not report its outcome keeps the previous behavior.
+  that does not report its outcome keeps the previous behavior. An applied block
+  has precedence: a failure that a later action reports does not change it.
 
 RASP rules report their block outcome on `rasp.rule.match` with the
 `block:success`, `block:failure`, or `block:irrelevant` tag.

@@ -26,13 +26,17 @@ func TestResolveBlockMilestones(t *testing.T) {
 		name           string
 		requested      bool
 		failed         bool
+		applied        bool
 		requestBlocked bool
 		blockFailure   bool
 	}{
 		{name: "not requested"},
 		{name: "not requested but unavailable", failed: true},
+		{name: "not requested but applied", applied: true},
 		{name: "requested with no reported outcome", requested: true, requestBlocked: true},
 		{name: "requested and failed", requested: true, failed: true, blockFailure: true},
+		{name: "requested and applied", requested: true, applied: true, requestBlocked: true},
+		{name: "requested, applied, and failed", requested: true, applied: true, failed: true, requestBlocked: true},
 	}
 
 	for _, tc := range tests {
@@ -43,6 +47,9 @@ func TestResolveBlockMilestones(t *testing.T) {
 			}
 			if tc.failed {
 				metrics.SetBlockFailed()
+			}
+			if tc.applied {
+				metrics.SetBlockApplied()
 			}
 
 			metrics.resolveBlockMilestones()
