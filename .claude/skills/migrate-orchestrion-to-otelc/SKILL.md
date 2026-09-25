@@ -162,9 +162,11 @@ Prefer hooks; inject raw code only when it must run inside the target package.
   where the rule changes nothing. Imports otelc injects elsewhere are resolved against a separate
   build, so a package that is both re-printed and imported that way can fail at link time with
   `fingerprint mismatch`. Seen only on the macOS CI jobs, not locally and not on Linux or Windows.
-  Keep glob targets as narrow as the rule allows.
+  Keep glob targets as narrow as the rule allows. In a target list, `not:` entries narrow the match
+  but do not avoid this: `[**, not: x]` still re-prints every other package. Prefer `[$root, main]`
+  or explicit paths.
 - `target: $root` never matches `package main`, whose compile-time import path is the literal
-  string `main`. A call-site rule that must fire there needs a `$root` rule and a `main` rule.
+  string `main`. A call-site rule that must fire there lists both: `target: [$root, main]`.
 - Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the same commit as `OTELC_VERSION`, not
   to whatever is current. There is no submodule tag, so plain `go mod tidy` drifts them onto HEAD.
   Both pseudo-versions carry that commit, so read the hash out of `OTELC_VERSION` and resolve it:
