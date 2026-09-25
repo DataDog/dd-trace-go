@@ -123,6 +123,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          workload: unit-contrib
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -323,9 +324,11 @@ jobs:
         run: docker compose up -d datadog-agent
 
       - name: Setup Go and development tools
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          workload: unit-core
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
@@ -371,6 +374,17 @@ jobs:
           files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE adds wall clock; skip it when a
+          # pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
@@ -407,6 +421,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          workload: unit-telemetry
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 

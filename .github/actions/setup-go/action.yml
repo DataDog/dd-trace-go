@@ -14,6 +14,14 @@ inputs:
   tools-dir:
     required: true
     description: Directory that has the tool definitions.
+  workload:
+    required: false
+    default: ""
+    description: >-
+      Logical workload family the job belongs to, e.g. unit-core or
+      dynamic-locking. Defaults to the job name. Recorded as a low-cardinality
+      tag on cache metrics and inside the structured cache observation, so
+      timing reports can group comparable workloads instead of raw job names.
 outputs:
   cache-metrics:
     description: Raw cache observations and filesystem paths as JSON.
@@ -88,7 +96,11 @@ runs:
         key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
 
     # Cache outcomes are observable during setup, while the API key used to submit
-    # metrics is minted later. Expose raw action outputs for classification at submission.
+    # metrics is minted later. Expose raw action outputs for classification at
+    # submission, and mirror the same observation to the job log as one
+    # structured record so jobs without Datadog credentials stay measurable:
+    # scripts/ci_timing.py reads `cache-observation:` lines from completed job
+    # logs. Keep the record non-secret and single-line.
     - name: Record cache observations
       id: cache-metrics
       # Record completed and incomplete operations so the reporting action can omit
@@ -98,17 +110,22 @@ runs:
       run: |
         set -euo pipefail
 
-        paths="$(go env -json GOMODCACHE GOCACHE)"
+        # A failed toolchain selection can leave `go` missing; record the
+        # observation anyway so incomplete telemetry stays visible.
+        paths="$(go env -json GOMODCACHE GOCACHE 2>/dev/null || printf '{}')"
         metrics="$(jq -c \
           --argjson paths "$paths" '
           .cache_paths = [
-            {name: "go_mod", path: $paths.GOMODCACHE},
-            {name: "go_build", path: $paths.GOCACHE}
+            {name: "go_mod", path: ($paths.GOMODCACHE // null)},
+            {name: "go_build", path: ($paths.GOCACHE // null)}
           ]
         ' <<'JSON'
         {
+          "provider": "github-cache",
+          "workload": ${{ toJSON(inputs.workload || github.job) }},
           "runtime": {
             "name": "go",
+            "requested": ${{ toJSON(inputs.go-version) }},
             "version": ${{ toJSON(steps.setup-go.outputs.go-version || '') }}
           },
           "restores": [
@@ -130,3 +147,4 @@ runs:
         JSON
         )"
         printf 'cache-metrics=%s\n' "$metrics" >> "$GITHUB_OUTPUT"
+        printf 'cache-observation:%s\n' "$metrics"

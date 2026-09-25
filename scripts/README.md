@@ -187,6 +187,95 @@ export DATADOG_SITE=datadoghq.com
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
 
+## CI Timing Scripts
+
+Scripts for measuring CI durations and Go build-cache behaviour from
+completed GitHub Actions runs. GitHub completed-run data is the source of
+truth; Datadog series are secondary.
+
+### citiming
+
+`go run ./scripts/citiming` collects deduplicated observations (one record
+per run, attempt, and job) plus one PR feedback record per PR revision,
+and compares two collected windows using baseline-frozen strata and
+baseline-frequency weights.
+
+Collection requires an authenticated `gh` with read access to workflow
+runs, jobs, logs, check runs, and the cache API. Raw job logs are input
+data only: they are never executed or republished in full.
+
+```bash
+# Collect one window of completed runs (daily cadence during measurement
+# programs; collects logs before they expire). Evidence stays outside the
+# source tree.
+go run ./scripts/citiming collect \
+  --repo DataDog/dd-trace-go \
+  --since 2026-09-14 --until 2026-09-20 \
+  --output-dir /tmp/ci-timing/baseline-week-1 \
+  --events pull_request --cache-snapshot
+
+# Compare two windows (offline, no API access needed).
+go run ./scripts/citiming compare \
+  --baseline /tmp/ci-timing/baseline-week-1 \
+  --candidate /tmp/ci-timing/candidate-week-1 \
+  --output-dir /tmp/ci-timing/comparison
+```
+
+Metric definitions (job wall time including post steps, post time, restore
+and save result classification, PR feedback time including the all-green
+delay, and the exact accepted check-name exclusions) live in the doc
+comment of `scripts/citiming/main.go` and are the report contract.
+
+Restores are classified from the structured `cache-observation:` record
+that the Go setup actions print into every job log (when a job emits
+several records, the collector keeps the last one): exact, prefix,
+cold_miss, disabled, error, or unknown. For isolated-cache providers a
+raw cache-hit of `false` is ambiguous between a prefix restore and a
+cold miss, so the collector classifies it as `unknown`. The Datadog
+count series keeps the contract it has always had, where `miss` means
+"not an exact hit" (actions/setup-go already reported false for
+restore-key matches), so every successful restore stays counted and
+existing dashboards remain continuous. The precise exact/prefix/cold
+split remains with completed-log classification in this tool. Saves are classified per event from
+completed log markers (`Cache saved with key:`, `Cache hit occurred on the
+primary key ... not saving cache`, reservation conflicts, failures); a
+successful job never counts as a successful save on its own.
+
+The filesystem sizes published by `.github/actions/cache-metrics` are
+end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
+with `phase:end_of_job` (the former
+`ci.step.cache.restore.disk_size_bytes` name was misleading and is
+retired; dashboards querying the old name must move to the new one at
+merge time). Compressed cache-service storage is measured from the
+cache API's `size_in_bytes` in the dated
+`cache_snapshot_<timestamp>.json` files, one per daily collection.
+
+Tests live in `scripts/citiming/citiming_test.go`:
+
+```bash
+go test -race -count=1 ./scripts/citiming/
+```
+
+### Weekly review procedure
+
+1. Collect each day of the window before job logs expire, with
+   `--cache-snapshot`.
+2. Compare only windows with the same frozen workload strata; a comparison
+   needs at least five independent successful first-attempt run IDs per
+   stratum per window, and five comparable PR revisions per window for PR
+   feedback. Extend the window rather than triggering runs to reach a
+   count.
+3. Do not pool different runner classes, Go patch versions, build modes, or
+   contrib module selections; the compare tool keeps strata separate,
+   including the matrix dimensions recorded in each job name, and it
+   refuses the weighted aggregate while any baseline stratum lacks
+   candidate observations or sits below the five-distinct-run minimum
+   (PR feedback: five distinct revisions per signature per window),
+   naming every affected stratum so the window can be extended.
+4. Record failures, retries, cancellations, and unknown classifications
+   from the reports; skipped jobs are absent work, not zero durations.
+5. Publish aggregates and run URLs in the PR description, never raw logs.
+
 ## Guidelines
 
 - Scripts should be idempotent when possible
