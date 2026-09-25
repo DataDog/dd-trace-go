@@ -6,6 +6,7 @@
 package llmobs
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -52,18 +53,43 @@ func TestPromptTextAndChat(t *testing.T) {
 }
 
 func TestPromptFormatBalancedPlaceholders(t *testing.T) {
-	prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, PromptTemplate{
-		Text: `{{double}} {single} | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`,
-	}, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rendered, err := prompt.Format(map[string]any{"double": "two", "single": "one", "age": 42})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := `two one | {{double} | {single}} | {{{double}}} | JSON: {"age": {age}}`; rendered.Text != want {
-		t.Fatalf("rendered %q, want %q", rendered.Text, want)
+	for _, kind := range []string{"text", "chat"} {
+		for _, tc := range []struct{ template, want string }{
+			{`{name} {{ name }} {user_id} {missing}`, `Ada Ada 42 {missing}`},
+			{`{{name}}}`, `Ada}`},
+			{`{{{name}}}`, `{Ada}`},
+			{`{{name}`, `{Ada`},
+			{`{name}}`, `Ada}`},
+			{`{"age": {age}}`, `{"age": 42}`},
+			{`{"age": {{age}}}`, `{"age": 42}`},
+			{`{"user": {"age": {age}}}`, `{"user": {"age": 42}}`},
+			{`{"user": {"age": {{age}}}}`, `{"user": {"age": 42}}`},
+		} {
+			t.Run(kind+"/"+tc.template, func(t *testing.T) {
+				template := PromptTemplate{Text: tc.template}
+				if kind == "chat" {
+					template = PromptTemplate{Messages: []PromptMessage{{Role: "user", Content: tc.template}}}
+				}
+				prompt, err := newManagedPrompt("balanced", "1", PromptSourceRegistry, template, "", "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				rendered, err := prompt.Format(map[string]any{"name": "Ada", "user_id": 42, "age": 42})
+				if err != nil {
+					t.Fatal(err)
+				}
+				text := rendered.Text
+				if kind == "chat" {
+					text = rendered.Messages[0].Content
+				}
+				if text != tc.want {
+					t.Fatalf("rendered %q, want %q", text, tc.want)
+				}
+				if json.Valid([]byte(tc.want)) && !json.Valid([]byte(text)) {
+					t.Fatalf("invalid JSON: %s", text)
+				}
+			})
+		}
 	}
 }
 
