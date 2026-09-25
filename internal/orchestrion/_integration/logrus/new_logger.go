@@ -28,7 +28,7 @@ func (tc *TestCaseNewLogger) Setup(context.Context, *testing.T) {
 }
 
 func (tc *TestCaseNewLogger) Run(ctx context.Context, t *testing.T) {
-	runTest(ctx, t, tc.logs, tc.Log)
+	runTest(ctx, t, tc.logs, tc.Log, true)
 }
 
 func (*TestCaseNewLogger) ExpectedTraces() trace.Traces {

@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -19,9 +20,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
-func runTest(ctx context.Context, t *testing.T, out *bytes.Buffer, logFn func(context.Context, logrus.Level, string)) {
+func runTest(ctx context.Context, t *testing.T, out *bytes.Buffer, logFn func(context.Context, logrus.Level, string), log128bits bool) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
+
+	wantTraceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	if log128bits {
+		wantTraceID = span.Context().TraceID()
+	}
 
 	logFn(ctx, logrus.DebugLevel, "debug")
 	logFn(ctx, logrus.InfoLevel, "info")
@@ -40,7 +46,7 @@ func runTest(ctx context.Context, t *testing.T, out *bytes.Buffer, logFn func(co
 		line := string(s.Bytes())
 		t.Logf("%s", line)
 		assert.Regexp(t, `dd.span_id=\d+`, line, "no span ID")
-		assert.Regexp(t, `dd.trace_id=\d+`, line, "no trace ID")
+		assert.Regexp(t, `dd.trace_id=`+wantTraceID+`(\s|$)`, line, "missing or wrong trace ID")
 	}
 }
 
