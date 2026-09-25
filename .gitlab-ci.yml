@@ -26,6 +26,8 @@ workflow:
 
 # Config Registry CI Jobs - Extended from one-pipeline
 validate_supported_configurations_v2_local_file:
+  rules:
+    - when: never
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .validate_supported_configurations_v2_local_file
   variables:
@@ -33,6 +35,8 @@ validate_supported_configurations_v2_local_file:
     BACKFILLED: "true"
 
 update_central_configurations_version_range_v2:
+  rules:
+    - when: never
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .update_central_configurations_version_range_v2
   variables:
@@ -49,7 +53,7 @@ include:
   - local: ".gitlab/one-pipeline.locked.yml"
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
-    ref: 'main'
+    ref: "12a3157e4e36ad5530c283c0e751f1fe71560192"
   # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
   # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
   - project: 'ddoghq/llm-validation-platform'
