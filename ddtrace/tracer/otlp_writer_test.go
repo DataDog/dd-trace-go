@@ -33,6 +33,12 @@ type testOTLPServer struct {
 	*httptest.Server
 	mu       sync.Mutex
 	payloads [][]byte
+	// discard makes the handler drain request bodies without retaining them, for
+	// tests that never inspect the payloads. Retaining them keeps one
+	// ~payloadSizeLimit-sized buffer alive per flush for the whole test, so peak
+	// RSS scales with the number of flushes rather than with the writer's
+	// in-flight window.
+	discard atomic.Bool
 	// failCount controls how many requests return 500 before succeeding.
 	failCount int32
 }
@@ -42,6 +48,11 @@ func newTestOTLPServer() *testOTLPServer {
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if remaining := atomic.AddInt32(&s.failCount, -1); remaining >= 0 {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if s.discard.Load() {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -363,16 +374,35 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 // panics with "Add called concurrently with Wait" once a Wait call observes a
 // zero counter at the same instant a new flush starts one.
 func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
+	// The three bounds below exist because this test was a memory bomb under
+	// -tags=deadlock: peak RSS ranged from 0.50GB to 13.70GB across identical
+	// runs, bimodal on whether the adders outran the drain. Each adder allocates
+	// a payloadSizeLimit/4 span (plus the copy convertSpan makes), four of those
+	// trigger a flush, and nothing bounded how many flushes piled up or how long
+	// their payloads stayed alive. None of the bounds touch the wg.Add/wg.Wait
+	// interleaving this test exists to catch -- the adders still flush
+	// concurrently with the waits, just not unboundedly.
 	srv := newTestOTLPServer()
+	// 1. Do not retain the bodies; this test never inspects them.
+	srv.discard.Store(true)
 	defer srv.Close()
 	w := newTestOTLPWriter(t, srv)
+	// 2. Bound the in-flight send window. At the default concurrentConnectionLimit
+	// of 100, each queued flush holds its own span batch plus the buffer
+	// proto.Marshal builds from it, which is where the multi-GB heaps came from.
+	w.climit = make(chan struct{}, 4)
 
 	const numAdders = 20
+	// 3. Bound each adder. Unbounded, they spin until the waits finish, so the
+	// volume allocated grew with however long a wait took -- unpredictable here,
+	// since every w.mu acquisition goes through the deadlock detector's global
+	// lock. numAdders*addsPerAdder still yields far more flushes than waits.
+	const addsPerAdder = 200
 	stop := make(chan struct{})
 	var adders sync.WaitGroup
 	for range numAdders {
 		adders.Go(func() {
-			for {
+			for range addsPerAdder {
 				select {
 				case <-stop:
 					return

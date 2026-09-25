@@ -154,7 +154,7 @@ func TestTracerCleanStop(t *testing.T) {
 	var wg sync.WaitGroup
 	transport := newDummyTransport()
 
-	n := 5000
+	n := tracerCleanStopIterations
 
 	wg.Add(3)
 	for range 3 {
