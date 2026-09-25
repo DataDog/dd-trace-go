@@ -194,9 +194,12 @@ jobs:
           ref: ${{ inputs.orchestrion-version }}
 
       # Local action references resolve from the workspace, and this
-      # repository is checked out beneath dd-trace-go/ (the dd-ci-upload
-      # reference below works because a later step re-checks out the
-      # default repository at the workspace root before the uploads).
+      # repository is checked out beneath dd-trace-go/ — also for the
+      # dd-ci-upload step at the end. Local composite actions must stay on
+      # disk until the job's post steps run (post steps re-resolve the action
+      # path), so nothing later in this job may wipe or replace the workspace
+      # contents: a checkout of the workspace root deletes everything already
+      # there, nested checkout included.
       - name: Setup Go
         id: setup-go
         uses: ./dd-trace-go/.github/actions/setup-go
@@ -364,13 +367,6 @@ jobs:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: always()
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
-          clean: false
       - name: Get Datadog credentials
         id: dd-sts
         if: always()
@@ -378,10 +374,15 @@ jobs:
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go
+      # Referenced beneath dd-trace-go/ on purpose: this job's checked-out
+      # copy is the one that stays on disk through the post steps. A checkout
+      # into the workspace root here (as this step once did) deletes the
+      # workspace contents and with them ./dd-trace-go/.github/actions/*,
+      # which the Setup Go step above then fails to resolve at post time.
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
-        uses: ./.github/actions/dd-ci-upload
+        uses: ./dd-trace-go/.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
