@@ -31,7 +31,7 @@ import (
 )
 
 func promptResponse(id, version, text string) string {
-	encoded, _ := json.Marshal(map[string]any{"prompt_id": id, "version": version, "template": text})
+	encoded, _ := json.Marshal(map[string]any{"prompt_id": id, "version": version, "template": text, "config": map[string]any{"model": map[string]any{"temperature": 0.2}}})
 	return string(encoded)
 }
 
@@ -179,7 +179,7 @@ func TestGetPromptOptions(t *testing.T) {
 	prompt, err := GetPrompt(context.Background(), "greeting",
 		WithPromptTargetingKey("user-1"),
 		WithPromptTargetingAttributes(attributes),
-		WithPromptFallback(PromptFallback{Template: PromptTemplate{Messages: messages}}),
+		WithPromptFallback(PromptFallback{Template: PromptTemplate{Messages: messages}, Config: map[string]any{"nested": map[string]any{"value": "original"}}}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +193,11 @@ func TestGetPromptOptions(t *testing.T) {
 	}
 	if got := prompt.Template().Messages[0].Content; got != "Hello {name}" {
 		t.Fatalf("fallback mutated: %q", got)
+	}
+	config := prompt.Config()
+	config["nested"].(map[string]any)["value"] = "mutated"
+	if got := prompt.Config()["nested"].(map[string]any)["value"]; got != "original" {
+		t.Fatalf("fallback config mutated: %v", got)
 	}
 	if !strings.Contains(string(request.body), `"targeting_key":"user-1"`) || !strings.Contains(string(request.body), `"tier":"gold"`) {
 		t.Fatalf("resolve body %s", request.body)
@@ -456,7 +461,7 @@ func TestPromptFallbackAuthAndErrors(t *testing.T) {
 func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	now := time.Unix(100, 0)
 	cache := newPromptCache(time.Minute, func() time.Time { return now })
-	prompt, _ := newManagedPrompt("p", "1", PromptSourceRegistry, PromptTemplate{Text: "x"}, "", "")
+	prompt, _ := newManagedPrompt("p", "1", PromptSourceRegistry, PromptTemplate{Text: "x"}, map[string]any{"nested": map[string]any{"value": "cached"}}, "", "")
 	for i := range promptCacheMaxEntries {
 		cache.set(promptCacheKey{promptID: "p", selector: string(rune(i))}, prompt, now)
 	}
@@ -495,9 +500,12 @@ func TestPromptCacheSelectorsLRUAndFile(t *testing.T) {
 	if files.path(keyA) == files.path(keyB) {
 		t.Fatal("file paths collided")
 	}
-	_, written, stale, ok := files.get(keyA)
+	cachedPrompt, written, stale, ok := files.get(keyA)
 	if !ok || stale || !written.Equal(now.Add(-30*time.Second)) {
 		t.Fatalf("file hit ok=%v stale=%v written=%v", ok, stale, written)
+	}
+	if got := cachedPrompt.Config()["nested"].(map[string]any)["value"]; got != "cached" {
+		t.Fatalf("file config %v", got)
 	}
 	now = now.Add(time.Minute)
 	_, _, stale, ok = files.get(keyA)

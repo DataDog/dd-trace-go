@@ -229,7 +229,7 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 	if version == "" {
 		version = "fallback"
 	}
-	prompt, fallbackErr := newManagedPrompt(promptID, version, PromptSourceFallback, fallback.Template, "", "")
+	prompt, fallbackErr := newManagedPrompt(promptID, version, PromptSourceFallback, fallback.Template, fallback.Config, "", "")
 	if fallbackErr != nil {
 		return nil, fallbackErr
 	}
@@ -425,6 +425,14 @@ func parsePrompt(raw any, source PromptSource) (*ManagedPrompt, error) {
 	if err != nil {
 		return nil, err
 	}
+	config := map[string]any{}
+	if value, exists := data["config"]; exists {
+		var ok bool
+		config, ok = value.(map[string]any)
+		if !ok {
+			return nil, errors.New("invalid prompt response: config must be an object")
+		}
+	}
 	promptUUID, _ := data["prompt_uuid"].(string)
 	versionUUID, _ := data["prompt_version_uuid"].(string)
 	if versionUUID == "" {
@@ -433,7 +441,7 @@ func parsePrompt(raw any, source PromptSource) (*ManagedPrompt, error) {
 	if versionUUID == "" {
 		versionUUID, _ = data["ID"].(string)
 	}
-	return newManagedPrompt(id, version, source, template, promptUUID, versionUUID)
+	return newManagedPrompt(id, version, source, template, config, promptUUID, versionUUID)
 }
 
 func promptVersion(value any) string {
