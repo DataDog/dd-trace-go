@@ -36,6 +36,7 @@ var changeToWafUpdates sync.Once
 // TODO: add request_excluded to the mix once we have the capability to track it (blocked on libddwaf)
 type RequestMilestones struct {
 	requestBlocked bool
+	blockFailure   bool
 	ruleTriggered  bool
 	wafTimeout     bool
 	rateLimited    bool
@@ -330,6 +331,8 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 			blockTag := "block:irrelevant"
 			if tags.requestBlocked {
 				blockTag = "block:success"
+			} else if tags.blockFailure {
+				blockTag = "block:failure"
 			}
 
 			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() (telemetry.MetricHandle, bool) {

@@ -13,6 +13,29 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func BenchmarkPgxQueryHookAppSecDisabled(b *testing.B) {
+	if instr.AppSecRASPEnabled() {
+		b.Fatal("benchmark requires AppSec RASP to be disabled")
+	}
+	tr := wrapPgxTracer(&pgx.ConnConfig{}, WithTraceQuery(false))
+	ctx := context.Background()
+	data := pgx.TraceQueryStartData{SQL: "SELECT 1"}
+	b.Run("serial", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			tr.TraceQueryStart(ctx, nil, data)
+		}
+	})
+	b.Run("parallel", func(b *testing.B) {
+		b.ReportAllocs()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				tr.TraceQueryStart(ctx, nil, data)
+			}
+		})
+	})
+}
+
 // BenchmarkPgxTracerHooks measures the allocation cost of tagging traced spans with
 // connection metadata (net.destination.name/port, db.name, db.user). Not registered
 // in .gitlab/benchmarks/micro/gitlab-ci.yml.
