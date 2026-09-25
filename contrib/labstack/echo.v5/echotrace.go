@@ -149,20 +149,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			err := next(c)
 			var echoStatus int
 			if err != nil && !shouldIgnoreError(cfg, err) {
-				// It is impossible to determine what the final status code of a request is in echo.
-				// This is the best we can do.
-				if echoErr, ok := cfg.translateError(err); ok {
-					if cfg.isStatusError(echoErr.Code) {
-						finishOpts = append(finishOpts, tracer.WithError(err))
-					}
-					echoStatus = echoErr.Code
-
-				} else {
-					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
-					if cfg.isStatusError(500) {
-						finishOpts = append(finishOpts, tracer.WithError(err))
-					}
-					echoStatus = 500
+				echoStatus = statusFromError(cfg, c, err)
+				if cfg.isStatusError(echoStatus) {
+					finishOpts = append(finishOpts, tracer.WithError(err))
 				}
 			} else if status := responseStatus(c); status > 0 {
 				if cfg.isStatusError(status) {
@@ -202,6 +191,20 @@ func responseStatus(c *echo.Context) int {
 		return r.Status
 	}
 	return 0
+}
+
+// statusFromError reports the HTTP status for err. A translator result with a
+// non-zero Code wins unless the response is already committed; a zero Code
+// falls through. Otherwise [echo.ResolveResponseStatus] is used, which honors
+// a committed response, then [echo.HTTPStatusCoder], then 500.
+func statusFromError(cfg *config, c *echo.Context, err error) int {
+	if echoErr, ok := cfg.translateError(err); ok && echoErr != nil && echoErr.Code != 0 {
+		if r, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr != nil || r == nil || !r.Committed {
+			return echoErr.Code
+		}
+	}
+	_, status := echo.ResolveResponseStatus(c.Response(), err)
+	return status
 }
 
 func errorFromStatusCode(statusCode int) error {
