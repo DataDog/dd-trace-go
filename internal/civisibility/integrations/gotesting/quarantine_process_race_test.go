@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/subtesthelper"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
@@ -196,6 +197,11 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 				}},
 				"quarantine_process_test.go": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceForeignSuiteFixture/root/foreign": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+				}},
+				"callback.go": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+					"TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled": {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
 				}},
@@ -433,6 +439,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		child := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/parent/child", 2)
 		checkSpansByTagValue(child, constants.TestIsAttempToFix, "true", 2)
 		checkSpansByTagValue(child, constants.TestIsRetry, "true", 1)
+		helperDisabled := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled", 1)
+		checkSpansByTagValue(helperDisabled, constants.TestModule, module, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestStatus, constants.TestStatusSkip, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestIsDisabled, "true", 1)
+		helperChild := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/parent/helper-child", 2)
+		checkSpansByTagValue(helperChild, constants.TestModule, module, 2)
+		checkSpansByTagValue(helperChild, constants.TestIsRetry, "true", 1)
+		checkSpansByTagValue(helperChild, constants.TestSourceFile, "internal/civisibility/integrations/gotesting/fixtures/subtesthelper/callback.go", 2)
 		os.Exit(0)
 	case "ancestor-atf":
 		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorATFFixture/child", 2)
@@ -1593,6 +1607,7 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
+		t.Run("helper-disabled", instrumentTestingTFunc(subtesthelper.Disabled))
 		t.Run("itr", instrumentTestingTFunc(quarantinedRaceForeignSuiteITRCallback))
 		t.Run("parent", instrumentTestingTFunc(quarantinedRaceForeignSuiteParentCallback))
 	}))
@@ -1600,6 +1615,7 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 
 func quarantinedRaceForeignSuiteParentCallback(t *testing.T) {
 	t.Run("child", instrumentTestingTFunc(quarantinedRaceHomeSuiteCallback))
+	t.Run("helper-child", instrumentTestingTFunc(subtesthelper.Pass))
 }
 
 func TestQuarantinedRaceParallelDeniedFixture(t *testing.T) {

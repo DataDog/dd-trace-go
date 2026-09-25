@@ -143,7 +143,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
+	callbackModuleName, callbackSuiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
 	originalFunc := runtime.FuncForPC(fReflect.Pointer())
 
 	// Avoid instrumenting twice
@@ -154,6 +154,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	}
 
 	instrumentedFn := func(t *testing.T) {
+		moduleName := callbackModuleName
+		suiteName := callbackSuiteName
+
 		// Check if we have testify suite data related to this test
 		testifyData := getTestifyTest(t)
 		if testifyData != nil {
@@ -173,6 +176,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			if testPrivateFields != nil && testPrivateFields.parent != nil {
 				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
 			}
+			moduleName = subtestModuleName(moduleName, parentExecMeta)
+			subtestIdentity.ModuleName = moduleName
 
 			settings := integrations.GetSettings()
 			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled
@@ -327,6 +332,16 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return instrumentedFn
+}
+
+// subtestModuleName keeps subtests in the module of the test binary that owns
+// them. The callback can live in an imported production helper package, while
+// the suite continues to identify the callback's source file.
+func subtestModuleName(callbackModuleName string, parentExecMeta *testExecutionMetadata) string {
+	if parentExecMeta == nil || parentExecMeta.identity == nil || parentExecMeta.identity.ModuleName == "" {
+		return callbackModuleName
+	}
+	return parentExecMeta.identity.ModuleName
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span

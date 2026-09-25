@@ -870,6 +870,7 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 		suiteName = testifyData.suiteName
 		sourceFunc = testifyData.methodFunc
 	}
+	moduleName = subtestModuleName(moduleName, parent)
 	execMeta := createTestMetadata(t, nil)
 	execMeta.test = parent.test
 	execMeta.processRetryOwner = parent

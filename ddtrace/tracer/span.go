@@ -460,7 +460,7 @@ func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 		return false
 	}
 
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
 	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
 		return false
 	}
@@ -1105,7 +1105,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := concreteTracerForSpan(getGlobalTracer(), s).(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -1172,7 +1172,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
 			return
@@ -1312,7 +1312,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		if tr := concreteTracerForSpanContext(getGlobalTracer(), s.context); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
