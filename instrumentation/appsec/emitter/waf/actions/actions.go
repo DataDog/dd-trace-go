@@ -28,6 +28,11 @@ type (
 		// StackTraceDepth is the maximum number of frames captured by a stack-trace
 		// action. A non-positive value uses the default depth.
 		StackTraceDepth int
+		// ReportBlockOutcome marks the HTTP block that a block_request action
+		// creates as the block whose outcome the waf.requests metric reports.
+		// Set it only for WAF-scope runs that can block the request. It has no
+		// effect on other action types.
+		ReportBlockOutcome bool
 	}
 )
 
@@ -71,15 +76,16 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any, configs ...Con
 			continue
 		}
 
-		blocked = blocked || aType == "block_request"
-
 		actionHandler, ok := actionHandlers[aType]
 		if !ok {
 			telemetrylog.Error("appsec: unknown action type", slog.String("action_type", aType))
 			continue
 		}
 
-		for _, a := range actionHandler(params, cfg) {
+		emitted := actionHandler(params, cfg)
+		// Only a block action that could actually be built interrupts the handler.
+		blocked = blocked || (aType == "block_request" && len(emitted) > 0)
+		for _, a := range emitted {
 			a.EmitData(op)
 		}
 	}

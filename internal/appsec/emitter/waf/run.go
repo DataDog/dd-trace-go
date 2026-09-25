@@ -60,6 +60,15 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
+	metrics := op.GetMetricsInstance()
+	// Only a WAF-scope block_request contributes to the waf.requests block outcome.
+	// A monitor-only run never requests a block, so it does not change the block
+	// outcome of the request. Its suppressed block is reported on rasp.rule.match.
+	_, blockRequested := result.Actions["block_request"]
+	blockRequested = blockRequested && addrs.TimerKey != addresses.RASPScope && !monitorOnly
+	if blockRequested && metrics != nil {
+		metrics.SetBlockRequested()
+	}
 	var blockFailure bool
 	if monitorOnly {
 		// Only block_request is a block outcome. A redirect is block:irrelevant on
@@ -70,7 +79,15 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		delete(result.Actions, "block_request")
 		delete(result.Actions, "redirect_request")
 	}
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
+	cfg := op.actionConfig()
+	// Only the block that can change the waf.requests block outcome reports its
+	// enforcement result. Redirects and RASP-scope blocks do not.
+	cfg.ReportBlockOutcome = addrs.TimerKey != addresses.RASPScope && !monitorOnly
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, cfg)
+	if blockRequested && !blocking && metrics != nil {
+		// The action could not be built, so no integration will ever enforce it.
+		metrics.SetBlockFailed()
+	}
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.
@@ -82,7 +99,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	if metrics := op.GetMetricsInstance(); metrics != nil {
+	if metrics != nil {
 		metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,
