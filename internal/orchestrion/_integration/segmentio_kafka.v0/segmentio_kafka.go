@@ -32,14 +32,20 @@ const (
 )
 
 type TestCase struct {
-	kafka *kafkatest.KafkaContainer
-	addr  string
+	kafka     *kafkatest.KafkaContainer
+	addr      string
+	clusterID string
+}
+
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topicA, topicB})
+	tc.clusterID = containers.KafkaClusterID(t, tc.kafka)
 }
 
 func (tc *TestCase) newReader(topic string) *kafka.Reader {
@@ -87,11 +93,22 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 			defer func() { require.NoError(t, writer.Close()) }()
 
 			err := writer.WriteMessages(ctx, messages...)
-			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
-				return backoff.Permanent(err)
+			if err != nil {
+				if !errors.Is(err, kafka.UnknownTopicOrPartition) {
+					return backoff.Permanent(err)
+				}
+				t.Logf("failed to produce messages (retrying...): %s", err.Error())
+				return err
 			}
-			t.Logf("failed to produce messages (retrying...): %s", err.Error())
-			return err
+
+			// The cluster ID is fetched asynchronously when the first instrumented
+			// operation initializes the writer tracer.
+			time.Sleep(3 * time.Second)
+			return writer.WriteMessages(ctx, kafka.Message{
+				Topic: topicA,
+				Key:   []byte("Key-A"),
+				Value: []byte("Cluster ID message"),
+			})
 		},
 		backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(30*time.Second)),
 	)
@@ -112,6 +129,13 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Hello World!", string(m.Value))
 		assert.Equal(t, "Key-A", string(m.Key))
+
+		// Allow the asynchronous metadata request started by the first read to
+		// populate the cluster ID before consuming the second message.
+		time.Sleep(3 * time.Second)
+		m, err = readerA.ReadMessage(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "Cluster ID message", string(m.Value))
 	})
 
 	wg.Go(func() {
@@ -127,7 +151,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	wg.Wait()
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -198,6 +222,34 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component": "segmentio/kafka.go.v0",
 					},
 					Children: nil,
+				},
+			},
+		},
+		{
+			Tags: map[string]any{
+				"name":     "kafka.produce",
+				"type":     "queue",
+				"service":  "kafka",
+				"resource": "Produce Topic " + topicA,
+			},
+			Meta: map[string]string{
+				"span.kind":                  "producer",
+				"component":                  "segmentio/kafka.go.v0",
+				"messaging.kafka.cluster_id": tc.clusterID,
+			},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "kafka.consume",
+						"type":     "queue",
+						"service":  "kafka",
+						"resource": "Consume Topic " + topicA,
+					},
+					Meta: map[string]string{
+						"span.kind":                  "consumer",
+						"component":                  "segmentio/kafka.go.v0",
+						"messaging.kafka.cluster_id": tc.clusterID,
+					},
 				},
 			},
 		},
