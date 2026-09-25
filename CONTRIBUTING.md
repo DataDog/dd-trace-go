@@ -386,6 +386,15 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+### Fiber AppSec route guards
+
+Use `fibertrace.Wrap(app, opts...)` before registering Fiber v2 routes or
+middleware. This setup API installs tracing and guards that inspect matched
+path parameters before user handlers run. Wrap each mounted app as well.
+Orchestrion applies this setup automatically. The older global `Middleware`
+form remains supported, but its path-parameter checks run after the handler
+chain and cannot prevent handler side effects.
+
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
@@ -489,8 +498,8 @@ A few things to keep in mind:
   `scripts`, and `tools`).
 - Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
   entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
-- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
-  group is measured and tracked but does not gate the PR.
+- Every benchmark group must appear in the `pr-performance-gates` job's `needs` list, so the gate waits for all
+  result uploads. When adding a group, update that list; `go test ./scripts/ciselect/` checks this requirement.
 - A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
   starts gating it from the next PR onward.
 
