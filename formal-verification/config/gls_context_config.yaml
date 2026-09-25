@@ -1,0 +1,101 @@
+# Specula configuration for Phase 2: GLS Push/Pop Model
+#
+# This config tells Specula how to translate the GLS context stack protocol
+# in source/glscontext/gls_context.go into a TLA+ specification.
+#
+# Directly complements the kakkoyun/orchestrion_gls_leak branch.
+
+# Path to the Go source file to analyze
+source_file: "../source/glscontext/gls_context.go"
+
+# Output directory for generated TLA+ specs
+output_dir: "../specs/gls_context"
+
+# Model constants — the GLS model is simpler than span lifecycle,
+# so we can afford slightly larger state spaces.
+model:
+  constants:
+    NUM_GOROUTINES: 2
+    NUM_SPANS: 3
+    NUM_KEYS: 1  # ActiveSpanKey only; extend later if needed
+
+  # Initial variable state
+  init:
+    stacks: "{} \\ empty map (goroutine -> key -> value stack)"
+    active_spans: "{} \\ set of spans that have been started but not finished"
+
+  # Actions
+  actions:
+    - name: "StartSpan"
+      source: "StartSpan"
+      description: "Create a span and push it onto the GLS stack"
+
+    - name: "FinishSpan"
+      source: "FinishSpan"
+      description: "Mark span finished and pop it from the GLS stack"
+
+    - name: "Peek"
+      source: "Peek"
+      description: "Read the top of the GLS stack without modification"
+
+    - name: "NestedStartSpan"
+      source: "StartSpan"
+      description: "Start a child span while parent is still active (nested push)"
+
+  # Invariant properties to check
+  invariants:
+    - name: "PushPopPairing"
+      type: "safety"
+      description: "When all spans on a goroutine are finished, the stack is empty"
+      formula: |
+        \A g \in Goroutines, k \in Keys:
+          all_finished(g) => Len(stacks[g][k]) = 0
+
+    - name: "StackDepthMonotonic"
+      type: "safety"
+      description: "Between Push and Pop, stack depth is strictly greater"
+      formula: |
+        \A g \in Goroutines, k \in Keys:
+          after_push(g, k) => Len(stacks[g][k]) > Len(stacks'[g][k]) - 1
+
+    - name: "NoLeakOnFinish"
+      type: "safety"
+      description: "A finished span's GLS entry has been popped"
+      formula: |
+        \A s \in Spans:
+          s.finished => ~\E g \in Goroutines:
+            s \in Range(stacks[g][ActiveSpanKey])
+
+    - name: "PeekReturnsLatest"
+      type: "safety"
+      description: "Peek always returns the most recently pushed value"
+      formula: |
+        \A g \in Goroutines, k \in Keys:
+          Len(stacks[g][k]) > 0 =>
+            Peek(g, k) = Last(stacks[g][k])
+
+    - name: "PopOrderLIFO"
+      type: "safety"
+      description: "Pop returns values in reverse push order"
+      formula: |
+        \A g \in Goroutines, k \in Keys:
+          Len(stacks[g][k]) > 0 =>
+            Pop(g, k) = Last(stacks[g][k])
+
+# Specula pipeline options
+pipeline:
+  step1:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 8192
+    temperature: 0.1
+
+  step2:
+    timeout_seconds: 60  # simpler model, faster CFA
+
+  step3:
+    max_fix_attempts: 5
+    tlc_workers: 4
+    tlc_depth: -1
+
+  step4:
+    enabled: false
