@@ -276,7 +276,7 @@ jobs:
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
-        uses: reviewdog/action-shellcheck@0722bbdb0d47f04c1b53b8734d2422ac63a45ec6 # v1.32.1
+        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
