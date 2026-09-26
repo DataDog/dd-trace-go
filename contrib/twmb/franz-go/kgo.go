@@ -37,8 +37,10 @@ func init() {
 }
 
 type tracingHook struct {
-	cfg           config
-	client        *kgo.Client
+	cfg config
+	// groupID is the configured consumer or share group name, set in OnNewClient.
+	groupID       string
+	isShareGroup  bool
 	activeSpans   []*tracer.Span
 	activeSpansMu sync.Mutex
 	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
@@ -84,12 +86,26 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 }
 
 // OnNewClient is a kgo hook called when the client is initialized
-// before any client goroutines are started.
-//
-// We need a reference to the client in the TracingHook
-// in order to retrieve metadata later on for DSM
+// before any client goroutines are started. It resolves the group name
+// used for DSM.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
-	h.client = c
+	h.groupID, h.isShareGroup = groupName(c)
+}
+
+// groupName returns the consumer group or share group name the client was
+// configured with, and whether it is a share group. It returns "" for direct
+// (non-group) consumers and producers.
+//
+// Client.GroupMetadata is deliberately not used: it returns the
+// broker-assigned member ID, not the group name.
+func groupName(c *kgo.Client) (name string, isShareGroup bool) {
+	if g, _ := c.OptValue(kgo.ConsumerGroup).(string); g != "" {
+		return g, false
+	}
+	if g, _ := c.OptValue(kgo.ShareGroup).(string); g != "" {
+		return g, true
+	}
+	return "", false
 }
 
 // OnPollStart is a kgo hook called at the start of every PollFetches or
@@ -232,17 +248,8 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + r.Topic, "type:kafka"}
-
-	// The client should never be nil when we reach that point
-	// but still checking to avoid a panic.
-	var groupID string
-	if h.client != nil {
-		// GroupMetadata uses an atomic load internally, so it is safe to call
-		// concurrently without additional locking.
-		groupID, _ = h.client.GroupMetadata()
-		if groupID != "" {
-			edges = append(edges, "group:"+groupID)
-		}
+	if h.groupID != "" {
+		edges = append(edges, "group:"+h.groupID)
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -255,8 +262,12 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		return
 	}
 	datastreams.InjectToBase64Carrier(ctx, carrier)
-	if groupID != "" {
-		tracer.TrackKafkaCommitOffset(groupID, r.Topic, r.Partition, r.Offset)
+	// Share groups have no per-partition committed offset: the broker tracks
+	// per-record acknowledgement and may deliver a partition's records to
+	// several members, out of order and with redeliveries. Reporting consumed
+	// offsets as commit offsets would produce a misleading consumer lag.
+	if h.groupID != "" && !h.isShareGroup {
+		tracer.TrackKafkaCommitOffset(h.groupID, r.Topic, r.Partition, r.Offset)
 	}
 }
 
