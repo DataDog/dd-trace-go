@@ -17,6 +17,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestOTelSemantics(t *testing.T) {
+	harness.Run(t, new(TestCaseOTelSemantics))
+}
+
 func TestRouterParallel(t *testing.T) {
 	harness.Run(t, new(TestCaseRouterParallel))
 }
