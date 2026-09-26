@@ -42,6 +42,9 @@ const (
 	// This constant is used to tag traces with the reason why the test was skipped.
 	TestSkipReason = "test.skip_reason"
 
+	// TestSessionEmptyReason identifies an expected empty test session.
+	TestSessionEmptyReason = "test.session.empty_reason"
+
 	// TestSourceFile indicates the source file where the test is located.
 	// This constant is used to tag traces with the file path of the test source code.
 	TestSourceFile = "test.source.file"

@@ -311,7 +311,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	wrapperOpts.retryAttemptObserveOutput = logs.IsEnabled()
 
 	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	sessionOptions := []integrations.TestSessionStartOption{integrations.WithTestSessionFramework(testFramework, runtime.Version())}
+	if canSkipEmptyTestSession(m) {
+		sessionOptions = append(sessionOptions, integrations.WithTestSessionSkipIfNoModules())
+	}
+	session = integrations.CreateTestSession(sessionOptions...)
 	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
 	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
@@ -454,6 +458,15 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 		return exitCode
 	}
+}
+
+// Examples and fuzz targets do not create modules, so their absence from the
+// event hierarchy must not be treated as proof that no workload executed.
+func canSkipEmptyTestSession(m *testing.M) bool {
+	examples := getInternalExampleArray(m)
+	fuzzTargets := getInternalFuzzTargetArray(m)
+	return getInternalTestArray(m) != nil && getInternalBenchmarkArray(m) != nil &&
+		examples != nil && len(*examples) == 0 && fuzzTargets != nil && len(*fuzzTargets) == 0
 }
 
 func recordTestingMDeferredDisposition(claim *testingMInstrumentationClaim, summary processRetryCoordinatorSummary) {
