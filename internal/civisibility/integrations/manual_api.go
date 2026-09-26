@@ -78,6 +78,14 @@ type tslvTestSessionStartOptions struct {
 	framework        string
 	frameworkVersion string
 	startTime        time.Time
+	skipIfNoModules  bool
+}
+
+// WithTestSessionSkipIfNoModules marks a successful session as skipped if it
+// never created a module. Use only when the integration creates a module for
+// every executed workload.
+func WithTestSessionSkipIfNoModules() TestSessionStartOption {
+	return func(o *tslvTestSessionStartOptions) { o.skipIfNoModules = true }
 }
 
 // WithTestSessionCommand sets the command used to run the test session.
