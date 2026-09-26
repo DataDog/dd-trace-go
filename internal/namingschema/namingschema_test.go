@@ -6,13 +6,18 @@
 package namingschema
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestNamingSchema(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()
@@ -25,6 +30,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
 		t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
 
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()
@@ -34,6 +40,7 @@ func TestNamingSchema(t *testing.T) {
 	})
 
 	t.Run("options", func(t *testing.T) {
+		internalconfig.CreateNew()
 		LoadFromEnv()
 		SetRemoveIntegrationServiceNames(true)
 
@@ -46,12 +53,18 @@ func TestNamingSchema(t *testing.T) {
 	t.Run("fallback to v0", func(t *testing.T) {
 		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
 		t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+		tp := new(log.RecordLogger)
+		defer log.UseLogger(tp)()
 
+		internalconfig.CreateNew()
 		LoadFromEnv()
 
 		cfg := GetConfig()
 		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)
 		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
+		const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, ignoring"
+		assert.Equal(t, 1, strings.Count(strings.Join(tp.Logs(), "\n"), warning))
 	})
+
 }
