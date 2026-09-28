@@ -95,13 +95,16 @@ transport_round_trip_tracer_internal:
 # context.Context or *http.Request the calling function already has, which is
 # the only route that survives crossing a goroutine, since GLS does not.
 #
-# Two targets per function, and neither is "everything but net/http", which no
-# selector can express (IDMPL-724). $root is every package of the module being
-# built, but never package main, whose compile-time import path is the literal
-# "main". Call sites inside third-party dependencies are not rewritten; their
-# spans still exist, they just parent through GLS.
-client_get_root:
-  target: "$root"
+# The target is the module being built plus main, whose compile-time import
+# path is the literal "main" and so is not part of $root. "Everything but
+# net/http" ("**" with a not entry) would also reach third-party call sites, but
+# otelc re-prints every package a glob matches, so the target stays narrow. Call
+# sites inside third-party dependencies are not rewritten; their spans still
+# exist, they just parent through GLS.
+client_get:
+  target:
+    - "$root"
+    - main
   where:
     function_call: net/http.Get
   do:
@@ -119,27 +122,10 @@ client_get_root:
   imports:
     __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
 
-client_get_main:
-  target: "main"
-  where:
-    function_call: net/http.Get
-  do:
-    - wrap_call:
-        replace: |-
-          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
-          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
-          {{- if $ctx -}}
-            __dd_ddtrace_client.Get({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else if $req -}}
-            __dd_ddtrace_client.Get({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else -}}
-            {{ . }}
-          {{- end -}}
-  imports:
-    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
-
-client_head_root:
-  target: "$root"
+client_head:
+  target:
+    - "$root"
+    - main
   where:
     function_call: net/http.Head
   do:
@@ -157,27 +143,10 @@ client_head_root:
   imports:
     __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
 
-client_head_main:
-  target: "main"
-  where:
-    function_call: net/http.Head
-  do:
-    - wrap_call:
-        replace: |-
-          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
-          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
-          {{- if $ctx -}}
-            __dd_ddtrace_client.Head({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else if $req -}}
-            __dd_ddtrace_client.Head({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else -}}
-            {{ . }}
-          {{- end -}}
-  imports:
-    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
-
-client_post_root:
-  target: "$root"
+client_post:
+  target:
+    - "$root"
+    - main
   where:
     function_call: net/http.Post
   do:
@@ -195,46 +164,10 @@ client_post_root:
   imports:
     __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
 
-client_post_main:
-  target: "main"
-  where:
-    function_call: net/http.Post
-  do:
-    - wrap_call:
-        replace: |-
-          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
-          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
-          {{- if $ctx -}}
-            __dd_ddtrace_client.Post({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else if $req -}}
-            __dd_ddtrace_client.Post({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else -}}
-            {{ . }}
-          {{- end -}}
-  imports:
-    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
-
-client_postform_root:
-  target: "$root"
-  where:
-    function_call: net/http.PostForm
-  do:
-    - wrap_call:
-        replace: |-
-          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
-          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
-          {{- if $ctx -}}
-            __dd_ddtrace_client.PostForm({{ $ctx }}{{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else if $req -}}
-            __dd_ddtrace_client.PostForm({{ $req }}.Context(){{ range $i := .CallArgumentCount }}, {{ $.CallArgument $i }}{{ end }})
-          {{- else -}}
-            {{ . }}
-          {{- end -}}
-  imports:
-    __dd_ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
-
-client_postform_main:
-  target: "main"
+client_postform:
+  target:
+    - "$root"
+    - main
   where:
     function_call: net/http.PostForm
   do:
