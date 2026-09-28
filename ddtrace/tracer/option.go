@@ -555,7 +555,7 @@ type agentFeaturesDecodeError struct {
 }
 
 func (e *agentFeaturesDecodeError) Error() string {
-	return fmt.Sprintf("decoding features: %s", e.err.Error())
+	return "decoding features: " + e.err.Error()
 }
 func (e *agentFeaturesDecodeError) Unwrap() error { return e.err }
 
