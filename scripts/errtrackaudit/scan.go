@@ -198,14 +198,20 @@ func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site
 		}
 		for i, file := range pkg.Syntax {
 			filename := pkg.CompiledGoFiles[i]
-			if excluded(filename, opts.exclude) {
-				continue
-			}
 			rel, err := filepath.Rel(root, filename)
 			if err != nil {
 				return nil, fmt.Errorf("relative path for %s: %w", filename, err)
 			}
-			sites = append(sites, scanFile(pkg, file, filepath.ToSlash(rel), opts)...)
+			relSlash := filepath.ToSlash(rel)
+			// Exclusion patterns are repo-relative (e.g. "/testdata/"), so
+			// match against relSlash, not the absolute filename: an absolute
+			// checkout path containing one of these substrings (e.g. a
+			// clone under a directory named "testdata") would otherwise
+			// exclude every file and silently return an empty inventory.
+			if excluded("/"+relSlash, opts.exclude) {
+				continue
+			}
+			sites = append(sites, scanFile(pkg, file, relSlash, opts)...)
 		}
 	}
 	return sites, nil

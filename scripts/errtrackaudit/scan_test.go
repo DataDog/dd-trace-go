@@ -126,6 +126,26 @@ func TestScan_FixtureExcludes(t *testing.T) {
 	}
 }
 
+func TestScan_ExcludesAreRepoRelative(t *testing.T) {
+	// The fixture module itself sits under an ancestor directory literally
+	// named "testdata" (scripts/errtrackaudit/testdata/fixture). Matching an
+	// exclusion pattern against the absolute checkout path, instead of the
+	// repo-relative path, would make "/testdata/" match every file here and
+	// silently return an empty inventory.
+	dir := filepath.Join("testdata", "fixture")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: fixtureLogPath,
+		exclude:        []string{"/testdata/"},
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(sites) == 0 {
+		t.Fatal("scan found 0 sites; the exclusion pattern matched the absolute checkout path instead of the repo-relative path")
+	}
+}
+
 func TestScan_BrokenPackageFails(t *testing.T) {
 	// A package that does not type-check must fail the scan loudly: a
 	// partial inventory is worse than no inventory.
