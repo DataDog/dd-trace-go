@@ -197,7 +197,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
-		log.Warn("appsec: user event monitoring SDK: could not find a span in the provided context.Context")
+		log.Warn("appsec: user event monitoring SDK: could not find a span in the provided context.Context") //errtrack:ignore caller provided a context without a span
 		return nil
 	}
 	return span.Root()
