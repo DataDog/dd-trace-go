@@ -344,7 +344,10 @@ The rest comes from two `ddtrace/tracer` tests that now carry their own bounds,
 commented in place: `TestTracerCleanStop` scales its iteration count by build
 tag, and `TestOTLPWriterConcurrentAddAndWait` bounds its adders, its in-flight
 send window, and whether the test server retains payloads. That last one was
-independently pathological -- 0.50GB to 13.70GB across identical runs.
+tag, and `TestOTLPWriterConcurrentAddAndWait` paces its work through the
+waits, bounds its in-flight send window, and has the test server discard
+payloads; its unbounded predecessor peaked between 0.50GB and 13.70GB across                                       
+identical runs.
 
 `GOMEMLIMIT` does not substitute for this. The memory above is live, not
 collector lag, so a soft limit is exceeded rather than enforced -- with
