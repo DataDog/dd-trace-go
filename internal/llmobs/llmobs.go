@@ -540,7 +540,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		startTime: cfg.StartTime,
 	}
 	if !l.Config.Enabled {
-		log.Warn("llmobs: LLMObs span was started without enabling LLMObs")
+		log.Warn("llmobs: LLMObs span was started without enabling LLMObs") //errtrack:ignore caller used the LLMObs API before enabling it
 		return span, ctx
 	}
 
