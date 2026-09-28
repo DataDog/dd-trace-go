@@ -384,8 +384,7 @@ func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 		}
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	u.Path = strings.TrimRight(u.Path, "/") + otlpTracesPath
-	return u.String()
+	return u.JoinPath(otlpTracesPath).String()
 }
 
 // buildOTLPHeaders builds the OTLP headers map from the provided map.
@@ -483,8 +482,7 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 		}
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
-	return u.String()
+	return u.JoinPath(otlpMetricsPath).String()
 }
 
 // buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
