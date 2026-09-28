@@ -54,21 +54,21 @@ func parseFile(filePath string) *declarativeConfig {
 	if err != nil {
 		if !os.IsNotExist(err) {
 			// It's expected that the declarative config file may not exist; its absence is not an error.
-			log.Warn("Failed to stat declarative config file %q, dropping: %v", filePath, err.Error())
+			log.Warn("Failed to stat declarative config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore — user configuration file failure
 		}
 		return emptyDeclarativeConfig()
 	}
 
 	if info.Size() > maxFileSize {
 		log.Warn("Declarative config file %s exceeds size limit (%d bytes > %d bytes), dropping",
-			filePath, info.Size(), maxFileSize)
+			filePath, info.Size(), maxFileSize) //errtrack:ignore — user configuration file exceeds a documented limit
 		return emptyDeclarativeConfig()
 	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read declarative config file %q, dropping: %v", filePath, err.Error())
+			log.Warn("Failed to read declarative config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore — user configuration file failure
 		}
 		return emptyDeclarativeConfig()
 	}
@@ -80,7 +80,7 @@ func fileContentsToConfig(data []byte, fileName string) *declarativeConfig {
 	dc := &declarativeConfig{}
 	err := yaml.Unmarshal(data, dc)
 	if err != nil {
-		log.Warn("Parsing declarative config file %s failed due to error, dropping: %v", fileName, err.Error())
+		log.Warn("Parsing declarative config file %s failed due to error, dropping: %v", fileName, err.Error()) //errtrack:ignore — invalid user configuration file
 		return emptyDeclarativeConfig()
 	}
 	if dc.Config == nil {
