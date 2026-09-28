@@ -181,7 +181,7 @@ func (a *appsec) start() error {
 			return fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error())
+		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error()) //errtrack:ignore host native-library compatibility failure
 	}
 
 	// Register dyngo listeners

@@ -162,7 +162,7 @@ func (op *ContextOperation) AddEvents(events ...any) bool {
 	}
 
 	if !op.limiter.Allow() {
-		log.Error("appsec: too many WAF events, stopping further reporting")
+		log.Error("appsec: too many WAF events, stopping further reporting") //errtrack:ignore expected per-request capacity limit
 		return true
 	}
 
@@ -172,7 +172,7 @@ func (op *ContextOperation) AddEvents(events ...any) bool {
 	const maxWAFEventsPerRequest = 10
 	if len(op.events) >= maxWAFEventsPerRequest {
 		op.logOnce.Do(func() {
-			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached")
+			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached") //errtrack:ignore expected per-request capacity limit
 		})
 		return true
 	}
