@@ -83,7 +83,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		httpClient = internal.DefaultHTTPClient(config.internalConfig.AgentTimeout(), false)
 		APIKeyValue := config.internalConfig.APIKey()
 		if APIKeyValue == "" {
-			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
+			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it") //errtrack:ignore missing user configuration
 		}
 
 		defaultHeaders["dd-api-key"] = APIKeyValue

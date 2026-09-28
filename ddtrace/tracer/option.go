@@ -661,7 +661,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		if errors.Is(err, errAgentFeaturesNotSupported) {
 			return features, protoV04
 		}
-		log.Error("%s", err.Error())
+		log.Error("%s", err.Error()) //errtrack:ignore agent or network discovery failure
 		return features, protoUnknown
 	}
 	if features.v1TracesAdvertised {
@@ -1019,13 +1019,13 @@ func WithAgentURL(agentURL string) StartOption {
 				u, _ = url.Parse(urlErr.URL)
 				if u != nil {
 					urlErr.URL = u.Redacted()
-					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
+					log.Warn("Fail to parse Agent URL: %s", urlErr.Err) //errtrack:ignore invalid user configuration
 					return
 				}
-				log.Warn("Fail to parse Agent URL: %s", err.Error())
+				log.Warn("Fail to parse Agent URL: %s", err.Error()) //errtrack:ignore invalid user configuration
 				return
 			}
-			log.Warn("Fail to parse Agent URL")
+			log.Warn("Fail to parse Agent URL") //errtrack:ignore invalid user configuration
 			return
 		}
 		switch u.Scheme {
@@ -1040,7 +1040,7 @@ func WithAgentURL(agentURL string) StartOption {
 				Path:   u.Path,
 			}, telemetry.OriginCode)
 		default:
-			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL) //errtrack:ignore invalid user configuration
 		}
 	}
 }

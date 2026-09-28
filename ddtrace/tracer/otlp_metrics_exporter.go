@@ -67,7 +67,7 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 	// No retry: a failed metrics interval is dropped rather than retried.
 	// Span metrics are lossy by design — the next flush interval replaces the lost window.
 	if sendErr := e.transport.send(body, contentType); sendErr != nil {
-		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error())
+		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error()) //errtrack:ignore exporter or network failure
 		return sendErr
 	}
 	log.Debug("otlp_metrics_exporter: exported %d bytes (%s) to %s", len(body), e.protocol, e.transport.endpoint)

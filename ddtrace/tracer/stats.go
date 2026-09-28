@@ -396,7 +396,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		err := c.sender.send(csp, sendRetries, retryInterval)
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-			log.Error("Error sending stats payload: %s", err.Error())
+			log.Error("Error sending stats payload: %s", err.Error()) //errtrack:ignore agent or network failure
 		}
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
@@ -459,7 +459,7 @@ func (c *concentrator) trySendSpans(spans []*tracerStatSpan) {
 	select {
 	case c.In <- spans:
 	default:
-		log.Error("Stats channel full, disregarding span batch.")
+		log.Error("Stats channel full, disregarding span batch.") //errtrack:ignore per-span queue capacity limit
 	}
 }
 

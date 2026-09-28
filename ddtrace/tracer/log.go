@@ -208,7 +208,7 @@ func logStartup(t *tracer) {
 		startupHeaders := traceTransportHeaders(t.config.internalConfig)
 		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(proto), proto, startupHeaders); err != nil {
 			info.AgentError = err.Error()
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
+			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error()) //errtrack:ignore agent or network failure
 		}
 	}
 	bs, err := json.Marshal(info)
