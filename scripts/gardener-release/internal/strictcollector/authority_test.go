@@ -39,16 +39,22 @@ var auditedTreeEmptyAuthorityBodiesSHA256 = map[string]string{
 	"collector.go:session:Close":                                                         "76ed8219fa3fb68b662b644c124bdcdf9d13c7213cbfeefb796d6781ae6019a1",
 	"compact_admission.go:stateV3CompactLaneHistory:append":                              "4ea03c5680fc426a1428ba5f74fe966703b2cf9c82fff2ad9108f3b6d1e92082",
 	"compact_admission.go:session:compactEntry":                                          "5f7a34dfe762954859296b024f544a006ba57c1de05a70a8840833da01fb2353",
-	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "211f058d8d0c89c35ffc38e36ff9a3f0a175074a3ec1c59a9ec4a8d0d9dfcc1a",
+	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "3d8fde0cf217c283e9c2c8898c6804ff86126bb8a843947a574ce561e7c38886",
 	"compact_admission.go:stateV3AssemblyChild:captureLaneTerminationPrefix":             "70e2fb555e759711610aa96b5fd0552f96a309e036c8d0301a0e77fdff8796f6",
-	"operation.go:stateV3AssemblyChild:sealMinorHistory":                                 "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
-	"operation.go:stateV3AssemblyChild:sealPatchHistory":                                 "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
-	"operation.go:stateV3AssemblyChild:sealCoordinationHistory":                          "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":                                 "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":                                 "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory":                          "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
 	"compact_admission.go:stateV3AssemblyChild:loadCompactSnapshot":                      "7546a84ecafa98d6487b235d83ca54a9fa4141aae20584d3939e6d84976fcc6e",
 	"compact_admission.go::historyReachedCheckpoint":                                     "7358dc50a9aefca0b027c91bb6869aa3d4e8bbcb889c9788362342ea1e886846",
 	"coordination_admission.go:stateV3CompactCoordinationHistory:append":                 "fd695b1fbd4e246e1588489edea40eace0f9160c748283448769104a57b52c2e",
 	"coordination_admission.go::coordinationHistoryReachedCheckpoint":                    "25b625e64a30680a72f4d7c5fb156e43feb26f943aecd1a2d16e30000a4cfc92",
-	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "0bbf8de188846d9bb1b6ca59c758f8323106a407a37cfba6e70df873c1d9bab4",
+	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "a11c521dd916821218046a669648becd64f241806b1715a8401c898d30964757",
+	"witness.go:stateV3FullLaneWitnessHistory:appendWitness":                             "ef84921dad611958859f99ba5b9345dfef2d2de0748f1f27c340077ecf83ce74",
+	"witness.go:stateV3FullCoordinationWitnessHistory:appendWitness":                     "10e2cab6769f44a3d0bfb1258564fe80a1d94c6f3e04dad1801b31096e9de78a",
+	"witness.go::laneWitnessMatchesCompact":                                              "888b430c7d7003ecd82eade137a1b4790dd774f35fb2b029b06e82105ff5acd5",
+	"witness.go::coordinationWitnessMatchesCompact":                                      "4be00159cd7a21e42232cb35cf4e5a43c992144f712c34560513435d8d70556c",
+	"witness.go::sealedLaneWitnessesMatch":                                               "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
+	"witness.go::sealedCoordinationWitnessesMatch":                                       "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
 }
 
 var auditedAssemblyPolicyBodiesSHA256 = map[string]string{
@@ -56,11 +62,11 @@ var auditedAssemblyPolicyBodiesSHA256 = map[string]string{
 	"operation.go:begin":                                            "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
 	"operation.go:beginChild":                                       "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
 	"operation.go:close":                                            "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
-	"compact_admission.go:collectStateV3LaneDocuments":              "211f058d8d0c89c35ffc38e36ff9a3f0a175074a3ec1c59a9ec4a8d0d9dfcc1a",
-	"coordination_admission.go:collectStateV3CoordinationDocuments": "0bbf8de188846d9bb1b6ca59c758f8323106a407a37cfba6e70df873c1d9bab4",
-	"operation.go:sealMinorHistory":                                 "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
-	"operation.go:sealPatchHistory":                                 "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
-	"operation.go:sealCoordinationHistory":                          "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
+	"compact_admission.go:collectStateV3LaneDocuments":              "3d8fde0cf217c283e9c2c8898c6804ff86126bb8a843947a574ce561e7c38886",
+	"coordination_admission.go:collectStateV3CoordinationDocuments": "a11c521dd916821218046a669648becd64f241806b1715a8401c898d30964757",
+	"operation.go:sealMinorHistory":                                 "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
+	"operation.go:sealPatchHistory":                                 "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
+	"operation.go:sealCoordinationHistory":                          "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
 }
 
 const auditedSettleFixedBody = `{
@@ -285,6 +291,9 @@ func validateDocumentAuthoritySurface(files map[string]*ast.File) error {
 	if err := validateSealedHistoryAuthority(files, functions); err != nil {
 		return err
 	}
+	if err := validateFullWitnessAuthority(files, functions); err != nil {
+		return err
+	}
 	if err := validateNoParentSemanticValidatorCalls(files); err != nil {
 		return err
 	}
@@ -303,6 +312,8 @@ func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authori
 	}{
 		"compact_admission.go:stateV3CompactLaneHistory:append":              {"stateV3CompactLaneHistory", []string{"wireRawCommit", "wireTree", "stateV3AssemblyRole"}},
 		"coordination_admission.go:stateV3CompactCoordinationHistory:append": {"stateV3CompactCoordinationHistory", []string{"wireRawCommit", "wireTree"}},
+		"witness.go:stateV3FullLaneWitnessHistory:appendWitness":             {"stateV3FullLaneWitnessHistory", []string{"wireRawCommit", "wireTree", "stateV3AssemblyRole"}},
+		"witness.go:stateV3FullCoordinationWitnessHistory:appendWitness":     {"stateV3FullCoordinationWitnessHistory", []string{"wireRawCommit", "wireTree"}},
 	}
 	allowedTreeEmpty := map[string]int{
 		"compact_admission.go:stateV3CompactLaneHistory:append":                              1,
@@ -310,6 +321,10 @@ func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authori
 		"compact_admission.go:stateV3AssemblyChild:captureLaneTerminationPrefix":             1,
 		"coordination_admission.go:stateV3CompactCoordinationHistory:append":                 1,
 		"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": 1,
+		"witness.go:stateV3FullLaneWitnessHistory:appendWitness":                             1,
+		"witness.go:stateV3FullCoordinationWitnessHistory:appendWitness":                     1,
+		"witness.go::laneWitnessMatchesCompact":                                              2,
+		"witness.go::coordinationWitnessMatchesCompact":                                      2,
 	}
 	seenAppenders := map[string]bool{}
 	seenTreeEmpty := map[string]int{}
@@ -324,8 +339,8 @@ func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authori
 			seenHistoryBodies[identity] = true
 		}
 		if appender, watched := appenders[identity]; watched {
-			if err := requireFunctionSignature(function.declaration, appender.receiver, "append", appender.params, []string{"bool"}); err != nil {
-				return fmt.Errorf("tree-empty producer: %w", err)
+			if err := requireFunctionSignature(function.declaration, appender.receiver, function.declaration.Name.Name, appender.params, []string{"bool"}); err != nil {
+				return fmt.Errorf("tree-empty producer %s: %w", identity, err)
 			}
 			seenAppenders[identity] = true
 		}
@@ -426,7 +441,7 @@ func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authori
 			}
 		}
 	}
-	if len(seenAppenders) != len(appenders) || len(seenHistoryBodies) != len(auditedTreeEmptyAuthorityBodiesSHA256) || globalTreeEmptyIdentifiers != 1 {
+	if len(seenAppenders) != len(appenders) || len(seenHistoryBodies) != len(auditedTreeEmptyAuthorityBodiesSHA256) || globalTreeEmptyIdentifiers != 3 {
 		return fmt.Errorf("tree-empty authority topology missing")
 	}
 	for identity, expected := range allowedTreeEmpty {
@@ -449,12 +464,14 @@ func treeEmptyCompactType(expression ast.Expr) bool {
 var auditedSealedHistoryBodiesSHA256 = map[string]string{
 	"operation.go:stateV3AssemblyOperation:begin":               "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
 	"operation.go:stateV3AssemblyOperation:beginChild":          "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
-	"operation.go:stateV3AssemblyOperation:finishChild":         "3e2ab8e4ba87f253f30fc9406948a04b8cf26eb77a451c738cd61190798d43fb",
+	"operation.go:stateV3AssemblyOperation:finishChild":         "060ace65d22dc01215307751a285d0ddd22e5f9e58ca31553f3a0cf1052b021e",
 	"operation.go:stateV3AssemblyOperation:close":               "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
 	"operation.go:stateV3AssemblyOperation:collectThreeSpines":  "a378490ef3737abb9b1a1abf020eb792da04b3e527f3867aed8db35f307b4637",
-	"operation.go:stateV3AssemblyChild:sealMinorHistory":        "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
-	"operation.go:stateV3AssemblyChild:sealPatchHistory":        "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
-	"operation.go:stateV3AssemblyChild:sealCoordinationHistory": "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":        "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":        "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory": "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
+	"witness.go::sealedLaneWitnessesMatch":                      "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
+	"witness.go::sealedCoordinationWitnessesMatch":              "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
 }
 
 // validateSealedHistoryAuthority closes the operation-owned seal capability.
@@ -507,7 +524,7 @@ func validateSealedHistoryAuthority(files map[string]*ast.File, functions []*aut
 				}
 				switch selector.Sel.Name {
 				case "sealMinorHistory", "sealPatchHistory", "sealCoordinationHistory":
-					if (selector.Sel.Name == "sealMinorHistory" || selector.Sel.Name == "sealPatchHistory") && identity != "compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments" || selector.Sel.Name == "sealCoordinationHistory" && identity != "coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments" || exprName(selector.X) != "c" || len(value.Args) != 2 {
+					if (selector.Sel.Name == "sealMinorHistory" || selector.Sel.Name == "sealPatchHistory") && identity != "compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments" || selector.Sel.Name == "sealCoordinationHistory" && identity != "coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments" || exprName(selector.X) != "c" || len(value.Args) != 3 {
 						invalid = "unapproved sealed-history issuer call"
 						return false
 					}
@@ -682,6 +699,144 @@ func validateNoParentSemanticValidatorCalls(files map[string]*ast.File) error {
 		}
 	}
 	return nil
+}
+
+var auditedFullWitnessBodiesSHA256 = map[string]string{
+	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "3d8fde0cf217c283e9c2c8898c6804ff86126bb8a843947a574ce561e7c38886",
+	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "a11c521dd916821218046a669648becd64f241806b1715a8401c898d30964757",
+	"operation.go:stateV3AssemblyOperation:finishChild":                                  "060ace65d22dc01215307751a285d0ddd22e5f9e58ca31553f3a0cf1052b021e",
+	"operation.go:stateV3AssemblyOperation:close":                                        "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":                                 "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":                                 "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory":                          "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
+	"witness.go:stateV3FullLaneWitnessHistory:appendWitness":                             "ef84921dad611958859f99ba5b9345dfef2d2de0748f1f27c340077ecf83ce74",
+	"witness.go:stateV3FullCoordinationWitnessHistory:appendWitness":                     "10e2cab6769f44a3d0bfb1258564fe80a1d94c6f3e04dad1801b31096e9de78a",
+	"witness.go::laneWitnessMatchesCompact":                                              "888b430c7d7003ecd82eade137a1b4790dd774f35fb2b029b06e82105ff5acd5",
+	"witness.go::coordinationWitnessMatchesCompact":                                      "4be00159cd7a21e42232cb35cf4e5a43c992144f712c34560513435d8d70556c",
+	"witness.go::sealedLaneWitnessesMatch":                                               "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
+	"witness.go::sealedCoordinationWitnessesMatch":                                       "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
+}
+
+func validateFullWitnessAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
+	allowed := make(map[string]bool, len(auditedFullWitnessBodiesSHA256))
+	for identity := range auditedFullWitnessBodiesSHA256 {
+		allowed[identity] = true
+	}
+	seenBodies := make(map[string]bool, len(allowed))
+	issuerCalls := map[string]int{}
+	for _, function := range functions {
+		identity := treeEmptyFunctionIdentity(function)
+		if expected, ok := auditedFullWitnessBodiesSHA256[identity]; ok {
+			if functionBodySHA256(function.declaration) != expected {
+				return fmt.Errorf("full-witness authority body is not audited: %s", identity)
+			}
+			seenBodies[identity] = true
+		}
+		if containsFullWitnessType(function.declaration.Type) && !allowed[identity] {
+			return fmt.Errorf("unapproved full-witness parameter, result, or receiver: %s", identity)
+		}
+		invalid := ""
+		approvedIssuer := map[*ast.SelectorExpr]bool{}
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			if invalid != "" {
+				return false
+			}
+			switch value := node.(type) {
+			case *ast.CallExpr:
+				if selector, ok := value.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "appendWitness" {
+					lane := identity == "compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments" && exprName(selector.X) == "witness" && len(value.Args) == 3
+					coordination := identity == "coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments" && exprName(selector.X) == "witness" && len(value.Args) == 2
+					if !lane && !coordination {
+						invalid = "unapproved full-witness issuer call"
+						return false
+					}
+					approvedIssuer[selector] = true
+					issuerCalls[identity]++
+				}
+				if identifier, ok := value.Fun.(*ast.Ident); ok && identifier.Name == "new" && len(value.Args) == 1 && isFullWitnessType(astTypeName(value.Args[0])) {
+					invalid = "full-witness allocation is forbidden"
+					return false
+				}
+			case *ast.SelectorExpr:
+				switch value.Sel.Name {
+				case "witnesses", "verification":
+					if !allowed[identity] {
+						invalid = "unapproved full-witness selector"
+						return false
+					}
+				case "appendWitness":
+					if !approvedIssuer[value] {
+						invalid = "full-witness method value or forwarding is forbidden"
+						return false
+					}
+				}
+			case *ast.CompositeLit:
+				name := astTypeName(value.Type)
+				if isFullWitnessType(name) && !(name == "stateV3FullWitnessEntry" && (identity == "witness.go:stateV3FullLaneWitnessHistory:appendWitness" || identity == "witness.go:stateV3FullCoordinationWitnessHistory:appendWitness")) {
+					invalid = "full-witness construction is forbidden"
+					return false
+				}
+			case *ast.TypeSpec:
+				if value.Assign.IsValid() && containsFullWitnessType(value.Type) {
+					invalid = "full-witness aliases are forbidden"
+					return false
+				}
+			}
+			return true
+		})
+		if invalid != "" {
+			return fmt.Errorf("%s: %s", identity, invalid)
+		}
+	}
+	if len(seenBodies) != len(auditedFullWitnessBodiesSHA256) || issuerCalls["compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments"] != 1 || issuerCalls["coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments"] != 1 {
+		return fmt.Errorf("full-witness authority topology missing")
+	}
+	for filename, file := range files {
+		for _, declaration := range file.Decls {
+			if _, ok := declaration.(*ast.FuncDecl); ok {
+				continue
+			}
+			invalid := false
+			ast.Inspect(declaration, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.TypeSpec:
+					if value.Assign.IsValid() && containsFullWitnessType(value.Type) {
+						invalid = true
+					}
+				case *ast.CompositeLit:
+					if isFullWitnessType(astTypeName(value.Type)) {
+						invalid = true
+					}
+				}
+				return !invalid
+			})
+			if invalid {
+				return fmt.Errorf("%s: global full-witness authority is forbidden", filename)
+			}
+		}
+	}
+	return nil
+}
+
+func isFullWitnessType(name string) bool {
+	switch name {
+	case "stateV3WitnessVerification", "stateV3FullWitnessEntry", "stateV3FullLaneSnapshotWitness", "stateV3FullCoordinationSnapshotWitness", "stateV3FullLaneWitnessHistory", "stateV3FullCoordinationWitnessHistory":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsFullWitnessType(expression ast.Expr) bool {
+	found := false
+	ast.Inspect(expression, func(node ast.Node) bool {
+		if identifier, ok := node.(*ast.Ident); ok && isFullWitnessType(identifier.Name) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 func isParentSemanticValidator(name string) bool {

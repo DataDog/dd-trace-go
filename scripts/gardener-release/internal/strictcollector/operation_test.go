@@ -37,16 +37,18 @@ func TestStateV3SealedSpinesAreFixedAndCleared(t *testing.T) {
 	}
 	history := &stateV3CompactLaneHistory{count: 1}
 	history.snapshots[0] = stateV3CompactSnapshot{commitOID: fixedCheckpoint}
+	witness := &stateV3FullLaneWitnessHistory{count: 1}
+	witness.snapshots[0] = stateV3FullLaneSnapshotWitness{commitOID: fixedCheckpoint, role: stateV3AssemblyMinor, verification: stateV3WitnessVerified}
 	seals := &stateV3SealedSpines{}
 	session := &session{assemblyLive: true, assemblyRole: stateV3AssemblyMinor, compactHistory: history, compactGeneration: 9}
 	child := &stateV3AssemblyChild{session: session, seals: seals, policy: &stateV3AssemblyPolicy{value: policy}}
-	if result := child.sealMinorHistory(history, 9); result.Diagnostic != DiagnosticOK {
+	if result := child.sealMinorHistory(history, witness, 9); result.Diagnostic != DiagnosticOK {
 		t.Fatal(result)
 	}
-	if !seals.minor.sealed || seals.minor.role != stateV3AssemblyMinor || seals.minor.count != 1 || seals.minor.snapshots[0].commitOID != fixedCheckpoint {
+	if !seals.minor.sealed || seals.minor.role != stateV3AssemblyMinor || seals.minor.count != 1 || seals.minor.snapshots[0].commitOID != fixedCheckpoint || seals.minor.witnesses[0].commitOID != fixedCheckpoint {
 		t.Fatalf("seal=%#v", seals.minor)
 	}
-	if result := child.sealMinorHistory(history, 9); result.Diagnostic != DiagnosticProtocol {
+	if result := child.sealMinorHistory(history, witness, 9); result.Diagnostic != DiagnosticProtocol {
 		t.Fatal(result)
 	}
 	op := &stateV3AssemblyOperation{active: true, seals: *seals}
@@ -56,15 +58,40 @@ func TestStateV3SealedSpinesAreFixedAndCleared(t *testing.T) {
 	}
 }
 
+func TestStateV3CompoundSealRejectsMismatchedWitness(t *testing.T) {
+	policy := validStateV3Policy(t)
+	checkpoint := compactAdmissionOID(81_101)
+	policy.StateLanes.Minor.CheckpointOID = checkpoint
+	fixedCheckpoint := mustFixedOID(checkpoint)
+	history := &stateV3CompactLaneHistory{count: 1}
+	history.snapshots[0] = stateV3CompactSnapshot{commitOID: fixedCheckpoint}
+	witness := &stateV3FullLaneWitnessHistory{count: 1}
+	witness.snapshots[0] = stateV3FullLaneSnapshotWitness{commitOID: fixedCheckpoint, role: stateV3AssemblyMinor}
+	child := &stateV3AssemblyChild{
+		session: &session{assemblyLive: true, assemblyRole: stateV3AssemblyMinor, compactHistory: history, compactGeneration: 3},
+		seals:   &stateV3SealedSpines{},
+		policy:  &stateV3AssemblyPolicy{value: policy},
+	}
+	if result := child.sealMinorHistory(history, witness, 3); result.Diagnostic != DiagnosticProtocol {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
 func markChildSealedForTest(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
 	child.sealed = true
 	switch child.session.assemblyRole {
 	case stateV3AssemblyMinor:
-		op.seals.minor = stateV3SealedLaneHistory{count: 1, role: stateV3AssemblyMinor, sealed: true}
+		compact := stateV3CompactSnapshot{}
+		witness := stateV3FullLaneSnapshotWitness{role: stateV3AssemblyMinor, verification: stateV3WitnessVerified}
+		op.seals.minor = stateV3SealedLaneHistory{snapshots: [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3CompactSnapshot{compact}, witnesses: [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3FullLaneSnapshotWitness{witness}, count: 1, role: stateV3AssemblyMinor, sealed: true}
 	case stateV3AssemblyPatch:
-		op.seals.patch = stateV3SealedLaneHistory{count: 1, role: stateV3AssemblyPatch, sealed: true}
+		compact := stateV3CompactSnapshot{}
+		witness := stateV3FullLaneSnapshotWitness{role: stateV3AssemblyPatch, verification: stateV3WitnessVerified}
+		op.seals.patch = stateV3SealedLaneHistory{snapshots: [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3CompactSnapshot{compact}, witnesses: [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3FullLaneSnapshotWitness{witness}, count: 1, role: stateV3AssemblyPatch, sealed: true}
 	case stateV3AssemblyCoordination:
-		op.seals.coordination = stateV3SealedCoordinationHistory{count: 1, role: stateV3AssemblyCoordination, sealed: true}
+		compact := stateV3CompactSnapshot{}
+		witness := stateV3FullCoordinationSnapshotWitness{role: stateV3AssemblyCoordination, verification: stateV3WitnessVerified}
+		op.seals.coordination = stateV3SealedCoordinationHistory{snapshots: [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3CompactSnapshot{compact}, witnesses: [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3FullCoordinationSnapshotWitness{witness}, count: 1, role: stateV3AssemblyCoordination, sealed: true}
 	}
 }
 

@@ -69,10 +69,10 @@ type stateV3AssemblyChild struct {
 	sealed       bool
 }
 
-// stateV3SealedSpines retains only operation-owned, fixed compact metadata
-// after each child has detached its live compact history. It deliberately has
-// no semantic projection or document bytes: compact metadata lacks the full
-// tree and transition evidence required by the parent validators.
+// stateV3SealedSpines retains operation-owned fixed compact metadata and
+// modeled-full-leaf witnesses after each child detaches its live history. It
+// deliberately has no semantic projection or document bytes; parent validator
+// projection remains a separate private, fail-closed slice.
 type stateV3SealedSpines struct {
 	minor        stateV3SealedLaneHistory
 	patch        stateV3SealedLaneHistory
@@ -81,6 +81,7 @@ type stateV3SealedSpines struct {
 
 type stateV3SealedLaneHistory struct {
 	snapshots [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3CompactSnapshot
+	witnesses [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3FullLaneSnapshotWitness
 	count     uint16
 	role      stateV3AssemblyRole
 	sealed    bool
@@ -88,9 +89,67 @@ type stateV3SealedLaneHistory struct {
 
 type stateV3SealedCoordinationHistory struct {
 	snapshots [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3CompactSnapshot
+	witnesses [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3FullCoordinationSnapshotWitness
 	count     uint16
 	role      stateV3AssemblyRole
 	sealed    bool
+}
+
+// stateV3WitnessVerification is issued only after stateV3SnapshotEvidence has
+// accepted the exact raw, REST, GraphQL, and recursive-tree snapshot. It is a
+// fixed attestation for later private projection; it is not a standalone
+// authority boundary.
+type stateV3WitnessVerification uint8
+
+const stateV3WitnessVerified stateV3WitnessVerification = 1
+
+// stateV3FullWitnessEntry is one complete parent-model regular leaf. The
+// collector validates every recursive-tree entry before issuing this value,
+// but the parent tree model deliberately represents only accepted 100644 blob
+// leaves, never directory entries or arbitrary Git-tree artifacts.
+type stateV3FullWitnessEntry struct {
+	oid  [20]byte
+	kind stateV3DocumentKind
+	path [stateV3StoredPathBytes]byte
+	len  uint8
+}
+
+// stateV3FullLaneSnapshotWitness and
+// stateV3FullCoordinationSnapshotWitness are distinct from compact admission
+// metadata. They retain exactly the bounded complete parent-model leaf set:
+// five state documents or three coordination documents, respectively.
+type stateV3FullLaneSnapshotWitness struct {
+	commitOID    [20]byte
+	treeOID      [20]byte
+	parentOID    [20]byte
+	ordinal      uint16
+	role         stateV3AssemblyRole
+	verification stateV3WitnessVerification
+	entries      [5]stateV3FullWitnessEntry
+	count        uint8
+	treeEmpty    bool
+}
+
+type stateV3FullCoordinationSnapshotWitness struct {
+	commitOID    [20]byte
+	treeOID      [20]byte
+	parentOID    [20]byte
+	ordinal      uint16
+	role         stateV3AssemblyRole
+	verification stateV3WitnessVerification
+	entries      [gardenerrelease.MaxStateV3CoordinationReleaseProofs + 1]stateV3FullWitnessEntry
+	count        uint8
+	treeEmpty    bool
+}
+
+type stateV3FullLaneWitnessHistory struct {
+	snapshots [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3FullLaneSnapshotWitness
+	count     uint16
+}
+
+type stateV3FullCoordinationWitnessHistory struct {
+	snapshots [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3FullCoordinationSnapshotWitness
+	count     uint16
 }
 
 // stateV3AssemblyPolicy is the immutable, deep-copied policy snapshot bound
@@ -285,11 +344,11 @@ func (op *stateV3AssemblyOperation) finishChild(child *stateV3AssemblyChild) Res
 	var sealed bool
 	switch child.session.assemblyRole {
 	case stateV3AssemblyMinor:
-		sealed = op.seals.minor.sealed && op.seals.minor.role == stateV3AssemblyMinor && op.seals.minor.count > 0 && int(op.seals.minor.count) <= gardenerrelease.MaxStateV3StateLaneHistoryCommits
+		sealed = sealedLaneWitnessesMatch(op.seals.minor, stateV3AssemblyMinor, gardenerrelease.MaxStateV3StateLaneHistoryCommits)
 	case stateV3AssemblyPatch:
-		sealed = op.seals.patch.sealed && op.seals.patch.role == stateV3AssemblyPatch && op.seals.patch.count > 0 && int(op.seals.patch.count) <= gardenerrelease.MaxStateV3StateLaneHistoryCommits
+		sealed = sealedLaneWitnessesMatch(op.seals.patch, stateV3AssemblyPatch, gardenerrelease.MaxStateV3StateLaneHistoryCommits)
 	case stateV3AssemblyCoordination:
-		sealed = op.seals.coordination.sealed && op.seals.coordination.role == stateV3AssemblyCoordination && op.seals.coordination.count > 0 && int(op.seals.coordination.count) <= gardenerrelease.MaxStateV3CoordinationHistoryCommits
+		sealed = sealedCoordinationWitnessesMatch(op.seals.coordination, gardenerrelease.MaxStateV3CoordinationHistoryCommits)
 	}
 	if !sealed {
 		return failure(DiagnosticProtocol)
@@ -357,11 +416,10 @@ func (op *stateV3AssemblyOperation) collectThreeSpines() Result {
 			return finished
 		}
 	}
-	// The sealed arrays preserve only compact document-admission metadata. They
-	// cannot honestly reconstruct the complete recursive trees, authenticated
-	// commit verification evidence, or transition changes required by the
-	// parent semantic validators. Until an independently designed witness
-	// retains those facts, semantic assembly must fail closed.
+	// The sealed arrays include modeled-full-leaf witnesses, but no private
+	// projection has yet proven exact document provenance, coordination prefixes,
+	// or lane termination authentications to the parent validators. Semantic
+	// assembly therefore remains fail-closed until that separate slice exists.
 	return failure(DiagnosticRequiredEvidenceAbsent)
 }
 
@@ -373,8 +431,8 @@ func (op *stateV3AssemblyOperation) validSessions() bool {
 // compact history to operation-owned fixed storage. It runs only after the
 // lane reached its checkpoint, completed chronological admission, retained
 // every admitted document, and captured termination prefixes.
-func (c *stateV3AssemblyChild) sealMinorHistory(history *stateV3CompactLaneHistory, generation uint64) Result {
-	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyMinor || c.sealed || c.seals.minor.sealed {
+func (c *stateV3AssemblyChild) sealMinorHistory(history *stateV3CompactLaneHistory, witness *stateV3FullLaneWitnessHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || witness == nil || c.session.assemblyRole != stateV3AssemblyMinor || c.sealed || c.seals.minor.sealed {
 		return failure(DiagnosticProtocol)
 	}
 	checkpoint, ok := decodeFixedOID(c.policy.value.StateLanes.Minor.CheckpointOID)
@@ -383,15 +441,16 @@ func (c *stateV3AssemblyChild) sealMinorHistory(history *stateV3CompactLaneHisto
 	}
 	c.session.mu.Lock()
 	defer c.session.mu.Unlock()
-	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.StateLanes.Minor.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || history.count != witness.count || int(history.count) > c.policy.value.StateLanes.Minor.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
 		return failure(DiagnosticProtocol)
 	}
 	for ordinal := 0; ordinal < int(history.count); ordinal++ {
-		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) || !laneWitnessMatchesCompact(witness.snapshots[ordinal], history.snapshots[ordinal], stateV3AssemblyMinor) {
 			return failure(DiagnosticProtocol)
 		}
 	}
 	copy(c.seals.minor.snapshots[:history.count], history.snapshots[:history.count])
+	copy(c.seals.minor.witnesses[:history.count], witness.snapshots[:history.count])
 	c.seals.minor.count, c.seals.minor.role, c.seals.minor.sealed = history.count, stateV3AssemblyMinor, true
 	c.sealed = true
 	return Result{}
@@ -399,8 +458,8 @@ func (c *stateV3AssemblyChild) sealMinorHistory(history *stateV3CompactLaneHisto
 
 // sealPatchHistory is the sole patch-lane transfer from session-owned live
 // compact history to operation-owned fixed storage.
-func (c *stateV3AssemblyChild) sealPatchHistory(history *stateV3CompactLaneHistory, generation uint64) Result {
-	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyPatch || c.sealed || c.seals.patch.sealed {
+func (c *stateV3AssemblyChild) sealPatchHistory(history *stateV3CompactLaneHistory, witness *stateV3FullLaneWitnessHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || witness == nil || c.session.assemblyRole != stateV3AssemblyPatch || c.sealed || c.seals.patch.sealed {
 		return failure(DiagnosticProtocol)
 	}
 	checkpoint, ok := decodeFixedOID(c.policy.value.StateLanes.Patch.CheckpointOID)
@@ -409,15 +468,16 @@ func (c *stateV3AssemblyChild) sealPatchHistory(history *stateV3CompactLaneHisto
 	}
 	c.session.mu.Lock()
 	defer c.session.mu.Unlock()
-	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.StateLanes.Patch.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || history.count != witness.count || int(history.count) > c.policy.value.StateLanes.Patch.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
 		return failure(DiagnosticProtocol)
 	}
 	for ordinal := 0; ordinal < int(history.count); ordinal++ {
-		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) || !laneWitnessMatchesCompact(witness.snapshots[ordinal], history.snapshots[ordinal], stateV3AssemblyPatch) {
 			return failure(DiagnosticProtocol)
 		}
 	}
 	copy(c.seals.patch.snapshots[:history.count], history.snapshots[:history.count])
+	copy(c.seals.patch.witnesses[:history.count], witness.snapshots[:history.count])
 	c.seals.patch.count, c.seals.patch.role, c.seals.patch.sealed = history.count, stateV3AssemblyPatch, true
 	c.sealed = true
 	return Result{}
@@ -425,8 +485,8 @@ func (c *stateV3AssemblyChild) sealPatchHistory(history *stateV3CompactLaneHisto
 
 // sealCoordinationHistory is the sole coordination transfer from the live
 // authenticated compact history to operation-owned fixed storage.
-func (c *stateV3AssemblyChild) sealCoordinationHistory(history *stateV3CompactCoordinationHistory, generation uint64) Result {
-	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyCoordination || c.sealed || c.seals.coordination.sealed {
+func (c *stateV3AssemblyChild) sealCoordinationHistory(history *stateV3CompactCoordinationHistory, witness *stateV3FullCoordinationWitnessHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || witness == nil || c.session.assemblyRole != stateV3AssemblyCoordination || c.sealed || c.seals.coordination.sealed {
 		return failure(DiagnosticProtocol)
 	}
 	checkpoint, ok := decodeFixedOID(c.policy.value.Coordination.CheckpointOID)
@@ -435,15 +495,16 @@ func (c *stateV3AssemblyChild) sealCoordinationHistory(history *stateV3CompactCo
 	}
 	c.session.mu.Lock()
 	defer c.session.mu.Unlock()
-	if !c.session.assemblyLive || c.session.compactHistory != nil || c.session.coordinationCompactHistory != history || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.Coordination.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+	if !c.session.assemblyLive || c.session.compactHistory != nil || c.session.coordinationCompactHistory != history || c.session.compactGeneration != generation || history.count == 0 || history.count != witness.count || int(history.count) > c.policy.value.Coordination.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
 		return failure(DiagnosticProtocol)
 	}
 	for ordinal := 0; ordinal < int(history.count); ordinal++ {
-		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) || !coordinationWitnessMatchesCompact(witness.snapshots[ordinal], history.snapshots[ordinal]) {
 			return failure(DiagnosticProtocol)
 		}
 	}
 	copy(c.seals.coordination.snapshots[:history.count], history.snapshots[:history.count])
+	copy(c.seals.coordination.witnesses[:history.count], witness.snapshots[:history.count])
 	c.seals.coordination.count, c.seals.coordination.role, c.seals.coordination.sealed = history.count, stateV3AssemblyCoordination, true
 	c.sealed = true
 	return Result{}

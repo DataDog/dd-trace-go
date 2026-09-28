@@ -83,6 +83,7 @@ func (c *stateV3AssemblyChild) collectStateV3CoordinationDocuments() Result {
 		return failure(DiagnosticProtocol)
 	}
 	var history stateV3CompactCoordinationHistory
+	var witness stateV3FullCoordinationWitnessHistory
 	root, result := c.readRoot()
 	if result.Diagnostic != DiagnosticOK {
 		return result
@@ -133,7 +134,7 @@ func (c *stateV3AssemblyChild) collectStateV3CoordinationDocuments() Result {
 		c.session.Release(treeHandle)
 		budget := stateV3SpineBudget{}
 		_, evidenceOK := stateV3SnapshotEvidence(raw, rest, gql, tree, policy, raw.SHA == checkpoint, &budget)
-		if !restOK || !gqlOK || !treeOK || !evidenceOK || !history.append(raw, tree) {
+		if !restOK || !gqlOK || !treeOK || !evidenceOK || !history.append(raw, tree) || !witness.appendWitness(raw, tree) {
 			c.session.Release(current)
 			c.store.reset()
 			return failure(DiagnosticConflict)
@@ -208,7 +209,7 @@ func (c *stateV3AssemblyChild) collectStateV3CoordinationDocuments() Result {
 			}
 		}
 	}
-	if sealed := c.sealCoordinationHistory(&history, admission.generation); sealed.Diagnostic != DiagnosticOK {
+	if sealed := c.sealCoordinationHistory(&history, &witness, admission.generation); sealed.Diagnostic != DiagnosticOK {
 		c.store.reset()
 		return sealed
 	}

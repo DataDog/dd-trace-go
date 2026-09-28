@@ -157,6 +157,7 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments() Result {
 		return failure(DiagnosticProtocol)
 	}
 	var history stateV3CompactLaneHistory
+	var witness stateV3FullLaneWitnessHistory
 	root, result := c.readRoot()
 	if result.Diagnostic != DiagnosticOK {
 		return result
@@ -209,7 +210,7 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments() Result {
 		// immediately. It is never retained in compact history.
 		transientBudget := stateV3SpineBudget{}
 		_, evidenceOK := stateV3SnapshotEvidence(raw, rest, gql, tree, policy, raw.SHA == checkpoint, &transientBudget)
-		if !restOK || !gqlOK || !treeOK || !evidenceOK || !history.append(raw, tree, c.session.assemblyRole) {
+		if !restOK || !gqlOK || !treeOK || !evidenceOK || !history.append(raw, tree, c.session.assemblyRole) || !witness.appendWitness(raw, tree, c.session.assemblyRole) {
 			c.session.Release(current)
 			c.store.reset()
 			return failure(DiagnosticConflict)
@@ -316,9 +317,9 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments() Result {
 	var sealed Result
 	switch c.session.assemblyRole {
 	case stateV3AssemblyMinor:
-		sealed = c.sealMinorHistory(&history, admission.generation)
+		sealed = c.sealMinorHistory(&history, &witness, admission.generation)
 	case stateV3AssemblyPatch:
-		sealed = c.sealPatchHistory(&history, admission.generation)
+		sealed = c.sealPatchHistory(&history, &witness, admission.generation)
 	default:
 		sealed = failure(DiagnosticProtocol)
 	}
