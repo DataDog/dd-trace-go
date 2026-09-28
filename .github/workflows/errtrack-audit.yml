@@ -5,13 +5,19 @@ on:
     paths:
       # Root-module code only: the contrib/* integration modules cannot import
       # the internal/telemetry/log reporting API, so auditing their changes is
-      # out of scope by construction. contrib/os and top-level orchestrion/ are
-      # exceptions on the other side of that rule: they have no go.mod of their
-      # own, so they are root-module code that CAN import it.
+      # out of scope by construction. contrib/contrib.go, contrib/os,
+      # contrib/cloud.google.com/go/pubsubtrace, and
+      # contrib/confluentinc/confluent-kafka-go/kafkatrace (along with
+      # top-level orchestrion/) are exceptions on the other side of that
+      # rule: they have no go.mod of their own, so they are root-module code
+      # that CAN import it.
       - 'appsec/**'
       - 'crashtracker/**'
       - 'civisibility/**'
+      - 'contrib/contrib.go'
       - 'contrib/os/**'
+      - 'contrib/cloud.google.com/go/pubsubtrace/**'
+      - 'contrib/confluentinc/confluent-kafka-go/kafkatrace/**'
       - 'datastreams/**'
       - 'ddtrace/**'
       - 'instrumentation/**'
