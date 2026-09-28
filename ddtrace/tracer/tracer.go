@@ -295,7 +295,7 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
 		if err != nil {
-			log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore metrics exporter configuration or environment failure
+			reportOtelRuntimeMetricsStartError(err)
 			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
@@ -414,7 +414,7 @@ func (t *tracer) startAppSec() {
 			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 				log.Debug("remoteconfig: client not started, remote configuration is disabled")
 			} else {
-				log.Warn("Remote config startup error: %s", err.Error()) //errtrack:ignore agent or network startup failure
+				reportRemoteConfigStartupError(err)
 			}
 		}
 	}
@@ -688,6 +688,20 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 // defaultAgentInfoPollInterval is the default interval at which the tracer
 // polls the agent's /info endpoint for capability updates.
 const defaultAgentInfoPollInterval = 5 * time.Second
+
+func reportOtelRuntimeMetricsStartError(err error) {
+	if registrationErr, ok := errors.AsType[*otelmetricsinstall.RuntimeRegistrationError](err); ok {
+		log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("Failed to start OTel runtime metrics", registrationErr.Err)
+		return
+	}
+	log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore metrics exporter configuration or environment failure
+}
+
+func reportRemoteConfigStartupError(err error) {
+	log.Warn("Remote config startup error: %s", err.Error()) //errtrack:ignore reported by ReportError below
+	telemetrylog.ReportError("Remote config startup error", err)
+}
 
 // newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
