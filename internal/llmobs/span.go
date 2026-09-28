@@ -50,6 +50,10 @@ type Prompt struct {
 	ID string `json:"id,omitempty"`
 	// Version is the version of the prompt.
 	Version string `json:"version,omitempty"`
+	// PromptUUID is the backend UUID of the managed prompt.
+	PromptUUID string `json:"prompt_uuid,omitempty"`
+	// PromptVersionUUID is the backend UUID of the managed prompt version.
+	PromptVersionUUID string `json:"prompt_version_uuid,omitempty"`
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string `json:"label,omitempty"`
 	// Template is the prompt template string.

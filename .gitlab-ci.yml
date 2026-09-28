@@ -18,6 +18,7 @@ variables:
   # Disable one-pipeline shared pipeline (packaging/publish/system-test) as dd-trace-go runs those in its own way.
   SKIP_SHARED_PIPELINE: "true"
   DANGEROUSLY_SKIP_SHARED_PIPELINE_TESTS: "true"
+  REPO_NOTIFICATION_CHANNEL: "#guild-dd-trace-go-notifications"
 
 workflow:
   auto_cancel:
@@ -49,11 +50,22 @@ include:
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
+  # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
+  # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
+  - project: 'ddoghq/llm-validation-platform'
+    ref: 4bb157a2cbb50ef608b9ec8e14b886e0cf838ca3 # v0.1.4
+    file: '/ci/llm-validation.gitlab-ci.yml'
 
 # Pin the benchmarking-platform image for the go-go-prof-app-parallel jobs
 # included from DataDog/apm-reliability/apm-sdks-benchmarks above.
 linux-go-go-prof-app-parallel:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7
+
+"llm validation":
+  variables:
+    LLMVAL_PLATFORM_PROJECT: "ddoghq/llm-validation-platform"
+    LLMVAL_PLATFORM_REF: "4bb157a2cbb50ef608b9ec8e14b886e0cf838ca3" # v0.1.4
+    LLMVAL_BASE_REF: "main"   # must be job-level, not top-level `variables:` — see ci/README.md
 
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7

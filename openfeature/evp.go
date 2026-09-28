@@ -120,6 +120,7 @@ func newEVPClientBase() *evpClient {
 	} else {
 		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 	}
+	agentURL = evpAgentBaseURL(agentURL)
 	return &evpClient{
 		httpClient: httpClient,
 		agentURL:   agentURL,
@@ -127,6 +128,22 @@ func newEVPClientBase() *evpClient {
 		now:        time.Now,
 		cooldown:   defaultEVPRouteRecoveryCooldown,
 	}
+}
+
+// evpAgentBaseURL keeps an explicit Agent URL prefix while removing a known
+// trace intake endpoint. DD_TRACE_AGENT_URL may name that endpoint even though
+// /info and /evp_proxy are sibling routes.
+func evpAgentBaseURL(agentURL *url.URL) *url.URL {
+	u := *agentURL
+	u.Path = strings.TrimRight(u.Path, "/")
+	for _, endpoint := range []string{"/v0.4/traces", "/v0.5/traces", "/v1.0/traces"} {
+		if basePath, ok := strings.CutSuffix(u.Path, endpoint); ok {
+			u.Path = basePath
+			break
+		}
+	}
+	u.RawPath = ""
+	return &u
 }
 
 func refuseEVPRedirect(*http.Request, []*http.Request) error {
@@ -184,13 +201,13 @@ func (c *evpClient) postRaw(endpoint, eventName string, body []byte) error {
 			return nil
 		}
 
-		var statusErr *evpHTTPStatusError
-		if errors.As(result.err, &statusErr) {
-			if statusErr.statusCode != http.StatusNotFound &&
-				statusErr.statusCode != http.StatusMethodNotAllowed {
+		if statusErr, ok := errors.AsType[*evpHTTPStatusError](result.err); ok {
+			replay := statusErr.statusCode == http.StatusNotFound ||
+				statusErr.statusCode == http.StatusMethodNotAllowed
+			if !replay && !shouldSwitchFutureRoute(statusErr.statusCode) {
 				return result.err
 			}
-			if c.leaveLocalRoute() {
+			if direct := c.leaveLocalRoute(); direct && replay {
 				return c.sendDirect(endpoint, eventName, body)
 			}
 			return result.err
@@ -229,7 +246,8 @@ func (c *evpClient) send(
 	}
 
 	u := *baseURL
-	u.Path = joinEVPPath(basePath, endpoint)
+	u.Path = joinEVPPath(u.Path, basePath, endpoint)
+	u.RawPath = ""
 	requestURL := u.String()
 	var wroteRequest atomic.Bool
 	trace := &httptrace.ClientTrace{
@@ -312,7 +330,8 @@ func (c *evpClient) discoverLocalRoute() string {
 	}
 
 	u := *c.agentURL
-	u.Path = "/info"
+	u.Path = joinEVPPath(u.Path, "/info")
+	u.RawPath = ""
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
 	if err != nil {
 		return ""
@@ -327,12 +346,30 @@ func (c *evpClient) discoverLocalRoute() string {
 	}
 
 	var info struct {
-		Endpoints []string `json:"endpoints"`
+		Endpoints              []string `json:"endpoints"`
+		EVPProxyAllowedHeaders []string `json:"evp_proxy_allowed_headers"`
 	}
 	if err := c.jsonConfig.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		return ""
 	}
+	if !supportsEVPProxyIdentityHeaders(info.EVPProxyAllowedHeaders) {
+		return ""
+	}
 	return selectEVPProxyPath(info.Endpoints)
+}
+
+func supportsEVPProxyIdentityHeaders(headers []string) bool {
+	hasOrigin := false
+	hasOriginVersion := false
+	for _, header := range headers {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(header), headerEVPOrigin):
+			hasOrigin = true
+		case strings.EqualFold(strings.TrimSpace(header), headerEVPOriginVersion):
+			hasOriginVersion = true
+		}
+	}
+	return hasOrigin && hasOriginVersion
 }
 
 func selectEVPProxyPath(endpoints []string) string {
@@ -348,12 +385,28 @@ func selectEVPProxyPath(endpoints []string) string {
 	return ""
 }
 
-func joinEVPPath(basePath, endpoint string) string {
-	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(endpoint, "/")
+func joinEVPPath(parts ...string) string {
+	var joined strings.Builder
+	for _, part := range parts {
+		if part = strings.Trim(part, "/"); part != "" {
+			joined.WriteByte('/')
+			joined.WriteString(part)
+		}
+	}
+	if joined.Len() == 0 {
+		return "/"
+	}
+	return joined.String()
 }
 
 func (c *evpClient) canUseDirect() bool {
 	return c.directClient != nil && c.directURL != nil && c.apiKey != ""
+}
+
+func shouldSwitchFutureRoute(statusCode int) bool {
+	return statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests ||
+		statusCode >= http.StatusInternalServerError && statusCode < 600
 }
 
 // leaveLocalRoute selects direct intake for future events when available.

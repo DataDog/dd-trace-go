@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.273.1
@@ -93,7 +93,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -101,3 +101,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

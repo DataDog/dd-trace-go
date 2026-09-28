@@ -79,9 +79,25 @@ func (op *ServiceEntrySpanOperation) SetSerializableTags(tags map[string]any) {
 }
 
 func (op *ServiceEntrySpanOperation) setSerializableTag(key string, value any) {
-	switch value.(type) {
+	const maxSafeInt = (int64(1) << 53) - 1
+	switch v := value.(type) {
 	case string, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, bool:
 		op.tagSetter.SetTag(key, value)
+	case int:
+		// Native int is 64-bit wide on 64-bit platforms. Set it directly only when float64 can hold it
+		// exactly; otherwise serialize it to preserve the exact value. internal.ToFloat64 range-guards
+		// int64/uint64 but not int/uint, so the direct path would silently round large native ints.
+		if int64(v) >= -maxSafeInt && int64(v) <= maxSafeInt {
+			op.tagSetter.SetTag(key, value)
+		} else {
+			op.jsonTags[key] = value
+		}
+	case uint:
+		if uint64(v) <= uint64(maxSafeInt) {
+			op.tagSetter.SetTag(key, value)
+		} else {
+			op.jsonTags[key] = value
+		}
 	default:
 		op.jsonTags[key] = value
 	}

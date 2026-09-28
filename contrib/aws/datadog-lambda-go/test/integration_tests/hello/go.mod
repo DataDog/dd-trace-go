@@ -8,9 +8,9 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/inte
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
@@ -105,7 +105,7 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
 

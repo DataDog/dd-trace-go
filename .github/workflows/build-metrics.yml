@@ -13,8 +13,11 @@ name: Build Metrics
 # - Dependency attribution (standard mode only): go-size-analyzer breaks the binary down by
 #   vendor package, published as go.build.dependency_size_bytes.<dependency>, so a size
 #   regression can be traced to which dependency grew instead of just the binary total
+# - Tool binary cache: go-size-analyzer is restored from the actions cache, so
+#   the flaky GitHub-release download only runs on a cache miss; utilization
+#   is published as ci.cache.*.hit measures for hit-rate tracking
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
-# - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
+# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
@@ -27,6 +30,10 @@ on:
       - scripts/measure_build.sh
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
+      # '**/orchestrion.yml' also matches .github/workflows/orchestrion.yml, so
+      # editing that workflow fired this 107-job matrix for nothing. Later
+      # patterns win, so exclude it. Aspect files still match.
+      - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
   push:
     branches:
@@ -36,6 +43,10 @@ on:
       - scripts/measure_build.sh
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
+      # '**/orchestrion.yml' also matches .github/workflows/orchestrion.yml, so
+      # editing that workflow fired this 107-job matrix for nothing. Later
+      # patterns win, so exclude it. Aspect files still match.
+      - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
   workflow_dispatch:
 
@@ -45,6 +56,10 @@ concurrency:
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  # Single source of truth for the go-size-analyzer release: the download URL
+  # and the cache key below both derive from it, so they cannot drift apart
+  # (a stale key would silently serve an old binary).
+  GSA_VERSION: "1.13.0"
 
 permissions:
   id-token: write
@@ -173,6 +188,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Restore Go modules cache
+        id: go-mod-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
@@ -192,13 +208,24 @@ jobs:
           cache: false
           check-latest: true
 
-      - name: Install go-size-analyzer
+      - name: Cache go-size-analyzer
         if: matrix.mode == 'standard'
+        id: gsa-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: gsa
+          key: go-size-analyzer-${{ env.GSA_VERSION }}-linux-amd64
+
+      - name: Install go-size-analyzer
+        if: matrix.mode == 'standard' && steps.gsa-cache.outputs.cache-hit != 'true'
         run: |
-          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v1.13.0/go-size-analyzer_1.13.0_linux_amd64.tar.gz" -o gsa.tar.gz
+          curl -L --fail "https://github.com/Zxilly/go-size-analyzer/releases/download/v${GSA_VERSION}/go-size-analyzer_${GSA_VERSION}_linux_amd64.tar.gz" -o gsa.tar.gz
           tar -xzf gsa.tar.gz gsa
           chmod +x gsa
-          echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+
+      - name: Add go-size-analyzer to PATH
+        if: matrix.mode == 'standard'
+        run: echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
       - name: Measure build
         id: measure
@@ -252,4 +279,14 @@ jobs:
           DATADOG_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           DATADOG_SITE: datadoghq.com
           METRICS_FILE: ${{ runner.temp }}/metrics.json
+          # Per-cache step outcome and hit flags, published as ci.cache.*.hit
+          # measures by the script below. actions/cache emits an empty
+          # cache-hit on a miss, so the outcome separates misses from skipped
+          # steps (gsa in orchestrion mode).
+          GO_MOD_CACHE_OUTCOME: ${{ steps.go-mod-cache.outcome }}
+          GO_MOD_CACHE_HIT: ${{ steps.go-mod-cache.outputs.cache-hit }}
+          GSA_CACHE_OUTCOME: ${{ steps.gsa-cache.outcome }}
+          GSA_CACHE_HIT: ${{ steps.gsa-cache.outputs.cache-hit }}
+          DATADOG_CI_CACHE_OUTCOME: ${{ steps.dd-ci-cli-cache.outcome }}
+          DATADOG_CI_CACHE_HIT: ${{ steps.dd-ci-cli-cache.outputs.cache-hit }}
         run: ./scripts/publish_build_metrics.sh

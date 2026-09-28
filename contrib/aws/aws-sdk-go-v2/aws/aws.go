@@ -50,9 +50,7 @@ var tagMapPool = sync.Pool{
 
 type spanTimestampKey struct{}
 
-// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
-// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
-func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+func prepConfig(opts ...Option) *config {
 	cfg := &config{}
 
 	defaults(cfg)
@@ -60,8 +58,22 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 		opt.apply(cfg)
 	}
 
+	return cfg
+}
+
+func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
 	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+}
+
+// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
+//
+// To instrument an aws.Config that isn't directly accessible (e.g. it is built by
+// (github.com/aws/aws-sdk-go-v2/config).LoadDefaultConfig), use
+// (github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws/awsconfig).WithDataDogTracer instead.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
 }
 
 type traceMiddleware struct {

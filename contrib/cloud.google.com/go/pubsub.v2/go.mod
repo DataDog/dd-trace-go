@@ -4,10 +4,10 @@ go 1.26.0
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.0.0
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.273.1
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.2
 )
 
 require (
@@ -101,10 +101,12 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.
