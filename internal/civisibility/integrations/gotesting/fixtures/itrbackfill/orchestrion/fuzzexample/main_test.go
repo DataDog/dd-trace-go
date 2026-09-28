@@ -59,9 +59,29 @@ func TestMain(m *testing.M) {
 		{name: "FuzzNativeTypes", status: constants.TestStatusPass},
 	}
 	if scenario == "active-fuzz" {
-		want = []eventExpectation{{name: "FuzzNativeParity", status: constants.TestStatusPass}}
+		want = []eventExpectation{
+			{name: "FuzzActiveOther/seed#0", status: constants.TestStatusPass},
+			{name: "FuzzActiveOther", status: constants.TestStatusPass},
+			{name: "FuzzNativeParity", status: constants.TestStatusPass},
+		}
 	} else if scenario == "filtered" {
 		want = []eventExpectation{{name: "TestNormalSelection", status: constants.TestStatusPass}}
+	} else if scenario == "seed-lifecycle" {
+		wantExitCode = 1
+		want = []eventExpectation{
+			{name: "FuzzSeedCleanupFailure/seed#0", status: constants.TestStatusFail},
+			{name: "FuzzSeedCleanupFailure", status: constants.TestStatusFail},
+			{name: "FuzzSeedCleanupSkip/seed#0", status: constants.TestStatusSkip},
+			{name: "FuzzSeedCleanupSkip", status: constants.TestStatusPass},
+			{name: "FuzzSeedParallelFailure/seed#0/parallel", status: constants.TestStatusFail},
+			{name: "FuzzSeedParallelFailure/seed#0", status: constants.TestStatusFail},
+			{name: "FuzzSeedParallelFailure", status: constants.TestStatusFail},
+		}
+	} else if scenario == "fuzz-missing-call" {
+		wantExitCode = 1
+		want = []eventExpectation{{name: "FuzzMissingCall", status: constants.TestStatusFail}}
+	} else if scenario == "example-panic-nil" {
+		want = []eventExpectation{{name: "ExamplePanicNil", status: constants.TestStatusFail}}
 	}
 	switch scenario {
 	case "fuzz-failure":
@@ -78,6 +98,10 @@ func TestMain(m *testing.M) {
 	if scenario == "example-panic" {
 		if fmt.Sprint(panicData) != "example panic sentinel" {
 			panic(fmt.Sprintf("unexpected example panic: %v", panicData))
+		}
+	} else if scenario == "example-panic-nil" {
+		if fmt.Sprint(panicData) != "test executed panic(nil) or runtime.Goexit" {
+			panic(fmt.Sprintf("unexpected panic(nil) terminal: %v", panicData))
 		}
 	} else if panicData != nil {
 		panic(panicData)

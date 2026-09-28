@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -21,6 +22,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+var errTestingDidNotReturn = errors.New("test executed panic(nil) or runtime.Goexit")
 
 type (
 	// instrumentationMetadata contains the internal instrumentation metadata
@@ -1322,14 +1325,26 @@ func runTestCleanupCallbacks(t *testing.T, result *testCleanupResult) {
 // release the parent slot before unblocking children, then reacquire it for
 // sequential parents before running cleanup.
 func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFields, neutralizeNativeParallelRelease bool) {
+	completeParallelSubtestsWithState(
+		localTPrivateFields,
+		getTestState(t),
+		isParallelTest(t, localTPrivateFields),
+		neutralizeNativeParallelRelease,
+	)
+}
+
+func completeParallelSubtestsWithState(
+	localTPrivateFields *commonPrivateFields,
+	testState *testingTestState,
+	parentIsParallel bool,
+	neutralizeNativeParallelRelease bool,
+) {
 	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
 		return
 	}
 
 	subtests := *localTPrivateFields.sub
-	parentIsParallel := isParallelTest(t, localTPrivateFields)
 	*localTPrivateFields.sub = nil
-	testState := getTestState(t)
 	if testState != nil {
 		testingTestStateRelease(testState)
 	}
@@ -1382,8 +1397,20 @@ func runAndApplyTestCleanup(t *testing.T, execMeta *testExecutionMetadata) {
 // runAndApplyTestCleanupWithDuration adds user cleanup time to the test body
 // duration without counting CI Visibility work performed between them.
 func runAndApplyTestCleanupWithDuration(t *testing.T, execMeta *testExecutionMetadata, bodyDuration time.Duration) time.Duration {
+	return runAndApplyTestCleanupWithDurationOptions(t, execMeta, bodyDuration, false)
+}
+
+func runAndApplyTestCleanupWithDurationOptions(
+	t *testing.T,
+	execMeta *testExecutionMetadata,
+	bodyDuration time.Duration,
+	neutralizeNativeParallelRelease bool,
+) time.Duration {
 	cleanupStart := time.Now()
-	runAndApplyTestCleanup(t, execMeta)
+	if execMeta != nil && execMeta.cleanupResult != nil && !execMeta.cleanupResult.ran {
+		runTestCleanupWithOptions(t, execMeta.cleanupResult, neutralizeNativeParallelRelease)
+		applyTestCleanupResult(t, execMeta, execMeta.cleanupResult)
+	}
 	return bodyDuration + time.Since(cleanupStart)
 }
 

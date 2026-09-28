@@ -6,11 +6,14 @@
 package gotesting
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -37,13 +40,6 @@ func (ddf *F) Fuzz(ff any) {
 		return
 	}
 	f.Fuzz(instrumentTestingFuzzFunc(ff))
-}
-
-// testingFuzzingActive reports whether the test binary is running a fuzzing
-// campaign rather than executing the seed corpus as ordinary tests.
-func testingFuzzingActive() bool {
-	fuzz := flag.Lookup("test.fuzz")
-	return fuzz != nil && fuzz.Value.String() != ""
 }
 
 // testingFuzzWorkerActive reports whether this process is a child worker that
@@ -111,14 +107,93 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 		execMeta.identity = info.identity
 		execMeta.test = test
 
-		// Register first so the CI event closes after user cleanups and seed
-		// executions, which testing runs before the fuzz target's cleanup phase.
-		f.Cleanup(func() {
+		bodyReturned := false
+		defer func() {
+			bodyTerminal := recover()
+			terminal, terminalStack := completeFuzzTargetLifecycle(f, bodyReturned, bodyTerminal)
+			if terminal != nil {
+				errorType := "panic"
+				if terminalErr, ok := terminal.(error); ok && errors.Is(terminalErr, errTestingDidNotReturn) {
+					errorType = "runtime.Goexit"
+				}
+				execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{
+					Type:    errorType,
+					Message: fmt.Sprint(terminal),
+					Stack:   terminalStack,
+				})
+			}
 			defer deleteTestMetadata(f)
 			finishTestingTBEvent(f, execMeta, test, suite, module, time.Now())
-		})
+			if terminal != nil {
+				panic(terminal)
+			}
+		}()
 		info.originalFunc(f)
+		bodyReturned = true
 	}
+}
+
+// completeFuzzTargetLifecycle mirrors the terminal work performed by
+// testing.fRunner before the root event is closed.
+func completeFuzzTargetLifecycle(f *testing.F, bodyReturned bool, bodyTerminal any) (any, string) {
+	cleanup := &testCleanupResult{}
+	completeFuzzParallelSeeds(f)
+	runTestCleanupCallbacks((*testing.T)(unsafe.Pointer(f)), cleanup)
+
+	terminal := bodyTerminal
+	terminalStack := ""
+	if terminal != nil {
+		terminalStack = utils.GetStacktrace(1)
+		if cleanup.panicData != nil {
+			f.Logf("cleanup panicked with %v", cleanup.panicData)
+		}
+	} else if cleanup.panicData != nil {
+		terminal = cleanup.panicData
+		terminalStack = cleanup.panicStacktrace
+	} else if (!bodyReturned || cleanup.goexit) && !f.Failed() && !f.Skipped() {
+		terminal = errTestingDidNotReturn
+		terminalStack = utils.GetStacktrace(1)
+	}
+	if terminal != nil {
+		f.Fail()
+	}
+	if !testingFFuzzCalled(f) && !f.Failed() && !f.Skipped() {
+		f.Error("returned without calling F.Fuzz, F.Fail, or F.Skip")
+	}
+	return terminal, terminalStack
+}
+
+// completeFuzzParallelSeeds waits for seeds that called T.Parallel before the
+// fuzz target result and its cleanups are observed.
+func completeFuzzParallelSeeds(f *testing.F) {
+	t := (*testing.T)(unsafe.Pointer(f))
+	fields := getTestPrivateFields(t)
+	state := getFuzzTestState(f)
+	completeParallelSubtestsWithState(fields, state, false, false)
+}
+
+// getFuzzTestState reads testing.F's scheduler state. testing.F and testing.T
+// place this field at different offsets, so the testing.T helper cannot be used.
+func getFuzzTestState(f *testing.F) *testingTestState {
+	ptr, err := getFieldPointerFrom(f, "tstate")
+	if err != nil || ptr == nil {
+		return nil
+	}
+	state := *(**testingTestState)(ptr)
+	runtime.KeepAlive(f)
+	return state
+}
+
+// testingFFuzzCalled reports whether the root invoked F.Fuzz. The standard
+// library validates this after user cleanups, so the native event must do so too.
+func testingFFuzzCalled(f *testing.F) bool {
+	ptr, err := getFieldPointerFromWithType(f, "fuzzCalled", reflect.TypeFor[bool]())
+	if err != nil || ptr == nil {
+		return true
+	}
+	called := *(*bool)(ptr)
+	runtime.KeepAlive(f)
+	return called
 }
 
 // finishTestingTBEvent maps testing's terminal state to the native CI

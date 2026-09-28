@@ -6,6 +6,8 @@
 package gotesting
 
 import (
+	"bufio"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,4 +33,13 @@ func TestExampleOutputMismatchMatchesTestingSemantics(t *testing.T) {
 			require.Equal(t, tt.mismatch, message != "")
 		})
 	}
+}
+
+func TestExampleOutputLinesDoNotTruncateLongLines(t *testing.T) {
+	longLine := strings.Repeat("x", bufio.MaxScanTokenSize+1)
+	var lines []string
+	forEachExampleOutputLine([]byte(longLine+"\r\nafter\n\r"), func(line string) {
+		lines = append(lines, line)
+	})
+	require.Equal(t, []string{longLine, "after", ""}, lines)
 }

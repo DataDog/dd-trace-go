@@ -18,13 +18,30 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 	goCache := filepath.Join(t.TempDir(), "gocache")
 	goModCache := goEnv(t, "GOMODCACHE")
 	for _, mode := range []string{"manual", "orchestrion"} {
-		for _, scenario := range []string{"pass", "fuzz-failure", "example-mismatch", "example-panic", "active-fuzz", "filtered"} {
+		for _, scenario := range []string{
+			"pass",
+			"fuzz-failure",
+			"seed-lifecycle",
+			"fuzz-missing-call",
+			"example-mismatch",
+			"example-panic",
+			"example-panic-nil",
+			"active-fuzz",
+			"filtered",
+		} {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
 				fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app")
 				args := []string{"test", "-mod=readonly", "-count=1", "-v", "-run", "^(FuzzNative|ExampleNative)"}
-				if scenario == "active-fuzz" {
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^$", "-fuzz", "^FuzzNativeParity$", "-fuzztime", "1x"}
-				} else if scenario == "filtered" {
+				switch scenario {
+				case "seed-lifecycle":
+					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$"}
+				case "fuzz-missing-call":
+					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzMissingCall$"}
+				case "example-panic-nil":
+					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^ExamplePanicNil$"}
+				case "active-fuzz":
+					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzActiveOther$", "-fuzz", "^FuzzNativeParity$", "-fuzztime", "1x"}
+				case "filtered":
 					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^TestNormalSelection$"}
 				}
 				if mode == "orchestrion" {
@@ -53,7 +70,8 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
 		if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") || strings.HasPrefix(key, "CI") ||
-			key == "GOFLAGS" || key == "GOWORK" || key == "HOME" || key == "XDG_CACHE_HOME" || key == "GOCACHE" || key == "GOMODCACHE" {
+			key == "GOFLAGS" || key == "GOWORK" || key == "HOME" || key == "XDG_CACHE_HOME" || key == "GOCACHE" || key == "GOMODCACHE" ||
+			(scenario == "example-panic-nil" && key == "GODEBUG") {
 			continue
 		}
 		env = append(env, item)
@@ -69,6 +87,9 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 		"GOWORK=off",
 		"GOFLAGS=",
 	)
+	if scenario == "example-panic-nil" {
+		env = append(env, "GODEBUG=panicnil=1")
+	}
 	return env
 }
 

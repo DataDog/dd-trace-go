@@ -141,9 +141,9 @@ func instrumentTestingFuzzFunc(ff any) any {
 	if isProcessRetryChild() {
 		return ff
 	}
-	if testingFuzzingActive() {
-		// Generated fuzzing mutations are not JUnit test cases. The root fuzz
-		// target is still reported by its testing.M descriptor wrapper.
+	if testingFuzzWorkerActive() {
+		// Generated fuzzing mutations are not JUnit test cases. Coordinator
+		// processes still execute ordinary seeds for non-selected fuzz targets.
 		return ff
 	}
 	if !isCiVisibilityEnabled() || !testing.Testing() || ff == nil {
@@ -165,12 +165,21 @@ func instrumentTestingFuzzFunc(ff any) any {
 			args[0] = reflect.ValueOf(currentT)
 			fn.Call(args)
 		}
-		instrumentTestingTFuncWithSource(seedBody, sourceFunc, false)(t)
+		instrumentTestingTFuncWithSourceOptions(seedBody, sourceFunc, false, true)(t)
 		return nil
 	}).Interface()
 }
 
 func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Func, additionalFeatures bool) func(*testing.T) {
+	return instrumentTestingTFuncWithSourceOptions(f, sourceFunc, additionalFeatures, false)
+}
+
+func instrumentTestingTFuncWithSourceOptions(
+	f func(*testing.T),
+	sourceFunc *runtime.Func,
+	additionalFeatures bool,
+	drainNativeLifecycle bool,
+) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {
 		return f
@@ -289,6 +298,9 @@ func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Fu
 				defer deleteTestMetadata(currentT)
 			}
 			execMeta.identity = localIdentity
+			if drainNativeLifecycle && execMeta.cleanupResult == nil {
+				execMeta.cleanupResult = &testCleanupResult{}
+			}
 
 			currentPrivates := getTestPrivateFields(currentT)
 			if currentPrivates != nil && currentPrivates.parent != nil {
@@ -339,7 +351,7 @@ func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Fu
 				}
 
 				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
-				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, bodyDuration)
+				duration := runAndApplyTestCleanupWithDurationOptions(currentT, execMeta, bodyDuration, drainNativeLifecycle)
 				if unexpectedTermination {
 					r = unexpectedTestTerminationMessage
 				}

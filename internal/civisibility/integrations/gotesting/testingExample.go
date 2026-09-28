@@ -6,7 +6,7 @@
 package gotesting
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -126,6 +126,11 @@ func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 			if panicData != nil {
 				panic(panicData)
 			}
+			if !finished {
+				// recover returns nil for panic(nil) when GODEBUG=panicnil=1 and
+				// for runtime.Goexit. Preserve testing's terminal behavior in both cases.
+				panic(errTestingDidNotReturn)
+			}
 		}()
 
 		info.originalFunc()
@@ -147,10 +152,7 @@ func finishExampleEvent(
 	unfinished bool,
 ) {
 	if len(output) > 0 {
-		scanner := bufio.NewScanner(strings.NewReader(string(output)))
-		for scanner.Scan() {
-			test.Log(scanner.Text(), "")
-		}
+		forEachExampleOutputLine(output, func(line string) { test.Log(line, "") })
 	}
 
 	switch {
@@ -171,6 +173,21 @@ func finishExampleEvent(
 		test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(finishTime))
 	}
 	checkModuleAndSuite(module, suite)
+}
+
+// forEachExampleOutputLine applies bufio.ScanLines semantics without its
+// 64 KiB token limit, since examples may legitimately print larger lines.
+func forEachExampleOutputLine(output []byte, visit func(string)) {
+	for len(output) > 0 {
+		line, rest, found := bytes.Cut(output, []byte{'\n'})
+		if !found {
+			visit(string(bytes.TrimSuffix(output, []byte{'\r'})))
+			return
+		}
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		visit(string(line))
+		output = rest
+	}
 }
 
 // exampleOutputMismatch mirrors testing's ordered and unordered output
