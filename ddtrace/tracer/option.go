@@ -42,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -549,6 +550,15 @@ func (a *atomicAgentFeatures) update(fn func(agentFeatures) agentFeatures) {
 // previous snapshot" during a poll.
 var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
 
+type agentFeaturesDecodeError struct {
+	err error
+}
+
+func (e *agentFeaturesDecodeError) Error() string {
+	return fmt.Sprintf("decoding features: %s", e.err.Error())
+}
+func (e *agentFeaturesDecodeError) Unwrap() error { return e.err }
+
 // fetchAgentFeatures queries the trace-agent's /info endpoint and parses the
 // response into an agentFeatures value. It returns an error if the request
 // fails or the response cannot be decoded; the caller should retain the
@@ -601,7 +611,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	}
 	var info infoResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
-		return agentFeatures{}, fmt.Errorf("decoding features: %w", err)
+		return agentFeatures{}, &agentFeaturesDecodeError{err: err}
 	}
 	var features agentFeatures
 	features.DropP0s = info.ClientDropP0s
@@ -661,7 +671,12 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		if errors.Is(err, errAgentFeaturesNotSupported) {
 			return features, protoV04
 		}
-		log.Error("%s", err.Error()) //errtrack:ignore agent or network discovery failure
+		if decodeErr, ok := errors.AsType[*agentFeaturesDecodeError](err); ok {
+			log.Error("%s", err.Error()) //errtrack:ignore reported by ReportError below
+			telemetrylog.ReportError("Failed to decode agent info response", decodeErr.err)
+		} else {
+			log.Error("%s", err.Error()) //errtrack:ignore agent or network discovery failure
+		}
 		return features, protoUnknown
 	}
 	if features.v1TracesAdvertised {

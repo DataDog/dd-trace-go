@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -70,6 +72,33 @@ type concentrator struct {
 	// sender determines where flushed stats go (the Datadog Agent or an OTLP
 	// metrics endpoint) and the destination-specific policy that comes with it.
 	sender statsSender
+}
+
+type statsSerializationError struct {
+	format string
+	prefix string
+	err    error
+}
+
+func (e *statsSerializationError) Error() string {
+	if e.prefix != "" {
+		return e.prefix + ": " + e.err.Error()
+	}
+	return e.err.Error()
+}
+func (e *statsSerializationError) Unwrap() error { return e.err }
+
+func reportStatsSendError(err error) {
+	if serializationErr, ok := errors.AsType[*statsSerializationError](err); ok {
+		log.Error("Error sending stats payload: %s", err.Error()) //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError(
+			"Error serializing stats payload",
+			serializationErr.err,
+			telemetry.WithTags([]string{"format:" + serializationErr.format}),
+		)
+	} else {
+		log.Error("Error sending stats payload: %s", err.Error()) //errtrack:ignore agent or network failure
+	}
 }
 
 // statsSender abstracts a concentrator's stats destination: how a flushed
@@ -396,7 +425,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		err := c.sender.send(csp, sendRetries, retryInterval)
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-			log.Error("Error sending stats payload: %s", err.Error()) //errtrack:ignore agent or network failure
+			reportStatsSendError(err)
 		}
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))

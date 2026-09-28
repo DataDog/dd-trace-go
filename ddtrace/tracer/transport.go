@@ -165,7 +165,7 @@ func updateContainerTagsHash(h http.Header) {
 func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVersion int) error {
 	var buf bytes.Buffer
 	if err := msgp.Encode(&buf, p); err != nil {
-		return err
+		return &statsSerializationError{format: "msgpack", err: err}
 	}
 	req, err := http.NewRequest("POST", t.statsURL, &buf)
 	if err != nil {

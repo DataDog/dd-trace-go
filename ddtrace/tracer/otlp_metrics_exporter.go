@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"encoding/json"
-	"fmt"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -61,7 +60,7 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 		contentType = otlpContentTypeProto
 	}
 	if err != nil {
-		return fmt.Errorf("otlp_metrics_exporter: marshal failed: %w", err)
+		return &statsSerializationError{format: "otlp", prefix: "otlp_metrics_exporter: marshal failed", err: err}
 	}
 
 	// No retry: a failed metrics interval is dropped rather than retried.
