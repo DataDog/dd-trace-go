@@ -16,6 +16,7 @@ import (
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	goCache := filepath.Join(t.TempDir(), "gocache")
+	goModCache := goEnv(t, "GOMODCACHE")
 	for _, mode := range []string{"manual", "orchestrion"} {
 		for _, scenario := range []string{"pass", "fuzz-failure", "example-mismatch", "example-panic", "active-fuzz", "filtered"} {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
@@ -33,7 +34,7 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 				}
 				cmd := exec.Command("go", args...)
 				cmd.Dir = fixtureDir
-				cmd.Env = fixtureEnv(t, mode, scenario, goCache)
+				cmd.Env = fixtureEnv(t, mode, scenario, goCache, goModCache)
 				var output bytes.Buffer
 				cmd.Stdout = &output
 				cmd.Stderr = &output
@@ -45,14 +46,14 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 	}
 }
 
-func fixtureEnv(t *testing.T, mode, scenario, goCache string) []string {
+func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []string {
 	t.Helper()
 	tempRoot := t.TempDir()
 	env := make([]string, 0, len(os.Environ())+10)
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
 		if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") || strings.HasPrefix(key, "CI") ||
-			key == "GOFLAGS" || key == "GOWORK" || key == "HOME" || key == "XDG_CACHE_HOME" || key == "GOCACHE" {
+			key == "GOFLAGS" || key == "GOWORK" || key == "HOME" || key == "XDG_CACHE_HOME" || key == "GOCACHE" || key == "GOMODCACHE" {
 			continue
 		}
 		env = append(env, item)
@@ -64,8 +65,49 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache string) []string {
 		"HOME="+filepath.Join(tempRoot, "home"),
 		"XDG_CACHE_HOME="+filepath.Join(tempRoot, "xdg"),
 		"GOCACHE="+goCache,
+		"GOMODCACHE="+goModCache,
 		"GOWORK=off",
 		"GOFLAGS=",
 	)
 	return env
+}
+
+func goEnv(t *testing.T, name string) string {
+	t.Helper()
+
+	output, err := exec.Command("go", "env", name).Output()
+	if err != nil {
+		t.Fatalf("go env %s failed: %v", name, err)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func TestFixtureEnvUsesExplicitGoCaches(t *testing.T) {
+	t.Setenv("GOCACHE", filepath.Join(t.TempDir(), "inherited-gocache"))
+	t.Setenv("GOMODCACHE", filepath.Join(t.TempDir(), "inherited-gomodcache"))
+
+	goCache := filepath.Join(t.TempDir(), "gocache")
+	goModCache := filepath.Join(t.TempDir(), "gomodcache")
+	env := fixtureEnv(t, "manual", "pass", goCache, goModCache)
+
+	want := map[string]string{
+		"GOCACHE":    goCache,
+		"GOMODCACHE": goModCache,
+	}
+	seen := make(map[string]int, len(want))
+	for _, item := range env {
+		key, value, _ := strings.Cut(item, "=")
+		if _, ok := want[key]; !ok {
+			continue
+		}
+		seen[key]++
+		if value != want[key] {
+			t.Errorf("%s = %q, want %q", key, value, want[key])
+		}
+	}
+	for key := range want {
+		if seen[key] != 1 {
+			t.Errorf("%s appears %d times, want exactly once", key, seen[key])
+		}
+	}
 }
