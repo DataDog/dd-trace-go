@@ -149,7 +149,10 @@ func scan(root string, opts scanOptions) ([]Site, error) {
 		if c := strings.Compare(a.File, b.File); c != 0 {
 			return c
 		}
-		return a.Line - b.Line
+		if c := a.Line - b.Line; c != 0 {
+			return c
+		}
+		return a.column - b.column
 	})
 	return sites, nil
 }

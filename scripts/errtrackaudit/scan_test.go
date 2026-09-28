@@ -171,6 +171,30 @@ func TestScan_SameLineDistinctCalls(t *testing.T) {
 	}
 }
 
+func TestScan_SameLineOrderIsDeterministic(t *testing.T) {
+	// The two calls on testdata/sameline/app/app.go's one line come out of
+	// an unordered map, so a sort comparator that treats same-line sites as
+	// equal lets their relative order vary from run to run. log.Error is at
+	// the smaller column, so it must sort first on every run.
+	dir := filepath.Join("testdata", "sameline")
+	opts := scanOptions{
+		logPackagePath: "example.com/sameline/internal/log",
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	}
+	for i := 0; i < 20; i++ {
+		sites, err := scan(dir, opts)
+		if err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if len(sites) != 2 {
+			t.Fatalf("scan found %d sites on one line, want 2", len(sites))
+		}
+		if sites[0].Level != levelError || sites[1].Level != levelWarn {
+			t.Fatalf("run %d: sites = [%s, %s], want [%s, %s] every run", i, sites[0].Level, sites[1].Level, levelError, levelWarn)
+		}
+	}
+}
+
 func TestHasIgnoreDirective(t *testing.T) {
 	cases := []struct {
 		name string
