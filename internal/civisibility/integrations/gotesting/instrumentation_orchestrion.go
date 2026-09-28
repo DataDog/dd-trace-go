@@ -364,7 +364,8 @@ func instrumentTestingTFuncWithSourceOptions(
 				if nativeTerminal == nil && execMeta.cleanupResult != nil {
 					nativeTerminal = execMeta.cleanupResult.panicData
 				}
-				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper {
+				maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
+				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper && !maskedByTestManagement {
 					checkModuleAndSuite(module, suite)
 					integrations.ExitCiVisibility()
 					panic(nativeTerminal)
@@ -385,7 +386,8 @@ func instrumentTestingTFuncWithSourceOptions(
 			wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
 			wrappedFunc(t)
 		} else {
-			runSubtest(t)
+			wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{testManagementOnly: true})
+			wrappedFunc(t)
 		}
 	}
 

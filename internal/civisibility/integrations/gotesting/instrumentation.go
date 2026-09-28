@@ -145,6 +145,7 @@ type (
 		quarantinedRaceProcess     *quarantinedRaceProcessContext
 		efdFaultySessionGuard      earlyFlakeDetectionFaultySession
 		retryAttemptObserveOutput  bool
+		testManagementOnly         bool
 	}
 
 	// executionOptions holds the execution options for the test
@@ -450,6 +451,49 @@ func logAdditionalFeatureSelection(meta *additionalFeatureMetadata, selection ad
 	log.Debug("gotesting: additional feature path test=%s path=%s reasons=[%s]", name, selection.path.String(), selection.reasons.String())
 }
 
+// populateTestManagementMetadata resolves the Test Management directive for
+// meta's identity. Retry ownership is selected separately by the caller.
+func populateTestManagementMetadata(meta *additionalFeatureMetadata) {
+	if meta == nil || !meta.isTestManagementEnabled {
+		return
+	}
+	if data, matchKind, ok := getTestManagementData(meta.identity); ok && data != nil {
+		meta.managementMatchKind = matchKind
+		meta.isQuarantined = data.Quarantined
+		meta.isDisabled = data.Disabled
+		meta.isAttemptToFix = data.AttemptToFix
+		if matchKind == testManagementMatchExact {
+			meta.hasExplicitQuarantined = true
+			meta.hasExplicitDisabled = true
+			meta.hasExplicitAttemptToFix = true
+		}
+	}
+}
+
+// testManagementOnlyMetadata returns the directive state used by one-shot
+// workloads such as fuzz targets, seeds, and examples. They report Test
+// Management state without scheduling EFD or retries.
+func testManagementOnlyMetadata(identity *testIdentity) *additionalFeatureMetadata {
+	settings := integrations.GetSettings()
+	if settings == nil || !settings.TestManagement.Enabled {
+		return nil
+	}
+
+	meta := &additionalFeatureMetadata{
+		identity:                identity,
+		isTestManagementEnabled: true,
+	}
+	populateTestManagementMetadata(meta)
+	if !meta.isDisabled && !meta.isQuarantined && !meta.isAttemptToFix {
+		return nil
+	}
+	// Attempt-to-fix remains metadata-only for these workloads. Re-running a
+	// fuzz callback or example through the testing.T retry machinery changes
+	// the standard library lifecycle and can execute a seed more than once.
+	meta.shouldOrchestrateAttemptToFix = false
+	return meta
+}
+
 func (reasons additionalFeatureReasons) String() string {
 	ordered := [...]struct {
 		value additionalFeatureReasons
@@ -620,26 +664,20 @@ func applyAdditionalFeaturesToTestFunc(
 	}
 
 	// Test Management feature
-	if meta.isTestManagementEnabled {
-		// Pull the most specific directives available for the current identity.
-		if data, matchKind, ok := getTestManagementData(identity); ok && data != nil {
-			meta.managementMatchKind = matchKind
-			meta.isQuarantined = data.Quarantined
-			meta.isDisabled = data.Disabled
-			meta.isAttemptToFix = data.AttemptToFix
-			if matchKind == testManagementMatchExact {
-				meta.hasExplicitQuarantined = true
-				meta.hasExplicitDisabled = true
-				meta.hasExplicitAttemptToFix = true
-			}
-		}
-	}
+	populateTestManagementMetadata(&meta)
 
 	// determine whether attempt-to-fix retries should be orchestrated at this level
 	meta.shouldOrchestrateAttemptToFix = meta.isAttemptToFix
 	if parentExecMeta != nil && parentExecMeta.isAttemptToFix {
 		// The parent already controls the attempt-to-fix loop; subtests should only orchestrate if explicitly requested.
 		meta.shouldOrchestrateAttemptToFix = meta.hasExplicitAttemptToFix && meta.isAttemptToFix && !parentExecMeta.isAttemptToFix
+	}
+	if wrapperOpts.testManagementOnly {
+		// Fuzz seeds use testing's native one-shot corpus lifecycle. They still
+		// honor Test Management state, but never enter retry or EFD scheduling.
+		meta.isEarlyFlakeDetectionEnabled = false
+		meta.isFlakyTestRetriesEnabled = false
+		meta.shouldOrchestrateAttemptToFix = false
 	}
 
 	if isSubtest {
@@ -682,12 +720,13 @@ func applyAdditionalFeaturesToTestFunc(
 	}
 
 	parentAttemptToFixActive := parentExecMeta != nil && parentExecMeta.isAttemptToFix
-	needsMetadataOnly := isSubtest &&
-		meta.managementMatchKind == testManagementMatchExact &&
-		parentAttemptToFixActive &&
-		!meta.shouldOrchestrateAttemptToFix &&
-		!meta.isDisabled &&
-		!meta.isQuarantined
+	needsMetadataOnly := (wrapperOpts.testManagementOnly && meta.isAttemptToFix && !meta.isDisabled && !meta.isQuarantined) ||
+		(isSubtest &&
+			meta.managementMatchKind == testManagementMatchExact &&
+			parentAttemptToFixActive &&
+			!meta.shouldOrchestrateAttemptToFix &&
+			!meta.isDisabled &&
+			!meta.isQuarantined)
 	selection := selectAdditionalFeaturePath(
 		&meta,
 		flakyRetryCount,
@@ -725,6 +764,10 @@ func applyAdditionalFeaturesToTestFunc(
 	wrapper := func(t *testing.T) {
 		t.Helper()
 		originalExecMeta := getTestMetadata(t)
+		processRetryIdentity := identity
+		if wrapperOpts.testManagementOnly {
+			processRetryIdentity = nil
+		}
 
 		var outcomes retryOutcomeAccumulator
 
@@ -733,7 +776,7 @@ func applyAdditionalFeaturesToTestFunc(
 			t:                             t,
 			parallelEFDAllowed:            wrapperOpts.parallelEFDAllowed,
 			testInfo:                      testInfo,
-			processRetryIdentity:          identity,
+			processRetryIdentity:          processRetryIdentity,
 			processRetryMRunEpoch:         wrapperOpts.mRunEpoch,
 			processRetryInvocationCounter: wrapperOpts.mRunInvocations,
 			processRetryLaunchTemplate:    wrapperOpts.processRetryLaunchTemplate,

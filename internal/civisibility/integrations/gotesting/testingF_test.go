@@ -71,3 +71,28 @@ func TestCompleteFuzzTargetLifecycleRejectsCleanupGoexit(t *testing.T) {
 	require.ErrorIs(t, terminal.(error), errTestingDidNotReturn)
 	require.True(t, f.Failed())
 }
+
+func TestTestingFuzzWorkerRequested(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "short flag", args: []string{"-test.fuzzworker"}, want: true},
+		{name: "long flag", args: []string{"--test.fuzzworker"}, want: true},
+		{name: "explicit true", args: []string{"-test.fuzzworker=true"}, want: true},
+		{name: "numeric true", args: []string{"--test.fuzzworker=1"}, want: true},
+		{name: "explicit false", args: []string{"-test.fuzzworker=false"}},
+		{name: "numeric false", args: []string{"--test.fuzzworker=0"}},
+		{name: "invalid value", args: []string{"-test.fuzzworker=invalid"}},
+		{name: "unrelated flag", args: []string{"-test.fuzz=FuzzNativeParity"}},
+		{name: "after terminator", args: []string{"--", "-test.fuzzworker"}},
+		{name: "after positional argument", args: []string{"package.test", "-test.fuzzworker"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, testingFuzzWorkerRequested(tt.args))
+		})
+	}
+}

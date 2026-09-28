@@ -172,6 +172,21 @@ func (c *commonPrivateFields) SetSkipped(value bool) {
 	*c.skipped = value
 }
 
+// SetFinished updates whether testing observed the body returning or invoking
+// FailNow/SkipNow. It is used when a managed test masks runtime.Goexit after
+// its real result has already been reported.
+func (c *commonPrivateFields) SetFinished(value bool) {
+	if c.mu == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.finished == nil {
+		return
+	}
+	*c.finished = value
+}
+
 func (c *commonPrivateFields) GetFinished() bool {
 	if c.mu == nil {
 		return false

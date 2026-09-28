@@ -1,3 +1,5 @@
+//go:build fuzzexamplefixture
+
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
@@ -8,15 +10,21 @@ package fuzzexample
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 )
 
-func NativeParity()    {}
-func NativeUnordered() {}
-func NativeMismatch()  {}
-func NativePanic()     {}
-func WithoutOutput()   {}
-func PanicNil()        {}
+func NativeParity()             {}
+func NativeUnordered()          {}
+func NativeMismatch()           {}
+func NativePanic()              {}
+func WithoutOutput()            {}
+func PanicNil()                 {}
+func ManagedDisabled()          {}
+func ManagedQuarantined()       {}
+func ManagedQuarantinedPanic()  {}
+func ManagedQuarantinedGoexit() {}
+func ManagedAttemptToFix()      {}
 
 func TestNormalSelection(t *testing.T) {
 	t.Log("selected normal test")
@@ -100,6 +108,45 @@ func FuzzActiveOther(f *testing.F) {
 	})
 }
 
+func FuzzManagedSeeds(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	f.Add(0)
+	f.Add(1)
+	f.Add(2)
+	f.Fuzz(func(t *testing.T, seed int) {
+		switch seed {
+		case 0:
+			panic("disabled seed executed")
+		case 1:
+			t.Error("quarantined seed failure")
+		}
+	})
+}
+
+func FuzzManagedDisabled(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	panic("disabled fuzz target executed")
+}
+
+func FuzzManagedQuarantined(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	f.Fatal("quarantined fuzz target failure")
+}
+
+func FuzzManagedAttemptToFix(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	f.Add("pass")
+	f.Fuzz(func(*testing.T, string) {})
+}
+
 func ExampleNativeParity() {
 	fmt.Println("native example output")
 	// Output: native example output
@@ -132,10 +179,52 @@ func ExampleNativePanic() {
 
 func ExamplePanicNil() {
 	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") == "example-panic-nil" {
-		panic(nil)
+		panicWithValue(nil)
 	}
 	fmt.Println("safe")
 	// Output: safe
+}
+
+func panicWithValue(value any) {
+	panic(value)
+}
+
+func ExampleManagedDisabled() {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") == "test-management" {
+		panic("disabled example executed")
+	}
+	fmt.Println("disabled expected")
+	// Output: disabled expected
+}
+
+func ExampleManagedQuarantined() {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") == "test-management" {
+		fmt.Println("quarantined actual")
+		return
+	}
+	fmt.Println("quarantined expected")
+	// Output: quarantined expected
+}
+
+func ExampleManagedQuarantinedPanic() {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") == "test-management" {
+		panic("quarantined example panic")
+	}
+	fmt.Println("panic expected")
+	// Output: panic expected
+}
+
+func ExampleManagedQuarantinedGoexit() {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") == "test-management" {
+		runtime.Goexit()
+	}
+	fmt.Println("goexit expected")
+	// Output: goexit expected
+}
+
+func ExampleManagedAttemptToFix() {
+	fmt.Println("attempt expected")
+	// Output: attempt expected
 }
 
 func ExampleWithoutOutput() {

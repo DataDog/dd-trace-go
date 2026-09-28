@@ -30,6 +30,17 @@ type testingExampleInfo struct {
 	unordered    bool
 }
 
+type exampleExecutionResult struct {
+	finished  bool
+	panicData any
+	stack     string
+}
+
+type exampleOutputCaptureResult struct {
+	output string
+	err    error
+}
+
 // instrumentInternalExamples replaces testing's example descriptors with CI
 // Visibility wrappers and retains the originals in claim for later restoration.
 func (ddm *M) instrumentInternalExamples(examples *[]testing.InternalExample, claim *testingMInstrumentationClaim) {
@@ -88,41 +99,73 @@ func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 		suite := module.GetOrCreateSuite(info.suiteName, integrations.WithTestSuiteStartTime(startTime))
 		test := suite.CreateTest(info.testName, integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(info.sourceFunc)
+		execMeta := &testExecutionMetadata{identity: info.identity}
+		if meta := testManagementOnlyMetadata(info.identity); meta != nil {
+			applyAdditionalFeatureMetadataToExecution(execMeta, meta)
+		}
+		if setTestTagsFromExecutionMetadata(test, execMeta) {
+			checkModuleAndSuite(module, suite)
+			// Examples have no testing.T to skip. Replaying the declared output
+			// keeps the outer testing example runner green without executing the
+			// disabled body.
+			_, _ = io.WriteString(os.Stdout, info.output)
+			return
+		}
+		maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
 
 		stdout := os.Stdout
 		reader, writer, err := os.Pipe()
 		if err != nil {
 			message := fmt.Sprintf("capture example output: %v", err)
-			finishExampleEvent(test, suite, module, time.Now(), nil, message, nil, "", false)
+			finishExampleEvent(test, suite, module, execMeta, time.Now(), nil, message, nil, "", false)
 			panic(message)
 		}
 		os.Stdout = writer
-		output := make(chan string, 1)
+		output := make(chan exampleOutputCaptureResult, 1)
 		go func() {
-			var captured strings.Builder
-			_, copyErr := io.Copy(&captured, reader)
+			captured := captureExampleOutput(reader)
 			_ = reader.Close()
-			if copyErr != nil {
-				fmt.Fprintf(os.Stderr, "civisibility: copying example output: %v\n", copyErr)
-			}
-			output <- captured.String()
+			output <- captured
 		}()
 
 		finished := false
+		var isolatedResult *exampleExecutionResult
 		defer func() {
 			finishTime := time.Now()
 			_ = writer.Close()
 			os.Stdout = stdout
-			captured := <-output
-			_, _ = io.WriteString(stdout, captured)
+			capture := <-output
+			captured := capture.output
 
 			panicData := recover()
-			mismatch := exampleOutputMismatch(captured, info.output, info.unordered)
 			stack := ""
-			if panicData != nil || !finished {
+			if isolatedResult != nil {
+				finished = isolatedResult.finished
+				panicData = isolatedResult.panicData
+				stack = isolatedResult.stack
+			}
+			if capture.err != nil {
+				panicData = fmt.Errorf("copying example output: %w", capture.err)
+				stack = utils.GetStacktrace(1)
+				finished = false
+			}
+			replayed := captured
+			if maskedByTestManagement && isolatedResult != nil {
+				// The native event keeps the real output and outcome. The standard
+				// example runner receives the declared output so quarantine does
+				// not fail the package.
+				replayed = info.output
+			}
+			_, _ = io.WriteString(stdout, replayed)
+
+			mismatch := exampleOutputMismatch(captured, info.output, info.unordered)
+			if stack == "" && (panicData != nil || !finished) {
 				stack = utils.GetStacktrace(1)
 			}
-			finishExampleEvent(test, suite, module, finishTime, []byte(captured), mismatch, panicData, stack, !finished)
+			finishExampleEvent(test, suite, module, execMeta, finishTime, []byte(captured), mismatch, panicData, stack, !finished)
+			if maskedByTestManagement && isolatedResult != nil && capture.err == nil {
+				return
+			}
 			if panicData != nil {
 				panic(panicData)
 			}
@@ -133,9 +176,41 @@ func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 			}
 		}()
 
+		if maskedByTestManagement {
+			result := runManagedExample(info.originalFunc)
+			isolatedResult = &result
+			finished = result.finished
+			return
+		}
 		info.originalFunc()
 		finished = true
 	}
+}
+
+func captureExampleOutput(reader io.Reader) exampleOutputCaptureResult {
+	var captured strings.Builder
+	_, err := io.Copy(&captured, reader)
+	return exampleOutputCaptureResult{output: captured.String(), err: err}
+}
+
+// runManagedExample isolates the example body so runtime.Goexit can be
+// observed and masked for quarantined workloads without terminating the outer
+// example runner's goroutine.
+func runManagedExample(fn func()) (result exampleExecutionResult) {
+	completed := make(chan exampleExecutionResult, 1)
+	go func() {
+		var local exampleExecutionResult
+		defer func() {
+			local.panicData = recover()
+			if local.panicData != nil || !local.finished {
+				local.stack = utils.GetStacktrace(1)
+			}
+			completed <- local
+		}()
+		fn()
+		local.finished = true
+	}()
+	return <-completed
 }
 
 // finishExampleEvent records captured output and closes the native test event
@@ -144,6 +219,7 @@ func finishExampleEvent(
 	test integrations.Test,
 	suite integrations.TestSuite,
 	module integrations.TestModule,
+	execMeta *testExecutionMetadata,
 	finishTime time.Time,
 	output []byte,
 	mismatch string,
@@ -164,12 +240,12 @@ func finishExampleEvent(
 		test.SetError(integrations.WithErrorInfo("output", mismatch, ""))
 	}
 	if panicData != nil || unfinished || mismatch != "" {
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusFail)
+		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(false, true, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
 		suite.SetTag(ext.Error, true)
 		module.SetTag(ext.Error, true)
 		test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(finishTime))
 	} else {
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusPass)
+		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(true, false, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
 		test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(finishTime))
 	}
 	checkModuleAndSuite(module, suite)

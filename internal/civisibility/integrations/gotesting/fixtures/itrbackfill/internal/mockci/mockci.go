@@ -80,6 +80,16 @@ type Content struct {
 
 // Start starts the mock and configures process environment for agentless CI Visibility.
 func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage map[string][]byte) *Server {
+	return StartWithTestManagement(settings, tests, coverage, nil)
+}
+
+// StartWithTestManagement starts the mock with optional Test Management data.
+func StartWithTestManagement(
+	settings net.SettingsResponseData,
+	tests []SkippableTest,
+	coverage map[string][]byte,
+	management *net.TestManagementTestsResponseDataModules,
+) *Server {
 	mock := &Server{coverageByFile: make(map[string][]byte)}
 	mock.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -92,6 +102,9 @@ func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage ma
 		case "/api/v2/ci/tests/skippable":
 			_ = drain(r.Body)
 			mock.handleSkippable(w, tests, coverage)
+		case "/api/v2/test/libraries/test-management/tests":
+			_ = drain(r.Body)
+			writeTestManagement(w, management)
 		case "/api/v2/citestcov":
 			mock.handleCoverageUpload(w, r)
 		case "/api/v2/cicovreprt":
@@ -225,6 +238,31 @@ func (s *Server) HasEventResourceMeta(resourceContains, key, value string) bool 
 func (s *Server) HasEventResourceMetaKey(resourceContains, key string) bool {
 	for _, event := range s.Events() {
 		if strings.Contains(event.Content.Resource, resourceContains) && event.Content.Meta[key] != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasEventResourceSuffixMeta returns true when an event resource ends with
+// resourceSuffix and has the requested meta tag value.
+func (s *Server) HasEventResourceSuffixMeta(resourceSuffix, key, value string) bool {
+	for _, event := range s.Events() {
+		if !strings.HasSuffix(event.Content.Resource, resourceSuffix) {
+			continue
+		}
+		if key == "" || event.Content.Meta[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// HasEventResourceSuffixMetaKey returns true when an event resource ends with
+// resourceSuffix and contains a non-empty meta value for key.
+func (s *Server) HasEventResourceSuffixMetaKey(resourceSuffix, key string) bool {
+	for _, event := range s.Events() {
+		if strings.HasSuffix(event.Content.Resource, resourceSuffix) && event.Content.Meta[key] != "" {
 			return true
 		}
 	}
@@ -567,6 +605,25 @@ func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {
 	response.Data.ID = "settings"
 	response.Data.Type = "ci_app_libraries_tests_settings"
 	response.Data.Attributes = settings
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func writeTestManagement(w http.ResponseWriter, management *net.TestManagementTestsResponseDataModules) {
+	response := struct {
+		Data struct {
+			ID         string                                     `json:"id"`
+			Type       string                                     `json:"type"`
+			Attributes net.TestManagementTestsResponseDataModules `json:"attributes"`
+		} `json:"data"`
+	}{}
+	response.Data.ID = "test-management"
+	response.Data.Type = "ci_app_libraries_tests"
+	if management != nil {
+		response.Data.Attributes = *management
+	} else {
+		response.Data.Attributes.Modules = map[string]net.TestManagementTestsResponseDataSuites{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
 }

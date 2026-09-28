@@ -7,6 +7,8 @@ package gotesting
 
 import (
 	"bufio"
+	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -42,4 +44,49 @@ func TestExampleOutputLinesDoNotTruncateLongLines(t *testing.T) {
 		lines = append(lines, line)
 	})
 	require.Equal(t, []string{longLine, "after", ""}, lines)
+}
+
+func TestCaptureExampleOutputPreservesPartialOutputAndError(t *testing.T) {
+	wantErr := errors.New("read failed")
+	result := captureExampleOutput(&failingExampleOutputReader{err: wantErr})
+
+	require.Equal(t, "partial output", result.output)
+	require.ErrorIs(t, result.err, wantErr)
+}
+
+func TestRunManagedExampleCapturesCompletion(t *testing.T) {
+	result := runManagedExample(func() {})
+
+	require.True(t, result.finished)
+	require.Nil(t, result.panicData)
+	require.Empty(t, result.stack)
+}
+
+func TestRunManagedExampleCapturesPanic(t *testing.T) {
+	result := runManagedExample(func() { panic("example panic") })
+
+	require.False(t, result.finished)
+	require.Equal(t, "example panic", result.panicData)
+	require.NotEmpty(t, result.stack)
+}
+
+func TestRunManagedExampleCapturesGoexit(t *testing.T) {
+	result := runManagedExample(runtime.Goexit)
+
+	require.False(t, result.finished)
+	require.Nil(t, result.panicData)
+	require.NotEmpty(t, result.stack)
+}
+
+type failingExampleOutputReader struct {
+	err  error
+	read bool
+}
+
+func (r *failingExampleOutputReader) Read(buffer []byte) (int, error) {
+	if r.read {
+		return 0, r.err
+	}
+	r.read = true
+	return copy(buffer, "partial output"), r.err
 }

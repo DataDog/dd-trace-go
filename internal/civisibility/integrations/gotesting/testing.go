@@ -289,6 +289,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 		return instrumentProcessRetryChild(m, cfg)
 	}
+	if testingFuzzWorkerActive() {
+		// The coordinator owns the native fuzz event. Mutation workers must run
+		// the standard library workload without creating their own CI session.
+		return true, identityTestingMFinalizer
+	}
 	claim, disposition := claimTestingMInstrumentation(m)
 	switch disposition {
 	case testingMClaimActiveConflict:

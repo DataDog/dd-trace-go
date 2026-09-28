@@ -9,8 +9,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -45,8 +48,37 @@ func (ddf *F) Fuzz(ff any) {
 // testingFuzzWorkerActive reports whether this process is a child worker that
 // executes generated mutations on behalf of the fuzzing coordinator.
 func testingFuzzWorkerActive() bool {
-	worker := flag.Lookup("test.fuzzworker")
-	return worker != nil && worker.Value.String() == "true"
+	if worker := flag.Lookup("test.fuzzworker"); worker != nil {
+		active, err := strconv.ParseBool(worker.Value.String())
+		if err == nil && active {
+			return true
+		}
+	}
+	// testing.M.Run parses test flags after its instrumentation hook executes,
+	// so active fuzz workers must also be recognized from the raw command line.
+	return testingFuzzWorkerRequested(os.Args[1:])
+}
+
+func testingFuzzWorkerRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" || !strings.HasPrefix(arg, "-") {
+			return false
+		}
+		var value string
+		switch {
+		case arg == "-test.fuzzworker" || arg == "--test.fuzzworker":
+			return true
+		case strings.HasPrefix(arg, "-test.fuzzworker="):
+			value = strings.TrimPrefix(arg, "-test.fuzzworker=")
+		case strings.HasPrefix(arg, "--test.fuzzworker="):
+			value = strings.TrimPrefix(arg, "--test.fuzzworker=")
+		default:
+			continue
+		}
+		active, err := strconv.ParseBool(value)
+		return err == nil && active
+	}
+	return false
 }
 
 type testingFInfo struct {
@@ -105,7 +137,16 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 
 		execMeta := createTestMetadata(f, nil)
 		execMeta.identity = info.identity
-		execMeta.test = test
+		if meta := testManagementOnlyMetadata(info.identity); meta != nil {
+			applyAdditionalFeatureMetadataToExecution(execMeta, meta)
+		}
+		if setTestTagsFromExecutionMetadata(test, execMeta) {
+			deleteTestMetadata(f)
+			checkModuleAndSuite(module, suite)
+			f.Skip(constants.TestDisabledSkipReason)
+			return
+		}
+		maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
 
 		bodyReturned := false
 		defer func() {
@@ -124,6 +165,19 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 			}
 			defer deleteTestMetadata(f)
 			finishTestingTBEvent(f, execMeta, test, suite, module, time.Now())
+			if maskedByTestManagement {
+				// Keep the actual native outcome, but prevent a managed failure
+				// from failing the package. Mark incomplete bodies as finished so
+				// testing does not reinterpret a masked Goexit as a new panic.
+				if fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f))); fields != nil {
+					fields.SetFailed(false)
+					fields.SetSkipped(true)
+					if !bodyReturned {
+						fields.SetFinished(true)
+					}
+				}
+				return
+			}
 			if terminal != nil {
 				panic(terminal)
 			}
@@ -208,7 +262,7 @@ func finishTestingTBEvent(
 ) {
 	switch {
 	case tb.Failed():
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusFail)
+		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(false, true, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
 		if captured := execMeta.processRetryError.Load(); captured != nil {
 			test.SetError(integrations.WithErrorInfo(captured.Type, captured.Message, captured.Stack))
 		} else {
@@ -224,10 +278,10 @@ func finishTestingTBEvent(
 				reason = *captured
 			}
 		}
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
+		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(false, false, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
 		test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(finishTime), integrations.WithTestSkipReason(reason))
 	default:
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusPass)
+		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(true, false, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
 		test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(finishTime))
 	}
 	checkModuleAndSuite(module, suite)

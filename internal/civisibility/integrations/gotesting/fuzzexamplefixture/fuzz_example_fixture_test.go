@@ -15,6 +15,10 @@ import (
 )
 
 func TestFuzzAndExampleFixture(t *testing.T) {
+	if os.Getenv("GO_CMD") == "gotip" {
+		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
+	}
+
 	goCache := filepath.Join(t.TempDir(), "gocache")
 	goModCache := goEnv(t, "GOMODCACHE")
 	for _, mode := range []string{"manual", "orchestrion"} {
@@ -26,6 +30,7 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 			"example-mismatch",
 			"example-panic",
 			"example-panic-nil",
+			"test-management",
 			"active-fuzz",
 			"filtered",
 		} {
@@ -39,6 +44,8 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzMissingCall$"}
 				case "example-panic-nil":
 					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^ExamplePanicNil$"}
+				case "test-management":
+					args = []string{"test", "-mod=readonly", "-count=1", "-v", "-run", "^(FuzzManaged|ExampleManaged)"}
 				case "active-fuzz":
 					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzActiveOther$", "-fuzz", "^FuzzNativeParity$", "-fuzztime", "1x"}
 				case "filtered":
@@ -47,6 +54,7 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 				if mode == "orchestrion" {
 					fixtureDir = filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 					args = append([]string{"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go"}, args...)
+					args = append(args, "-tags=fuzzexamplefixture")
 					args = append(args, "./fuzzexample")
 				}
 				cmd := exec.Command("go", args...)
@@ -60,6 +68,27 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestOrchestrionFuzzFixtureIsExcludedFromITRPackageList(t *testing.T) {
+	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
+	cmd := exec.Command("go", "list", "-mod=readonly", "./...")
+	cmd.Dir = fixtureDir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("list ITR fixture packages: %v\n%s", err, output)
+	}
+	if strings.Contains(string(output), "/fuzzexample") {
+		t.Fatalf("fuzz/example fixture leaked into the ITR package list:\n%s", output)
+	}
+
+	cmd = exec.Command("go", "list", "-mod=readonly", "-tags=fuzzexamplefixture", "./fuzzexample")
+	cmd.Dir = fixtureDir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	if output, err = cmd.CombinedOutput(); err != nil {
+		t.Fatalf("list tagged fuzz/example fixture: %v\n%s", err, output)
 	}
 }
 
