@@ -416,10 +416,12 @@ func (op *stateV3AssemblyOperation) collectThreeSpines() Result {
 			return finished
 		}
 	}
-	// The sealed arrays include modeled-full-leaf witnesses, but no private
-	// projection has yet proven exact document provenance, coordination prefixes,
-	// or lane termination authentications to the parent validators. Semantic
-	// assembly therefore remains fail-closed until that separate slice exists.
+	if !op.verifySealedProjectionInputs() {
+		return failure(DiagnosticRequiredEvidenceAbsent)
+	}
+	// Exact witness-to-store provenance is now established, but transient parent
+	// graph construction, coordination prefixes, and lane termination
+	// authentications remain unavailable. Semantic assembly stays fail-closed.
 	return failure(DiagnosticRequiredEvidenceAbsent)
 }
 

@@ -7,6 +7,7 @@ package strictcollector
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"sort"
 	"strings"
@@ -43,7 +44,6 @@ type stateV3DocumentKey struct {
 	oid, digest string
 	kind        stateV3DocumentKind
 }
-type stateV3ImmutableDocument struct{ raw []byte }
 
 const (
 	stateV3StoreMaxBlobSlots = gardenerrelease.MaxStateV3DocumentBlobVersions
@@ -390,24 +390,51 @@ func (s *stateV3DocumentStore) terminationRecord(role stateV3AssemblyRole, snaps
 	return nil, false
 }
 
-func (s *stateV3DocumentStore) get(key stateV3DocumentKey) (stateV3ImmutableDocument, bool) {
-	keyOID, keyOIDOK := decodeFixedOID(key.oid)
-	keyDigest, keyDigestOK := decodeFixedDigest(key.digest)
-	if !keyOIDOK || !keyDigestOK {
-		return stateV3ImmutableDocument{}, false
+// verifyLaneWitnessDocument verifies one fixed lane witness leaf against its
+// sole provenance binding. It returns no blob, handle, or caller-selectable
+// capability; the projection issuer chooses every input from sealed state.
+func (s *stateV3DocumentStore) verifyLaneWitnessDocument(role stateV3AssemblyRole, witness stateV3FullLaneSnapshotWitness, entry stateV3FullWitnessEntry) bool {
+	if role != stateV3AssemblyMinor && role != stateV3AssemblyPatch || witness.role != role || witness.verification != stateV3WitnessVerified || int(entry.len) > len(entry.path) || !stateV3DocumentPathAllowed(role, entry.kind, string(entry.path[:entry.len])) {
+		return false
+	}
+	return s.verifyWitnessDocument(role, witness.commitOID, witness.treeOID, entry)
+}
+
+// verifyCoordinationWitnessDocument is the coordination-only counterpart to
+// verifyLaneWitnessDocument. Its witness and entry are operation-selected.
+func (s *stateV3DocumentStore) verifyCoordinationWitnessDocument(witness stateV3FullCoordinationSnapshotWitness, entry stateV3FullWitnessEntry) bool {
+	if witness.role != stateV3AssemblyCoordination || witness.verification != stateV3WitnessVerified || int(entry.len) > len(entry.path) || !stateV3DocumentPathAllowed(stateV3AssemblyCoordination, entry.kind, string(entry.path[:entry.len])) {
+		return false
+	}
+	return s.verifyWitnessDocument(stateV3AssemblyCoordination, witness.commitOID, witness.treeOID, entry)
+}
+
+func (s *stateV3DocumentStore) verifyWitnessDocument(role stateV3AssemblyRole, commitOID, treeOID [20]byte, entry stateV3FullWitnessEntry) bool {
+	if s == nil || int(entry.len) > len(entry.path) {
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return stateV3ImmutableDocument{}, false
+		return false
 	}
-	for i := 0; i < int(s.blobCount); i++ {
-		blob := s.blobs[i]
-		if blob.kind == key.kind && blob.oid == keyOID && blob.digest == keyDigest {
-			return stateV3ImmutableDocument{raw: append([]byte(nil), s.raw[blob.rawAt:blob.rawAt+blob.rawLen]...)}, true
+	matches := 0
+	for index := 0; index < int(s.bindingCount); index++ {
+		binding := s.bindings[index]
+		if !binding.used || binding.role != role || binding.commitOID != commitOID || binding.treeOID != treeOID || binding.pathLen != entry.len || !bytes.Equal(binding.path[:binding.pathLen], entry.path[:entry.len]) || int(binding.blobSlot) >= int(s.blobCount) {
+			continue
 		}
+		blob := s.blobs[binding.blobSlot]
+		if !blob.used || blob.kind != entry.kind || blob.oid != entry.oid || blob.rawLen == 0 || uint64(blob.rawAt)+uint64(blob.rawLen) > uint64(s.rawUsed) {
+			return false
+		}
+		raw := s.raw[blob.rawAt : blob.rawAt+blob.rawLen]
+		if sha256.Sum256(raw) != blob.digest || !stateV3DocumentValid(entry.kind, string(entry.path[:entry.len]), raw) {
+			return false
+		}
+		matches++
 	}
-	return stateV3ImmutableDocument{}, false
+	return matches == 1
 }
 
 // reset removes all transient retained documents after a failed admission.

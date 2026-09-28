@@ -55,6 +55,13 @@ var auditedTreeEmptyAuthorityBodiesSHA256 = map[string]string{
 	"witness.go::coordinationWitnessMatchesCompact":                                      "4be00159cd7a21e42232cb35cf4e5a43c992144f712c34560513435d8d70556c",
 	"witness.go::sealedLaneWitnessesMatch":                                               "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
 	"witness.go::sealedCoordinationWitnessesMatch":                                       "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
+	"projection.go:stateV3AssemblyOperation:verifySealedProjectionInputs":                "cfed1fc2a8e2ff2487c52fe3233e9f078bfdfb211823d26c9e014e73d2b9a3f8",
+	"projection.go:stateV3AssemblyOperation:verifyMinorProjectionDocuments":              "56138ebca00b19d3043b912294da333aeb8a0c0e217f4d861657dea1c0ff5360",
+	"projection.go:stateV3AssemblyOperation:verifyPatchProjectionDocuments":              "a04e50858b73ee44dda84cefbc0d190668255ffa95379263fd32ea487aa8dc24",
+	"projection.go:stateV3AssemblyOperation:verifyCoordinationProjectionDocuments":       "2435e6a043d534692d111db5db39d51c3eee48f674a2e753d69a938a080eb0c3",
+	"projection.go::projectionLaneWitnessTopologyValid":                                  "fca1566082d1bd11eebd4a2f6a944f980e8d11e95c2315bcd7edc193e3a7d594",
+	"projection.go::projectionCoordinationWitnessTopologyValid":                          "854846f1b631cab53a7be2323c31631b6a4ac927e51f3e42bc0bcc76cf1ecbaa",
+	"projection.go::fixedWitnessPathCompare":                                             "4c77c965e63684245644c533900c12c465defe9c451198603be14f4e93762137",
 }
 
 var auditedAssemblyPolicyBodiesSHA256 = map[string]string{
@@ -325,6 +332,8 @@ func validateTreeEmptyAuthority(files map[string]*ast.File, functions []*authori
 		"witness.go:stateV3FullCoordinationWitnessHistory:appendWitness":                     1,
 		"witness.go::laneWitnessMatchesCompact":                                              2,
 		"witness.go::coordinationWitnessMatchesCompact":                                      2,
+		"projection.go::projectionLaneWitnessTopologyValid":                                  1,
+		"projection.go::projectionCoordinationWitnessTopologyValid":                          1,
 	}
 	seenAppenders := map[string]bool{}
 	seenTreeEmpty := map[string]int{}
@@ -462,16 +471,26 @@ func treeEmptyCompactType(expression ast.Expr) bool {
 }
 
 var auditedSealedHistoryBodiesSHA256 = map[string]string{
-	"operation.go:stateV3AssemblyOperation:begin":               "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
-	"operation.go:stateV3AssemblyOperation:beginChild":          "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
-	"operation.go:stateV3AssemblyOperation:finishChild":         "060ace65d22dc01215307751a285d0ddd22e5f9e58ca31553f3a0cf1052b021e",
-	"operation.go:stateV3AssemblyOperation:close":               "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
-	"operation.go:stateV3AssemblyOperation:collectThreeSpines":  "a378490ef3737abb9b1a1abf020eb792da04b3e527f3867aed8db35f307b4637",
-	"operation.go:stateV3AssemblyChild:sealMinorHistory":        "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
-	"operation.go:stateV3AssemblyChild:sealPatchHistory":        "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
-	"operation.go:stateV3AssemblyChild:sealCoordinationHistory": "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
-	"witness.go::sealedLaneWitnessesMatch":                      "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
-	"witness.go::sealedCoordinationWitnessesMatch":              "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
+	"operation.go:stateV3AssemblyOperation:begin":                                  "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
+	"operation.go:stateV3AssemblyOperation:beginChild":                             "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
+	"operation.go:stateV3AssemblyOperation:finishChild":                            "060ace65d22dc01215307751a285d0ddd22e5f9e58ca31553f3a0cf1052b021e",
+	"operation.go:stateV3AssemblyOperation:close":                                  "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
+	"operation.go:stateV3AssemblyOperation:collectThreeSpines":                     "0ce7ce6741cb208cc38eb7cfa25fe1cdf552bee77cae19e099384100d8fd0c70",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":                           "2b612b7e3ba74c70602a1dc6836e6c757f3d93c08165ac92deb6c25c98b3d311",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":                           "52a943f73a2775595bcc9d2765fa3d96cf74eb516f26c0e56a948420599d6e11",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory":                    "61efd5514fd893375813f594d22b524b2cdbc558e2416c18e4273c8beff3581e",
+	"witness.go::sealedLaneWitnessesMatch":                                         "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
+	"witness.go::sealedCoordinationWitnessesMatch":                                 "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
+	"projection.go:stateV3AssemblyOperation:verifySealedProjectionInputs":          "cfed1fc2a8e2ff2487c52fe3233e9f078bfdfb211823d26c9e014e73d2b9a3f8",
+	"projection.go:stateV3AssemblyOperation:verifyMinorProjectionDocuments":        "56138ebca00b19d3043b912294da333aeb8a0c0e217f4d861657dea1c0ff5360",
+	"projection.go:stateV3AssemblyOperation:verifyPatchProjectionDocuments":        "a04e50858b73ee44dda84cefbc0d190668255ffa95379263fd32ea487aa8dc24",
+	"projection.go:stateV3AssemblyOperation:verifyCoordinationProjectionDocuments": "2435e6a043d534692d111db5db39d51c3eee48f674a2e753d69a938a080eb0c3",
+	"projection.go::projectionLaneWitnessTopologyValid":                            "fca1566082d1bd11eebd4a2f6a944f980e8d11e95c2315bcd7edc193e3a7d594",
+	"projection.go::projectionCoordinationWitnessTopologyValid":                    "854846f1b631cab53a7be2323c31631b6a4ac927e51f3e42bc0bcc76cf1ecbaa",
+	"projection.go::fixedWitnessPathCompare":                                       "4c77c965e63684245644c533900c12c465defe9c451198603be14f4e93762137",
+	"documents.go:stateV3DocumentStore:verifyLaneWitnessDocument":                  "9fe18875306d10c3b14f5c75f533cc727c08b83aa9d9a134c0bdaab3242309b0",
+	"documents.go:stateV3DocumentStore:verifyCoordinationWitnessDocument":          "395e53bdc6093be21dad30b923ff885ba57ebed2866bfa73401851dd188a1dca",
+	"documents.go:stateV3DocumentStore:verifyWitnessDocument":                      "cdec075e3dd1b1ce47ea50d33f0260c45dfc1ece2edf1aebb1cc630c760ba1aa",
 }
 
 // validateSealedHistoryAuthority closes the operation-owned seal capability.
@@ -715,6 +734,16 @@ var auditedFullWitnessBodiesSHA256 = map[string]string{
 	"witness.go::coordinationWitnessMatchesCompact":                                      "4be00159cd7a21e42232cb35cf4e5a43c992144f712c34560513435d8d70556c",
 	"witness.go::sealedLaneWitnessesMatch":                                               "001d417972c922a2df1731b81af76237f165b59ee8ba2afb019d11caadd86acd",
 	"witness.go::sealedCoordinationWitnessesMatch":                                       "5f1634fbfb02511af8d91d92991b4ed583d5ccb31e5a6b50d2c404fe01ece329",
+	"projection.go:stateV3AssemblyOperation:verifySealedProjectionInputs":                "cfed1fc2a8e2ff2487c52fe3233e9f078bfdfb211823d26c9e014e73d2b9a3f8",
+	"projection.go:stateV3AssemblyOperation:verifyMinorProjectionDocuments":              "56138ebca00b19d3043b912294da333aeb8a0c0e217f4d861657dea1c0ff5360",
+	"projection.go:stateV3AssemblyOperation:verifyPatchProjectionDocuments":              "a04e50858b73ee44dda84cefbc0d190668255ffa95379263fd32ea487aa8dc24",
+	"projection.go:stateV3AssemblyOperation:verifyCoordinationProjectionDocuments":       "2435e6a043d534692d111db5db39d51c3eee48f674a2e753d69a938a080eb0c3",
+	"projection.go::projectionLaneWitnessTopologyValid":                                  "fca1566082d1bd11eebd4a2f6a944f980e8d11e95c2315bcd7edc193e3a7d594",
+	"projection.go::projectionCoordinationWitnessTopologyValid":                          "854846f1b631cab53a7be2323c31631b6a4ac927e51f3e42bc0bcc76cf1ecbaa",
+	"projection.go::fixedWitnessPathCompare":                                             "4c77c965e63684245644c533900c12c465defe9c451198603be14f4e93762137",
+	"documents.go:stateV3DocumentStore:verifyLaneWitnessDocument":                        "9fe18875306d10c3b14f5c75f533cc727c08b83aa9d9a134c0bdaab3242309b0",
+	"documents.go:stateV3DocumentStore:verifyCoordinationWitnessDocument":                "395e53bdc6093be21dad30b923ff885ba57ebed2866bfa73401851dd188a1dca",
+	"documents.go:stateV3DocumentStore:verifyWitnessDocument":                            "cdec075e3dd1b1ce47ea50d33f0260c45dfc1ece2edf1aebb1cc630c760ba1aa",
 }
 
 func validateFullWitnessAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
@@ -960,6 +989,7 @@ func validateAssemblyPolicyAuthority(files map[string]*ast.File, functions []*au
 		"operation.go:sealMinorHistory":                                 5,
 		"operation.go:sealPatchHistory":                                 5,
 		"operation.go:sealCoordinationHistory":                          5,
+		"projection.go:verifySealedProjectionInputs":                    1,
 	}
 	allowedValue := map[string]int{
 		"compact_admission.go:collectStateV3LaneDocuments":              1,

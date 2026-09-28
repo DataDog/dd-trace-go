@@ -55,14 +55,20 @@ func TestStateV3DocumentStoreOwnsAndCloses(t *testing.T) {
 		t.Fatal("initial put")
 	}
 	raw[0] = 'x'
-	got, ok := store.get(key)
-	if !ok || string(got.raw) != "bundle" {
-		t.Fatal("store aliases input")
+	commitOID, commitOK := decodeFixedOID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbba")
+	treeOID, treeOK := decodeFixedOID("ccccccccccccccccccccccccccccccccccccccca")
+	blobOID, blobOK := decodeFixedOID(key.oid)
+	if !commitOK || !treeOK || !blobOK {
+		t.Fatal("invalid witness identity")
 	}
-	got.raw[0] = 'y'
-	got, ok = store.get(key)
-	if !ok || string(got.raw) != "bundle" {
-		t.Fatal("get aliases retained data")
+	path := "requests/1/2/generation.bundle"
+	witness := stateV3FullLaneSnapshotWitness{
+		commitOID: commitOID, treeOID: treeOID, role: stateV3AssemblyMinor, verification: stateV3WitnessVerified, count: 1,
+		entries: [5]stateV3FullWitnessEntry{{oid: blobOID, kind: key.kind, len: uint8(len(path))}},
+	}
+	copy(witness.entries[0].path[:], path)
+	if !store.verifyLaneWitnessDocument(stateV3AssemblyMinor, witness, witness.entries[0]) {
+		t.Fatal("store did not bind witness provenance")
 	}
 	store.close()
 	if store.blobCount != 0 || store.bindingCount != 0 || store.rawUsed != 0 || store.putEntry(key, documentEntry(key.kind, "requests/1/2/generation.bundle", stateV3AssemblyMinor, 'a'), []byte("bundle")) {
