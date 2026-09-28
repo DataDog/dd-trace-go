@@ -367,7 +367,8 @@ func reportDynamicInstrumentationStopError(err error) {
 }
 
 func reportOpenFeatureSubscriptionError(err error) {
-	telemetrylog.LogAndReportError("openfeature: failed to subscribe to Remote Config", err)
+	log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error()) //errtrack:ignore reported by ReportError below
+	telemetrylog.ReportError("openfeature: failed to subscribe to Remote Config", err)
 }
 
 func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
