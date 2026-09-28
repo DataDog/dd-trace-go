@@ -4,7 +4,13 @@ go 1.26.0
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
 
-require github.com/DataDog/dd-trace-go/v2 v2.0.0-00010101000000-000000000000
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 => ../../contrib/google.golang.org/grpc/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../contrib/google.golang.org/grpc
+
+require github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
+
+require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.0.0-00010101000000-000000000000
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
@@ -17,6 +23,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
@@ -68,9 +75,14 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc

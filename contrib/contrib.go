@@ -51,6 +51,7 @@
 //   - [contrib/gofiber/fiber.v2/v2]
 //   - [contrib/gomodule/redigo/v2]
 //   - [contrib/google.golang.org/api/v2]
+//   - [contrib/google.golang.org/grpc/otelc/v2]
 //   - [contrib/google.golang.org/grpc/v2]
 //   - [contrib/gorilla/mux/v2]
 //   - [contrib/gorm.io/gorm.v1/v2]
@@ -120,6 +121,7 @@
 // [contrib/gofiber/fiber.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
 // [contrib/gomodule/redigo/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
 // [contrib/google.golang.org/api/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2
+// [contrib/google.golang.org/grpc/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2
 // [contrib/google.golang.org/grpc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
 // [contrib/gorilla/mux/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
 // [contrib/gorm.io/gorm.v1/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
