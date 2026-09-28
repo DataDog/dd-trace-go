@@ -11,6 +11,7 @@ on:
       - "instrumentation/**"
       - "internal/**"
       - "orchestrion/**"
+      - "otelc/**"
       - "scripts/**"
   workflow_call:
     inputs:
