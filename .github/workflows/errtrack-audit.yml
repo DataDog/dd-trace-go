@@ -86,6 +86,23 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+
+            // Queued (not cancelled) runs on the same PR are not guaranteed to
+            // finish in commit order (GitHub's concurrency docs: ordering
+            // within a group is not guaranteed once queued). An older run
+            // finishing last would overwrite the comment with a stale
+            // inventory, so skip posting if this run's commit is no longer
+            // the PR's head.
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (pr.data.head.sha !== context.sha) {
+              console.log(`Skipping stale run for ${context.sha}; PR head is now ${pr.data.head.sha}.`);
+              return;
+            }
+
             let table = fs.readFileSync('out/audit.txt', 'utf8');
             // GitHub rejects comments over 65,536 characters, and a failed
             // createComment/updateComment would mark this advisory workflow red.
