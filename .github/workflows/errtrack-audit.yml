@@ -111,7 +111,11 @@ jobs:
               comments.push(...resp.data);
               if (resp.data.length < 100) break;
             }
-            const existing = comments.find(c => c.body.startsWith(marker));
+            // Match only this workflow's own comments: a participant whose
+            // comment happens to start with the marker text must not be
+            // adopted as "existing" and then fail to update (wrong author)
+            // or have their text overwritten.
+            const existing = comments.find(c => c.body.startsWith(marker) && c.user.login === 'github-actions[bot]');
 
             if (existing) {
               await github.rest.issues.updateComment({
