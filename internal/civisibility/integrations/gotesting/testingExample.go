@@ -30,6 +30,8 @@ type testingExampleInfo struct {
 	unordered    bool
 }
 
+// instrumentInternalExamples replaces testing's example descriptors with CI
+// Visibility wrappers and retains the originals in claim for later restoration.
 func (ddm *M) instrumentInternalExamples(examples *[]testing.InternalExample, claim *testingMInstrumentationClaim) {
 	if examples == nil || !exampleOutputCaptureSupported() {
 		return
@@ -70,12 +72,15 @@ func (ddm *M) instrumentInternalExamples(examples *[]testing.InternalExample, cl
 	*examples = wrapped
 }
 
+// exampleOutputCaptureSupported reports whether examples can be wrapped
+// in-process. It follows testing's use of a separate runner where os.Pipe is
+// unavailable.
 func exampleOutputCaptureSupported() bool {
-	// The standard library also uses a separate example runner on these
-	// platforms because os.Pipe is unavailable.
 	return runtime.GOOS != "js" && runtime.GOOS != "wasip1"
 }
 
+// executeInternalExample captures and replays stdout while reporting the same
+// output comparison and panic outcome that testing assigns to the example.
 func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 	return func() {
 		startTime := time.Now()
@@ -128,6 +133,8 @@ func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 	}
 }
 
+// finishExampleEvent records captured output and closes the native test event
+// with the example's output, panic, or runtime.Goexit result.
 func finishExampleEvent(
 	test integrations.Test,
 	suite integrations.TestSuite,
@@ -166,6 +173,8 @@ func finishExampleEvent(
 	checkModuleAndSuite(module, suite)
 }
 
+// exampleOutputMismatch mirrors testing's ordered and unordered output
+// comparison rules and returns an empty string when the output matches.
 func exampleOutputMismatch(gotOutput, wantOutput string, unordered bool) string {
 	got := strings.TrimSpace(gotOutput)
 	want := strings.TrimSpace(wantOutput)

@@ -39,11 +39,15 @@ func (ddf *F) Fuzz(ff any) {
 	f.Fuzz(instrumentTestingFuzzFunc(ff))
 }
 
+// testingFuzzingActive reports whether the test binary is running a fuzzing
+// campaign rather than executing the seed corpus as ordinary tests.
 func testingFuzzingActive() bool {
 	fuzz := flag.Lookup("test.fuzz")
 	return fuzz != nil && fuzz.Value.String() != ""
 }
 
+// testingFuzzWorkerActive reports whether this process is a child worker that
+// executes generated mutations on behalf of the fuzzing coordinator.
 func testingFuzzWorkerActive() bool {
 	worker := flag.Lookup("test.fuzzworker")
 	return worker != nil && worker.Value.String() == "true"
@@ -54,6 +58,8 @@ type testingFInfo struct {
 	originalFunc func(*testing.F)
 }
 
+// instrumentInternalFuzzTargets replaces testing's fuzz descriptors with CI
+// Visibility wrappers and retains the originals in claim for later restoration.
 func (ddm *M) instrumentInternalFuzzTargets(targets *[]testing.InternalFuzzTarget, claim *testingMInstrumentationClaim) {
 	if targets == nil {
 		return
@@ -87,6 +93,8 @@ func (ddm *M) instrumentInternalFuzzTargets(targets *[]testing.InternalFuzzTarge
 	*targets = wrapped
 }
 
+// executeInternalFuzzTarget reports the coordinator's root fuzz test. Fuzz
+// workers bypass this lifecycle because generated mutations are not test cases.
 func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 	return func(f *testing.F) {
 		if testingFuzzWorkerActive() {
@@ -113,6 +121,8 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 	}
 }
 
+// finishTestingTBEvent maps testing's terminal state to the native CI
+// Visibility result and releases the enclosing suite and module workloads.
 func finishTestingTBEvent(
 	tb testing.TB,
 	execMeta *testExecutionMetadata,
