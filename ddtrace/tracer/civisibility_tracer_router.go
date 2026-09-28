@@ -80,6 +80,11 @@ func (t *ciVisibilityTracerRouter) StartSpan(operationName string, opts ...Start
 	if detachParent {
 		cfg.Parent = detachedParentContext(cfg.Parent)
 	}
+	if concrete, ok := target.(*tracer); ok && markTrace {
+		// A custom sampler can re-enter the router with this span as a parent.
+		// Its trace must already carry the selected class before that callback.
+		return concrete.startSpan(operationName, tracerType, useConfig(cfg))
+	}
 	span := target.StartSpan(operationName, useConfig(cfg))
 	if markTrace {
 		setCIVisibilityTracerType(span, tracerType)

@@ -393,6 +393,93 @@ func TestCIVisibilityMockTracer_StartSpanOptionsRunOnce(t *testing.T) {
 	require.Len(t, cmt.FinishedSpans(), 1)
 }
 
+func TestCIVisibilityMockTracer_WithoutRouterFiltersCISpans(t *testing.T) {
+	for _, exiting := range []bool{false, true} {
+		t.Run("exiting="+boolString(exiting), func(t *testing.T) {
+			resetCIVisibilityMockTracerTestState(t)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, boolString(!exiting))
+			if exiting {
+				civisibility.SetState(civisibility.StateExiting)
+			}
+			mt := Start()
+			t.Cleanup(mt.Stop)
+			require.Nil(t, mt.(*civisibilitymocktracer).currentRouter())
+			for _, spanType := range []string{constants.SpanTypeTest, constants.SpanTypeTestSuite, constants.SpanTypeTestModule, constants.SpanTypeTestSession} {
+				var calls int
+				span := tracer.StartSpan("ci.event", tracer.SpanType(spanType), func(*tracer.StartSpanConfig) { calls++ })
+				assert.Nil(t, span, spanType)
+				assert.Equal(t, 1, calls)
+			}
+			span := tracer.StartSpan("application.operation")
+			require.NotNil(t, span)
+			span.Finish()
+			require.Len(t, mt.FinishedSpans(), 1)
+			require.Empty(t, mt.OpenSpans())
+		})
+	}
+}
+
+func TestCIVisibilityMockTracer_FinishAfterStop(t *testing.T) {
+	for _, direct := range []bool{false, true} {
+		t.Run("direct="+boolString(direct), func(t *testing.T) {
+			resetCIVisibilityMockTracerTestState(t)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			mt := Start()
+			t.Cleanup(mt.Stop)
+			span := mt.StartSpan("application.operation")
+			require.NotNil(t, span)
+			mt.Stop()
+			if direct {
+				mt.FinishSpan(span)
+			} else {
+				span.Finish()
+			}
+			require.Empty(t, mt.FinishedSpans())
+			require.Len(t, mt.OpenSpans(), 1)
+		})
+	}
+}
+
+type ciVisibilityReentrantSampler struct {
+	entered atomic.Bool
+	mock    Tracer
+	child   *tracer.Span
+}
+
+func (s *ciVisibilityReentrantSampler) Sample(parent *tracer.Span) bool {
+	if s.entered.CompareAndSwap(false, true) {
+		s.mock = Start()
+		s.child = tracer.StartSpan("sampler.child", tracer.ChildOf(parent.Context()))
+	}
+	return true
+}
+
+func TestCIVisibilityMockTracer_SamplerStartsMock(t *testing.T) {
+	for _, useNoop := range []bool{false, true} {
+		t.Run(boolString(useNoop), func(t *testing.T) {
+			setupCIVisibilityMockTracerIntegrationTest(t, useNoop)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+			civisibility.SetState(civisibility.StateInitialized)
+			sampler := &ciVisibilityReentrantSampler{}
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil), tracer.WithSampler(sampler)))
+			parent := tracer.StartSpan("application.parent")
+			require.NotNil(t, parent)
+			require.NotNil(t, sampler.mock)
+			t.Cleanup(sampler.mock.Stop)
+			require.NotNil(t, sampler.child)
+			sampler.child.Finish()
+			parent.Finish()
+			finished := sampler.mock.FinishedSpans()
+			require.Len(t, finished, 1)
+			require.Equal(t, "sampler.child", finished[0].OperationName())
+			require.Equal(t, parent.Context().SpanID(), finished[0].ParentID())
+			require.Equal(t, parent.Context().TraceIDLower(), finished[0].TraceID())
+			require.Empty(t, sampler.mock.OpenSpans())
+		})
+	}
+}
+
 func TestCIVisibilityMockTracer_StoppedMockForwardsToPreservedTracer(t *testing.T) {
 	resetCIVisibilityMockTracerTestState(t)
 	civisibility.SetState(civisibility.StateInitialized)

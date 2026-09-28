@@ -1088,8 +1088,12 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-// +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
+	return t.startSpan(operationName, "", options...)
+}
+
+// +checklocksignore — Initialization time, span not yet returned to caller.
+func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options ...StartSpanOption) *Span {
 	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
@@ -1097,6 +1101,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
 	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	if ciVisibilityTracerType != "" {
+		setCIVisibilityTracerType(span, ciVisibilityTracerType)
+	}
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName

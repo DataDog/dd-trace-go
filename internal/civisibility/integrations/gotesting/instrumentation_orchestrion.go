@@ -176,8 +176,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			if testPrivateFields != nil && testPrivateFields.parent != nil {
 				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
 			}
-			moduleName = subtestModuleName(moduleName, parentExecMeta)
-			subtestIdentity.ModuleName = moduleName
+			if testifyData == nil {
+				moduleName = subtestModuleName(moduleName, parentExecMeta)
+				subtestIdentity.ModuleName = moduleName
+			}
 
 			settings := integrations.GetSettings()
 			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled

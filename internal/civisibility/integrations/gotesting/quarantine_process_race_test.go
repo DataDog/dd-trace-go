@@ -82,7 +82,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
-	testifySuite := suite + "/quarantinedRaceTestifySuite"
+	testifyModule := reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath()
+	testifySuite := "callback.go/TestifySuite"
 	itrEnabled := scenario == "foreign-suite"
 	var itrData []net.SkippableResponseDataAttributes
 	if itrEnabled {
@@ -205,6 +206,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
 				}},
+			}},
+			testifyModule: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
 				}},
@@ -548,7 +551,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			panic("Testify method did not run in the isolated child")
 		}
 		testifySpans := checkSpansByResourceName(spans, testifySuite+".TestQuarantinedRaceTestifyFixture/TestSource", 1)
-		method := runtime.FuncForPC(reflect.ValueOf((*quarantinedRaceTestifySuite).TestSource).Pointer())
+		checkSpansByTagValue(testifySpans, constants.TestModule, testifyModule, 1)
+		method := runtime.FuncForPC(reflect.ValueOf((*subtesthelper.TestifySuite).TestSource).Pointer())
 		_, sourceLine := method.FileLine(method.Entry())
 		if got := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceStartLine)); got != strconv.Itoa(sourceLine) {
 			panic(fmt.Sprintf("Testify source line = %s, want method line %d", got, sourceLine))
@@ -1479,22 +1483,17 @@ func TestQuarantinedRaceAncestorFailureFixture(t *testing.T) {
 	}
 }
 
-type quarantinedRaceTestifySuite struct {
-	t *testing.T
-}
-
-func (s *quarantinedRaceTestifySuite) TestSource() {
-	writeQuarantinedRaceIsolationPID(s.t, "testify-source")
-}
-
 func TestQuarantinedRaceTestifyFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
 	}
-	suite := &quarantinedRaceTestifySuite{}
+	suite := &subtesthelper.TestifySuite{OnTest: func(t *testing.T) {
+		writeQuarantinedRaceIsolationPID(t, "testify-source")
+	}}
 	instrumentTestifySuiteRun(t, suite)
 	t.Run("TestSource", instrumentTestingTFunc(func(t *testing.T) {
-		suite.t = t
+		require.Equal(t, reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath(), getTestMetadata(t).identity.ModuleName)
+		suite.T = t
 		suite.TestSource()
 	}))
 }

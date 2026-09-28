@@ -10,9 +10,11 @@ import (
 	"sync/atomic"
 	_ "unsafe" // Needed for go:linkname.
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 )
 
@@ -165,11 +167,22 @@ func (t *civisibilitymocktracer) StartSpan(operationName string, opts ...tracer.
 	if t.isnoop.Load() {
 		return nil
 	}
-	return t.mock.StartSpan(operationName, opts...)
+	var cfg tracer.StartSpanConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	switch cfg.Tags[ext.SpanType] {
+	case constants.SpanTypeTest, constants.SpanTypeTestSuite, constants.SpanTypeTestModule, constants.SpanTypeTestSession:
+		// Without a CI router these events have no destination.
+		return nil
+	}
+	return t.mock.StartSpan(operationName, func(c *tracer.StartSpanConfig) { *c = cfg })
 }
 
 func (t *civisibilitymocktracer) FinishSpan(span *tracer.Span) {
-	if span == nil {
+	if span == nil || t.isnoop.Load() {
 		return
 	}
 	t.mock.FinishSpan(span)

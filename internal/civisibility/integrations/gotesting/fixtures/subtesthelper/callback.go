@@ -12,3 +12,13 @@ func Disabled(*testing.T) {
 }
 
 func Pass(*testing.T) {}
+
+// TestifySuite exercises suites defined outside the consuming test package.
+type TestifySuite struct {
+	T      *testing.T
+	OnTest func(*testing.T)
+}
+
+func (s *TestifySuite) TestSource() {
+	s.OnTest(s.T)
+}
