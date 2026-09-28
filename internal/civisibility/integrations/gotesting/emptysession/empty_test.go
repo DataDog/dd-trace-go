@@ -110,9 +110,9 @@ func TestSessionStatus(t *testing.T) {
 			}
 			var r result
 			found := false
-			for _, line := range strings.Split(string(output), "\n") {
-				if strings.HasPrefix(line, "CI_RESULT=") {
-					require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "CI_RESULT=")), &r))
+			for line := range strings.SplitSeq(string(output), "\n") {
+				if payload, ok := strings.CutPrefix(line, "CI_RESULT="); ok {
+					require.NoError(t, json.Unmarshal([]byte(payload), &r))
 					found = true
 				}
 			}
