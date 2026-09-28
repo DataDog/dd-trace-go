@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 )
 

@@ -35,6 +35,7 @@ on:
       - "instrumentation/**"
       - "internal/**"
       - "orchestrion/**"
+      - "otelc/**"
       - "scripts/**"
 
 permissions:
