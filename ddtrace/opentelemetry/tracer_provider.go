@@ -98,7 +98,7 @@ func (p *TracerProvider) ForceFlush(timeout time.Duration, callback func(ok bool
 
 func (p *TracerProvider) forceFlush(timeout time.Duration, callback func(ok bool), flush func()) {
 	if atomic.LoadUint32(&p.stopped) != 0 {
-		log.Warn("Cannot perform (*TracerProvider).Flush since the tracer is already stopped.")
+		log.Warn("Cannot perform (*TracerProvider).Flush since the tracer is already stopped.") //errtrack:ignore — caller used the lifecycle API out of order
 		return
 	}
 	done := make(chan struct{})

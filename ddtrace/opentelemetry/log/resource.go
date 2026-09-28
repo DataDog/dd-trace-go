@@ -156,7 +156,7 @@ func resolveHostname() (string, bool) {
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
 		return hostname, true
 	} else if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
+		log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore — host environment failure
 	}
 
 	// Could not determine hostname
