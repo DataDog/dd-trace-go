@@ -128,6 +128,48 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	return instrumentTestingTFuncWithSource(f, nil, true)
 }
 
+// instrumentTestingFuzzFunc preserves the callback's exact concrete type,
+// which testing.F.Fuzz validates through reflection.
+//
+//go:linkname instrumentTestingFuzzFunc
+func instrumentTestingFuzzFunc(ff any) any {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return ff
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return ff
+	}
+	if testingFuzzingActive() {
+		// Generated fuzzing mutations are not JUnit test cases. The root fuzz
+		// target is still reported by its testing.M descriptor wrapper.
+		return ff
+	}
+	if !isCiVisibilityEnabled() || !testing.Testing() || ff == nil {
+		return ff
+	}
+
+	fn := reflect.ValueOf(ff)
+	fnType := fn.Type()
+	testingTPtr := reflect.TypeFor[*testing.T]()
+	if fn.Kind() != reflect.Func || fnType.NumIn() == 0 || fnType.In(0) != testingTPtr || fnType.NumOut() != 0 {
+		// Let testing.F.Fuzz produce its native validation error unchanged.
+		return ff
+	}
+
+	sourceFunc := runtime.FuncForPC(fn.Pointer())
+	return reflect.MakeFunc(fnType, func(args []reflect.Value) []reflect.Value {
+		t := args[0].Interface().(*testing.T)
+		seedBody := func(currentT *testing.T) {
+			args[0] = reflect.ValueOf(currentT)
+			fn.Call(args)
+		}
+		instrumentTestingTFuncWithSource(seedBody, sourceFunc, false)(t)
+		return nil
+	}).Interface()
+}
+
 func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Func, additionalFeatures bool) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {

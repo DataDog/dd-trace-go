@@ -23,75 +23,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
-type testingFInfo struct {
-	commonInfo
-	originalFunc func(*testing.F)
-}
-
 type testingExampleInfo struct {
 	commonInfo
 	originalFunc func()
 	output       string
 	unordered    bool
-}
-
-func (ddm *M) instrumentInternalFuzzTargets(targets *[]testing.InternalFuzzTarget, claim *testingMInstrumentationClaim) {
-	if targets == nil {
-		return
-	}
-	if claim != nil {
-		claim.fuzzDescriptors = targets
-		claim.fuzzTargets = make(map[string]func(*testing.F), len(*targets))
-	}
-
-	wrapped := make([]testing.InternalFuzzTarget, len(*targets))
-	for idx, target := range *targets {
-		fn := runtime.FuncForPC(reflect.ValueOf(target.Fn).Pointer())
-		moduleName, suiteName := utils.GetModuleAndSuiteName(fn.Entry())
-		addModulesCounters(moduleName, 1)
-		addSuitesCounters(suiteName, 1)
-		info := &testingFInfo{
-			originalFunc: target.Fn,
-			commonInfo: commonInfo{
-				moduleName: moduleName,
-				suiteName:  suiteName,
-				testName:   target.Name,
-				identity:   newTestIdentity(moduleName, suiteName, target.Name),
-				sourceFunc: fn,
-			},
-		}
-		wrapped[idx] = testing.InternalFuzzTarget{Name: target.Name, Fn: ddm.executeInternalFuzzTarget(info)}
-		if claim != nil {
-			claim.fuzzTargets[target.Name] = target.Fn
-		}
-	}
-	*targets = wrapped
-}
-
-func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
-	return func(f *testing.F) {
-		if testingFuzzWorkerActive() {
-			info.originalFunc(f)
-			return
-		}
-		startTime := time.Now()
-		module := session.GetOrCreateModule(info.moduleName, integrations.WithTestModuleStartTime(startTime))
-		suite := module.GetOrCreateSuite(info.suiteName, integrations.WithTestSuiteStartTime(startTime))
-		test := suite.CreateTest(info.testName, integrations.WithTestStartTime(startTime))
-		test.SetTestFunc(info.sourceFunc)
-
-		execMeta := createTestMetadata(f, nil)
-		execMeta.identity = info.identity
-		execMeta.test = test
-
-		// Register first so the CI event closes after user cleanups and seed
-		// executions, which testing runs before the fuzz target's cleanup phase.
-		f.Cleanup(func() {
-			defer deleteTestMetadata(f)
-			finishTestingTBEvent(f, execMeta, test, suite, module, time.Now())
-		})
-		info.originalFunc(f)
-	}
 }
 
 func (ddm *M) instrumentInternalExamples(examples *[]testing.InternalExample, claim *testingMInstrumentationClaim) {
@@ -190,41 +126,6 @@ func (ddm *M) executeInternalExample(info *testingExampleInfo) func() {
 		info.originalFunc()
 		finished = true
 	}
-}
-
-func finishTestingTBEvent(
-	tb testing.TB,
-	execMeta *testExecutionMetadata,
-	test integrations.Test,
-	suite integrations.TestSuite,
-	module integrations.TestModule,
-	finishTime time.Time,
-) {
-	switch {
-	case tb.Failed():
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusFail)
-		if captured := execMeta.processRetryError.Load(); captured != nil {
-			test.SetError(integrations.WithErrorInfo(captured.Type, captured.Message, captured.Stack))
-		} else {
-			test.SetTag(ext.Error, true)
-		}
-		suite.SetTag(ext.Error, true)
-		module.SetTag(ext.Error, true)
-		test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(finishTime))
-	case tb.Skipped():
-		reason := execMeta.skipReason
-		if reason == "" {
-			if captured := execMeta.processRetrySkipReason.Load(); captured != nil {
-				reason = *captured
-			}
-		}
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-		test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(finishTime), integrations.WithTestSkipReason(reason))
-	default:
-		test.SetTag(constants.TestFinalStatus, constants.TestStatusPass)
-		test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(finishTime))
-	}
-	checkModuleAndSuite(module, suite)
 }
 
 func finishExampleEvent(

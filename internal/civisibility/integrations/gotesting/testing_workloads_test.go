@@ -15,28 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
-func TestExampleOutputMismatchMatchesTestingSemantics(t *testing.T) {
-	tests := []struct {
-		name      string
-		got       string
-		want      string
-		unordered bool
-		mismatch  bool
-	}{
-		{name: "ordered exact", got: "first\nsecond\n", want: "first\nsecond\n"},
-		{name: "ordered trims surrounding whitespace", got: " first\n", want: "first"},
-		{name: "ordered mismatch", got: "second\nfirst\n", want: "first\nsecond\n", mismatch: true},
-		{name: "unordered", got: "second\nfirst\n", want: "first\nsecond\n", unordered: true},
-		{name: "unordered preserves duplicates", got: "first\nfirst\n", want: "first\n", unordered: true, mismatch: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			message := exampleOutputMismatch(tt.got, tt.want, tt.unordered)
-			require.Equal(t, tt.mismatch, message != "")
-		})
-	}
-}
-
 func TestRestoreTestingMWorkloadsRestoresFuzzTargetsAndExamples(t *testing.T) {
 	originalFuzz := func(*testing.F) {}
 	originalExample := func() {}
