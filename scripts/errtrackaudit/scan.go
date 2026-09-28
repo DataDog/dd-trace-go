@@ -430,7 +430,7 @@ const errtrackIgnore = "errtrack:ignore"
 
 // hasIgnoreDirective reports whether text is a comment carrying
 // //errtrack:ignore, with or without a trailing reason
-// (e.g. "//errtrack:ignore — adopted in #5251").
+// (e.g. "//errtrack:ignore adopted in #5251").
 func hasIgnoreDirective(text string) bool {
 	fields := strings.Fields(strings.TrimLeft(text, "/"))
 	return len(fields) > 0 && fields[0] == errtrackIgnore

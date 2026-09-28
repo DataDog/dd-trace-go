@@ -46,7 +46,7 @@ func Reads() {
 	weird.Info("info level is not audited")
 	weird.Error(msgConst, "m")
 	weird.Error(msgVar, "v")
-	weird.Error("suppressed by directive: %s", "s") //errtrack:ignore — reviewed, stays on plain log.Error
+	weird.Error("suppressed by directive: %s", "s") //errtrack:ignore reviewed, stays on plain log.Error
 	weird.Error(                                    //errtrack:ignore inside the call span
 		"suppressed multi-line: %s", "s2")
 	weird.Error("kept", "k")

@@ -77,7 +77,7 @@ reason, and it drops out of the audit while still being counted in the
 per-owner totals:
 
 ```go
-log.Error("agent unreachable: %s", err.Error()) //errtrack:ignore — user environment, not our defect
+log.Error("agent unreachable: %s", err.Error()) //errtrack:ignore user environment, not our defect
 ```
 
 Directive semantics: the comment must sit on a line spanned by the call itself
@@ -93,7 +93,7 @@ should carry the directive too (with the adopting PR as the reason), so the
 `CANDIDATE` count shrinks as migration PRs land:
 
 ```go
-log.Error("failed to flush trace chunks: %s", err.Error()) //errtrack:ignore — reported via ReportError in #5251
+log.Error("failed to flush trace chunks: %s", err.Error()) //errtrack:ignore reported via ReportError in #5251
 telemetrylog.ReportError("failed to flush trace chunks", err)
 ```
 
