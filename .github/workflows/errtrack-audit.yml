@@ -53,6 +53,7 @@ jobs:
       - name: Run errtrack audit tests
         run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
       - name: Run errtrack audit
+        shell: bash
         run: |
           mkdir -p out
           (cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format json) > out/audit.json
