@@ -720,7 +720,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		// get a temporary path to store the pack files
 		temporaryPath, err = os.MkdirTemp(folder, ".dd-pack-objects")
 		if err != nil {
-			log.Warn("civisibility: error creating temporary directory %s: %s", folder, err.Error())
+			log.Warn("civisibility: error creating temporary directory %s: %s", folder, err.Error()) //errtrack:ignore filesystem failure
 			continue
 		}
 
@@ -733,7 +733,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	}
 
 	if err != nil {
-		log.Warn("civisibility: error creating pack files in %s: %s", temporaryPath, err.Error())
+		log.Warn("civisibility: error creating pack files in %s: %s", temporaryPath, err.Error()) //errtrack:ignore repository command failure
 		return nil
 	}
 
@@ -744,7 +744,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 
 		// check if the pack file exists
 		if _, err := os.Stat(file); os.IsNotExist(err) {
-			log.Warn("civisibility: pack file not found: %s", file)
+			log.Warn("civisibility: pack file not found: %s", file) //errtrack:ignore repository command output
 			continue
 		}
 

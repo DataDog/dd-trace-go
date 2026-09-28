@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -36,6 +37,14 @@ type coverageWriter struct {
 	mu      sync.Mutex       // Guards payload rotation between add and flush.
 }
 
+func reportCoverageEncodingError(err error) {
+	telemetrylog.LogAndReportError("coverageWriter: error encoding msgpack", err)
+}
+
+func reportCoverageBufferError(err error) {
+	telemetrylog.LogAndReportError("coverageWriter: failure getting coverage data", err)
+}
+
 func newCoverageWriter() *coverageWriter {
 	log.Debug("coverageWriter: creating trace writer instance")
 	return &coverageWriter{
@@ -52,7 +61,7 @@ func (w *coverageWriter) add(coverage *testCoverage) {
 
 	w.mu.Lock()
 	if err := w.payload.push(ciTestCoverage); err != nil {
-		log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
+		reportCoverageEncodingError(err)
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
 		payloadToFlush = w.rotatePayloadLocked()
@@ -115,14 +124,14 @@ func (w *coverageWriter) flushPayload(oldp *coveragePayload) {
 
 		buf, err := p.getBuffer()
 		if err != nil {
-			log.Error("coverageWriter: failure getting coverage data: %s", err.Error())
+			reportCoverageBufferError(err)
 			return
 		}
 
 		telemetry.CodeCoverageFiles(float64(p.itemCount()))
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
-			log.Error("coverageWriter: failure sending coverage data: %s", err.Error())
+			log.Error("coverageWriter: failure sending coverage data: %s", err.Error()) //errtrack:ignore remote request failure
 		}
 	}(oldp)
 }

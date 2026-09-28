@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -38,6 +39,10 @@ type logsWriter struct {
 }
 
 // newLogsWriter creates a new instance of logsWriter.
+func reportLogsEncodingError(err error) {
+	telemetrylog.LogAndReportError("logsWriter: error encoding JSON", err)
+}
+
 func newLogsWriter() *logsWriter {
 	log.Debug("logsWriter: creating logs writer instance")
 	return &logsWriter{
@@ -56,7 +61,7 @@ func (w *logsWriter) add(entry *logEntry) bool {
 		return false
 	}
 	if err := w.payload.push(entry); err != nil {
-		log.Error("logsWriter: Error encoding JSON: %s", err.Error())
+		reportLogsEncodingError(err)
 		w.mu.Unlock()
 		return false
 	}
@@ -138,7 +143,7 @@ func (w *logsWriter) startUpload(oldp *logsPayload) {
 
 		err := w.client.SendLogs(p)
 		if err != nil {
-			log.Error("logsWriter: failure sending logs data data: %s", err.Error())
+			log.Error("logsWriter: failure sending logs data data: %s", err.Error()) //errtrack:ignore remote request failure
 		}
 	}(oldp)
 }
