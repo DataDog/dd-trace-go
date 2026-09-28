@@ -208,7 +208,7 @@ func ensureSettingsInitialization(serviceName string) {
 
 		// check if impacted tests is disabled by env-vars
 		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
-			log.Warn("civisibility: impacted tests was disabled by the environment variable")
+			log.Warn("civisibility: impacted tests was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
