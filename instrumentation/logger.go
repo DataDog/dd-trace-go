@@ -36,11 +36,11 @@ func (l logger) Info(msg string, args ...any) {
 }
 
 func (l logger) Warn(msg string, args ...any) {
-	log.Warn(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
+	log.Warn(msg, args...) //nolint:gocritic //errtrack:ignore user-provided instrumentation log message
 }
 
 func (l logger) Error(msg string, args ...any) {
-	log.Error(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
+	log.Error(msg, args...) //nolint:gocritic //errtrack:ignore user-provided instrumentation log message
 }
 
 func hasErrors(args ...any) bool {
