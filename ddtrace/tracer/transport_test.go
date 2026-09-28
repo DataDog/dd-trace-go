@@ -228,6 +228,30 @@ func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
 	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
 }
 
+func TestFetchAgentFeaturesCancellationIsNotDecodeError(t *testing.T) {
+	headersSent := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		close(headersSent)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-headersSent
+		cancel()
+	}()
+
+	_, err = fetchAgentFeatures(ctx, agentURL, srv.Client())
+	require.ErrorIs(t, err, context.Canceled)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr))
+}
+
 func TestTraceCountHeader(t *testing.T) {
 	assert := assert.New(t)
 

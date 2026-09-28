@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -316,11 +317,11 @@ func otlpKeyValue(key string, value *otlpcommon.AnyValue) *otlpcommon.KeyValue {
 	if value == nil {
 		return nil
 	}
-	return &otlpcommon.KeyValue{Key: key, Value: value}
+	return &otlpcommon.KeyValue{Key: strings.ToValidUTF8(key, "\uFFFD"), Value: value}
 }
 
 func otlpStringValue(s string) *otlpcommon.AnyValue {
-	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: s}}
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: strings.ToValidUTF8(s, "\uFFFD")}}
 }
 
 func otlpDoubleValue(d float64) *otlpcommon.AnyValue {

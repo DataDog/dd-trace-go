@@ -611,6 +611,9 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	}
 	var info infoResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return agentFeatures{}, err
+		}
 		return agentFeatures{}, &agentFeaturesDecodeError{err: err}
 	}
 	var features agentFeatures
