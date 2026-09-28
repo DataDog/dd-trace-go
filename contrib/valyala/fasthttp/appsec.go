@@ -149,6 +149,15 @@ func (w *responseWriter) Status() int {
 	return w.response.StatusCode()
 }
 
+// Committed implements the interface httpsec uses to check whether it can still
+// replace the response. fasthttp sends the response only after the handler
+// returns, and a timed-out request uses a separate response that is not sent
+// yet. AppSec can therefore always replace it. Without this method, httpsec uses
+// Status, which is never zero for a fasthttp response.
+func (*responseWriter) Committed() bool {
+	return false
+}
+
 // discardHandlerResponse drops whatever the handler already wrote so that a
 // blocking response replaces it instead of being appended to it. It is a no-op
 // once the blocking response itself has been written, because httpsec runs the
