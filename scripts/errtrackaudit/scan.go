@@ -317,15 +317,18 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 	return v
 }
 
-// packageErrors collects the load/parse/type errors go/packages reports on the
-// packages themselves rather than through Load's returned error.
+// packageErrors collects the load/parse/type errors go/packages reports on
+// pkgs and everything they transitively import. A type error in a dependency
+// leaves the importing root package IllTyped with no Errors of its own, so
+// walking only pkgs would miss it and let the scan proceed on an incomplete
+// package graph.
 func packageErrors(pkgs []*packages.Package) []error {
 	var errs []error
-	for _, pkg := range pkgs {
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
 		for _, e := range pkg.Errors {
 			errs = append(errs, e)
 		}
-	}
+	})
 	if len(errs) > 5 {
 		errs = errs[:5]
 	}

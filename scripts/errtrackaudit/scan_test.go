@@ -139,6 +139,21 @@ func TestScan_BrokenPackageFails(t *testing.T) {
 	}
 }
 
+func TestScan_BrokenDependencyFails(t *testing.T) {
+	// A type error inside an imported dependency, not the root package
+	// itself, must still fail the scan loudly: go/packages marks the
+	// importing package IllTyped with no Errors of its own, so packageErrors
+	// must walk the whole dependency graph, not just the root packages.
+	dir := filepath.Join("testdata", "brokenimport")
+	_, err := scan(dir, scanOptions{logPackagePath: fixtureLogPath})
+	if err == nil {
+		t.Fatal("scan of a package with a broken dependency succeeded, want an error")
+	}
+	if !strings.Contains(err.Error(), "did not load cleanly") || !strings.Contains(err.Error(), "undefinedIdent") {
+		t.Errorf("scan error = %v, want a load error mentioning undefinedIdent", err)
+	}
+}
+
 func TestHasIgnoreDirective(t *testing.T) {
 	cases := []struct {
 		name string
