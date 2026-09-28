@@ -20,6 +20,14 @@ on:
       - 'openfeature/**'
       - 'orchestrion/**'
       - 'profiler/**'
+      # The remaining root-module directories the scan walks: scripts/ and
+      # tools/ subdirectories that have no go.mod of their own.
+      - 'scripts/ciselect/**'
+      - 'scripts/parseversion/**'
+      # The root package and its module files.
+      - 'go.mod'
+      - 'go.sum'
+      - 'gosum.go'
       # The audit's grouping and its own tooling.
       - 'CODEOWNERS'
       - 'scripts/errtrackaudit/**'
