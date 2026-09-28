@@ -83,6 +83,7 @@ func TestCustomRules(t *testing.T) {
 			// Build tags and capture count before request to measure the delta
 			tags := []string{
 				"request_blocked:false",
+				"block_failure:false",
 				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
 				"waf_timeout:false",
 				"rate_limited:false",
@@ -352,16 +353,25 @@ func TestBlocking(t *testing.T) {
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
+	mux.HandleFunc("/body-after-response", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		// Commit the response before asking the WAF to inspect the body. A block
+		// decision at this point cannot replace the response.
+		w.Write([]byte("Hello World!\n"))
+		_ = pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String())
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	for _, tc := range []struct {
-		name      string
-		headers   map[string]string
-		endpoint  string
-		status    int
-		ruleMatch string
-		reqBody   string
+		name         string
+		headers      map[string]string
+		endpoint     string
+		status       int
+		ruleMatch    string
+		reqBody      string
+		blockFailure bool
 	}{
 		{
 			name:     "ip/no-block/no-ip",
@@ -421,6 +431,14 @@ func TestBlocking(t *testing.T) {
 			reqBody:   "$globals",
 			ruleMatch: bodyBlockingRule,
 		},
+		{
+			name:         "body/block-after-response",
+			endpoint:     "/body-after-response",
+			status:       200,
+			reqBody:      "$globals",
+			ruleMatch:    bodyBlockingRule,
+			blockFailure: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -432,6 +450,7 @@ func TestBlocking(t *testing.T) {
 			// Build tags and capture count before request to measure the delta
 			tags := []string{
 				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"block_failure:" + strconv.FormatBool(tc.blockFailure),
 				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
 				"waf_timeout:false",
 				"rate_limited:false",
@@ -462,6 +481,11 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.blockFailure {
+					assert.NotEqual(t, "true", spans[0].Tag("appsec.blocked"))
+				} else if tc.status != http.StatusOK {
+					assert.Equal(t, "true", spans[0].Tag("appsec.blocked"))
+				}
 				if tc.status != 200 {
 					var payload struct {
 						Triggers []struct {
@@ -487,6 +511,48 @@ func TestBlocking(t *testing.T) {
 			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
+}
+
+func TestBlockingUnavailable(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	testutils.StartAppSec(t, config.WithBlockingUnavailable(true))
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+	telemetryClient := new(telemetrytest.RecordClient)
+	prevClient := telemetry.SwapClient(telemetryClient)
+	t.Cleanup(func() { telemetry.SwapClient(prevClient) })
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("x-forwarded-for", "1.2.3.4")
+	res, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { res.Body.Close() })
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.NotEqual(t, "true", spans[0].Tag("appsec.blocked"))
+
+	tags := []string{
+		"request_blocked:false",
+		"block_failure:true",
+		"rule_triggered:true",
+		"waf_timeout:false",
+		"rate_limited:false",
+		"waf_error:false",
+		"waf_version:" + libddwaf.Version(),
+		"event_rules_version:1.4.2",
+		"input_truncated:false",
+	}
+	assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 }
 
 // Test that API Security schemas get collected when API security is enabled
