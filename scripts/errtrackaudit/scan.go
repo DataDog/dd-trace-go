@@ -42,6 +42,11 @@ type Site struct {
 	Level   string // "ERROR" or "WARN"
 	Message string // constant format string, or "(non-constant)"
 	Ignored bool   // carries an //errtrack:ignore directive
+
+	// column disambiguates two distinct calls reported on the same line
+	// (e.g. "log.Error(a); log.Warn(b)") from the same call reappearing
+	// across platform loads. It is not part of the reported output.
+	column int
 }
 
 // scanOptions parameterizes scan. The log package path is configurable so unit
@@ -133,7 +138,7 @@ func scan(root string, opts scanOptions) ([]Site, error) {
 			return nil, err
 		}
 		for _, site := range sites {
-			unique[fmt.Sprintf("%s:%d", site.File, site.Line)] = site
+			unique[fmt.Sprintf("%s:%d:%d", site.File, site.Line, site.column)] = site
 		}
 	}
 	sites := make([]Site, 0, len(unique))
@@ -291,7 +296,8 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 		if !recognized {
 			return v
 		}
-		start := v.fset.Position(t.Pos()).Line
+		pos := v.fset.Position(t.Pos())
+		start := pos.Line
 		end := v.fset.Position(t.End()).Line
 		ignored := false
 		for line := start; line <= end; line++ {
@@ -308,6 +314,7 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 			Level:   level,
 			Message: "",
 			Ignored: ignored,
+			column:  pos.Column,
 		}
 		if len(t.Args) > 0 {
 			site.Message = resolveMessage(v.info, t.Args[0])

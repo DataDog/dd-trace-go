@@ -154,6 +154,23 @@ func TestScan_BrokenDependencyFails(t *testing.T) {
 	}
 }
 
+func TestScan_SameLineDistinctCalls(t *testing.T) {
+	// gofmt can place two audited calls on one source line (e.g. a short
+	// "log.Error(a); log.Warn(b)" body). The dedup key that merges the same
+	// call across platform loads must not collapse these into one site.
+	dir := filepath.Join("testdata", "sameline")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: "example.com/sameline/internal/log",
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(sites) != 2 {
+		t.Fatalf("scan found %d sites on one line, want 2", len(sites))
+	}
+}
+
 func TestHasIgnoreDirective(t *testing.T) {
 	cases := []struct {
 		name string
