@@ -146,7 +146,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol) //errtrack:ignore — invalid user configuration
+		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol) //errtrack:ignore invalid user configuration
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingJSON
@@ -227,7 +227,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 			log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
 		} else {
 			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint) //errtrack:ignore — invalid user configuration
+			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint) //errtrack:ignore invalid user configuration
 			endpoint, path, insecure := resolveOTLPEndpointHTTP()
 			opts = append(opts, otlploghttp.WithEndpoint(endpoint))
 			opts = append(opts, otlploghttp.WithURLPath(path))
@@ -274,7 +274,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		u, err := url.Parse(rawEndpoint)
 		if err != nil {
 			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error()) //errtrack:ignore — invalid user configuration
+			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error()) //errtrack:ignore invalid user configuration
 			endpoint, insecure := resolveOTLPEndpointGRPC()
 			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
 			if insecure {
@@ -337,7 +337,7 @@ func hasOTLPEndpointInEnv() bool {
 func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error()) //errtrack:ignore — invalid user configuration
+		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error()) //errtrack:ignore invalid user configuration
 		return ""
 	}
 
@@ -377,7 +377,7 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error()) //errtrack:ignore — invalid user configuration
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error()) //errtrack:ignore invalid user configuration
 		} else {
 			// Extract hostname from the agent URL and use port 4318
 			hostname := u.Hostname()
@@ -422,7 +422,7 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error()) //errtrack:ignore — invalid user configuration
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error()) //errtrack:ignore invalid user configuration
 		} else {
 			// Extract hostname from the agent URL and use port 4317 for gRPC
 			hostname := u.Hostname()

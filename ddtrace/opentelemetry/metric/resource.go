@@ -213,7 +213,7 @@ func hostname(otelAttrs map[string]string) (string, bool) {
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
 		return hostname, true
 	} else if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore — host environment failure
+		log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore host environment failure
 	}
 
 	// No hostname could be determined
