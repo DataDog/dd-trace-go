@@ -305,8 +305,15 @@ func TestScan_RealRepo(t *testing.T) {
 	// Loading the real repository verifies that the production package graph
 	// and platform configurations remain valid. Fixed backlog counts do not
 	// belong here because successful migrations intentionally reduce them.
+	//
+	// contrib/ is deliberately absent from this list: most of contrib/* is
+	// out of scope by module boundary, not by an exclusion pattern, but
+	// contrib/contrib.go, contrib/os, pubsubtrace, and kafkatrace have no
+	// go.mod of their own and are legitimately scanned root-module code
+	// (see errtrack-audit.yml's path filters). A blanket "contrib/" check
+	// would fail this test the moment any of those gets an audited call.
 	for _, s := range sites {
-		for _, frag := range []string{"internal/log/", "internal/telemetry/", "contrib/", "_test.go", "testdata/"} {
+		for _, frag := range []string{"internal/log/", "internal/telemetry/", "_test.go", "testdata/"} {
 			if strings.Contains(s.File, frag) {
 				t.Errorf("site %s:%d falls in excluded scope %q", s.File, s.Line, frag)
 			}
