@@ -22,7 +22,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 const spanDurationMetricName = "traces.span.sdk.metrics.duration"
@@ -136,7 +136,7 @@ func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64) []*o
 func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
-		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
+		telemetrylog.LogAndReportError("stats_to_otlp_metrics: failed to decode sketch", err)
 		return nil
 	}
 	if count == 0 {
