@@ -39,22 +39,28 @@ var auditedTreeEmptyAuthorityBodiesSHA256 = map[string]string{
 	"collector.go:session:Close":                                                         "76ed8219fa3fb68b662b644c124bdcdf9d13c7213cbfeefb796d6781ae6019a1",
 	"compact_admission.go:stateV3CompactLaneHistory:append":                              "4ea03c5680fc426a1428ba5f74fe966703b2cf9c82fff2ad9108f3b6d1e92082",
 	"compact_admission.go:session:compactEntry":                                          "5f7a34dfe762954859296b024f544a006ba57c1de05a70a8840833da01fb2353",
-	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "542c8b9d649fd7874026f97689fe74d277ac09810e22ddaddb4217662a7b4d06",
+	"compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments":              "211f058d8d0c89c35ffc38e36ff9a3f0a175074a3ec1c59a9ec4a8d0d9dfcc1a",
 	"compact_admission.go:stateV3AssemblyChild:captureLaneTerminationPrefix":             "70e2fb555e759711610aa96b5fd0552f96a309e036c8d0301a0e77fdff8796f6",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":                                 "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":                                 "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory":                          "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
 	"compact_admission.go:stateV3AssemblyChild:loadCompactSnapshot":                      "7546a84ecafa98d6487b235d83ca54a9fa4141aae20584d3939e6d84976fcc6e",
 	"compact_admission.go::historyReachedCheckpoint":                                     "7358dc50a9aefca0b027c91bb6869aa3d4e8bbcb889c9788362342ea1e886846",
 	"coordination_admission.go:stateV3CompactCoordinationHistory:append":                 "fd695b1fbd4e246e1588489edea40eace0f9160c748283448769104a57b52c2e",
 	"coordination_admission.go::coordinationHistoryReachedCheckpoint":                    "25b625e64a30680a72f4d7c5fb156e43feb26f943aecd1a2d16e30000a4cfc92",
-	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "581d5f830600b41cd829fa100cf6556729d3de3921c26ef8ffa8dfb1693af3a6",
+	"coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments": "0bbf8de188846d9bb1b6ca59c758f8323106a407a37cfba6e70df873c1d9bab4",
 }
 
 var auditedAssemblyPolicyBodiesSHA256 = map[string]string{
 	"operation.go:newStateV3AssemblyPolicy":                         "131c1df18e1c69e332a5251e73abf46dbf8d2ba783697eebdde6c7f2b898564d",
 	"operation.go:begin":                                            "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
-	"operation.go:beginChild":                                       "e466efe0fb283776a7975a5376add403695eb4d6a2929b287cff368c52c54e65",
-	"operation.go:close":                                            "4ff5d12dbfe80d8863fbd27686dde2a6db7ed03ff929285bc32143243cb547b0",
-	"compact_admission.go:collectStateV3LaneDocuments":              "542c8b9d649fd7874026f97689fe74d277ac09810e22ddaddb4217662a7b4d06",
-	"coordination_admission.go:collectStateV3CoordinationDocuments": "581d5f830600b41cd829fa100cf6556729d3de3921c26ef8ffa8dfb1693af3a6",
+	"operation.go:beginChild":                                       "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
+	"operation.go:close":                                            "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
+	"compact_admission.go:collectStateV3LaneDocuments":              "211f058d8d0c89c35ffc38e36ff9a3f0a175074a3ec1c59a9ec4a8d0d9dfcc1a",
+	"coordination_admission.go:collectStateV3CoordinationDocuments": "0bbf8de188846d9bb1b6ca59c758f8323106a407a37cfba6e70df873c1d9bab4",
+	"operation.go:sealMinorHistory":                                 "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
+	"operation.go:sealPatchHistory":                                 "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
+	"operation.go:sealCoordinationHistory":                          "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
 }
 
 const auditedSettleFixedBody = `{
@@ -276,6 +282,12 @@ func validateDocumentAuthoritySurface(files map[string]*ast.File) error {
 	if err := validateTreeEmptyAuthority(files, functions); err != nil {
 		return err
 	}
+	if err := validateSealedHistoryAuthority(files, functions); err != nil {
+		return err
+	}
+	if err := validateNoParentSemanticValidatorCalls(files); err != nil {
+		return err
+	}
 	return validateTerminationPrefixAuthority(files, functions)
 }
 
@@ -434,6 +446,253 @@ func treeEmptyCompactType(expression ast.Expr) bool {
 	return name == "stateV3CompactSnapshot" || name == "stateV3CompactLaneHistory" || name == "stateV3CompactCoordinationHistory"
 }
 
+var auditedSealedHistoryBodiesSHA256 = map[string]string{
+	"operation.go:stateV3AssemblyOperation:begin":               "1d133b295d29c4b109ce7ce9668c50e2659d30d01f20e98f126cc6655cc531de",
+	"operation.go:stateV3AssemblyOperation:beginChild":          "9d2d4ee0144b8835dbb74e81cdf327fe39483b1936c0e9e6e4f97203129d4780",
+	"operation.go:stateV3AssemblyOperation:finishChild":         "3e2ab8e4ba87f253f30fc9406948a04b8cf26eb77a451c738cd61190798d43fb",
+	"operation.go:stateV3AssemblyOperation:close":               "54df3ad53ec1403238e77c5560e10a96e876adc1a5938d83b54e1f9963726008",
+	"operation.go:stateV3AssemblyOperation:collectThreeSpines":  "a378490ef3737abb9b1a1abf020eb792da04b3e527f3867aed8db35f307b4637",
+	"operation.go:stateV3AssemblyChild:sealMinorHistory":        "176a98be2c4112ca26736b0154573a7962c449501f7c55d256553d51973ed5ce",
+	"operation.go:stateV3AssemblyChild:sealPatchHistory":        "bc8256423ac7534c5a663d8fb83c3b8f130ae0000d392335a7fca2ef44c2a3be",
+	"operation.go:stateV3AssemblyChild:sealCoordinationHistory": "ee1a90e4813e37e712800ba80a9641e6bbe58db6a7475979ac6bb437c7a32ad2",
+}
+
+// validateSealedHistoryAuthority closes the operation-owned seal capability.
+// Live histories may cross the child boundary only through their role-specific
+// seal issuer. Operation state, child construction, and child sequencing are
+// likewise closed so a same-package edit cannot mark a forged child complete.
+func validateSealedHistoryAuthority(files map[string]*ast.File, functions []*authorityFunction) error {
+	if err := validateSealedHistoryGlobalDeclarations(files); err != nil {
+		return err
+	}
+	allowedBodies := map[string]bool{}
+	for identity := range auditedSealedHistoryBodiesSHA256 {
+		allowedBodies[identity] = true
+	}
+	operationStateBodies := map[string]bool{
+		"operation.go:stateV3AssemblyOperation:begin":       true,
+		"operation.go:stateV3AssemblyOperation:beginChild":  true,
+		"operation.go:stateV3AssemblyOperation:finishChild": true,
+		"operation.go:stateV3AssemblyOperation:close":       true,
+	}
+	seenBodies := map[string]bool{}
+	seenCalls := map[string]int{}
+	for _, function := range functions {
+		identity := treeEmptyFunctionIdentity(function)
+		if expected, watched := auditedSealedHistoryBodiesSHA256[identity]; watched {
+			if functionBodySHA256(function.declaration) != expected {
+				return fmt.Errorf("sealed-history authority body is not audited: %s", identity)
+			}
+			seenBodies[identity] = true
+		}
+		invalid := ""
+		approvedIssuers := map[*ast.SelectorExpr]bool{}
+		approvedSequencers := map[*ast.SelectorExpr]bool{}
+		ast.Inspect(function.declaration.Body, func(node ast.Node) bool {
+			if invalid != "" {
+				return false
+			}
+			switch value := node.(type) {
+			case *ast.CallExpr:
+				if identifier, ok := value.Fun.(*ast.Ident); ok {
+					if identifier.Name == "new" && len(value.Args) == 1 && isChildControlType(astTypeName(value.Args[0])) {
+						invalid = "assembly child-control allocation is forbidden"
+						return false
+					}
+					return true
+				}
+				selector, ok := value.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				switch selector.Sel.Name {
+				case "sealMinorHistory", "sealPatchHistory", "sealCoordinationHistory":
+					if (selector.Sel.Name == "sealMinorHistory" || selector.Sel.Name == "sealPatchHistory") && identity != "compact_admission.go:stateV3AssemblyChild:collectStateV3LaneDocuments" || selector.Sel.Name == "sealCoordinationHistory" && identity != "coordination_admission.go:stateV3AssemblyChild:collectStateV3CoordinationDocuments" || exprName(selector.X) != "c" || len(value.Args) != 2 {
+						invalid = "unapproved sealed-history issuer call"
+						return false
+					}
+					approvedIssuers[selector] = true
+					seenCalls[selector.Sel.Name]++
+				case "beginChild", "finishChild", "collectStateV3LaneDocuments", "collectStateV3CoordinationDocuments":
+					if identity != "operation.go:stateV3AssemblyOperation:collectThreeSpines" {
+						invalid = "child sequencing outside collectThreeSpines is forbidden"
+						return false
+					}
+					approvedSequencers[selector] = true
+				}
+			case *ast.SelectorExpr:
+				switch value.Sel.Name {
+				case "seals", "sealed":
+					if !allowedBodies[identity] {
+						invalid = "unapproved sealed-history selector"
+						return false
+					}
+				case "running", "next":
+					if !operationStateBodies[identity] {
+						invalid = "unapproved operation child-state selector"
+						return false
+					}
+				case "sealMinorHistory", "sealPatchHistory", "sealCoordinationHistory":
+					if !approvedIssuers[value] {
+						invalid = "sealed-history method value or forwarding is forbidden"
+						return false
+					}
+				case "beginChild", "finishChild", "collectStateV3LaneDocuments", "collectStateV3CoordinationDocuments":
+					if !approvedSequencers[value] {
+						invalid = "child sequencing method value or forwarding is forbidden"
+						return false
+					}
+				}
+			case *ast.CompositeLit:
+				typeName := astTypeName(value.Type)
+				if typeName == "stateV3SealedSpines" && identity != "operation.go:stateV3AssemblyOperation:close" {
+					invalid = "unapproved sealed-history construction"
+					return false
+				}
+				if typeName == "stateV3AssemblyChild" && identity != "operation.go:stateV3AssemblyOperation:beginChild" {
+					invalid = "unapproved assembly child construction"
+					return false
+				}
+				for _, field := range value.Elts {
+					key, ok := field.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					name := exprName(key.Key)
+					if isSealedHistoryType(typeName) && name == "sealed" {
+						invalid = "keyed sealed-history construction is forbidden"
+						return false
+					}
+					if typeName == "stateV3AssemblyChild" && name == "sealed" {
+						invalid = "keyed sealed child construction is forbidden"
+						return false
+					}
+					if typeName == "stateV3AssemblyOperation" && (name == "running" || name == "next" || name == "seals") {
+						invalid = "keyed operation child-state construction is forbidden"
+						return false
+					}
+				}
+			case *ast.TypeSpec:
+				if isChildControlType(astTypeName(value.Type)) {
+					invalid = "assembly child-control aliases are forbidden"
+					return false
+				}
+			case *ast.AssignStmt:
+				for _, target := range value.Lhs {
+					selector, ok := target.(*ast.SelectorExpr)
+					if !ok {
+						continue
+					}
+					if selector.Sel.Name == "seals" && identity != "operation.go:stateV3AssemblyOperation:close" {
+						invalid = "sealed destination replacement is forbidden"
+						return false
+					}
+				}
+			}
+			return true
+		})
+		if invalid != "" {
+			return fmt.Errorf("%s: %s", identity, invalid)
+		}
+	}
+	if len(seenBodies) != len(auditedSealedHistoryBodiesSHA256) || seenCalls["sealMinorHistory"] != 1 || seenCalls["sealPatchHistory"] != 1 || seenCalls["sealCoordinationHistory"] != 1 {
+		return fmt.Errorf("sealed-history authority topology missing")
+	}
+	return nil
+}
+
+func validateSealedHistoryGlobalDeclarations(files map[string]*ast.File) error {
+	for filename, file := range files {
+		for _, declaration := range file.Decls {
+			if _, ok := declaration.(*ast.FuncDecl); ok {
+				continue
+			}
+			invalid := ""
+			ast.Inspect(declaration, func(node ast.Node) bool {
+				switch value := node.(type) {
+				case *ast.TypeSpec:
+					if isChildControlType(astTypeName(value.Type)) {
+						invalid = "assembly child-control aliases are forbidden"
+						return false
+					}
+				case *ast.CompositeLit:
+					if isChildControlType(astTypeName(value.Type)) {
+						invalid = "global assembly child-control construction is forbidden"
+						return false
+					}
+				case *ast.CallExpr:
+					if identifier, ok := value.Fun.(*ast.Ident); ok && identifier.Name == "new" && len(value.Args) == 1 && isChildControlType(astTypeName(value.Args[0])) {
+						invalid = "global assembly child-control allocation is forbidden"
+						return false
+					}
+				}
+				return true
+			})
+			if invalid != "" {
+				return fmt.Errorf("%s: %s", filename, invalid)
+			}
+		}
+	}
+	return nil
+}
+
+func isSealedHistoryType(name string) bool {
+	return name == "stateV3SealedLaneHistory" || name == "stateV3SealedCoordinationHistory"
+}
+
+func isChildControlType(name string) bool {
+	return name == "stateV3AssemblyChild" || name == "stateV3AssemblyOperation" || name == "stateV3SealedSpines" || isSealedHistoryType(name)
+}
+
+// validateNoParentSemanticValidatorCalls ensures the compact-only seal cannot
+// be mistaken for complete parent authentication evidence. A future witness
+// design must explicitly replace this fail-closed prohibition.
+func validateNoParentSemanticValidatorCalls(files map[string]*ast.File) error {
+	for filename, file := range files {
+		for _, declaration := range file.Decls {
+			importDeclaration, ok := declaration.(*ast.GenDecl)
+			if !ok || importDeclaration.Tok != token.IMPORT {
+				continue
+			}
+			for _, specification := range importDeclaration.Specs {
+				importSpec, ok := specification.(*ast.ImportSpec)
+				if ok && importSpec.Name != nil && importSpec.Name.Name == "." {
+					return fmt.Errorf("dot import is forbidden while parent semantic validators are unavailable: %s", filename)
+				}
+			}
+		}
+		invalid := ""
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch value := node.(type) {
+			case *ast.SelectorExpr:
+				if isParentSemanticValidator(value.Sel.Name) {
+					invalid = value.Sel.Name
+					return false
+				}
+			case *ast.Ident:
+				if isParentSemanticValidator(value.Name) {
+					invalid = value.Name
+					return false
+				}
+			}
+			return true
+		})
+		if invalid != "" {
+			return fmt.Errorf("parent semantic validator %s is forbidden without a complete witness: %s", invalid, filename)
+		}
+	}
+	return nil
+}
+
+func isParentSemanticValidator(name string) bool {
+	switch name {
+	case "ValidateStateV3CoordinationAuthentication", "ValidateStateV3Authentication", "ValidateStateV3Record", "ValidateStateV3ActiveLease":
+		return true
+	default:
+		return false
+	}
+}
+
 // validateTerminationPrefixAuthority keeps termination evidence derived from
 // authenticated compact slots. Snapshot-valued callers must never append or
 // select a termination proof.
@@ -543,10 +802,16 @@ func validateAssemblyPolicyAuthority(files map[string]*ast.File, functions []*au
 		"operation.go:begin": 1, "operation.go:beginChild": 2, "operation.go:close": 1,
 		"compact_admission.go:collectStateV3LaneDocuments":              2,
 		"coordination_admission.go:collectStateV3CoordinationDocuments": 2,
+		"operation.go:sealMinorHistory":                                 5,
+		"operation.go:sealPatchHistory":                                 5,
+		"operation.go:sealCoordinationHistory":                          5,
 	}
 	allowedValue := map[string]int{
 		"compact_admission.go:collectStateV3LaneDocuments":              1,
 		"coordination_admission.go:collectStateV3CoordinationDocuments": 1,
+		"operation.go:sealMinorHistory":                                 4,
+		"operation.go:sealPatchHistory":                                 4,
+		"operation.go:sealCoordinationHistory":                          4,
 	}
 	seenPolicy, seenValue := map[string]int{}, map[string]int{}
 	policyFactoryFound, policyTypeReferences := false, 0
@@ -2412,6 +2677,58 @@ func TestDocumentAuthoritySurfaceRejectsSyntheticSeams(t *testing.T) {
 			}
 			if err := validateDocumentAuthoritySurface(files); err == nil {
 				t.Fatal("generic authority surface accepted")
+			}
+		})
+	}
+}
+
+func TestSealedHistoryAuthorityRejectsChildCompletionBypasses(t *testing.T) {
+	for name, source := range map[string]string{
+		"keyed sealed child": `package strictcollector
+			func bypass(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				op.running = &stateV3AssemblyChild{session: child.session, sealed: true}
+			}`,
+		"operation child-state replacement": `package strictcollector
+			func bypass(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				op.running = child
+				op.next = stateV3AssemblyCoordination
+			}`,
+		"sealed destination replacement": `package strictcollector
+			func bypass(op *stateV3AssemblyOperation) { op.seals = stateV3SealedSpines{} }`,
+		"keyed sealed history": `package strictcollector
+			func bypass() { _ = stateV3SealedLaneHistory{sealed: true} }`,
+		"child alias": `package strictcollector
+			type forgedChild = stateV3AssemblyChild
+			func bypass() { _ = &forgedChild{} }`,
+		"sequencer forwarding": `package strictcollector
+			func bypass(op *stateV3AssemblyOperation) { advance := op.beginChild; _, _ = advance(stateV3AssemblyMinor) }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files, err := productionStrictcollectorFiles(".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			files["zz_sealed_history_bypass.go"] = parseAuthorityFixture(t, source)
+			if err := validateSealedHistoryAuthority(files, authorityFunctions(files)); err == nil {
+				t.Fatal("sealed-history authority bypass accepted")
+			}
+		})
+	}
+}
+
+func TestNoParentSemanticValidatorReferences(t *testing.T) {
+	for name, source := range map[string]string{
+		"function alias": `package strictcollector
+			import gardenerrelease "github.com/DataDog/dd-trace-go/scripts/gardener-release"
+			var validate = gardenerrelease.ValidateStateV3Record`,
+		"dot import": `package strictcollector
+			import . "github.com/DataDog/dd-trace-go/scripts/gardener-release"
+			func validate() { _ = ValidateStateV3ActiveLease }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			files := map[string]*ast.File{"zz_parent_validator_bypass.go": parseAuthorityFixture(t, source)}
+			if err := validateNoParentSemanticValidatorCalls(files); err == nil {
+				t.Fatal("parent semantic validator reference accepted")
 			}
 		})
 	}

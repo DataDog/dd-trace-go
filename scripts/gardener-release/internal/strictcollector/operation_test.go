@@ -23,6 +23,107 @@ func TestStateV3LaneTerminationPrefixesAreFixedAndRawFree(t *testing.T) {
 	assertFixedCompactType(t, reflect.TypeFor[stateV3LaneTerminationPrefixes]())
 }
 
+func TestStateV3SealedSpinesAreFixedAndCleared(t *testing.T) {
+	assertFixedCompactType(t, reflect.TypeFor[stateV3SealedSpines]())
+	assertFixedCompactType(t, reflect.TypeFor[stateV3SealedLaneHistory]())
+	assertFixedCompactType(t, reflect.TypeFor[stateV3SealedCoordinationHistory]())
+
+	policy := validStateV3Policy(t)
+	checkpoint := compactAdmissionOID(81_001)
+	policy.StateLanes.Minor.CheckpointOID = checkpoint
+	fixedCheckpoint, ok := decodeFixedOID(checkpoint)
+	if !ok {
+		t.Fatal("invalid test checkpoint")
+	}
+	history := &stateV3CompactLaneHistory{count: 1}
+	history.snapshots[0] = stateV3CompactSnapshot{commitOID: fixedCheckpoint}
+	seals := &stateV3SealedSpines{}
+	session := &session{assemblyLive: true, assemblyRole: stateV3AssemblyMinor, compactHistory: history, compactGeneration: 9}
+	child := &stateV3AssemblyChild{session: session, seals: seals, policy: &stateV3AssemblyPolicy{value: policy}}
+	if result := child.sealMinorHistory(history, 9); result.Diagnostic != DiagnosticOK {
+		t.Fatal(result)
+	}
+	if !seals.minor.sealed || seals.minor.role != stateV3AssemblyMinor || seals.minor.count != 1 || seals.minor.snapshots[0].commitOID != fixedCheckpoint {
+		t.Fatalf("seal=%#v", seals.minor)
+	}
+	if result := child.sealMinorHistory(history, 9); result.Diagnostic != DiagnosticProtocol {
+		t.Fatal(result)
+	}
+	op := &stateV3AssemblyOperation{active: true, seals: *seals}
+	op.close()
+	if op.seals != (stateV3SealedSpines{}) {
+		t.Fatal("close retained sealed compact history")
+	}
+}
+
+func markChildSealedForTest(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+	child.sealed = true
+	switch child.session.assemblyRole {
+	case stateV3AssemblyMinor:
+		op.seals.minor = stateV3SealedLaneHistory{count: 1, role: stateV3AssemblyMinor, sealed: true}
+	case stateV3AssemblyPatch:
+		op.seals.patch = stateV3SealedLaneHistory{count: 1, role: stateV3AssemblyPatch, sealed: true}
+	case stateV3AssemblyCoordination:
+		op.seals.coordination = stateV3SealedCoordinationHistory{count: 1, role: stateV3AssemblyCoordination, sealed: true}
+	}
+}
+
+func TestStateV3AssemblyOperationFinishChildRequiresOperationOwnedRoleSeal(t *testing.T) {
+	newChild := func() *session {
+		return newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
+			return response(refJSON("refs/heads/gardener-release-state/minor")), nil
+		}), time.Now)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*stateV3AssemblyOperation, *stateV3AssemblyChild)
+	}{
+		{
+			name: "child boolean alone",
+			mutate: func(_ *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				child.sealed = true
+			},
+		},
+		{
+			name: "foreign sealed destination",
+			mutate: func(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				markChildSealedForTest(op, child)
+				child.seals = &stateV3SealedSpines{minor: op.seals.minor}
+			},
+		},
+		{
+			name: "wrong role",
+			mutate: func(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				markChildSealedForTest(op, child)
+				op.seals.minor.role = stateV3AssemblyPatch
+			},
+		},
+		{
+			name: "zero count",
+			mutate: func(op *stateV3AssemblyOperation, child *stateV3AssemblyChild) {
+				markChildSealedForTest(op, child)
+				op.seals.minor.count = 0
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op := stateV3AssemblyOperation{minor: newChild(), patch: newChild(), coordination: newChild()}
+			if result := op.begin(context.Background(), time.Now().Add(time.Second), validStateV3Policy(t)); result.Diagnostic != DiagnosticOK {
+				t.Fatal(result)
+			}
+			child, result := op.beginChild(stateV3AssemblyMinor)
+			if result.Diagnostic != DiagnosticOK {
+				t.Fatal(result)
+			}
+			tc.mutate(&op, child)
+			if result := op.finishChild(child); result.Diagnostic != DiagnosticProtocol {
+				t.Fatalf("result=%#v", result)
+			}
+			op.close()
+		})
+	}
+}
+
 func TestStateV3AssemblyOperationAdmissionAndOrder(t *testing.T) {
 	minor := newTestSession(roundTrip(func(*http.Request) (*http.Response, error) {
 		return response(refJSON("refs/heads/gardener-release-state/minor")), nil
@@ -50,6 +151,10 @@ func TestStateV3AssemblyOperationAdmissionAndOrder(t *testing.T) {
 	if _, result := op.beginChild(stateV3AssemblyPatch); result.Diagnostic != DiagnosticProtocol {
 		t.Fatal(result)
 	}
+	if result := op.finishChild(child); result.Diagnostic != DiagnosticProtocol {
+		t.Fatal("unsealed child finished: ", result)
+	}
+	markChildSealedForTest(&op, child)
 	if result := op.finishChild(child); result.Diagnostic != DiagnosticOK {
 		t.Fatal(result)
 	}
@@ -94,6 +199,7 @@ func TestStateV3AssemblyChildUsesOnlyRoleFixedRoot(t *testing.T) {
 					t.Fatal(result)
 				}
 				if role != tc.role {
+					markChildSealedForTest(&op, child)
 					if result := op.finishChild(child); result.Diagnostic != DiagnosticOK {
 						t.Fatal(result)
 					}
@@ -320,14 +426,14 @@ func TestStateV3AssemblyCollectsThreeSpinesUnderBoundPolicy(t *testing.T) {
 	policy.StateLanes.Minor.CheckpointOID = compactAdmissionOID(22_001)
 	policy.StateLanes.Patch.CheckpointOID = compactAdmissionOID(22_002)
 	policy.Coordination.CheckpointOID = compactAdmissionOID(22_003)
-	if result := op.collectThreeSpines(); result.Diagnostic != DiagnosticOK {
+	if result := op.collectThreeSpines(); result.Diagnostic != DiagnosticRequiredEvidenceAbsent {
 		t.Fatal(result)
 	}
 	want := []string{gardenerrelease.StateV3MinorStateRef, gardenerrelease.StateV3PatchStateRef, gardenerrelease.StateV3CoordinationRef}
 	if !reflect.DeepEqual(roots, want) {
 		t.Fatalf("root order=%v want=%v", roots, want)
 	}
-	if op.active || op.policy != nil || op.store != nil || op.terminations != (stateV3LaneTerminationPrefixes{}) {
+	if op.active || op.policy != nil || op.store != nil || op.terminations != (stateV3LaneTerminationPrefixes{}) || op.seals != (stateV3SealedSpines{}) {
 		t.Fatal("three-spine operation retained state after close")
 	}
 }

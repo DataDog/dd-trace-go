@@ -231,6 +231,7 @@ func coordinationAdmissionChild(t *testing.T, policy gardenerrelease.StateV3Poli
 		if result.Diagnostic != DiagnosticOK {
 			t.Fatalf("begin %d: %#v", role, result)
 		}
+		markChildSealedForTest(operation, child) // Test-only role progression; this helper tests coordination in isolation.
 		if result := operation.finishChild(child); result.Diagnostic != DiagnosticOK {
 			t.Fatalf("finish %d: %#v", role, result)
 		}

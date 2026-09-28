@@ -313,6 +313,19 @@ func (c *stateV3AssemblyChild) collectStateV3LaneDocuments() Result {
 		parent.clear()
 		parent = current
 	}
+	var sealed Result
+	switch c.session.assemblyRole {
+	case stateV3AssemblyMinor:
+		sealed = c.sealMinorHistory(&history, admission.generation)
+	case stateV3AssemblyPatch:
+		sealed = c.sealPatchHistory(&history, admission.generation)
+	default:
+		sealed = failure(DiagnosticProtocol)
+	}
+	if sealed.Diagnostic != DiagnosticOK {
+		c.store.reset()
+		return sealed
+	}
 	return Result{}
 }
 

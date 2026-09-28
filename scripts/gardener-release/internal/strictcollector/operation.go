@@ -64,7 +64,33 @@ type stateV3AssemblyChild struct {
 	session      *session
 	store        *stateV3DocumentStore
 	terminations *stateV3LaneTerminationPrefixes
+	seals        *stateV3SealedSpines
 	policy       *stateV3AssemblyPolicy
+	sealed       bool
+}
+
+// stateV3SealedSpines retains only operation-owned, fixed compact metadata
+// after each child has detached its live compact history. It deliberately has
+// no semantic projection or document bytes: compact metadata lacks the full
+// tree and transition evidence required by the parent validators.
+type stateV3SealedSpines struct {
+	minor        stateV3SealedLaneHistory
+	patch        stateV3SealedLaneHistory
+	coordination stateV3SealedCoordinationHistory
+}
+
+type stateV3SealedLaneHistory struct {
+	snapshots [gardenerrelease.MaxStateV3StateLaneHistoryCommits]stateV3CompactSnapshot
+	count     uint16
+	role      stateV3AssemblyRole
+	sealed    bool
+}
+
+type stateV3SealedCoordinationHistory struct {
+	snapshots [gardenerrelease.MaxStateV3CoordinationHistoryCommits]stateV3CompactSnapshot
+	count     uint16
+	role      stateV3AssemblyRole
+	sealed    bool
 }
 
 // stateV3AssemblyPolicy is the immutable, deep-copied policy snapshot bound
@@ -183,6 +209,7 @@ type stateV3AssemblyOperation struct {
 	cancel                     context.CancelFunc
 	deadline                   time.Time
 	terminations               stateV3LaneTerminationPrefixes
+	seals                      stateV3SealedSpines
 	policy                     *stateV3AssemblyPolicy
 }
 
@@ -244,7 +271,7 @@ func (op *stateV3AssemblyOperation) beginChild(role stateV3AssemblyRole) (*state
 	if !session.activateAssembly(op.ctx, op.deadline, role) {
 		return nil, failure(DiagnosticProtocol)
 	}
-	child := &stateV3AssemblyChild{session: session, store: op.store, terminations: &op.terminations, policy: op.policy}
+	child := &stateV3AssemblyChild{session: session, store: op.store, terminations: &op.terminations, seals: &op.seals, policy: op.policy}
 	op.running, op.next = child, next
 	return child, Result{}
 }
@@ -252,7 +279,19 @@ func (op *stateV3AssemblyOperation) beginChild(role stateV3AssemblyRole) (*state
 func (op *stateV3AssemblyOperation) finishChild(child *stateV3AssemblyChild) Result {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	if !op.active || child == nil || op.running != child {
+	if !op.active || child == nil || child.session == nil || op.running != child || child.seals != &op.seals || !child.sealed {
+		return failure(DiagnosticProtocol)
+	}
+	var sealed bool
+	switch child.session.assemblyRole {
+	case stateV3AssemblyMinor:
+		sealed = op.seals.minor.sealed && op.seals.minor.role == stateV3AssemblyMinor && op.seals.minor.count > 0 && int(op.seals.minor.count) <= gardenerrelease.MaxStateV3StateLaneHistoryCommits
+	case stateV3AssemblyPatch:
+		sealed = op.seals.patch.sealed && op.seals.patch.role == stateV3AssemblyPatch && op.seals.patch.count > 0 && int(op.seals.patch.count) <= gardenerrelease.MaxStateV3StateLaneHistoryCommits
+	case stateV3AssemblyCoordination:
+		sealed = op.seals.coordination.sealed && op.seals.coordination.role == stateV3AssemblyCoordination && op.seals.coordination.count > 0 && int(op.seals.coordination.count) <= gardenerrelease.MaxStateV3CoordinationHistoryCommits
+	}
+	if !sealed {
 		return failure(DiagnosticProtocol)
 	}
 	child.session.closeAssembly()
@@ -288,6 +327,7 @@ func (op *stateV3AssemblyOperation) close() {
 	op.ctx = nil
 	op.cancel = nil
 	op.policy = nil
+	op.seals = stateV3SealedSpines{}
 	op.terminations = stateV3LaneTerminationPrefixes{}
 }
 
@@ -317,9 +357,94 @@ func (op *stateV3AssemblyOperation) collectThreeSpines() Result {
 			return finished
 		}
 	}
-	return Result{}
+	// The sealed arrays preserve only compact document-admission metadata. They
+	// cannot honestly reconstruct the complete recursive trees, authenticated
+	// commit verification evidence, or transition changes required by the
+	// parent semantic validators. Until an independently designed witness
+	// retains those facts, semantic assembly must fail closed.
+	return failure(DiagnosticRequiredEvidenceAbsent)
 }
 
 func (op *stateV3AssemblyOperation) validSessions() bool {
 	return op != nil && op.minor != nil && op.patch != nil && op.coordination != nil && op.minor != op.patch && op.minor != op.coordination && op.patch != op.coordination
+}
+
+// sealMinorHistory is the sole minor-lane transfer from session-owned live
+// compact history to operation-owned fixed storage. It runs only after the
+// lane reached its checkpoint, completed chronological admission, retained
+// every admitted document, and captured termination prefixes.
+func (c *stateV3AssemblyChild) sealMinorHistory(history *stateV3CompactLaneHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyMinor || c.sealed || c.seals.minor.sealed {
+		return failure(DiagnosticProtocol)
+	}
+	checkpoint, ok := decodeFixedOID(c.policy.value.StateLanes.Minor.CheckpointOID)
+	if !ok || c.policy.value.StateLanes.Minor.MaxHistoryCommits <= 0 || c.policy.value.StateLanes.Minor.MaxHistoryCommits > gardenerrelease.MaxStateV3StateLaneHistoryCommits {
+		return failure(DiagnosticProtocol)
+	}
+	c.session.mu.Lock()
+	defer c.session.mu.Unlock()
+	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.StateLanes.Minor.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+		return failure(DiagnosticProtocol)
+	}
+	for ordinal := 0; ordinal < int(history.count); ordinal++ {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+			return failure(DiagnosticProtocol)
+		}
+	}
+	copy(c.seals.minor.snapshots[:history.count], history.snapshots[:history.count])
+	c.seals.minor.count, c.seals.minor.role, c.seals.minor.sealed = history.count, stateV3AssemblyMinor, true
+	c.sealed = true
+	return Result{}
+}
+
+// sealPatchHistory is the sole patch-lane transfer from session-owned live
+// compact history to operation-owned fixed storage.
+func (c *stateV3AssemblyChild) sealPatchHistory(history *stateV3CompactLaneHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyPatch || c.sealed || c.seals.patch.sealed {
+		return failure(DiagnosticProtocol)
+	}
+	checkpoint, ok := decodeFixedOID(c.policy.value.StateLanes.Patch.CheckpointOID)
+	if !ok || c.policy.value.StateLanes.Patch.MaxHistoryCommits <= 0 || c.policy.value.StateLanes.Patch.MaxHistoryCommits > gardenerrelease.MaxStateV3StateLaneHistoryCommits {
+		return failure(DiagnosticProtocol)
+	}
+	c.session.mu.Lock()
+	defer c.session.mu.Unlock()
+	if !c.session.assemblyLive || c.session.compactHistory != history || c.session.coordinationCompactHistory != nil || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.StateLanes.Patch.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+		return failure(DiagnosticProtocol)
+	}
+	for ordinal := 0; ordinal < int(history.count); ordinal++ {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+			return failure(DiagnosticProtocol)
+		}
+	}
+	copy(c.seals.patch.snapshots[:history.count], history.snapshots[:history.count])
+	c.seals.patch.count, c.seals.patch.role, c.seals.patch.sealed = history.count, stateV3AssemblyPatch, true
+	c.sealed = true
+	return Result{}
+}
+
+// sealCoordinationHistory is the sole coordination transfer from the live
+// authenticated compact history to operation-owned fixed storage.
+func (c *stateV3AssemblyChild) sealCoordinationHistory(history *stateV3CompactCoordinationHistory, generation uint64) Result {
+	if c == nil || c.session == nil || c.seals == nil || c.policy == nil || history == nil || c.session.assemblyRole != stateV3AssemblyCoordination || c.sealed || c.seals.coordination.sealed {
+		return failure(DiagnosticProtocol)
+	}
+	checkpoint, ok := decodeFixedOID(c.policy.value.Coordination.CheckpointOID)
+	if !ok || c.policy.value.Coordination.MaxHistoryCommits <= 0 || c.policy.value.Coordination.MaxHistoryCommits > gardenerrelease.MaxStateV3CoordinationHistoryCommits {
+		return failure(DiagnosticProtocol)
+	}
+	c.session.mu.Lock()
+	defer c.session.mu.Unlock()
+	if !c.session.assemblyLive || c.session.compactHistory != nil || c.session.coordinationCompactHistory != history || c.session.compactGeneration != generation || history.count == 0 || int(history.count) > c.policy.value.Coordination.MaxHistoryCommits || history.snapshots[history.count-1].commitOID != checkpoint {
+		return failure(DiagnosticProtocol)
+	}
+	for ordinal := 0; ordinal < int(history.count); ordinal++ {
+		if history.snapshots[ordinal].ordinal != uint16(ordinal) {
+			return failure(DiagnosticProtocol)
+		}
+	}
+	copy(c.seals.coordination.snapshots[:history.count], history.snapshots[:history.count])
+	c.seals.coordination.count, c.seals.coordination.role, c.seals.coordination.sealed = history.count, stateV3AssemblyCoordination, true
+	c.sealed = true
+	return Result{}
 }

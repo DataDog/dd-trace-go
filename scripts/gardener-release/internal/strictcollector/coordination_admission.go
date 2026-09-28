@@ -208,5 +208,9 @@ func (c *stateV3AssemblyChild) collectStateV3CoordinationDocuments() Result {
 			}
 		}
 	}
+	if sealed := c.sealCoordinationHistory(&history, admission.generation); sealed.Diagnostic != DiagnosticOK {
+		c.store.reset()
+		return sealed
+	}
 	return Result{}
 }
