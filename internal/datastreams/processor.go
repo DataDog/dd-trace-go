@@ -250,7 +250,7 @@ func (r *checkpointRegistry) getOrAssign(name string) (byte, bool) {
 		return id, true
 	}
 	if r.nextID == math.MaxUint8 {
-		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name") //errtrack:ignore — expected capacity limit from user-provided checkpoint names
+		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name") //errtrack:ignore expected capacity limit from user-provided checkpoint names
 		return 0, false
 	}
 	id := r.nextID
@@ -355,13 +355,13 @@ func (p *Processor) addToBuckets(point statsPoint, btime int64, buckets map[buck
 		b.points[point.hash] = group
 	}
 	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add pathway latency. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
+		log.Error("failed to add pathway latency. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add edge latency. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
+		log.Error("failed to add edge latency. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.payloadSize.Add(float64(point.payloadSize)); err != nil {
-		log.Error("failed to add payload size. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
+		log.Error("failed to add payload size. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 }
 
@@ -510,7 +510,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 func (p *Processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*Processor).Start called more than once. This is likely a programming error.") //errtrack:ignore — caller used the lifecycle API out of order
+		log.Warn("(*Processor).Start called more than once. This is likely a programming error.") //errtrack:ignore caller used the lifecycle API out of order
 		return
 	}
 	p.stop = make(chan struct{})
@@ -562,7 +562,7 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
 		if dt := p.stats.droppedTransactions.Swap(0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
-			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt) //errtrack:ignore — expected capacity limit already reported by a metric
+			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt) //errtrack:ignore expected capacity limit already reported by a metric
 		}
 	}
 }
