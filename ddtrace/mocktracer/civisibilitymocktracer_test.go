@@ -602,6 +602,77 @@ func TestCIVisibilityMockTracer_StoppingStaleMockKeepsActiveMock(t *testing.T) {
 	}
 }
 
+type blockingClearMockTracerRouter struct {
+	ciVisibilityRouter
+	onClear func()
+}
+
+func (r *blockingClearMockTracerRouter) ClearMockTracer(mock tracer.Tracer) bool {
+	cleared := r.ciVisibilityRouter.ClearMockTracer(mock)
+	r.onClear()
+	return cleared
+}
+
+func TestCIVisibilityMockTracer_ConcurrentStopKeepsNewMockGlobal(t *testing.T) {
+	for _, useNoop := range []bool{false, true} {
+		t.Run(boolString(useNoop), func(t *testing.T) {
+			server := setupCIVisibilityMockTracerIntegrationTest(t, useNoop)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
+			require.NoError(t, tracer.Start(tracer.WithTestDefaults(nil)))
+			civisibility.SetState(civisibility.StateInitialized)
+
+			first := Start().(*civisibilitymocktracer)
+			cleared := make(chan struct{})
+			release := make(chan struct{})
+			stopped := make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			// Pause after clearing the real delegate, before Stop restores the global tracer.
+			router := &blockingClearMockTracerRouter{
+				ciVisibilityRouter: first.currentRouter(),
+				onClear: sync.OnceFunc(func() {
+					close(cleared)
+					<-release
+				}),
+			}
+			first.routerMu.Lock()
+			first.router = router
+			first.routerMu.Unlock()
+			go func() {
+				first.Stop()
+				close(stopped)
+			}()
+			defer func() {
+				unblock()
+				<-stopped
+			}()
+			select {
+			case <-cleared:
+			case <-time.After(5 * time.Second):
+				t.Fatal("mock shutdown did not clear its delegate")
+			}
+
+			second := Start()
+			t.Cleanup(second.Stop)
+			require.Same(t, second, getGlobalTracer())
+			unblock()
+			<-stopped
+			require.Same(t, second, getGlobalTracer(), "old mock Stop must not overwrite the new handle")
+
+			span := tracer.StartSpan("application.new-mock")
+			require.NotNil(t, span)
+			require.NotPanics(t, func() {
+				getGlobalTracer().(Tracer).FinishSpan(span)
+				span.Finish()
+			})
+			require.Len(t, second.FinishedSpans(), 1)
+			ciSpan := tracer.StartSpan("ci.after.concurrent-mock-stop", tracer.SpanType(constants.SpanTypeTest))
+			require.NotNil(t, ciSpan)
+			ciSpan.Finish()
+			requireTestCycleRequest(t, server)
+		})
+	}
+}
+
 func TestCIVisibilityMockTracer_RoutesSpansStartedBeforeMockTracerToCITracer(t *testing.T) {
 	server := setupCIVisibilityMockTracerIntegrationTest(t, false)
 

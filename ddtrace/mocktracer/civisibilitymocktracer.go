@@ -45,10 +45,16 @@ var (
 	_ Tracer        = (*civisibilitymocktracer)(nil)
 )
 
+// Serializes mock publication and router restoration, without holding the lock
+// while stopping delegates or routing spans.
+var ciVisibilityMockTracerMu sync.Mutex
+
 // startCIVisibilityMockTracer keeps the user-facing mock handle global while
 // the mock is active. The handle delegates routing to the CI router and also
 // preserves the mocktracer.Tracer contract used by the v1 compatibility layer.
 func startCIVisibilityMockTracer() *civisibilitymocktracer {
+	ciVisibilityMockTracerMu.Lock()
+	defer ciVisibilityMockTracerMu.Unlock()
 	t := newCIVisibilityMockTracer()
 	internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
 	return t
@@ -114,27 +120,39 @@ func (t *civisibilitymocktracer) Stop() {
 
 	state := civisibility.GetState()
 	ciVisibilityActive := state == civisibility.StateInitializing || state == civisibility.StateInitialized
-	current := getGlobalTracer()
 	if router != nil {
 		router.ClearMockTracer(t.mock)
 	}
 	if ciVisibilityActive && router != nil {
-		if current == t {
-			internal.StoreGlobalTracer[ciVisibilityRouter, tracer.Tracer](router)
-		} else if active, ok := current.(*civisibilitymocktracer); ok && active.currentRouter() == router {
-			return
-		} else if current != tracer.Tracer(router) {
+		if !t.restoreCIVisibilityRouter(router) {
 			router.Stop()
 		}
 		return
 	}
 
+	current := getGlobalTracer()
 	if current == t || current == tracer.Tracer(router) {
 		internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
 	}
 	if router != nil && tracer.Tracer(router) != current {
 		router.Stop()
 	}
+}
+
+// restoreCIVisibilityRouter reports whether the router remains reachable through
+// the global tracer. A new mock must not be overwritten by an older mock's Stop.
+func (t *civisibilitymocktracer) restoreCIVisibilityRouter(router ciVisibilityRouter) bool {
+	ciVisibilityMockTracerMu.Lock()
+	defer ciVisibilityMockTracerMu.Unlock()
+	current := getGlobalTracer()
+	if current == t {
+		internal.StoreGlobalTracer[ciVisibilityRouter, tracer.Tracer](router)
+		return true
+	}
+	if active, ok := current.(*civisibilitymocktracer); ok && active.currentRouter() == router {
+		return true
+	}
+	return current == tracer.Tracer(router)
 }
 
 // StartSpan delegates through the router so direct calls on the returned mock
