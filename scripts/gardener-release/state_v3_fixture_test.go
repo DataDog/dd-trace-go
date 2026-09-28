@@ -163,7 +163,8 @@ func fixtureStateV3SetCoordinationClaims(t *testing.T, evidence *StateV3VersionR
 				child.Claims[i] = *claim
 			}
 		}
-		chronological = append(chronological, arm, child)
+		outcome := fixtureStateV3CoordinationOutcome(t, arm, child, *claim, 101+index*3)
+		chronological = append(chronological, arm, child, outcome)
 	}
 	current := chronological[len(chronological)-1]
 	predecessors := make([]StateV3CoordinationSnapshot, 0, len(chronological)-1)
@@ -190,12 +191,57 @@ func fixtureStateV3CoordinationArm(t *testing.T, parent StateV3CoordinationSnaps
 	digest := sha256.Sum256(raw)
 	blob := stateV3GitBlobOID(raw)
 	commit := StateV3StateCommitEvidence{OID: fmt.Sprintf("%040x", 930000+sequence), ParentOID: parent.Commit.OID, TreeOID: fmt.Sprintf("%040x", 940000+sequence), RESTVerified: true, RESTReason: StateV3RequiredRESTVerificationReason, GraphQLSignatureValid: true, WasSignedByGitHub: true, SignatureState: StateV3RequiredSignatureState, Roles: policy.CommitRoles}
-	entries := append([]StateV3StateTreeEntry(nil), parent.Tree.Entries...)
+	entries := make([]StateV3StateTreeEntry, 0, len(parent.Tree.Entries)+1)
+	for _, entry := range parent.Tree.Entries {
+		if entry.Path != StateV3CoordinationMutationOutcomePath {
+			entries = append(entries, entry)
+		}
+	}
 	entries = append(entries, StateV3StateTreeEntry{Path: stateV3CoordinationArmPath, Mode: "100644", Type: "blob", OID: blob})
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	child := StateV3CoordinationSnapshot{Commit: commit, Tree: StateV3StateTreeEvidence{OID: commit.TreeOID, Complete: true, Entries: entries}, Claims: cloneStateV3(t, parent.Claims), Arm: &StateV3CoordinationArmEvidence{Path: stateV3CoordinationArmPath, Raw: raw, SHA256: hex.EncodeToString(digest[:]), BlobOID: blob, Arm: arm}}
 	child.Commit.ChangedPaths = stateV3TreeChanges(parent.Tree, child.Tree)
 	return child
+}
+
+func fixtureStateV3CoordinationOutcome(t *testing.T, arm, effect StateV3CoordinationSnapshot, claim StateV3ReleaseLineClaimEvidence, sequence int) StateV3CoordinationSnapshot {
+	t.Helper()
+	if arm.Arm == nil {
+		t.Fatal("outcome fixture requires arm")
+	}
+	value := StateV3CoordinationMutationOutcome{
+		SchemaVersion: "1", Operation: arm.Arm.Arm.Operation, StateRef: StateV3CoordinationRef,
+		ArmPath: arm.Arm.Path, ArmBlobOID: arm.Arm.BlobOID, ArmSHA256: arm.Arm.SHA256,
+		ArmCommitOID: arm.Commit.OID, ArmTreeOID: arm.Tree.OID, ClaimPath: claim.Path,
+		RequestKey: claim.Claim.RequestKey, RequestSHA256: claim.Claim.RequestSHA256,
+		ReleaseLine: claim.Claim.ReleaseLine, LaneRef: claim.Claim.LaneRef,
+		ResolvedVersion: claim.Claim.ResolvedVersion, ExpectedHeadOID: arm.Commit.OID,
+		ClaimBlobOID: claim.BlobOID, ClaimSHA256: claim.SHA256,
+		Response:       StateV3MutationResponse{Observation: "observed", Attempts: 1, OID: effect.Commit.OID},
+		ObservedRefOID: effect.Commit.OID,
+	}
+	if value.Operation == "claim_acquire" {
+		value.ClaimCommitOID = effect.Commit.OID
+		value.ClaimTreeOID = effect.Tree.OID
+		value.IntendedClaimSHA256 = arm.Arm.Arm.IntendedClaimSHA256
+	} else {
+		value.ClaimCommitOID = arm.Commit.OID
+		value.ClaimTreeOID = arm.Tree.OID
+		value.ExpectedClaimBlobOID = arm.Arm.Arm.ExpectedClaimBlobOID
+	}
+	raw, err := canonicalJSON(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	blob := stateV3GitBlobOID(raw)
+	commit := StateV3StateCommitEvidence{OID: fmt.Sprintf("%040x", 950000+sequence), ParentOID: effect.Commit.OID, TreeOID: fmt.Sprintf("%040x", 960000+sequence), RESTVerified: true, RESTReason: StateV3RequiredRESTVerificationReason, GraphQLSignatureValid: true, WasSignedByGitHub: true, SignatureState: StateV3RequiredSignatureState, Roles: fixtureStateV3Policy().CommitRoles}
+	entries := append([]StateV3StateTreeEntry(nil), effect.Tree.Entries...)
+	entries = append(entries, StateV3StateTreeEntry{Path: StateV3CoordinationMutationOutcomePath, Mode: "100644", Type: "blob", OID: blob})
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	tree := StateV3StateTreeEvidence{OID: commit.TreeOID, Complete: true, Entries: entries}
+	commit.ChangedPaths = stateV3TreeChanges(effect.Tree, tree)
+	return StateV3CoordinationSnapshot{Commit: commit, Tree: tree, Claims: cloneStateV3(t, effect.Claims), Outcome: &StateV3CoordinationMutationOutcomeEvidence{Path: StateV3CoordinationMutationOutcomePath, Raw: raw, SHA256: hex.EncodeToString(digest[:]), BlobOID: blob, Outcome: value, Commit: commit, Tree: tree}}
 }
 
 func fixtureStateV3CoordinationClaim(t *testing.T, reservation *StateV3Reservation) {

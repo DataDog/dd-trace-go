@@ -384,16 +384,47 @@ func stateV3CoordinationArm(snapshot StateV3CoordinationSnapshot) (*StateV3Coord
 	return &evidence.Arm, true
 }
 
+func stateV3CoordinationOutcome(snapshot StateV3CoordinationSnapshot) (*StateV3CoordinationMutationOutcomeEvidence, bool) {
+	if snapshot.Outcome == nil {
+		for _, entry := range snapshot.Tree.Entries {
+			if entry.Path == StateV3CoordinationMutationOutcomePath {
+				return nil, false
+			}
+		}
+		return nil, true
+	}
+	evidence := snapshot.Outcome
+	if evidence.Path != StateV3CoordinationMutationOutcomePath || len(evidence.Raw) == 0 || len(evidence.Raw) > MaxStateV3CoordinationOutcomeBytes || !lowerHexDigest(evidence.SHA256) || !validStateV3OID(evidence.BlobOID) || !reflect.DeepEqual(evidence.Commit, snapshot.Commit) || !reflect.DeepEqual(evidence.Tree, snapshot.Tree) {
+		return nil, false
+	}
+	decoded, ok := DecodeStateV3CoordinationMutationOutcomeDocument(evidence.Raw)
+	if !ok || decoded != evidence.Outcome || evidence.BlobOID != stateV3GitBlobOID(evidence.Raw) {
+		return nil, false
+	}
+	digest := sha256.Sum256(evidence.Raw)
+	if evidence.SHA256 != hex.EncodeToString(digest[:]) {
+		return nil, false
+	}
+	for _, entry := range snapshot.Tree.Entries {
+		if entry.Path == StateV3CoordinationMutationOutcomePath {
+			return evidence, entry.OID == evidence.BlobOID
+		}
+	}
+	return nil, false
+}
+
 func stateV3CoordinationClaims(snapshot StateV3CoordinationSnapshot) (map[string]StateV3ReleaseLineClaimEvidence, bool) {
 	if !validStateV3CompleteTree(snapshot.Tree) || len(snapshot.Tree.Entries) > MaxStateV3CoordinationReleaseProofs+1 || len(snapshot.Claims) > MaxStateV3CoordinationReleaseProofs || !sort.SliceIsSorted(snapshot.Claims, func(i, j int) bool { return snapshot.Claims[i].Path < snapshot.Claims[j].Path }) {
 		return nil, false
 	}
-	if _, ok := stateV3CoordinationArm(snapshot); !ok {
+	arm, armOK := stateV3CoordinationArm(snapshot)
+	outcome, outcomeOK := stateV3CoordinationOutcome(snapshot)
+	if !armOK || !outcomeOK || arm != nil && outcome != nil {
 		return nil, false
 	}
 	entries := make(map[string]string, len(snapshot.Tree.Entries))
 	for _, entry := range snapshot.Tree.Entries {
-		if entry.Path == stateV3CoordinationArmPath {
+		if entry.Path == stateV3CoordinationArmPath || entry.Path == StateV3CoordinationMutationOutcomePath {
 			continue
 		}
 		if !validStateV3CoordinationPath(entry.Path) {
@@ -432,48 +463,79 @@ func validStateV3CoordinationDocument(evidence StateV3ReleaseLineClaimEvidence) 
 	return evidence.SHA256 == hex.EncodeToString(digest[:])
 }
 
-// validStateV3CoordinationAuthentication validates the shared claim index.
-// Its checkpoint rotation is permitted only after all claims have been
-// released, so every retained history segment is a sequence of one-file claim
-// creations or ordinary terminal claim deletions.
+// validStateV3CoordinationAuthentication validates the observed-only
+// coordination lifecycle. A successful one-shot effect is never terminal:
+// the direct effect child must be followed by an immutable outcome transcript.
 func validStateV3CoordinationAuthentication(authentication StateV3CoordinationAuthentication, policy StateV3Policy) bool {
 	if authentication.StateRef != policy.Coordination.StateRef || authentication.CheckpointOID != policy.Coordination.CheckpointOID || authentication.HeadOID != authentication.Current.Commit.OID || len(authentication.Predecessors)+1 > policy.Coordination.MaxHistoryCommits {
 		return false
 	}
 	snapshots := append([]StateV3CoordinationSnapshot{authentication.Current}, authentication.Predecessors...)
 	seen := map[string]bool{}
-	releaseProofLanes := map[string]bool{}
-	releaseProofs := 0
-	for index := range snapshots {
+	for index, snapshot := range snapshots {
 		checkpoint := index == len(snapshots)-1
-		snapshot := snapshots[index]
-		if !validStateV3SnapshotShape(StateV3StateSnapshot{Commit: snapshot.Commit, Tree: snapshot.Tree}, policy, checkpoint) || seen[snapshot.Commit.OID] || (checkpoint && snapshot.Commit.OID != policy.Coordination.CheckpointOID) || (!checkpoint && snapshot.Commit.ParentOID != snapshots[index+1].Commit.OID) {
+		if !validStateV3SnapshotShape(StateV3StateSnapshot{Commit: snapshot.Commit, Tree: snapshot.Tree}, policy, checkpoint) || seen[snapshot.Commit.OID] || checkpoint && (snapshot.Commit.OID != policy.Coordination.CheckpointOID || len(snapshot.Tree.Entries) != 0 || len(snapshot.Claims) != 0 || snapshot.Arm != nil || snapshot.Outcome != nil || snapshot.Release != nil) || !checkpoint && snapshot.Commit.ParentOID != snapshots[index+1].Commit.OID {
 			return false
 		}
 		seen[snapshot.Commit.OID] = true
-		if _, ok := stateV3CoordinationClaims(snapshot); !ok || (checkpoint && (len(snapshot.Claims) != 0 || snapshot.Release != nil || snapshot.Arm != nil)) {
+		if _, ok := stateV3CoordinationClaims(snapshot); !ok {
 			return false
 		}
-		if index+1 == len(snapshots) {
-			continue
-		}
-		parent, child := snapshots[index+1], snapshot
+	}
+
+	var pendingArm StateV3CoordinationSnapshot
+	var pendingEffect StateV3CoordinationSnapshot
+	pending := false
+	releaseProofLanes := map[string]bool{}
+	releaseProofs := 0
+	for index := len(snapshots) - 1; index > 0; index-- {
+		parent, child := snapshots[index], snapshots[index-1]
 		parentClaims, parentOK := stateV3CoordinationClaims(parent)
 		childClaims, childOK := stateV3CoordinationClaims(child)
 		parentArm, parentArmOK := stateV3CoordinationArm(parent)
 		childArm, childArmOK := stateV3CoordinationArm(child)
+		parentOutcome, parentOutcomeOK := stateV3CoordinationOutcome(parent)
+		childOutcome, childOutcomeOK := stateV3CoordinationOutcome(child)
 		changes := stateV3TreeChanges(parent.Tree, child.Tree)
-		if !parentOK || !childOK || !parentArmOK || !childArmOK || !reflect.DeepEqual(changes, child.Commit.ChangedPaths) {
+		if !parentOK || !childOK || !parentArmOK || !childArmOK || !parentOutcomeOK || !childOutcomeOK || !reflect.DeepEqual(changes, child.Commit.ChangedPaths) {
 			return false
 		}
+
+		if pending {
+			if parentArm != nil || parentOutcome != nil || childArm != nil || childOutcome == nil || child.Release != nil || !reflect.DeepEqual(parentClaims, childClaims) || len(changes) != 1 || changes[0] != (StateV3ChangedPath{Path: StateV3CoordinationMutationOutcomePath, ChildOID: childOutcome.BlobOID}) || !validStateV3ObservedOutcome(*childOutcome, pendingArm, pendingEffect, parentClaims) {
+				return false
+			}
+			pending = false
+			continue
+		}
+
+		if parentOutcome != nil {
+			if childOutcome != nil {
+				return false
+			}
+			if childArm != nil {
+				if child.Release != nil || !reflect.DeepEqual(parentClaims, childClaims) || len(changes) != 2 || changes[0] != (StateV3ChangedPath{Path: stateV3CoordinationArmPath, ChildOID: child.Arm.BlobOID}) || changes[1] != (StateV3ChangedPath{Path: StateV3CoordinationMutationOutcomePath, ParentOID: parentOutcome.BlobOID}) || childArm.ExpectedHeadOID != parent.Commit.OID {
+					return false
+				}
+				continue
+			}
+			// A release outcome can leave the coordination domain only through an
+			// explicit exact-empty cleanup. A checkpoint is independently required
+			// to be empty, so an outcome can never survive into one.
+			if child.Release != nil || len(parentClaims) != 0 || len(childClaims) != 0 || len(changes) != 1 || changes[0] != (StateV3ChangedPath{Path: StateV3CoordinationMutationOutcomePath, ParentOID: parentOutcome.BlobOID}) || len(child.Tree.Entries) != 0 {
+				return false
+			}
+			continue
+		}
+
 		if parentArm == nil && childArm != nil {
 			if child.Release != nil || !reflect.DeepEqual(parentClaims, childClaims) || len(changes) != 1 || changes[0] != (StateV3ChangedPath{Path: stateV3CoordinationArmPath, ChildOID: child.Arm.BlobOID}) || childArm.ExpectedHeadOID != parent.Commit.OID {
 				return false
 			}
 			continue
 		}
-		if parentArm != nil && childArm == nil {
-			if len(changes) != 2 || child.Release != nil && parentArm.Operation != "claim_release" {
+		if parentArm != nil && childArm == nil && childOutcome == nil {
+			if len(changes) != 2 {
 				return false
 			}
 			claimChange := StateV3ChangedPath{}
@@ -498,11 +560,12 @@ func validStateV3CoordinationAuthentication(authentication StateV3CoordinationAu
 			default:
 				return false
 			}
+			pendingArm, pendingEffect, pending = parent, child, true
 			continue
 		}
 		return false
 	}
-	if len(authentication.LaneTerminations) != releaseProofs {
+	if pending || len(authentication.LaneTerminations) != releaseProofs {
 		return false
 	}
 	for _, termination := range authentication.LaneTerminations {
@@ -511,18 +574,52 @@ func validStateV3CoordinationAuthentication(authentication StateV3CoordinationAu
 		}
 	}
 	claims, claimsOK := stateV3CoordinationClaims(authentication.Current)
-	// A pending acquire still needs its result plus an ordinary release; a
-	// pending release needs its one result. Without an arm each active claim
-	// reserves its eventual ordinary release.
 	arm, armOK := stateV3CoordinationArm(authentication.Current)
-	if !claimsOK || !armOK {
+	outcome, outcomeOK := stateV3CoordinationOutcome(authentication.Current)
+	if !claimsOK || !armOK || !outcomeOK {
 		return false
 	}
-	remaining := len(claims)
-	if arm != nil && arm.Operation == "claim_acquire" {
-		remaining += 2
+	remaining := len(claims) * 4
+	if arm != nil {
+		if arm.Operation == "claim_acquire" {
+			remaining += 6
+		} else {
+			remaining += 3
+		}
+	}
+	if outcome != nil && len(claims) == 0 {
+		remaining++
 	}
 	return stateV3CapacityFits(len(snapshots), remaining, policy.Coordination.MaxHistoryCommits)
+}
+
+func validStateV3ObservedOutcome(outcome StateV3CoordinationMutationOutcomeEvidence, arm, effect StateV3CoordinationSnapshot, claims map[string]StateV3ReleaseLineClaimEvidence) bool {
+	value := outcome.Outcome
+	armEvidence := arm.Arm
+	if armEvidence == nil || value.Response.Observation != "observed" || value.Response.Attempts != 1 || value.Response.OID != effect.Commit.OID || value.ObservedRefOID != effect.Commit.OID || value.ExpectedHeadOID != arm.Commit.OID || value.ArmPath != armEvidence.Path || value.ArmBlobOID != armEvidence.BlobOID || value.ArmSHA256 != armEvidence.SHA256 || value.ArmCommitOID != arm.Commit.OID || value.ArmTreeOID != arm.Tree.OID || value.Operation != armEvidence.Arm.Operation || value.StateRef != StateV3CoordinationRef || value.ClaimPath != armEvidence.Arm.ClaimPath || value.RequestKey != armEvidence.Arm.RequestKey || value.ReleaseLine != armEvidence.Arm.ReleaseLine || value.LaneRef != armEvidence.Arm.LaneRef || value.ResolvedVersion != armEvidence.Arm.ResolvedVersion {
+		return false
+	}
+	claim, hasClaim := claims[value.ClaimPath]
+	switch value.Operation {
+	case "claim_acquire":
+		return hasClaim && validStateV3ObservedEffectResponse(claim.Acquired, effect.Commit.OID) && value.ExpectedClaimBlobOID == "" && value.IntendedClaimSHA256 == armEvidence.Arm.IntendedClaimSHA256 && value.ClaimBlobOID == claim.BlobOID && value.ClaimSHA256 == claim.SHA256 && value.ClaimCommitOID == effect.Commit.OID && value.ClaimTreeOID == effect.Tree.OID && value.RequestSHA256 == claim.Claim.RequestSHA256
+	case "claim_release":
+		// The effect has already deleted the claim, so the exact immutable claim
+		// must be recovered from the arm snapshot rather than searched globally.
+		if effect.Release == nil || !validStateV3ObservedEffectResponse(effect.Release.Response, effect.Commit.OID) {
+			return false
+		}
+		for _, entry := range arm.Claims {
+			if entry.Path == value.ClaimPath {
+				return value.ExpectedClaimBlobOID == armEvidence.Arm.ExpectedClaimBlobOID && value.ClaimBlobOID == entry.BlobOID && value.ClaimSHA256 == entry.SHA256 && value.ClaimCommitOID == arm.Commit.OID && value.ClaimTreeOID == arm.Tree.OID && value.RequestSHA256 == entry.Claim.RequestSHA256
+			}
+		}
+	}
+	return false
+}
+
+func validStateV3ObservedEffectResponse(response StateV3MutationResponse, effectOID string) bool {
+	return response.Observation == "observed" && response.Attempts == 1 && response.OID == effectOID
 }
 
 func validStateV3CoordinationAttemptResponse(response StateV3MutationResponse, expectedOID string) bool {

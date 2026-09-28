@@ -25,13 +25,15 @@ func fixtureStateV3ReleasedCoordination(t *testing.T, record StateV3Record) Stat
 	claim := record.Reservation.CoordinationClaim
 	base := record.Reservation.VersionResolution.Coordination.Authentication
 	acquired := StateV3CoordinationSnapshot{Commit: claim.Commit, Tree: claim.Tree, Claims: []StateV3ReleaseLineClaimEvidence{claim}}
-	releaseArm := fixtureStateV3CoordinationArm(t, acquired, claim.Path, "claim_release", claim.BlobOID, claim.Claim, 20, policy)
+	acquireOutcome := fixtureStateV3CoordinationOutcome(t, base.Current, acquired, claim, 19)
+	releaseArm := fixtureStateV3CoordinationArm(t, acquireOutcome, claim.Path, "claim_release", claim.BlobOID, claim.Claim, 20, policy)
 	releasedCommit := StateV3StateCommitEvidence{OID: fmt.Sprintf("%040x", 990001), ParentOID: releaseArm.Commit.OID, TreeOID: fmt.Sprintf("%040x", 990002), RESTVerified: true, RESTReason: StateV3RequiredRESTVerificationReason, GraphQLSignatureValid: true, WasSignedByGitHub: true, SignatureState: StateV3RequiredSignatureState, Roles: policy.CommitRoles}
 	released := StateV3CoordinationSnapshot{Commit: releasedCommit, Tree: StateV3StateTreeEvidence{OID: releasedCommit.TreeOID, Complete: true, Entries: []StateV3StateTreeEntry{}}, Claims: []StateV3ReleaseLineClaimEvidence{}}
 	released.Commit.ChangedPaths = stateV3TreeChanges(releaseArm.Tree, released.Tree)
 	released.Release = &StateV3CoordinationReleaseEvidence{Path: claim.Path, ClaimSHA256: claim.SHA256, ClaimBlobOID: claim.BlobOID, ClaimCommitOID: claim.Commit.OID, Response: StateV3MutationResponse{Observation: "observed", Attempts: 1, OID: released.Commit.OID}, ObservedRefOID: released.Commit.OID, LaneTermination: fixtureStateV3LaneTermination(t, laneAuth, claim)}
-	auth := StateV3CoordinationAuthentication{StateRef: policy.Coordination.StateRef, CheckpointOID: policy.Coordination.CheckpointOID, HeadOID: released.Commit.OID, Current: released, Predecessors: append([]StateV3CoordinationSnapshot{releaseArm, acquired, base.Current}, base.Predecessors...), LaneTerminations: []StateV3Authentication{laneAuth}}
-	return StateV3CoordinationObservation{StateRef: policy.Coordination.StateRef, CheckpointOID: policy.Coordination.CheckpointOID, Head: released.Commit, Tree: released.Tree, Claims: released.Claims, Authentication: auth}
+	outcome := fixtureStateV3CoordinationOutcome(t, releaseArm, released, claim, 30)
+	auth := StateV3CoordinationAuthentication{StateRef: policy.Coordination.StateRef, CheckpointOID: policy.Coordination.CheckpointOID, HeadOID: outcome.Commit.OID, Current: outcome, Predecessors: append([]StateV3CoordinationSnapshot{released, releaseArm, acquireOutcome, acquired, base.Current}, base.Predecessors...), LaneTerminations: []StateV3Authentication{laneAuth}}
+	return StateV3CoordinationObservation{StateRef: policy.Coordination.StateRef, CheckpointOID: policy.Coordination.CheckpointOID, Head: outcome.Commit, Tree: outcome.Tree, Claims: outcome.Claims, Authentication: auth}
 }
 
 func TestStateV3CoordinationAuthenticatesClaimLifecycleAndReacquire(t *testing.T) {
@@ -67,9 +69,105 @@ func TestStateV3CoordinationAuthenticatesClaimLifecycleAndReacquire(t *testing.T
 	} {
 		t.Run(name, func(t *testing.T) {
 			candidate := cloneStateV3(t, observation.Authentication)
-			mutate(&candidate.Current)
+			mutate(&candidate.Predecessors[0])
 			if validStateV3CoordinationAuthentication(candidate, policy) {
 				t.Fatal("invalid claim release lifecycle accepted")
+			}
+		})
+	}
+}
+
+func TestStateV3CoordinationObservedReleaseOutcomeCanBeRemovedOnlyByExactCleanup(t *testing.T) {
+	policy := fixtureStateV3Policy()
+	base := fixtureStateV3ReleasedCoordination(t, fixtureStateV3Record(t)).Authentication
+	outcome := base.Current
+	cleanupCommit := StateV3StateCommitEvidence{OID: fmt.Sprintf("%040x", 990003), ParentOID: outcome.Commit.OID, TreeOID: fmt.Sprintf("%040x", 990004), RESTVerified: true, RESTReason: StateV3RequiredRESTVerificationReason, GraphQLSignatureValid: true, WasSignedByGitHub: true, SignatureState: StateV3RequiredSignatureState, Roles: policy.CommitRoles}
+	cleanup := StateV3CoordinationSnapshot{Commit: cleanupCommit, Tree: StateV3StateTreeEvidence{OID: cleanupCommit.TreeOID, Complete: true, Entries: []StateV3StateTreeEntry{}}, Claims: []StateV3ReleaseLineClaimEvidence{}}
+	cleanup.Commit.ChangedPaths = stateV3TreeChanges(outcome.Tree, cleanup.Tree)
+	base.Current = cleanup
+	base.HeadOID = cleanup.Commit.OID
+	base.Predecessors = append([]StateV3CoordinationSnapshot{outcome}, base.Predecessors...)
+	if !validStateV3CoordinationAuthentication(base, policy) {
+		t.Fatal("exact observed release-outcome cleanup rejected")
+	}
+
+	invalid := cloneStateV3(t, base)
+	invalid.Current.Tree.Entries = append(invalid.Current.Tree.Entries, StateV3StateTreeEntry{Path: "release-lines/2.11.json", Mode: "100644", Type: "blob", OID: v3OIDd})
+	if validStateV3CoordinationAuthentication(invalid, policy) {
+		t.Fatal("outcome cleanup with collateral tree entry accepted")
+	}
+}
+
+func TestStateV3CoordinationObservedOutcomeLifecycleFailsClosed(t *testing.T) {
+	policy := fixtureStateV3Policy()
+	authentication := fixtureStateV3ReleasedCoordination(t, fixtureStateV3Record(t)).Authentication
+	if !validStateV3CoordinationAuthentication(authentication, policy) {
+		t.Fatal("valid arm effect outcome lifecycle rejected")
+	}
+
+	for name, mutate := range map[string]func(*StateV3CoordinationAuthentication){
+		"legacy direct effect": func(value *StateV3CoordinationAuthentication) {
+			value.Current = value.Predecessors[0]
+			value.Predecessors = value.Predecessors[1:]
+			value.HeadOID = value.Current.Commit.OID
+		},
+		"outcome parent mismatch": func(value *StateV3CoordinationAuthentication) {
+			value.Current.Commit.ParentOID = v3OIDd
+		},
+		"outcome changes claims": func(value *StateV3CoordinationAuthentication) {
+			value.Current.Claims = append(value.Current.Claims, value.Predecessors[3].Claims[0])
+		},
+		"arm and outcome coexist": func(value *StateV3CoordinationAuthentication) {
+			value.Predecessors[1].Outcome = value.Current.Outcome
+		},
+		"outcome at checkpoint": func(value *StateV3CoordinationAuthentication) {
+			checkpoint := &value.Predecessors[len(value.Predecessors)-1]
+			checkpoint.Outcome = value.Current.Outcome
+		},
+		"acquire effect lost response": func(value *StateV3CoordinationAuthentication) {
+			for index := range value.Predecessors {
+				snapshot := &value.Predecessors[index]
+				if snapshot.Arm == nil && snapshot.Outcome == nil && len(snapshot.Claims) == 1 && snapshot.Claims[0].Commit.OID == snapshot.Commit.OID {
+					snapshot.Claims[0].Acquired = StateV3MutationResponse{Observation: "lost", Attempts: 1}
+					return
+				}
+			}
+			t.Fatal("fixture acquire effect unavailable")
+		},
+		"acquire effect mismatched observed response": func(value *StateV3CoordinationAuthentication) {
+			for index := range value.Predecessors {
+				snapshot := &value.Predecessors[index]
+				if snapshot.Arm == nil && snapshot.Outcome == nil && len(snapshot.Claims) == 1 && snapshot.Claims[0].Commit.OID == snapshot.Commit.OID {
+					snapshot.Claims[0].Acquired = StateV3MutationResponse{Observation: "observed", Attempts: 1, OID: v3OIDd}
+					return
+				}
+			}
+			t.Fatal("fixture acquire effect unavailable")
+		},
+		"release effect lost response": func(value *StateV3CoordinationAuthentication) {
+			for index := range value.Predecessors {
+				if value.Predecessors[index].Release != nil {
+					value.Predecessors[index].Release.Response = StateV3MutationResponse{Observation: "lost", Attempts: 1}
+					return
+				}
+			}
+			t.Fatal("fixture release effect unavailable")
+		},
+		"release effect mismatched observed response": func(value *StateV3CoordinationAuthentication) {
+			for index := range value.Predecessors {
+				if value.Predecessors[index].Release != nil {
+					value.Predecessors[index].Release.Response = StateV3MutationResponse{Observation: "observed", Attempts: 1, OID: v3OIDd}
+					return
+				}
+			}
+			t.Fatal("fixture release effect unavailable")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := cloneStateV3(t, authentication)
+			mutate(&candidate)
+			if validStateV3CoordinationAuthentication(candidate, policy) {
+				t.Fatal("invalid observed outcome lifecycle accepted")
 			}
 		})
 	}
@@ -132,7 +230,15 @@ func TestStateV3CoordinationReleaseOptionalEvidenceFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string]func(*StateV3CoordinationAuthentication){
-		"nil release":         func(authentication *StateV3CoordinationAuthentication) { authentication.Predecessors[0].Release = nil },
+		"nil release": func(authentication *StateV3CoordinationAuthentication) {
+			for index := range authentication.Predecessors {
+				if authentication.Predecessors[index].Release != nil {
+					authentication.Predecessors[index].Release = nil
+					return
+				}
+			}
+			t.Fatal("fixture release unavailable")
+		},
 		"nil current arm":     func(authentication *StateV3CoordinationAuthentication) { authentication.Current.Arm = nil },
 		"missing termination": func(authentication *StateV3CoordinationAuthentication) { authentication.LaneTerminations = nil },
 	}
@@ -189,7 +295,7 @@ func TestStateV3CoordinationArmsBindAttemptAndExactClaim(t *testing.T) {
 
 	completed := fixtureStateV3Record(t)
 	observation := fixtureStateV3ReleasedCoordination(t, completed)
-	observation.Authentication.Current.Release.Response = StateV3MutationResponse{Observation: "not_attempted"}
+	observation.Authentication.Predecessors[0].Release.Response = StateV3MutationResponse{Observation: "not_attempted"}
 	if validStateV3CoordinationAuthentication(observation.Authentication, fixtureStateV3Policy()) {
 		t.Fatal("coordination release consumed an arm with a zero-attempt result")
 	}

@@ -467,11 +467,12 @@ type StateV3CoordinationAuthentication struct {
 }
 
 type StateV3CoordinationSnapshot struct {
-	Commit  StateV3StateCommitEvidence          `json:"commit"`
-	Tree    StateV3StateTreeEvidence            `json:"tree"`
-	Claims  []StateV3ReleaseLineClaimEvidence   `json:"claims"`
-	Arm     *StateV3CoordinationArmEvidence     `json:"arm,omitempty"`
-	Release *StateV3CoordinationReleaseEvidence `json:"release,omitempty"`
+	Commit  StateV3StateCommitEvidence                  `json:"commit"`
+	Tree    StateV3StateTreeEvidence                    `json:"tree"`
+	Claims  []StateV3ReleaseLineClaimEvidence           `json:"claims"`
+	Arm     *StateV3CoordinationArmEvidence             `json:"arm,omitempty"`
+	Outcome *StateV3CoordinationMutationOutcomeEvidence `json:"outcome,omitempty"`
+	Release *StateV3CoordinationReleaseEvidence         `json:"release,omitempty"`
 }
 
 // StateV3CoordinationMutationArm is persisted before a one-shot coordination
@@ -532,6 +533,19 @@ type StateV3CoordinationArmEvidence struct {
 	SHA256  string                         `json:"sha256"`
 	BlobOID string                         `json:"blob_oid"`
 	Arm     StateV3CoordinationMutationArm `json:"arm"`
+}
+
+// StateV3CoordinationMutationOutcomeEvidence binds a canonical observed-only
+// transcript to the exact authenticated coordination snapshot containing it.
+// It is transient parent validation evidence, never durable release state.
+type StateV3CoordinationMutationOutcomeEvidence struct {
+	Path    string                             `json:"path"`
+	Raw     []byte                             `json:"raw"`
+	SHA256  string                             `json:"sha256"`
+	BlobOID string                             `json:"blob_oid"`
+	Outcome StateV3CoordinationMutationOutcome `json:"outcome"`
+	Commit  StateV3StateCommitEvidence         `json:"commit"`
+	Tree    StateV3StateTreeEvidence           `json:"tree"`
 }
 
 // StateV3CoordinationReleaseEvidence is an ordinary, one-shot claim deletion.
