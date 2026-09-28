@@ -312,8 +312,14 @@ func TestScan_RealRepo(t *testing.T) {
 	// go.mod of their own and are legitimately scanned root-module code
 	// (see errtrack-audit.yml's path filters). A blanket "contrib/" check
 	// would fail this test the moment any of those gets an audited call.
+	//
+	// The internal/telemetry/ fragment is narrowed to internal/telemetry/log/
+	// for the same reason: defaultExcludes only excludes that subpackage (the
+	// reporting API's own implementation), not siblings like
+	// internal/telemetry/telemetrytest, which does not import it and can
+	// adopt the reporting API without a cycle.
 	for _, s := range sites {
-		for _, frag := range []string{"internal/log/", "internal/telemetry/", "_test.go", "testdata/"} {
+		for _, frag := range []string{"internal/log/", "internal/telemetry/log/", "_test.go", "testdata/"} {
 			if strings.Contains(s.File, frag) {
 				t.Errorf("site %s:%d falls in excluded scope %q", s.File, s.Line, frag)
 			}
