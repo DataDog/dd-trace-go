@@ -50,6 +50,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Run errtrack audit tests
+        run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
       - name: Run errtrack audit
         run: |
           mkdir -p out
