@@ -92,14 +92,17 @@ jobs:
             // within a group is not guaranteed once queued). An older run
             // finishing last would overwrite the comment with a stale
             // inventory, so skip posting if this run's commit is no longer
-            // the PR's head.
+            // the PR's head. context.sha is the synthetic refs/pull/N/merge
+            // commit on a pull_request event, never the branch head, so the
+            // comparison must use the event payload's head SHA instead.
+            const runHeadSha = context.payload.pull_request.head.sha;
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
             });
-            if (pr.data.head.sha !== context.sha) {
-              console.log(`Skipping stale run for ${context.sha}; PR head is now ${pr.data.head.sha}.`);
+            if (pr.data.head.sha !== runHeadSha) {
+              console.log(`Skipping stale run for ${runHeadSha}; PR head is now ${pr.data.head.sha}.`);
               return;
             }
 
