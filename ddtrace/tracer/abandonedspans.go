@@ -151,7 +151,7 @@ func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 func (d *abandonedSpansDebugger) Start(interval time.Duration) {
 	if atomic.SwapUint32(&d.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.")
+		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.") //errtrack:ignore caller used the lifecycle API out of order
 		return
 	}
 	d.stop = make(chan struct{})
@@ -277,12 +277,12 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		return
 	}
 
-	log.Warn("%d abandoned spans:", spanCount)
+	log.Warn("%d abandoned spans:", spanCount) //errtrack:ignore expected abandoned-span diagnostic output
 	if truncated {
-		log.Warn("Too many abandoned spans. Truncating message.")
+		log.Warn("Too many abandoned spans. Truncating message.") //errtrack:ignore expected diagnostic output limit
 		sb.WriteString("...")
 	}
-	log.Warn("%s", sb.String())
+	log.Warn("%s", sb.String()) //errtrack:ignore expected abandoned-span diagnostic output
 }
 
 // formatAbandonedSpans takes a bucket and returns a human-readable string representing
