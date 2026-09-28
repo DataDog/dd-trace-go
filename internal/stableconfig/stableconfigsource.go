@@ -62,14 +62,14 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to stat stable config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore — user configuration file failure
+			log.Warn("Failed to stat stable config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore user configuration file failure
 		}
 		return emptyStableConfig()
 	}
 
 	if info.Size() > maxFileSize {
 		log.Warn("Stable config file %s exceeds size limit (%d bytes > %d bytes), dropping",
-			filePath, info.Size(), maxFileSize) //errtrack:ignore — user configuration file exceeds a documented limit
+			filePath, info.Size(), maxFileSize) //errtrack:ignore user configuration file exceeds a documented limit
 		return emptyStableConfig()
 	}
 
@@ -77,7 +77,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read stable config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore — user configuration file failure
+			log.Warn("Failed to read stable config file %q, dropping: %v", filePath, err.Error()) //errtrack:ignore user configuration file failure
 		}
 		return emptyStableConfig()
 	}
@@ -91,7 +91,7 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		log.Warn("Parsing stable config file %s failed due to error, dropping: %v", fileName, err.Error()) //errtrack:ignore — invalid user configuration file
+		log.Warn("Parsing stable config file %s failed due to error, dropping: %v", fileName, err.Error()) //errtrack:ignore invalid user configuration file
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {
