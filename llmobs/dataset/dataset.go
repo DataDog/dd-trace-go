@@ -395,18 +395,18 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range updating dataset record", index)
+		log.Warn("llmobs: index %d out of range updating dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 	if update.Input == nil && update.Metadata == nil && update.ExpectedOutput == nil {
-		log.Warn("llmobs: invalid dataset update (no changes)")
+		log.Warn("llmobs: invalid dataset update (no changes)") //errtrack:ignore invalid caller update
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore invalid caller record
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -431,14 +431,14 @@ func (d *Dataset) Delete(index int) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range deleting dataset record", index)
+		log.Warn("llmobs: index %d out of range deleting dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore invalid caller record
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}

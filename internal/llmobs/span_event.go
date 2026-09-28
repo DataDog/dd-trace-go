@@ -204,7 +204,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 	if inputPrompt := span.llmCtx.prompt; inputPrompt != nil {
 		if spanKind != SpanKindLLM {
-			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds")
+			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds") //errtrack:ignore invalid caller annotation
 		} else {
 			input["prompt"] = promptPayload{Prompt: *inputPrompt, MLApp: span.mlApp}
 		}
@@ -215,7 +215,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 	if intent := span.llmCtx.intent; intent != "" {
 		if spanKind != SpanKindTool {
-			log.Warn("llmobs: dropping intent on non-tool span kind, annotating intent is only supported for tool span kinds")
+			log.Warn("llmobs: dropping intent on non-tool span kind, annotating intent is only supported for tool span kinds") //errtrack:ignore invalid caller annotation
 		} else {
 			meta["intent"] = intent
 		}
@@ -258,7 +258,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		parentID = span.propagated.SpanID
 	}
 	if span.llmTraceID == "" {
-		log.Warn("llmobs: span has no trace ID")
+		log.Warn("llmobs: span has no trace ID") //errtrack:ignore invalid caller-propagated trace ID
 		span.llmTraceID = newLLMObsTraceID()
 	}
 
@@ -327,7 +327,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 			log.Warn(
 				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
 				readableBytes(rawSize),
-			)
+			) //errtrack:ignore oversized user-provided span data
 			truncated = DropSpanEventIO(ev)
 			if !truncated {
 				log.Debug("llmobs: attempted to drop span event IO but it was not present")
@@ -375,7 +375,7 @@ func validateCostTags(span *Span, finalTags map[string]string) []string {
 	missing := 0
 	for _, costTag := range costTags {
 		if _, ok := finalTags[costTag]; !ok {
-			log.Warn("llmobs: cost_tags entry %q must reference a key present in span tags. Skipping entry.", costTag)
+			log.Warn("llmobs: cost_tags entry %q must reference a key present in span tags. Skipping entry.", costTag) //errtrack:ignore invalid caller annotation
 			missing++
 			continue
 		}
