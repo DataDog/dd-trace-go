@@ -406,7 +406,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err) //errtrack:ignore — invalid user configuration
+			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err) //errtrack:ignore invalid user configuration
 			return
 		}
 		cfg.apiURL = u
