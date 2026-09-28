@@ -6,7 +6,6 @@
 package config
 
 import (
-	"fmt"
 	"maps"
 	"math"
 	"net"
@@ -372,34 +371,21 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint using the following priority:
-//  1. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, used as-is.
-//  2. OTEL_EXPORTER_OTLP_ENDPOINT, with the /v1/traces path appended if not already present.
-//  3. agentURL host + default OTLP port 4318 + /v1/traces.
-//
-// A user-provided endpoint is validated: it must be a parseable URL with an http or https scheme.
-// If validation fails, the next endpoint in the priority order is used instead.
-func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint, otlpEndpoint string) string {
-	if otlpTracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
-			return otlpTracesEndpoint
-		}
-	} else if otlpEndpoint != "" {
-		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint); ok {
-			u.Path = strings.TrimRight(u.Path, "/")
-			if !strings.HasSuffix(u.Path, otlpTracesPath) {
-				u.Path += otlpTracesPath
+// resolveOTLPTraceURL resolves the OTLP traces endpoint; tracesEndpoint takes precedence over genericEndpoint.
+// genericEndpoint must already be resolved and valid (see resolveOTLPEndpoint) since it is used as-is when
+// tracesEndpoint is unset or invalid.
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
+	if tracesEndpoint != "" {
+		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
+			if u.Path == "" || u.Path == "/" {
+				u.Path = otlpTracesPath
 			}
 			return u.String()
 		}
 	}
-	host := internal.DefaultAgentHostname
-	if rawAgentURL != nil {
-		if h := rawAgentURL.Hostname(); h != "" {
-			host = h
-		}
-	}
-	return fmt.Sprintf("http://%s%s", net.JoinHostPort(host, otlpDefaultPort), otlpTracesPath)
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	u.Path = strings.TrimRight(u.Path, "/") + otlpTracesPath
+	return u.String()
 }
 
 // buildOTLPHeaders builds the OTLP headers map from the provided map.
