@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 var (
@@ -151,7 +152,8 @@ func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 func (d *abandonedSpansDebugger) Start(interval time.Duration) {
 	if atomic.SwapUint32(&d.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.") //errtrack:ignore caller used the lifecycle API out of order
+		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.") //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("abandoned spans debugger started more than once", nil)
 		return
 	}
 	d.stop = make(chan struct{})
