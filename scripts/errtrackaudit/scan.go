@@ -47,6 +47,11 @@ type Site struct {
 	// (e.g. "log.Error(a); log.Warn(b)") from the same call reappearing
 	// across platform loads. It is not part of the reported output.
 	column int
+	// endLine is the call's closing line, equal to Line for a single-line
+	// call. It distinguishes a multi-line call's interior-comment
+	// suppression rule from a same-line call's nearest-preceding-comment
+	// rule in applyIgnoreDirectives. Not part of the reported output.
+	endLine int
 }
 
 // scanOptions parameterizes scan. The log package path is configurable so unit
@@ -263,16 +268,16 @@ const packageInit = "(package-init)"
 func scanFile(pkg *packages.Package, file *ast.File, relPath string, opts scanOptions) []Site {
 	var out []Site
 	v := &callVisitor{
-		fset:       pkg.Fset,
-		info:       pkg.TypesInfo,
-		pkg:        pkg,
-		opts:       opts,
-		relPath:    relPath,
-		suppressed: ignoreDirectiveLines(file, pkg.Fset),
-		sites:      &out,
-		enclosing:  packageInit,
+		fset:      pkg.Fset,
+		info:      pkg.TypesInfo,
+		pkg:       pkg,
+		opts:      opts,
+		relPath:   relPath,
+		sites:     &out,
+		enclosing: packageInit,
 	}
 	ast.Walk(v, file)
+	applyIgnoreDirectives(out, ignoreDirectiveLines(file, pkg.Fset))
 	return out
 }
 
@@ -280,14 +285,13 @@ func scanFile(pkg *packages.Package, file *ast.File, relPath string, opts scanOp
 // function for each one. Visit returns a derived visitor for a function
 // declaration's children, which is how ast.Walk propagates context.
 type callVisitor struct {
-	fset       *token.FileSet
-	info       *types.Info
-	pkg        *packages.Package
-	opts       scanOptions
-	relPath    string
-	suppressed map[int]bool
-	sites      *[]Site
-	enclosing  string
+	fset      *token.FileSet
+	info      *types.Info
+	pkg       *packages.Package
+	opts      scanOptions
+	relPath   string
+	sites     *[]Site
+	enclosing string
 }
 
 func (v *callVisitor) withEnclosing(name string) *callVisitor {
@@ -308,13 +312,6 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 		pos := v.fset.Position(t.Pos())
 		start := pos.Line
 		end := v.fset.Position(t.End()).Line
-		ignored := false
-		for line := start; line <= end; line++ {
-			if v.suppressed[line] {
-				ignored = true
-				break
-			}
-		}
 		site := Site{
 			File:    v.relPath,
 			Line:    start,
@@ -322,8 +319,8 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 			Func:    v.enclosing,
 			Level:   level,
 			Message: "",
-			Ignored: ignored,
 			column:  pos.Column,
+			endLine: end,
 		}
 		if len(t.Args) > 0 {
 			site.Message = resolveMessage(v.info, t.Args[0])
@@ -439,8 +436,9 @@ func hasIgnoreDirective(text string) bool {
 	return len(fields) > 0 && fields[0] == errtrackIgnore
 }
 
-// ignoreDirectiveLines returns the set of 1-based line numbers in file that
-// carry an //errtrack:ignore directive.
+// ignoreDirectiveLines returns, for each 1-based line in file that carries an
+// //errtrack:ignore directive, the sorted columns of that line's directive
+// comments.
 //
 // Directive semantics (exact): a directive suppresses a call when the comment
 // sits on a line spanned by the call itself — a trailing comment on the
@@ -448,15 +446,65 @@ func hasIgnoreDirective(text string) bool {
 // and closing parenthesis. A standalone comment line above the call does NOT
 // suppress it: there is no reliable way to bind a preceding comment to the
 // next statement, and a broad "comment near the call" rule would silently
-// swallow directives meant for other lines.
-func ignoreDirectiveLines(file *ast.File, fset *token.FileSet) map[int]bool {
-	out := map[int]bool{}
+// swallow directives meant for other lines. When multiple calls share a
+// line, a trailing comment's column (not just its line) decides which call
+// it suppresses; see applyIgnoreDirectives.
+func ignoreDirectiveLines(file *ast.File, fset *token.FileSet) map[int][]int {
+	out := map[int][]int{}
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
 			if hasIgnoreDirective(c.Text) {
-				out[fset.Position(c.Pos()).Line] = true
+				pos := fset.Position(c.Pos())
+				out[pos.Line] = append(out[pos.Line], pos.Column)
 			}
 		}
 	}
+	for line := range out {
+		slices.Sort(out[line])
+	}
 	return out
+}
+
+// applyIgnoreDirectives sets Ignored on each site in sites, mutating them in
+// place, from the directive comment columns collected by
+// ignoreDirectiveLines.
+//
+// A multi-line call (endLine > Line) keeps the simple rule: any directive on
+// a line it spans suppresses it. A single-line call only suppresses on a
+// directive whose column is at or after its own — the nearest such call,
+// by column, on that line — so "log.Error(a); log.Warn(b) //errtrack:ignore"
+// binds the directive to Warn, not to both calls on the line.
+func applyIgnoreDirectives(sites []Site, suppressed map[int][]int) {
+	sameLine := map[int][]int{} // line -> indices into sites, single-line calls only
+	for i := range sites {
+		if sites[i].Line != sites[i].endLine {
+			for line := sites[i].Line; line <= sites[i].endLine; line++ {
+				if len(suppressed[line]) > 0 {
+					sites[i].Ignored = true
+					break
+				}
+			}
+			continue
+		}
+		sameLine[sites[i].Line] = append(sameLine[sites[i].Line], i)
+	}
+	for line, idxs := range sameLine {
+		cols := suppressed[line]
+		if len(cols) == 0 {
+			continue
+		}
+		slices.SortFunc(idxs, func(a, b int) int { return sites[a].column - sites[b].column })
+		for _, c := range cols {
+			nearest := -1
+			for _, i := range idxs {
+				if sites[i].column > c {
+					break
+				}
+				nearest = i
+			}
+			if nearest >= 0 {
+				sites[nearest].Ignored = true
+			}
+		}
+	}
 }

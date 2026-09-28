@@ -10,3 +10,7 @@ import "example.com/sameline/internal/log"
 // F holds two distinct audited calls on the same source line, gofmt's own
 // output for a short if/else body. The dedup key must keep them apart.
 func F() { log.Error("first"); log.Warn("second") }
+
+// G's trailing directive must suppress only "reviewed" (the nearest
+// preceding call), not "unreviewed" too.
+func G() { log.Error("unreviewed"); log.Warn("reviewed") } //errtrack:ignore

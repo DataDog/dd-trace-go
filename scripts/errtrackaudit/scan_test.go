@@ -186,14 +186,14 @@ func TestScan_SameLineDistinctCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	if len(sites) != 2 {
-		t.Fatalf("scan found %d sites on one line, want 2", len(sites))
+	if len(sites) != 4 {
+		t.Fatalf("scan found %d sites, want 4 (two per same-line function)", len(sites))
 	}
 }
 
 func TestScan_SameLineOrderIsDeterministic(t *testing.T) {
-	// The two calls on testdata/sameline/app/app.go's one line come out of
-	// an unordered map, so a sort comparator that treats same-line sites as
+	// F's two calls on testdata/sameline/app/app.go's line come out of an
+	// unordered map, so a sort comparator that treats same-line sites as
 	// equal lets their relative order vary from run to run. log.Error is at
 	// the smaller column, so it must sort first on every run.
 	dir := filepath.Join("testdata", "sameline")
@@ -206,12 +206,45 @@ func TestScan_SameLineOrderIsDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		if len(sites) != 2 {
-			t.Fatalf("scan found %d sites on one line, want 2", len(sites))
+		if len(sites) != 4 {
+			t.Fatalf("scan found %d sites, want 4 (two per same-line function)", len(sites))
 		}
 		if sites[0].Level != levelError || sites[1].Level != levelWarn {
 			t.Fatalf("run %d: sites = [%s, %s], want [%s, %s] every run", i, sites[0].Level, sites[1].Level, levelError, levelWarn)
 		}
+	}
+}
+
+func TestScan_SameLineIgnoreBindsToNearestCall(t *testing.T) {
+	// G's trailing //errtrack:ignore must bind to the nearest preceding
+	// call (Warn, "reviewed") only. Keying suppression by line alone, as
+	// before, would also suppress Error ("unreviewed") since it shares the
+	// line, silently dropping it from the actionable inventory.
+	dir := filepath.Join("testdata", "sameline")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: "example.com/sameline/internal/log",
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	var unreviewed, reviewed *Site
+	for i := range sites {
+		switch sites[i].Message {
+		case "unreviewed":
+			unreviewed = &sites[i]
+		case "reviewed":
+			reviewed = &sites[i]
+		}
+	}
+	if unreviewed == nil || reviewed == nil {
+		t.Fatalf("scan did not find both G sites: %+v", sites)
+	}
+	if unreviewed.Ignored {
+		t.Error("unreviewed call was ignored; the directive must bind only to the nearest preceding call")
+	}
+	if !reviewed.Ignored {
+		t.Error("reviewed call was not ignored; it is the nearest preceding call to the trailing directive")
 	}
 }
 
