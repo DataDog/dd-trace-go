@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -280,12 +281,12 @@ func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
 	if cfg.Get() {
 		log.Info("Dynamic Instrumentation starting through Remote Config update")
 		if err := t.startDynamicInstrumentationRCSubscriptions(); err != nil {
-			log.Error("failed to start Dynamic Instrumentation subscriptions: %s", err)
+			reportDynamicInstrumentationStartError(err)
 		}
 	} else {
 		log.Info("Dynamic Instrumentation stopping through Remote Config update")
 		if err := t.stopDynamicInstrumentationRCSubscriptions(); err != nil {
-			log.Error("failed to stop Dynamic Instrumentation subscriptions: %s", err)
+			reportDynamicInstrumentationStopError(err)
 		}
 	}
 }
@@ -342,7 +343,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	if internalffe.RemoteConfigSourceSelected(t.config.internalConfig) {
 		if err := internalffe.SubscribeRC(); err != nil {
-			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
+			reportOpenFeatureSubscriptionError(err)
 		}
 	}
 
@@ -355,6 +356,18 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	}
 
 	return nil
+}
+
+func reportDynamicInstrumentationStartError(err error) {
+	telemetrylog.LogAndReportError("failed to start Dynamic Instrumentation subscriptions", err)
+}
+
+func reportDynamicInstrumentationStopError(err error) {
+	telemetrylog.LogAndReportError("failed to stop Dynamic Instrumentation subscriptions", err)
+}
+
+func reportOpenFeatureSubscriptionError(err error) {
+	telemetrylog.LogAndReportError("openfeature: failed to subscribe to Remote Config", err)
 }
 
 func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
