@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -119,6 +120,10 @@ type config struct {
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
+	logStartupWithMarshaler(c, json.Marshal)
+}
+
+func logStartupWithMarshaler(c *config, marshal func(any) ([]byte, error)) {
 	info := map[string]any{
 		"date":                       time.Now().Format(time.RFC3339),
 		"os_name":                    osinfo.OSName(),
@@ -137,9 +142,9 @@ func logStartup(c *config) {
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
 	}
-	b, err := json.Marshal(info)
+	b, err := marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err.Error())
+		telemetrylog.LogAndReportError("Marshaling profiler configuration", err)
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -401,7 +406,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
+			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err) //errtrack:ignore — invalid user configuration
 			return
 		}
 		cfg.apiURL = u
