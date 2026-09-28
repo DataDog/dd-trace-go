@@ -107,8 +107,6 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 			PayloadSize:    payloadSize,
 		})
 	}
-	// Transactions and TransactionCheckpointIds are intentionally left unset:
-	// transaction tracking has been removed, so they always encode as empty.
 	exported := StatsBucket{
 		Start:    b.start,
 		Duration: b.duration,
@@ -154,21 +152,15 @@ type processorInput struct {
 }
 
 type processorStats struct {
-	payloadsIn      atomic.Int64
-	flushedPayloads atomic.Int64
-	flushedBuckets  atomic.Int64
-	flushErrors     atomic.Int64
-	dropped         atomic.Int64
-	// droppedAgentStall and droppedPollStall are subsets of dropped, tracking
-	// (approximately, since the reader's state can change between the sample
-	// and the actual drop) which reader-loop stall coincided with the drop.
+	payloadsIn        atomic.Int64
+	flushedPayloads   atomic.Int64
+	flushedBuckets    atomic.Int64
+	flushErrors       atomic.Int64
+	dropped           atomic.Int64
 	droppedAgentStall atomic.Int64
 	droppedPollStall  atomic.Int64
 }
 
-// readerState describes what the fastQueue reader goroutine (Processor.run)
-// is doing right now, so a dropped payload can be attributed to why the
-// reader wasn't draining the queue.
 type readerState int32
 
 const (
@@ -354,9 +346,6 @@ func (p *Processor) flushInput() {
 	}
 }
 
-// sendToAgentStalling wraps sendToAgent, marking the reader as stalled on
-// the agent call for the duration of the (synchronous) HTTP request, since
-// the queue isn't drained while it's in flight.
 func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 	p.readerState.Store(int32(readerStalledOnAgent))
 	p.sendToAgent(payloads)
@@ -389,9 +378,6 @@ func (p *Processor) run(tick <-chan time.Time) {
 	}
 }
 
-// recordDrop increments the aggregate dropped-payloads counter, plus the
-// counter for whichever reader-loop stall (approximately) coincided with
-// the drop.
 func (p *Processor) recordDrop() {
 	p.stats.dropped.Add(1)
 	switch readerState(p.readerState.Load()) {

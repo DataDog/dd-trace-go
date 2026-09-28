@@ -509,8 +509,6 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-// blockingTransport blocks every RoundTrip until release is closed, so tests
-// can observe the reader goroutine while it's stalled sending to the agent.
 type blockingTransport struct {
 	release chan struct{}
 }
@@ -572,7 +570,6 @@ func TestRunMarksReaderStalledOnAgentCall(t *testing.T) {
 	release := make(chan struct{})
 	client := &http.Client{Transport: &blockingTransport{release: release}}
 	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
-	// Seed a bucket old enough to be flushed as soon as the tick fires.
 	tp := time.Now().Truncate(bucketDuration).Add(-2 * bucketDuration)
 	p.add(statsPoint{serviceName: "service1", hash: 1, timestamp: tp.UnixNano()})
 
