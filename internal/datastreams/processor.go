@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/sketches-go/ddsketch"
@@ -95,21 +96,25 @@ func newBucket(start, duration uint64) bucket {
 }
 
 func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) StatsBucket {
+	return b.exportWithMarshaler(timestampType, checkpointNameMapping, proto.Marshal)
+}
+
+func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameMapping []byte, marshal func(proto.Message) ([]byte, error)) StatsBucket {
 	stats := make([]StatsPoint, 0, len(b.points))
 	for _, s := range b.points {
-		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
+		pathwayLatency, err := marshal(s.pathwayLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
+			telemetrylog.LogAndReportError("can't serialize pathway latency. Ignoring", err)
 			continue
 		}
-		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
+		edgeLatency, err := marshal(s.edgeLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
+			telemetrylog.LogAndReportError("can't serialize edge latency. Ignoring", err)
 			continue
 		}
-		payloadSize, err := proto.Marshal(s.payloadSize.ToProto())
+		payloadSize, err := marshal(s.payloadSize.ToProto())
 		if err != nil {
-			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
+			telemetrylog.LogAndReportError("can't serialize payload size. Ignoring", err)
 			continue
 		}
 		stats = append(stats, StatsPoint{
@@ -245,7 +250,7 @@ func (r *checkpointRegistry) getOrAssign(name string) (byte, bool) {
 		return id, true
 	}
 	if r.nextID == math.MaxUint8 {
-		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name")
+		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name") //errtrack:ignore — expected capacity limit from user-provided checkpoint names
 		return 0, false
 	}
 	id := r.nextID
@@ -350,13 +355,13 @@ func (p *Processor) addToBuckets(point statsPoint, btime int64, buckets map[buck
 		b.points[point.hash] = group
 	}
 	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add pathway latency. Ignoring %v.", err.Error())
+		log.Error("failed to add pathway latency. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add edge latency. Ignoring %v.", err.Error())
+		log.Error("failed to add edge latency. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.payloadSize.Add(float64(point.payloadSize)); err != nil {
-		log.Error("failed to add payload size. Ignoring %v.", err.Error())
+		log.Error("failed to add payload size. Ignoring %v.", err.Error()) //errtrack:ignore — per-checkpoint customer data; reporting here would be per-request
 	}
 }
 
@@ -505,7 +510,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 func (p *Processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*Processor).Start called more than once. This is likely a programming error.")
+		log.Warn("(*Processor).Start called more than once. This is likely a programming error.") //errtrack:ignore — caller used the lifecycle API out of order
 		return
 	}
 	p.stop = make(chan struct{})
@@ -557,7 +562,7 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
 		if dt := p.stats.droppedTransactions.Swap(0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
-			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
+			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt) //errtrack:ignore — expected capacity limit already reported by a metric
 		}
 	}
 }
