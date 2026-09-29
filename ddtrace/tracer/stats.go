@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -139,8 +140,14 @@ func (s *otlpStatsSender) httpRouteFallback() bool {
 }
 
 func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
+	rms, sketchDecodeErr := buildOTLPMetricsRequest(csp, s.exporter.cfg)
+	if sketchDecodeErr != nil {
+		// Report once per flushed payload, before the transport retry loop. The
+		// decoder logs every malformed summary locally and drops only that summary.
+		telemetrylog.ReportError("stats_to_otlp_metrics: failed to decode sketch", sketchDecodeErr)
+	}
 	return sendWithRetry(retries, interval, func() error {
-		return s.exporter.export(csp)
+		return s.exporter.export(rms)
 	})
 }
 
