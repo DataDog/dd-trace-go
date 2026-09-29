@@ -8,6 +8,7 @@ package gotesting
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
@@ -378,13 +379,20 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	// Instrument the internal tests for CI visibility.
 	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
 
-	// Instrument the internal benchmarks for CI visibility.
-	for _, v := range os.Args {
-		// check if benchmarking is enabled to instrument
-		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
-			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m), claim)
-			break
+	// TestMain can enable benchmarks with flag.Set without changing os.Args.
+	bench := flag.Lookup("test.bench")
+	benchmarksEnabled := bench != nil && bench.Value.String() != ""
+	if !flag.Parsed() {
+		// M.Run parses flags after instrumentation when TestMain hasn't done so.
+		for _, v := range os.Args {
+			if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
+				benchmarksEnabled = true
+				break
+			}
 		}
+	}
+	if benchmarksEnabled {
+		ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m), claim)
 	}
 
 	return true, func(exitCode int) int {

@@ -7,6 +7,7 @@ package emptysession
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,21 @@ type result struct {
 func TestMain(m *testing.M) {
 	if os.Getenv(childEnv) == "" {
 		os.Exit(m.Run())
+	}
+	benchmarkPatterns := map[string]string{
+		"programmatic-benchmark":          "^BenchmarkFixture$",
+		"programmatic-benchmark-parsed":   "^BenchmarkFixture$",
+		"programmatic-benchmark-no-match": "^BenchmarkMissing$",
+	}
+	if pattern, ok := benchmarkPatterns[os.Getenv(childEnv)]; ok {
+		if os.Getenv(childEnv) == "programmatic-benchmark-parsed" {
+			flag.Parse()
+		}
+		for name, value := range map[string]string{"test.bench": pattern, "test.benchtime": "1x"} {
+			if err := flag.Set(name, value); err != nil {
+				panic(err)
+			}
+		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -96,10 +112,13 @@ func TestSessionStatus(t *testing.T) {
 		{"passing", []string{"-test.run=^TestPassingFixture$"}, "pass", 1, 0},
 		{"failing", []string{"-test.run=^TestFailingFixture$"}, "fail", 1, 1},
 		{"benchmark-only", []string{"-test.run=^$", "-test.bench=^BenchmarkFixture$", "-test.benchtime=1x"}, "pass", 1, 0},
+		{"programmatic-benchmark", []string{"-test.run=^$"}, "pass", 1, 0},
+		{"programmatic-benchmark-parsed", []string{"-test.run=^$"}, "pass", 1, 0},
+		{"programmatic-benchmark-no-match", []string{"-test.run=^$"}, "skip", 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], tc.args...)
-			cmd.Env = append(os.Environ(), childEnv+"=1")
+			cmd.Env = append(os.Environ(), childEnv+"="+tc.name)
 			output, err := cmd.CombinedOutput()
 			if tc.exitCode == 0 {
 				require.NoError(t, err, "%s", output)
