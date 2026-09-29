@@ -50,10 +50,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		if filepath.Base(filepath.Dir(path)) == "otelc" {
 			return nil
 		}
-		// otelc hook modules call into the contrib, which loads telemetry itself.
-		if filepath.Base(filepath.Dir(path)) == "otelc" {
-			return nil
-		}
 		rErr := testTelemetryEnabled(t, filepath.Dir(path))
 		if rErr != nil {
 			return fmt.Errorf("path: %s, err: %w", path, rErr)

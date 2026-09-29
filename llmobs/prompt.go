@@ -32,6 +32,13 @@ type PromptTemplate struct {
 	Messages []PromptMessage
 }
 
+// FormattedPrompt contains text or typed provider messages ready for use.
+// Messages preserve provider extensions and omit empty content on tool messages.
+type FormattedPrompt struct {
+	Text     string
+	Messages []FormattedMessage
+}
+
 // PromptFallback is used when a managed prompt cannot be fetched.
 type PromptFallback struct {
 	Template PromptTemplate
@@ -79,17 +86,15 @@ func (p *ManagedPrompt) Config() map[string]any {
 	return config
 }
 
+// Match double braces first; preserve surrounding braces such as the closing object in {"age": {age}}.
 var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
 // Format renders supplied variables and leaves missing placeholders unchanged.
-func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error) {
+func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error) {
 	render := func(s string) string {
 		var rendered strings.Builder
 		last := 0
 		for _, match := range promptVariablePattern.FindAllStringSubmatchIndex(s, -1) {
-			if match[0] > 0 && s[match[0]-1] == '{' || match[1] < len(s) && s[match[1]] == '}' {
-				continue
-			}
 			start, end := match[2], match[3]
 			if start == -1 {
 				start, end = match[4], match[5]
@@ -109,13 +114,13 @@ func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error)
 		return rendered.String()
 	}
 	if p.template.Messages == nil {
-		return PromptTemplate{Text: render(p.template.Text)}, nil
+		return FormattedPrompt{Text: render(p.template.Text)}, nil
 	}
-	messages := make([]PromptMessage, len(p.template.Messages))
+	messages := make([]FormattedMessage, len(p.template.Messages))
 	for i, message := range p.template.Messages {
-		messages[i] = PromptMessage{Role: message.Role, Content: render(message.Content)}
+		messages[i] = FormattedMessage{Role: message.Role, Content: render(message.Content)}
 	}
-	return PromptTemplate{Messages: messages}, nil
+	return FormattedPrompt{Messages: messages}, nil
 }
 
 // Annotation converts the managed prompt to the existing explicit span annotation shape.

@@ -15,6 +15,7 @@ variables:
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
   # Known flaky benchmarks
+  # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
   FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
 
 # Paths that can move a number in the BENCHMARKS lists below.
