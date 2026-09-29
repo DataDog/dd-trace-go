@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"math"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -28,7 +29,10 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 type cachedServiceName struct {
-	value    string
+	// value is read and published by concurrent interceptor calls. It must be
+	// atomic: a plain string can be observed half-written on weakly ordered CPUs
+	// (non-zero length, nil data), which crashes when the tracer compares it.
+	value    atomic.Pointer[string]
 	getValue func() string
 }
 
@@ -40,14 +44,14 @@ func newCachedServiceName(getValue func() string) *cachedServiceName {
 }
 
 func (cs *cachedServiceName) String() string {
-	if cs.value != "" {
-		return cs.value
+	if v := cs.value.Load(); v != nil {
+		return *v
 	}
 	svc := cs.getValue()
 	// cache only if the tracer has been started. This ensures we get the final value for service name, since this
 	// is where the tracer configuration is resolved (including env variables and tracer options).
-	if instr.TracerInitialized() {
-		cs.value = svc
+	if svc != "" && instr.TracerInitialized() {
+		cs.value.Store(&svc)
 	}
 	return svc
 }
