@@ -7,6 +7,7 @@ package nethttp
 
 import (
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -61,3 +62,30 @@ func TestTracerInternalTransportIsNotTraced(t *testing.T) {
 		agent.FindSpan(agenttest.With().Tag("component", "net/http").Tag("span.kind", "client")),
 		"dd-trace-go's own HTTP client must not be traced")
 }
+
+// TestCustomTracerClientIsIgnored checks that a client passed to
+// tracer.WithHTTPClient is replaced by the tracer's own, as it is under
+// orchestrion. Its transport is not one the tracer-internal aspect marks, so
+// using it would trace every flush.
+func TestCustomTracerClientIsIgnored(t *testing.T) {
+	var calls atomic.Int32
+	custom := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return http.DefaultTransport.RoundTrip(req)
+	})}
+
+	require.NoError(t, tracer.Start(
+		tracer.WithAgentAddr("127.0.0.1:1"),
+		tracer.WithHTTPClient(custom),
+		tracer.WithLogStartup(false),
+	))
+	tracer.StartSpan("probe").Finish()
+	tracer.Flush()
+	tracer.Stop()
+
+	assert.Zero(t, calls.Load(), "the custom HTTP client must not be used")
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
