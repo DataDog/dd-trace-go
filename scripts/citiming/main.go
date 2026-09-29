@@ -16,14 +16,18 @@
 //     covering main steps and post steps of the job. Only first attempts
 //     of successful jobs feed timings, whether or not the run was later
 //     retried; retried runs are counted per stratum.
-//   - stratum: workflow file + logical job name + runner identity (runner
-//     group and sorted runner labels). Nothing the cache treatment
-//     changes (workload family, resolved Go version) is part of the key.
+//   - stratum: workflow file + full job name + runner identity
+//     ("<group> (<sorted labels>)"). The job name carries matrix
+//     dimensions, including those of a reusable-workflow caller. Nothing
+//     the cache treatment changes (workload family, resolved Go version)
+//     is part of the key.
 //   - post time: log time from the first "Post job cleanup." marker to the
 //     last log line; covers post steps including cache saving.
 //   - restore result: classification from the structured
 //     "cache-observation:" record emitted by .github/actions/setup-go:
-//     exact, prefix, cold_miss, disabled, error, or unknown.
+//     exact, prefix, cold_miss, disabled, error, or unknown. Successful
+//     jobs without that record are counted per stratum as "no
+//     observation" rather than as zero restores.
 //   - save result: classification per save event from job log markers:
 //     saved, exact_key_skip, conflict, error. A successful job does not prove
 //     a successful save.
@@ -36,7 +40,8 @@
 //     never excludes). The headline is refused when comparable strata
 //     cover less than 80% of the baseline weight; excluded strata are
 //     listed with their reason.
-//   - PR feedback time: earliest workflow-run created_at for a PR revision
+//   - PR feedback time: earliest pull_request workflow-run created_at for a
+//     PR revision (looked up by head SHA, so a run before the window counts)
 //     to the completion of the last non-ignored check run on that revision,
 //     including queueing and the all-green delay. Human review and
 //     merge-queue waiting are excluded by ignoring the same check-name

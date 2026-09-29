@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,8 @@ type fakeClient struct {
 	usage  string
 	// runQueries records every list-runs path, in order.
 	runQueries []string
+	// headSHAErr, when set, fails every head_sha run query.
+	headSHAErr error
 }
 
 func (f *fakeClient) repoPath() string { return f.repo }
@@ -47,12 +50,24 @@ func (f *fakeClient) getJSON(path string) (string, error) {
 		// range and serve 100 items per page so fetchAll's page loop
 		// terminates the same way.
 		matching := []run{}
-		_, query, _ := strings.Cut(path, "created=")
-		created, _, _ := strings.Cut(query, "&")
-		from, to, _ := strings.Cut(created, "..")
-		for _, r := range f.runs {
-			if r.CreatedAt >= from && r.CreatedAt <= to {
-				matching = append(matching, r)
+		if _, query, ok := strings.Cut(path, "head_sha="); ok {
+			if f.headSHAErr != nil {
+				return "", f.headSHAErr
+			}
+			sha, _, _ := strings.Cut(query, "&")
+			for _, r := range f.runs {
+				if r.HeadSHA == sha && r.Event == "pull_request" {
+					matching = append(matching, r)
+				}
+			}
+		} else {
+			_, query, _ := strings.Cut(path, "created=")
+			created, _, _ := strings.Cut(query, "&")
+			from, to, _ := strings.Cut(created, "..")
+			for _, r := range f.runs {
+				if r.CreatedAt >= from && r.CreatedAt <= to {
+					matching = append(matching, r)
+				}
 			}
 		}
 		page := 1
@@ -417,9 +432,6 @@ func TestCollectRun(t *testing.T) {
 		if rec.Job.Seconds == nil || *rec.Job.Seconds != 2190 {
 			t.Fatalf("job seconds = %v, want 2190", rec.Job.Seconds)
 		}
-		if rec.Job.LogicalName != "test-core" {
-			t.Fatalf("logical name = %q", rec.Job.LogicalName)
-		}
 		if rec.Workload.Family != "unit-core" || rec.Workload.ResolvedGoVersion != "1.27.1" {
 			t.Fatalf("workload = %+v", rec.Workload)
 		}
@@ -637,6 +649,47 @@ func TestCollectPRFeedback(t *testing.T) {
 		}
 		if rec.ChecksCount != 2 {
 			t.Fatalf("checks count = %d, want 2 (mergegate ignored)", rec.ChecksCount)
+		}
+	})
+	t.Run("earliest run outside the window starts the clock", func(t *testing.T) {
+		// The check-runs list covers the whole revision, so the start
+		// must too: sha5 has a run before the window that only the
+		// head_sha query returns.
+		early := makeRun(50, 1, "pull_request", "all-green.yml", "2026-09-12T23:00:00Z", "sha5")
+		inWindow := makeRun(51, 1, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "sha5")
+		checks := []checkRun{{Name: "test-core", Conclusion: "success", CompletedAt: "2026-09-13T12:00:00Z"}}
+		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{early, inWindow},
+			checks: map[string][]checkRun{"sha5": checks}}
+		records := collectPRFeedback(c, []run{inWindow}, "now")
+		if len(records) != 1 {
+			t.Fatalf("got %d records, want 1", len(records))
+		}
+		rec := records[0]
+		if rec.CreatedAt != early.CreatedAt {
+			t.Fatalf("created = %s, want the earlier run %s", rec.CreatedAt, early.CreatedAt)
+		}
+		if rec.Seconds == nil || *rec.Seconds != 13*3600 {
+			t.Fatalf("seconds = %v, want 46800", rec.Seconds)
+		}
+		if !slices.Equal(rec.RunIDs, []int64{50, 51}) {
+			t.Fatalf("run ids = %v, want [50 51]", rec.RunIDs)
+		}
+		for _, q := range c.runQueries {
+			if strings.Contains(q, "exclude_pull_requests") {
+				t.Fatalf("query %q sends exclude_pull_requests", q)
+			}
+		}
+	})
+	t.Run("falls back to in-window runs when the revision query fails", func(t *testing.T) {
+		inWindow := makeRun(61, 1, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "sha6")
+		checks := []checkRun{{Name: "test-core", Conclusion: "success", CompletedAt: "2026-09-13T12:00:00Z"}}
+		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{inWindow},
+			checks:     map[string][]checkRun{"sha6": checks},
+			headSHAErr: errors.New("boom")}
+		records := collectPRFeedback(c, []run{inWindow}, "now")
+		if len(records) != 1 || records[0].CreatedAt != inWindow.CreatedAt ||
+			!slices.Equal(records[0].RunIDs, []int64{61}) {
+			t.Fatalf("records = %+v, want the in-window fallback", records)
 		}
 	})
 	t.Run("defers revisions with pending checks", func(t *testing.T) {
@@ -905,7 +958,7 @@ func jobRecord(workflow, family string, id int64, seconds *float64, conclusion s
 			Conclusion: "success", WorkflowFile: workflow, PR: &pr,
 		},
 		Job: jobMeta{
-			ID: id * 10, LogicalName: family, Conclusion: conclusion,
+			ID: id * 10, Name: family, Conclusion: conclusion,
 			RunnerGroup: "group", RunnerLabels: []string{"ubuntu-latest", "x64"}, Seconds: seconds,
 		},
 		Workload: workloadMeta{Family: family, ResolvedGoVersion: "1.27.1"},
@@ -965,6 +1018,78 @@ func TestCompareFrozenStrata(t *testing.T) {
 	}
 	if !strings.Contains(text, "| 30.0 |") && !strings.Contains(text, "30.0/30.0") {
 		t.Fatalf("cache behavior table lacks post p50:\n%s", text)
+	}
+}
+
+func TestStratifyKeysOnFullJobName(t *testing.T) {
+	// Reusable-workflow callers prefix the job name with the caller job,
+	// which carries the matrix dimension (here the Go version).
+	a := jobRecord("w.yml", "PR Unit and Integration Tests (1.26) / test-core", 1, secondsPtr(1), "success")
+	b := jobRecord("w.yml", "PR Unit and Integration Tests (1.27) / test-core", 2, secondsPtr(1), "success")
+	if stratify(a) == stratify(b) {
+		t.Fatalf("1.26 and 1.27 callers share stratum %v", stratify(a))
+	}
+}
+
+func TestCompareRunnerIdentityKeepsMarkdownTablesIntact(t *testing.T) {
+	report, err := runCompare(t, []stratumSpec{{name: "A", baseSecs: 100, candSecs: 50}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(report, "group (ubuntu-latest,x64)") {
+		t.Fatalf("report lacks runner identity \"group (ubuntu-latest,x64)\":\n%s", report)
+	}
+	columns := 0
+	for line := range strings.SplitSeq(report, "\n") {
+		if !strings.HasPrefix(line, "|") {
+			columns = 0
+			continue
+		}
+		if n := strings.Count(line, "|"); columns == 0 {
+			columns = n
+		} else if n != columns {
+			t.Fatalf("table row has %d pipes, want %d: %s", n, columns, line)
+		}
+	}
+}
+
+func TestStratifyRunnerIdentity(t *testing.T) {
+	rec := jobRecord("w.yml", "A", 1, secondsPtr(1), "success")
+	rec.Job.RunnerGroup = "GitHub Actions"
+	rec.Job.RunnerLabels = []string{"x64", "ubuntu-latest"}
+	if got := stratify(rec).runner; got != "GitHub Actions (ubuntu-latest,x64)" {
+		t.Fatalf("runner = %q", got)
+	}
+	rec.Job.RunnerGroup = ""
+	if got := stratify(rec).runner; got != "(ubuntu-latest,x64)" {
+		t.Fatalf("runner without group = %q", got)
+	}
+}
+
+func TestCompareCountsJobsWithoutCacheObservation(t *testing.T) {
+	observed := func(id int64) jobObservation {
+		rec := jobRecord("w.yml", "A", id, secondsPtr(100), "success")
+		rec.Workload.Provider = "github-cache"
+		return rec
+	}
+	unobserved := jobRecord("w.yml", "A", 3, secondsPtr(100), "success")
+	unobserved.Workload = workloadMeta{Provider: "unknown"}
+	unobserved.Cache = cacheMeta{}
+	unobserved.HasLogs = true // logs without a cache-observation record
+
+	split := perfValues([]jobObservation{observed(1), observed(2), unobserved})
+	agg := split.cache[stratify(unobserved)]
+	if agg == nil || agg.noObs != 1 || agg.restores != 2 {
+		t.Fatalf("cache agg = %+v, want noObs=1 restores=2", agg)
+	}
+
+	rows := cacheBehaviorRows(split, perfValues(nil))
+	if len(rows) != 1 || rows[0].baseNoObs != 1 || rows[0].candNoObs != 0 {
+		t.Fatalf("cache rows = %+v, want baseNoObs=1", rows)
+	}
+	report := renderReport(reportData{cacheRows: rows})
+	if !strings.Contains(report, "no observation b/c") || !strings.Contains(report, "| 1/0 |") {
+		t.Fatalf("report lacks the no-observation column:\n%s", report)
 	}
 }
 

@@ -265,8 +265,9 @@ go test -race -count=1 ./scripts/citiming/
    returns at most 1000 results per query) and fails if a slice reaches
    that limit; the collector never truncates silently.
 3. Compare only windows collected with the same workflow and job set. A
-   stratum is one workflow file, logical job name (which carries the
-   matrix dimensions), and runner identity (runner group plus labels);
+   stratum is one workflow file, full job name (which carries the matrix
+   dimensions, including those of a reusable-workflow caller), and runner
+   identity (`<group> (<sorted labels>)`);
    workload family and resolved Go version are not part of the key, so a
    treatment that changes them does not split a stratum. A stratum is
    comparable when both windows have at least five distinct successful
@@ -280,11 +281,16 @@ go test -race -count=1 ./scripts/citiming/
    PR feedback uses the same approach per selection signature, with the
    baseline measured revisions as weight and a five-revision minimum per
    window; it is computed from every `pull_request` run in the window,
-   regardless of `--workflows` and `--events`. The report gives the
+   regardless of `--workflows` and `--events`, starting at the earliest
+   `pull_request` run of the revision even when that run predates the
+   window. The report gives the
    covered share of baseline weight and lists every excluded stratum
    with its reason. The tool refuses the headline (improvement `n/a`,
    non-zero exit for the job headline) when the comparable strata cover
    less than 80% of the baseline weight.
+   Jobs whose log has no cache-observation record are counted per stratum
+   as "no observation" in the cache-behavior table; their restores are
+   missing evidence, not zero restores.
 5. Record failures, retries (runs with a later attempt, counted per
    stratum from first attempts), cancellations, and unknown classifications
    from the reports; skipped jobs are absent work, not zero durations.

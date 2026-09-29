@@ -175,7 +175,6 @@ type runMeta struct {
 type jobMeta struct {
 	ID           int64    `json:"id"`
 	Name         string   `json:"name"`
-	LogicalName  string   `json:"logical_name"`
 	Status       string   `json:"status"`
 	Conclusion   string   `json:"conclusion"`
 	StartedAt    string   `json:"started_at"`
@@ -249,13 +248,6 @@ func workflowFile(path string) string {
 		return path[i+1:]
 	}
 	return path
-}
-
-func logicalJobName(name string) string {
-	if i := strings.LastIndex(name, " / "); i >= 0 {
-		return name[i+3:]
-	}
-	return name
 }
 
 func isIgnoredCheck(name string) bool {
@@ -355,7 +347,6 @@ func buildJobRecord(c client, r run, j job, collectedAt string) jobObservation {
 		Job: jobMeta{
 			ID:           j.ID,
 			Name:         j.Name,
-			LogicalName:  logicalJobName(j.Name),
 			Status:       j.Status,
 			Conclusion:   j.Conclusion,
 			StartedAt:    j.StartedAt,
@@ -372,7 +363,9 @@ func buildJobRecord(c client, r run, j job, collectedAt string) jobObservation {
 }
 
 // collectPRFeedback produces one feedback record per (PR, head SHA):
-// earliest workflow creation to last non-ignored check completion.
+// earliest workflow creation to last non-ignored check completion. Check
+// runs cover the whole revision, so the start is taken from every
+// pull_request run of the revision, not only those inside the window.
 func collectPRFeedback(c client, runs []run, collectedAt string) []prFeedback {
 	type revision struct {
 		pr  int
@@ -428,8 +421,18 @@ func collectPRFeedback(c client, runs []run, collectedAt string) []prFeedback {
 		if !complete {
 			continue
 		}
+		// exclude_pull_requests is deliberately not sent: GitHub treats
+		// any value as true.
+		revisionRuns, err := fetchAll[run](c,
+			fmt.Sprintf("repos/%s/actions/runs?head_sha=%s&event=pull_request", c.repoPath(), key.sha),
+			"workflow_runs")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ! pr %d %s: revision runs unavailable, using in-window runs: %v\n",
+				key.pr, key.sha, err)
+			revisionRuns = group
+		}
 		var created, last string
-		for _, r := range group {
+		for _, r := range revisionRuns {
 			if created == "" || (r.CreatedAt != "" && r.CreatedAt < created) {
 				created = r.CreatedAt
 			}
@@ -445,8 +448,8 @@ func collectPRFeedback(c client, runs []run, collectedAt string) []prFeedback {
 		}
 		signature := shortSignature(names)
 
-		runIDs := make(map[int64]bool, len(group))
-		for _, r := range group {
+		runIDs := make(map[int64]bool, len(revisionRuns))
+		for _, r := range revisionRuns {
 			runIDs[r.ID] = true
 		}
 		ids := make([]int64, 0, len(runIDs))

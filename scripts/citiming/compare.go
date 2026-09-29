@@ -33,10 +33,12 @@ const (
 // stratum is one frozen comparison cell: a job on one kind of runner. It
 // deliberately holds nothing the candidate treatment changes (workload
 // family, resolved Go version), so baseline and candidate records of the
-// same job land in the same cell. The logical job name carries the matrix
-// dimensions (e.g. "test-contrib-matrix (chunk 3/6)"), so matrix variants
-// do not collapse into one stratum. Strata and weights come from the
-// baseline window.
+// same job land in the same cell. The job is the full GitHub job name: for
+// reusable workflows it carries the caller's matrix dimensions (e.g.
+// "PR Unit and Integration Tests (1.26) / test-core") and for matrix jobs
+// its own (e.g. "test-contrib-matrix (chunk 3/6)"), so variants do not
+// collapse into one stratum. Strata and weights come from the baseline
+// window.
 type stratum struct {
 	workflow string
 	job      string
@@ -44,12 +46,21 @@ type stratum struct {
 }
 
 func stratify(rec jobObservation) stratum {
-	labels := slices.Sorted(slices.Values(rec.Job.RunnerLabels))
 	return stratum{
 		workflow: rec.Run.WorkflowFile,
-		job:      rec.Job.LogicalName,
-		runner:   rec.Job.RunnerGroup + "|" + strings.Join(labels, ","),
+		job:      rec.Job.Name,
+		runner:   runnerIdentity(rec.Job),
 	}
+}
+
+// runnerIdentity renders "<group> (<sorted labels>)". It avoids '|' so the
+// value is safe inside a Markdown table cell.
+func runnerIdentity(j jobMeta) string {
+	labels := "(" + strings.Join(slices.Sorted(slices.Values(j.RunnerLabels)), ",") + ")"
+	if j.RunnerGroup == "" {
+		return labels
+	}
+	return j.RunnerGroup + " " + labels
 }
 
 func (s stratum) String() string {
@@ -140,8 +151,11 @@ type perfSplit struct {
 }
 
 // cacheAgg summarizes one stratum's successful first attempts: restore
-// classification counts, save failures, and post-phase durations.
+// classification counts, save failures, and post-phase durations. noObs
+// counts jobs with no cache observation, so missing evidence is not read as
+// zero restores.
 type cacheAgg struct {
+	noObs    int
 	restores int
 	exact    int
 	unknown  int
@@ -154,6 +168,15 @@ type cacheAgg struct {
 // errors all mean the workload was not served from an exact snapshot.
 func (a *cacheAgg) nonExact() int {
 	return a.restores - a.exact - a.unknown
+}
+
+// hasNoCacheObservation reports a job whose log carried no usable
+// cache-observation record (logs unavailable, or logs without the record).
+// buildJobRecord stores the "unknown" provider and no restores exactly then;
+// a hand-built record with an empty provider is treated the same way.
+func hasNoCacheObservation(rec jobObservation) bool {
+	return (rec.Workload.Provider == "" || rec.Workload.Provider == "unknown") &&
+		len(rec.Cache.Restores) == 0
 }
 
 func perfValues(records []jobObservation) perfSplit {
@@ -187,6 +210,9 @@ func perfValues(records []jobObservation) perfSplit {
 			if agg == nil {
 				agg = &cacheAgg{}
 				split.cache[key] = agg
+			}
+			if hasNoCacheObservation(rec) {
+				agg.noObs++
 			}
 			for _, r := range rec.Cache.Restores {
 				agg.restores++
@@ -223,9 +249,9 @@ func perfValues(records []jobObservation) perfSplit {
 type cacheRow struct {
 	stratum stratum
 	baseRestores, baseNonExact, baseUnknown,
-	baseSaveErrs int
+	baseSaveErrs, baseNoObs int
 	candRestores, candNonExact, candUnknown,
-	candSaveErrs int
+	candSaveErrs, candNoObs int
 	basePostP50, candPostP50 *float64
 }
 
@@ -250,6 +276,7 @@ func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
 			row.baseNonExact = a.nonExact()
 			row.baseUnknown = a.unknown
 			row.baseSaveErrs = a.saveErrs
+			row.baseNoObs = a.noObs
 			row.basePostP50 = median(a.post)
 		}
 		if a := cand.cache[k]; a != nil {
@@ -257,6 +284,7 @@ func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
 			row.candNonExact = a.nonExact()
 			row.candUnknown = a.unknown
 			row.candSaveErrs = a.saveErrs
+			row.candNoObs = a.noObs
 			row.candPostP50 = median(a.post)
 		}
 		rows = append(rows, row)
@@ -550,9 +578,9 @@ func writeComparisonCSV(dir string, rows []comparisonRow,
 		"baseline_p50_s", "baseline_p95_s",
 		"candidate_p50_s", "candidate_p95_s",
 		"baseline_restore_non_exact", "baseline_restore_unknown",
-		"baseline_save_errors", "baseline_post_p50_s",
+		"baseline_save_errors", "baseline_no_observation", "baseline_post_p50_s",
 		"candidate_restore_non_exact", "candidate_restore_unknown",
-		"candidate_save_errors", "candidate_post_p50_s",
+		"candidate_save_errors", "candidate_no_observation", "candidate_post_p50_s",
 		"excluded")
 	for _, row := range rows {
 		c := cacheByStratum[row.stratum]
@@ -562,9 +590,9 @@ func writeComparisonCSV(dir string, rows []comparisonRow,
 			fmtSeconds(row.baselineP50), fmtSeconds(row.baseP95),
 			fmtSeconds(row.candP50), fmtSeconds(row.candP95),
 			strconv.Itoa(c.baseNonExact), strconv.Itoa(c.baseUnknown),
-			strconv.Itoa(c.baseSaveErrs), fmtSeconds(c.basePostP50),
+			strconv.Itoa(c.baseSaveErrs), strconv.Itoa(c.baseNoObs), fmtSeconds(c.basePostP50),
 			strconv.Itoa(c.candNonExact), strconv.Itoa(c.candUnknown),
-			strconv.Itoa(c.candSaveErrs), fmtSeconds(c.candPostP50),
+			strconv.Itoa(c.candSaveErrs), strconv.Itoa(c.candNoObs), fmtSeconds(c.candPostP50),
 			row.excluded)
 	}
 	w.write("")
@@ -637,16 +665,19 @@ func renderReport(d reportData) string {
 	b.WriteString("\n## Cache behavior\n\n")
 	b.WriteString("Restores that were not exact hits and unknown\n")
 	b.WriteString("classifications, save errors, and post-phase p50 from the\n")
-	b.WriteString("successful first attempts of each stratum.\n\n")
-	b.WriteString("| workflow | job | runner | restores b (non-exact/unknown) | restores c | save errors b/c | post p50 b/c |\n")
-	b.WriteString("|---|---|---|---|---|---|---|\n")
+	b.WriteString("successful first attempts of each stratum. \"no observation\"\n")
+	b.WriteString("counts jobs without a cache-observation record: their\n")
+	b.WriteString("restores are missing evidence, not zero restores.\n\n")
+	b.WriteString("| workflow | job | runner | restores b (non-exact/unknown) | restores c | save errors b/c | no observation b/c | post p50 b/c |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|\n")
 	for _, row := range d.cacheRows {
 		s := row.stratum
-		fmt.Fprintf(&b, "| %s | %s | %s | %d (%d/%d) | %d (%d/%d) | %d/%d | %s/%s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %s | %d (%d/%d) | %d (%d/%d) | %d/%d | %d/%d | %s/%s |\n",
 			s.workflow, s.job, s.runner,
 			row.baseRestores, row.baseNonExact, row.baseUnknown,
 			row.candRestores, row.candNonExact, row.candUnknown,
 			row.baseSaveErrs, row.candSaveErrs,
+			row.baseNoObs, row.candNoObs,
 			fmtSeconds(row.basePostP50), fmtSeconds(row.candPostP50))
 	}
 
