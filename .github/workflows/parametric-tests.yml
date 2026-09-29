@@ -70,7 +70,9 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          # TODO: remove this pin once DataDog/system-tests#7845 (support for the
+          # OpenTelemetry Logs API v0.21.0) is merged into system-tests main.
+          ref: ${{ inputs.ref || 'fix/otel-log-v0.21' }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
