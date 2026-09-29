@@ -20,6 +20,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func useLocalLogCapture(t *testing.T) *log.RecordLogger {
+	t.Helper()
+
+	localLogs := new(log.RecordLogger)
+	restoreLogger := log.UseLogger(localLogs)
+	t.Cleanup(func() {
+		log.Flush()
+		restoreLogger()
+	})
+	return localLogs
+}
+
 func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
 	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
@@ -27,8 +39,7 @@ func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(
 	internalffe.ResetForTest()
 	t.Cleanup(internalffe.ResetForTest)
 
-	localLogs := new(log.RecordLogger)
-	defer log.UseLogger(localLogs)()
+	localLogs := useLocalLogCapture(t)
 	client, capture := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 	defer telemetry.MockClient(client)()
@@ -47,6 +58,7 @@ func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(
 }
 
 func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
+	localLogs := useLocalLogCapture(t)
 	client, capture := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 	defer telemetry.MockClient(client)()
@@ -55,6 +67,11 @@ func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
 	reportDynamicInstrumentationStopError(errors.New("stop failed"))
 	reportOpenFeatureSubscriptionError(errors.New("subscribe failed"))
 	client.Flush()
+	log.Flush()
+
+	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "failed to start Dynamic Instrumentation subscriptions: start failed")
+	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "failed to stop Dynamic Instrumentation subscriptions: stop failed")
+	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "openfeature: failed to subscribe to Remote Config: subscribe failed")
 
 	logs := capture.LogMessages()
 	require.Len(t, logs, 3)
