@@ -30,17 +30,17 @@ const (
 
 // logsWriter is responsible for writing logs to the agentless endpoint.
 type logsWriter struct {
-	client  net.Client     // http client
-	payload *logsPayload   // Encodes and buffers events in JSON format.
-	climit  chan struct{}  // Limits the number of concurrent outgoing connections.
-	wg      sync.WaitGroup // Waits for all uploads to finish.
-	mu      sync.Mutex     // Guards payload rotation, stopped state, and upload reservations.
-	stopped bool           // Prevents new entries and reservations after shutdown starts.
+	client               net.Client     // http client
+	payload              *logsPayload   // Encodes and buffers events in JSON format.
+	climit               chan struct{}  // Limits the number of concurrent outgoing connections.
+	wg                   sync.WaitGroup // Waits for all uploads to finish.
+	mu                   sync.Mutex     // Guards payload rotation, stopped state, upload reservations, and pendingEncodingError.
+	stopped              bool           // Prevents new entries and reservations after shutdown starts.
+	pendingEncodingError error          // First serialization error since the last reporting boundary.
 }
 
-// newLogsWriter creates a new instance of logsWriter.
 func reportLogsEncodingError(err error) {
-	telemetrylog.LogAndReportError("logsWriter: error encoding JSON", err)
+	telemetrylog.ReportError("logsWriter: error encoding JSON", err)
 }
 
 func newLogsWriter() *logsWriter {
@@ -53,7 +53,10 @@ func newLogsWriter() *logsWriter {
 }
 
 func (w *logsWriter) add(entry *logEntry) bool {
-	var payloadToFlush *logsPayload
+	var (
+		payloadToFlush *logsPayload
+		encodingErr    error
+	)
 
 	w.mu.Lock()
 	if w.stopped {
@@ -61,17 +64,26 @@ func (w *logsWriter) add(entry *logEntry) bool {
 		return false
 	}
 	if err := w.payload.push(entry); err != nil {
-		reportLogsEncodingError(err)
+		// Keep the existing local log exactly as-is, but defer Error Tracking
+		// until a writer boundary so serialization failures do not report per log.
+		log.Error("logsWriter: Error encoding JSON: %s", err.Error())
+		if w.pendingEncodingError == nil {
+			w.pendingEncodingError = err
+		}
 		w.mu.Unlock()
 		return false
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
 		payloadToFlush = w.rotateAndReserveLocked()
+		encodingErr = w.takePendingEncodingErrorLocked()
 	}
 	w.mu.Unlock()
 
 	if payloadToFlush != nil {
 		w.startUpload(payloadToFlush)
+	}
+	if encodingErr != nil {
+		reportLogsEncodingError(encodingErr)
 	}
 	return true
 }
@@ -79,15 +91,22 @@ func (w *logsWriter) add(entry *logEntry) bool {
 func (w *logsWriter) stop() {
 	log.Debug("logsWriter: stopping writer")
 	w.mu.Lock()
-	var payloadToFlush *logsPayload
+	var (
+		payloadToFlush *logsPayload
+		encodingErr    error
+	)
 	if !w.stopped {
 		w.stopped = true
 		payloadToFlush = w.rotateAndReserveLocked()
+		encodingErr = w.takePendingEncodingErrorLocked()
 	}
 	w.mu.Unlock()
 
 	if payloadToFlush != nil {
 		w.startUpload(payloadToFlush)
+	}
+	if encodingErr != nil {
+		reportLogsEncodingError(encodingErr)
 	}
 	w.wg.Wait()
 	if closer, ok := w.client.(interface{ CloseIdleConnections() }); ok {
@@ -102,11 +121,23 @@ func (w *logsWriter) flush() {
 		return
 	}
 	payloadToFlush := w.rotateAndReserveLocked()
+	encodingErr := w.takePendingEncodingErrorLocked()
 	w.mu.Unlock()
 
 	if payloadToFlush != nil {
 		w.startUpload(payloadToFlush)
 	}
+	if encodingErr != nil {
+		reportLogsEncodingError(encodingErr)
+	}
+}
+
+// takePendingEncodingErrorLocked returns the first serialization error seen
+// since the last writer boundary and clears it. w.mu must be held by the caller.
+func (w *logsWriter) takePendingEncodingErrorLocked() error {
+	err := w.pendingEncodingError
+	w.pendingEncodingError = nil
+	return err
 }
 
 // rotateAndReserveLocked swaps the active payload and reserves an upload.
