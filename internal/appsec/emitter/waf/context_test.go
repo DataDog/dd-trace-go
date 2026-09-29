@@ -27,6 +27,14 @@ func TestContextOperationActionConfig(t *testing.T) {
 	}
 }
 
+func TestBlockingUnavailableFromContext(t *testing.T) {
+	ctx := ContextWithBlockingUnavailable(context.Background())
+	op, _ := StartContextOperation(ctx, tracelib.NoopTagSetter{})
+	if !op.BlockingUnavailable() {
+		t.Fatal("ContextOperation did not preserve blocking-unavailable context")
+	}
+}
+
 func TestSendActionEventsStackTraceConfig(t *testing.T) {
 	op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
 	var received []*actions.StackTraceAction
@@ -116,7 +124,7 @@ func TestAbsorbDerivativesFirstWriteWins(t *testing.T) {
 }
 
 func TestAbsorbDerivativesBlockedResponseSchemaStillSkipped(t *testing.T) {
-	op := &ContextOperation{}
+	op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
 	op.SetRequestBlocked()
 
 	op.AbsorbDerivatives(map[string]any{

@@ -31,7 +31,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.R
 		return
 	}
 
-	op.runWAF(eventReceiver, ctx, addrs)
+	op.runWAF(eventReceiver, ctx, addrs, false)
 }
 
 func (op *ContextOperation) skipRASPRuleAfterRequest(addrs addresses.RunAddressData) {
@@ -43,7 +43,7 @@ func (op *ContextOperation) skipRASPRuleAfterRequest(addrs addresses.RunAddressD
 	}
 }
 
-func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwaf.Runner, addrs addresses.RunAddressData) {
+func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwaf.Runner, addrs addresses.RunAddressData, monitorOnly bool) {
 	// Remove unsupported addresses in case the listener was registered but some addresses are still unsupported
 	// Technically the WAF does this step for us but doing this check before calling the WAF makes us skip encoding huge
 	// values that may be discarded by the WAF afterward.
@@ -60,7 +60,34 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
-	blocking := actions.SendActionEvents(eventReceiver, result.Actions, op.actionConfig())
+	metrics := op.GetMetricsInstance()
+	// Only a WAF-scope block_request contributes to the waf.requests block outcome.
+	// A monitor-only run never requests a block, so it does not change the block
+	// outcome of the request. Its suppressed block is reported on rasp.rule.match.
+	_, blockRequested := result.Actions["block_request"]
+	blockRequested = blockRequested && addrs.TimerKey != addresses.RASPScope && !monitorOnly
+	if blockRequested && metrics != nil {
+		metrics.SetBlockRequested()
+	}
+	var blockFailure bool
+	if monitorOnly {
+		// Only block_request is a block outcome. A redirect is block:irrelevant on
+		// the normal path, so it stays block:irrelevant when it is suppressed.
+		_, blockFailure = result.Actions["block_request"]
+		// Observational hooks cannot stop the sink operation. Do not block the
+		// enclosing request or count it as blocked when the operation still runs.
+		delete(result.Actions, "block_request")
+		delete(result.Actions, "redirect_request")
+	}
+	cfg := op.actionConfig()
+	// Only the block that can change the waf.requests block outcome reports its
+	// enforcement result. Redirects and RASP-scope blocks do not.
+	cfg.ReportBlockOutcome = addrs.TimerKey != addresses.RASPScope && !monitorOnly
+	blocking := actions.SendActionEvents(eventReceiver, result.Actions, cfg)
+	if blockRequested && !blocking && metrics != nil {
+		// The action could not be built, so no integration will ever enforce it.
+		metrics.SetBlockFailed()
+	}
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.
@@ -72,10 +99,11 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	if metrics := op.GetMetricsInstance(); metrics != nil {
+	if metrics != nil {
 		metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,
+			blockFailure:   blockFailure,
 			ruleTriggered:  result.HasEvents(),
 			wafTimeout:     wafTimeout,
 			rateLimited:    rateLimited,
