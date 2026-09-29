@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 const (
@@ -168,11 +167,6 @@ func buildChildEnv(cfg *config) []string {
 	return childEnv
 }
 
-func reportMonitorExitError(err error) {
-	log.Warn("crashtracker: monitor process exited unexpectedly: %v", err.Error()) //errtrack:ignore reported by ReportError below
-	telemetrylog.ReportError("crashtracker: monitor process exited unexpectedly", err)
-}
-
 // spawnMonitor re-execs the current binary as a monitor child, sets up a pipe,
 // and registers the pipe write end with runtime/debug.SetCrashOutput.
 func spawnMonitor(cfg *config) error {
@@ -247,7 +241,7 @@ func spawnMonitor(cfg *config) error {
 	// status indicates the monitor itself panicked during parse or upload.
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			reportMonitorExitError(err)
+			log.Warn("crashtracker: monitor process exited unexpectedly: %v", err.Error())
 		}
 	}()
 
