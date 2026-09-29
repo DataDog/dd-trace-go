@@ -38,7 +38,8 @@ type testOTLPServer struct {
 	// ~payloadSizeLimit-sized buffer alive per flush for the whole test, so peak
 	// RSS scales with the number of flushes rather than with the writer's
 	// in-flight window.
-	discard atomic.Bool
+	discard   atomic.Bool
+	discarded atomic.Int32
 	// failCount controls how many requests return 500 before succeeding.
 	failCount int32
 }
@@ -52,6 +53,7 @@ func newTestOTLPServer() *testOTLPServer {
 		}
 		if s.discard.Load() {
 			_, _ = io.Copy(io.Discard, r.Body)
+			s.discarded.Add(1)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -374,54 +376,42 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 // panics with "Add called concurrently with Wait" once a Wait call observes a
 // zero counter at the same instant a new flush starts one.
 func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
-	// The three bounds below exist because this test was a memory bomb under
-	// -tags=deadlock: peak RSS ranged from 0.50GB to 13.70GB across identical
-	// runs, bimodal on whether the adders outran the drain. Each adder allocates
-	// a payloadSizeLimit/4 span (plus the copy convertSpan makes), four of those
-	// trigger a flush, and nothing bounded how many flushes piled up or how long
-	// their payloads stayed alive. None of the bounds touch the wg.Add/wg.Wait
-	// interleaving this test exists to catch -- the adders still flush
-	// concurrently with the waits, just not unboundedly.
+	// This test was a memory bomb under -tags=deadlock: peak RSS ranged from
+	// 0.50GB to 13.70GB across identical runs. Retaining every payload, allowing
+	// 100 in-flight sends, and letting adders run until the waits finished made
+	// the amount of work depend on how slowly the test ran.
 	srv := newTestOTLPServer()
-	// 1. Do not retain the bodies; this test never inspects them.
 	srv.discard.Store(true)
 	defer srv.Close()
 	w := newTestOTLPWriter(t, srv)
-	// 2. Bound the in-flight send window. At the default concurrentConnectionLimit
-	// of 100, each queued flush holds its own span batch plus the buffer
-	// proto.Marshal builds from it, which is where the multi-GB heaps came from.
 	w.climit = make(chan struct{}, 4)
 
 	const numAdders = 20
-	// 3. Bound each adder. Unbounded, they spin until the waits finish, so the
-	// volume allocated grew with however long a wait took -- unpredictable here,
-	// since every w.mu acquisition goes through the deadlock detector's global
-	// lock. numAdders*addsPerAdder still yields far more flushes than waits.
-	const addsPerAdder = 200
-	stop := make(chan struct{})
+	// Reuse the source string; each flush still serializes a full-sized payload.
+	bigData := strings.Repeat("X", payloadSizeLimit/4)
+	jobs := make(chan struct{})
 	var adders sync.WaitGroup
 	for range numAdders {
 		adders.Go(func() {
-			for range addsPerAdder {
-				select {
-				case <-stop:
-					return
-				default:
-				}
+			for range jobs {
 				bigSpan := newSpan("op", "svc", "res", randUint64(), randUint64(), 0)
-				bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit/4))
+				bigSpan.meta.Set("big", bigData)
 				w.add([]*Span{bigSpan})
 			}
 		})
 	}
 
+	// Pace bounded work through the waits, rather than letting adders exhaust
+	// their iteration budget before the first wait starts.
 	for range 200 {
+		jobs <- struct{}{}
 		w.wait()
 	}
-
-	close(stop)
+	sentDuringWaits := srv.discarded.Load()
+	close(jobs)
 	adders.Wait()
 	w.stop()
+	require.Positive(t, sentDuringWaits, "no payloads were sent during the wait loop")
 }
 
 func TestOTLPWriterBuffSizeTracking(t *testing.T) {
