@@ -23,12 +23,14 @@ import (
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 var (
 	errRequiresProjectName = errors.New(`a project name must be provided for the dataset, either configured via the DD_LLMOBS_PROJECT_NAME
 environment variable, using the global tracer.WithLLMObsProjectName option, or dataset.WithProjectName option`)
-	errRequiresAppKey = errors.New(`an app key must be provided for the dataset in agentless mode configured via the DD_APP_KEY environment variable`)
+	errRequiresAppKey         = errors.New(`an app key must be provided for the dataset in agentless mode configured via the DD_APP_KEY environment variable`)
+	errBackendRecordMissingID = errors.New("backend dataset record is missing its ID")
 )
 
 const (
@@ -330,7 +332,12 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 	}
 
 	records := make([]*Record, 0, len(recordsResp))
+	missingRecordID := false
 	for _, rec := range recordsResp {
+		if rec.ID == "" {
+			missingRecordID = true
+			continue
+		}
 		records = append(records, &Record{
 			id:             rec.ID,
 			Input:          rec.Input,
@@ -338,6 +345,9 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			Metadata:       rec.Metadata,
 			version:        rec.Version,
 		})
+	}
+	if missingRecordID {
+		telemetrylog.ReportError("llmobs: backend returned dataset record without ID", errBackendRecordMissingID)
 	}
 	// When pulling a specific historical version, report that version so that
 	// experiment.Run registers the run against the correct dataset snapshot
@@ -406,7 +416,7 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore invalid caller record
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore backend record ID is reported at Pull ingress
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -438,7 +448,7 @@ func (d *Dataset) Delete(index int) {
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore invalid caller record
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore backend record ID is reported at Pull ingress
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}

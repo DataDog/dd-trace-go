@@ -204,7 +204,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 	if inputPrompt := span.llmCtx.prompt; inputPrompt != nil {
 		if spanKind != SpanKindLLM {
-			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds") //errtrack:ignore invalid caller annotation
+			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds") //errtrack:ignore per-span SDK invariant guard
 		} else {
 			input["prompt"] = promptPayload{Prompt: *inputPrompt, MLApp: span.mlApp}
 		}
@@ -215,7 +215,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 	if intent := span.llmCtx.intent; intent != "" {
 		if spanKind != SpanKindTool {
-			log.Warn("llmobs: dropping intent on non-tool span kind, annotating intent is only supported for tool span kinds") //errtrack:ignore invalid caller annotation
+			log.Warn("llmobs: dropping intent on non-tool span kind, annotating intent is only supported for tool span kinds") //errtrack:ignore per-span SDK invariant guard
 		} else {
 			meta["intent"] = intent
 		}

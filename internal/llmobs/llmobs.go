@@ -583,7 +583,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		span.mlApp = span.propagatedMLApp()
 		if span.mlApp == "" {
 			// We should ensure there's always an ML App to fall back to during startup, so in theory this should never happen.
-			log.Warn("llmobs: ML App is required for sending LLM Observability data.") //errtrack:ignore missing user configuration
+			log.Warn("llmobs: ML App is required for sending LLM Observability data.") //errtrack:ignore per-span lifecycle invariant guard
 		}
 	}
 
