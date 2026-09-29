@@ -345,7 +345,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		})
 	}
 	if missingRecordID {
-		log.Error("llmobs: backend returned dataset records without IDs; discarding malformed records")
+		log.Error("llmobs: backend returned dataset records without IDs; discarding malformed records") //errtrack:ignore caller request path; malformed records are logged locally only
 	}
 	// When pulling a specific historical version, report that version so that
 	// experiment.Run registers the run against the correct dataset snapshot
@@ -414,7 +414,7 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore backend record ID is logged at Pull ingress
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -446,7 +446,7 @@ func (d *Dataset) Delete(index int) {
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore backend record ID is logged at Pull ingress
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
