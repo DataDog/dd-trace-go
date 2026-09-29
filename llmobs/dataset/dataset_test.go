@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -981,7 +982,7 @@ func TestDatasetPull(t *testing.T) {
 	})
 }
 
-func TestPull_MissingBackendRecordIDs_ReportError(t *testing.T) {
+func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) {
 	agent, err := tracertest.StartAgent(t)
 	require.NoError(t, err)
 	coll := llmobstest.New(t)
@@ -992,9 +993,9 @@ func TestPull_MissingBackendRecordIDs_ReportError(t *testing.T) {
 			return
 		}
 
-		// The literal response verifies that a malformed backend record is
-		// reported at the wire ingress boundary. Both empty IDs must result in
-		// one report and neither record may reach the Dataset.
+		// The literal response verifies that malformed backend records are
+		// dropped at ingress. Both empty IDs must result in one local log and
+		// neither record may reach the Dataset.
 		const recordsResponse = `{
 			"data": [
 				{"id": "record-1", "type": "dataset_records", "attributes": {"input": "valid"}},
@@ -1018,6 +1019,9 @@ func TestPull_MissingBackendRecordIDs_ReportError(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
 	client, rt := telemetrytest.NewCapturingClient(t)
 	defer telemetry.MockClient(client)()
 
@@ -1025,13 +1029,13 @@ func TestPull_MissingBackendRecordIDs_ReportError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, ds.Len(), "records without IDs must be discarded at ingress")
 
+	log.Flush()
 	client.Flush()
-	logs := rt.LogMessages()
+
+	logs := tp.Logs()
 	require.Len(t, logs, 1)
-	assert.Equal(t, telemetry.LogError, logs[0].Level)
-	assert.Equal(t, "llmobs: backend returned dataset record without ID: error.error_type=errors.errorString", logs[0].Message)
-	assert.EqualValues(t, 1, logs[0].Count)
-	assert.Contains(t, logs[0].StackTrace, "dataset.go")
+	assert.Contains(t, logs[0], "llmobs: backend returned dataset records without IDs; discarding malformed records")
+	assert.Empty(t, rt.LogMessages(), "Pull is a caller request path and must not report to Error Tracking")
 }
 
 func TestDatasetRecordIteration(t *testing.T) {
