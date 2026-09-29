@@ -120,10 +120,6 @@ type config struct {
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
-	logStartupWithMarshaler(c, json.Marshal)
-}
-
-func logStartupWithMarshaler(c *config, marshal func(any) ([]byte, error)) {
 	info := map[string]any{
 		"date":                       time.Now().Format(time.RFC3339),
 		"os_name":                    osinfo.OSName(),
@@ -142,7 +138,7 @@ func logStartupWithMarshaler(c *config, marshal func(any) ([]byte, error)) {
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
 	}
-	b, err := marshal(info)
+	b, err := json.Marshal(info)
 	if err != nil {
 		telemetrylog.LogAndReportError("Marshaling profiler configuration", err)
 		return
@@ -406,7 +402,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err) //errtrack:ignore invalid user configuration
+			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
 			return
 		}
 		cfg.apiURL = u

@@ -166,12 +166,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	if cfg.traceConfig.Enabled && (cfg.traceConfig.Period == 0 || cfg.traceConfig.Limit == 0) {
-		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution tracing") //errtrack:ignore invalid user configuration
+		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution tracing")
 		cfg.traceConfig.Enabled = false
 	}
 
 	if _, ok := cfg.types[GoroutineLeakProfile]; ok && version.Compare(runtime.Version(), "go1.27") < 0 && !goroutineLeakExperiment() {
-		log.Warn("goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile") //errtrack:ignore unsupported user environment
+		log.Warn("goroutine leak profile requires Go 1.27 or later, or GOEXPERIMENT=goroutineleakprofile")
 		delete(cfg.types, GoroutineLeakProfile)
 	}
 	if goroutineLeakExperiment() {
@@ -186,7 +186,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("Agentless upload is currently for internal usage only and not officially supported.") //errtrack:ignore user enabled an unsupported option
+		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
@@ -195,7 +195,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		// key configured, we warn the customers that this is probably a
 		// misconfiguration.
 		if cfg.apiKey != "" {
-			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.") //errtrack:ignore user configuration warning
+			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.")
 		}
 		cfg.targetURL = cfg.agentURL
 	}
@@ -205,7 +205,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			if cfg.targetURL == cfg.apiURL {
 				return nil, fmt.Errorf("could not obtain hostname: %s", err)
 			}
-			log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore host environment failure
+			log.Warn("unable to look up hostname: %s", err.Error())
 		}
 		cfg.hostname = hostname
 	}
@@ -405,7 +405,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				profs, err := p.runProfile(t)
 				if err != nil {
 					if err != errProfilerStopped {
-						log.Error("Error getting %s profile: %v; skipping.", t, err.Error()) //errtrack:ignore runtime profile collection can fail because of the user environment
+						log.Error("Error getting %s profile: %v; skipping.", t, err.Error())
 						tags := append(p.cfg.tags.Slice(), t.Tag())
 						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
@@ -497,7 +497,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Slice(), 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.") //errtrack:ignore expected queue pressure already reported by a metric
+				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
 				// full p.out to completely drain within nanoseconds or extreme
@@ -520,10 +520,10 @@ func (p *profiler) send() {
 				return
 			}
 			if err := p.outputDir(bat); err != nil {
-				log.Error("Failed to output profile to dir: %s", err.Error()) //errtrack:ignore user-selected output path failure
+				log.Error("Failed to output profile to dir: %s", err.Error())
 			}
 			if err := p.upload(bat); err != nil {
-				log.Error("Failed to upload profile: %s", err.Error()) //errtrack:ignore agent or network failure
+				log.Error("Failed to upload profile: %s", err.Error())
 			}
 		}
 	}
