@@ -31,17 +31,20 @@ func (otelcTestConnector) Connect(context.Context) (driver.Conn, error) {
 func (otelcTestConnector) Driver() driver.Driver { return otelcTestDriver{} }
 
 func TestOtelcWrapConnector(t *testing.T) {
-	traced, wrapped := otelcWrapConnector(otelcTestConnector{})
+	traced, wrapped := otelcWrapConnector(otelcTestConnector{}, "")
 	require.True(t, wrapped)
 	assert.IsType(t, &tracedConnector{}, traced)
 
-	again, wrapped := otelcWrapConnector(traced)
+	again, wrapped := otelcWrapConnector(traced, "")
 	assert.False(t, wrapped, "a traced connector must not be wrapped twice")
 	assert.Same(t, traced, again)
+
+	traced, _ = otelcWrapConnector(otelcTestConnector{}, "file::memory:")
+	assert.Equal(t, "file::memory:", traced.(*tracedConnector).cfg.dsn)
 }
 
 func TestOtelcStartDBStats(t *testing.T) {
-	traced, _ := otelcWrapConnector(otelcTestConnector{})
+	traced, _ := otelcWrapConnector(otelcTestConnector{}, "")
 	db := sql.OpenDB(traced)
 	// DB stats are off by default, so this starts nothing, and a connector
 	// that is not traced is ignored.

@@ -16,12 +16,15 @@ import (
 
 // otelcWrapConnector returns c wrapped for tracing and true, or c and false
 // when c is already a traced connector, as it is when OpenDB calls
-// database/sql.OpenDB.
-func otelcWrapConnector(c driver.Connector) (driver.Connector, bool) {
+// database/sql.OpenDB. A non-empty dsn is used as with WithDSN.
+func otelcWrapConnector(c driver.Connector, dsn string) (driver.Connector, bool) {
 	if _, ok := c.(*tracedConnector); ok {
 		return c, false
 	}
-	return newTracedConnector(c), true
+	if dsn == "" {
+		return newTracedConnector(c), true
+	}
+	return newTracedConnector(c, WithDSN(dsn)), true
 }
 
 // otelcStartDBStats does what OpenDB does once database/sql.OpenDB returns.
