@@ -69,9 +69,9 @@ func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
 	case slog.LevelInfo:
 		log.Info("%s %s", r.Message, extra)
 	case slog.LevelWarn:
-		log.Warn("%s %s", r.Message, extra) //errtrack:ignore user-provided log record
+		log.Warn("%s %s", r.Message, extra)
 	case slog.LevelError:
-		log.Error("%s %s", r.Message, extra) //errtrack:ignore user-provided log record
+		log.Error("%s %s", r.Message, extra)
 	}
 	return nil
 }

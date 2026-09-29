@@ -299,7 +299,7 @@ func Start(opts ...StartOption) error {
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
 		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error()) //errtrack:ignore duplicate runtime-metrics emitter is application process state
 		}
 	}
 
