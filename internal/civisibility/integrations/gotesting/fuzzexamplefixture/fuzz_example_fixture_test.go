@@ -7,12 +7,34 @@ package fuzzexamplefixture
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
+
+const (
+	fixtureBuildTimeout = 5 * time.Minute
+	fixtureRunTimeout   = 3 * time.Minute
+)
+
+var fixtureScenarios = []string{
+	"pass",
+	"fuzz-failure",
+	"seed-lifecycle",
+	"fuzz-missing-call",
+	"example-mismatch",
+	"example-panic",
+	"example-panic-nil",
+	"test-management",
+	"active-fuzz",
+	"filtered",
+}
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	if os.Getenv("GO_CMD") == "gotip" {
@@ -22,52 +44,147 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 	goCache := filepath.Join(t.TempDir(), "gocache")
 	goModCache := goEnv(t, "GOMODCACHE")
 	for _, mode := range []string{"manual", "orchestrion"} {
-		for _, scenario := range []string{
-			"pass",
-			"fuzz-failure",
-			"seed-lifecycle",
-			"fuzz-missing-call",
-			"example-mismatch",
-			"example-panic",
-			"example-panic-nil",
-			"test-management",
-			"active-fuzz",
-			"filtered",
-		} {
+		// Compile each mode once. Re-running go test for every scenario repeats
+		// Orchestrion weaving and can exhaust the package timeout on Windows.
+		binaryName := "fuzzexample-" + mode + ".test"
+		if runtime.GOOS == "windows" {
+			binaryName += ".exe"
+		}
+		binaryPath := filepath.Join(t.TempDir(), binaryName)
+		buildDir, buildArgs := fixtureBuildCommand(mode, binaryPath)
+		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), "go", buildArgs...)
+
+		for _, scenario := range fixtureScenarios {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
-				fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app")
-				args := []string{"test", "-mod=readonly", "-count=1", "-v", "-run", "^(FuzzNative|ExampleNative)"}
-				switch scenario {
-				case "seed-lifecycle":
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$"}
-				case "fuzz-missing-call":
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzMissingCall$"}
-				case "example-panic-nil":
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^ExamplePanicNil$"}
-				case "test-management":
-					args = []string{"test", "-mod=readonly", "-count=1", "-v", "-run", "^(FuzzManaged|ExampleManaged)"}
-				case "active-fuzz":
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^FuzzActiveOther$", "-fuzz", "^FuzzNativeParity$", "-fuzztime", "1x"}
-				case "filtered":
-					args = []string{"test", "-mod=readonly", "-count=1", "-run", "^TestNormalSelection$"}
-				}
-				if mode == "orchestrion" {
-					fixtureDir = filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
-					args = append([]string{"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go"}, args...)
-					args = append(args, "-tags=fuzzexamplefixture")
-					args = append(args, "./fuzzexample")
-				}
-				cmd := exec.Command("go", args...)
-				cmd.Dir = fixtureDir
-				cmd.Env = fixtureEnv(t, mode, scenario, goCache, goModCache)
-				var output bytes.Buffer
-				cmd.Stdout = &output
-				cmd.Stderr = &output
-				if err := cmd.Run(); err != nil {
-					t.Fatalf("fixture failed: %v\n%s", err, output.String())
-				}
+				runFixtureCommand(t, fixtureRunTimeout, fixtureRunDir(mode), fixtureEnv(t, mode, scenario, goCache, goModCache), binaryPath, fixtureScenarioArgs(scenario, filepath.Join(t.TempDir(), "fuzzcache"))...)
 			})
 		}
+	}
+}
+
+func fixtureBuildCommand(mode, binaryPath string) (string, []string) {
+	if mode == "orchestrion" {
+		return filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"), []string{
+			"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go", "test", "-c", "-mod=readonly",
+			"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample",
+		}
+	}
+	return filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"), []string{
+		"test", "-c", "-mod=readonly", "-o", binaryPath, ".",
+	}
+}
+
+func fixtureRunDir(mode string) string {
+	if mode == "orchestrion" {
+		return filepath.Join("..", "fixtures", "itrbackfill", "orchestrion", "fuzzexample")
+	}
+	return filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app")
+}
+
+func fixtureScenarioArgs(scenario, fuzzCacheDir string) []string {
+	args := []string{"-test.count=1", "-test.timeout=2m"}
+	switch scenario {
+	case "seed-lifecycle":
+		return append(args, "-test.run=^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$")
+	case "fuzz-missing-call":
+		return append(args, "-test.run=^FuzzMissingCall$")
+	case "example-panic-nil":
+		return append(args, "-test.run=^ExamplePanicNil$")
+	case "test-management":
+		return append(args, "-test.v=true", "-test.run=^(FuzzManaged|ExampleManaged)")
+	case "active-fuzz":
+		return append(args, "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)
+	case "filtered":
+		return append(args, "-test.run=^TestNormalSelection$")
+	default:
+		return append(args, "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")
+	}
+}
+
+func runFixtureCommand(t *testing.T, timeout time.Duration, dir string, env []string, executable string, args ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			t.Fatalf("fixture command timed out after %s: %s\n%s", timeout, strings.Join(cmd.Args, " "), output.String())
+		}
+		t.Fatalf("fixture command failed: %s: %v\n%s", strings.Join(cmd.Args, " "), err, output.String())
+	}
+}
+
+func TestFixtureBuildCommands(t *testing.T) {
+	binaryPath := filepath.Join("tmp", "fuzzexample.test")
+	tests := []struct {
+		mode     string
+		wantDir  string
+		wantArgs []string
+	}{
+		{
+			mode:    "manual",
+			wantDir: filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"),
+			wantArgs: []string{
+				"test", "-c", "-mod=readonly", "-o", binaryPath, ".",
+			},
+		},
+		{
+			mode:    "orchestrion",
+			wantDir: filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"),
+			wantArgs: []string{
+				"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go", "test", "-c", "-mod=readonly",
+				"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.mode, func(t *testing.T) {
+			dir, args := fixtureBuildCommand(test.mode, binaryPath)
+			if dir != test.wantDir {
+				t.Errorf("build dir = %q, want %q", dir, test.wantDir)
+			}
+			if !slices.Equal(args, test.wantArgs) {
+				t.Errorf("build args = %q, want %q", args, test.wantArgs)
+			}
+		})
+	}
+}
+
+func TestFixtureScenarioArgs(t *testing.T) {
+	common := []string{"-test.count=1", "-test.timeout=2m"}
+	fuzzCacheDir := filepath.Join("tmp", "fuzzcache")
+	tests := []struct {
+		scenario string
+		want     []string
+	}{
+		{scenario: "pass", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
+		{scenario: "fuzz-failure", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
+		{scenario: "seed-lifecycle", want: append(slices.Clone(common), "-test.run=^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$")},
+		{scenario: "fuzz-missing-call", want: append(slices.Clone(common), "-test.run=^FuzzMissingCall$")},
+		{scenario: "example-mismatch", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
+		{scenario: "example-panic", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
+		{scenario: "example-panic-nil", want: append(slices.Clone(common), "-test.run=^ExamplePanicNil$")},
+		{scenario: "test-management", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzManaged|ExampleManaged)")},
+		{scenario: "active-fuzz", want: append(slices.Clone(common), "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)},
+		{scenario: "filtered", want: append(slices.Clone(common), "-test.run=^TestNormalSelection$")},
+	}
+	gotScenarios := make([]string, 0, len(tests))
+	for _, test := range tests {
+		gotScenarios = append(gotScenarios, test.scenario)
+		t.Run(test.scenario, func(t *testing.T) {
+			if got := fixtureScenarioArgs(test.scenario, fuzzCacheDir); !slices.Equal(got, test.want) {
+				t.Errorf("scenario args = %q, want %q", got, test.want)
+			}
+		})
+	}
+	if !slices.Equal(gotScenarios, fixtureScenarios) {
+		t.Errorf("tested scenarios = %q, want %q", gotScenarios, fixtureScenarios)
 	}
 }
 
