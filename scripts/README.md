@@ -231,13 +231,14 @@ that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
 `cold_miss`, disabled, error, or unknown. For isolated-cache providers a
 raw cache-hit of `false` is ambiguous between a prefix restore and a
-cold miss, so the collector classifies it as `unknown`. The Datadog
-count series keeps the contract it has always had, where `miss` means
-"not an exact hit" (actions/setup-go already reported false for
-restore-key matches), so every successful restore stays counted and
+cold miss, so the collector classifies it as `unknown`. This applies to
+the cloudx provider; `actions/setup-go` restores with the primary key
+only, so for the github-cache provider `false` is a cold miss. The
+Datadog count series keeps the contract it has always had, where `miss`
+means "not an exact hit", so every successful restore stays counted and
 existing dashboards remain continuous. The precise exact/prefix/cold
-split remains with completed-log classification in this tool. Saves are classified per event from
-completed log markers (`Cache saved with key:`, `Cache hit occurred on the
+split remains with completed-log classification in this tool. Saves are
+classified per event from completed log markers (`Cache saved with key:`, `Cache hit occurred on the
 primary key ... not saving cache`, reservation conflicts, failures); a
 successful job never counts as a successful save on its own.
 
@@ -260,21 +261,34 @@ go test -race -count=1 ./scripts/citiming/
 
 1. Collect each day of the window before job logs expire, with
    `--cache-snapshot`.
-2. Compare only windows with the same frozen workload strata; a comparison
-   needs at least five independent successful first-attempt run IDs per
-   stratum per window, and five PR revisions with measured feedback times
-   per window. Extend the window rather than triggering runs to reach a
-   count.
-3. Do not pool different runner classes, Go patch versions, build modes, or
-   contrib module selections; the compare tool keeps strata separate,
-   including the matrix dimensions recorded in each job name, and it
-   refuses the weighted aggregate while any baseline stratum lacks
-   candidate observations or sits below the five-distinct-run minimum
-   (PR feedback: five measured revisions per signature per window),
-   naming every affected stratum so the window can be extended.
-4. Record failures, retries, cancellations, and unknown classifications
+2. Collect lists runs in hourly slices (the GitHub list-runs endpoint
+   returns at most 1000 results per query) and fails if a slice reaches
+   that limit; the collector never truncates silently.
+3. Compare only windows collected with the same workflow and job set. A
+   stratum is one workflow file, logical job name (which carries the
+   matrix dimensions), and runner identity (runner group plus labels);
+   workload family and resolved Go version are not part of the key, so a
+   treatment that changes them does not split a stratum. A stratum is
+   comparable when both windows have at least five distinct successful
+   first-attempt run IDs, it has candidate data, and its known resolved
+   Go versions do not differ between windows (reported as "toolchain
+   changed"; an unknown version never excludes). Extend the window rather
+   than triggering runs to reach a count.
+4. The headline is baseline-weighted job-minutes over the comparable
+   strata: each stratum's weight is its baseline success count, and the
+   improvement is `1 - sum(w * candidate p50) / sum(w * baseline p50)`.
+   PR feedback uses the same approach per selection signature, with the
+   baseline measured revisions as weight and a five-revision minimum per
+   window; it is computed from every `pull_request` run in the window,
+   regardless of `--workflows` and `--events`. The report gives the
+   covered share of baseline weight and lists every excluded stratum
+   with its reason. The tool refuses the headline (improvement `n/a`,
+   non-zero exit for the job headline) when the comparable strata cover
+   less than 80% of the baseline weight.
+5. Record failures, retries (runs with a later attempt, counted per
+   stratum from first attempts), cancellations, and unknown classifications
    from the reports; skipped jobs are absent work, not zero durations.
-5. Publish aggregates and run URLs in the PR description, never raw logs.
+6. Publish aggregates and run URLs in the PR description, never raw logs.
 
 ## Guidelines
 

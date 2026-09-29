@@ -14,8 +14,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -155,19 +157,19 @@ type cacheEntry struct {
 // The observation records written to observations.jsonl.
 
 type runMeta struct {
-	ID            int64  `json:"id"`
-	Attempt       int    `json:"attempt"`
-	LatestAttempt bool   `json:"latest_attempt"`
-	Event         string `json:"event"`
-	Status        string `json:"status"`
-	Conclusion    string `json:"conclusion"`
-	Workflow      string `json:"workflow"`
-	WorkflowFile  string `json:"workflow_file"`
-	CreatedAt     string `json:"created_at"`
-	HeadSHA       string `json:"head_sha"`
-	HeadBranch    string `json:"head_branch"`
-	PR            *int   `json:"pr"`
-	URL           string `json:"url"`
+	ID           int64  `json:"id"`
+	Attempt      int    `json:"attempt"`
+	Retried      bool   `json:"retried"` // the run has a later attempt
+	Event        string `json:"event"`
+	Status       string `json:"status"`
+	Conclusion   string `json:"conclusion"`
+	Workflow     string `json:"workflow"`
+	WorkflowFile string `json:"workflow_file"`
+	CreatedAt    string `json:"created_at"`
+	HeadSHA      string `json:"head_sha"`
+	HeadBranch   string `json:"head_branch"`
+	PR           *int   `json:"pr"`
+	URL          string `json:"url"`
 }
 
 type jobMeta struct {
@@ -180,8 +182,6 @@ type jobMeta struct {
 	CompletedAt  string   `json:"completed_at"`
 	Seconds      *float64 `json:"seconds"`
 	RunnerGroup  string   `json:"runner_group"`
-	RunnerOS     string   `json:"runner_os"`
-	RunnerArch   string   `json:"runner_arch"`
 	RunnerLabels []string `json:"runner_labels"`
 }
 
@@ -258,32 +258,6 @@ func logicalJobName(name string) string {
 	return name
 }
 
-func osFromLabels(labels []string) string {
-	for _, label := range labels {
-		for _, hint := range []string{"ubuntu", "windows", "macos", "linux"} {
-			if strings.Contains(strings.ToLower(label), hint) {
-				return hint
-			}
-		}
-	}
-	return "unknown"
-}
-
-func archFromLabels(labels []string) string {
-	for _, label := range labels {
-		lower := strings.ToLower(label)
-		for _, hint := range []string{"x64", "arm64", "x86", "amd64", "arm"} {
-			if strings.Contains(lower, hint) {
-				if hint == "amd64" {
-					return "x64"
-				}
-				return hint
-			}
-		}
-	}
-	return "unknown"
-}
-
 func isIgnoredCheck(name string) bool {
 	for _, pattern := range ignoredCheckPatterns {
 		if strings.Contains(name, pattern) {
@@ -293,29 +267,27 @@ func isIgnoredCheck(name string) bool {
 	return false
 }
 
-// collectRun produces job observations for one workflow run, all attempts.
-// A rerun reuses the run ID with a higher attempt number, so every attempt
-// is recorded and only the latest is flagged as such.
+// collectRun produces job observations for the first attempt of one
+// workflow run. Timing and non-success counts use first attempts only, so
+// later attempts are not collected; a run with a later attempt is flagged
+// Retried so the report can count retries.
 func collectRun(c client, r run, collectedAt string) ([]jobObservation, error) {
-	latest := max(r.RunAttempt, 1)
-	var records []jobObservation
-	for attempt := 1; attempt <= latest; attempt++ {
-		path := fmt.Sprintf("repos/%s/actions/runs/%d/attempts/%d/jobs", c.repoPath(), r.ID, attempt)
-		jobs, err := fetchAll[job](c, path, "jobs")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ! run %d attempt %d: jobs unavailable: %v\n", r.ID, attempt, err)
-			continue
-		}
-		for _, j := range jobs {
-			records = append(records, buildJobRecord(c, r, attempt, latest, j, collectedAt))
-		}
+	path := fmt.Sprintf("repos/%s/actions/runs/%d/attempts/1/jobs", c.repoPath(), r.ID)
+	jobs, err := fetchAll[job](c, path, "jobs")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  ! run %d: jobs unavailable: %v\n", r.ID, err)
+		return nil, nil
+	}
+	records := make([]jobObservation, 0, len(jobs))
+	for _, j := range jobs {
+		records = append(records, buildJobRecord(c, r, j, collectedAt))
 	}
 	return records, nil
 }
 
 // buildJobRecord assembles one observation, fetching the job's log for
 // cache evidence. Missing logs keep the record with unknown classifications.
-func buildJobRecord(c client, r run, attempt, latest int, j job, collectedAt string) jobObservation {
+func buildJobRecord(c client, r run, j job, collectedAt string) jobObservation {
 	logText, logErr := c.getLog(fmt.Sprintf("repos/%s/actions/jobs/%d/logs", c.repoPath(), j.ID))
 	var ev *logEvidence
 	if logErr == nil {
@@ -366,19 +338,19 @@ func buildJobRecord(c client, r run, attempt, latest int, j job, collectedAt str
 		Schema:      schemaVersion,
 		CollectedAt: collectedAt,
 		Run: runMeta{
-			ID:            r.ID,
-			Attempt:       attempt,
-			LatestAttempt: attempt == latest,
-			Event:         r.Event,
-			Status:        r.Status,
-			Conclusion:    r.Conclusion,
-			Workflow:      r.Name,
-			WorkflowFile:  workflowFile(r.Path),
-			CreatedAt:     r.CreatedAt,
-			HeadSHA:       r.HeadSHA,
-			HeadBranch:    r.HeadBranch,
-			PR:            pr,
-			URL:           r.HTMLURL,
+			ID:           r.ID,
+			Attempt:      1,
+			Retried:      r.RunAttempt > 1,
+			Event:        r.Event,
+			Status:       r.Status,
+			Conclusion:   r.Conclusion,
+			Workflow:     r.Name,
+			WorkflowFile: workflowFile(r.Path),
+			CreatedAt:    r.CreatedAt,
+			HeadSHA:      r.HeadSHA,
+			HeadBranch:   r.HeadBranch,
+			PR:           pr,
+			URL:          r.HTMLURL,
 		},
 		Job: jobMeta{
 			ID:           j.ID,
@@ -390,8 +362,6 @@ func buildJobRecord(c client, r run, attempt, latest int, j job, collectedAt str
 			CompletedAt:  j.CompletedAt,
 			Seconds:      secondsBetween(j.StartedAt, j.CompletedAt),
 			RunnerGroup:  j.RunnerGroupName,
-			RunnerOS:     osFromLabels(j.Labels),
-			RunnerArch:   archFromLabels(j.Labels),
 			RunnerLabels: j.Labels,
 		},
 		Workload: wl,
@@ -550,46 +520,67 @@ type prKey struct {
 	sha string
 }
 
-const schemaVersion = 1
+const schemaVersion = 2
 
-// loadObservations reads an existing store: job observations by dedup key and
-// the set of already-recorded PR feedback revisions.
+// loadObservations reads a store strictly, for both collect and compare:
+// job observations by dedup key and PR feedback by revision. Any non-blank
+// line that is not a well-formed record of the current schema is an error
+// naming the file and line, so a damaged store is never silently dropped
+// or rewritten. A missing file returns an error satisfying
+// errors.Is(err, fs.ErrNotExist).
 func loadObservations(dir string) (map[jobKey]jobObservation, map[prKey]prFeedback, error) {
-	jobs := map[jobKey]jobObservation{}
-	feedback := map[prKey]prFeedback{}
-	data, err := os.ReadFile(dir + "/observations.jsonl")
-	if os.IsNotExist(err) {
-		return jobs, feedback, nil
-	}
+	path := filepath.Join(dir, "observations.jsonl")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	for line := range strings.SplitSeq(string(data), "\n") {
+	jobs := map[jobKey]jobObservation{}
+	feedback := map[prKey]prFeedback{}
+	for i, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var probe struct {
-			Kind string `json:"kind"`
+			Kind   string `json:"kind"`
+			Schema int    `json:"schema"`
 		}
-		if json.Unmarshal([]byte(line), &probe) != nil {
-			continue
+		if err := json.Unmarshal([]byte(line), &probe); err != nil {
+			return nil, nil, fmt.Errorf("%s line %d: %w", path, i+1, err)
+		}
+		if probe.Schema != schemaVersion {
+			return nil, nil, fmt.Errorf("%s line %d: schema %d, want %d",
+				path, i+1, probe.Schema, schemaVersion)
 		}
 		switch probe.Kind {
 		case "job_observation":
 			var rec jobObservation
-			if json.Unmarshal([]byte(line), &rec) != nil {
-				continue
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				return nil, nil, fmt.Errorf("%s line %d: %w", path, i+1, err)
 			}
 			jobs[jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}] = rec
 		case "pr_feedback":
 			var rec prFeedback
-			if json.Unmarshal([]byte(line), &rec) != nil {
-				continue
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				return nil, nil, fmt.Errorf("%s line %d: %w", path, i+1, err)
 			}
 			feedback[prKey{rec.PR, rec.HeadSHA}] = rec
+		default:
+			return nil, nil, fmt.Errorf("%s line %d: unknown record kind %q",
+				path, i+1, probe.Kind)
 		}
 	}
 	return jobs, feedback, nil
+}
+
+// loadStoreForUpdate is loadObservations for collect, where a missing
+// store is an empty one. Any other failure, including a malformed line,
+// stops the collection before the store is rewritten.
+func loadStoreForUpdate(dir string) (map[jobKey]jobObservation, map[prKey]prFeedback, error) {
+	jobs, feedback, err := loadObservations(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[jobKey]jobObservation{}, map[prKey]prFeedback{}, nil
+	}
+	return jobs, feedback, err
 }
 
 // writeStore serializes the merged observation store: job
@@ -597,8 +588,8 @@ func loadObservations(dir string) (map[jobKey]jobObservation, map[prKey]prFeedba
 // (PR, head SHA). Both maps are the complete merged state; callers
 // merge freshly collected records over previously stored ones so an
 // overlapping collection refreshes re-observed records (correcting,
-// for example, a superseded attempt's latest flag after a rerun)
-// instead of dropping or duplicating them.
+// for example, a run's retried flag after a rerun) instead of
+// dropping or duplicating them. The file is replaced atomically.
 func writeStore(path string, jobs map[jobKey]jobObservation,
 	feedback map[prKey]prFeedback) error {
 
@@ -635,11 +626,126 @@ func writeStore(path string, jobs map[jobKey]jobObservation,
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	return writeFileAtomic(path, buf.Bytes())
+}
+
+// writeFileAtomic writes data to a temporary file in the target directory
+// and renames it over path, so an interrupted write never leaves a
+// truncated store.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op after a successful rename
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func flagSet(name string) *flag.FlagSet {
 	return flag.NewFlagSet(name, flag.ContinueOnError)
+}
+
+// Runs are listed in time slices because the list-runs endpoint returns at
+// most runsQueryLimit results per query when filtered by created or status.
+const (
+	runsSlice      = time.Hour
+	runsQueryLimit = 1000
+	runTimeLayout  = "2006-01-02T15:04:05Z"
+)
+
+// fetchRuns lists completed runs created in [since, until) one slice at a
+// time and dedupes them by run ID. A slice that reaches runsQueryLimit may
+// have been truncated by the API, so it is an error rather than a silent
+// undercount. It also returns the number of slices queried.
+func fetchRuns(c client, since, until time.Time) ([]run, int, error) {
+	var runs []run
+	seen := map[int64]bool{}
+	nSlices := 0
+	for start := since; start.Before(until); start = start.Add(runsSlice) {
+		end := start.Add(runsSlice)
+		if end.After(until) {
+			end = until
+		}
+		// created= ranges are inclusive at both ends.
+		created := start.Format(runTimeLayout) + ".." + end.Add(-time.Second).Format(runTimeLayout)
+		found, err := fetchAll[run](c,
+			fmt.Sprintf("repos/%s/actions/runs?created=%s&status=completed",
+				c.repoPath(), created),
+			"workflow_runs")
+		if err != nil {
+			return nil, nSlices, err
+		}
+		nSlices++
+		if len(found) >= runsQueryLimit {
+			return nil, nSlices, fmt.Errorf(
+				"runs created %s returned %d results, the API limit per query; results may be truncated",
+				created, len(found))
+		}
+		for _, r := range found {
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				runs = append(runs, r)
+			}
+		}
+	}
+	return runs, nSlices, nil
+}
+
+// window selects what collectWindow gathers. The filters restrict which
+// runs contribute job observations; PR feedback always uses every
+// pull_request run in the time window, because it measures the whole
+// pipeline and must not depend on which workflows are being inspected.
+type window struct {
+	since, until time.Time // [since, until)
+	workflows    map[string]bool
+	events       map[string]bool
+	verbose      bool
+}
+
+func collectWindow(c client, w window, collectedAt string) ([]jobObservation, []prFeedback, error) {
+	runs, nSlices, err := fetchRuns(c, w.since, w.until)
+	if err != nil {
+		return nil, nil, err
+	}
+	kept := make([]run, 0, len(runs))
+	for _, r := range runs {
+		if w.workflows != nil && !w.workflows[workflowFile(r.Path)] {
+			continue
+		}
+		if w.events != nil && !w.events[r.Event] {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	fmt.Fprintf(os.Stdout, "Collected %d completed runs (%d kept after filters) in %d hourly slices\n",
+		len(runs), len(kept), nSlices)
+
+	var records []jobObservation
+	for _, r := range kept {
+		if w.verbose {
+			fmt.Fprintf(os.Stdout, "  run %d %s attempt %d\n", r.ID, r.Name, r.RunAttempt)
+		}
+		recs, err := collectRun(c, r, collectedAt)
+		if err != nil {
+			return nil, nil, err
+		}
+		records = append(records, recs...)
+	}
+	feedback := collectPRFeedback(c, runs, collectedAt)
+	fmt.Fprintf(os.Stdout, "  %d job observations, %d pr feedback records\n",
+		len(records), len(feedback))
+	return records, feedback, nil
 }
 
 func cmdCollect(args []string) error {
@@ -658,12 +764,20 @@ func cmdCollect(args []string) error {
 	if *repo == "" || *since == "" || *until == "" || *outputDir == "" {
 		return errors.New("collect needs --repo, --since, --until and --output-dir")
 	}
-	var workflowFilter, eventFilter map[string]bool
+	sinceDay, err := time.Parse(time.DateOnly, *since)
+	if err != nil {
+		return fmt.Errorf("--since: %w", err)
+	}
+	untilDay, err := time.Parse(time.DateOnly, *until)
+	if err != nil {
+		return fmt.Errorf("--until: %w", err)
+	}
+	w := window{since: sinceDay, until: untilDay.AddDate(0, 0, 1), verbose: *verbose}
 	if *workflows != "" {
-		workflowFilter = splitSet(*workflows)
+		w.workflows = splitSet(*workflows)
 	}
 	if *events != "" {
-		eventFilter = splitSet(*events)
+		w.events = splitSet(*events)
 	}
 
 	c := &ghClient{repo: *repo}
@@ -671,44 +785,12 @@ func cmdCollect(args []string) error {
 	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
 		return err
 	}
-
-	runs, err := fetchAll[run](c,
-		fmt.Sprintf("repos/%s/actions/runs?created=%s..%s&status=completed&exclude_pull_requests=false",
-			*repo, *since, *until),
-		"workflow_runs")
+	records, feedback, err := collectWindow(c, w, collectedAt)
 	if err != nil {
 		return err
 	}
-	kept := make([]run, 0, len(runs))
-	for _, r := range runs {
-		if workflowFilter != nil && !workflowFilter[workflowFile(r.Path)] {
-			continue
-		}
-		if eventFilter != nil && !eventFilter[r.Event] {
-			continue
-		}
-		kept = append(kept, r)
-	}
-	fmt.Fprintf(os.Stdout, "Collected %d completed runs for %s (%s..%s)\n",
-		len(kept), *repo, *since, *until)
 
-	var records []jobObservation
-	var feedback []prFeedback
-	for _, r := range kept {
-		if *verbose {
-			fmt.Fprintf(os.Stdout, "  run %d %s attempt %d\n", r.ID, r.Name, r.RunAttempt)
-		}
-		recs, err := collectRun(c, r, collectedAt)
-		if err != nil {
-			return err
-		}
-		records = append(records, recs...)
-	}
-	feedback = collectPRFeedback(c, kept, collectedAt)
-	fmt.Fprintf(os.Stdout, "  %d job observations, %d pr feedback records\n",
-		len(records), len(feedback))
-
-	existingJobs, existingFeedback, err := loadObservations(*outputDir)
+	existingJobs, existingFeedback, err := loadStoreForUpdate(*outputDir)
 	if err != nil {
 		return err
 	}
@@ -732,7 +814,7 @@ func cmdCollect(args []string) error {
 		}
 		existingFeedback[key] = rec
 	}
-	storePath := *outputDir + "/observations.jsonl"
+	storePath := filepath.Join(*outputDir, "observations.jsonl")
 	if err := writeStore(storePath, existingJobs, existingFeedback); err != nil {
 		return err
 	}

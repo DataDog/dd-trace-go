@@ -99,7 +99,7 @@ runs:
     # metrics is minted later. Expose raw action outputs for classification at
     # submission, and mirror the same observation to the job log as one
     # structured record so jobs without Datadog credentials stay measurable:
-    # scripts/ci_timing.py reads `cache-observation:` lines from completed job
+    # scripts/citiming reads `cache-observation:` lines from completed job
     # logs. Keep the record non-secret and single-line.
     - name: Record cache observations
       id: cache-metrics

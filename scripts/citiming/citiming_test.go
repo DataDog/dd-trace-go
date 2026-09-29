@@ -7,11 +7,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeClient serves canned API responses.
@@ -22,6 +25,8 @@ type fakeClient struct {
 	logs   map[int64]string
 	checks map[string][]checkRun
 	usage  string
+	// runQueries records every list-runs path, in order.
+	runQueries []string
 }
 
 func (f *fakeClient) repoPath() string { return f.repo }
@@ -37,21 +42,31 @@ func (f *fakeClient) getJSON(path string) (string, error) {
 		return `{"total_count":0,"actions_caches":[]}`, nil
 	}
 	if strings.Contains(path, "/actions/runs?") {
-		// Simulate real per-page behavior: 100 items per page so fetchAll's
-		// page loop terminates exactly like it does against the live API.
+		f.runQueries = append(f.runQueries, path)
+		// Simulate the live API: filter by the inclusive created=A..B
+		// range and serve 100 items per page so fetchAll's page loop
+		// terminates the same way.
+		matching := []run{}
+		_, query, _ := strings.Cut(path, "created=")
+		created, _, _ := strings.Cut(query, "&")
+		from, to, _ := strings.Cut(created, "..")
+		for _, r := range f.runs {
+			if r.CreatedAt >= from && r.CreatedAt <= to {
+				matching = append(matching, r)
+			}
+		}
 		page := 1
 		if _, rest, ok := strings.Cut(path, "&page="); ok {
 			fmt.Sscanf(rest, "%d", &page)
 		}
 		start := (page - 1) * 100
-		end := min(start+100, len(f.runs))
+		end := min(start+100, len(matching))
 		var payload struct {
 			WorkflowRuns []run `json:"workflow_runs"`
 		}
-		if start < len(f.runs) {
-			payload.WorkflowRuns = f.runs[start:end]
-		} else {
-			payload.WorkflowRuns = []run{}
+		payload.WorkflowRuns = []run{}
+		if start < len(matching) {
+			payload.WorkflowRuns = matching[start:end]
 		}
 		b, err := json.Marshal(payload)
 		if err != nil {
@@ -415,7 +430,7 @@ func TestCollectRun(t *testing.T) {
 			t.Fatalf("saves = %v, want [exact_key_skip]", rec.Cache.Saves)
 		}
 	})
-	t.Run("rerun attempts recorded", func(t *testing.T) {
+	t.Run("first attempt only, flagged retried", func(t *testing.T) {
 		r := makeRun(2, 2, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "abc123")
 		failed := makeJob(21, "test-contrib-matrix (chunk 1)", "2026-09-13T11:01:00Z", "2026-09-13T11:10:00Z")
 		failed.Conclusion = "failure"
@@ -427,21 +442,28 @@ func TestCollectRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(records) != 2 {
-			t.Fatalf("got %d records, want 2", len(records))
+		if len(records) != 1 {
+			t.Fatalf("got %d records, want only the attempt-1 job", len(records))
 		}
-		byJob := map[int64]jobObservation{}
-		for _, rec := range records {
-			byJob[rec.Job.ID] = rec
+		rec := records[0]
+		if rec.Job.ID != 21 || rec.Run.Attempt != 1 || rec.Job.Conclusion != "failure" {
+			t.Fatalf("record = job %d attempt %d conclusion %q", rec.Job.ID, rec.Run.Attempt, rec.Job.Conclusion)
 		}
-		if byJob[21].Run.LatestAttempt {
-			t.Fatal("attempt 1 must not be flagged latest")
+		if !rec.Run.Retried {
+			t.Fatal("a run with a later attempt must be flagged retried")
 		}
-		if !byJob[22].Run.LatestAttempt {
-			t.Fatal("attempt 2 must be flagged latest")
+	})
+	t.Run("run without rerun is not retried", func(t *testing.T) {
+		r := makeRun(4, 1, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "abc")
+		j := makeJob(41, "test-core", "2026-09-13T11:01:00Z", "2026-09-13T11:10:00Z")
+		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+			jobs: map[string][]job{"4:1": {j}}, logs: map[int64]string{41: joinLines(baseLogLines(""))}}
+		records, err := collectRun(c, r, "now")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if byJob[21].Job.Conclusion != "failure" {
-			t.Fatalf("attempt 1 conclusion = %q", byJob[21].Job.Conclusion)
+		if len(records) != 1 || records[0].Run.Retried {
+			t.Fatalf("records = %+v", records)
 		}
 	})
 	t.Run("missing logs still recorded with unknown", func(t *testing.T) {
@@ -476,12 +498,117 @@ func TestPagination(t *testing.T) {
 	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: runs}
 	// The fake returns everything in one payload; only the page loop's
 	// termination is exercised here via a short list.
-	seen, err := fetchAll[run](c, "repos/x/actions/runs?created=a..b", "workflow_runs")
+	seen, err := fetchAll[run](c, "repos/x/actions/runs?created=2026-09-13T00:00:00Z..2026-09-13T23:59:59Z", "workflow_runs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(seen) != 120 {
 		t.Fatalf("saw %d runs, want 120", len(seen))
+	}
+}
+
+// ---- run listing ------------------------------------------------------------------
+
+func hourRuns(first int64, hour string, n int) []run {
+	runs := make([]run, 0, n)
+	for i := range n {
+		runs = append(runs, makeRun(first+int64(i), 1, "push", "w.yml",
+			"2026-09-13T"+hour+":30:00Z", fmt.Sprintf("sha%d", first+int64(i))))
+	}
+	return runs
+}
+
+func mustTime(t *testing.T, value string) time.Time {
+	t.Helper()
+	ts, err := time.Parse(runTimeLayout, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ts
+}
+
+func TestFetchRunsSlicesTheWindow(t *testing.T) {
+	// 1200 runs exceed the API's 1000-result cap for one query but no
+	// slice does, so every run must come back exactly once.
+	all := append(hourRuns(1, "00", 600), hourRuns(10000, "01", 600)...)
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: all}
+	got, slices, err := fetchRuns(c, mustTime(t, "2026-09-13T00:00:00Z"), mustTime(t, "2026-09-13T03:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1200 {
+		t.Fatalf("got %d runs, want 1200", len(got))
+	}
+	if slices != 3 {
+		t.Fatalf("got %d slices, want 3 hourly slices", slices)
+	}
+	wantFirst := "created=2026-09-13T00:00:00Z..2026-09-13T00:59:59Z"
+	if !strings.Contains(c.runQueries[0], wantFirst) {
+		t.Fatalf("first query %q lacks %q", c.runQueries[0], wantFirst)
+	}
+}
+
+func TestFetchRunsQueryOmitsExcludePullRequests(t *testing.T) {
+	// GitHub treats any value of exclude_pull_requests, including false, as
+	// true and then returns empty pull_requests arrays, so the parameter
+	// must not be sent.
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: hourRuns(1, "00", 1)}
+	if _, _, err := fetchRuns(c, mustTime(t, "2026-09-13T00:00:00Z"), mustTime(t, "2026-09-13T02:00:00Z")); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.runQueries) == 0 {
+		t.Fatal("no queries recorded")
+	}
+	for _, q := range c.runQueries {
+		if strings.Contains(q, "exclude_pull_requests") {
+			t.Fatalf("query %q must not send exclude_pull_requests", q)
+		}
+	}
+}
+
+func TestFetchRunsDedupesByID(t *testing.T) {
+	r := makeRun(5, 1, "push", "w.yml", "2026-09-13T00:30:00Z", "sha")
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r, r}}
+	got, _, err := fetchRuns(c, mustTime(t, "2026-09-13T00:00:00Z"), mustTime(t, "2026-09-13T01:00:00Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d runs, want 1 after dedupe", len(got))
+	}
+}
+
+func TestFetchRunsFailsAtQueryLimit(t *testing.T) {
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: hourRuns(1, "00", runsQueryLimit)}
+	_, _, err := fetchRuns(c, mustTime(t, "2026-09-13T00:00:00Z"), mustTime(t, "2026-09-13T01:00:00Z"))
+	if err == nil || !strings.Contains(err.Error(), "2026-09-13T00:00:00Z..2026-09-13T00:59:59Z") {
+		t.Fatalf("err = %v, want a truncation error naming the slice", err)
+	}
+}
+
+func TestCollectWindowPRFeedbackIgnoresWorkflowFilter(t *testing.T) {
+	// The PR run is outside --workflows, but PR feedback measures the whole
+	// pipeline and must still be computed from it.
+	prRun := makeRun(1, 1, "pull_request", "all-green.yml", "2026-09-13T11:00:00Z", "sha1")
+	pushRun := makeRun(2, 1, "push", "w.yml", "2026-09-13T11:10:00Z", "sha2")
+	j := makeJob(21, "test-core", "2026-09-13T11:11:00Z", "2026-09-13T11:20:00Z")
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{prRun, pushRun},
+		jobs: map[string][]job{"2:1": {j}}, logs: map[int64]string{21: joinLines(baseLogLines(""))},
+		checks: map[string][]checkRun{"sha1": {{Name: "test-core", Conclusion: "success", CompletedAt: "2026-09-13T11:30:00Z"}}}}
+	records, feedback, err := collectWindow(c, window{
+		since:     mustTime(t, "2026-09-13T00:00:00Z"),
+		until:     mustTime(t, "2026-09-14T00:00:00Z"),
+		workflows: map[string]bool{"w.yml": true},
+		events:    map[string]bool{"push": true},
+	}, "now")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].Run.ID != 2 {
+		t.Fatalf("job records = %+v, want only the push run", records)
+	}
+	if len(feedback) != 1 || feedback[0].PR != 42 || feedback[0].HeadSHA != "sha1" {
+		t.Fatalf("feedback = %+v, want the filtered-out PR revision", feedback)
 	}
 }
 
@@ -555,30 +682,6 @@ func TestCacheSnapshotUsesAPIBytes(t *testing.T) {
 	}
 }
 
-// ---- weighted median -----------------------------------------------------------------
-
-func TestWeightedMedian(t *testing.T) {
-	t.Run("heavy stratum wins", func(t *testing.T) {
-		pairs := []weightedValue{{10, 4}, {2, 1}, {3, 1}, {4, 1}}
-		got := weightedMedian(pairs)
-		if got == nil || *got != 10 {
-			t.Fatalf("weightedMedian = %v, want 10", got)
-		}
-	})
-	t.Run("boundary inclusive", func(t *testing.T) {
-		pairs := []weightedValue{{2, 1}, {3, 1}, {4, 1}, {10, 3}}
-		got := weightedMedian(pairs)
-		if got == nil || *got != 4 {
-			t.Fatalf("weightedMedian = %v, want 4", got)
-		}
-	})
-	t.Run("empty", func(t *testing.T) {
-		if weightedMedian(nil) != nil {
-			t.Fatal("empty input must return nil")
-		}
-	})
-}
-
 // ---- store dedup ----------------------------------------------------------------------
 
 func TestStoreMergeSemantics(t *testing.T) {
@@ -599,7 +702,7 @@ func TestStoreMergeSemantics(t *testing.T) {
 	storePath := filepath.Join(dir, "observations.jsonl")
 
 	merge := func() (map[jobKey]jobObservation, map[prKey]prFeedback) {
-		jobs, feedback, err := loadObservations(dir)
+		jobs, feedback, err := loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -623,27 +726,27 @@ func TestStoreMergeSemantics(t *testing.T) {
 		}
 	})
 
-	t.Run("refreshes superseded-attempt metadata", func(t *testing.T) {
-		// Attempt 1 was collected as the latest before a rerun created
-		// attempt 2; a later overlapping collection re-observes it with
-		// the corrected flag and the store must take the refresh.
-		jobs, _, err := loadObservations(dir)
+	t.Run("refreshes retried flag", func(t *testing.T) {
+		// Attempt 1 was collected before a rerun created attempt 2; a
+		// later overlapping collection re-observes it with the retried
+		// flag and the store must take the refresh.
+		jobs, _, err := loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
 		key := jobKey{7, 1, 71}
 		rec := jobs[key]
-		rec.Run.LatestAttempt = false
+		rec.Run.Retried = true
 		jobs[key] = rec
 		if err := writeStore(storePath, jobs, nil); err != nil {
 			t.Fatal(err)
 		}
-		jobs, _, err = loadObservations(dir)
+		jobs, _, err = loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if jobs[key].Run.LatestAttempt {
-			t.Fatal("stale latest-attempt flag was not refreshed")
+		if !jobs[key].Run.Retried {
+			t.Fatal("stale retried flag was not refreshed")
 		}
 	})
 
@@ -652,7 +755,7 @@ func TestStoreMergeSemantics(t *testing.T) {
 		fb := prFeedback{Kind: "pr_feedback", Schema: schemaVersion,
 			PR: 7, HeadSHA: "sha7", Seconds: &sec,
 			SelectionSignature: "s7"}
-		jobs, feedback, err := loadObservations(dir)
+		jobs, feedback, err := loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -662,14 +765,14 @@ func TestStoreMergeSemantics(t *testing.T) {
 		}
 		// A later daily collection observes no feedback; the stored
 		// record must survive the rewrite.
-		jobs, feedback2, err := loadObservations(dir)
+		jobs, feedback2, err := loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := writeStore(storePath, jobs, feedback2); err != nil {
 			t.Fatal(err)
 		}
-		jobs, feedback3, err := loadObservations(dir)
+		jobs, feedback3, err := loadStoreForUpdate(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -680,6 +783,80 @@ func TestStoreMergeSemantics(t *testing.T) {
 			t.Fatalf("store holds %d lines, want 2 (job + feedback)", got)
 		}
 	})
+}
+
+func TestLoadObservationsIsStrict(t *testing.T) {
+	good, err := json.Marshal(jobRecord("w.yml", "A", 1, secondsPtr(10), "success"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSchema := strings.Replace(string(good), fmt.Sprintf(`"schema":%d`, schemaVersion), `"schema":1`, 1)
+	for name, tc := range map[string]struct{ line, want string }{
+		"malformed json": {`{"kind":`, "line 2"},
+		"unknown kind":   {`{"kind":"other","schema":2}`, `unknown record kind "other"`},
+		"old schema":     {oldSchema, "schema 1"},
+		"bad record":     {fmt.Sprintf(`{"kind":"job_observation","schema":%d,"run":"x"}`, schemaVersion), "line 2"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "observations.jsonl")
+			content := string(good) + "\n" + tc.line + "\n"
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err := loadObservations(dir)
+			if err == nil || !strings.Contains(err.Error(), tc.want) ||
+				!strings.Contains(err.Error(), path) {
+				t.Fatalf("err = %v, want it to name %s and contain %q", err, path, tc.want)
+			}
+			// compare shares the loader and must reject the store too.
+			cmpErr := cmdCompare([]string{"--baseline", dir, "--candidate", dir, "--output-dir", t.TempDir()})
+			if cmpErr == nil || !strings.Contains(cmpErr.Error(), tc.want) {
+				t.Fatalf("compare err = %v, want %q", cmpErr, tc.want)
+			}
+			after, _ := os.ReadFile(path)
+			if string(after) != content {
+				t.Fatal("a rejected store must not be rewritten")
+			}
+		})
+	}
+	t.Run("missing store", func(t *testing.T) {
+		_, _, err := loadObservations(t.TempDir())
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
+		}
+		jobs, feedback, err := loadStoreForUpdate(t.TempDir())
+		if err != nil || len(jobs) != 0 || len(feedback) != 0 {
+			t.Fatalf("collect must start from an empty store, got %d/%d, %v", len(jobs), len(feedback), err)
+		}
+	})
+}
+
+func TestWriteStoreIsAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "observations.jsonl")
+	if err := os.WriteFile(path, []byte("previous\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := jobRecord("w.yml", "A", 1, secondsPtr(10), "success")
+	jobs := map[jobKey]jobObservation{{1, 1, 10}: rec}
+	if err := writeStore(path, jobs, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "observations.jsonl" {
+		t.Fatalf("directory holds %v, want only the store (no temp files)", entries)
+	}
+	if _, _, err := loadObservations(dir); err != nil {
+		t.Fatal(err)
+	}
+	// A failed write must leave the previous store untouched.
+	if err := writeStore(filepath.Join(dir, "missing", "observations.jsonl"), jobs, nil); err == nil {
+		t.Fatal("write into a missing directory must fail")
+	}
 }
 
 func countLines(t *testing.T, path string) int {
@@ -724,12 +901,12 @@ func jobRecord(workflow, family string, id int64, seconds *float64, conclusion s
 		Kind:   "job_observation",
 		Schema: schemaVersion,
 		Run: runMeta{
-			ID: id, Attempt: 1, LatestAttempt: true, Event: "pull_request",
+			ID: id, Attempt: 1, Event: "pull_request",
 			Conclusion: "success", WorkflowFile: workflow, PR: &pr,
 		},
 		Job: jobMeta{
 			ID: id * 10, LogicalName: family, Conclusion: conclusion,
-			RunnerOS: "ubuntu", RunnerArch: "x64", Seconds: seconds,
+			RunnerGroup: "group", RunnerLabels: []string{"ubuntu-latest", "x64"}, Seconds: seconds,
 		},
 		Workload: workloadMeta{Family: family, ResolvedGoVersion: "1.27.1"},
 		Cache: cacheMeta{
@@ -775,9 +952,11 @@ func TestCompareFrozenStrata(t *testing.T) {
 	}
 	text := string(report)
 	for _, want := range []string{
-		"baseline weighted median: 100.0 s",
-		"candidate weighted median: 50.0 s",
-		"improvement: 50.0%",
+		// weights 5+5; 5*100+5*500 = 50.0 job-minutes vs 5*50+5*500 = 45.8.
+		"covered share: 100.0%",
+		"baseline weighted job-minutes: 50.0 min",
+		"candidate weighted job-minutes: 45.8 min",
+		"improvement: 8.3%",
 		"## Cache behavior",
 	} {
 		if !strings.Contains(text, want) {
@@ -806,15 +985,166 @@ func TestCompareMissingStratumReported(t *testing.T) {
 	writeTestStore(t, candDir, cand, nil)
 	err := cmdCompare([]string{"--baseline", baseDir, "--candidate", candDir, "--output-dir", outDir})
 	if err == nil {
-		t.Fatal("missing candidate stratum must refuse the aggregate")
+		t.Fatal("50% covered share must refuse the aggregate")
 	}
 	report, rerr := os.ReadFile(filepath.Join(outDir, "comparison.md"))
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	if !strings.Contains(string(report), "Missing coverage") ||
-		!strings.Contains(string(report), "C") {
-		t.Fatalf("report must list missing stratum C:\n%s", report)
+	for _, want := range []string{"## Excluded strata", "/ C / ", "no candidate data",
+		"covered share: 50.0%", "aggregate refused: covered share 50.0% is below the minimum of 80%"} {
+		if !strings.Contains(string(report), want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
+// compareStrata builds a baseline and candidate store where every named
+// stratum has minRunSamples successful first attempts per window, taking
+// its timings and Go versions from the given specs. A stratum absent from
+// the candidate map has no candidate records.
+type stratumSpec struct {
+	name                string
+	baseSecs, candSecs  float64
+	baseFamily, baseVer string
+	candFamily, candVer string
+	noCandidate         bool
+	retried             bool
+}
+
+func runCompare(t *testing.T, specs []stratumSpec) (string, error) {
+	t.Helper()
+	baseDir, candDir, outDir := t.TempDir(), t.TempDir(), t.TempDir()
+	var base, cand []jobObservation
+	id := int64(1)
+	for _, sp := range specs {
+		for range minRunSamples {
+			b := jobRecord("w.yml", sp.name, id, secondsPtr(sp.baseSecs), "success")
+			b.Workload = workloadMeta{Family: sp.baseFamily, ResolvedGoVersion: sp.baseVer}
+			b.Run.Retried = sp.retried
+			base = append(base, b)
+			id++
+			if sp.noCandidate {
+				continue
+			}
+			c := jobRecord("w.yml", sp.name, id, secondsPtr(sp.candSecs), "success")
+			c.Workload = workloadMeta{Family: sp.candFamily, ResolvedGoVersion: sp.candVer}
+			cand = append(cand, c)
+			id++
+		}
+	}
+	writeTestStore(t, baseDir, base, nil)
+	writeTestStore(t, candDir, cand, nil)
+	err := cmdCompare([]string{"--baseline", baseDir, "--candidate", candDir, "--output-dir", outDir})
+	report, rerr := os.ReadFile(filepath.Join(outDir, "comparison.md"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	return string(report), err
+}
+
+func TestCompareAggregatesOverEligibleStrata(t *testing.T) {
+	// E has no candidate data: 4 of 5 equal-weight strata (80%) is the
+	// minimum coverage, so the aggregate is computed over A-D only and E
+	// is listed as excluded.
+	specs := []stratumSpec{
+		{name: "A", baseSecs: 100, candSecs: 50}, {name: "B", baseSecs: 100, candSecs: 50},
+		{name: "C", baseSecs: 100, candSecs: 50}, {name: "D", baseSecs: 100, candSecs: 50},
+		{name: "E", baseSecs: 100, noCandidate: true},
+	}
+	report, err := runCompare(t, specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"covered share: 80.0%", "improvement: 50.0%", "/ E / ", "no candidate data"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
+func TestCompareStratumIsStableAcrossTreatment(t *testing.T) {
+	// The baseline has no cache observation (family "", version ""); the
+	// candidate carries a cloudx observation. Same workflow, job and
+	// runner: one stratum, compared.
+	report, err := runCompare(t, []stratumSpec{{
+		name: "A", baseSecs: 100, candSecs: 60,
+		candFamily: "orchestrion-matrix", candVer: "1.27.1",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"| 5 | 5 |", "improvement: 40.0%"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "## Excluded strata") {
+		t.Fatalf("stratum must not be excluded:\n%s", report)
+	}
+}
+
+func TestCompareToolchainChangedIsExcluded(t *testing.T) {
+	// A changes known versions and is excluded (its 10x slowdown must not
+	// leak into the aggregate). B has an unknown baseline version and C an
+	// unknown candidate version; unknown never excludes.
+	specs := []stratumSpec{
+		{name: "A", baseSecs: 100, candSecs: 1000, baseVer: "1.26.0", candVer: "1.27.1"},
+		{name: "B", baseSecs: 100, candSecs: 50, candVer: "1.27.1"},
+		{name: "C", baseSecs: 100, candSecs: 50, baseVer: "1.26.0"},
+		{name: "D", baseSecs: 100, candSecs: 50, baseVer: "1.27.1", candVer: "1.27.1"},
+		{name: "E", baseSecs: 100, candSecs: 50},
+		{name: "F", baseSecs: 100, candSecs: 50},
+	}
+	report, err := runCompare(t, specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"toolchain changed (baseline 1.26.0; candidate 1.27.1)",
+		"covered share: 83.3%", "improvement: 50.0%",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+	if strings.Count(report, "toolchain changed") != 1 {
+		t.Fatalf("only A may be toolchain-changed:\n%s", report)
+	}
+}
+
+func TestCompareUsesFirstAttemptsAndCountsRetries(t *testing.T) {
+	// Every baseline first attempt belongs to a run that was later
+	// retried. Those first attempts still supply timings, and the retry
+	// count is reported.
+	report, err := runCompare(t, []stratumSpec{{name: "A", baseSecs: 100, candSecs: 50, retried: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"| 5 | 5 |", "improvement: 50.0%",
+		"## Non-success outcomes and retries", "baseline 0 non-success, 5 retried runs; candidate 0 non-success, 0 retried runs"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
+func TestAggregateCoverageBoundary(t *testing.T) {
+	p := secondsPtr(60)
+	var a aggregate
+	for range 4 {
+		a.add(5, true, p, p)
+	}
+	a.add(5, false, nil, nil)
+	if a.refusal() != "" {
+		t.Fatalf("80%% coverage must be accepted, got %q", a.refusal())
+	}
+	a.add(1, false, nil, nil)
+	if a.refusal() == "" || a.improvement() != nil {
+		t.Fatal("coverage below 80% must be refused")
+	}
+	if (aggregate{}).refusal() != "no baseline observations" {
+		t.Fatal("empty aggregate must be refused")
 	}
 }
 
@@ -907,6 +1237,44 @@ func TestComparePRFeedbackImprovement(t *testing.T) {
 	}
 }
 
+func TestComparePRFeedbackCoverage(t *testing.T) {
+	// Signature s2 has no candidate revisions: the feedback headline
+	// covers 50% of baseline weight and is refused while the job
+	// aggregate is unaffected.
+	baseDir, candDir, outDir := t.TempDir(), t.TempDir(), t.TempDir()
+	base := make([]jobObservation, 0, minRunSamples)
+	cand := make([]jobObservation, 0, minRunSamples)
+	baseFB := make([]prFeedback, 0, 2*minRevisions)
+	candFB := make([]prFeedback, 0, minRevisions)
+	for i := range minRunSamples {
+		base = append(base, jobRecord("w.yml", "A", int64(i+1), secondsPtr(100), "success"))
+		cand = append(cand, jobRecord("w.yml", "A", int64(100+i), secondsPtr(50), "success"))
+	}
+	mk := func(sig, sha string) prFeedback {
+		return prFeedback{Kind: "pr_feedback", Schema: schemaVersion, PR: 1,
+			HeadSHA: sha, Seconds: secondsPtr(3000), SelectionSignature: sig}
+	}
+	for i := range minRevisions {
+		baseFB = append(baseFB, mk("s1", fmt.Sprintf("b1-%d", i)), mk("s2", fmt.Sprintf("b2-%d", i)))
+		candFB = append(candFB, mk("s1", fmt.Sprintf("c1-%d", i)))
+	}
+	writeTestStore(t, baseDir, base, baseFB)
+	writeTestStore(t, candDir, cand, candFB)
+	if err := cmdCompare([]string{"--baseline", baseDir, "--candidate", candDir, "--output-dir", outDir}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(outDir, "comparison.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"aggregate refused: covered share 50.0% is below the minimum of 80%",
+		"excluded signature s2: no candidate revisions"} {
+		if !strings.Contains(string(report), want) {
+			t.Fatalf("report missing %q:\n%s", want, report)
+		}
+	}
+}
+
 func TestComparePRFeedbackNeedsMeasuredRevisions(t *testing.T) {
 	baseDir := t.TempDir()
 	candDir := t.TempDir()
@@ -940,7 +1308,7 @@ func TestComparePRFeedbackNeedsMeasuredRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(report), "feedback under-sampled: same: 1 baseline, 1 candidate revisions") ||
+	if !strings.Contains(string(report), "excluded signature same: 1 baseline, 1 candidate measured revisions") ||
 		!strings.Contains(string(report), "- **improvement: n/a%**") {
 		t.Fatalf("missing feedback durations must refuse the feedback aggregate:\n%s", report)
 	}
@@ -971,7 +1339,7 @@ func TestCompareUnderSampledRefusesAggregate(t *testing.T) {
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	if !strings.Contains(string(report), "Under-sampled") {
+	if !strings.Contains(string(report), "below 5 distinct runs (5 baseline, 4 candidate)") {
 		t.Fatalf("report must name the under-sampled stratum:\n%s", report)
 	}
 }

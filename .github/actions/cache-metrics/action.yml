@@ -18,7 +18,7 @@
 #   were restore-time sizes. That series is retired; queries must move to
 #   `ci.cache.disk_size_bytes` with `phase:end_of_job`. Compressed
 #   cache-service storage consumption is measured from the cache API's
-#   `size_in_bytes` by scripts/ci_timing.py, not from this action.
+#   `size_in_bytes` by scripts/citiming, not from this action.
 #
 # Common tags:
 # - `repository`: Repository name, e.g. `dd-trace-go`.
@@ -139,14 +139,14 @@ runs:
 
         # A cache_matched_key field selects exact/partial/miss classification.
         # Observations without that field use aggregate hit/miss classification.
-        # For the isolated-cache provider a `false` cache-hit is ambiguous
-        # between a prefix restore and a cold miss. The count series keeps
-        # the contract it has always had: for the setup_go cache, `miss`
-        # has meant "not an exact hit" since this action's first release
-        # (actions/setup-go also reports false for restore-key matches),
-        # so a false emits miss and every successful restore stays counted
-        # and dashboards remain continuous. The precise exact/prefix/cold
-        # split stays with the offline collector in scripts/citiming.
+        # For the github-cache provider a `false` cache-hit is a cold miss:
+        # actions/setup-go restores with the primary key only. For the
+        # cloudx provider a `false` cache-hit is ambiguous between a prefix
+        # restore and a cold miss. The count series keeps the contract it
+        # has always had, where `miss` means "not an exact hit", so a false
+        # emits miss and every successful restore stays counted and
+        # dashboards remain continuous. The precise exact/prefix/cold split
+        # stays with the offline collector in scripts/citiming.
         jq -cn \
           --argjson metrics "$CACHE_METRICS" \
           --argjson timestamp "$(date +%s)" \
