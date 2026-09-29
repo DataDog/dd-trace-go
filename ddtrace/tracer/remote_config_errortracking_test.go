@@ -10,12 +10,41 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+	t.Cleanup(remoteconfig.Reset)
+	internalffe.ResetForTest()
+	t.Cleanup(internalffe.ResetForTest)
+
+	localLogs := new(log.RecordLogger)
+	defer log.UseLogger(localLogs)()
+	client, capture := telemetrytest.NewCapturingClient(t)
+	defer client.Close()
+	defer telemetry.MockClient(client)()
+
+	tr, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+	require.NoError(t, err)
+	defer stop()
+
+	err = tr.startRemoteConfig(remoteconfig.DefaultClientConfig())
+	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
+
+	log.Flush()
+	client.Flush()
+	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "openfeature: failed to subscribe to Remote Config: remote config client not started")
+	assert.Empty(t, capture.LogMessages())
+}
 
 func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
 	client, capture := telemetrytest.NewCapturingClient(t)
