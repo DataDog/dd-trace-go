@@ -101,20 +101,30 @@ func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte
 
 func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameMapping []byte, marshal func(proto.Message) ([]byte, error)) StatsBucket {
 	stats := make([]StatsPoint, 0, len(b.points))
+	var pathwayLatencyErr, edgeLatencyErr, payloadSizeErr error
 	for _, s := range b.points {
 		pathwayLatency, err := marshal(s.pathwayLatency.ToProto())
 		if err != nil {
-			telemetrylog.LogAndReportError("can't serialize pathway latency. Ignoring", err)
+			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
+			if pathwayLatencyErr == nil {
+				pathwayLatencyErr = err
+			}
 			continue
 		}
 		edgeLatency, err := marshal(s.edgeLatency.ToProto())
 		if err != nil {
-			telemetrylog.LogAndReportError("can't serialize edge latency. Ignoring", err)
+			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
+			if edgeLatencyErr == nil {
+				edgeLatencyErr = err
+			}
 			continue
 		}
 		payloadSize, err := marshal(s.payloadSize.ToProto())
 		if err != nil {
-			telemetrylog.LogAndReportError("can't serialize payload size. Ignoring", err)
+			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
+			if payloadSizeErr == nil {
+				payloadSizeErr = err
+			}
 			continue
 		}
 		stats = append(stats, StatsPoint{
@@ -126,6 +136,15 @@ func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameM
 			TimestampType:  timestampType,
 			PayloadSize:    payloadSize,
 		})
+	}
+	if pathwayLatencyErr != nil {
+		telemetrylog.ReportError("can't serialize pathway latency. Ignoring", pathwayLatencyErr)
+	}
+	if edgeLatencyErr != nil {
+		telemetrylog.ReportError("can't serialize edge latency. Ignoring", edgeLatencyErr)
+	}
+	if payloadSizeErr != nil {
+		telemetrylog.ReportError("can't serialize payload size. Ignoring", payloadSizeErr)
 	}
 	exported := StatsBucket{
 		Start:                    b.start,

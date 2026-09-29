@@ -20,46 +20,54 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestBucketExportReportsSerializationErrors(t *testing.T) {
+func TestBucketExportReportsSerializationErrorsOncePerFlush(t *testing.T) {
 	client, capture := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 	defer telemetry.MockClient(client)()
 
+	const points = 32
 	sketch := ddsketch.NewDDSketch(sketchMapping, store.DenseStoreConstructor(), store.DenseStoreConstructor())
 	require.NoError(t, sketch.Add(1))
-	b := bucket{points: map[uint64]statsGroup{
-		1: {
+	b := bucket{points: make(map[uint64]statsGroup, points)}
+	for i := range points {
+		b.points[uint64(i)] = statsGroup{
 			pathwayLatency: sketch,
 			edgeLatency:    sketch,
 			payloadSize:    sketch,
-		},
-	}}
+		}
+	}
 
-	for failingCall := 1; failingCall <= 3; failingCall++ {
+	for _, phase := range []int{1, 2, 3} {
 		calls := 0
-		b.exportWithMarshaler(TimestampTypeCurrent, nil, func(message proto.Message) ([]byte, error) {
+		exported := b.exportWithMarshaler(TimestampTypeCurrent, nil, func(message proto.Message) ([]byte, error) {
 			calls++
-			if calls == failingCall {
-				return nil, errors.New("serialization failed")
+			if calls%phase == 0 {
+				return nil, errors.New("sensitive serialization failure")
 			}
 			return proto.Marshal(message)
 		})
+		assert.Empty(t, exported.Stats, "every point is dropped when serialization phase %d fails", phase)
 	}
-	client.Flush()
 
+	valid := b.export(TimestampTypeCurrent, nil)
+	require.Len(t, valid.Stats, points, "successful serialization must preserve all points")
+
+	client.Flush()
 	logs := capture.LogMessages()
 	require.Len(t, logs, 3)
-	type observedLog struct {
-		level      string
+
+	messages := make(map[string]struct {
 		count      uint32
 		message    string
 		stackTrace string
-	}
-	messages := make(map[string]observedLog, len(logs))
+	}, len(logs))
 	for _, entry := range logs {
 		message, _, _ := strings.Cut(entry.Message, ": error.error_type=")
-		messages[message] = observedLog{
-			level:      string(entry.Level),
+		messages[message] = struct {
+			count      uint32
+			message    string
+			stackTrace string
+		}{
 			count:      entry.Count,
 			message:    entry.Message,
 			stackTrace: entry.StackTrace,
@@ -72,9 +80,10 @@ func TestBucketExportReportsSerializationErrors(t *testing.T) {
 	} {
 		entry, ok := messages[message]
 		require.True(t, ok, "missing telemetry report for %q", message)
-		assert.Equal(t, "ERROR", entry.level)
-		assert.Equal(t, uint32(1), entry.count)
-		assert.Contains(t, entry.message, "error.error_type=errors.errorString")
+		assert.Equal(t, uint32(1), entry.count, "one report must cover every failed point in the flush")
+		assert.Equal(t, message+": error.error_type=errors.errorString", entry.message)
+		assert.NotContains(t, entry.message, "sensitive serialization failure")
+		require.NotEmpty(t, entry.stackTrace)
 		assert.Contains(t, entry.stackTrace, "processor.go")
 		assert.Contains(t, entry.stackTrace, "bucket.exportWithMarshaler")
 	}
