@@ -478,16 +478,10 @@ jobs:
       # failure when it has not yet caught up with a just-pushed commit.
       GOSUMDB: "off"
     steps:
-      # No checkout: this job simulates an external consumer building
-      # against the module proxy, so the repository must not influence
-      # resolution. A local action needs the repo in the workspace, so
-      # this one step keeps the official remote setup-go.
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26" # lowest supported version, so this checks the floor
-          cache: true
-          cache-dependency-path: '**/go.mod'
       - name: Resolve orchestrion/all as an external consumer would
         id: resolve
         run: |-
