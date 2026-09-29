@@ -49,7 +49,6 @@ env:
     otelc-autostart
     net_http
     sql
-    sql_register
 
 jobs:
   go-versions-matrix:

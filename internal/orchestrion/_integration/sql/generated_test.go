@@ -20,3 +20,7 @@ func Test(t *testing.T) {
 func TestEarlyOpen(t *testing.T) {
 	harness.Run(t, new(TestCaseEarlyOpen))
 }
+
+func TestRegister(t *testing.T) {
+	harness.Run(t, new(TestCaseRegister))
+}
