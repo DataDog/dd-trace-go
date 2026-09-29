@@ -95,35 +95,65 @@ func newBucket(start, duration uint64) bucket {
 	}
 }
 
-func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) StatsBucket {
+type serializationErrors struct {
+	pathwayLatency error
+	edgeLatency    error
+	payloadSize    error
+}
+
+func (e *serializationErrors) merge(other serializationErrors) {
+	if e.pathwayLatency == nil {
+		e.pathwayLatency = other.pathwayLatency
+	}
+	if e.edgeLatency == nil {
+		e.edgeLatency = other.edgeLatency
+	}
+	if e.payloadSize == nil {
+		e.payloadSize = other.payloadSize
+	}
+}
+
+func (e serializationErrors) report() {
+	if e.pathwayLatency != nil {
+		telemetrylog.ReportError("can't serialize pathway latency. Ignoring", e.pathwayLatency)
+	}
+	if e.edgeLatency != nil {
+		telemetrylog.ReportError("can't serialize edge latency. Ignoring", e.edgeLatency)
+	}
+	if e.payloadSize != nil {
+		telemetrylog.ReportError("can't serialize payload size. Ignoring", e.payloadSize)
+	}
+}
+
+func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) (StatsBucket, serializationErrors) {
 	return b.exportWithMarshaler(timestampType, checkpointNameMapping, proto.Marshal)
 }
 
-func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameMapping []byte, marshal func(proto.Message) ([]byte, error)) StatsBucket {
+func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameMapping []byte, marshal func(proto.Message) ([]byte, error)) (StatsBucket, serializationErrors) {
 	stats := make([]StatsPoint, 0, len(b.points))
-	var pathwayLatencyErr, edgeLatencyErr, payloadSizeErr error
+	var errs serializationErrors
 	for _, s := range b.points {
 		pathwayLatency, err := marshal(s.pathwayLatency.ToProto())
 		if err != nil {
 			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
-			if pathwayLatencyErr == nil {
-				pathwayLatencyErr = err
+			if errs.pathwayLatency == nil {
+				errs.pathwayLatency = err
 			}
 			continue
 		}
 		edgeLatency, err := marshal(s.edgeLatency.ToProto())
 		if err != nil {
 			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
-			if edgeLatencyErr == nil {
-				edgeLatencyErr = err
+			if errs.edgeLatency == nil {
+				errs.edgeLatency = err
 			}
 			continue
 		}
 		payloadSize, err := marshal(s.payloadSize.ToProto())
 		if err != nil {
 			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
-			if payloadSizeErr == nil {
-				payloadSizeErr = err
+			if errs.payloadSize == nil {
+				errs.payloadSize = err
 			}
 			continue
 		}
@@ -136,15 +166,6 @@ func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameM
 			TimestampType:  timestampType,
 			PayloadSize:    payloadSize,
 		})
-	}
-	if pathwayLatencyErr != nil {
-		telemetrylog.ReportError("can't serialize pathway latency. Ignoring", pathwayLatencyErr)
-	}
-	if edgeLatencyErr != nil {
-		telemetrylog.ReportError("can't serialize edge latency. Ignoring", edgeLatencyErr)
-	}
-	if payloadSizeErr != nil {
-		telemetrylog.ReportError("can't serialize payload size. Ignoring", payloadSizeErr)
 	}
 	exported := StatsBucket{
 		Start:                    b.start,
@@ -175,7 +196,7 @@ func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameM
 		}
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
-	return exported
+	return exported, errs
 }
 
 type pointType int
@@ -586,7 +607,7 @@ func (p *Processor) reportStats() {
 	}
 }
 
-func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, timestampType TimestampType) StatsBucket {
+func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, timestampType TimestampType, marshal func(proto.Message) ([]byte, error)) (StatsBucket, serializationErrors) {
 	b := buckets[bk]
 	delete(buckets, bk)
 	var mapping []byte
@@ -594,12 +615,17 @@ func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, time
 		log.Debug("datastreams: flushing bucket with %d transaction bytes, %d mapping bytes", len(b.transactions), len(p.checkpoints.encodedKeys))
 		mapping = p.checkpoints.encodedKeys
 	}
-	return b.export(timestampType, mapping)
+	return b.exportWithMarshaler(timestampType, mapping, marshal)
 }
 
 func (p *Processor) flush(now time.Time) map[string]StatsPayload {
+	return p.flushWithMarshaler(now, proto.Marshal)
+}
+
+func (p *Processor) flushWithMarshaler(now time.Time, marshal func(proto.Message) ([]byte, error)) map[string]StatsPayload {
 	nowNano := now.UnixNano()
 	payloads := make(map[string]StatsPayload)
+	var errs serializationErrors
 	addBucket := func(service string, bucket StatsBucket) {
 		payload, ok := payloads[service]
 		if !ok {
@@ -624,15 +650,20 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 			// do not flush the bucket at the current time
 			continue
 		}
-		addBucket(bucketKey.serviceName, p.flushBucket(p.tsTypeCurrentBuckets, bucketKey, TimestampTypeCurrent))
+		bucket, bucketErrors := p.flushBucket(p.tsTypeCurrentBuckets, bucketKey, TimestampTypeCurrent, marshal)
+		errs.merge(bucketErrors)
+		addBucket(bucketKey.serviceName, bucket)
 	}
 	for bucketKey := range p.tsTypeOriginBuckets {
 		if bucketKey.btime > nowNano-bucketDuration.Nanoseconds() {
 			// do not flush the bucket at the current time
 			continue
 		}
-		addBucket(bucketKey.serviceName, p.flushBucket(p.tsTypeOriginBuckets, bucketKey, TimestampTypeOrigin))
+		bucket, bucketErrors := p.flushBucket(p.tsTypeOriginBuckets, bucketKey, TimestampTypeOrigin, marshal)
+		errs.merge(bucketErrors)
+		addBucket(bucketKey.serviceName, bucket)
 	}
+	errs.report()
 	return payloads
 }
 

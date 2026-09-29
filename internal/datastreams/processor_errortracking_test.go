@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -20,37 +21,57 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestBucketExportReportsSerializationErrorsOncePerFlush(t *testing.T) {
+func serializationTestBucket(t *testing.T, start uint64) bucket {
+	t.Helper()
+
+	sketch := ddsketch.NewDDSketch(sketchMapping, store.DenseStoreConstructor(), store.DenseStoreConstructor())
+	require.NoError(t, sketch.Add(1))
+	return bucket{
+		points: map[uint64]statsGroup{0: {
+			pathwayLatency: sketch,
+			edgeLatency:    sketch,
+			payloadSize:    sketch,
+		}},
+		start:    start,
+		duration: uint64(bucketDuration),
+	}
+}
+
+func TestProcessorFlushReportsSerializationErrorsOnceAcrossBuckets(t *testing.T) {
 	client, capture := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 	defer telemetry.MockClient(client)()
 
-	const points = 32
-	sketch := ddsketch.NewDDSketch(sketchMapping, store.DenseStoreConstructor(), store.DenseStoreConstructor())
-	require.NoError(t, sketch.Add(1))
-	b := bucket{points: make(map[uint64]statsGroup, points)}
-	for i := range points {
-		b.points[uint64(i)] = statsGroup{
-			pathwayLatency: sketch,
-			edgeLatency:    sketch,
-			payloadSize:    sketch,
+	p := &Processor{
+		tsTypeCurrentBuckets: map[bucketKey]bucket{
+			{serviceName: "service", btime: 0}: serializationTestBucket(t, 0),
+			{serviceName: "service", btime: 1}: serializationTestBucket(t, 1),
+		},
+		tsTypeOriginBuckets: map[bucketKey]bucket{
+			{serviceName: "service", btime: 2}: serializationTestBucket(t, 2),
+			{serviceName: "service", btime: 3}: serializationTestBucket(t, 3),
+		},
+	}
+
+	calls := 0
+	payloads := p.flushWithMarshaler(time.Unix(20, 0), func(message proto.Message) ([]byte, error) {
+		calls++
+		if calls == 1 || calls == 3 || calls == 6 {
+			return nil, errors.New("sensitive serialization failure")
 		}
-	}
+		return proto.Marshal(message)
+	})
 
-	for _, phase := range []int{1, 2, 3} {
-		calls := 0
-		exported := b.exportWithMarshaler(TimestampTypeCurrent, nil, func(message proto.Message) ([]byte, error) {
-			calls++
-			if calls%phase == 0 {
-				return nil, errors.New("sensitive serialization failure")
-			}
-			return proto.Marshal(message)
-		})
-		assert.Empty(t, exported.Stats, "every point is dropped when serialization phase %d fails", phase)
+	assert.Equal(t, 9, calls)
+	assert.Empty(t, p.tsTypeCurrentBuckets)
+	assert.Empty(t, p.tsTypeOriginBuckets)
+	require.Contains(t, payloads, "service")
+	require.Len(t, payloads["service"].Stats, 4)
+	var exportedPoints int
+	for _, bucket := range payloads["service"].Stats {
+		exportedPoints += len(bucket.Stats)
 	}
-
-	valid := b.export(TimestampTypeCurrent, nil)
-	require.Len(t, valid.Stats, points, "successful serialization must preserve all points")
+	assert.Equal(t, 1, exportedPoints, "the fully serialized bucket must remain exportable")
 
 	client.Flush()
 	logs := capture.LogMessages()
@@ -80,11 +101,31 @@ func TestBucketExportReportsSerializationErrorsOncePerFlush(t *testing.T) {
 	} {
 		entry, ok := messages[message]
 		require.True(t, ok, "missing telemetry report for %q", message)
-		assert.Equal(t, uint32(1), entry.count, "one report must cover every failed point in the flush")
+		assert.Equal(t, uint32(1), entry.count, "one report must cover the processor flush")
 		assert.Equal(t, message+": error.error_type=errors.errorString", entry.message)
 		assert.NotContains(t, entry.message, "sensitive serialization failure")
 		require.NotEmpty(t, entry.stackTrace)
 		assert.Contains(t, entry.stackTrace, "processor.go")
-		assert.Contains(t, entry.stackTrace, "bucket.exportWithMarshaler")
+		assert.Contains(t, entry.stackTrace, "flushWithMarshaler")
 	}
+}
+
+func TestProcessorFlushDoesNotReportSerializationErrorsWithoutFailures(t *testing.T) {
+	client, capture := telemetrytest.NewCapturingClient(t)
+	defer client.Close()
+	defer telemetry.MockClient(client)()
+
+	p := &Processor{
+		tsTypeCurrentBuckets: make(map[bucketKey]bucket),
+		tsTypeOriginBuckets:  make(map[bucketKey]bucket),
+	}
+	assert.Empty(t, p.flush(time.Unix(20, 0)), "an empty flush must not report")
+
+	p.tsTypeCurrentBuckets[bucketKey{serviceName: "service", btime: 0}] = serializationTestBucket(t, 0)
+	payloads := p.flush(time.Unix(20, 0))
+	require.Len(t, payloads["service"].Stats, 1)
+	require.Len(t, payloads["service"].Stats[0].Stats, 1)
+
+	client.Flush()
+	assert.Empty(t, capture.LogMessages(), "a successful flush must not report")
 }
