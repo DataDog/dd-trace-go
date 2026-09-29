@@ -32,12 +32,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  #
-  # Pinned to a main commit rather than v1.1.0: the rules use the `.Receiver`
-  # template variable, added after that release in
-  # open-telemetry/opentelemetry-go-compile-instrumentation#1194. Move back to a
-  # tag once one ships with it.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260904142222-f25f662b469d' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
 
 jobs:
   go-versions-matrix:
@@ -47,7 +42,7 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Go
@@ -83,7 +78,7 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -140,10 +135,6 @@ jobs:
             ${PREFIX}/otelc-autostart"
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
-          # `otelc go test -json` silently produces uninstrumented binaries: every
-          # GLS test skips and the proof test fails. So the tests run without it and
-          # the output is converted afterwards, which is also why each package gets
-          # its own invocation, since test2json -p labels one package at a time.
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
           cat > "${RUN_SCRIPT}" <<'EOF'
           #!/usr/bin/env bash
@@ -203,7 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

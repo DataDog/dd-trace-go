@@ -125,7 +125,7 @@ var globalPromptManager = func() *promptManager {
 		if enabled, _ := cfg.ExperimentalFlaggingProviderEnabled(); enabled {
 			if internalffe.NewEvaluator == nil {
 				promptEvaluatorMissingWarning.Do(func() {
-					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting")
+					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting") //errtrack:ignore optional integration was not imported
 				})
 			} else {
 				managerConfig.evaluate = evaluatePromptFeatureFlag
@@ -229,7 +229,7 @@ func (manager *promptManager) get(ctx context.Context, promptID string, options 
 	if version == "" {
 		version = "fallback"
 	}
-	prompt, fallbackErr := newManagedPrompt(promptID, version, PromptSourceFallback, fallback.Template, "", "")
+	prompt, fallbackErr := newManagedPrompt(promptID, version, PromptSourceFallback, fallback.Template, fallback.Config, "", "")
 	if fallbackErr != nil {
 		return nil, fallbackErr
 	}
@@ -361,7 +361,7 @@ func (manager *promptManager) fetchHTTP(ctx context.Context, request promptReque
 	}
 	response, err := manager.httpClient.Do(httpRequest)
 	if err != nil {
-		log.Warn("Prompt fetch exception: prompt_id=%s: %v", request.promptID, err.Error())
+		log.Warn("Prompt fetch exception: prompt_id=%s: %v", request.promptID, err.Error()) //errtrack:ignore remote request failure
 		return nil, &promptFetchError{reason: err.Error(), cause: err}
 	}
 	defer response.Body.Close()
@@ -375,7 +375,7 @@ func (manager *promptManager) fetchHTTP(ctx context.Context, request promptReque
 		if notFound {
 			log.Debug("Prompt not found: prompt_id=%s detail=%q", request.promptID, reason)
 		} else {
-			log.Warn("Prompt fetch failed: prompt_id=%s status=%d detail=%q", request.promptID, response.StatusCode, reason)
+			log.Warn("Prompt fetch failed: prompt_id=%s status=%d detail=%q", request.promptID, response.StatusCode, reason) //errtrack:ignore remote service response
 		}
 		return nil, &promptFetchError{reason: reason, notFound: notFound}
 	}
@@ -425,6 +425,14 @@ func parsePrompt(raw any, source PromptSource) (*ManagedPrompt, error) {
 	if err != nil {
 		return nil, err
 	}
+	config := map[string]any{}
+	if value, exists := data["config"]; exists {
+		var ok bool
+		config, ok = value.(map[string]any)
+		if !ok {
+			return nil, errors.New("invalid prompt response: config must be an object")
+		}
+	}
 	promptUUID, _ := data["prompt_uuid"].(string)
 	versionUUID, _ := data["prompt_version_uuid"].(string)
 	if versionUUID == "" {
@@ -433,7 +441,7 @@ func parsePrompt(raw any, source PromptSource) (*ManagedPrompt, error) {
 	if versionUUID == "" {
 		versionUUID, _ = data["ID"].(string)
 	}
-	return newManagedPrompt(id, version, source, template, promptUUID, versionUUID)
+	return newManagedPrompt(id, version, source, template, config, promptUUID, versionUUID)
 }
 
 func promptVersion(value any) string {

@@ -29,16 +29,14 @@ import (
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started.Load()
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load()
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started.Load() && activeAppSec.cfg.RASP
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load() && a.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -143,26 +141,26 @@ func Stop() {
 }
 
 var (
-	activeAppSec *appsec
-	mu           sync.RWMutex
+	activeAppSec atomic.Pointer[appsec]
+	mu           sync.Mutex
 )
 
 func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
-	if activeAppSec != nil {
-		activeAppSec.stopRC()
-		activeAppSec.stop()
+	if previous := activeAppSec.Load(); previous != nil {
+		previous.stopRC()
+		previous.stop()
 	}
-	activeAppSec = a
+	activeAppSec.Store(a)
 }
 
 type appsec struct {
 	cfg        *config.Config
 	features   []listener.Feature
 	featuresMu sync.Mutex
-	// started is read by Enabled/RASPEnabled (under mu) and written by start()/stop(), which the
-	// remote-config client invokes from its own goroutine without holding mu; it must be atomic.
+	// started is read by Enabled/RASPEnabled and written by start()/stop(), which the
+	// remote-config client invokes from its own goroutine; it must be atomic.
 	started atomic.Bool
 }
 
