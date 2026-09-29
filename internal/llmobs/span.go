@@ -345,7 +345,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Warn("llmobs: failed to annotate span: %v", err.Error())
+			log.Warn("llmobs: failed to annotate span: %v", err.Error()) //errtrack:ignore invalid caller annotation
 		}
 		trackSpanAnnotations(s, err)
 	}()
@@ -376,7 +376,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 	if a.Prompt != nil {
 		if s.spanKind != SpanKindLLM {
-			log.Warn("llmobs: input prompt can only be annotated on llm spans, ignoring")
+			log.Warn("llmobs: input prompt can only be annotated on llm spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			if a.Prompt.RAGContextVariables == nil {
 				a.Prompt.RAGContextVariables = []string{"context"}
@@ -388,7 +388,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
 			}
 			if a.Prompt.Template != "" && len(a.Prompt.ChatTemplate) > 0 {
-				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate")
+				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate") //errtrack:ignore conflicting caller annotation
 				a.Prompt.Template = ""
 			}
 			s.llmCtx.prompt = a.Prompt
@@ -397,7 +397,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 	if len(a.ToolDefinitions) > 0 {
 		if s.spanKind != SpanKindLLM {
-			log.Warn("llmobs: tool definitions can only be annotated on llm spans, ignoring")
+			log.Warn("llmobs: tool definitions can only be annotated on llm spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			s.llmCtx.toolDefinitions = a.ToolDefinitions
 		}
@@ -405,7 +405,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 	if a.AgentManifest != "" {
 		if s.spanKind != SpanKindAgent {
-			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring")
+			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			s.llmCtx.agentManifest = a.AgentManifest
 		}
@@ -413,7 +413,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 	if a.Intent != "" {
 		if s.spanKind != SpanKindTool {
-			log.Warn("llmobs: intent can only be annotated on tool spans, ignoring")
+			log.Warn("llmobs: intent can only be annotated on tool spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			s.llmCtx.intent = a.Intent
 		}
@@ -424,10 +424,10 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 func (s *Span) annotateIO(a SpanAnnotations) {
 	if a.OutputRetrievedDocs != nil && s.spanKind != SpanKindRetrieval {
-		log.Warn("llmobs: retrieve docs can only be used to annotate outputs for retrieval spans, ignoring")
+		log.Warn("llmobs: retrieve docs can only be used to annotate outputs for retrieval spans, ignoring") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputEmbeddedDocs != nil && s.spanKind != SpanKindEmbedding {
-		log.Warn("llmobs: embedding docs can only be used to annotate inputs for embedding spans, ignoring")
+		log.Warn("llmobs: embedding docs can only be used to annotate inputs for embedding spans, ignoring") //errtrack:ignore invalid caller annotation
 	}
 	switch s.spanKind {
 	case SpanKindLLM:
@@ -458,10 +458,10 @@ func (s *Span) annotateIOLLM(a SpanAnnotations) {
 
 func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
 	if a.InputText != "" || a.InputMessages != nil {
-		log.Warn("llmobs: embedding spans can only be annotated with input embedded docs, ignoring other inputs")
+		log.Warn("llmobs: embedding spans can only be annotated with input embedded docs, ignoring other inputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
-		log.Warn("llmobs: embedding spans can only be annotated with output text, ignoring other outputs")
+		log.Warn("llmobs: embedding spans can only be annotated with output text, ignoring other outputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputEmbeddedDocs != nil {
 		s.llmCtx.inputDocuments = a.InputEmbeddedDocs
@@ -473,10 +473,10 @@ func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
 
 func (s *Span) annotateIORetrieval(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
-		log.Warn("llmobs: retrieval spans can only be annotated with input text, ignoring other inputs")
+		log.Warn("llmobs: retrieval spans can only be annotated with input text, ignoring other inputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputText != "" || a.OutputMessages != nil {
-		log.Warn("llmobs: retrieval spans can only be annotated with output retrieved docs, ignoring other outputs")
+		log.Warn("llmobs: retrieval spans can only be annotated with output retrieved docs, ignoring other outputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputText != "" {
 		s.llmCtx.inputText = a.InputText
@@ -500,10 +500,10 @@ func (s *Span) annotateIOExperiment(a SpanAnnotations) {
 
 func (s *Span) annotateIOText(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
-		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind) //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
-		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind) //errtrack:ignore invalid caller annotation
 	}
 	if a.InputText != "" {
 		s.llmCtx.inputText = a.InputText
