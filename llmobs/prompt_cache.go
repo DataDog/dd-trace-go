@@ -114,7 +114,7 @@ func newPromptFileCache(enabled bool, dir string, ttl time.Duration, now func() 
 		} else if enabled {
 			enabled = false
 			promptFileCacheDirWarning.Do(func() {
-				log.Warn("Prompt file cache disabled: could not determine a user cache directory: %v", err.Error())
+				log.Warn("Prompt file cache disabled: could not determine a user cache directory: %v", err.Error()) //errtrack:ignore host environment has no user cache directory
 			})
 		}
 	}
