@@ -389,6 +389,7 @@ const processRetryCoverageDirectoryEnvironmentVariable = "GOCOVERDIR"
 
 func sanitizeProcessRetryBaseEnv(base []string) []string {
 	result := make([]string, 0, len(base))
+	enabledPresent := false
 	for _, entry := range base {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -399,12 +400,18 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 			continue
 		}
 		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
+			enabledPresent = true
 			if mode, valid := envconfig.ParseEnabledMode(value); valid && mode == envconfig.EnabledModeParent {
 				result = append(result, key+"=false")
 				continue
 			}
 		}
 		result = append(result, entry)
+	}
+	// The startup snapshot precedes CI Visibility bootstrap. Preserve child
+	// isolation when the selected entry point defaults an absent variable to parent.
+	if mode, _ := envconfig.FromLookup("", enabledPresent); !enabledPresent && mode == envconfig.EnabledModeParent {
+		result = append(result, constants.CIVisibilityEnabledEnvironmentVariable+"=false")
 	}
 	return result
 }

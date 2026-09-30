@@ -394,6 +394,10 @@ Once a new environment variable is added to the codebase, Datadog maintainers wi
 
 Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
 
+#### Selecting CI Visibility instrumentation
+
+The public `github.com/DataDog/dd-trace-go/v2/civisibility` Orchestrion entry point selects the Go testing integration and changes its unset `DD_CIVISIBILITY_ENABLED` default to `parent`. Explicit environment values take precedence. Keep this entry point in the generator's `optionalIntegrations` set so regenerating `orchestrion/all/v2` preserves its existing activation behavior. See the [client setup](README.md#ci-visibility-with-orchestrion) and [CI Visibility overview](internal/civisibility/CIVISIBILITY_OVERVIEW.md).
+
 #### Overriding automatic test retries
 
 `DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).

@@ -10,6 +10,8 @@ Orchestrion uses Aspect-Oriented Programming (AOP) and the Go `toolexec` command
 
 For more information on how to use Orchestrion in a user's project, refer to the [user guide](https://datadoghq.dev/orchestrion/docs/getting-started/). 
 
+The public [`../civisibility`](../civisibility/) entry point selects CI Visibility alone and defaults `DD_CIVISIBILITY_ENABLED` to `parent` when unset. Its `orchestrion.tool.go` imports the existing testing rules, and its `orchestrion.yml` replaces the internal activation default at compile time. It is excluded from the generated `all/v2` bundle; this directory's legacy entry point continues to load the testing rules with a disabled default. See the [client setup](../README.md#ci-visibility-with-orchestrion).
+
 ## Contributing
 
 For references on which aspects and join points are available, code templates, and other contributing guidelines, refer to the [contributor guide](https://datadoghq.dev/orchestrion/contributing/aspects/). 

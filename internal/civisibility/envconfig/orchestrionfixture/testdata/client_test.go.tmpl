@@ -1,0 +1,50 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package client
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"testing"
+
+	_ "github.com/DataDog/dd-trace-go/v2/civisibility"
+)
+
+func TestProbe(t *testing.T) {
+	fmt.Println("CI_MODE=" + strconv.Quote(os.Getenv("DD_CIVISIBILITY_ENABLED")))
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(executable, "-test.run=^TestChildProbe$", "-test.v", "-test.timeout=20s").CombinedOutput()
+	if err != nil {
+		t.Fatalf("child failed: %v\n%s", err, output)
+	}
+	fmt.Printf("%s", output)
+}
+
+func TestChildProbe(t *testing.T) {
+	fmt.Println("CI_MODE=" + strconv.Quote(os.Getenv("DD_CIVISIBILITY_ENABLED")))
+}
+
+func TestRetry(t *testing.T) {
+	fmt.Println("RETRY_PID=" + strconv.Itoa(os.Getpid()))
+	marker, err := os.OpenFile("retry-marker", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err == nil {
+		if err := marker.Close(); err != nil {
+			t.Fatal(err)
+		}
+		t.Fatal("fail the first attempt")
+	}
+	if !os.IsExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("retry-mode", []byte(os.Getenv("DD_CIVISIBILITY_ENABLED")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -56,10 +56,24 @@ func Enabled(mode EnabledMode) bool {
 }
 
 // FromEnv reads and parses DD_CIVISIBILITY_ENABLED from the process environment.
+// Only an absent variable uses the instrumented default; explicit invalid values remain disabled.
 func FromEnv() (EnabledMode, bool) {
 	value, ok := internalenv.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
-	if !ok {
-		return EnabledModeDisabled, false
+	return FromLookup(value, ok)
+}
+
+// FromLookup resolves an environment lookup, using the selected instrumentation
+// default only when the variable is absent.
+func FromLookup(value string, present bool) (EnabledMode, bool) {
+	if !present {
+		mode := defaultEnabledMode()
+		return mode, mode != EnabledModeDisabled
 	}
 	return ParseEnabledMode(value)
+}
+
+// The public civisibility Orchestrion entry point replaces calls to this function
+// with EnabledModeParent. Legacy entry points and manual instrumentation stay opt-in.
+func defaultEnabledMode() EnabledMode {
+	return EnabledModeDisabled
 }
