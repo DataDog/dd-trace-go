@@ -20,6 +20,11 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		assert.Equal(t, "http://traces-collector:4318/v1/traces", got)
 	})
 
+	t.Run("traces-specific endpoint without a path is used as-is", func(t *testing.T) {
+		got := resolveOTLPTraceURL("http://traces-collector:4318", agentDefault)
+		assert.Equal(t, "http://traces-collector:4318", got)
+	})
+
 	t.Run("valid https endpoint used when set", func(t *testing.T) {
 		got := resolveOTLPTraceURL("https://traces-collector:4318/v1/traces", agentDefault)
 		assert.Equal(t, "https://traces-collector:4318/v1/traces", got)
