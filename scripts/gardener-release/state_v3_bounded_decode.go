@@ -83,6 +83,10 @@ func DecodeStateV3CoordinationClaimBounded(raw []byte, workspace *StateV3Bounded
 	if err != nil {
 		return StateV3BoundedCoordinationClaim{}, err
 	}
+	developmentVersion := document.fields[2]
+	if developmentVersion.present && developmentVersion.length == 0 {
+		return StateV3BoundedCoordinationClaim{}, errstateV3BoundedDocument
+	}
 	return StateV3BoundedCoordinationClaim{document: document}, nil
 }
 
@@ -648,6 +652,16 @@ type StateV3BoundedClaimReleaseArmExpectation struct {
 	attempt                                                int32
 }
 
+// StateV3BoundedActiveClaimExpectation is an exact fixed expectation for an
+// active, reserved coordination claim. It establishes document-local
+// correlation only; it does not establish claim provenance or lifecycle.
+type StateV3BoundedActiveClaimExpectation struct {
+	arena                                                                                            [stateV3BoundedCompactDocumentBytes]byte
+	command, laneExpectedHeadOID, laneRef, releaseLine, requestKey, requestSHA256, reservationSHA256 stateV3BoundedExpectationSpan
+	resolvedVersion, versionResolutionSHA256, developmentVersion                                     stateV3BoundedExpectationSpan
+	developmentVersionPresent                                                                        bool
+}
+
 // StateV3BoundedClaimAcquireOutcomeExpectation is an exact fixed expectation
 // for an observed claim-acquire outcome. All text values share one private
 // 16 KiB arena and never alias constructor input.
@@ -721,6 +735,26 @@ func NewStateV3BoundedClaimReleaseArmExpectation(ref, claimPath, requestKey, rel
 		return StateV3BoundedClaimReleaseArmExpectation{}, false
 	}
 	expected.attempt = attempt
+	return expected, true
+}
+
+// NewStateV3BoundedActiveClaimExpectation copies byte-backed values into one
+// fixed arena for exact active, reserved claim correlation.
+func NewStateV3BoundedActiveClaimExpectation(command, developmentVersion []byte, developmentVersionPresent bool, laneExpectedHeadOID, laneRef, releaseLine, requestKey, requestSHA256, reservationSHA256, resolvedVersion, versionResolutionSHA256 []byte) (StateV3BoundedActiveClaimExpectation, bool) {
+	if (!developmentVersionPresent && len(developmentVersion) != 0) || (developmentVersionPresent && len(developmentVersion) == 0) {
+		return StateV3BoundedActiveClaimExpectation{}, false
+	}
+	var expected StateV3BoundedActiveClaimExpectation
+	spans := []*stateV3BoundedExpectationSpan{&expected.command, &expected.laneExpectedHeadOID, &expected.laneRef, &expected.releaseLine, &expected.requestKey, &expected.requestSHA256, &expected.reservationSHA256, &expected.resolvedVersion, &expected.versionResolutionSHA256}
+	values := [][]byte{command, laneExpectedHeadOID, laneRef, releaseLine, requestKey, requestSHA256, reservationSHA256, resolvedVersion, versionResolutionSHA256}
+	if developmentVersionPresent {
+		spans = append(spans, &expected.developmentVersion)
+		values = append(values, developmentVersion)
+	}
+	if !stateV3BoundedExpectationAppendAll(&expected.arena, spans, values) {
+		return StateV3BoundedActiveClaimExpectation{}, false
+	}
+	expected.developmentVersionPresent = developmentVersionPresent
 	return expected, true
 }
 
@@ -837,6 +871,28 @@ func StateV3BoundedArmMatchesClaimRelease(arm StateV3BoundedCoordinationArm, exp
 		stateV3BoundedExpectationMatches(d.fields[9], d, expected.arena, expected.requestKey) &&
 		stateV3BoundedExpectationMatches(d.fields[10], d, expected.arena, expected.resolvedVersion) &&
 		stateV3BoundedNumber(d.fields[0], expected.attempt) && stateV3BoundedAbsent(d.fields[4])
+}
+
+// StateV3BoundedClaimMatchesActiveReservation reports exact document-local
+// correlation for an active, reserved claim. It does not establish claim
+// provenance, policy, reservation validity, or coordination lifecycle.
+func StateV3BoundedClaimMatchesActiveReservation(claim StateV3BoundedCoordinationClaim, expected StateV3BoundedActiveClaimExpectation) bool {
+	d := claim.document
+	return d.kind == stateV3BoundedClaim &&
+		stateV3BoundedNumber(d.fields[0], 1) &&
+		stateV3BoundedExpectationMatches(d.fields[1], d, expected.arena, expected.command) &&
+		(d.fields[2].present == expected.developmentVersionPresent) &&
+		(!expected.developmentVersionPresent || stateV3BoundedExpectationMatches(d.fields[2], d, expected.arena, expected.developmentVersion)) &&
+		stateV3BoundedExpectationMatches(d.fields[3], d, expected.arena, expected.laneExpectedHeadOID) &&
+		stateV3BoundedExpectationMatches(d.fields[4], d, expected.arena, expected.laneRef) &&
+		stateV3BoundedStringMatches(d.fields[5], d, "reserved") &&
+		stateV3BoundedExpectationMatches(d.fields[6], d, expected.arena, expected.releaseLine) &&
+		stateV3BoundedExpectationMatches(d.fields[7], d, expected.arena, expected.requestKey) &&
+		stateV3BoundedExpectationMatches(d.fields[8], d, expected.arena, expected.requestSHA256) &&
+		stateV3BoundedExpectationMatches(d.fields[9], d, expected.arena, expected.reservationSHA256) &&
+		stateV3BoundedExpectationMatches(d.fields[10], d, expected.arena, expected.resolvedVersion) &&
+		stateV3BoundedStringMatches(d.fields[11], d, "active") &&
+		stateV3BoundedExpectationMatches(d.fields[12], d, expected.arena, expected.versionResolutionSHA256)
 }
 
 func stateV3BoundedObserved(document stateV3BoundedDocument, arena [stateV3BoundedCompactDocumentBytes]byte, oid stateV3BoundedExpectationSpan, attempts int32) bool {

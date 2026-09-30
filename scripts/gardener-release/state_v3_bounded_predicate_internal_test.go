@@ -17,3 +17,13 @@ func TestStateV3BoundedOutcomePredicateRejectsForgedExpectationSpan(t *testing.T
 		t.Fatal("forged expectation span matched")
 	}
 }
+
+func TestStateV3BoundedClaimPredicateRejectsForgedExpectationSpan(t *testing.T) {
+	expected := StateV3BoundedActiveClaimExpectation{
+		command: stateV3BoundedExpectationSpan{start: stateV3BoundedCompactDocumentBytes, length: 1},
+	}
+	claim := StateV3BoundedCoordinationClaim{document: stateV3BoundedDocument{kind: stateV3BoundedClaim}}
+	if StateV3BoundedClaimMatchesActiveReservation(claim, expected) {
+		t.Fatal("forged expectation span matched")
+	}
+}
