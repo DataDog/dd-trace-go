@@ -657,6 +657,19 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 
 		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
 	})
+
+	t.Run("traces endpoint wins when the generic endpoint is invalid", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "grpc://general-collector:4317")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
 }
 
 func TestOTLPHeaders(t *testing.T) {
