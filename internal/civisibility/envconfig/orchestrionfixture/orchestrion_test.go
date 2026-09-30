@@ -68,10 +68,11 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 				binary += ".exe"
 			}
 			args := []string{"test", "-mod=mod", "-c", "-o", binary}
-			if entry != "plain" {
-				args = append(args, "-toolexec="+strconv.Quote(orchestrion)+" toolexec")
+			if entry == "plain" {
+				runCommand(t, dir, baseEnv, 5*time.Minute, "go", args...)
+			} else {
+				runCommand(t, dir, baseEnv, 5*time.Minute, orchestrion, append([]string{"go"}, args...)...)
 			}
-			runCommand(t, dir, baseEnv, 5*time.Minute, "go", args...)
 
 			type scenario struct {
 				name   string
@@ -117,17 +118,33 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 			}
 			if entry == "civisibility" && (runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows") {
 				t.Run("process retry", func(t *testing.T) {
-					server, events := startIntake(t)
-					env := append(append([]string{}, baseEnv...), intakeEnv(server.URL)...)
-					env = append(env, "DD_CIVISIBILITY_RETRY_EXECUTION_MODE=process")
-					output := runCommand(t, dir, env, time.Minute, binary, "-test.run=^TestRetry$", "-test.v", "-test.timeout=30s")
-					mode, err := os.ReadFile(filepath.Join(dir, "retry-mode"))
-					if err != nil || string(mode) != "false" {
-						t.Fatalf("retry child mode = %q, read error = %v; want false:\n%s", mode, err, output)
+					keys := []string{""}
+					if runtime.GOOS != "windows" {
+						keys = append(keys, "dd_civisibility_enabled", "Dd_CiVisibility_Enabled")
 					}
-					got := events()
-					if len(got) != 2 || got[1].Content.Meta["test.retry.execution_mode"] != "process" || got[1].Content.Meta["test.status"] != "pass" {
-						t.Fatalf("expected a failed parent attempt and passing process retry, got %+v:\n%s", got, output)
+					for _, key := range keys {
+						name := key
+						if name == "" {
+							name = "unset"
+						}
+						t.Run(name, func(t *testing.T) {
+							retryDir := t.TempDir()
+							server, events := startIntake(t)
+							env := append(append([]string{}, baseEnv...), intakeEnv(server.URL)...)
+							env = append(env, "DD_CIVISIBILITY_RETRY_EXECUTION_MODE=process")
+							if key != "" {
+								env = append(env, key+"=false")
+							}
+							output := runCommand(t, retryDir, env, time.Minute, binary, "-test.run=^TestRetry$", "-test.v", "-test.timeout=30s")
+							mode, err := os.ReadFile(filepath.Join(retryDir, "retry-mode"))
+							if err != nil || string(mode) != "false" {
+								t.Fatalf("retry child mode = %q, read error = %v; want false:\n%s", mode, err, output)
+							}
+							got := events()
+							if len(got) != 2 || got[1].Content.Meta["test.retry.execution_mode"] != "process" || got[1].Content.Meta["test.status"] != "pass" {
+								t.Fatalf("expected a failed parent attempt and passing process retry, got %+v:\n%s", got, output)
+							}
+						})
 					}
 				})
 			}

@@ -400,7 +400,9 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 			continue
 		}
 		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
-			enabledPresent = true
+			if runtime.GOOS == "windows" || key == constants.CIVisibilityEnabledEnvironmentVariable {
+				enabledPresent = true
+			}
 			if mode, valid := envconfig.ParseEnabledMode(value); valid && mode == envconfig.EnabledModeParent {
 				result = append(result, key+"=false")
 				continue
