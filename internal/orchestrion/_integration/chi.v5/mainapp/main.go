@@ -3,9 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Command mainapp calls the chi router constructors from package main, where
-// only the otelc rules with target: main apply. TestRoutersInMain builds and
-// runs it.
+// Command mainapp calls the chi.v5 router constructors from package main,
+// where only the otelc rules with target: main apply. TestRoutersInMain builds
+// and runs it.
 package main
 
 import (
@@ -13,12 +13,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
-	serve(route(chi.NewRouter(), "/v4/router"), "/v4/router")
-	serve(route(chi.NewMux(), "/v4/mux"), "/v4/mux")
+	serve(route(chi.NewRouter(), "/v5/router"), "/v5/router")
+	serve(route(chi.NewMux(), "/v5/mux"), "/v5/mux")
 	serveAliased()
 
 	// The injected `defer tracer.Stop()` flushes the spans, so main has to

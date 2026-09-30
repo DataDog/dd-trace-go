@@ -5,18 +5,14 @@
 
 package main
 
-// chi v5 lives in its own file so both versions are imported as chi, without
-// an alias.
+// Imported under another name than chi, which the rules must handle the way
+// orchestrion does.
 import (
-	"github.com/go-chi/chi/v5"
+	chiv4 "github.com/go-chi/chi"
 )
 
-func serveV5() {
-	r := chi.NewRouter()
-	r.Get("/v5/router", ok)
-	serve(r, "/v5/router")
-
-	m := chi.NewMux()
-	m.Get("/v5/mux", ok)
-	serve(m, "/v5/mux")
+func serveAliased() {
+	r := chiv4.NewRouter()
+	r.Get("/v4/alias", ok)
+	serve(r, "/v4/alias")
 }

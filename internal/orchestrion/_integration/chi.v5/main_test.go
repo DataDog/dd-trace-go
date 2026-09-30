@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package chi
+package chiv5
 
 import (
 	"testing"
@@ -17,11 +17,11 @@ import (
 // suites only reach the $root rules, since the package under test is never
 // main.
 func TestRoutersInMain(t *testing.T) {
-	agent := otelcrun.Run(t, "./chi/mainapp")
+	agent := otelcrun.Run(t, "./chi.v5/mainapp")
 	for _, resource := range []string{
-		"GET /v4/router",
-		"GET /v4/mux",
-		"GET /v4/alias",
+		"GET /v5/router",
+		"GET /v5/mux",
+		"GET /v5/alias",
 	} {
 		assert.Truef(t, agent.Reported(resource),
 			"no %q span reached the agent across %d payload(s)", resource, agent.RequestCount())
