@@ -31,7 +31,22 @@ type client interface {
 	repoPath() string
 }
 
-type ghClient struct{ repo string }
+type ghClient struct {
+	repo string
+	// run executes gh; nil means the gh executable. Tests replace it.
+	run func(args ...string) (string, error)
+}
+
+// errRateLimited marks a gh failure that persisted after waiting for the
+// rate limit to reset. Callers abort the collection on it: recording the
+// affected jobs as having no logs would be permanent, wrong evidence.
+var errRateLimited = errors.New("GitHub API rate limit exceeded")
+
+// rateLimitPad is added to the reset time so the retry lands after it.
+const rateLimitPad = 5 * time.Second
+
+// sleep is a seam for tests.
+var sleep = time.Sleep
 
 func runGh(args ...string) (string, error) {
 	cmd := exec.Command("gh", args...)
@@ -48,17 +63,73 @@ func runGh(args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+func (c *ghClient) exec(args ...string) (string, error) {
+	if c.run != nil {
+		return c.run(args...)
+	}
+	return runGh(args...)
+}
+
+// isRateLimit reports whether a gh failure is a primary or secondary rate
+// limit: an HTTP 403 or 429 that says so.
+func isRateLimit(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "rate limit") &&
+		(strings.Contains(msg, "403") || strings.Contains(msg, "429"))
+}
+
+// gh runs gh and, when the API rate limit is hit, waits for the core limit
+// to reset and retries once. A second rate-limit failure returns
+// errRateLimited.
+func (c *ghClient) gh(args ...string) (string, error) {
+	out, err := c.exec(args...)
+	if err == nil || !isRateLimit(err) {
+		return out, err
+	}
+	if err := c.waitForRateLimitReset(); err != nil {
+		return "", fmt.Errorf("%w: %w", errRateLimited, err)
+	}
+	out, err = c.exec(args...)
+	if err != nil && isRateLimit(err) {
+		return "", fmt.Errorf("%w: %w", errRateLimited, err)
+	}
+	return out, err
+}
+
+func (c *ghClient) waitForRateLimitReset() error {
+	out, err := c.exec("api", "rate_limit")
+	if err != nil {
+		return err
+	}
+	var limits struct {
+		Resources struct {
+			Core struct {
+				Reset int64 `json:"reset"`
+			} `json:"core"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal([]byte(out), &limits); err != nil {
+		return fmt.Errorf("decode rate_limit: %w", err)
+	}
+	wait := max(time.Unix(limits.Resources.Core.Reset, 0).Sub(timeNow()), 0) + rateLimitPad
+	fmt.Fprintf(os.Stderr, "  ! GitHub API rate limit reached; waiting %s for the reset\n",
+		wait.Round(time.Second))
+	sleep(wait)
+	return nil
+}
+
 func (c *ghClient) getJSON(path string) (string, error) {
-	return runGh("api", "-H", "Accept: application/vnd.github+json", path)
+	return c.gh("api", "-H", "Accept: application/vnd.github+json", path)
 }
 
 // getLog fetches job logs, which contain terminal escape sequences and a
-// UTF-8 BOM; gh only emits them with --allow-escape-sequences, which older
-// gh versions lack, so fall back to a plain call.
+// UTF-8 BOM; gh only emits them with --allow-escape-sequences. Older gh
+// versions lack the flag, so a plain call is the fallback for that error
+// only: retrying any other failure would repeat a doomed request.
 func (c *ghClient) getLog(path string) (string, error) {
-	out, err := runGh("api", "--allow-escape-sequences", path)
-	if err != nil {
-		out, err = runGh("api", path)
+	out, err := c.gh("api", "--allow-escape-sequences", path)
+	if err != nil && strings.Contains(err.Error(), "unknown flag") {
+		return c.gh("api", path)
 	}
 	return out, err
 }
@@ -262,28 +333,59 @@ func isIgnoredCheck(name string) bool {
 // collectRun produces job observations for the first attempt of one
 // workflow run. Timing and non-success counts use first attempts only, so
 // later attempts are not collected; a run with a later attempt is flagged
-// Retried so the report can count retries.
-func collectRun(c client, r run, collectedAt string) ([]jobObservation, error) {
+// Retried so the report can count retries. stored holds the records of
+// earlier collections: a job whose stored record has logs is not fetched
+// again, and the returned record keeps that log evidence. A rate-limit
+// failure aborts with an error.
+func collectRun(c client, r run, collectedAt string, stored map[jobKey]jobObservation) ([]jobObservation, error) {
 	path := fmt.Sprintf("repos/%s/actions/runs/%d/attempts/1/jobs", c.repoPath(), r.ID)
 	jobs, err := fetchAll[job](c, path, "jobs")
 	if err != nil {
+		if errors.Is(err, errRateLimited) {
+			return nil, err
+		}
 		fmt.Fprintf(os.Stderr, "  ! run %d: jobs unavailable: %v\n", r.ID, err)
 		return nil, nil
 	}
 	records := make([]jobObservation, 0, len(jobs))
 	for _, j := range jobs {
-		records = append(records, buildJobRecord(c, r, j, collectedAt))
+		prev, have := stored[jobKey{r.ID, 1, j.ID}]
+		rec, err := buildJobRecord(c, r, j, collectedAt, have && prev.HasLogs)
+		if err != nil {
+			return nil, err
+		}
+		if have {
+			rec = mergeJobRecord(prev, rec)
+		}
+		records = append(records, rec)
 	}
 	return records, nil
 }
 
+// mergeJobRecord returns the record to store when fresh is observed over
+// stored. Refreshing never loses evidence: a fresh record without logs
+// keeps the stored workload and cache evidence, while run and job fields
+// (for example Retried) are taken from the fresh one.
+func mergeJobRecord(stored, fresh jobObservation) jobObservation {
+	if stored.HasLogs && !fresh.HasLogs {
+		fresh.Workload, fresh.Cache, fresh.HasLogs = stored.Workload, stored.Cache, true
+	}
+	return fresh
+}
+
 // buildJobRecord assembles one observation, fetching the job's log for
-// cache evidence. Missing logs keep the record with unknown classifications.
-func buildJobRecord(c client, r run, j job, collectedAt string) jobObservation {
-	logText, logErr := c.getLog(fmt.Sprintf("repos/%s/actions/jobs/%d/logs", c.repoPath(), j.ID))
+// cache evidence unless skipLogs is set. An unavailable log keeps the
+// record with unknown classifications; only a rate limit is an error.
+func buildJobRecord(c client, r run, j job, collectedAt string, skipLogs bool) (jobObservation, error) {
 	var ev *logEvidence
-	if logErr == nil {
-		ev = parseLog(logText)
+	if !skipLogs {
+		logText, err := c.getLog(fmt.Sprintf("repos/%s/actions/jobs/%d/logs", c.repoPath(), j.ID))
+		if errors.Is(err, errRateLimited) {
+			return jobObservation{}, err
+		}
+		if err == nil {
+			ev = parseLog(logText)
+		}
 	}
 
 	var restores []restoreClassification
@@ -359,7 +461,7 @@ func buildJobRecord(c client, r run, j job, collectedAt string) jobObservation {
 		Cache:    cache,
 		Steps:    steps,
 		HasLogs:  ev != nil,
-	}
+	}, nil
 }
 
 // collectPRFeedback produces one feedback record per (PR, head SHA):
@@ -716,7 +818,11 @@ type window struct {
 	verbose      bool
 }
 
-func collectWindow(c client, w window, collectedAt string) ([]jobObservation, []prFeedback, error) {
+// collectWindow gathers the window's observations. stored is the current
+// observation store (nil when empty); see collectRun.
+func collectWindow(c client, w window, collectedAt string,
+	stored map[jobKey]jobObservation) ([]jobObservation, []prFeedback, error) {
+
 	runs, nSlices, err := fetchRuns(c, w.since, w.until)
 	if err != nil {
 		return nil, nil, err
@@ -739,16 +845,29 @@ func collectWindow(c client, w window, collectedAt string) ([]jobObservation, []
 		if w.verbose {
 			fmt.Fprintf(os.Stdout, "  run %d %s attempt %d\n", r.ID, r.Name, r.RunAttempt)
 		}
-		recs, err := collectRun(c, r, collectedAt)
+		recs, err := collectRun(c, r, collectedAt, stored)
 		if err != nil {
 			return nil, nil, err
 		}
 		records = append(records, recs...)
 	}
 	feedback := collectPRFeedback(c, runs, collectedAt)
-	fmt.Fprintf(os.Stdout, "  %d job observations, %d pr feedback records\n",
-		len(records), len(feedback))
+	fmt.Fprintln(os.Stdout, collectSummary(records, feedback))
 	return records, feedback, nil
+}
+
+// collectSummary reports what a collection gathered, including the jobs
+// whose logs were unavailable (expired or unreadable), which carry no
+// cache evidence.
+func collectSummary(records []jobObservation, feedback []prFeedback) string {
+	noLogs := 0
+	for _, rec := range records {
+		if !rec.HasLogs {
+			noLogs++
+		}
+	}
+	return fmt.Sprintf("  %d job observations (%d without logs), %d pr feedback records",
+		len(records), noLogs, len(feedback))
 }
 
 func cmdCollect(args []string) error {
@@ -788,15 +907,15 @@ func cmdCollect(args []string) error {
 	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
 		return err
 	}
-	records, feedback, err := collectWindow(c, w, collectedAt)
-	if err != nil {
-		return err
-	}
-
 	existingJobs, existingFeedback, err := loadStoreForUpdate(*outputDir)
 	if err != nil {
 		return err
 	}
+	records, feedback, err := collectWindow(c, w, collectedAt, existingJobs)
+	if err != nil {
+		return err
+	}
+
 	added, refreshed := 0, 0
 	for _, rec := range records {
 		key := jobKey{rec.Run.ID, rec.Run.Attempt, rec.Job.ID}

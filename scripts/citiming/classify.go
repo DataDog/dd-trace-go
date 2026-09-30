@@ -58,13 +58,16 @@ type cacheObservation struct {
 }
 
 // restoreObs is one restore's raw provider outputs. cache_matched_key is a
-// pointer so its presence is distinguishable from an empty string.
+// pointer so its presence is distinguishable from an empty string. Restored
+// is set by the cloudx setup step ("true" when the module cache is non-empty
+// after the restore) and is empty when the record does not carry it.
 type restoreObs struct {
 	Name            string  `json:"name"`
 	Enabled         string  `json:"enabled"`
 	Outcome         string  `json:"outcome"`
 	CacheHit        string  `json:"cache_hit"`
 	CacheMatchedKey *string `json:"cache_matched_key"`
+	Restored        string  `json:"restored"`
 }
 
 type restoreClassification struct {
@@ -77,8 +80,9 @@ type restoreClassification struct {
 // github-cache provider cache_hit is an exact-hit boolean and a non-empty
 // cache_matched_key alongside cache_hit != true marks a prefix restore.
 // For the cloudx provider a `false` cache_hit is ambiguous between a
-// prefix restore and a cold miss and stays unknown until completed-log
-// evidence classifies it; only a `true` (an exact hit) is unambiguous.
+// prefix restore and a cold miss; the record's restored field resolves it
+// (prefix or cold_miss) and, when absent, it stays unknown. Only a `true`
+// (an exact hit) is unambiguous on its own.
 func classifyRestore(obs *restoreObs, provider string) string {
 	if obs == nil {
 		return "unknown"
@@ -98,10 +102,16 @@ func classifyRestore(obs *restoreObs, provider string) string {
 	// which never carries a matched key; the tools entry keeps its
 	// actions/cache semantics even inside a merged cloudx observation.
 	if provider == "cloudx" && obs.CacheMatchedKey == nil {
-		if hit == "true" {
+		switch {
+		case hit == "true":
 			return "exact"
+		case strings.EqualFold(obs.Restored, "true"):
+			return "prefix"
+		case strings.EqualFold(obs.Restored, "false"):
+			return "cold_miss"
+		default:
+			return "unknown"
 		}
-		return "unknown"
 	}
 	if obs.CacheMatchedKey != nil {
 		switch {

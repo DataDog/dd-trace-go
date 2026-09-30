@@ -30,6 +30,10 @@ type fakeClient struct {
 	runQueries []string
 	// headSHAErr, when set, fails every head_sha run query.
 	headSHAErr error
+	// logErr, when set, fails every log fetch with that error.
+	logErr error
+	// logCalls counts getLog calls.
+	logCalls int
 }
 
 func (f *fakeClient) repoPath() string { return f.repo }
@@ -126,6 +130,10 @@ func (f *fakeClient) getJSON(path string) (string, error) {
 }
 
 func (f *fakeClient) getLog(path string) (string, error) {
+	f.logCalls++
+	if f.logErr != nil {
+		return "", f.logErr
+	}
 	for id, text := range f.logs {
 		if strings.Contains(path, fmt.Sprintf("/jobs/%d/logs", id)) {
 			return text, nil
@@ -252,21 +260,27 @@ func TestClassifyRestore(t *testing.T) {
 }
 
 // The cloudx provider exposes only the underlying exact-hit boolean: a
-// `false` is ambiguous between a prefix restore and a cold miss and must
-// stay unknown until completed-log evidence classifies it.
+// `false` is ambiguous between a prefix restore and a cold miss. The setup
+// action's optional `restored` field (module cache non-empty after the
+// restore) resolves it; without the field the result stays unknown.
 func TestClassifyRestoreCloudx(t *testing.T) {
 	cases := []struct {
-		name string
-		hit  string
-		want string
+		name     string
+		hit      string
+		restored string
+		want     string
 	}{
-		{"true is an exact hit", "true", "exact"},
-		{"false is ambiguous", "false", "unknown"},
-		{"empty is ambiguous", "", "unknown"},
+		{"true is an exact hit", "true", "", "exact"},
+		{"exact hit wins over restored false", "true", "false", "exact"},
+		{"false without restored is ambiguous", "false", "", "unknown"},
+		{"empty without restored is ambiguous", "", "", "unknown"},
+		{"false and restored is a prefix restore", "false", "true", "prefix"},
+		{"false and not restored is a cold miss", "false", "false", "cold_miss"},
+		{"unexpected restored value is ambiguous", "false", "maybe", "unknown"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			obs := &restoreObs{Enabled: "true", Outcome: "success", CacheHit: tc.hit}
+			obs := &restoreObs{Enabled: "true", Outcome: "success", CacheHit: tc.hit, Restored: tc.restored}
 			if got := classifyRestore(obs, "cloudx"); got != tc.want {
 				t.Fatalf("classifyRestore = %q, want %q", got, tc.want)
 			}
@@ -398,6 +412,27 @@ func TestParseLog(t *testing.T) {
 			t.Fatalf("workload = %q, want the last (merged) record", ev.observation.Workload)
 		}
 	})
+	t.Run("a forged later observation replaces the setup record", func(t *testing.T) {
+		// Observations are best-effort records from the job log, not
+		// tamper-proof: a later step printing a cache-observation line
+		// supersedes the setup record (see scripts/README.md).
+		setupObs := observationJSON("true", "success", "true", nil)
+		forged := strings.Replace(observationJSON("true", "success", "false", nil),
+			"unit-core", "forged-family", 1)
+		forged = strings.Replace(forged, "1.27.1", "1.99.0", 1)
+		lines := append(baseLogLines(setupObs),
+			logLine("2026-09-13T11:37:20.0000000Z", "cache-observation:"+forged))
+		ev := parseLog(joinLines(lines, postLogLines(defaultSkipMarker)))
+		if ev == nil || ev.observation == nil {
+			t.Fatal("missing observation")
+		}
+		if ev.observation.Workload != "forged-family" || ev.observation.Runtime.Version != "1.99.0" {
+			t.Fatalf("observation = %+v, want the later line to win", ev.observation)
+		}
+		if got := classifyRestore(&ev.observation.Restores[0], ev.observation.Provider); got != "cold_miss" {
+			t.Fatalf("restore = %q, want the later line's classification", got)
+		}
+	})
 	t.Run("secret lines are not propagated", func(t *testing.T) {
 		leak := append(baseLogLines(""),
 			logLine("2026-09-13T11:37:20Z", "DD_API_KEY=deadbeef gho_abc123"))
@@ -421,7 +456,7 @@ func TestCollectRun(t *testing.T) {
 			"2026-09-13T11:01:00Z", "2026-09-13T11:37:30Z")
 		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 			jobs: map[string][]job{"1:1": {j}}, logs: map[int64]string{11: logText}}
-		records, err := collectRun(c, r, "2026-09-14T00:00:00Z")
+		records, err := collectRun(c, r, "2026-09-14T00:00:00Z", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -450,7 +485,7 @@ func TestCollectRun(t *testing.T) {
 		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 			jobs: map[string][]job{"2:1": {failed}, "2:2": {retried}},
 			logs: map[int64]string{21: joinLines(baseLogLines("")), 22: joinLines(baseLogLines(""))}}
-		records, err := collectRun(c, r, "now")
+		records, err := collectRun(c, r, "now", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -470,7 +505,7 @@ func TestCollectRun(t *testing.T) {
 		j := makeJob(41, "test-core", "2026-09-13T11:01:00Z", "2026-09-13T11:10:00Z")
 		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 			jobs: map[string][]job{"4:1": {j}}, logs: map[int64]string{41: joinLines(baseLogLines(""))}}
-		records, err := collectRun(c, r, "now")
+		records, err := collectRun(c, r, "now", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -483,7 +518,7 @@ func TestCollectRun(t *testing.T) {
 		j := makeJob(31, "test-core", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
 		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 			jobs: map[string][]job{"3:1": {j}}}
-		records, err := collectRun(c, r, "now")
+		records, err := collectRun(c, r, "now", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -612,7 +647,7 @@ func TestCollectWindowPRFeedbackIgnoresWorkflowFilter(t *testing.T) {
 		until:     mustTime(t, "2026-09-14T00:00:00Z"),
 		workflows: map[string]bool{"w.yml": true},
 		events:    map[string]bool{"push": true},
-	}, "now")
+	}, "now", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +780,7 @@ func TestStoreMergeSemantics(t *testing.T) {
 	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 		jobs: map[string][]job{"7:1": {j}},
 		logs: map[int64]string{71: joinLines(baseLogLines(""), postLogLines(defaultSkipMarker))}}
-	records, err := collectRun(c, r, "now")
+	records, err := collectRun(c, r, "now", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1514,7 +1549,7 @@ func TestReportsNeverCarrySecrets(t *testing.T) {
 	logText := joinLines(leaky, postLogLines(defaultSkipMarker))
 	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
 		jobs: map[string][]job{"8:1": {j}}, logs: map[int64]string{81: logText}}
-	records, err := collectRun(c, r, "now")
+	records, err := collectRun(c, r, "now", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1522,4 +1557,268 @@ func TestReportsNeverCarrySecrets(t *testing.T) {
 	if strings.Contains(string(blob), "supersecret123") || strings.Contains(string(blob), "DD_API_KEY") {
 		t.Fatal("records leaked secret-looking log content")
 	}
+}
+
+// ---- refresh and skip of stored log evidence -------------------------------------------
+
+// storedWithLogs collects a job with a readable log and returns the record
+// as a previous collection would have stored it.
+func storedWithLogs(t *testing.T, r run, j job) jobObservation {
+	t.Helper()
+	obs := observationJSON("true", "success", "true", nil)
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+		jobs: map[string][]job{fmt.Sprintf("%d:1", r.ID): {j}},
+		logs: map[int64]string{j.ID: joinLines(baseLogLines(obs), postLogLines(defaultSkipMarker))}}
+	records, err := collectRun(c, r, "earlier", nil)
+	if err != nil || len(records) != 1 || !records[0].HasLogs {
+		t.Fatalf("records = %+v, err = %v", records, err)
+	}
+	return records[0]
+}
+
+func TestCollectRunRefreshKeepsStoredLogEvidence(t *testing.T) {
+	r := makeRun(8, 1, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "sha8")
+	j := makeJob(81, "test-core", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	stored := storedWithLogs(t, r, j)
+	storeMap := map[jobKey]jobObservation{{8, 1, 81}: stored}
+
+	// The run was rerun after the first collection, and the log is no
+	// longer readable.
+	rerun := makeRun(8, 2, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "sha8")
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{rerun},
+		jobs:   map[string][]job{"8:1": {j}},
+		logErr: errors.New("HTTP 410: logs expired")}
+	records, err := collectRun(c, rerun, "later", storeMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+	got := records[0]
+	if !got.HasLogs || got.Workload != stored.Workload || len(got.Cache.Restores) != 1 ||
+		got.Cache.Restores[0].Result != "exact" || len(got.Cache.Saves) != 1 {
+		t.Fatalf("stored log evidence was lost: %+v", got)
+	}
+	if !got.Run.Retried || got.CollectedAt != "later" {
+		t.Fatalf("run fields were not refreshed: retried=%v collected_at=%q", got.Run.Retried, got.CollectedAt)
+	}
+}
+
+func TestCollectRunSkipsLogFetchForStoredLogs(t *testing.T) {
+	r := makeRun(9, 1, "pull_request", "unit-integration-tests.yml", "2026-09-13T11:00:00Z", "sha9")
+	withLogs := makeJob(91, "test-core", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	withoutLogs := makeJob(92, "test-contrib", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	unstored := makeJob(93, "test-extra", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	storeMap := map[jobKey]jobObservation{
+		{9, 1, 91}: storedWithLogs(t, r, withLogs),
+		{9, 1, 92}: {Kind: "job_observation", Schema: schemaVersion, Run: runMeta{ID: 9, Attempt: 1}, Job: jobMeta{ID: 92}},
+	}
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+		jobs: map[string][]job{"9:1": {withLogs, withoutLogs, unstored}},
+		logs: map[int64]string{92: joinLines(baseLogLines("")), 93: joinLines(baseLogLines(""))}}
+	records, err := collectRun(c, r, "now", storeMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("got %d records, want 3", len(records))
+	}
+	if c.logCalls != 2 {
+		t.Fatalf("fetched %d logs, want 2 (only jobs without stored logs)", c.logCalls)
+	}
+	for _, rec := range records {
+		if !rec.HasLogs {
+			t.Fatalf("job %d has no logs", rec.Job.ID)
+		}
+	}
+}
+
+func TestCollectCountsJobsWithoutLogs(t *testing.T) {
+	r := makeRun(10, 1, "push", "main-branch-tests.yml", "2026-09-13T11:00:00Z", "d")
+	withLog := makeJob(101, "a", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	noLog := makeJob(102, "b", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+		jobs: map[string][]job{"10:1": {withLog, noLog}},
+		logs: map[int64]string{101: joinLines(baseLogLines(""))}}
+	records, feedback, err := collectWindow(c, window{
+		since: mustTime(t, "2026-09-13T00:00:00Z"),
+		until: mustTime(t, "2026-09-14T00:00:00Z"),
+	}, "now", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := collectSummary(records, feedback); !strings.Contains(got, "2 job observations (1 without logs)") {
+		t.Fatalf("summary = %q", got)
+	}
+}
+
+// ---- gh invocation: flag fallback and rate limits ------------------------------------------
+
+// scriptedGh replaces the gh executable: each call is recorded and answered
+// by reply.
+type scriptedGh struct {
+	calls [][]string
+	reply func(args []string) (string, error)
+}
+
+func (s *scriptedGh) run(args ...string) (string, error) {
+	s.calls = append(s.calls, args)
+	return s.reply(args)
+}
+
+func (s *scriptedGh) count(arg string) int {
+	n := 0
+	for _, call := range s.calls {
+		if slices.Contains(call, arg) {
+			n++
+		}
+	}
+	return n
+}
+
+func ghFailure(arg, stderr string) error {
+	return fmt.Errorf("gh %s: exit status 1: %s", arg, stderr)
+}
+
+const rateLimitStderr = "gh: API rate limit exceeded for user ID 1. (HTTP 403)"
+
+// stubSleep records requested sleeps instead of sleeping and pins the clock.
+func stubSleep(t *testing.T, now time.Time) *[]time.Duration {
+	t.Helper()
+	var slept []time.Duration
+	prevSleep, prevNow := sleep, timeNow
+	sleep = func(d time.Duration) { slept = append(slept, d) }
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() { sleep, timeNow = prevSleep, prevNow })
+	return &slept
+}
+
+func TestGhClientGetLogFlagFallback(t *testing.T) {
+	const logPath = "repos/o/r/actions/jobs/1/logs"
+	t.Run("falls back when the flag is unsupported", func(t *testing.T) {
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			if slices.Contains(args, "--allow-escape-sequences") {
+				return "", ghFailure(logPath, "unknown flag: --allow-escape-sequences")
+			}
+			return "plain log", nil
+		}}
+		out, err := (&ghClient{repo: "o/r", run: gh.run}).getLog(logPath)
+		if err != nil || out != "plain log" {
+			t.Fatalf("getLog = %q, %v", out, err)
+		}
+		if len(gh.calls) != 2 {
+			t.Fatalf("got %d gh calls, want 2", len(gh.calls))
+		}
+	})
+	t.Run("does not retry on HTTP errors", func(t *testing.T) {
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			return "", ghFailure(logPath, "gh: Not Found (HTTP 404)")
+		}}
+		if _, err := (&ghClient{repo: "o/r", run: gh.run}).getLog(logPath); err == nil {
+			t.Fatal("want the HTTP error")
+		}
+		if len(gh.calls) != 1 {
+			t.Fatalf("got %d gh calls, want 1 (no plain retry)", len(gh.calls))
+		}
+	})
+}
+
+func TestGhClientRateLimit(t *testing.T) {
+	const logPath = "repos/o/r/actions/jobs/1/logs"
+	now := time.Unix(1_800_000_000, 0)
+	rateLimitJSON := fmt.Sprintf(`{"resources":{"core":{"reset":%d}}}`, now.Add(90*time.Second).Unix())
+
+	t.Run("waits for the reset and retries once", func(t *testing.T) {
+		slept := stubSleep(t, now)
+		limited := true
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			switch {
+			case slices.Contains(args, "rate_limit"):
+				return rateLimitJSON, nil
+			case limited:
+				limited = false
+				return "", ghFailure(logPath, rateLimitStderr)
+			default:
+				return "the log", nil
+			}
+		}}
+		out, err := (&ghClient{repo: "o/r", run: gh.run}).getLog(logPath)
+		if err != nil || out != "the log" {
+			t.Fatalf("getLog = %q, %v", out, err)
+		}
+		if want := []time.Duration{90*time.Second + rateLimitPad}; !slices.Equal(*slept, want) {
+			t.Fatalf("slept %v, want %v", *slept, want)
+		}
+	})
+	t.Run("aborts when the retry is still limited", func(t *testing.T) {
+		slept := stubSleep(t, now)
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			if slices.Contains(args, "rate_limit") {
+				return rateLimitJSON, nil
+			}
+			return "", ghFailure(logPath, rateLimitStderr)
+		}}
+		_, err := (&ghClient{repo: "o/r", run: gh.run}).getLog(logPath)
+		if !errors.Is(err, errRateLimited) {
+			t.Fatalf("err = %v, want errRateLimited", err)
+		}
+		if len(*slept) != 1 {
+			t.Fatalf("slept %d times, want exactly one wait", len(*slept))
+		}
+		if gh.count("rate_limit") != 1 {
+			t.Fatalf("queried rate_limit %d times, want 1", gh.count("rate_limit"))
+		}
+	})
+	t.Run("secondary limit on 429 is recognised", func(t *testing.T) {
+		stubSleep(t, now)
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			if slices.Contains(args, "rate_limit") {
+				return rateLimitJSON, nil
+			}
+			return "", ghFailure(logPath, "gh: You have exceeded a secondary rate limit (HTTP 429)")
+		}}
+		if _, err := (&ghClient{repo: "o/r", run: gh.run}).getJSON(logPath); !errors.Is(err, errRateLimited) {
+			t.Fatalf("err = %v, want errRateLimited", err)
+		}
+	})
+	t.Run("a plain 403 is not a rate limit", func(t *testing.T) {
+		slept := stubSleep(t, now)
+		gh := &scriptedGh{reply: func(args []string) (string, error) {
+			return "", ghFailure(logPath, "gh: Resource not accessible by integration (HTTP 403)")
+		}}
+		_, err := (&ghClient{repo: "o/r", run: gh.run}).getJSON(logPath)
+		if err == nil || errors.Is(err, errRateLimited) {
+			t.Fatalf("err = %v, want the plain HTTP error", err)
+		}
+		if len(*slept) != 0 || len(gh.calls) != 1 {
+			t.Fatalf("slept %v, %d calls; want neither wait nor retry", *slept, len(gh.calls))
+		}
+	})
+}
+
+func TestCollectAbortsOnRateLimit(t *testing.T) {
+	r := makeRun(11, 1, "push", "main-branch-tests.yml", "2026-09-13T11:00:00Z", "d")
+	j := makeJob(111, "a", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	limited := fmt.Errorf("%w: gh: API rate limit exceeded (HTTP 403)", errRateLimited)
+
+	t.Run("log fetch", func(t *testing.T) {
+		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+			jobs: map[string][]job{"11:1": {j}}, logErr: limited}
+		records, _, err := collectWindow(c, window{
+			since: mustTime(t, "2026-09-13T00:00:00Z"),
+			until: mustTime(t, "2026-09-14T00:00:00Z"),
+		}, "now", nil)
+		if !errors.Is(err, errRateLimited) {
+			t.Fatalf("err = %v, records = %+v; want errRateLimited and no records", err, records)
+		}
+	})
+	t.Run("ordinary log failure is recorded as no logs", func(t *testing.T) {
+		c := &fakeClient{repo: "DataDog/dd-trace-go", runs: []run{r},
+			jobs: map[string][]job{"11:1": {j}}, logErr: errors.New("HTTP 410: expired")}
+		records, err := collectRun(c, r, "now", nil)
+		if err != nil || len(records) != 1 || records[0].HasLogs {
+			t.Fatalf("records = %+v, err = %v", records, err)
+		}
+	})
 }

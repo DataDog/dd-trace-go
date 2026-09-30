@@ -231,9 +231,12 @@ that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
 `cold_miss`, disabled, error, or unknown. For isolated-cache providers a
 raw cache-hit of `false` is ambiguous between a prefix restore and a
-cold miss, so the collector classifies it as `unknown`. This applies to
-the cloudx provider; `actions/setup-go` restores with the primary key
-only, so for the github-cache provider `false` is a cold miss. The
+cold miss. This applies to the cloudx provider: the setup action adds an
+optional `restored` field to the restore entry (`"true"` when the module
+cache is non-empty after the restore), which classifies the restore as
+prefix (`"true"`) or `cold_miss` (`"false"`); without the field the
+collector reports `unknown`. `actions/setup-go` restores with the primary
+key only, so for the github-cache provider `false` is a cold miss. The
 Datadog count series keeps the contract it has always had, where `miss`
 means "not an exact hit", so every successful restore stays counted and
 existing dashboards remain continuous. The precise exact/prefix/cold
@@ -241,6 +244,20 @@ split remains with completed-log classification in this tool. Saves are
 classified per event from completed log markers (`Cache saved with key:`, `Cache hit occurred on the
 primary key ... not saving cache`, reservation conflicts, failures); a
 successful job never counts as a successful save on its own.
+
+Observations are trusted, best-effort records read from the job log; they
+are not tamper-proof. A later step that prints a `cache-observation:` line
+replaces the setup record, because the last line wins. Job durations come
+from the GitHub API and are unaffected, but restore classification,
+workload family and resolved Go version (and therefore the
+toolchain-changed exclusion) can be skewed by such a line.
+
+Collection fetches one job log at a time and skips the log fetch for jobs
+whose stored record already has logs, so a refresh never loses stored
+evidence. When the API rate limit is reached it waits for the reset and
+retries once; a second failure aborts the collection before the store is
+written. The collect summary reports how many job observations have no
+logs.
 
 The filesystem sizes published by `.github/actions/cache-metrics` are
 end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
@@ -251,10 +268,11 @@ merge time). Compressed cache-service storage comes from the cache API
 `size_in_bytes` field in dated `cache_snapshot_<timestamp>.json` files,
 one per daily collection.
 
-Tests live in `scripts/citiming/citiming_test.go`:
+Tests live in `scripts/citiming/citiming_test.go`; the payload builder of
+`.github/actions/cache-metrics` is tested in `scripts/actiontest`:
 
 ```bash
-go test -race -count=1 ./scripts/citiming/
+go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
 ```
 
 ### Weekly review procedure
