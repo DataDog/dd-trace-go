@@ -44,6 +44,8 @@ env:
     otelc/all
     contrib/net/http
     contrib/net/http/otelc
+    contrib/database/sql
+    contrib/database/sql/otelc
     contrib/go-chi/chi
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
@@ -55,6 +57,7 @@ env:
     gls-leak
     otelc-autostart
     net_http
+    sql
     chi
     chi.v5
 
