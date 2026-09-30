@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -31,10 +32,18 @@ type PromptTemplate struct {
 	Messages []PromptMessage
 }
 
+// FormattedPrompt contains text or typed provider messages ready for use.
+// Messages preserve provider extensions and omit empty content on tool messages.
+type FormattedPrompt struct {
+	Text     string
+	Messages []FormattedMessage
+}
+
 // PromptFallback is used when a managed prompt cannot be fetched.
 type PromptFallback struct {
 	Template PromptTemplate
 	Version  string
+	Config   map[string]any
 }
 
 // PromptSource identifies where a managed prompt came from.
@@ -54,6 +63,7 @@ type ManagedPrompt struct {
 	version           string
 	source            PromptSource
 	template          PromptTemplate
+	config            map[string]any
 	promptUUID        string
 	promptVersionUUID string
 }
@@ -70,17 +80,21 @@ func (p *ManagedPrompt) Source() PromptSource { return p.source }
 // Template returns an unrendered copy of the prompt template.
 func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.template) }
 
+// Config returns a copy of the application-consumed configuration stored with this prompt version.
+func (p *ManagedPrompt) Config() map[string]any {
+	config, _ := normalizePromptConfig(p.config)
+	return config
+}
+
+// Match double braces first; preserve surrounding braces such as the closing object in {"age": {age}}.
 var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
 
 // Format renders supplied variables and leaves missing placeholders unchanged.
-func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error) {
+func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error) {
 	render := func(s string) string {
 		var rendered strings.Builder
 		last := 0
 		for _, match := range promptVariablePattern.FindAllStringSubmatchIndex(s, -1) {
-			if match[0] > 0 && s[match[0]-1] == '{' || match[1] < len(s) && s[match[1]] == '}' {
-				continue
-			}
 			start, end := match[2], match[3]
 			if start == -1 {
 				start, end = match[4], match[5]
@@ -100,13 +114,13 @@ func (p *ManagedPrompt) Format(variables map[string]any) (PromptTemplate, error)
 		return rendered.String()
 	}
 	if p.template.Messages == nil {
-		return PromptTemplate{Text: render(p.template.Text)}, nil
+		return FormattedPrompt{Text: render(p.template.Text)}, nil
 	}
-	messages := make([]PromptMessage, len(p.template.Messages))
+	messages := make([]FormattedMessage, len(p.template.Messages))
 	for i, message := range p.template.Messages {
-		messages[i] = PromptMessage{Role: message.Role, Content: render(message.Content)}
+		messages[i] = FormattedMessage{Role: message.Role, Content: render(message.Content)}
 	}
-	return PromptTemplate{Messages: messages}, nil
+	return FormattedPrompt{Messages: messages}, nil
 }
 
 // Annotation converts the managed prompt to the existing explicit span annotation shape.
@@ -178,6 +192,9 @@ func WithPromptFallback(fallback PromptFallback) GetPromptOption {
 	return func(config *getPromptConfig) {
 		copy := fallback
 		copy.Template = copyPromptTemplate(fallback.Template)
+		if config, err := normalizePromptConfig(fallback.Config); err == nil {
+			copy.Config = config
+		}
 		config.fallback = &copy
 		config.fallbackFunc = nil
 	}
@@ -197,16 +214,36 @@ func copyPromptTemplate(template PromptTemplate) PromptTemplate {
 	return copy
 }
 
-func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, promptUUID, versionUUID string) (*ManagedPrompt, error) {
+func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, config map[string]any, promptUUID, versionUUID string) (*ManagedPrompt, error) {
 	if template.Text != "" && template.Messages != nil {
 		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")
 	}
-	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
+	config, err := normalizePromptConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), config: config, promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
 }
 
 func (p *ManagedPrompt) withSource(source PromptSource) *ManagedPrompt {
 	copy := *p
 	copy.source = source
 	copy.template = copyPromptTemplate(p.template)
+	copy.config = p.Config()
 	return &copy
+}
+
+func normalizePromptConfig(config map[string]any) (map[string]any, error) {
+	if config == nil {
+		return map[string]any{}, nil
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must contain JSON values: %w", err)
+	}
+	var copy map[string]any
+	if err := json.Unmarshal(encoded, &copy); err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must be a JSON object: %w", err)
+	}
+	return copy, nil
 }

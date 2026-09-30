@@ -429,7 +429,7 @@ func (s *LLMSpan) AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOpti
 func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (*baseSpan, context.Context, bool) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err.Error())
+		log.Warn("llmobs: failed to start llmobs span: %v", err.Error()) //errtrack:ignore invalid caller span configuration
 		return nil, ctx, false
 	}
 	cfg := illmobs.StartSpanConfig{}

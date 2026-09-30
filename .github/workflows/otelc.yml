@@ -37,7 +37,26 @@ env:
   # template variable, added after that release in
   # open-telemetry/opentelemetry-go-compile-instrumentation#1194. Move back to a
   # tag once one ships with it.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260928150151-b7074543ee0c' }}
+  # Modules otelc reads, tidied by both jobs next to the application each one
+  # builds.
+  OTELC_MODULES: >-
+    otelc/all
+    contrib/net/http
+    contrib/net/http/otelc
+    contrib/go-chi/chi
+    contrib/go-chi/chi/otelc
+    contrib/go-chi/chi.v5
+    contrib/go-chi/chi.v5/otelc
+  # Suites under internal/orchestrion/_integration that run with otelc.
+  OTELC_TEST_PACKAGES: >-
+    otelc
+    gls
+    gls-leak
+    otelc-autostart
+    net_http
+    chi
+    chi.v5
 
 jobs:
   go-versions-matrix:
@@ -47,7 +66,7 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Go
@@ -83,7 +102,7 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -119,8 +138,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all \
-                     contrib/go-chi/chi/otelc contrib/go-chi/chi.v5/otelc; do
+          for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -130,23 +148,14 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           otelc version
 
-          # Listed explicitly: _integration directory names do not map mechanically
-          # onto contrib paths (_integration/redigo lives at contrib/gomodule/redigo),
-          # so this cannot be discovered. Each migrated contrib adds its package here.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          export PACKAGE_NAMES="\
-            ${PREFIX}/otelc \
-            ${PREFIX}/gls \
-            ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart \
-            ${PREFIX}/chi \
-            ${PREFIX}/chi.v5"
+          PACKAGE_NAMES=""
+          for pkg in ${OTELC_TEST_PACKAGES}; do
+            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+          done
+          export PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
-          # `otelc go test -json` silently produces uninstrumented binaries: every
-          # GLS test skips and the proof test fails. So the tests run without it and
-          # the output is converted afterwards, which is also why each package gets
-          # its own invocation, since test2json -p labels one package at a time.
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
           cat > "${RUN_SCRIPT}" <<'EOF'
           #!/usr/bin/env bash
@@ -206,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -229,7 +238,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/apps/otelc-external-app otelc/all; do
+          for dir in internal/apps/otelc-external-app ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
