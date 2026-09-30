@@ -6,74 +6,17 @@
 package main
 
 import (
-	"bytes"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/stubagent"
 )
-
-// stubAgent is a real HTTP trace intake. The in-process agenttest.Agent does not
-// work here: it delivers requests through an in-process RoundTripper and never
-// opens a socket that a child process could reach.
-//
-// Payloads stay raw. An operation name appears verbatim in the msgpack body, so
-// matching on bytes avoids depending on the wire format.
-type stubAgent struct {
-	server *httptest.Server
-
-	mu       sync.Mutex
-	payloads [][]byte
-}
-
-func newStubAgent(t *testing.T) *stubAgent {
-	t.Helper()
-
-	a := &stubAgent{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/info", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"endpoints":["/v0.4/traces"]}`)
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if body, err := io.ReadAll(r.Body); err == nil && len(body) > 0 {
-			a.mu.Lock()
-			a.payloads = append(a.payloads, body)
-			a.mu.Unlock()
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"rate_by_service":{}}`)
-	})
-
-	a.server = httptest.NewServer(mux)
-	t.Cleanup(a.server.Close)
-	return a
-}
-
-func (a *stubAgent) reported(operation string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, p := range a.payloads {
-		if bytes.Contains(p, []byte(operation)) {
-			return true
-		}
-	}
-	return false
-}
-
-func (a *stubAgent) requestCount() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.payloads)
-}
 
 // TestOtelcStartsTracer is the only check that the tracer lifecycle rule in
 // ddtrace/tracer/otelc.yaml works. Every other suite runs under the integration
@@ -128,11 +71,11 @@ func TestOtelcStartsTracer(t *testing.T) {
 			out, err := build.CombinedOutput()
 			require.NoErrorf(t, err, "build failed:\n%s", out)
 
-			agent := newStubAgent(t)
+			agent := stubagent.New(t)
 
 			run := exec.Command(bin)
 			run.Env = append(os.Environ(),
-				"DD_TRACE_AGENT_URL="+agent.server.URL,
+				"DD_TRACE_AGENT_URL="+agent.URL(),
 				"DD_TRACE_STARTUP_LOGS=false",
 			)
 			runOut, err := run.CombinedOutput()
@@ -142,17 +85,17 @@ func TestOtelcStartsTracer(t *testing.T) {
 			// No polling either way: the app's own `defer tracer.Stop()` flushes
 			// synchronously, and the child process has already exited.
 			if tc.wantSpan {
-				assert.Truef(t, agent.reported(spanName),
+				assert.Truef(t, agent.Reported(spanName),
 					"no %q span reached the agent across %d payload(s): otelc did not start the tracer",
-					spanName, agent.requestCount())
+					spanName, agent.RequestCount())
 				return
 			}
-			assert.Falsef(t, agent.reported(spanName),
+			assert.Falsef(t, agent.Reported(spanName),
 				"a plain build reported %q, so a passing otelc case could not be attributed to otelc",
 				spanName)
-			assert.Zerof(t, agent.requestCount(),
+			assert.Zerof(t, agent.RequestCount(),
 				"a plain build talked to the agent %d time(s); no tracer should have started",
-				agent.requestCount())
+				agent.RequestCount())
 		})
 	}
 }
