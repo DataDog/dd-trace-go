@@ -20,9 +20,11 @@
 # There is deliberately no restore-keys ladder: the install step only
 # skips on an exact hit, so a near-miss ladder would restore stale
 # binaries that the install immediately rebuilds — pure download waste.
-# A miss is cheap anyway: setup-go's isolated module cache already
-# restored the modules these tools build from, so installing is
-# compilation only, no network.
+# A miss rebuilds the binaries. It needs no network only when this job's
+# module cache (setup-go with cache enabled) already holds the _tools
+# modules. After a _tools or Go-version change, or on the first run of a
+# workload, install_tools.sh downloads them from the module proxy. Jobs that
+# run setup-go with cache "false" therefore depend on an exact hit here.
 name: 'Tools cache'
 description: 'Restore or install the repository development tool binaries'
 inputs:
@@ -35,7 +37,7 @@ inputs:
     default: ""
     description: >-
       Directory for the tool binaries. Defaults to bin/ under the
-      workspace.
+      workspace; a relative value is resolved against the workspace.
   cache-metrics:
     required: false
     default: ""
@@ -50,28 +52,55 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # One absolute directory, resolved once and reused by the cache path,
+    # the install, the save and PATH, so they cannot disagree. On Windows
+    # cygpath yields the mixed form (D:/a/...), which Node, Git Bash and
+    # scripts/install_tools.sh all accept.
+    - name: Resolve tools directory
+      id: tools-dir
+      shell: bash
+      env:
+        BIN_DIR: ${{ inputs.tools-bin }}
+      run: |
+        set -euo pipefail
+
+        tools_bin="${BIN_DIR:-bin}"
+        case "$tools_bin" in
+          /* | [A-Za-z]:[\\/]*) ;;
+          *) tools_bin="${GITHUB_WORKSPACE}/${tools_bin}" ;;
+        esac
+        if command -v cygpath > /dev/null; then
+          tools_bin="$(cygpath -m "$tools_bin")"
+        fi
+        echo "tools-bin=${tools_bin}" >> "$GITHUB_OUTPUT"
+
     - name: Restore tools cache
       id: cache-tools-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ inputs.tools-bin || format('{0}/bin', github.workspace) }}
+        path: ${{ steps.tools-dir.outputs.tools-bin }}
         # Key on the resolved toolchain version, not the literal input:
         # `stable` silently changes meaning when a new Go release ships.
+        #
+        # Settings that change how the binaries are built (CGO_ENABLED,
+        # GOFLAGS, the runner image's libc) are not in the key. Any such
+        # change must also change a hashed file or be added to the key.
+        # The tools directory is not in the key either: actions/cache mixes
+        # the cache paths into the entry version.
         key: ${{ runner.os }}-${{ runner.arch }}-go-${{ inputs.go-version }}-tools-${{ hashFiles('_tools/go.mod', '_tools/go.sum', '_tools/tools.go', 'scripts/install_tools.sh') }}
 
     - name: Install development tools
       if: steps.cache-tools-restore.outputs.cache-hit != 'true'
       shell: bash
       env:
-        BIN_DIR: ${{ inputs.tools-bin }}
+        TOOLS_BIN: ${{ steps.tools-dir.outputs.tools-bin }}
       run: |-
-        tools_bin="${BIN_DIR:-$(pwd)/bin}"
         # bash's $(pwd) is a POSIX path on every runner, sidestepping the
         # Windows backslash mangling that callers previously normalized
         # around.
         ./scripts/install_tools.sh \
           --tools-dir "$(pwd)/_tools" \
-          --bin-dir "$tools_bin"
+          --bin-dir "$TOOLS_BIN"
 
     # Save after a successful install instead of waiting for the calling
     # job's post phase. This keeps failed installs out of the cache
@@ -80,19 +109,17 @@ runs:
       if: success() && steps.cache-tools-restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ inputs.tools-bin || format('{0}/bin', github.workspace) }}
+        path: ${{ steps.tools-dir.outputs.tools-bin }}
         key: ${{ steps.cache-tools-restore.outputs.cache-primary-key }}
 
     # Additive convenience: later steps find the binaries on PATH. Jobs
-    # that also export the path manually are unaffected.
+    # that also export the path manually are unaffected. Runs only after a
+    # successful restore or install, so PATH never names a missing directory.
     - name: Add tools to PATH
-      if: always()
       shell: bash
       env:
-        BIN_DIR: ${{ inputs.tools-bin }}
-      run: |
-        tools_bin="${BIN_DIR:-$(pwd)/bin}"
-        echo "$tools_bin" >> "$GITHUB_PATH"
+        TOOLS_BIN: ${{ steps.tools-dir.outputs.tools-bin }}
+      run: echo "$TOOLS_BIN" >> "$GITHUB_PATH"
 
     # Merge the tools restore into the setup record (or emit a
     # standalone one) so the job log keeps a single structured
@@ -104,6 +131,11 @@ runs:
       shell: bash
       env:
         BASE_METRICS: ${{ inputs.cache-metrics }}
+        WORKLOAD: ${{ github.job }}
+        GO_VERSION: ${{ inputs.go-version }}
+        TOOLS_OUTCOME: ${{ steps.cache-tools-restore.outcome }}
+        TOOLS_HIT: ${{ steps.cache-tools-restore.outputs.cache-hit }}
+        TOOLS_KEY: ${{ steps.cache-tools-restore.outputs.cache-matched-key }}
       run: |
         set -euo pipefail
 
@@ -112,20 +144,17 @@ runs:
         else
           # Standalone use without a prior setup record.
           base="$(jq -cn \
-            --arg workload "${{ github.job }}" \
-            --arg version "${{ inputs.go-version }}" \
+            --arg workload "$WORKLOAD" \
+            --arg version "$GO_VERSION" \
             '{provider: "github-cache", workload: $workload,
               runtime: {name: "go", requested: "", version: $version},
               restores: []}')"
         fi
 
-        tools_outcome="${{ steps.cache-tools-restore.outcome || '' }}"
-        tools_hit="${{ steps.cache-tools-restore.outputs.cache-hit || '' }}"
-        tools_key="${{ steps.cache-tools-restore.outputs.cache-matched-key }}"
         tools_entry="$(jq -cn \
-          --arg outcome "$tools_outcome" \
-          --arg hit "$tools_hit" \
-          --arg matched "$tools_key" \
+          --arg outcome "$TOOLS_OUTCOME" \
+          --arg hit "$TOOLS_HIT" \
+          --arg matched "$TOOLS_KEY" \
           '{name: "tools", enabled: "true", outcome: $outcome,
             cache_hit: $hit, cache_matched_key: $matched}')"
 

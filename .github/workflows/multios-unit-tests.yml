@@ -66,7 +66,7 @@ jobs:
           check-latest: "true"
           workload: multi-os
           variant: |-
-            {"runner":"${{ inputs.runs-on }}",
+            {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
 
       - name: Restore and install development tools

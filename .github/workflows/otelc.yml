@@ -50,6 +50,7 @@ jobs:
         with:
           go-version: "1.26.4"
           workload: otelc-matrix
+          cache-provider: github-cache
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -92,6 +93,8 @@ jobs:
              "instrumentation":"otelc",
              "workspace":"off"}
 
+      # Deliberately not tools-cache: `make tools-install` also installs
+      # checkmake, which the tools cache does not cover.
       - name: Install development tools
         run: make tools-install
 

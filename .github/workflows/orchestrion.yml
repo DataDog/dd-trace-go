@@ -114,6 +114,7 @@ jobs:
         with:
           go-version: "1.27"
           workload: orchestrion-matrix
+          cache-provider: github-cache
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -209,10 +210,14 @@ jobs:
             {"runner":"${{ matrix.runs-on }}",
              "mode":"${{ matrix.mode }}",
              "instrumentation":"orchestrion",
-             "version":"${{ inputs.orchestrion-version || 'pinned' }}",
+             "version":${{ toJSON(inputs.orchestrion-version || 'pinned') }},
              "coverage":"${{ inputs.collect-coverage && 'atomic' || 'none' }}",
              "workspace":"off"}
 
+      # Deliberately not tools-cache: this repository is checked out beneath
+      # dd-trace-go/, while tools-cache hashes and installs from the workspace
+      # root, and `make tools-install` also installs checkmake, which the
+      # cache does not cover.
       - name: Install development tools
         run: make -C ${{ github.workspace }}/dd-trace-go tools-install
 

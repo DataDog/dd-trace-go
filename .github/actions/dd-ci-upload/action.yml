@@ -11,7 +11,10 @@ inputs:
     description: Service name to use with the uploaded test results.
   path:
     required: true
-    description: Path containing the JUnit files to upload
+    description: >-
+      Absolute path containing the JUnit files to upload. The CodeOwners step
+      runs from the action's repository root, so a relative path would be
+      resolved there, not against the caller's working directory.
   tags:
     required: false
     description: Datadog tags to associate with the uploaded test results.
@@ -52,8 +55,10 @@ runs:
       # directory, which is not a Go module in every job (the orchestrion
       # integration tests check out this repository beneath dd-trace-go/).
       working-directory: ${{ github.action_path }}/../../..
+      env:
+        INPUT_PATH: ${{ inputs.path }}
       run: |-
-        dir="${{ inputs.path }}"
+        dir="$INPUT_PATH"
         # Trim a trailing path separator: a trailing backslash would escape
         # the closing quote in Git Bash on Windows and break this command.
         dir="${dir%/}"

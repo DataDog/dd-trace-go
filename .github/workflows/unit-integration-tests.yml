@@ -128,7 +128,7 @@ jobs:
           variant: |-
             {"runner":"APM Larger Runners",
              "modules":${{ toJson(matrix.chunk) }},
-             "tags":"${{ inputs.build_tags || 'standard' }}",
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
 
       - name: Restore and install development tools
@@ -347,7 +347,7 @@ jobs:
           variant: |-
             {"runner":"APM Larger Runners",
              "modules":["core"],
-             "tags":"${{ inputs.build_tags || 'standard' }}",
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
 
       - name: Restore and install development tools

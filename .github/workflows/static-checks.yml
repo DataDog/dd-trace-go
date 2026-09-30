@@ -118,6 +118,7 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-copyright
+          cache-provider: github-cache
 
       - name: Restore and install development tools
         id: tools
@@ -151,6 +152,7 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-check-github-actions
+          cache-provider: github-cache
 
       - name: Restore and install development tools
         id: tools
@@ -225,6 +227,7 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-check-docs
+          cache-provider: github-cache
 
       - name: Restore and install development tools
         id: tools
@@ -257,6 +260,7 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-check-format
+          cache-provider: github-cache
 
       - name: Restore and install development tools
         id: tools
@@ -321,6 +325,9 @@ jobs:
           workload: static-lint
           cache: "false"
 
+      # With cache "false" this job has no module cache, so a tools-cache
+      # miss downloads the whole _tools module set and compiles every tool.
+      # It therefore depends on warm-tools-cache producing an exact tools hit.
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
