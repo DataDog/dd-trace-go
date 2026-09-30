@@ -2,7 +2,6 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
-// Portions Copyright (c) 2026 CloudX. See LICENSE for the original MIT license.
 
 package clickhouse
 
