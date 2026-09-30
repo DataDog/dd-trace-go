@@ -7,10 +7,12 @@ package sarama
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -252,6 +254,131 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assertDSMProducerPathway(t, topic, msg1)
 		}
 	})
+}
+
+// errProduceFailed is the error the mock producers are told to fail with, so
+// that the error paths guarded by WithErrorCheck can be exercised.
+var errProduceFailed = errors.New("failed to produce message")
+
+// assertProducerSpanErrors asserts that every finished producer span is marked
+// as errored, or that none of them is, according to wantErr.
+func assertProducerSpanErrors(t *testing.T, spans []*mocktracer.Span, wantErr bool) {
+	t.Helper()
+	for _, s := range spans {
+		if !wantErr {
+			assert.Nil(t, s.Tag(ext.ErrorMsg))
+			continue
+		}
+		// the async producer reports a *sarama.ProducerError, which wraps the
+		// underlying error in a longer message, so only check for containment.
+		require.NotNil(t, s.Tag(ext.ErrorMsg))
+		assert.Contains(t, s.Tag(ext.ErrorMsg), errProduceFailed.Error())
+	}
+}
+
+func TestProducerWithErrorCheck(t *testing.T) {
+	testCases := []struct {
+		name string
+		opt  Option
+		// wantErr is whether the produced spans should be marked as errored.
+		wantErr bool
+	}{
+		{
+			name:    "errCheck true",
+			opt:     WithErrorCheck(func(error) bool { return true }),
+			wantErr: true,
+		},
+		{
+			name:    "errCheck false",
+			opt:     WithErrorCheck(func(error) bool { return false }),
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("SendMessage", func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				saramaCfg := newMockProducerConfig()
+				mock := mocks.NewSyncProducer(t, saramaCfg)
+				mock.ExpectSendMessageAndFail(errProduceFailed)
+
+				producer := WrapSyncProducer(saramaCfg, mock, tc.opt)
+				defer func() {
+					assert.NoError(t, producer.Close())
+				}()
+
+				_, _, err := producer.SendMessage(&sarama.ProducerMessage{
+					Topic: topicName(t),
+					Value: sarama.StringEncoder("test 1"),
+				})
+				// the option only affects the span; the caller still sees the error.
+				require.ErrorIs(t, err, errProduceFailed)
+
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				assertProducerSpanErrors(t, spans, tc.wantErr)
+			})
+
+			t.Run("SendMessages", func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				saramaCfg := newMockProducerConfig()
+				mock := mocks.NewSyncProducer(t, saramaCfg)
+				// one expectation is consumed per message, and SendMessages
+				// returns on the first failure, so both spans are finished with
+				// the same error.
+				mock.ExpectSendMessageAndFail(errProduceFailed)
+				mock.ExpectSendMessageAndSucceed()
+
+				producer := WrapSyncProducer(saramaCfg, mock, tc.opt)
+				defer func() {
+					assert.NoError(t, producer.Close())
+				}()
+
+				topic := topicName(t)
+				err := producer.SendMessages([]*sarama.ProducerMessage{
+					{Topic: topic, Value: sarama.StringEncoder("test 1")},
+					{Topic: topic, Value: sarama.StringEncoder("test 2")},
+				})
+				require.ErrorIs(t, err, errProduceFailed)
+
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 2)
+				assertProducerSpanErrors(t, spans, tc.wantErr)
+			})
+
+			t.Run("AsyncProducer", func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				saramaCfg := newMockProducerConfig()
+				mock := mocks.NewAsyncProducer(t, saramaCfg)
+				mock.ExpectInputAndFail(errProduceFailed)
+
+				producer := WrapAsyncProducer(saramaCfg, mock, tc.opt)
+				defer func() {
+					assert.NoError(t, producer.Close())
+				}()
+
+				producer.Input() <- &sarama.ProducerMessage{
+					Topic: topicName(t),
+					Value: sarama.StringEncoder("test 1"),
+				}
+				// the span is finished before the error is forwarded, so once
+				// this returns the span is guaranteed to be available.
+				err := <-producer.Errors()
+				require.ErrorIs(t, err, errProduceFailed)
+
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				assertProducerSpanErrors(t, spans, tc.wantErr)
+			})
+		})
+	}
 }
 
 func TestSyncProducerWithClusterID(t *testing.T) {
