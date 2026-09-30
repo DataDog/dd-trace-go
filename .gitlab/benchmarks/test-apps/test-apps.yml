@@ -3,6 +3,8 @@ variables:
   TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-137170464
 
 unit-of-work:
+  rules:
+    - when: never
   stage: test-apps
   when: manual
   image: $TESTAPPS_BENCHMARKS_CI_IMAGE
