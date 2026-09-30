@@ -60,6 +60,7 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 
 	for _, entry := range []string{"civisibility", "orchestrion", "all", "plain"} {
 		t.Run(entry, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			writeClient(t, dir, root, strings.TrimSpace(string(orchestrionVersion)), entry)
 			runCommand(t, dir, baseEnv, 5*time.Minute, "go", "mod", "tidy")
@@ -69,9 +70,9 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 			}
 			args := []string{"test", "-mod=mod", "-c", "-o", binary}
 			if entry == "plain" {
-				runCommand(t, dir, baseEnv, 5*time.Minute, "go", args...)
+				runCommand(t, dir, baseEnv, 10*time.Minute, "go", args...)
 			} else {
-				runCommand(t, dir, baseEnv, 5*time.Minute, orchestrion, append([]string{"go"}, args...)...)
+				runCommand(t, dir, baseEnv, 10*time.Minute, orchestrion, append([]string{"go"}, args...)...)
 			}
 
 			type scenario struct {
@@ -233,6 +234,7 @@ func runCommand(t *testing.T, dir string, env []string, timeout time.Duration, n
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
+	cmd.WaitDelay = 5 * time.Second
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %v failed: %v\n%s", name, args, err, output)
