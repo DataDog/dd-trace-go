@@ -21,9 +21,10 @@ import (
 func TestOTLPMetricsProtocolWarning(t *testing.T) {
 	const unsupported = "Unsupported OTEL_EXPORTER_OTLP"
 	for _, tc := range []struct {
-		name     string
-		env      map[string]string
-		wantWarn bool
+		name         string
+		env          map[string]string
+		wantWarn     bool
+		wantProtocol string
 	}{
 		{
 			name: "generic grpc, OTLP metrics export disabled",
@@ -72,6 +73,25 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 				"OTEL_TRACES_SPAN_METRICS_ENABLED": "true",
 				"OTEL_EXPORTER_OTLP_PROTOCOL":      "http/json",
 			},
+			wantProtocol: "http/json",
+		},
+		{
+			name: "generic grpc shadowed by supported signal-specific, span metrics enabled",
+			env: map[string]string{
+				"OTEL_TRACES_SPAN_METRICS_ENABLED":    "true",
+				"OTEL_EXPORTER_OTLP_PROTOCOL":        "grpc",
+				"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "http/json",
+			},
+			wantProtocol: "http/json",
+		},
+		{
+			name: "generic grpc shadowed by grpc signal-specific, span metrics enabled",
+			env: map[string]string{
+				"OTEL_TRACES_SPAN_METRICS_ENABLED":    "true",
+				"OTEL_EXPORTER_OTLP_PROTOCOL":        "grpc",
+				"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "grpc",
+			},
+			wantWarn: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,11 +113,11 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 			} else {
 				assert.NotContains(t, logs, unsupported)
 			}
-			if v, ok := tc.env["OTEL_EXPORTER_OTLP_PROTOCOL"]; ok && v == "http/json" {
-				assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
-			} else {
-				assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+			want := tc.wantProtocol
+			if want == "" {
+				want = "http/protobuf"
 			}
+			assert.Equal(t, want, cfg.OTLPMetricsProtocol())
 		})
 	}
 }
