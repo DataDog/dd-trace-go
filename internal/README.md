@@ -2,6 +2,8 @@
 
 Contains private methods and functionality used by the library itself. Code that is not part of the public API and not intended for direct use by customers.
 
+**Sections:** [Appsec](#appsec) (WAF/ASM) · [Config](#config) (global config sources/priority) · [CI Visibility](#ci-visibility) (Test Optimization internals) · [Env](#env) (validated env var access) · [Client IP](#client-ip) · [Locking](#locking) (deadlock-checked mutex replacement) · [Orchestrion](#orchestrion) (internal auto-instrumentation support) · [Sampling Rules](#sampling-rules) · [Telemetry](#telemetry) (metrics/logs/product reporting, including Error Tracking reporting rules) · [Telemetry Errors](#telemetry-errors) (dogfooding harness)
+
 ## Important Modules
 
 ### Appsec

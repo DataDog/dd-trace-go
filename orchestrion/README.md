@@ -10,6 +10,8 @@ Orchestrion uses Aspect-Oriented Programming (AOP) and the Go `toolexec` command
 
 For more information on how to use Orchestrion in a user's project, refer to the [user guide](https://datadoghq.dev/orchestrion/docs/getting-started/). 
 
+**Sections:** [Contributing](#contributing) · [Key Takeaways](#key-takeaways) (template variables for `orchestrion.yml`) · [Aspects](#aspects) (join-point/advice format) · [Including Dependency Upgrades](#including-dependency-upgrades) · [Testing](#testing)
+
 ## Contributing
 
 For references on which aspects and join points are available, code templates, and other contributing guidelines, refer to the [contributor guide](https://datadoghq.dev/orchestrion/contributing/aspects/). 

@@ -7,6 +7,8 @@ them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
 
+**Sections:** [Usage](#usage) (naming conventions, required tags/functions for a new contrib) · [Tests](#tests) · [Instrumentation telemetry](#instrumentation-telemetry) · [Version pinning](#version-pinning) · [Deprecation](#deprecation)
+
 ### Usage
 
 First, find the library which you'd like to integrate with. The naming convention for the integration packages has two things to take into consideration:

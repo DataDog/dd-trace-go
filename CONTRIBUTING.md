@@ -37,7 +37,7 @@ Examples:
 - `fix(ddtrace/tracer): resolve memory leak in span processor`
 
 
-All new code is expected to be covered by tests.
+All new code is expected to be covered by tests. A regression test for a bug fix should fail against the pre-fix code.
 
 ## Continuous Integration on Pull Requests
 
@@ -47,94 +47,7 @@ The code coverage report has a target of 90%. This is the goal, but is not a har
 
 Please feel free to comment on a PR if there is any difficulty or confusion about any of the checks.
 
-### CI Workflows
-
-Our CI pipeline includes several automated checks:
-
-#### Static Checks Workflow
-
-- **Copyright Check**: Verifies all files have proper copyright headers
-- **CODEOWNERS Check**: Runs `scripts/check_codeowners.go` to verify every tracked file has an owner in [CODEOWNERS](./CODEOWNERS), and that GitHub and CI Visibility resolve that owner identically. The repository has no catch-all `*` entry, so a new top-level directory or root-level file is unowned until an entry is added. See [CODEOWNERS patterns](#codeowners-patterns) for the accepted syntax. Run locally with `make lint/misc`.
-- **Generate Check**: Ensures generated code is up-to-date
-- **Module Check**: Validates Go module consistency using `make fix-modules`
-- **Lint Check**: Runs comprehensive linting using `golangci-lint`
-- **Error-logging Lint**: Runs `make lint/errlog`, three `go vet`-compatible analyzers: `constantlogmsg` (rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` helpers — non-constant messages break dedup and, for the telemetry-reporting functions, risk leaking PII to Error Tracking), `telemetrysafety` (requires `slog.Any`/`slog.String` values passed to telemetry log calls to be PII-safe), and `logformatverbs` (flags unsafe `%v`/`%+v`/`%#v` usage). Run locally with `make lint/errlog`. Before adding a new `ReportError`/`ReportPanic` call site, read "When to report, and when not to" in [`internal/README.md`](./internal/README.md#telemetry) — the short version: our defect (not the caller's environment or externally-controlled input), swallowed, not per-span, and firing on the tracer's own startup/poll path rather than a customer request. `internal/telemetry/log/report_backend_test.go` and `internal/telemetry/telemetrytest.NewCapturingClient` decode the real wire payload offline, so a unit test can already assert the message, error type, stack trace, and dedup count for a new call site. Before merging one, still dogfood it against a real org with [`internal/apps/telemetry-errors`](./internal/apps/telemetry-errors/README.md) — that's for what a unit test genuinely can't verify: whether the production telemetry intake accepts the payload (tier 1) and whether the report actually lands and is searchable in the product (tier 2).
-- **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
-- **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
-
-#### Unit and Integration Tests
-
-- **Core Tests**: Tests the main library functionality, including that specific Error Tracking call
-  sites (remote-config update-state JSON-parse errors in internal/remoteconfig, and the OTel-process-
-  context site in internal/apps/telemetry-errors) produce well-formed telemetry payloads, and that
-  sites which deliberately do *not* report (decision-maker parsing in ddtrace/tracer, verified by
-  `TestParseDecisionMaker_MalformedValue_LogsLocallyWithoutReporting`; and storeConfig's memfd site in
-  internal/apps/telemetry-errors, both externally-triggerable/customer-environment conditions rather
-  than SDK defects) still log locally without reporting — see internal/apps/telemetry-errors/README.md
-  for the full dogfooding process these regression tests automate tier 0 of.
-- **Integration Tests**: Tests against real services using Docker
-- **Contrib Tests**: Tests all third-party integrations
-- **Race Detection**: Tests with Go race detector enabled
-
-#### Generate Workflow
-
-- **Code Generation**: Ensures all generated code is current and consistent
-
-#### Config Audit Workflow
-
-- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
-
-#### Customer Simulation Platform (CuSim)
-
-- **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
-
-
-### Which checks run on a pull request
-
-Most workflows only run when a change could plausibly affect them. Two mechanisms
-do this, and which one applies is recorded in
-[`.github/ci-components.yml`](./.github/ci-components.yml):
-
-- A **`changes` job** classifies the pull request diff and the workflow's other
-  jobs gate on its outputs with `if:`. Skipped jobs still report a check run, and
-  the green-CI gate counts a `skipped` conclusion as a pass.
-- A native **`on.pull_request.paths`** filter, for workflows scoped to one narrow
-  area. A filtered-out workflow reports no check run at all.
-
-`.github/ci-components.yml` maps every path in the repository to the CI work it
-requires. It is ordered and first-match-wins, and the one rule that matters is:
-
-> **A path matching no component enables every gate.**
-
-The table is an allowlist of paths that are provably safe to skip, not a denylist
-of expensive ones. A new directory is therefore fully tested by default, and
-`make lint/misc` fails until someone classifies it — the same no-catch-all
-discipline as [CODEOWNERS](#codeowners-patterns).
-
-Some things worth knowing before editing the table:
-
-- **Directory names are a poor proxy for impact.** Every `contrib/` module
-  transitively imports 90-100 root-module packages, so a `ddtrace/tracer` change
-  really does need all of them. Conversely `datastreams/options` is reachable from
-  77 modules while the rest of `datastreams/` is reachable from 8. Check with
-  `go list -deps` rather than guessing from the path.
-- **`contrib/os/` has no `go.mod`.** It is root-module code living under a
-  `contrib/` path, so it escalates to the full suite.
-- The `dependent-modules` lists are measured facts, re-derived nightly by
-  `go test -tags depgraph ./scripts/ciselect/` in the `Main Branch and Release
-  Tests` workflow.
-- The merge queue is not gated. Everything gating a pull request still runs in
-  full on `mq-working-branch-*` before a commit can land on `main`.
-
-To see what a change set resolves to, without pushing:
-
-```shell
-git diff --name-only origin/main...HEAD | go run ./scripts/ciselect -explain
-```
-
-If a workflow was skipped and you believe it should have run, that is a bug in
-the table — open an issue or fix the component. To restore full CI for a
-component without touching any workflow, set its `gates:` to `[ "@everything" ]`.
+For what each CI workflow checks, which workflows run on a given diff, CODEOWNERS pattern rules, and how to reproduce checks locally, see [ci-workflows.md](./docs/ci-workflows.md).
 
 ### CI Troubleshooting
 
@@ -145,178 +58,11 @@ Sometimes a pull request's checks will show failures that aren't related to its 
 3. For internal contributors, ask the #dd-trace-go channel for help
 4. If you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @DataDog/apm-go
 
-### Running CI Checks Locally
-
-Before submitting a PR, you can run the same checks locally using make targets:
-
-```shell
-# Show all available targets
-make help
-
-# Install tools
-make tools-install
-
-# Run all linters (same as CI)
-make lint
-
-# Format code (recommended before committing)
-make format
-
-# Check module consistency
-make fix-modules
-
-# Run all tests
-make test
-
-# Run integration tests
-make test-integration
-```
-
-You can also run scripts directly for more control:
-
-```shell
-# Run specific linting options
-make lint
-
-# Format specific file types
-make format/go
-make format/shell
-
-# Run specific test configurations
-make test/contrib
-make test/appsec
-```
-
-### CODEOWNERS patterns
-
-[CODEOWNERS](./CODEOWNERS) is read by two consumers that do not implement the same matching rules: GitHub, which follows gitignore semantics, and CI Visibility, which uses the simpler matcher in [internal/civisibility/utils](./internal/civisibility/utils/codeowners.go) to attribute test results to teams. A pattern the two interpret differently assigns the right reviewers while silently mis-attributing test ownership.
-
-To keep them in agreement, entries are restricted to the subset on which both behave identically:
-
-| Pattern | Meaning |
-| --- | --- |
-| `/path/to/dir/` | Anchored at the repository root, applies to everything beneath the directory. The trailing slash is required. |
-| `/path/to/file.go` | Anchored at the repository root, matches exactly one file. |
-| `*suffix` | Matches any path ending in `suffix`, at any depth. Only one leading `*` is supported, and the suffix may not contain `/`. |
-
-Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
-
 ## Getting a PR Reviewed
 
 We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
 
 If a PR sits open for more than a month awaiting work or replies by the author, the PR may be closed due to staleness. If you would like to work on it again in the future, feel free to open a new PR and someone will review.
-
-## Development Scripts
-
-We provide several utility scripts in the `scripts/` directory to help with common development tasks:
-
-### Code Quality Scripts
-
-#### `make lint`
-
-Runs all linters on the codebase to ensure code quality and consistency.
-
-```shell
-# Run all linters (default behavior, install tools)
-make lint
-```
-
-The script runs:
-
-- `goimports` for import formatting
-- `golangci-lint` for comprehensive Go linting
-- `checklocks` for lock analysis (with error tolerance)
-
-#### `make format`
-
-Formats Go and shell files in the repository.
-
-```shell
-# Format both Go and shell files and install tools (default behavior)
-make format
-
-# Format Go files and install tools
-make format/go
-
-# Format shell files and install tools
-make format/shell
-```
-
-#### `./scripts/checklocks.sh`
-
-Analyzes lock usage patterns to detect potential deadlocks and race conditions.
-
-```shell
-# Install the managed checklocks binary
-make tools-install
-
-# Run checklocks on the default target (./ddtrace/tracer)
-./scripts/checklocks.sh
-
-# Run checklocks on a specific directory
-./scripts/checklocks.sh ./path/to/target
-
-# Run checklocks and ignore known issues
-./scripts/checklocks.sh --ignore-known-issues
-```
-
-### Module Management Scripts
-
-#### `make fix-modules`
-
-Maintains Go module consistency across the repository by running `go mod tidy` on all modules and adding missing replace directives for local imports.
-
-```shell
-make fix-modules
-```
-
-This script:
-
-- Runs the `fixmodules` tool to add missing replace directives
-- Executes `go mod tidy` on all Go modules in the repository
-- Updates the `go.work.sum` file
-
-### Testing Scripts
-
-#### `make test`
-
-Enhanced testing script with improved output formatting and additional options.
-
-```shell
-# Run core tests only
-make test/unit
-
-# Run integration tests
-make test/integration
-
-# Run contrib tests
-make test/contrib
-
-# Run all tests
-make test
-
-# Run with AppSec enabled
-make test/appsec
-```
-
-The script provides:
-
-- Timestamped output for better debugging
-- Early failure detection with clear error messages
-- Automatic Docker service management for integration tests
-- Support for Apple Silicon (M1/M2) Macs
-
-#### Crashtracker
-
-Run focused crashtracker tests with:
-
-```shell
-go test -race -count=1 ./crashtracker
-```
-
-The end-to-end tests intentionally crash helper processes and validate the
-report received by a local intake stub.
 
 ## Style Guidelines
 
@@ -326,45 +72,6 @@ It will help tremendously in avoiding comments and speeding up the PR process.
 ### Comments
 
 Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
-
-### Local Development
-
-For local development, use make targets as the primary interface:
-
-```shell
-# Instead of running golangci-lint directly
-make lint
-
-# Instead of running formatters manually
-make format
-
-# Instead of running go mod tidy manually
-make fix-modules
-
-# Install all development tools
-make tools-install
-```
-
-For more specific control, you can use scripts directly:
-
-```shell
-# Run specific linting configurations
-make lint --tools
-
-# Format only specific file types
-make format/go
-
-# Run specific test types
-make test/contrib
-```
-
-### Docker Alternative
-
-If you prefer using Docker for linting:
-
-```shell
-docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-lint run -v --timeout 5m
-```
 
 ## Code quality
 
@@ -376,6 +83,10 @@ When possible, prioritize creating or using internal implementations for repetit
 2. Locking: [internal/locking](./internal/locking) instead of `sync.mutex`.
 3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
 4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
+
+### Concurrency and shared state
+
+Any change that touches shared mutable state, adds or modifies a `sync.Once`-guarded teardown path, or calls into user-supplied callbacks (samplers, hooks, options) while holding a lock must include a test exercising the concurrent path under `-race`. When auditing a `sync.Once`-guarded shutdown, check every piece of shared state touched during teardown, not just the first step — a partial guard is a common source of races. Use the `checklocks` tool (see [Lock Analysis](./docs/ci-workflows.md#static-checks-workflow) and `./scripts/checklocks.sh`) to catch these before review.
 
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
@@ -390,57 +101,7 @@ Please view our contrib [README.md](contrib/README.md) for information on integr
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
 
-Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
-
-Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
-
-#### Overriding automatic test retries
-
-`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
-
-#### Code coverage report flags
-
-`DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
-
-#### Adding new environment variables using configinverter
-
-The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
-
-```sh
-go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
-```
-
-After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
-Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
-
-#### Auto-detection via tests
-
-All environment variables should be read at least once by a test. When this happens, a helper automatically detects the usage and adds the variable to the [JSON configuration file](./internal/env/supported_configurations.json). Since the variable isn't yet present in the generated code, it won't read any actual environment values initially, but it will be recorded for code generation.
-
-Note that CI jobs will fail if new keys are detected but not properly generated into the code.
-
-You can check for keys that have been added to the JSON file but not yet generated into code:
-
-```sh
-go run ./scripts/configinverter/main.go check
-```
-
-After the first test run that detects your new environment variable, regenerate the code:
-
-```sh
-go run ./scripts/configinverter/main.go generate
-```
-
-After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
-Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
-
-#### Handling related CI failures
-
-The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass, the key will need to be documented before merging the PR onto main.
-
-Additionally, multiple CI jobs include a [step](./.github/actions/supported_configurations_validation/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
+For how to add a new variable to the registry, existing override variables (`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED`, `DD_CODE_COVERAGE_FLAGS`), and how to resolve related CI failures, see [environment-variables.md](./docs/environment-variables.md).
 
 ### Adding Go Modules
 
@@ -473,54 +134,8 @@ This is neccessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 
-Some benchmarks will run on any new PR commits, the results will be commented into the PR on completion.
-
-#### Adding a new benchmark
-
-To add a benchmark that runs on every PR, edit [`.gitlab/benchmarks/micro/gitlab-ci.yml`](./.gitlab/benchmarks/micro/gitlab-ci.yml)
-and append your top-level benchmark function name (e.g. `BenchmarkMyThing`) to the `BENCHMARKS` variable of one of the
-`microbenchmarks-N` groups, using the pipe character (`|`) as the separator.
-
-A few things to keep in mind:
-
-- The value is a top-level benchmark function name (`func BenchmarkMyThing(b *testing.B)`), not a sub-benchmark. It is
-  matched with `go test -bench ^BenchmarkMyThing$`, so all of its `b.Run` sub-benchmarks run and are reported individually.
-- The benchmark must live in a package that isn't excluded by the runner (it skips `orchestrion`, `civisibility`,
-  `scripts`, and `tools`).
-- Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
-  entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
-- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
-  group is measured and tracked but does not gate the PR.
-- A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
-  starts gating it from the next PR onward.
+Some benchmarks run automatically on new PR commits, with results commented into the PR. See [ci-workflows.md](./docs/ci-workflows.md#benchmarks) for how to add a new benchmark and how the gating groups work.
 
 ### Goroutine Leaks
 
-Some core packages are using [uber-go/goleak](https://github.com/uber-go/goleak) to detect goroutine leaks.
-
-To isolate the leak to a single test, you can use the bash script from the goleak README.
-
-If you are experiencing a leak failure in CI that doesn't seem to reproduce locally, try running a local datadog agent. Some test failures only appear when http connections to the agent are created and become idle after the test completes.
-
-Last but not least, you might find a goroutine leak with an unhelpful stack trace:
-
-```
-Goroutine 92554 in state IO wait, with internal/poll.runtime_pollWait on top of the stack:
-internal/poll.runtime_pollWait(0x7f46dcd5b368, 0x72)
- /opt/hostedtoolcache/go/1.23.11/x64/src/runtime/netpoll.go:351 +0x85
-...
-net/http.(*persistConn).readLoop(0xc0041c8b40)
- /opt/hostedtoolcache/go/1.23.11/x64/src/net/http/transport.go:2205 +0x354
-created by net/http.(*Transport).dialConn in goroutine 92609
- /opt/hostedtoolcache/go/1.23.11/x64/src/net/http/transport.go:1874 +0x29b4
-```
-
-In this case, consider editing the stdlib code (e.g. `http/transport.go:1874`) to print a stack trace at the location where the goroutine is being created:
-
-```go
-fmt.Printf("Leak start at stack=%s\n", string(debug.Stack()))
-```
-
-In practice, leaks often go through `http.(*Client).Do`, so that can be a good place to instrument as well.
-
-Following the advice above, most goroutine leaks should be easy to debug and fix.
+Some core packages use [uber-go/goleak](https://github.com/uber-go/goleak) to detect goroutine leaks. See [debugging.md](./docs/debugging.md) for how to isolate and debug a leak, including CI-only leaks and unhelpful stack traces.
