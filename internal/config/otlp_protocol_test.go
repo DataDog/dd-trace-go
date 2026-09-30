@@ -76,7 +76,9 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 			wantProtocol: "http/json",
 		},
 		{
-			name: "generic grpc shadowed by supported signal-specific, span metrics enabled",
+			// The signal-specific value is supported and takes precedence, so
+			// the generic value is never used and no warning fires.
+			name: "supported metrics protocol overrides unsupported generic",
 			env: map[string]string{
 				"OTEL_TRACES_SPAN_METRICS_ENABLED":    "true",
 				"OTEL_EXPORTER_OTLP_PROTOCOL":         "grpc",
@@ -92,6 +94,19 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 				"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "grpc",
 			},
 			wantWarn: true,
+		},
+		{
+			// DD_TRACE_AGENT_PROTOCOL_VERSION forces otlpExportMode off, but the
+			// explicit OTEL_TRACES_SPAN_METRICS_ENABLED pointer still enables the
+			// exporter, so the warning must fire.
+			name: "agent protocol override keeps explicit span metrics warning",
+			env: map[string]string{
+				"DD_TRACE_AGENT_PROTOCOL_VERSION":  "0.4",
+				"OTEL_TRACES_SPAN_METRICS_ENABLED": "true",
+				"OTEL_EXPORTER_OTLP_PROTOCOL":      "grpc",
+			},
+			wantWarn:     true,
+			wantProtocol: "http/protobuf",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
