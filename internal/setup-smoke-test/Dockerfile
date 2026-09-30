@@ -53,7 +53,9 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   fi
 
 # go mod tidy relies a lot on github. This retry is not a silver bullet, but will 
-RUN go mod tidy && sleep 5 && go mod tidy
+RUN for i in 1 2 3; do \
+      go mod tidy && break || { [ "$i" -lt 3 ] && sleep 5; }; \
+    done
 
 ARG build_with_vendoring
 ARG go
