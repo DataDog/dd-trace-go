@@ -72,6 +72,10 @@ func DecodeStateV3ActiveLeaseBounded(raw []byte, workspace *StateV3BoundedWorksp
 	if err != nil {
 		return StateV3BoundedActiveLease{}, err
 	}
+	developmentVersion := document.fields[7]
+	if developmentVersion.present && developmentVersion.length == 0 {
+		return StateV3BoundedActiveLease{}, errstateV3BoundedDocument
+	}
 	return StateV3BoundedActiveLease{document: document}, nil
 }
 

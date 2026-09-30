@@ -75,6 +75,51 @@ func TestStateV3BoundedCompactDecodersRejectSizeAndInvalidUTF8(t *testing.T) {
 	}
 }
 
+func TestStateV3BoundedActiveLeaseDevelopmentVersionCanonicalParity(t *testing.T) {
+	lease := StateV3ActiveOperationLease{
+		SchemaVersion: "1", RepositoryID: "repo", RepositoryFullName: "org/repo", OriginalCommentID: "1",
+		Command: "minor", RequestedVersion: "v1.2.0", ResolvedVersion: "v1.2.0", SourceRef: "refs/heads/main",
+		SourceOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", RequestKey: "request", RequestSHA256: stateV3BoundedDigest,
+		ReservationMarker: "marker", VersionResolutionSHA256: stateV3BoundedDigest, CoordinationRef: StateV3CoordinationRef,
+		CoordinationClaimPath: "release-lines/1.2.json", CoordinationClaimOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CoordinationClaimBlobOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CoordinationClaimSHA256: stateV3BoundedDigest,
+		CoordinationParentOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	absent := mustCanonicalStateV3(lease)
+	lease.DevelopmentVersion = "v1.2.4-dev"
+	present := mustCanonicalStateV3(lease)
+	empty := bytes.Replace(absent, []byte(`"original_comment_id"`), []byte(`"development_version":"","original_comment_id"`), 1)
+	if bytes.Equal(absent, empty) {
+		t.Fatal("fixture did not add empty development_version")
+	}
+
+	cases := []struct {
+		name  string
+		raw   []byte
+		valid bool
+	}{
+		{"absent", absent, true},
+		{"present", present, true},
+		{"present-empty", empty, false},
+		{"present-null", bytes.Replace(present, []byte(`"development_version":"v1.2.4-dev"`), []byte(`"development_version":null`), 1), false},
+		{"present-array", bytes.Replace(present, []byte(`"development_version":"v1.2.4-dev"`), []byte(`"development_version":[]`), 1), false},
+		{"present-duplicate", bytes.Replace(present, []byte(`"development_version":"v1.2.4-dev","original_comment_id"`), []byte(`"development_version":"v1.2.4-dev","development_version":"v1.2.4-dev","original_comment_id"`), 1), false},
+		{"present-out-of-order", bytes.Replace(present, []byte(`"development_version":"v1.2.4-dev","original_comment_id":"1"`), []byte(`"original_comment_id":"1","development_version":"v1.2.4-dev"`), 1), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ValidateStateV3ActiveLeaseDocument(tc.raw); got != tc.valid {
+				t.Fatalf("dynamic canonical validation = %v, want %v", got, tc.valid)
+			}
+			var workspace StateV3BoundedWorkspace
+			_, err := DecodeStateV3ActiveLeaseBounded(tc.raw, &workspace)
+			if got := err == nil; got != tc.valid {
+				t.Fatalf("bounded decode success = %v, want %v (err = %v)", got, tc.valid, err)
+			}
+		})
+	}
+}
+
 func TestStateV3BoundedCompactDecodersAgreeWithDynamicCanonicalValidation(t *testing.T) {
 	lease := StateV3ActiveOperationLease{SchemaVersion: "1", RepositoryID: "repo", RepositoryFullName: "org/repo", OriginalCommentID: "1", Command: "minor", RequestedVersion: "v1.2.0", ResolvedVersion: "v1.2.0", SourceRef: "refs/heads/main", SourceOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", RequestKey: "request", RequestSHA256: stateV3BoundedDigest, ReservationMarker: "marker", VersionResolutionSHA256: stateV3BoundedDigest, CoordinationRef: StateV3CoordinationRef, CoordinationClaimPath: "release-lines/1.2.json", CoordinationClaimOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CoordinationClaimBlobOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", CoordinationClaimSHA256: stateV3BoundedDigest, CoordinationParentOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	claim := StateV3ReleaseLineClaim{ReleaseLine: "1.2", RequestKey: "request", RequestSHA256: stateV3BoundedDigest, LaneRef: StateV3MinorStateRef, LaneExpectedHeadOID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ReservationSHA256: stateV3BoundedDigest, VersionResolutionSHA256: stateV3BoundedDigest, Command: "minor", ResolvedVersion: "v1.2.0", State: "active", Phase: StateV3PhaseReserved, Attempt: 1}
