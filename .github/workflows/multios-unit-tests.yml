@@ -29,12 +29,7 @@ permissions:
 
 jobs:
   test-multi-os:
-    name: ${{ matrix.suite == 'orchestrionfixture' && 'test-orchestrion-fixture' || 'test-multi-os' }}
     runs-on: "${{ inputs.runs-on }}"
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: [core, orchestrionfixture]
     env:
       REPORT: gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
@@ -74,7 +69,6 @@ jobs:
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
       - name: "Runner: Test Core and Contrib (No Integration Tests)"
-        if: matrix.suite == 'core'
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -83,13 +77,90 @@ jobs:
             -e '^github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig/orchestrionfixture$' | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        if: always()
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          path: ./
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},suite:core
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE costs tens of seconds on Windows, so only do it
+          # where no pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt
+          format: go-coverprofile
+
+  test-multi-os-civiz-orchestrion:
+    runs-on: "${{ inputs.runs-on }}"
+    env:
+      REPORT: gotestsum-report.xml # path to where test results will be saved
+      DD_APPSEC_WAF_TIMEOUT: 1h
+    steps:
+      - name: Normalize github.workspace for Windows
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $normalizedPath = "${{ github.workspace }}" -replace '\\', '/'
+          "normalized_workspace=$normalizedPath" >> $env:GITHUB_ENV
+      - name: Normalize github.workspace for non-Windows OSes
+        if: ${{ runner.os != 'Windows' }}
+        shell: pwsh
+        run: |
+          "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
+      - name: Restore repo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        if: always()
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          clean: false
+          submodules: recursive
+      - name: Setup Go and development tools
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ env.normalized_workspace }}/_tools
+          tools-bin: ${{ env.normalized_workspace }}/bin
+      - name: Mac OS Coreutils
+        if: inputs.runs-on == 'macos-latest'
+        run: brew install coreutils
       - name: "Runner: Test Orchestrion Client Fixture"
-        if: matrix.suite == 'orchestrionfixture'
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # Cold Orchestrion configurations recompile the standard library. Run
-          # this matrix independently of other packages.
+          # these builds independently of other packages.
           gotestsum --junitfile "${REPORT}" -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
 
       - name: Get Datadog credentials
@@ -107,7 +178,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ./
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},suite:${{ matrix.suite }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},suite:orchestrionfixture
 
       - name: Report cache metrics to Datadog
         if: always()
