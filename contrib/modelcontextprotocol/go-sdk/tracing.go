@@ -78,7 +78,7 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	// Extract client info from params if available
 	if params := req.GetParams(); params != nil {
-		if initParams, ok := params.(*mcp.InitializeParams); ok {
+		if initParams, ok := params.(*mcp.InitializeParams); ok && initParams != nil && initParams.ClientInfo != nil {
 			clientName := initParams.ClientInfo.Name
 			clientVersion := initParams.ClientInfo.Version
 			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
