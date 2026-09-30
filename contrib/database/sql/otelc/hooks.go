@@ -13,6 +13,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 	_ "unsafe" // for go:linkname
 
 	"go.opentelemetry.io/otelc/pkg/hook"
@@ -35,13 +36,18 @@ type registration struct {
 }
 
 var (
+	// mu guards ready, pending, early and the fields of each earlyConnector.
+	mu      sync.Mutex
 	ready   bool
 	pending []registration
-
-	// earlyMu guards early and the fields of each earlyConnector it holds.
-	earlyMu sync.Mutex
 	early   []*earlyConnector
 )
+
+func isReady() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return ready
+}
 
 // Go initializes this package after the contrib because it imports it, so from
 // here on the hooks can call the contrib directly.
@@ -50,31 +56,40 @@ func init() { setReady() }
 // setReady registers the drivers that AfterRegister queued, traces the
 // databases opened before init, and lets the hooks call the contrib.
 func setReady() {
+	mu.Lock()
 	for _, r := range pending {
 		sqltrace.Register(r.name, r.drv)
 	}
 	pending = nil
-
-	earlyMu.Lock()
-	defer earlyMu.Unlock()
+	var dbs []*sql.DB
 	for _, c := range early {
-		c.trace()
+		if c.trace() {
+			dbs = append(dbs, c.db)
+		}
 	}
 	early = nil
 	ready = true
+	mu.Unlock()
+
+	for _, db := range dbs {
+		closeIdle(db)
+	}
 }
 
 func AfterRegister(ictx hook.HookContext) {
 	name, _ := ictx.GetParam(0).(string)
 	drv, _ := ictx.GetParam(1).(driver.Driver)
+	mu.Lock()
 	// Drivers call database/sql.Register from their own init(). database/sql
 	// reaches this hook through //go:linkname, which is not an import, so a
 	// driver like github.com/lib/pq can be initialized before the contrib.
 	// sqltrace.Register would panic then, so queue the driver for init.
 	if !ready {
 		pending = append(pending, registration{name, drv})
+		mu.Unlock()
 		return
 	}
+	mu.Unlock()
 	// otelc imports this package from main, so Go initializes it after the
 	// tracer and the contrib, just before main. Drivers registered from main
 	// or later reach this line.
@@ -91,7 +106,7 @@ type openResult struct {
 type earlyDSN string
 
 func BeforeOpen(ictx hook.HookContext, driverName, dataSourceName string) {
-	if !ready {
+	if !isReady() {
 		// Let database/sql.Open run. The OpenDB hook it calls sets up an
 		// earlyConnector.
 		ictx.SetData(earlyDSN(dataSourceName))
@@ -116,8 +131,8 @@ func AfterOpen(ictx hook.HookContext, db *sql.DB, _ error) {
 		if db == nil {
 			return
 		}
-		earlyMu.Lock()
-		defer earlyMu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
 		for _, c := range early {
 			if c.db == db {
 				c.dsn = string(data)
@@ -127,7 +142,7 @@ func AfterOpen(ictx hook.HookContext, db *sql.DB, _ error) {
 }
 
 func BeforeOpenDB(ictx hook.HookContext, c driver.Connector) {
-	if !ready {
+	if !isReady() {
 		// The contrib cannot be called before init, so init traces this
 		// connector later.
 		ec := &earlyConnector{Connector: c}
@@ -151,8 +166,8 @@ func AfterOpenDB(ictx hook.HookContext, db *sql.DB) {
 	}
 	switch c := ictx.GetData().(type) {
 	case *earlyConnector:
-		earlyMu.Lock()
-		defer earlyMu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
 		c.db = db
 		if ready {
 			// init ran while this database was being opened.
@@ -187,30 +202,52 @@ func (c *earlyConnector) Connect(ctx context.Context) (driver.Conn, error) {
 
 // Close is called by (*sql.DB).Close.
 func (c *earlyConnector) Close() error {
-	earlyMu.Lock()
-	defer earlyMu.Unlock()
+	mu.Lock()
 	c.closed = true
 	var target any = c.Connector
 	if t := c.traced.Load(); t != nil {
 		target = *t
 	}
+	// The connector's Close is application code, which can close another
+	// early database and take mu again.
+	mu.Unlock()
 	if cl, ok := target.(io.Closer); ok {
 		return cl.Close()
 	}
 	return nil
 }
 
-// trace switches c to a traced connector. earlyMu must be held.
-func (c *earlyConnector) trace() {
+// trace switches c to a traced connector, and reports whether it did. mu must
+// be held.
+func (c *earlyConnector) trace() bool {
 	if c.closed {
-		return
+		return false
 	}
 	traced, wrapped := wrapConnector(c.Connector, c.dsn)
 	if !wrapped {
 		// The contrib's own OpenDB, called before init, passed a connector it
 		// already traces and collects DB stats for.
-		return
+		return false
 	}
 	c.traced.Store(&traced)
 	startDBStats(traced, c.db)
+	return true
+}
+
+// closeIdle closes the idle connections of db. The original connector opened
+// them before init, for example for a Ping, and database/sql would reuse them
+// for later queries without tracing them.
+func closeIdle(db *sql.DB) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for n := db.Stats().Idle; n > 0; n-- {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return
+		}
+		// database/sql closes a connection instead of putting it back in the
+		// pool when Raw returns driver.ErrBadConn.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		_ = conn.Close()
+	}
 }
