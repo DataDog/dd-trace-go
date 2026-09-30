@@ -3,17 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package otelc holds the otelc rules that reproduce
-// contrib/go-chi/chi.v5's orchestrion.yml. The single aspect there wraps
-// chi.NewMux/chi.NewRouter call sites with chitrace.Middleware() directly, so
-// no hook functions are needed here.
-//
-// This package exists only so otelc.yaml has a directory to live in, and so
-// that a build blank-importing it (via otelc/all) also requires
-// contrib/go-chi/chi.v5/v2, which the wrap_call rule injects into the target
-// application's own source.
+// Package otelc holds the otelc rules for go-chi/chi.v5. See otelc.yaml.
 package otelc
 
 import (
-	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2" // chitrace, referenced by otelc.yaml
+	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2" // used by the otelc.yaml rules
 )
