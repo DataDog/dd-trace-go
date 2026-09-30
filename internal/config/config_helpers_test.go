@@ -64,6 +64,11 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		got := resolveOTLPTraceURL("", "https://collector/tenant%2Fblue")
 		assert.Equal(t, "https://collector/tenant%2Fblue/v1/traces", got)
 	})
+
+	t.Run("escaped path segment stays intact in the generic endpoint", func(t *testing.T) {
+		got := resolveOTLPTraceURL("", "https://collector/tenant%2Fblue")
+		assert.Equal(t, "https://collector/tenant%2Fblue/v1/traces", got)
+	})
 }
 
 func TestResolveOTLPEndpoint(t *testing.T) {
