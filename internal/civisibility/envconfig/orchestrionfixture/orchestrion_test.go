@@ -245,6 +245,11 @@ func intakeEnv(url string) []string {
 
 func runCommand(t *testing.T, dir string, env []string, timeout time.Duration, name string, args ...string) string {
 	t.Helper()
+	if deadline, ok := t.Deadline(); ok {
+		// Reserve time for tree cancellation and pipe cleanup before the test
+		// process exits at its global timeout.
+		timeout = min(timeout, time.Until(deadline)-15*time.Second)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 	cmd := commandContext(ctx, name, args...)
