@@ -5,15 +5,17 @@
 ---
 # otelc port of ../orchestrion.yml.
 #
-# The target is the module being built plus main, whose compile-time import
-# path is the literal "main" and so is not part of $root. NewRouter calls
-# NewMux inside chi, which neither target reaches, so each call site is wrapped
-# once.
+# Like orchestrion, the rules rewrite call sites in every package of the build,
+# dependencies included, except chi and the chi contrib. Inside chi, Route
+# creates sub-routers with NewRouter, which orchestrion does not wrap, and
+# NewRouter calls NewMux, so each call site is wrapped once. The contrib's own
+# tests create routers, and wrapping those would import the contrib into itself.
 
 new_mux:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: "github.com/go-chi/chi/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-chi/**"
   where:
     function_call: github.com/go-chi/chi/v5.NewMux
   do:
@@ -30,8 +32,9 @@ new_mux:
 
 new_router:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: "github.com/go-chi/chi/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-chi/**"
   where:
     function_call: github.com/go-chi/chi/v5.NewRouter
   do:
