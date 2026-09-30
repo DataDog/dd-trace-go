@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -58,6 +57,9 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 	}
 	runCommand(t, toolDir, baseEnv, 5*time.Minute, "go", "build", "-mod=mod", "-o", orchestrion, "github.com/DataDog/orchestrion")
 
+	// Each Orchestrion configuration recompiles the standard library. Avoid
+	// competing cold builds while allowing the runtime scenarios to overlap.
+	var buildMu sync.Mutex
 	for _, entry := range []string{"civisibility", "orchestrion", "all", "plain"} {
 		t.Run(entry, func(t *testing.T) {
 			t.Parallel()
@@ -73,11 +75,15 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 				binary += ".exe"
 			}
 			args := []string{"test", "-mod=mod", "-c", "-o", binary}
-			if entry == "plain" {
-				runCommand(t, dir, baseEnv, 10*time.Minute, "go", args...)
-			} else {
-				runCommand(t, dir, baseEnv, 10*time.Minute, orchestrion, append([]string{"go"}, args...)...)
-			}
+			func() {
+				buildMu.Lock()
+				defer buildMu.Unlock()
+				if entry == "plain" {
+					runCommand(t, dir, baseEnv, 10*time.Minute, "go", args...)
+				} else {
+					runCommand(t, dir, baseEnv, 10*time.Minute, orchestrion, append([]string{"go"}, args...)...)
+				}
+			}()
 			actualIntegrations, err := os.ReadFile(toolFile)
 			if err != nil || !bytes.Equal(actualIntegrations, selectedIntegrations) {
 				t.Fatalf("build changed selected integrations (read error: %v):\n%s", err, actualIntegrations)
@@ -241,12 +247,12 @@ func runCommand(t *testing.T, dir string, env []string, timeout time.Duration, n
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := commandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
-	cmd.WaitDelay = 5 * time.Second
+	started := time.Now()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s %v failed: %v\n%s", name, args, err, output)
+		t.Fatalf("%s %v failed after %s: %v (context: %v)\n%s", name, args, time.Since(started), err, ctx.Err(), output)
 	}
 	return string(output)
 }
