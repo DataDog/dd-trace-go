@@ -79,7 +79,7 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 			name: "generic grpc shadowed by supported signal-specific, span metrics enabled",
 			env: map[string]string{
 				"OTEL_TRACES_SPAN_METRICS_ENABLED":    "true",
-				"OTEL_EXPORTER_OTLP_PROTOCOL":        "grpc",
+				"OTEL_EXPORTER_OTLP_PROTOCOL":         "grpc",
 				"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "http/json",
 			},
 			wantProtocol: "http/json",
@@ -88,7 +88,7 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 			name: "generic grpc shadowed by grpc signal-specific, span metrics enabled",
 			env: map[string]string{
 				"OTEL_TRACES_SPAN_METRICS_ENABLED":    "true",
-				"OTEL_EXPORTER_OTLP_PROTOCOL":        "grpc",
+				"OTEL_EXPORTER_OTLP_PROTOCOL":         "grpc",
 				"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "grpc",
 			},
 			wantWarn: true,
