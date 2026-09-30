@@ -141,7 +141,17 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 								t.Fatalf("retry child mode = %q, read error = %v; want false:\n%s", mode, err, output)
 							}
 							got := events()
-							if len(got) != 2 || got[1].Content.Meta["test.retry.execution_mode"] != "process" || got[1].Content.Meta["test.status"] != "pass" {
+							var initialFailures, passingRetries int
+							for _, event := range got {
+								meta := event.Content.Meta
+								if meta["test.status"] == "fail" && meta["test.retry.execution_mode"] == "" {
+									initialFailures++
+								}
+								if meta["test.status"] == "pass" && meta["test.retry.execution_mode"] == "process" && meta["test.is_retry"] == "true" {
+									passingRetries++
+								}
+							}
+							if len(got) != 2 || initialFailures != 1 || passingRetries != 1 {
 								t.Fatalf("expected a failed parent attempt and passing process retry, got %+v:\n%s", got, output)
 							}
 						})
