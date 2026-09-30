@@ -483,8 +483,8 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
-func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
+func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
 		return nil
 	}

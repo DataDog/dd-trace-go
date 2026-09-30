@@ -701,6 +701,36 @@ func TestOTLPHeaders(t *testing.T) {
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 	})
 
+	t.Run("generic OTEL_EXPORTER_OTLP_HEADERS used as fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "generic-key", headers["api-key"])
+		assert.Equal(t, "acme", headers["x-tenant"])
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS take precedence over generic headers", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-key")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "traces-key", headers["api-key"])
+		assert.Equal(t, "acme", headers["x-tenant"])
+	})
+
 	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
