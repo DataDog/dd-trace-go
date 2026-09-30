@@ -3,9 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Package earlydb opens a database from a package-level variable. It imports
+// Package initdb opens a database from a package-level variable. It imports
 // nothing from dd-trace-go, so Go can initialize it before the tracer.
-package earlydb
+package initdb
 
 import (
 	"database/sql"

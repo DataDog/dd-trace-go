@@ -17,10 +17,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
-func TestEarlyOpen(t *testing.T) {
-	harness.Run(t, new(TestCaseEarlyOpen))
+func TestOpenInit(t *testing.T) {
+	harness.Run(t, new(TestCaseOpenInit))
 }
 
-func TestRegister(t *testing.T) {
-	harness.Run(t, new(TestCaseRegister))
+func TestRegisterInit(t *testing.T) {
+	harness.Run(t, new(TestCaseRegisterInit))
 }

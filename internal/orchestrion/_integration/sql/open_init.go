@@ -12,23 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/sql/earlydb"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/sql/initdb"
 )
 
-// TestCaseEarlyOpen checks that a database opened and pinged while Go
+// TestCaseOpenInit checks that a database opened and pinged while Go
 // initializes packages, before the tracer, is traced.
-type TestCaseEarlyOpen struct{}
+type TestCaseOpenInit struct{}
 
-func (*TestCaseEarlyOpen) Setup(_ context.Context, t *testing.T) {
-	require.NoError(t, earlydb.OpenErr)
+func (*TestCaseOpenInit) Setup(_ context.Context, t *testing.T) {
+	require.NoError(t, initdb.OpenErr)
 }
 
-func (*TestCaseEarlyOpen) Run(ctx context.Context, t *testing.T) {
-	_, err := earlydb.DB.ExecContext(ctx, "SELECT 1")
+func (*TestCaseOpenInit) Run(ctx context.Context, t *testing.T) {
+	_, err := initdb.DB.ExecContext(ctx, "SELECT 1")
 	require.NoError(t, err)
 }
 
-func (*TestCaseEarlyOpen) ExpectedTraces() trace.Traces {
+func (*TestCaseOpenInit) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{

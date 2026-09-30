@@ -177,7 +177,7 @@ func TestRegisterWhileInitRuns(t *testing.T) {
 	assert.True(t, isRegistered(name), "the driver must be registered whether it was queued or not")
 }
 
-func TestCloseIdleConnectionsFromBeforeInit(t *testing.T) {
+func TestCloseEarlyDBIdle(t *testing.T) {
 	beforeInit(t)
 	var closed atomic.Int32
 	db, ec := openDBBeforeInit(t, countingConnector{&closed})

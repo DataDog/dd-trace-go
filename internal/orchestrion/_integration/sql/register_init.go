@@ -18,27 +18,27 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/sql/registerdb"
 )
 
-// TestCaseRegister checks that a driver registering itself from its own init()
-// is known to the contrib before the application opens a database. OpenDB only
-// gets a connector, so the contrib names the driver from its registry by Go
-// type, and falls back to the type name when the driver is not registered.
-// Nothing else opens registerdb's driver by name, so only its sql.Register call
-// can register it.
-type TestCaseRegister struct {
+// TestCaseRegisterInit checks that a driver registering itself from its own
+// init() is known to the contrib before the application opens a database.
+// OpenDB only gets a connector, so the contrib names the driver from its
+// registry by Go type, and falls back to the type name when the driver is not
+// registered. Nothing else opens registerdb's driver by name, so only its
+// sql.Register call can register it.
+type TestCaseRegisterInit struct {
 	*sql.DB
 }
 
-func (tc *TestCaseRegister) Setup(_ context.Context, t *testing.T) {
+func (tc *TestCaseRegisterInit) Setup(_ context.Context, t *testing.T) {
 	tc.DB = sql.OpenDB(registerConnector{dsn: "file::memory:"})
 	t.Cleanup(func() { assert.NoError(t, tc.DB.Close()) })
 }
 
-func (tc *TestCaseRegister) Run(ctx context.Context, t *testing.T) {
+func (tc *TestCaseRegisterInit) Run(ctx context.Context, t *testing.T) {
 	_, err := tc.DB.ExecContext(ctx, "SELECT 1")
 	require.NoError(t, err)
 }
 
-func (*TestCaseRegister) ExpectedTraces() trace.Traces {
+func (*TestCaseRegisterInit) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
