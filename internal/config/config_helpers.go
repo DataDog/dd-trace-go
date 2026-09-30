@@ -371,8 +371,10 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP traces endpoint; tracesEndpoint takes precedence over genericEndpoint.
-// genericEndpoint must already be resolved and valid (see resolveOTLPEndpoint) since it is used as-is when
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. tracesEndpoint takes precedence
+// over genericEndpoint. The resolver appends /v1/traces when tracesEndpoint has an empty
+// path. The resolver appends /v1/traces to genericEndpoint in all cases. genericEndpoint
+// must already be resolved and valid (see resolveOTLPEndpoint) since it is used as-is when
 // tracesEndpoint is unset or invalid.
 func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	if tracesEndpoint != "" {
