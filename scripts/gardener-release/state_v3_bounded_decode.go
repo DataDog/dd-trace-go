@@ -475,8 +475,12 @@ func stateV3BoundedInt64(raw []byte) (int64, bool) {
 	if negative {
 		raw = raw[1:]
 	}
-	if len(raw) == 0 || (raw[0] == '0' && len(raw) > 1) {
-		return 0, false
+	// Canonical JSON reserialization normalizes negative zero to zero.
+	if len(raw) == 0 || raw[0] == '0' {
+		if negative || len(raw) > 1 {
+			return 0, false
+		}
+		return 0, true
 	}
 	const maximum = int64(1 << 31)
 	var value int64
