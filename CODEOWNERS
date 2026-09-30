@@ -15,6 +15,7 @@
 /.agents/                       @DataDog/dd-trace-go-guild
 /.backpassrc.json               @DataDog/dd-trace-go-guild
 /.claude/                       @DataDog/dd-trace-go-guild
+/.dagger/                       @DataDog/dd-trace-go-guild
 /.llm-validation/               @DataDog/dd-trace-go-guild
 /_docs/                         @DataDog/dd-trace-go-guild
 /_eval/                         @DataDog/dd-trace-go-guild
