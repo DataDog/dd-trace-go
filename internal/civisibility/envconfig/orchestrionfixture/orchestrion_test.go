@@ -63,7 +63,11 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			writeClient(t, dir, root, strings.TrimSpace(string(orchestrionVersion)), entry)
-			runCommand(t, dir, baseEnv, 5*time.Minute, "go", "mod", "tidy")
+			toolFile := filepath.Join(dir, "orchestrion.tool.go")
+			selectedIntegrations, err := os.ReadFile(toolFile)
+			if err != nil {
+				t.Fatal(err)
+			}
 			binary := filepath.Join(dir, "client.test")
 			if runtime.GOOS == "windows" {
 				binary += ".exe"
@@ -73,6 +77,10 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 				runCommand(t, dir, baseEnv, 10*time.Minute, "go", args...)
 			} else {
 				runCommand(t, dir, baseEnv, 10*time.Minute, orchestrion, append([]string{"go"}, args...)...)
+			}
+			actualIntegrations, err := os.ReadFile(toolFile)
+			if err != nil || !bytes.Equal(actualIntegrations, selectedIntegrations) {
+				t.Fatalf("build changed selected integrations (read error: %v):\n%s", err, actualIntegrations)
 			}
 
 			type scenario struct {
@@ -213,7 +221,8 @@ func clientEnv() []string {
 		}
 		result = append(result, entry)
 	}
-	return append(result, "GOWORK=off", "GOFLAGS=")
+	// Resolve build dependencies without tidying every integration's transitive tests.
+	return append(result, "GOWORK=off", "GOFLAGS=-mod=mod")
 }
 
 func intakeEnv(url string) []string {
