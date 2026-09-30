@@ -32,6 +32,11 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
+  #
+  # Pinned to a main commit rather than v1.1.0: the rules use the `.Receiver`
+  # template variable, added after that release in
+  # open-telemetry/opentelemetry-go-compile-instrumentation#1194. Move back to a
+  # tag once one ships with it.
   OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260928150151-b7074543ee0c' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
@@ -41,6 +46,10 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/go-chi/chi
+    contrib/go-chi/chi/otelc
+    contrib/go-chi/chi.v5
+    contrib/go-chi/chi.v5/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -49,6 +58,8 @@ env:
     otelc-autostart
     net_http
     sql
+    chi
+    chi.v5
 
 jobs:
   go-versions-matrix:
