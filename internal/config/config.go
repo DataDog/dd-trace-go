@@ -303,7 +303,11 @@ type Config struct {
 	// llmObsProjectName is the project name for LLM Observability
 	llmObsProjectName string
 	// llmObsAgentlessEnabled controls if LLM Observability is enabled in agentless mode
-	llmObsAgentlessEnabled *bool
+	llmObsAgentlessEnabled        *bool
+	llmObsPromptsCacheTTL         time.Duration
+	llmObsPromptsFileCacheEnabled bool
+	llmObsPromptsCacheDir         string
+	llmObsPromptsTimeout          time.Duration
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -482,6 +486,14 @@ func loadConfig() *Config {
 	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
 	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.llmObsPromptsCacheTTL = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_CACHE_TTL", 60, func(value float64) bool {
+		return !math.IsNaN(value) && !math.IsInf(value, 0) && (value <= 0 || value <= maxDurationSeconds)
+	}) * float64(time.Second))
+	cfg.llmObsPromptsFileCacheEnabled = p.GetBool("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", false)
+	cfg.llmObsPromptsCacheDir = p.GetString("DD_LLMOBS_PROMPTS_CACHE_DIR", "")
+	cfg.llmObsPromptsTimeout = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_TIMEOUT", 5, func(value float64) bool {
+		return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0) && value <= maxDurationSeconds
+	}) * float64(time.Second))
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
 	legacyFlaggingProviderEnabled, legacyFlaggingProviderOrigin := p.GetBoolWithOrigin("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
 	cfg.experimentalFlaggingProviderEnabled = legacyFlaggingProviderEnabled
@@ -1926,6 +1938,30 @@ func (c *Config) AppKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.appKey
+}
+
+func (c *Config) LLMObsPromptsCacheTTL() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsCacheTTL
+}
+
+func (c *Config) LLMObsPromptsFileCacheEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsFileCacheEnabled
+}
+
+func (c *Config) LLMObsPromptsCacheDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsCacheDir
+}
+
+func (c *Config) LLMObsPromptsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsTimeout
 }
 
 func (c *Config) CIVisibilityAgentlessURL() string {
