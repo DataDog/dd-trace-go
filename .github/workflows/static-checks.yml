@@ -147,6 +147,8 @@ jobs:
       # step exists.
       - name: Verify CI component table and workflow invariants
         run: go test ./scripts/ciselect/
+      - name: Test CI tooling scripts
+        run: go test ./scripts/citiming/ ./scripts/actiontest/
 
   check-modules:
     needs: [changes, warm-tools-cache]
