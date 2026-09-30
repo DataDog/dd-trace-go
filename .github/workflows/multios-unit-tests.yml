@@ -34,11 +34,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(startsWith(inputs.runs-on, 'windows-') && '["core", "orchestrionfixture"]' || '["core"]') }}
+        suite: [core, orchestrionfixture]
     env:
       REPORT: gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
-      ISOLATE_ORCHESTRION_FIXTURE: ${{ startsWith(inputs.runs-on, 'windows-') }}
     steps:
       - name: Normalize github.workspace for Windows
         if: ${{ runner.os == 'Windows' }}
@@ -79,11 +78,9 @@ jobs:
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          excluded_packages='google.golang.org/api|sarama|confluent-kafka-go|cmemprof'
-          if [[ "${ISOLATE_ORCHESTRION_FIXTURE}" == 'true' ]]; then
-            excluded_packages+='|^github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig/orchestrionfixture$'
-          fi
-          go list ./... | grep -Ev "${excluded_packages}" | sort >packages.txt
+          go list ./... | grep -v \
+            -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof \
+            -e '^github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig/orchestrionfixture$' | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
       - name: "Runner: Test Orchestrion Client Fixture"
@@ -92,7 +89,7 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # Cold Orchestrion configurations recompile the standard library. Run
-          # this matrix independently of other Windows packages.
+          # this matrix independently of other packages.
           gotestsum --junitfile "${REPORT}" -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
 
       - name: Get Datadog credentials
