@@ -91,9 +91,9 @@ jobs:
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          # Cold Orchestrion configurations recompile the standard library. Give
-          # this matrix its own Windows runner and package budget.
-          gotestsum --junitfile "${REPORT}" -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage.txt -covermode=atomic -timeout 25m
+          # Cold Orchestrion configurations recompile the standard library. Run
+          # this matrix independently of other Windows packages.
+          gotestsum --junitfile "${REPORT}" -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
 
       - name: Get Datadog credentials
         id: dd-sts
