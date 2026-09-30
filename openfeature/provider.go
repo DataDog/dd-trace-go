@@ -219,6 +219,15 @@ func reportFlagEvalMetricsCreationError(err error) {
 	telemetrylog.LogAndReportError("openfeature: failed to create flag evaluation metrics", err)
 }
 
+func handleFlagEvalMetricsCreationError(err error) {
+	var providerErr *flagEvalMeterProviderError
+	if errors.As(err, &providerErr) {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error()) //errtrack:ignore invalid user configuration
+		return
+	}
+	reportFlagEvalMetricsCreationError(err)
+}
+
 func newDatadogProviderWithSourceAndEVP(
 	config ProviderConfig,
 	source internalffe.Source,
@@ -233,7 +242,7 @@ func newDatadogProviderWithSourceAndEVP(
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
-		reportFlagEvalMetricsCreationError(err)
+		handleFlagEvalMetricsCreationError(err)
 	}
 	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 

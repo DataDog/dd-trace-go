@@ -23,7 +23,8 @@ func TestInternalFeatureFlagFailuresReportedToTelemetry(t *testing.T) {
 
 	reportMalformedAgentlessConfiguration(errors.New("decode"))
 	reportFlagEvalPayloadEncodingError(errors.New("encode"))
-	reportFlagEvalMetricsCreationError(errors.New("instrument"))
+	handleFlagEvalMetricsCreationError(errors.New("instrument"))
+	handleFlagEvalMetricsCreationError(&flagEvalMeterProviderError{err: errors.New("user configuration")})
 	client.Flush()
 
 	logs := rt.LogMessages()
