@@ -22,7 +22,7 @@ func ValidateStateV3ActiveLeaseDocument(raw []byte) bool {
 // ValidateStateV3ReservationDocument validates canonical reservation bytes.
 func ValidateStateV3ReservationDocument(raw []byte) bool {
 	var value StateV3Reservation
-	return decodeStateV3Document(raw, MaxStateV3ReservationBytes, &value) == nil && bytes.Equal(mustCanonicalStateV3(value), raw)
+	return decodeStateV3Document(raw, MaxStateV3ReservationBytes, &value) == nil && validStateV3ReservationPortableIntegers(value) && bytes.Equal(mustCanonicalStateV3(value), raw)
 }
 
 // ValidateStateV3PreparedManifestDocument validates canonical prepared-manifest bytes.
@@ -136,11 +136,83 @@ func ValidateStateV3RecordDocumentPath(raw []byte, path string) bool {
 // bytes and binds them to its own authoritative request directory.
 func ValidateStateV3ReservationDocumentPath(raw []byte, path string) bool {
 	var value StateV3Reservation
-	if decodeStateV3Document(raw, MaxStateV3ReservationBytes, &value) != nil || !bytes.Equal(mustCanonicalStateV3(value), raw) {
+	if decodeStateV3Document(raw, MaxStateV3ReservationBytes, &value) != nil || !validStateV3ReservationPortableIntegers(value) || !bytes.Equal(mustCanonicalStateV3(value), raw) {
 		return false
 	}
 	paths, ok := stateV3PreparedPaths(value.RepositoryID, value.OriginalCommentID)
 	return ok && path == paths.Reservation
+}
+
+const (
+	stateV3PortableIntMin = -1 << 31
+	stateV3PortableIntMax = 1<<31 - 1
+)
+
+// validStateV3ReservationPortableIntegers keeps reservation document decoding
+// identical on supported 32-bit and 64-bit platforms. It is intentionally
+// limited to the standalone reservation-document contract; record validation
+// has a separate schema boundary.
+func validStateV3ReservationPortableIntegers(reservation StateV3Reservation) bool {
+	if !validStateV3ReleaseLineClaimEvidencePortableIntegers(reservation.CoordinationClaim) {
+		return false
+	}
+	for _, claim := range reservation.VersionResolution.Coordination.Claims {
+		if !validStateV3ReleaseLineClaimEvidencePortableIntegers(claim) {
+			return false
+		}
+	}
+	for _, head := range reservation.VersionResolution.LaneHeads {
+		if !validStateV3StateSnapshotPortableIntegers(head.Snapshot) {
+			return false
+		}
+	}
+	return true
+}
+
+func validStateV3ReleaseLineClaimEvidencePortableIntegers(evidence StateV3ReleaseLineClaimEvidence) bool {
+	return validStateV3PortableInt(evidence.Claim.Attempt) && validStateV3MutationResponsePortableIntegers(evidence.Acquired)
+}
+
+func validStateV3StateSnapshotPortableIntegers(snapshot StateV3StateSnapshot) bool {
+	return validStateV3StagedEnvelopePortableIntegers(snapshot.StagedEnvelope) && validStateV3StagedEnvelopePortableIntegers(snapshot.ActiveRecord.StagedEnvelope)
+}
+
+func validStateV3StagedEnvelopePortableIntegers(envelope *StateV3StagedEnvelopeEvidence) bool {
+	if envelope == nil {
+		return true
+	}
+	prepared := envelope.Prepared
+	if !validStateV3PortableInt(prepared.AdditionCount) || !validStateV3PortableInt64(prepared.TotalDecodedAdditionBytes) || !validStateV3PortableInt64(prepared.Bundle.SizeBytes) {
+		return false
+	}
+	for _, file := range prepared.StateFiles {
+		if !validStateV3PortableInt64(file.SizeBytes) {
+			return false
+		}
+	}
+	for _, change := range prepared.Mutation.FileChanges {
+		if !validStateV3PortableInt64(change.SizeBytes) {
+			return false
+		}
+	}
+	for _, file := range envelope.Files {
+		if !validStateV3PortableInt64(file.SizeBytes) {
+			return false
+		}
+	}
+	return true
+}
+
+func validStateV3MutationResponsePortableIntegers(response StateV3MutationResponse) bool {
+	return validStateV3PortableInt(response.Attempts)
+}
+
+func validStateV3PortableInt(value int) bool {
+	return value >= stateV3PortableIntMin && value <= stateV3PortableIntMax
+}
+
+func validStateV3PortableInt64(value int64) bool {
+	return value >= stateV3PortableIntMin && value <= stateV3PortableIntMax
 }
 
 // ValidateStateV3CoordinationClaimPath delegates to the authoritative claim
