@@ -1,6 +1,6 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
-// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// This product contains software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
 package tracer
@@ -9,6 +9,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 
@@ -43,14 +44,17 @@ func (b *blockingTransport) endpoint(float64) string { return "http://localhost:
 
 var _ ddTransport = (*blockingTransport)(nil)
 
-// TestQueueOverflowOnStalledAgent reproduces the APMS-20060 root cause: a slow
-// or unresponsive agent saturates every one of the writer's
-// concurrentConnectionLimit outgoing connections. traceWriter.flush()
-// acquires that connection slot on the caller's goroutine (see writer.go),
-// and the caller is always the tracer's single worker goroutine. Once every
-// slot is taken, the next scheduled flush blocks the worker inside flush()
-// itself, so it can no longer drain t.out — and once t.out fills past its
-// capacity, pushChunk starts dropping chunks.
+// TestQueueOverflowOnStalledAgent is the fixed behavior for the APMS-20060
+// root cause: a slow or unresponsive agent saturates every one of the
+// writer's concurrentConnectionLimit outgoing connections. traceWriter.flush()
+// tries its connection slot non-blockingly and returns without swapping the
+// payload when none is free, so the tracer's single worker goroutine — the
+// only flush() caller on the scheduled path — stays free to keep draining
+// t.out. The traces instead accumulate in the payload buffer, nothing is
+// dropped with reason:queue_full, and once the stall clears the next tick
+// sends everything. (Before the fix, flush() blocked the worker on the
+// connection slot, t.out filled past its capacity, and pushChunk dropped
+// chunks with reason:queue_full.)
 func TestQueueOverflowOnStalledAgent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
@@ -67,7 +71,9 @@ func TestQueueOverflowOnStalledAgent(t *testing.T) {
 		// Unblock every stalled send before stop() waits on the worker/writer,
 		// or the cleanup itself deadlocks. Registered after defer stop() so it
 		// runs first (LIFO).
-		defer close(release)
+		var releaseOnce sync.Once
+		releaseStall := func() { releaseOnce.Do(func() { close(release) }) }
+		defer releaseStall()
 
 		// Saturate every outgoing connection slot: one chunk plus one flush
 		// per slot. Waiting for the worker to drain the chunk (first Wait)
@@ -84,30 +90,125 @@ func TestQueueOverflowOnStalledAgent(t *testing.T) {
 			synctest.Wait()
 		}
 
-		// One more tick: the writer now tries to acquire a 101st connection
-		// slot and blocks on it — the worker goroutine can no longer reach
-		// its select loop, so it stops draining t.out entirely.
-		trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}, willSend: true})
+		// Fill t.out past its capacity while every connection is stalled: the
+		// worker must keep draining chunks, so none of these drops with
+		// reason:queue_full the way the last one did before the fix.
+		const overCapacity = 25
+		queueSize := cap(trc.out)
+		for range queueSize + overCapacity {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}, willSend: true})
+		}
 		synctest.Wait()
+		require.Zero(t, len(trc.out), "the worker must keep draining t.out while every connection is in flight")
+
+		// A tick with all connections saturated: flush() defers — it must not
+		// swap the payload, block the worker, or lose anything.
 		flush(-1)
 		synctest.Wait()
 
-		// t.out is now undrained. Fill it to capacity...
-		queueSize := cap(trc.out)
-		for range queueSize {
-			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}})
-		}
-		require.Len(t, trc.out, queueSize)
-
-		// ...and this one is the drop this test reproduces.
-		trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}})
-
-		var queueFullDrops int64
+		var queueFullDrops, encodingDrops int64
 		for _, c := range tg.GetCallsByName("datadog.tracer.traces_dropped") {
 			if slices.Contains(c.Tags(), "reason:queue_full") {
 				queueFullDrops += c.IntVal()
 			}
+			if slices.Contains(c.Tags(), "reason:encoding_error") {
+				encodingDrops += c.IntVal()
+			}
 		}
-		assert.Equal(t, int64(1), queueFullDrops, "exactly one trace should have been dropped for reason:queue_full")
+		assert.Zero(t, queueFullDrops, "no trace should be dropped for reason:queue_full while the agent is stalled")
+		assert.Zero(t, encodingDrops, "the payload buffer should absorb every drained trace")
+
+		// The deferred traces are still sitting in the payload buffer, whole.
+		aw := trc.traceWriter.(*agentTraceWriter)
+		aw.mu.Lock()
+		buffered := aw.payload.itemCount()
+		aw.mu.Unlock()
+		assert.Equal(t, queueSize+overCapacity, buffered,
+			"the deferred flush must have left the traces in the payload buffer")
+
+		// The stall clears: every send finishes and frees its slot...
+		releaseStall()
+		synctest.Wait()
+
+		// ...and the next tick flushes everything that was absorbed.
+		flush(-1)
+		synctest.Wait()
+
+		var flushTraces int64
+		for _, c := range tg.GetCallsByName("datadog.tracer.flush_traces") {
+			flushTraces += c.IntVal()
+		}
+		assert.Equal(t, int64(concurrentConnectionLimit+queueSize+overCapacity), flushTraces,
+			"every trace pushed during and after the stall must eventually be sent")
+	})
+}
+
+// TestStopFlushesOnSaturatedAgent pins the shutdown half of the fix: Stop()
+// must still send every queued trace when all concurrentConnectionLimit
+// outgoing connections are saturated. The scheduled flush() defers under
+// those conditions (see TestQueueOverflowOnStalledAgent), but shutdown has
+// no next tick to retry on, so it flushes through the blocking variant and
+// waits for a connection slot instead.
+func TestStopFlushesOnSaturatedAgent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
+		release := make(chan struct{})
+		bt := &blockingTransport{release: release}
+
+		trc, _, flush, stop, err := startTestTracer(t,
+			withTransport(bt),
+			withNoopInfoHTTPClient(),
+			withStatsdClient(&tg),
+		)
+		require.NoError(t, err)
+
+		var releaseOnce sync.Once
+		releaseStall := func() { releaseOnce.Do(func() { close(release) }) }
+		// If an assertion fails before the stall clears, stop() blocks
+		// forever inside flushBlocking, waiting for a connection slot.
+		// Registered after defer stop() so the LIFO order releases the
+		// stall before stop() runs.
+		defer stop()
+		defer releaseStall()
+
+		// Saturate every outgoing connection slot, same choreography as
+		// TestQueueOverflowOnStalledAgent.
+		for range concurrentConnectionLimit {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("stop-saturated")}, willSend: true})
+			synctest.Wait()
+			flush(-1)
+			synctest.Wait()
+		}
+
+		// Queue more traces while every connection is in flight: the worker
+		// drains them into the payload buffer, which the stalled sends can't
+		// pick up yet.
+		const buffered = 3
+		for range buffered {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("stop-saturated")}, willSend: true})
+		}
+		synctest.Wait()
+
+		// Stop() runs on its own goroutine so the stall can be cleared from
+		// here once its flush is parked waiting for a connection slot.
+		stopped := make(chan struct{})
+		go func() {
+			defer close(stopped)
+			stop()
+		}()
+		releaseStall()
+		synctest.Wait()
+		<-stopped
+
+		var flushTraces, dropped int64
+		for _, c := range tg.GetCallsByName("datadog.tracer.flush_traces") {
+			flushTraces += c.IntVal()
+		}
+		for _, c := range tg.GetCallsByName("datadog.tracer.traces_dropped") {
+			dropped += c.IntVal()
+		}
+		assert.Equal(t, int64(concurrentConnectionLimit+buffered), flushTraces,
+			"Stop() must send every queued trace, including those buffered while all connections were in flight")
+		assert.Zero(t, dropped, "nothing should be dropped on shutdown")
 	})
 }
