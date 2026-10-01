@@ -25,7 +25,7 @@ type Ticker struct {
 	tickFunc TickFunc
 
 	stopChan chan struct{}
-	stopped  bool
+	stopOnce sync.Once
 }
 
 func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
@@ -81,12 +81,14 @@ func (t *Ticker) CanDecreaseSpeed() {
 	t.ticker.Reset(t.tickSpeed)
 }
 
+// Stop stops the ticker and waits for the worker goroutine to return when a
+// tick is still running. Stop is safe for concurrent use and can run on any
+// goroutine, including the worker itself: the caller then blocks until the
+// current tick ends.
 func (t *Ticker) Stop() {
-	if t.stopped {
-		return
-	}
-	t.ticker.Stop()
-	t.stopChan <- struct{}{}
-	close(t.stopChan)
-	t.stopped = true
+	t.stopOnce.Do(func() {
+		t.ticker.Stop()
+		t.stopChan <- struct{}{}
+		close(t.stopChan)
+	})
 }

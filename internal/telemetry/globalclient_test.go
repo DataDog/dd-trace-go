@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,4 +142,56 @@ func TestLog_DisabledSkipsStacktraceCapture(t *testing.T) {
 
 	assert.Less(t, disabledAllocs, enabledNotStartedAllocs,
 		"a disabled Log(..., WithStacktrace()) call must do less work than an enabled-but-not-started one — it must not capture a stacktrace it will immediately discard")
+}
+
+// TestAppStartedFlushPanicStopsClientWithoutDeadlock verifies that a panic in
+// the asynchronous app-started flush disables the client without deadlocking.
+// The panic recovery must not close the client from the flush goroutine
+// itself: Close joins the app-started flush goroutine, so that close would
+// wait for the very goroutine that runs it.
+func TestAppStartedFlushPanicStopsClientWithoutDeadlock(t *testing.T) {
+	// Force telemetry enabled: StartApp ignores calls while Disabled.
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { SwapClient(nil) })
+	SwapClient(nil)
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+
+	var panicked atomic.Bool
+	c.AddFlushTicker(func(Client) {
+		if !panicked.CompareAndSwap(false, true) {
+			return
+		}
+		panic("boom: stop the app-started flush")
+	})
+
+	StartApp(c)
+
+	// The app-started flush runs the ticker callbacks and panics.
+	require.Eventually(t, panicked.Load, 5*time.Second, 10*time.Millisecond,
+		"the app-started flush never ran the ticker callbacks")
+	// The panic recovery removes the client from the global slot.
+	require.Eventually(t, func() bool { return GlobalClient() == nil }, 5*time.Second, 10*time.Millisecond,
+		"the panic recovery did not remove the global client")
+
+	// The recovery closes the client on another goroutine once the flush
+	// returns. Wait for that close to finish before closing here, so this
+	// close observes the settled state rather than racing the recovery.
+	time.Sleep(250 * time.Millisecond)
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		c.Close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not return: the panic recovery joined its own app-started flush goroutine")
+	}
 }

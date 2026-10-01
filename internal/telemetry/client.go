@@ -234,8 +234,11 @@ func (c *client) Flush() {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
 		telemetryClientEnabled = false
-		if gc, ok := GlobalClient().(*client); ok && gc == c {
-			SwapClient(nil)
+		if old := clearGlobalClient(c); old != nil {
+			// Close joins the goroutine that runs this Flush, so Close must not
+			// run here. A new goroutine closes the client after this Flush
+			// returns, which is also when the ticker goroutine can exit.
+			go old.Close()
 		}
 	}()
 

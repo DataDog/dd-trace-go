@@ -98,6 +98,23 @@ func StartApp(client Client) {
 	}()
 }
 
+// clearGlobalClient removes the global client when it still is c, and
+// returns the removed client. It returns nil when no global client is set or
+// another client replaced c. The caller must close the returned client: this
+// function does not close it, because the caller may run on one of the
+// client's own goroutines, and Close joins those goroutines.
+func clearGlobalClient(c Client) Client {
+	var nilClient Client
+	cur := globalClient.Load()
+	if cur == nil || *cur == nil || *cur != c {
+		return nil
+	}
+	if globalClient.CompareAndSwap(cur, &nilClient) {
+		return *cur
+	}
+	return nil
+}
+
 // SwapClient swaps the global client with the given client and Flush the old (*client).
 func SwapClient(client Client) Client {
 	if Disabled() {
