@@ -16,3 +16,39 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestBidiStream(t *testing.T) {
+	harness.Run(t, new(TestCaseBidiStream))
+}
+
+func TestClientStream(t *testing.T) {
+	harness.Run(t, new(TestCaseClientStream))
+}
+
+func TestClientStreamSimple(t *testing.T) {
+	harness.Run(t, new(TestCaseClientStreamSimple))
+}
+
+func TestNestedClientOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseNestedClientOptions))
+}
+
+func TestServerStream(t *testing.T) {
+	harness.Run(t, new(TestCaseServerStream))
+}
+
+func TestServerStreamSimple(t *testing.T) {
+	harness.Run(t, new(TestCaseServerStreamSimple))
+}
+
+func TestSharedOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseSharedOptions))
+}
+
+func TestUnarySimple(t *testing.T) {
+	harness.Run(t, new(TestCaseUnarySimple))
+}
+
+func TestUntracedClient(t *testing.T) {
+	harness.Run(t, new(TestCaseUntracedClient))
+}

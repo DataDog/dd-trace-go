@@ -309,20 +309,6 @@ var packages = map[Package]PackageInfo{
 	PackageConnectRPC: {
 		TracedPackage: "connectrpc.com/connect",
 		EnvVarPrefix:  "CONNECT",
-		naming: map[Component]componentNames{
-			ComponentServer: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("connect.server"),
-				buildOpNameV0:      staticName("connect.server"),
-				buildOpNameV1:      staticName("connect.server.request"),
-			},
-			ComponentClient: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("connect.client"),
-				buildOpNameV0:      staticName("connect.client"),
-				buildOpNameV1:      staticName("connect.client.request"),
-			},
-		},
 	},
 	PackageDatabaseSQL: {
 		TracedPackage: "database/sql",

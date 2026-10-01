@@ -74,7 +74,7 @@ require (
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.83.2
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
-	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
+	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 	gotest.tools/v3 v3.5.2
@@ -384,7 +384,6 @@ require (
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
