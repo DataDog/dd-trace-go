@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -196,7 +197,17 @@ type subscription struct {
 var (
 	// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
 	// Using a single RC client instance in the tracer is a requirement for remote configuration.
-	client    *Client
+	//
+	// The global is an atomic pointer so that the package-level helpers can read
+	// it without clientMux. Stop holds clientMux while it waits for the poll
+	// goroutine to exit, and a poll callback re-enters those helpers (the AppSec
+	// activation path does: handleASMFeatures -> enableRCBlocking ->
+	// RegisterProduct/RegisterCapability). A mutex-protected read would block
+	// such a callback until the wait of Stop elapsed: the HTTP timeout plus one
+	// second, eleven seconds with the default client.
+	//
+	// clientMux serializes the lifecycle transitions (Start/Stop/Reset) only.
+	client    atomic.Pointer[Client]
 	clientMux sync.Mutex
 	started   bool
 )
@@ -240,16 +251,15 @@ func Start(config ClientConfig) error {
 		// Return early if already started.
 		return nil
 	}
-	var err error
-	client, err = newClient(config)
+	c, err := newClient(config)
 	if err != nil {
 		return err
 	}
+	client.Store(c)
 	started = true
 
-	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
+	// Capture the client locally; the goroutine must not read the global (Stop/Reset replace it).
 	var (
-		c            = client
 		pollInterval = c.PollInterval
 		stop         = c.stop
 		pollNow      = c.pollNow
@@ -288,7 +298,8 @@ func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
-	if client == nil {
+	c := client.Load()
+	if c == nil {
 		// In case Stop() is called before Start()
 		return
 	}
@@ -297,20 +308,22 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	client.stopOnce.Do(func() { close(client.stop) })
+	c.stopOnce.Do(func() { close(c.stop) })
 	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
 	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
+	// A callback the poll goroutine runs may re-enter the package API; it reads
+	// the singleton atomically, so the callback cannot block on clientMux here.
 	wait := time.Second
-	if client.HTTP != nil && client.HTTP.Timeout > 0 {
-		wait = client.HTTP.Timeout + time.Second
+	if c.HTTP != nil && c.HTTP.Timeout > 0 {
+		wait = c.HTTP.Timeout + time.Second
 	}
 	select {
-	case <-client.done:
+	case <-c.done:
 		log.Debug("remoteconfig: client stopped successfully")
 	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
-	client = nil
+	client.Store(nil)
 	started = false
 }
 
@@ -321,10 +334,10 @@ func Reset() {
 	defer clientMux.Unlock()
 
 	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
-	if client != nil {
-		client.stopOnce.Do(func() { close(client.stop) })
+	if c := client.Load(); c != nil {
+		c.stopOnce.Do(func() { close(c.stop) })
 	}
-	client = nil
+	client.Store(nil)
 	started = false
 }
 
@@ -338,13 +351,14 @@ func ClientID() string {
 }
 
 // currentClient returns the RC client singleton, or nil when the client is not
-// started. The read is synchronized with Stop and Reset, which clear the global
-// under clientMux: reading the global without this lock races with those writes
-// (issue #5479) and can nil-deref mid-function (issue #5134).
+// started. It loads the global atomically, so the read never blocks and cannot
+// race the stores in Stop and Reset (issues #5479 and #5134). The read must not
+// take clientMux: Stop holds that mutex while it waits for the poll goroutine,
+// and a poll callback that re-enters the package API (see the `client` var
+// comment) would otherwise block for the full wait of Stop, then fail with
+// ErrClientNotStarted after Stop cleared the singleton.
 func currentClient() *Client {
-	clientMux.Lock()
-	defer clientMux.Unlock()
-	return client
+	return client.Load()
 }
 
 func (c *Client) updateState() {
