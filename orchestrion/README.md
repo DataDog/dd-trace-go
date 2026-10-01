@@ -10,11 +10,32 @@ Orchestrion uses Aspect-Oriented Programming (AOP) and the Go `toolexec` command
 
 For more information on how to use Orchestrion in a user's project, refer to the [user guide](https://datadoghq.dev/orchestrion/docs/getting-started/). 
 
-The public [`../civisibility`](../civisibility/) entry point selects CI Visibility alone and defaults `DD_CIVISIBILITY_ENABLED` to `parent` when unset. Its `orchestrion.tool.go` imports the existing testing rules, and its `orchestrion.yml` replaces the internal activation default at compile time. It is excluded from the generated `all/v2` bundle; this directory's legacy entry point continues to load the testing rules with a disabled default. See the [client setup](../README.md#ci-visibility-with-orchestrion).
+## CI Visibility with Orchestrion
+
+To select only CI Visibility instrumentation, use this `orchestrion.tool.go` at the root of your Go module:
+
+```go
+//go:build tools
+
+package tools
+
+import (
+	_ "github.com/DataDog/orchestrion"
+	_ "github.com/DataDog/dd-trace-go/v2/civisibility" // integration
+)
+```
+
+Run your tests with `orchestrion go test ./...`. When `DD_CIVISIBILITY_ENABLED` is unset, this entry point defaults to `parent`: CI Visibility is enabled for the test process, and ordinary subprocesses launched after initialization inherit `DD_CIVISIBILITY_ENABLED=false`. Managed process retries continue to report through the parent. An explicit `true`, `false`, or `parent` overrides the default; empty or invalid values disable it.
+
+Configure an Agent or [Agentless mode](https://docs.datadoghq.com/tests/setup/go/) to send test results. Selecting this entry point does not enable Agentless mode or provide credentials.
+
+The existing `/v2/orchestrion` and `orchestrion/all/v2` entry points retain their disabled default. `orchestrion pin` may restore the `all/v2` import, so apply this selection after pinning. Importing `civisibility` in ordinary application code or running plain `go test` does not enable automatic instrumentation.
 
 ## Contributing
 
 For references on which aspects and join points are available, code templates, and other contributing guidelines, refer to the [contributor guide](https://datadoghq.dev/orchestrion/contributing/aspects/). 
+
+The public [`../civisibility`](../civisibility/) entry point imports the existing Go testing rules and replaces the internal activation default at compile time. Keep it in the generator's `optionalIntegrations` set so regenerating `orchestrion/all/v2` preserves its existing activation behavior. See the [CI Visibility overview](../internal/civisibility/CIVISIBILITY_OVERVIEW.md).
 
 ### Key Takeaways
 
