@@ -9,6 +9,7 @@
 ## Top-Level Layout
 - `civisibility.go` – atomic state/test-mode switches shared across integrations.
 - `constants/` – tag keys, span types, environment variable names, capability flags, span metadata helpers.
+- `envconfig/` – parses CI Visibility activation modes. Its default remains disabled unless the public `civisibility` Orchestrion entry point replaces it with `parent`; explicit environment values always take precedence, including disabled and invalid values.
 - `integrations/` – tracer bootstrapping, feature negotiation, manual test lifecycle API, Go `testing` instrumentation (including subtest orchestration), log streaming.
 - `integrations/gotesting/subtests/` – mock backend + scenario harness exercising parent/subtest directive matrices and retry ownership rules.
 - `utils/` – CI provider discovery, git utilities, code owners lookup, network clients, telemetry plumbing, name canonicalization, impacted test logic, fixtures.
@@ -69,6 +70,7 @@
 
 ## Testing, Fixtures, and Tooling
 - Extensive `_test.go` coverage in integrations (`manual_api`, `gotesting`, `logs`) and utils ensures feature toggles, retries, coverage serialization, and network clients behave as expected.
+- `envconfig/orchestrionfixture` compiles external clients once per entry point and runs an activation matrix against a local intake. It checks the public parent-only default, explicit overrides, ordinary child-process isolation, managed process retries, unchanged legacy and `all/v2` defaults, and uninstrumented builds.
 - Subtest matrix harness (`integrations/gotesting/subtests`) runs under `go test` and exercises the parent/subtest permutations needed to guard subtest-specific instrumentation changes. Enable debug logging to surface per-scenario diagnostics.
 - `integrations/gotesting/testcontroller_test.go` retains historical scenarios for flaky retries, EFD, ITR, and impacted tests; it coexists with the new subtest harness to avoid regression gaps.
 - `integrations/gotesting/itrbackfillfixture` runs subprocess fixtures for ITR coverage backfill. The manual fixture calls `gotesting.RunM`; the Orchestrion fixture runs `go run -mod=readonly github.com/DataDog/orchestrion go test -mod=readonly ./... -cover -coverpkg ./...` without importing `gotesting` at runtime, proving that the existing `testing.M.Run` aspect finalizes backfill correctly. The matrix covers `count`, `atomic`, no user `-coverprofile`, `CodeCoverage=false`, missing/unsafe backend coverage, unmatched paths, narrowing flags, unsupported `set` mode, and no-skippable responses.

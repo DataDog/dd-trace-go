@@ -1839,7 +1839,7 @@ func TestSanitizeProcessRetryBaseEnvDisablesParentOnlyDescendants(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, []string{tt.want}, sanitizeProcessRetryBaseEnv([]string{tt.entry}))
+			require.Equal(t, []string{tt.want}, sanitizeProcessRetryBaseEnv([]string{tt.entry}, true))
 		})
 	}
 }
@@ -1862,7 +1862,7 @@ func TestBuildProcessRetryEnvDisablesParentOnlyDescendants(t *testing.T) {
 		constants.CIVisibilityInternalRetryProcessReason + "=stale",
 	}
 
-	sanitized := sanitizeProcessRetryBaseEnv(base)
+	sanitized := sanitizeProcessRetryBaseEnv(base, true)
 	got := buildProcessRetryEnv(sanitized, cfg)
 	envMap := envSliceToMap(got)
 	require.Equal(t, "false", envMap[constants.CIVisibilityEnabledEnvironmentVariable])
@@ -1892,7 +1892,7 @@ func TestBuildProcessRetryEnvRemovesInternalKeysCaseInsensitively(t *testing.T) 
 		"gocoverdir=C:/stale-coverdir",
 	}
 
-	sanitized := sanitizeProcessRetryBaseEnv(base)
+	sanitized := sanitizeProcessRetryBaseEnv(base, false)
 	got := buildProcessRetryEnv(sanitized, cfg)
 	require.Len(t, envValuesForKey(got, constants.CIVisibilityInternalRetryProcessChild, true), 1)
 	require.Len(t, envValuesForKey(got, constants.CIVisibilityInternalRetryProcessResultPath, true), 1)
@@ -3760,7 +3760,7 @@ func BenchmarkProcessRetryBoundedOutputSaturated(b *testing.B) {
 
 func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	resetProcessRetryLimiterForTesting(t)
-	var executableCalls, lateArgsCalls, startupArgsCalls, workingDirectoryCalls, environCalls atomic.Int32
+	var executableCalls, lateArgsCalls, startupArgsCalls, workingDirectoryCalls, environCalls, lookupEnvCalls atomic.Int32
 	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
 		executable: func() (string, error) {
 			executableCalls.Add(1)
@@ -3781,6 +3781,7 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	})
 
 	startupArgs := []string{"-test.run=TestTarget"}
+	enabledPresent := false
 	startup := captureProcessRetryStartupSnapshot(
 		func() (string, error) {
 			workingDirectoryCalls.Add(1)
@@ -3798,8 +3799,14 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 				processRetryCoverageDirectoryEnvironmentVariable + "=/tmp/coverage",
 			}
 		},
+		func(key string) (string, bool) {
+			require.Equal(t, constants.CIVisibilityEnabledEnvironmentVariable, key)
+			lookupEnvCalls.Add(1)
+			return "", enabledPresent
+		},
 	)
 	startupArgs[0] = "-test.run=TestMutatedAfterSnapshot"
+	enabledPresent = true
 	template := captureProcessRetryLaunchTemplateFromStartup(startup)
 	require.NoError(t, template.err)
 	require.Equal(t, int32(1), executableCalls.Load())
@@ -3807,6 +3814,7 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	require.Equal(t, int32(1), startupArgsCalls.Load())
 	require.Equal(t, int32(1), workingDirectoryCalls.Load())
 	require.Equal(t, int32(1), environCalls.Load())
+	require.Equal(t, int32(1), lookupEnvCalls.Load())
 	require.Equal(t, []string{"-test.run=TestTarget"}, template.args)
 
 	first := captureProcessRetryLaunchBaselineFromTemplate(template)
@@ -3818,6 +3826,7 @@ func TestProcessRetryLaunchBaselineReusesStaticTemplate(t *testing.T) {
 	require.Equal(t, int32(1), startupArgsCalls.Load())
 	require.Equal(t, int32(1), workingDirectoryCalls.Load())
 	require.Equal(t, int32(1), environCalls.Load())
+	require.Equal(t, int32(1), lookupEnvCalls.Load())
 	require.Equal(t, "/tmp/startup-work", first.workingDirectory)
 	require.Equal(t, "/tmp/startup-work", second.workingDirectory)
 	require.Equal(t, []string{"STARTUP=1"}, first.environment)

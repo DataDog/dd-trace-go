@@ -8,10 +8,12 @@ package integrations
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 
 	"github.com/stretchr/testify/assert"
@@ -56,6 +58,48 @@ func TestInternalCiVisibilityInitializationExplicitTrueDoesNotRewriteEnvToFalse(
 	assert.Equal(t, "1", valueAfterTracerInit)
 }
 
+func TestDisableAdditionalFeaturesWaitsForInitialization(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	initialized := make(chan struct{})
+	var disabled chan struct{}
+	releaseInitialization := sync.OnceFunc(func() { close(release) })
+	defer func() {
+		releaseInitialization()
+		<-initialized
+		if disabled != nil {
+			<-disabled
+		}
+	}()
+	newCIVisibilityClientWithServiceNameFunc = func(string) civisibilitynet.Client {
+		close(started)
+		<-release
+		return nil
+	}
+	go func() {
+		ensureAdditionalFeaturesInitialization("")
+		close(initialized)
+	}()
+	select {
+	case <-started:
+	case <-t.Context().Done():
+		t.Fatal("feature initialization did not start")
+	}
+	disabled = make(chan struct{})
+	go func() {
+		disableAdditionalFeaturesForBootstrapTest()
+		close(disabled)
+	}()
+	select {
+	case <-disabled:
+		t.Error("bootstrap helper replaced the Once while feature initialization was running")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 // resetCIVisibilityBootstrapStateForTesting clears bootstrap-only global state while preserving package test mode.
 func resetCIVisibilityBootstrapStateForTesting() {
 	resetCIVisibilityStateForTesting()
@@ -80,6 +124,11 @@ func restoreCIVisibilityMockModeForTesting() {
 
 // disableAdditionalFeaturesForBootstrapTest prevents bootstrap tests from starting asynchronous backend setup.
 func disableAdditionalFeaturesForBootstrapTest() {
+	// Bootstrap may still have feature initialization in flight. Use the same
+	// lock as initialization and state resets before replacing its Once.
+	additionalFeaturesInitializationMu.Lock()
+	defer additionalFeaturesInitializationMu.Unlock()
 	additionalFeaturesInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce.Do(func() {})
+	additionalFeaturesInitialized.Store(true)
 }

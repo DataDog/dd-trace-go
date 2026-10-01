@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 func (c *retryAttemptOutputCapture) snapshot() []byte {
@@ -98,7 +100,7 @@ func runProcessRetryAttempt(ctx context.Context, cfg processRetryChildConfig, pa
 
 func captureProcessRetryLaunchBaselineForTesting() *processRetryLaunchBaseline {
 	hooks := currentProcessRetryRunnerHooks()
-	startup := captureProcessRetryStartupSnapshot(hooks.workingDirectory, hooks.args, hooks.environ)
+	startup := captureProcessRetryStartupSnapshot(hooks.workingDirectory, hooks.args, hooks.environ, env.Lookup)
 	return captureProcessRetryLaunchBaselineFromTemplate(captureProcessRetryLaunchTemplateFromStartup(startup))
 }
 

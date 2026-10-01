@@ -42,6 +42,7 @@ import (
 const orchestrionToolGo = "orchestrion.tool.go"
 
 var optionalIntegrations = map[string]struct{}{
+	"civisibility":               {}, // Explicit opt-in changes the CI Visibility activation default.
 	"instrumentation/errortrace": {},
 }
 

@@ -1,0 +1,20 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/civisibility
+  description: CI Visibility with parent-only activation when DD_CIVISIBILITY_ENABLED is unset.
+
+aspects:
+  - id: parent-only default
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig
+        - function-call: defaultEnabledMode
+    advice:
+      - wrap-expression:
+          template: EnabledModeParent

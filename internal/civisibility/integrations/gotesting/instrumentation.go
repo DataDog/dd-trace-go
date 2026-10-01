@@ -286,11 +286,8 @@ func isCiVisibilityEnabled() bool {
 	// let's check if the value has already been loaded from the env-vars
 	enabledValue := atomic.LoadInt32(&ciVisibilityEnabledValue)
 	if enabledValue == -1 {
-		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to false (for now). This is because if we are here, it means
-		// that the process was instrumented for ci visibility or by using orchestrion.
-		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
-		// we don't want the civisibility instrumentation to be enabled.
-		// *** For preview releases we will default to false, meaning that the use of ci visibility must be opt-in ***
+		// The selected Orchestrion entry point determines the default when the
+		// variable is absent. An explicit value always takes precedence.
 		mode, ok := envconfig.FromEnv()
 		if ok && envconfig.Enabled(mode) {
 			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
