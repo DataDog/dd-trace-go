@@ -48,8 +48,11 @@ func (cs *cachedServiceName) String() string {
 		return *v
 	}
 	svc := cs.getValue()
-	// cache only if the tracer has been started. This ensures we get the final value for service name, since this
-	// is where the tracer configuration is resolved (including env variables and tracer options).
+	// Cache the value only after the tracer starts. Do not cache an empty
+	// string. tracer.Start resolves the tracer configuration (env variables and
+	// tracer options), so a value cached before tracer.Start runs can be
+	// wrong. The Load above returns a stored empty string for all later calls.
+	// The service name can become non-empty after the tracer starts.
 	if svc != "" && instr.TracerInitialized() {
 		cs.value.Store(&svc)
 	}
