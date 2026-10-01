@@ -64,7 +64,7 @@
 - `git.go` performs git command execution with telemetry instrumentation, synchronized access (`gitCommandMutex`), shallow clone detection/unshallow, pack-file generation (`MaxPackFileSizeInMb`, `CreatePackfiles`), base branch discovery, and sensitive info filtering. Interacts with `utils/telemetry` enums to classify commands/errors. Backed by tests covering command paths and error handling.
 - `file_environmental_data.go` and `_test.go` collect file-level metadata (size, permissions, hash) referenced by impacted tests. `filebitmap/` stores efficient bitmap representation of file coverage.
 - `impactedtests/` implements incremental test selection. `algorithm.md` documents the base branch detection heuristic (with 2025 updates) and ties closely to git utilities; `impacted_tests.go` consumes backend responses to track new/modified tests.
-- `codeowners.go` parses CODEOWNERS files with caching and fallback to repo root; fixtures for GitHub/GitLab located under `testdata/fixtures/codeowners`.
+- `codeowners.go` parses CODEOWNERS files with caching and fallback to repo root, including anchored filename prefixes (`/dir/prefix*`); fixtures for GitHub/GitLab located under `testdata/fixtures/codeowners`.
 - `names.go` normalizes module/suite names via runtime function lookup and heuristics, ensuring consistent tagging even with nested/subtests; tests validate complex name resolution.
 - `home.go` and `file_environmental_data.go` handle home directory discovery with consideration for CI sandboxes and Windows drive letters.
 - `net/` houses HTTP client logic:

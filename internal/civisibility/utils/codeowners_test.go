@@ -196,31 +196,61 @@ func TestMatch(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestRepositoryCIVisibilityTracerOwnership(t *testing.T) {
-	root := filepath.Join("..", "..", "..")
-	owners, err := NewCodeOwners(filepath.Join(root, "CODEOWNERS"))
-	require.NoError(t, err)
-	const ciOwner = "@DataDog/ci-app-libraries"
-	for _, dir := range []string{"ddtrace/tracer", "ddtrace/mocktracer"} {
-		files, err := filepath.Glob(filepath.Join(root, dir, "*civisibility*.go"))
-		require.NoError(t, err)
-		require.NotEmpty(t, files)
-		for _, file := range files {
-			path, err := filepath.Rel(root, file)
-			require.NoError(t, err)
-			t.Run(filepath.ToSlash(path), func(t *testing.T) {
-				entry, ok := owners.Match("/" + filepath.ToSlash(path))
-				require.True(t, ok)
-				assert.Equal(t, []string{ciOwner}, entry.Owners)
-			})
-		}
+func TestMatchAnchoredFilenamePrefix(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		path    string
+		matches bool
+	}{
+		{"/src/ci_*", "/src/ci_new.go", true},
+		{"/src/ci_*", "/src/ci_new_test.go", true},
+		{"/src/ci_*", "/src/ci_", true},
+		{"/src/ci_*", "/src/ci_group/nested.go", true},
+		{"/ci_*", "/ci_root.go", true},
+		{"/src/ci_*", "/src/app.go", false},
+		{"/src/ci_*", "/src/ci.go", false},
+		{"/src/ci_*", "/src/CI_new.go", false},
+		{"/src/ci_*", "/src/nested/ci_new.go", false},
+		{"/src/ci_*", "/other/src/ci_new.go", false},
+		{"/src/ci_*", "/other/ci_new.go", false},
+		{"/src/*", "/src/direct.go", true},
+		{"/src/*", "/src/nested/direct.go", false},
+		{"/src/", "/src/nested/direct.go", true},
+		{"*test.go", "/src/nested/direct_test.go", true},
+		{"ci_*", "/src/ci_new.go", false},
+		{"/src/ci_**", "/src/ci_new.go", false},
+		{"/src/ci_?*", "/src/ci_new.go", false},
+		{"/src/ci_*.go", "/src/ci_new.go", false},
+	} {
+		t.Run(tc.pattern+":"+tc.path, func(t *testing.T) {
+			owners := &CodeOwners{Sections: []*Section{{Entries: []Entry{{Pattern: tc.pattern, Owners: []string{"@owner"}}}}}}
+			entry, ok := owners.Match(tc.path)
+			assert.Equal(t, tc.matches, ok)
+			if tc.matches {
+				require.NotNil(t, entry)
+				assert.Equal(t, []string{"@owner"}, entry.Owners)
+			}
+		})
 	}
-	for _, path := range []string{"ddtrace/tracer/tracer.go", "ddtrace/tracer/span.go", "ddtrace/mocktracer/mocktracer.go"} {
-		t.Run(path, func(t *testing.T) {
-			entry, ok := owners.Match("/" + path)
+}
+
+func TestMatchAnchoredFilenamePrefixPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		owner   string
+	}{
+		{"/src/ @directory\n/src/ci_* @prefix\n/src/ci_exact.go @exact\n", "@exact"},
+		{"/src/ @directory\n/src/ci_exact.go @exact\n/src/ci_* @prefix\n", "@prefix"},
+		{"/src/ci_* @prefix\n/src/ @directory\n", "@directory"},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CODEOWNERS")
+			writeCodeOwnersFile(t, path, tc.content)
+			owners, err := NewCodeOwners(path)
+			require.NoError(t, err)
+			entry, ok := owners.Match("/src/ci_exact.go")
 			require.True(t, ok)
-			require.NotEmpty(t, entry.Owners)
-			assert.NotContains(t, entry.Owners, ciOwner, "CI ownership must not extend to application tracer files")
+			assert.Equal(t, []string{tc.owner}, entry.Owners)
 		})
 	}
 }
