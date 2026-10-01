@@ -8,22 +8,22 @@ package chiv5
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/otelcrun"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/maintest"
 )
 
-// TestRoutersInMain covers the otelc rules with target: main. The harness
-// suites only reach the $root rules, since the package under test is never
-// main.
+// TestRoutersInMain covers chi routers created in package main, including one
+// imported under another name. The harness suites never build a package main.
 func TestRoutersInMain(t *testing.T) {
-	agent := otelcrun.Run(t, "./chi.v5/mainapp")
+	agent := maintest.Run(t, "./chi.v5/mainapp")
 	for _, resource := range []string{
 		"GET /v5/router",
 		"GET /v5/mux",
 		"GET /v5/alias",
 	} {
-		assert.Truef(t, agent.Reported(resource),
-			"no %q span reached the agent across %d payload(s)", resource, agent.RequestCount())
+		agent.RequireSpan(t, agenttest.With().
+			Operation("http.request").
+			Resource(resource).
+			Tag("component", "go-chi/chi.v5"))
 	}
 }
