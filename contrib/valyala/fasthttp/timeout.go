@@ -117,6 +117,9 @@ type timeoutEvent struct {
 	// owner writes it before it sends the reply.
 	started **handlerScope
 	reply   chan struct{}
+	// panicked tells that the handler of a finished scope did not return
+	// normally. The owner records it, so only the owner writes the scope.
+	panicked bool
 }
 
 type timeoutLayer struct {
@@ -218,8 +221,10 @@ func (l *timeoutLayer) wrapHandler(ctx *fasthttp.RequestCtx, h fasthttp.RequestH
 		}
 		return
 	}
+	// Do not recover the panic: the worker goroutine handles it.
+	returned := false
 	defer func() {
-		if !l.exchange(timeoutEvent{scope: scope}) {
+		if !l.exchange(timeoutEvent{scope: scope, panicked: !returned}) {
 			// The owner has finished against a detached response. Only this
 			// worker may now change the live context's user values.
 			scope.restore()
@@ -229,6 +234,7 @@ func (l *timeoutLayer) wrapHandler(ctx *fasthttp.RequestCtx, h fasthttp.RequestH
 	if !scope.handled {
 		h(ctx)
 	}
+	returned = true
 }
 
 // A separate operation owns the worker's GLS binding. The HTTP operation starts
@@ -318,6 +324,9 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 				*event.started = scope
 				event.reply <- struct{}{}
 			case event.scope != nil:
+				if event.panicked {
+					event.scope.panicked = true
+				}
 				if event.scope != l.rootWorker {
 					// The worker waits for this reply, so the resource namer
 					// can read what the handler stored in the context.
@@ -352,6 +361,11 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 			l.workerPanicHandled = true
 			// No application code can now access the live response or values.
 			if l.rootWorker != nil {
+				if l.panicked {
+					// The root scope covers the whole worker. Code after its
+					// handler can panic, so its status is not the result.
+					l.rootWorker.panicked = true
+				}
 				l.rootWorker.setResource()
 				l.rootWorker.finishAppSec(&l.ctx.Response)
 				l.rootWorker.restore()

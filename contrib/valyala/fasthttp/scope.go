@@ -6,6 +6,7 @@
 package fasthttp
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -33,7 +34,15 @@ type handlerScope struct {
 	appsecOnce   sync.Once
 	spanOnce     sync.Once
 	restoreOnce  sync.Once
+	// panicked tells that the handler did not return normally. The response
+	// status then does not show the result of the handler.
+	panicked bool
 }
+
+// errHandlerPanic is the span error when the handler panics. It does not
+// contain the panic value, because that value can contain request data or
+// credentials.
+var errHandlerPanic = errors.New("handler panicked")
 
 func startHandlerScope(ctx *fasthttp.RequestCtx, cfg *config) *handlerScope {
 	parent, _ := ctx.UserValue(handlerScopeKey{}).(*handlerScope)
@@ -81,6 +90,12 @@ func (s *handlerScope) finishSpan(response *fasthttp.Response) {
 		defer s.span.Finish()
 		if s.resourceSet {
 			s.span.SetTag(ext.ResourceName, s.resource)
+		}
+		if s.panicked {
+			// The response still has the status that the handler had set
+			// before the panic (fasthttp's default is 200). Do not report it.
+			s.span.SetTag(ext.ErrorNoStackTrace, errHandlerPanic)
+			return
 		}
 		status := response.StatusCode()
 		if s.cfg.isStatusError(status) {

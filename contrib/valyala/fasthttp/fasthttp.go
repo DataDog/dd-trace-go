@@ -52,10 +52,16 @@ func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			return
 		}
 		scope := startHandlerScope(fctx, cfg)
-		defer scope.finish()
+		// Do not recover the panic: the caller must get it without change.
+		returned := false
+		defer func() {
+			scope.panicked = !returned
+			scope.finish()
+		}()
 		if !scope.handled {
 			h(fctx)
 		}
+		returned = true
 	}
 }
 

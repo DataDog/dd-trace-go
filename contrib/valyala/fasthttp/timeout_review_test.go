@@ -169,10 +169,17 @@ func TestTimeoutHandlerDoesNotRepeatHandledPanic(t *testing.T) {
 	defer mt.Stop()
 	ctx := timeoutReviewContext()
 	exited := make(chan (<-chan struct{}), 1)
+	calls := 0
 	handler := TimeoutHandler(WrapHandler(func(ctx *fasthttp.RequestCtx) {
 		exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
 		panic("handler panic")
-	}, WithStatusCheck(func(int) bool { panic("finish panic") })), time.Second, "timeout")
+	}, WithResourceNamer(func(*fasthttp.RequestCtx) string {
+		// The first call is before the handler; the second is at finish.
+		if calls++; calls > 1 {
+			panic("finish panic")
+		}
+		return "resource"
+	})), time.Second, "timeout")
 	require.PanicsWithValue(t, "finish panic", func() { handler(ctx) })
 	waitTimeoutWorker(t, <-exited)
 	require.Nil(t, ctx.UserValue(timeoutContextKey{}))

@@ -75,3 +75,12 @@ Important behavior:
   Nested wrappers use only the outer worker limit.
 - Orchestrion can add the server tracing wrapper automatically. Use this
   integration's timeout functions in that case as well.
+
+## Testing
+
+From the repository root, run the timeout regression tests with the race
+detector:
+
+```shell
+go test -race ./contrib/valyala/fasthttp/... -run '^TestTimeout'
+```

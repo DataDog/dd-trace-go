@@ -285,9 +285,56 @@ func TestTimeoutHandlerPanic(t *testing.T) {
 			require.Nil(t, ctx.UserValue(handlerScopeKey{}))
 			_, found := dyngo.FromContext(&ctx)
 			require.False(t, found)
-			require.Len(t, timeoutServerSpans(mt), 1)
+			spans := timeoutServerSpans(mt)
+			require.Len(t, spans, 1)
+			// The live response still has fasthttp's default status 200, which
+			// is not the result of the handler.
+			require.Nil(t, spans[0].Tag(ext.HTTPCode))
+			require.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
 		})
 	}
+}
+
+// A nested scope in the timeout worker finishes on the owner. It must also
+// report the panic and not the live response status.
+func TestTimeoutHandlerNestedPanic(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	var ctx fasthttp.RequestCtx
+	ctx.Init(&req, &net.TCPAddr{}, nil)
+	handler := TimeoutHandler(WrapHandler(WrapHandler(func(*fasthttp.RequestCtx) {
+		panic("handler panic")
+	})), 5*time.Second, "timeout")
+	require.PanicsWithValue(t, "handler panic", func() { handler(&ctx) })
+	spans := timeoutServerSpans(mt)
+	require.Len(t, spans, 2)
+	for _, span := range spans {
+		require.Nil(t, span.Tag(ext.HTTPCode))
+		require.Equal(t, errHandlerPanic.Error(), span.Tag(ext.ErrorMsg))
+	}
+}
+
+// The first traced scope covers the whole worker. A panic after its handler
+// returns must also hide the live response status.
+func TestTimeoutHandlerPanicAfterRootScope(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	var ctx fasthttp.RequestCtx
+	ctx.Init(&req, &net.TCPAddr{}, nil)
+	traced := WrapHandler(func(*fasthttp.RequestCtx) {})
+	handler := TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+		traced(ctx)
+		panic("handler panic")
+	}, 5*time.Second, "timeout")
+	require.PanicsWithValue(t, "handler panic", func() { handler(&ctx) })
+	spans := timeoutServerSpans(mt)
+	require.Len(t, spans, 1)
+	require.Nil(t, spans[0].Tag(ext.HTTPCode))
+	require.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
 }
 
 func TestTimeoutHandlerResourceNamerPanic(t *testing.T) {

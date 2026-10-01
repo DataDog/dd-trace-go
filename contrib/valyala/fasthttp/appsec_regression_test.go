@@ -254,7 +254,9 @@ func TestAppSecHandlerPanic(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	require.Contains(t, spans[0].Tag("_dd.appsec.json"), "fasthttp-body-response")
-	require.Equal(t, "418", spans[0].Tag(ext.HTTPCode))
+	// The handler panicked, so the response status is not the result.
+	require.Nil(t, spans[0].Tag(ext.HTTPCode))
+	require.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
 }
 
 // TestAppSecRequestTargets sends raw requests that fasthttp serves but that
