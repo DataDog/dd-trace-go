@@ -6,6 +6,7 @@
 package fuzzfixture
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -110,15 +112,12 @@ func CheckFatalShutdown(t *testing.T, scenario string, target func(*testing.F)) 
 	}
 	server := mockci.StartWithTestManagement(settings, nil, nil, management)
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "-test.run=^"+root+"$", "-test.timeout=15s")
-	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=fatal-child", "DD_FUZZ_FATAL_KIND="+scenario)
+	args := []string{"-test.run=^" + root + "$", "-test.timeout=15s"}
+	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=fatal-child", "DD_FUZZ_FATAL_KIND="+scenario)
 	if strings.HasSuffix(scenario, "-error") || strings.HasSuffix(scenario, "-fatal") {
 		// Check the uninstrumented process too: cleanup Fatal replaces the
 		// panic with a normal failure, while cleanup Error leaves it fatal.
-		cmd.Env = append(cmd.Env, "DD_CIVISIBILITY_ENABLED=false")
-		nativeOutput, nativeErr := cmd.CombinedOutput()
+		nativeOutput, nativeErr := runFixtureChild(binary, append(childEnv, "DD_CIVISIBILITY_ENABLED=false"), args...)
 		wantExit := 2
 		if strings.HasSuffix(scenario, "-fatal") {
 			wantExit = 1
@@ -129,10 +128,8 @@ func CheckFatalShutdown(t *testing.T, scenario string, target func(*testing.F)) 
 		if server.EventTypeCount(constants.SpanTypeTest) != 0 {
 			t.Fatal("disabled CI emitted fatal test events")
 		}
-		cmd = exec.CommandContext(ctx, binary, "-test.run=^"+root+"$", "-test.timeout=15s")
-		cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=fatal-child", "DD_FUZZ_FATAL_KIND="+scenario)
 	}
-	output, err := cmd.CombinedOutput()
+	output, err := runFixtureChild(binary, childEnv, args...)
 	if (err == nil) != managed {
 		t.Fatalf("exit = %v; output: %s", err, output)
 	}
@@ -332,12 +329,9 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout=15s")
-	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=lifecycle-child", "DD_CIVISIBILITY_ENABLED="+enabled)
-	cmd.Env = append(cmd.Env, extraEnv...)
-	output, err := cmd.CombinedOutput()
+	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=lifecycle-child", "DD_CIVISIBILITY_ENABLED="+enabled)
+	childEnv = append(childEnv, extraEnv...)
+	output, err := runFixtureChild(binary, childEnv, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout=15s")
 	if err == nil {
 		return string(output), 0
 	}
@@ -346,4 +340,35 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	}
 	t.Fatalf("lifecycle process: %v: %s", err, output)
 	return "", -1
+}
+
+// Each invocation owns its deadline: the CI-disabled reference run must not
+// consume the CI-enabled child's budget.
+func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = childEnv
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	err := runChildCommand(ctx, cmd)
+	return output.Bytes(), err
+}
+
+func runChildCommand(ctx context.Context, cmd *exec.Cmd) error {
+	cmd.Cancel = func() error {
+		if runtime.GOOS == "windows" {
+			return cmd.Process.Kill()
+		}
+		// Let the Go runtime print goroutine stacks before forced termination.
+		return cmd.Process.Signal(syscall.SIGQUIT)
+	}
+	cmd.WaitDelay = 5 * time.Second
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		// A killed process can have the expected failure exit code on Windows;
+		// cancellation must never count as a successful lifecycle assertion.
+		return fmt.Errorf("fixture command %q: %w (process error: %v)", cmd.Args, ctx.Err(), err)
+	}
+	return err
 }
