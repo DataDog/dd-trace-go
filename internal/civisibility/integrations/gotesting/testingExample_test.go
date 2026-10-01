@@ -46,6 +46,27 @@ func TestExampleOutputLinesDoNotTruncateLongLines(t *testing.T) {
 	require.Equal(t, []string{longLine, "after", ""}, lines)
 }
 
+func TestExampleOutputMismatchPreservesRawMessage(t *testing.T) {
+	tests := []struct {
+		name      string
+		got       string
+		want      string
+		unordered bool
+		message   string
+	}{
+		{name: "ordered whitespace", got: " actual \n\n", want: " expected \n", message: "got:\n actual \n\n\nwant:\n expected \n\n"},
+		{name: "ordered empty output", want: " expected \n", message: "got:\n\nwant:\n expected \n\n"},
+		{name: "ordered CRLF", got: "actual\r\n", want: "expected\r\n", message: "got:\nactual\r\n\nwant:\nexpected\r\n\n"},
+		{name: "unordered whitespace", got: " actual \n\n", want: " expected \n", unordered: true, message: "got:\n actual \n\n\nwant (unordered):\n expected \n\n"},
+		{name: "matching whitespace", got: " expected \n\n", want: "expected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.message, exampleOutputMismatch(tt.got, tt.want, tt.unordered))
+		})
+	}
+}
+
 func TestCaptureExampleOutputPreservesPartialOutputAndError(t *testing.T) {
 	wantErr := errors.New("read failed")
 	result := captureExampleOutput(&failingExampleOutputReader{err: wantErr})

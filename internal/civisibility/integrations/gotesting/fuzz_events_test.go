@@ -1,0 +1,196 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package gotesting
+
+import (
+	"reflect"
+	"sync"
+	"testing"
+	"time"
+	"unsafe"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+)
+
+func TestFuzzEventsReconcileNativeOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name                                                            string
+		rawFailed, rawSkipped, nativeFailed, nativeSkipped, quarantined bool
+		want                                                            processRetryStatus
+		final                                                           string
+	}{
+		{name: "late failure", nativeFailed: true, want: processRetryStatusFail, final: constants.TestStatusFail},
+		{name: "masked failure", rawFailed: true, nativeSkipped: true, quarantined: true, want: processRetryStatusFail, final: constants.TestStatusSkip},
+		{name: "masked pass", nativeSkipped: true, quarantined: true, want: processRetryStatusPass, final: constants.TestStatusSkip},
+		{name: "native skip", nativeSkipped: true, want: processRetryStatusSkip, final: constants.TestStatusSkip},
+		{name: "raw skip", rawSkipped: true, want: processRetryStatusSkip, final: constants.TestStatusSkip},
+		{name: "pass", want: processRetryStatusPass, final: constants.TestStatusPass},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			native := &testing.T{}
+			fields := getTestPrivateFields(native)
+			fields.SetFailed(tc.nativeFailed)
+			fields.SetSkipped(tc.nativeSkipped)
+			event := newProcessRetryRecordingTestForTesting(tc.name)
+			queue := &fuzzEventQueue{}
+			queue.add(fuzzTestEvent{native: native, metadata: &testExecutionMetadata{isQuarantined: tc.quarantined}, test: event, suite: event.suite, module: event.suite.module, failed: tc.rawFailed, skipped: tc.rawSkipped, finishTime: time.Now()})
+			require.Zero(t, event.closeCount)
+			queue.finish()
+			require.Equal(t, tc.want, event.status)
+			require.Equal(t, tc.final, event.tags[constants.TestFinalStatus])
+			queue.finish()
+			require.Equal(t, 1, event.closeCount)
+			requireFuzzQueueDrained(t, queue)
+		})
+	}
+}
+
+func TestFuzzEventsPreserveExecutionDuration(t *testing.T) {
+	native := &testing.F{}
+	setFuzzNativeField(t, native, "duration", 23*time.Millisecond)
+	start := time.Now().Add(-time.Hour)
+	event := &fuzzTimedRecordingTest{processRetryRecordingTest: newProcessRetryRecordingTestForTesting("duration"), start: start}
+	pending := fuzzTestEvent{native: native, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: start.Add(time.Millisecond)}
+	queue := &fuzzEventQueue{}
+	queue.add(pending)
+	queue.finishAfterNativeRun()
+	require.Equal(t, start.Add(23*time.Millisecond), event.finish, "use full native duration, not time spent waiting for M.Run")
+	queue = &fuzzEventQueue{}
+	queue.add(pending)
+	queue.finish()
+	require.Equal(t, pending.finishTime, event.finish, "an incomplete native lifecycle uses the original captured finish")
+}
+
+func TestFuzzEventsFatalDrainDoesNotReadUnprotectedDuration(t *testing.T) {
+	native := &testing.F{}
+	ptr, err := getFieldPointerFromWithType(native, "duration", reflect.TypeFor[time.Duration]())
+	require.NoError(t, err)
+	done, err := getFieldPointerFromWithType(native, "done", reflect.TypeFor[bool]())
+	require.NoError(t, err)
+	started, stop, stopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		close(started)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				*(*time.Duration)(ptr) += time.Nanosecond
+				*(*bool)(done) = !*(*bool)(done)
+			}
+		}
+	}()
+	<-started
+	defer func() { close(stop); <-stopped }()
+	for range 100 {
+		event := newProcessRetryRecordingTestForTesting("active root")
+		queue := &fuzzEventQueue{}
+		queue.add(fuzzTestEvent{native: native, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: time.Now()})
+		queue.finish()
+		require.Equal(t, 1, event.closeCount)
+	}
+}
+
+type fuzzTimedRecordingTest struct {
+	*processRetryRecordingTest
+	start, finish time.Time
+}
+
+func (e *fuzzTimedRecordingTest) StartTime() time.Time { return e.start }
+
+func (e *fuzzTimedRecordingTest) Close(status integrations.TestResultStatus, options ...integrations.TestCloseOption) {
+	e.processRetryRecordingTest.Close(status, options...)
+	for _, option := range options {
+		fn := reflect.ValueOf(option)
+		value := reflect.New(fn.Type().In(0).Elem())
+		fn.Call([]reflect.Value{value})
+		ptr, err := getFieldPointerFromWithType(value.Interface(), "finishTime", reflect.TypeFor[time.Time]())
+		if err == nil && !(*time.Time)(ptr).IsZero() {
+			e.finish = *(*time.Time)(ptr)
+		}
+	}
+}
+
+func TestFuzzEventsConcurrentAdmissionAndRepeatedFinish(t *testing.T) {
+	queue := &fuzzEventQueue{}
+	const count = 1000
+	events := make([]*processRetryRecordingTest, count)
+	var workers sync.WaitGroup
+	for i := range count {
+		events[i] = newProcessRetryRecordingTestForTesting("seed")
+		workers.Go(func() {
+			event := events[i]
+			queue.add(fuzzTestEvent{native: &testing.T{}, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: time.Now()})
+		})
+	}
+	workers.Wait()
+	queue.finish()
+	queue.finish()
+	for _, event := range events {
+		require.Equal(t, 1, event.closeCount)
+	}
+	requireFuzzQueueDrained(t, queue)
+	other := &fuzzEventQueue{}
+	event := newProcessRetryRecordingTestForTesting("other M.Run")
+	other.add(fuzzTestEvent{native: &testing.T{}, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: time.Now()})
+	queue.finish()
+	require.Zero(t, event.closeCount, "one M.Run must not drain another claim")
+	other.finish()
+	require.Equal(t, 1, event.closeCount)
+}
+
+func TestFuzzEventsAdmissionOverlapsFatalDrain(t *testing.T) {
+	queue := &fuzzEventQueue{}
+	const count = 1000
+	events := make([]*processRetryRecordingTest, count)
+	var workers sync.WaitGroup
+	for i := range count {
+		events[i] = newProcessRetryRecordingTestForTesting("seed")
+		workers.Go(func() {
+			event := events[i]
+			queue.add(fuzzTestEvent{native: &testing.T{}, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: time.Now()})
+		})
+		if i%100 == 0 {
+			workers.Go(queue.finish)
+		}
+	}
+	workers.Wait()
+	queue.finish()
+	for _, event := range events {
+		require.Equal(t, 1, event.closeCount, "a seed racing fatal shutdown must still finish exactly once")
+	}
+	requireFuzzQueueDrained(t, queue)
+}
+
+func requireFuzzQueueDrained(t *testing.T, queue *fuzzEventQueue) {
+	t.Helper()
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	require.Nil(t, queue.events, "release native tests and event references after finishing")
+}
+
+func setFuzzNativeField[V any](t *testing.T, native any, name string, value V) {
+	t.Helper()
+	ptr, err := getFieldPointerFromWithType(native, name, reflect.TypeFor[V]())
+	require.NoError(t, err)
+	*(*V)(ptr) = value
+}
+
+func BenchmarkFuzzEventsRetention(b *testing.B) {
+	for b.Loop() {
+		queue := &fuzzEventQueue{}
+		for range 10000 {
+			queue.add(fuzzTestEvent{})
+		}
+		// Measure only queue storage; native testing objects and tracer events
+		// are measured separately by the corpus fixture.
+	}
+	b.ReportMetric(float64(unsafe.Sizeof(fuzzTestEvent{})), "record-bytes")
+}

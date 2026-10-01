@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"testing"
 )
 
@@ -30,7 +31,10 @@ func TestNormalSelection(t *testing.T) {
 	t.Log("selected normal test")
 }
 
+var nativeParityRuns atomic.Int32
+
 func FuzzNativeParity(f *testing.F) {
+	nativeParityRuns.Add(1)
 	f.Add("alpha")
 	f.Add("beta")
 	f.Fuzz(func(t *testing.T, value string) {
@@ -145,6 +149,30 @@ func FuzzManagedAttemptToFix(f *testing.F) {
 	}
 	f.Add("pass")
 	f.Fuzz(func(*testing.T, string) {})
+}
+
+func FuzzManagedQuarantinedGoexit(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	runtime.Goexit()
+}
+
+var managedCombinedSeedRuns [4]atomic.Int32
+
+func FuzzManagedCombinedSeeds(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "test-management" {
+		f.Skip("test management regression is not selected")
+	}
+	for seed := range managedCombinedSeedRuns {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, seed int) {
+		managedCombinedSeedRuns[seed].Add(1)
+		if seed%2 != 0 {
+			t.Error("managed combined seed failure")
+		}
+	})
 }
 
 func ExampleNativeParity() {

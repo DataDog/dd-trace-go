@@ -298,6 +298,9 @@ func instrumentTestingTFuncWithSourceOptions(
 				defer deleteTestMetadata(currentT)
 			}
 			execMeta.identity = localIdentity
+			if drainNativeLifecycle && parentExecMeta != nil {
+				execMeta.fuzzEvents = parentExecMeta.fuzzEvents
+			}
 			if drainNativeLifecycle && execMeta.cleanupResult == nil {
 				execMeta.cleanupResult = &testCleanupResult{}
 			}
@@ -359,18 +362,33 @@ func instrumentTestingTFuncWithSourceOptions(
 				if r != nil {
 					terminalStack = utils.GetStacktrace(1)
 				}
-				finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
+				if execMeta.fuzzEvents != nil {
+					collectAndWriteLogs(currentT, test, nil)
+					if r != nil {
+						currentT.Fail()
+						execMeta.panicData = r
+						execMeta.panicStacktrace = terminalStack
+						execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{Type: "panic", Message: fmt.Sprint(r), Stack: terminalStack})
+					}
+					execMeta.fuzzEvents.add(fuzzTestEvent{native: t, metadata: execMeta, test: test, suite: suite, module: module, finishTime: time.Now(), failed: currentT.Failed(), skipped: currentT.Skipped(), closeContainers: !execMeta.hasAdditionalFeatureWrapper})
+				} else {
+					finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
+				}
 				nativeTerminal := r
 				if nativeTerminal == nil && execMeta.cleanupResult != nil {
 					nativeTerminal = execMeta.cleanupResult.panicData
 				}
 				maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
 				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper && !maskedByTestManagement {
-					checkModuleAndSuite(module, suite)
+					if execMeta.fuzzEvents != nil {
+						execMeta.fuzzEvents.finish()
+					} else {
+						checkModuleAndSuite(module, suite)
+					}
 					integrations.ExitCiVisibility()
 					panic(nativeTerminal)
 				}
-				if !execMeta.hasAdditionalFeatureWrapper {
+				if !execMeta.hasAdditionalFeatureWrapper && execMeta.fuzzEvents == nil {
 					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
 					checkModuleAndSuite(module, suite)
 				}

@@ -99,6 +99,7 @@ type (
 		tests                map[string]func(*testing.T)
 		benchmarks           map[string]func(*testing.B)
 		fuzzTargets          map[string]func(*testing.F)
+		fuzzEvents           *fuzzEventQueue
 		examples             map[string]func()
 		testDescriptors      *[]testing.InternalTest
 		benchmarkDescriptors *[]testing.InternalBenchmark
@@ -321,6 +322,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if targets := getInternalFuzzTargetArray(m); targets != nil && len(*targets) > 0 {
+		claim.fuzzEvents = &fuzzEventQueue{}
+		if !integrations.TryPushCiVisibilityPreCloseAction(claim.fuzzEvents.finish) {
+			log.Debug("instrumentTestingM: fuzz event shutdown registration rejected; keeping immediate reporting")
+			claim.fuzzEvents = nil
+		}
+	}
 	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
 	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
@@ -414,6 +422,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			recordTestingMDeferredDisposition(claim, summary)
 		}
 		markEFDSessionFaultyIfNeeded(wrapperOpts.efdFaultySessionGuard)
+		if claim.fuzzEvents != nil {
+			if abnormalExit {
+				claim.fuzzEvents.finish()
+			} else {
+				claim.fuzzEvents.finishAfterNativeRun()
+			}
+		}
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)

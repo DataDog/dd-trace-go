@@ -83,6 +83,7 @@ type (
 		suppressUserTestBody          bool
 		retryAttemptFinalizer         func(retryAttemptResult)
 		deferredRetryEvent            *deferredProcessRetryEvent
+		fuzzEvents                    *fuzzEventQueue
 		quarantinedRaceProcess        *quarantinedRaceProcessContext
 		quarantinedRaceChild          *quarantinedRaceChildState
 		quarantinedRaceReplay         atomic.Pointer[quarantinedRaceReplayState]

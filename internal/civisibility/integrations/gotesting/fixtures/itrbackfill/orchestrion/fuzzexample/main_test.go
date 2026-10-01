@@ -23,10 +23,11 @@ import (
 )
 
 type eventExpectation struct {
-	name        string
-	status      string
-	finalStatus string
-	tag         string
+	name         string
+	status       string
+	finalStatus  string
+	tag          string
+	attemptToFix bool
 }
 
 func TestMain(m *testing.M) {
@@ -41,6 +42,14 @@ func TestMain(m *testing.M) {
 	}
 
 	scenario := os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO")
+	if scenario == "corpus-child" {
+		exitCode := m.Run()
+		reportCorpusMemory()
+		os.Exit(exitCode)
+	}
+	if scenario == "fatal-child" {
+		os.Exit(m.Run())
+	}
 	settings := net.SettingsResponseData{
 		RequireGit:             false,
 		KnownTestsEnabled:      false,
@@ -50,12 +59,21 @@ func TestMain(m *testing.M) {
 	var management *net.TestManagementTestsResponseDataModules
 	if scenario == "test-management" {
 		settings.TestManagement.Enabled = true
+		settings.TestManagement.AttemptToFixRetries = 3
 		management = fuzzExampleTestManagementData()
 	}
 	server := mockci.StartWithTestManagement(settings, nil, nil, management)
 	defer server.Close()
 
 	exitCode, panicData := runFixtureM(m.Run)
+	if scenario == "repeat-run" && panicData == nil {
+		if second := m.Run(); second != exitCode {
+			panic(fmt.Sprintf("second M.Run exit = %d, want %d", second, exitCode))
+		}
+		if runs := nativeParityRuns.Load(); runs != 2 {
+			panic(fmt.Sprintf("FuzzNativeParity body ran %d times, want twice", runs))
+		}
+	}
 	wantExitCode := 0
 	want := []eventExpectation{
 		{name: "FuzzNativeParity/seed#0", status: constants.TestStatusPass},
@@ -70,7 +88,17 @@ func TestMain(m *testing.M) {
 		{name: "FuzzNativeTypes/seed#0", status: constants.TestStatusPass},
 		{name: "FuzzNativeTypes", status: constants.TestStatusPass},
 	}
-	if scenario == "active-fuzz" {
+	if scenario == "fatal-shutdown" {
+		want = []eventExpectation{{name: "TestFuzzFatalShutdown", status: constants.TestStatusPass},
+			{name: "TestFuzzFatalShutdown/root", status: constants.TestStatusPass},
+			{name: "TestFuzzFatalShutdown/seed", status: constants.TestStatusPass},
+			{name: "TestFuzzFatalShutdown/managed-root", status: constants.TestStatusPass},
+			{name: "TestFuzzFatalShutdown/managed-seed", status: constants.TestStatusPass}}
+	} else if scenario == "corpus-lifecycle" {
+		want = []eventExpectation{{name: "TestFuzzCorpusLifecycle", status: constants.TestStatusPass}, {name: "TestFuzzCorpusLifecycle/false", status: constants.TestStatusPass}, {name: "TestFuzzCorpusLifecycle/true", status: constants.TestStatusPass}}
+	} else if scenario == "repeat-run" {
+		want = []eventExpectation{{name: "FuzzNativeParity/seed#0", status: constants.TestStatusPass}, {name: "FuzzNativeParity/seed#1", status: constants.TestStatusPass}, {name: "FuzzNativeParity", status: constants.TestStatusPass}}
+	} else if scenario == "active-fuzz" {
 		want = []eventExpectation{
 			{name: "FuzzActiveOther/seed#0", status: constants.TestStatusPass},
 			{name: "FuzzActiveOther", status: constants.TestStatusPass},
@@ -139,6 +167,19 @@ func TestMain(m *testing.M) {
 		if expectation.tag != "" && !server.HasEventResourceSuffixMeta(expectation.name, expectation.tag, "true") {
 			panic("missing Test Management tag for native event " + expectation.name)
 		}
+		if expectation.attemptToFix && !server.HasEventResourceSuffixMeta(expectation.name, constants.TestIsAttempToFix, "true") {
+			panic("missing attempt-to-fix tag for native event " + expectation.name)
+		}
+		if expectation.attemptToFix && server.HasEventResourceSuffixMeta(expectation.name, constants.TestIsRetry, "true") {
+			panic("managed seed unexpectedly reported a retry " + expectation.name)
+		}
+	}
+	if scenario == "test-management" {
+		for seed := range managedCombinedSeedRuns {
+			if runs := managedCombinedSeedRuns[seed].Load(); runs != 1 {
+				panic(fmt.Sprintf("managed combined seed %d executed %d times, want once", seed, runs))
+			}
+		}
 	}
 	if server.HasEventResourceMeta("ExampleWithoutOutput", "", "") {
 		panic("example without an output directive emitted a native event")
@@ -159,8 +200,13 @@ func fuzzExampleTestManagementData() *net.TestManagementTestsResponseDataModules
 		"FuzzManagedSeeds/seed#0":         {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
 		"FuzzManagedSeeds/seed#1":         {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true}},
 		"FuzzManagedSeeds/seed#2":         {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true}},
+		"FuzzManagedCombinedSeeds/seed#0": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true, AttemptToFix: true}},
+		"FuzzManagedCombinedSeeds/seed#1": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true, AttemptToFix: true}},
+		"FuzzManagedCombinedSeeds/seed#2": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true, AttemptToFix: true}},
+		"FuzzManagedCombinedSeeds/seed#3": {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true, AttemptToFix: true}},
 		"FuzzManagedDisabled":             {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
 		"FuzzManagedQuarantined":          {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true}},
+		"FuzzManagedQuarantinedGoexit":    {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true}},
 		"FuzzManagedAttemptToFix":         {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true}},
 		"ExampleManagedDisabled":          {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true}},
 		"ExampleManagedQuarantined":       {Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Quarantined: true}},
@@ -181,8 +227,14 @@ func managedEventExpectations() []eventExpectation {
 		{name: "FuzzManagedSeeds/seed#1", status: constants.TestStatusFail, finalStatus: constants.TestStatusSkip, tag: constants.TestIsQuarantined},
 		{name: "FuzzManagedSeeds/seed#2", status: constants.TestStatusPass, finalStatus: constants.TestStatusPass, tag: constants.TestIsAttempToFix},
 		{name: "FuzzManagedSeeds", status: constants.TestStatusPass},
+		{name: "FuzzManagedCombinedSeeds/seed#0", status: constants.TestStatusPass, finalStatus: constants.TestStatusSkip, tag: constants.TestIsDisabled, attemptToFix: true},
+		{name: "FuzzManagedCombinedSeeds/seed#1", status: constants.TestStatusFail, finalStatus: constants.TestStatusSkip, tag: constants.TestIsDisabled, attemptToFix: true},
+		{name: "FuzzManagedCombinedSeeds/seed#2", status: constants.TestStatusPass, finalStatus: constants.TestStatusSkip, tag: constants.TestIsQuarantined, attemptToFix: true},
+		{name: "FuzzManagedCombinedSeeds/seed#3", status: constants.TestStatusFail, finalStatus: constants.TestStatusSkip, tag: constants.TestIsQuarantined, attemptToFix: true},
+		{name: "FuzzManagedCombinedSeeds", status: constants.TestStatusPass},
 		{name: "FuzzManagedDisabled", status: constants.TestStatusSkip, finalStatus: constants.TestStatusSkip, tag: constants.TestIsDisabled},
 		{name: "FuzzManagedQuarantined", status: constants.TestStatusFail, finalStatus: constants.TestStatusSkip, tag: constants.TestIsQuarantined},
+		{name: "FuzzManagedQuarantinedGoexit", status: constants.TestStatusFail, finalStatus: constants.TestStatusSkip, tag: constants.TestIsQuarantined},
 		{name: "FuzzManagedAttemptToFix/seed#0", status: constants.TestStatusPass, finalStatus: constants.TestStatusPass, tag: constants.TestIsAttempToFix},
 		{name: "FuzzManagedAttemptToFix", status: constants.TestStatusPass, finalStatus: constants.TestStatusPass, tag: constants.TestIsAttempToFix},
 		{name: "ExampleManagedDisabled", status: constants.TestStatusSkip, finalStatus: constants.TestStatusSkip, tag: constants.TestIsDisabled},

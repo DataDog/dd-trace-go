@@ -18,10 +18,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // F adapts testing.F methods that need CI Visibility instrumentation.
@@ -84,6 +84,7 @@ func testingFuzzWorkerRequested(args []string) bool {
 type testingFInfo struct {
 	commonInfo
 	originalFunc func(*testing.F)
+	events       *fuzzEventQueue
 }
 
 // instrumentInternalFuzzTargets replaces testing's fuzz descriptors with CI
@@ -113,6 +114,9 @@ func (ddm *M) instrumentInternalFuzzTargets(targets *[]testing.InternalFuzzTarge
 				sourceFunc: fn,
 			},
 		}
+		if claim != nil {
+			info.events = claim.fuzzEvents
+		}
 		wrapped[idx] = testing.InternalFuzzTarget{Name: target.Name, Fn: ddm.executeInternalFuzzTarget(info)}
 		if claim != nil {
 			claim.fuzzTargets[target.Name] = target.Fn
@@ -137,6 +141,7 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 
 		execMeta := createTestMetadata(f, nil)
 		execMeta.identity = info.identity
+		execMeta.fuzzEvents = info.events
 		if meta := testManagementOnlyMetadata(info.identity); meta != nil {
 			applyAdditionalFeatureMetadataToExecution(execMeta, meta)
 		}
@@ -147,6 +152,11 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 			return
 		}
 		maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
+		event := fuzzTestEvent{native: f, metadata: execMeta, test: test, suite: suite, module: module, closeContainers: true}
+		var pending *fuzzTestEvent
+		if info.events != nil {
+			pending = info.events.add(event)
+		}
 
 		bodyReturned := false
 		defer func() {
@@ -164,21 +174,27 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 				})
 			}
 			defer deleteTestMetadata(f)
-			finishTestingTBEvent(f, execMeta, test, suite, module, time.Now())
+			if info.events != nil {
+				info.events.complete(pending, f.Failed(), f.Skipped(), time.Now())
+			} else {
+				event.failed, event.skipped, event.finishTime = f.Failed(), f.Skipped(), time.Now()
+				event.finish(false)
+				checkModuleAndSuite(module, suite)
+			}
 			if maskedByTestManagement {
-				// Keep the actual native outcome, but prevent a managed failure
-				// from failing the package. Mark incomplete bodies as finished so
-				// testing does not reinterpret a masked Goexit as a new panic.
+				// Preserve the raw event outcome while native testing reports a
+				// skip. The skipped flag also prevents a second Goexit panic.
 				if fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f))); fields != nil {
 					fields.SetFailed(false)
 					fields.SetSkipped(true)
-					if !bodyReturned {
-						fields.SetFinished(true)
-					}
 				}
 				return
 			}
 			if terminal != nil {
+				if info.events != nil {
+					info.events.finish()
+				}
+				integrations.ExitCiVisibility()
 				panic(terminal)
 			}
 		}()
@@ -243,46 +259,10 @@ func getFuzzTestState(f *testing.F) *testingTestState {
 func testingFFuzzCalled(f *testing.F) bool {
 	ptr, err := getFieldPointerFromWithType(f, "fuzzCalled", reflect.TypeFor[bool]())
 	if err != nil || ptr == nil {
+		log.Debug("gotesting: testing.F fuzzCalled field unreadable; skipping the missing F.Fuzz parity validation")
 		return true
 	}
 	called := *(*bool)(ptr)
 	runtime.KeepAlive(f)
 	return called
-}
-
-// finishTestingTBEvent maps testing's terminal state to the native CI
-// Visibility result and releases the enclosing suite and module workloads.
-func finishTestingTBEvent(
-	tb testing.TB,
-	execMeta *testExecutionMetadata,
-	test integrations.Test,
-	suite integrations.TestSuite,
-	module integrations.TestModule,
-	finishTime time.Time,
-) {
-	switch {
-	case tb.Failed():
-		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(false, true, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
-		if captured := execMeta.processRetryError.Load(); captured != nil {
-			test.SetError(integrations.WithErrorInfo(captured.Type, captured.Message, captured.Stack))
-		} else {
-			test.SetTag(ext.Error, true)
-		}
-		suite.SetTag(ext.Error, true)
-		module.SetTag(ext.Error, true)
-		test.Close(integrations.ResultStatusFail, integrations.WithTestFinishTime(finishTime))
-	case tb.Skipped():
-		reason := execMeta.skipReason
-		if reason == "" {
-			if captured := execMeta.processRetrySkipReason.Load(); captured != nil {
-				reason = *captured
-			}
-		}
-		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(false, false, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
-		test.Close(integrations.ResultStatusSkip, integrations.WithTestFinishTime(finishTime), integrations.WithTestSkipReason(reason))
-	default:
-		test.SetTag(constants.TestFinalStatus, calculateFinalStatus(true, false, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix))
-		test.Close(integrations.ResultStatusPass, integrations.WithTestFinishTime(finishTime))
-	}
-	checkModuleAndSuite(module, suite)
 }

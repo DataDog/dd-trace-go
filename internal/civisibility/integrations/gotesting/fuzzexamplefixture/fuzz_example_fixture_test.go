@@ -34,16 +34,16 @@ var fixtureScenarios = []string{
 	"test-management",
 	"active-fuzz",
 	"filtered",
+	"fatal-shutdown",
+	"corpus-lifecycle",
+	"repeat-run",
 }
 
 func TestFuzzAndExampleFixture(t *testing.T) {
-	if os.Getenv("GO_CMD") == "gotip" {
-		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
-	}
-
+	goCommand := fixtureGoCommand()
 	goCache := filepath.Join(t.TempDir(), "gocache")
 	goModCache := goEnv(t, "GOMODCACHE")
-	for _, mode := range []string{"manual", "orchestrion"} {
+	for _, mode := range fixtureModes(goCommand) {
 		// Compile each mode once. Re-running go test for every scenario repeats
 		// Orchestrion weaving and can exhaust the package timeout on Windows.
 		binaryName := "fuzzexample-" + mode + ".test"
@@ -52,13 +52,51 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 		}
 		binaryPath := filepath.Join(t.TempDir(), binaryName)
 		buildDir, buildArgs := fixtureBuildCommand(mode, binaryPath)
-		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), "go", buildArgs...)
+		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), goCommand, buildArgs...)
 
 		for _, scenario := range fixtureScenarios {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
 				runFixtureCommand(t, fixtureRunTimeout, fixtureRunDir(mode), fixtureEnv(t, mode, scenario, goCache, goModCache), binaryPath, fixtureScenarioArgs(scenario, filepath.Join(t.TempDir(), "fuzzcache"))...)
 			})
 		}
+	}
+}
+
+func fixtureGoCommand() string {
+	if command := os.Getenv("GO_CMD"); command != "" {
+		return command
+	}
+	return "go"
+}
+
+func fixtureModes(goCommand string) []string {
+	if filepath.Base(goCommand) == "gotip" || filepath.Base(goCommand) == "gotip.exe" {
+		// Orchestrion does not yet support Go tip's -exportfd compiler flag:
+		// https://github.com/DataDog/orchestrion/pull/899
+		return []string{"manual"}
+	}
+	return []string{"manual", "orchestrion"}
+}
+
+func TestFixtureGoCommandAndModes(t *testing.T) {
+	for _, command := range []string{"", "go", "gotip", filepath.Join("custom", "gotip"), "gotip.exe", filepath.Join("custom toolchain", "go")} {
+		t.Run(command, func(t *testing.T) {
+			t.Setenv("GO_CMD", command)
+			wantCommand := command
+			if wantCommand == "" {
+				wantCommand = "go"
+			}
+			if got := fixtureGoCommand(); got != wantCommand {
+				t.Fatalf("Go command = %q, want %q", got, wantCommand)
+			}
+			wantModes := []string{"manual", "orchestrion"}
+			if filepath.Base(command) == "gotip" || filepath.Base(command) == "gotip.exe" {
+				wantModes = []string{"manual"}
+			}
+			if got := fixtureModes(fixtureGoCommand()); !slices.Equal(got, wantModes) {
+				t.Fatalf("fixture modes = %q, want %q", got, wantModes)
+			}
+		})
 	}
 }
 
@@ -84,6 +122,12 @@ func fixtureRunDir(mode string) string {
 func fixtureScenarioArgs(scenario, fuzzCacheDir string) []string {
 	args := []string{"-test.count=1", "-test.timeout=2m"}
 	switch scenario {
+	case "corpus-lifecycle":
+		return append(args, "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")
+	case "repeat-run":
+		return append(args, "-test.run=^FuzzNativeParity$")
+	case "fatal-shutdown":
+		return append(args, "-test.run=^TestFuzzFatalShutdown$")
 	case "seed-lifecycle":
 		return append(args, "-test.run=^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$")
 	case "fuzz-missing-call":
@@ -117,6 +161,9 @@ func runFixtureCommand(t *testing.T, timeout time.Duration, dir string, env []st
 			t.Fatalf("fixture command timed out after %s: %s\n%s", timeout, strings.Join(cmd.Args, " "), output.String())
 		}
 		t.Fatalf("fixture command failed: %s: %v\n%s", strings.Join(cmd.Args, " "), err, output.String())
+	}
+	if strings.Contains(output.String(), "CORPUS_MEMORY") {
+		t.Log(output.String())
 	}
 }
 
@@ -173,6 +220,9 @@ func TestFixtureScenarioArgs(t *testing.T) {
 		{scenario: "test-management", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzManaged|ExampleManaged)")},
 		{scenario: "active-fuzz", want: append(slices.Clone(common), "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)},
 		{scenario: "filtered", want: append(slices.Clone(common), "-test.run=^TestNormalSelection$")},
+		{scenario: "fatal-shutdown", want: append(slices.Clone(common), "-test.run=^TestFuzzFatalShutdown$")},
+		{scenario: "corpus-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")},
+		{scenario: "repeat-run", want: append(slices.Clone(common), "-test.run=^FuzzNativeParity$")},
 	}
 	gotScenarios := make([]string, 0, len(tests))
 	for _, test := range tests {
@@ -190,7 +240,7 @@ func TestFixtureScenarioArgs(t *testing.T) {
 
 func TestOrchestrionFuzzFixtureIsExcludedFromITRPackageList(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
-	cmd := exec.Command("go", "list", "-mod=readonly", "./...")
+	cmd := exec.Command(fixtureGoCommand(), "list", "-mod=readonly", "./...")
 	cmd.Dir = fixtureDir
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	output, err := cmd.CombinedOutput()
@@ -201,7 +251,7 @@ func TestOrchestrionFuzzFixtureIsExcludedFromITRPackageList(t *testing.T) {
 		t.Fatalf("fuzz/example fixture leaked into the ITR package list:\n%s", output)
 	}
 
-	cmd = exec.Command("go", "list", "-mod=readonly", "-tags=fuzzexamplefixture", "./fuzzexample")
+	cmd = exec.Command(fixtureGoCommand(), "list", "-mod=readonly", "-tags=fuzzexamplefixture", "./fuzzexample")
 	cmd.Dir = fixtureDir
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if output, err = cmd.CombinedOutput(); err != nil {
@@ -216,7 +266,7 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
 		if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") || strings.HasPrefix(key, "CI") ||
-			key == "GOFLAGS" || key == "GOWORK" || key == "HOME" || key == "XDG_CACHE_HOME" || key == "GOCACHE" || key == "GOMODCACHE" ||
+			key == "GOFLAGS" || key == "GOWORK" || (key == "HOME" && scenario != "build") || key == "XDG_CACHE_HOME" || key == "GOCACHE" || key == "GOMODCACHE" ||
 			(scenario == "example-panic-nil" && key == "GODEBUG") {
 			continue
 		}
@@ -226,13 +276,20 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 		"DD_FUZZ_EXAMPLE_MODE="+mode,
 		"DD_FUZZ_EXAMPLE_SCENARIO="+scenario,
 		"DD_SERVICE=fuzz-example-"+mode,
-		"HOME="+filepath.Join(tempRoot, "home"),
+		"DD_APPSEC_ENABLED=false",
+		"DD_APPSEC_SCA_ENABLED=false",
+		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
 		"XDG_CACHE_HOME="+filepath.Join(tempRoot, "xdg"),
 		"GOCACHE="+goCache,
 		"GOMODCACHE="+goModCache,
 		"GOWORK=off",
 		"GOFLAGS=",
 	)
+	// Go command wrappers such as gotip locate their SDK under the real HOME.
+	// Only the test binary needs an isolated home for CI Visibility state.
+	if scenario != "build" {
+		env = append(env, "HOME="+filepath.Join(tempRoot, "home"))
+	}
 	if scenario == "example-panic-nil" {
 		env = append(env, "GODEBUG=panicnil=1")
 	}
@@ -242,7 +299,7 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 func goEnv(t *testing.T, name string) string {
 	t.Helper()
 
-	output, err := exec.Command("go", "env", name).Output()
+	output, err := exec.Command(fixtureGoCommand(), "env", name).Output()
 	if err != nil {
 		t.Fatalf("go env %s failed: %v", name, err)
 	}
@@ -276,5 +333,28 @@ func TestFixtureEnvUsesExplicitGoCaches(t *testing.T) {
 		if seen[key] != 1 {
 			t.Errorf("%s appears %d times, want exactly once", key, seen[key])
 		}
+	}
+}
+
+func TestFixtureEnvPreservesBuildHome(t *testing.T) {
+	inheritedHome := filepath.Join(t.TempDir(), "sdk-home")
+	t.Setenv("HOME", inheritedHome)
+	for _, scenario := range []string{"build", "pass"} {
+		t.Run(scenario, func(t *testing.T) {
+			seen := 0
+			for _, item := range fixtureEnv(t, "manual", scenario, "gocache", "gomodcache") {
+				key, value, _ := strings.Cut(item, "=")
+				if key != "HOME" {
+					continue
+				}
+				seen++
+				if (value == inheritedHome) != (scenario == "build") {
+					t.Errorf("HOME = %q for %s; only builds must retain the inherited home", value, scenario)
+				}
+			}
+			if seen != 1 {
+				t.Errorf("HOME appears %d times, want exactly once", seen)
+			}
+		})
 	}
 }

@@ -286,7 +286,7 @@ func exampleOutputMismatch(gotOutput, wantOutput string, unordered bool) string 
 		return ""
 	}
 	if got != want {
-		return fmt.Sprintf("got:\n%s\nwant:\n%s\n", got, want)
+		return fmt.Sprintf("got:\n%s\nwant:\n%s\n", gotOutput, wantOutput)
 	}
 	return ""
 }
