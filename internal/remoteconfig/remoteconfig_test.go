@@ -450,8 +450,34 @@ func TestProcessTags(t *testing.T) {
 	})
 }
 
+// TestSubscribeConcurrentWithStop verifies that Subscribe does not panic or
+// race when Stop() clears the client singleton concurrently (regression test
+// for the capture added in #4958; see issues #5133 and #5134).
+func TestSubscribeConcurrentWithStop(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+
+	cb := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// ErrClientNotStarted is a valid outcome when Stop() wins the race.
+			_, _ = Subscribe(fmt.Sprintf("product-%d", i), cb)
+		}(i)
+	}
+	Stop()
+	wg.Wait()
+}
+
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
 func TestAsync(t *testing.T) {
+	Reset() // the RC client is a package-level singleton; guard against a dirty state from an earlier test
 	require.NoError(t, Start(DefaultClientConfig()))
 	defer Stop()
 	const iterations = 10000
