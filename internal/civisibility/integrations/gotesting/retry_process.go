@@ -387,9 +387,8 @@ func processRetryTestingMWorkloadsSupportedDefault() bool {
 // Go propagates GOCOVERDIR to subprocesses; retry children must not merge their counters into the parent's profile.
 const processRetryCoverageDirectoryEnvironmentVariable = "GOCOVERDIR"
 
-func sanitizeProcessRetryBaseEnv(base []string) []string {
+func sanitizeProcessRetryBaseEnv(base []string, enabledPresent bool) []string {
 	result := make([]string, 0, len(base))
-	enabledPresent := false
 	for _, entry := range base {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -400,9 +399,6 @@ func sanitizeProcessRetryBaseEnv(base []string) []string {
 			continue
 		}
 		if strings.EqualFold(key, constants.CIVisibilityEnabledEnvironmentVariable) {
-			if runtime.GOOS == "windows" || key == constants.CIVisibilityEnabledEnvironmentVariable {
-				enabledPresent = true
-			}
 			if mode, valid := envconfig.ParseEnabledMode(value); valid && mode == envconfig.EnabledModeParent {
 				result = append(result, key+"=false")
 				continue
@@ -1038,6 +1034,7 @@ var processRetryStartup = captureProcessRetryStartupSnapshot(
 	os.Getwd,
 	func() []string { return os.Args[1:] },
 	os.Environ,
+	env.Lookup,
 )
 var processRetryLaunchGate = processRetryLaunchGateState{
 	shutdown: make(chan struct{}),
@@ -1167,12 +1164,14 @@ func captureProcessRetryStartupSnapshot(
 	workingDirectory func() (string, error),
 	args func() []string,
 	environ func() []string,
+	lookupEnv func(string) (string, bool),
 ) processRetryStartupSnapshot {
 	dir, err := workingDirectory()
+	_, enabledPresent := lookupEnv(constants.CIVisibilityEnabledEnvironmentVariable)
 	return processRetryStartupSnapshot{
 		workingDirectory: dir,
 		args:             append([]string(nil), args()...),
-		environment:      sanitizeProcessRetryBaseEnv(environ()),
+		environment:      sanitizeProcessRetryBaseEnv(environ(), enabledPresent),
 		err:              err,
 	}
 }

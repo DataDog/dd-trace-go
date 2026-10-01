@@ -133,27 +133,40 @@ func TestCIVisibilityOrchestrionEntryPoints(t *testing.T) {
 			}
 			if entry == "civisibility" && (runtime.GOOS == "darwin" || runtime.GOOS == "linux" || runtime.GOOS == "windows") {
 				t.Run("process retry", func(t *testing.T) {
-					keys := []string{""}
+					type retryScenario struct{ key, value, mode string }
+					tests := []retryScenario{{mode: "false"}}
 					if runtime.GOOS != "windows" {
-						keys = append(keys, "dd_civisibility_enabled", "Dd_CiVisibility_Enabled")
+						tests = append(tests,
+							retryScenario{"dd_civisibility_enabled", "false", "false"},
+							retryScenario{"Dd_CiVisibility_Enabled", "false", "false"},
+						)
 					}
-					for _, key := range keys {
-						name := key
+					for _, key := range []string{"dd_civisibility_enabled", "Dd_CiVisibility_Enabled"} {
+						mode := "false"
+						if runtime.GOOS == "windows" {
+							mode = "true"
+						}
+						tests = append(tests, retryScenario{key, "true", mode})
+					}
+					for _, test := range tests {
+						name := test.key
 						if name == "" {
 							name = "unset"
+						} else {
+							name += "=" + test.value
 						}
 						t.Run(name, func(t *testing.T) {
 							retryDir := t.TempDir()
 							server, events := startIntake(t)
 							env := append(append([]string{}, baseEnv...), intakeEnv(server.URL)...)
 							env = append(env, "DD_CIVISIBILITY_RETRY_EXECUTION_MODE=process")
-							if key != "" {
-								env = append(env, key+"=false")
+							if test.key != "" {
+								env = append(env, test.key+"="+test.value)
 							}
 							output := runCommand(t, retryDir, env, time.Minute, binary, "-test.run=^TestRetry$", "-test.v", "-test.timeout=30s")
 							mode, err := os.ReadFile(filepath.Join(retryDir, "retry-mode"))
-							if err != nil || string(mode) != "false" {
-								t.Fatalf("retry child mode = %q, read error = %v; want false:\n%s", mode, err, output)
+							if err != nil || string(mode) != test.mode {
+								t.Fatalf("retry child mode = %q, read error = %v; want %s:\n%s", mode, err, test.mode, output)
 							}
 							got := events()
 							var initialFailures, passingRetries int
