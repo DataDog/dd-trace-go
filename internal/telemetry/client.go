@@ -118,9 +118,11 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
-	// startFlushWg tracks the app-started flush goroutine that StartApp spawns.
-	// Close joins this group so the flush completes before Close returns.
-	startFlushWg sync.WaitGroup
+	// startFlushDone is closed when the app-started flush goroutine returns.
+	// It stays nil until StartApp marks that flush pending, so a Close before
+	// StartApp never waits.
+	startFlushMu   sync.Mutex
+	startFlushDone chan struct{}
 	// flushMu is used to ensure that only one flush is happening at a time
 	flushMu sync.Mutex
 
@@ -414,33 +416,43 @@ func (c *client) AppStop() {
 
 func (c *client) Close() error {
 	c.flushTicker.Stop()
+	c.startFlushMu.Lock()
+	done := c.startFlushDone
+	c.startFlushMu.Unlock()
+	if done == nil {
+		return nil
+	}
 	// Join the app-started flush. Callers close idle HTTP connections right
 	// after Close returns. When the flush still runs at that point, the close
 	// cannot reach its connection, and the connection stays orphaned in the
 	// idle pool until the transport IdleConnTimeout elapses.
-	flushed := make(chan struct{})
-	go func() {
-		c.startFlushWg.Wait()
-		close(flushed)
-	}()
-	// The wait is bounded. A client without a request timeout cannot bound the
-	// flush, and an agent that accepts the request but never answers must not
-	// block Close forever. When the bound expires, the flush keeps running in
-	// the background.
 	bound := c.flushJoinBound()
 	select {
-	case <-flushed:
+	case <-done:
+		return nil
 	case <-time.After(bound):
-		log.Warn("telemetry: the app-started flush did not finish within %s of Close; continuing without it", bound)
+	}
+	// The flush spans several sequential requests, and each request may use
+	// the whole bound, so the flush can outlast the bound without anything
+	// being stuck. Cancel the flush requests instead of waiting longer: a
+	// canceled request closes its connection, so no orphan remains.
+	c.writer.Cancel()
+	log.Warn("telemetry: the app-started flush did not finish within %s of Close; canceled it", bound)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		// The flush goroutine did not unwind after the cancel. Leave it; the
+		// cancel prevents any new request from this client.
+		log.Warn("telemetry: the app-started flush did not unwind after the cancel; Close continues without it")
 	}
 	return nil
 }
 
-// flushJoinBound returns how long Close waits for the app-started flush to
-// return. The flush sends one HTTP request. The writer caps every client
-// timeout above five seconds, and a client without a timeout uses the
-// writer's five-second default, so five seconds is the longest request
-// deadline in flight. One second of grace covers scheduling delay.
+// flushJoinBound returns how long Close waits for the app-started flush
+// before it cancels the flush. The writer caps every client timeout above
+// five seconds, and a client without a timeout uses the writer's
+// five-second default, so five seconds is the longest request deadline in
+// flight. One second of grace covers scheduling delay.
 func (c *client) flushJoinBound() time.Duration {
 	deadline := 5 * time.Second
 	if client := c.clientConfig.HTTPClient; client != nil && client.Timeout > 0 && client.Timeout < deadline {

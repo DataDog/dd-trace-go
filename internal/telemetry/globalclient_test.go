@@ -249,4 +249,19 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("Close did not return: it waits without bound on the app-started flush")
 	}
+
+	// The cancel in Close unwinds the flush: the goroutine exits although the
+	// agent still holds the request, so Close leaves no waiter behind.
+	c.startFlushMu.Lock()
+	flushDone := c.startFlushDone
+	c.startFlushMu.Unlock()
+	require.NotNil(t, flushDone)
+	require.Eventually(t, func() bool {
+		select {
+		case <-flushDone:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond, "the app-started flush goroutine did not exit after the cancel")
 }
