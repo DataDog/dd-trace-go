@@ -5,19 +5,6 @@
 
 package tracer
 
-// setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless
-// the current global tracer can keep ownership and route CI Visibility spans to it.
-func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) {
-	if ciVisibilityEnabled {
-		installCIVisibilityFlushHandler(globalTracer)
-		if current, ok := getGlobalTracer().(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && current.SetCIVisibilityTracer(globalTracer) {
-			return
-		}
-	}
-
-	setGlobalTracer(globalTracer)
-}
-
 // submitTracerForFinishedChunk returns the concrete tracer that should receive
 // a finished chunk for the current global tracer snapshot.
 func submitTracerForFinishedChunk(globalTracer Tracer, spans []*Span) Tracer {

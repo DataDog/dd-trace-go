@@ -15,6 +15,10 @@
 
 ## Core Components
 
+### Tracer Lifecycle Hooks
+
+`ddtrace/tracer/civisibility_tracer_lifecycle.go` installs CI-specific hooks before publishing the tracer, whether or not a mock is active. `civisibility_flush.go` drains accepted chunks on explicit CI flushes; `civisibility_mocktracer.go` handles finished-chunk routing through a mock wrapper. These files and their tests belong to `@DataDog/ci-app-libraries` in `CODEOWNERS`; application tracer files retain their existing owners and behavior.
+
 ### Root State Management
 `civisibility.go` stores a process-wide `status` (`StateUninitialized` through `StateExited`) and a `isTestMode` flag using `atomic` types. Integrations set these to coordinate tracer startup/teardown, and tests can toggle “test mode” for mock tracer usage.
 

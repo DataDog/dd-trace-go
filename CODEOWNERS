@@ -126,6 +126,23 @@
 # civisibility
 /civisibility/                  @DataDog/ci-app-libraries
 /internal/civisibility/         @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_flush.go                  @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_flush_test.go             @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_mocktracer.go             @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_nooptracer.go             @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_nooptracer_test.go        @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_payload.go                @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_payload_test.go           @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_tracer_lifecycle.go        @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_tracer_lifecycle_test.go   @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_transport.go              @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_transport_test.go         @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_tslv.go                   @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_tslv_msgp.go              @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_writer.go                 @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_writer_test.go            @DataDog/ci-app-libraries
+/ddtrace/mocktracer/civisibilitymocktracer.go          @DataDog/ci-app-libraries
+/ddtrace/mocktracer/civisibilitymocktracer_test.go     @DataDog/ci-app-libraries
 
 # llm observability
 /llmobs/                                   @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go

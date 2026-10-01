@@ -33,7 +33,7 @@ func TestCIVisibilityFlushDrainsAcceptedChunks(t *testing.T) {
 			if mode == "ci-mock" {
 				setGlobalTracer(&ciFlushInstallationMock{Tracer: &NoopTracer{}})
 			}
-			setGlobalTracerPreservingCIVisibilityMockTracer(global, enabled)
+			setGlobalTracerWithCIVisibility(global, enabled)
 			if mode == "ci-mock" {
 				require.Same(t, tr, getGlobalTracer().(*ciFlushInstallationMock).Tracer)
 			}

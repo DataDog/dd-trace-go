@@ -196,6 +196,35 @@ func TestMatch(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRepositoryCIVisibilityTracerOwnership(t *testing.T) {
+	root := filepath.Join("..", "..", "..")
+	owners, err := NewCodeOwners(filepath.Join(root, "CODEOWNERS"))
+	require.NoError(t, err)
+	const ciOwner = "@DataDog/ci-app-libraries"
+	for _, dir := range []string{"ddtrace/tracer", "ddtrace/mocktracer"} {
+		files, err := filepath.Glob(filepath.Join(root, dir, "*civisibility*.go"))
+		require.NoError(t, err)
+		require.NotEmpty(t, files)
+		for _, file := range files {
+			path, err := filepath.Rel(root, file)
+			require.NoError(t, err)
+			t.Run(filepath.ToSlash(path), func(t *testing.T) {
+				entry, ok := owners.Match("/" + filepath.ToSlash(path))
+				require.True(t, ok)
+				assert.Equal(t, []string{ciOwner}, entry.Owners)
+			})
+		}
+	}
+	for _, path := range []string{"ddtrace/tracer/tracer.go", "ddtrace/tracer/span.go", "ddtrace/mocktracer/mocktracer.go"} {
+		t.Run(path, func(t *testing.T) {
+			entry, ok := owners.Match("/" + path)
+			require.True(t, ok)
+			require.NotEmpty(t, entry.Owners)
+			assert.NotContains(t, entry.Owners, ciOwner, "CI ownership must not extend to application tracer files")
+		})
+	}
+}
+
 func TestGetOwnersString(t *testing.T) {
 	entry := Entry{Owners: []string{"@owner1", "@owner2"}}
 	assert.Equal(t, "[\"@owner1\",\"@owner2\"]", entry.GetOwnersString())
