@@ -188,6 +188,133 @@ export DATADOG_SITE=datadoghq.com
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
 
+## CI Timing Scripts
+
+Scripts for measuring CI durations and Go build-cache behaviour from
+completed GitHub Actions runs. GitHub completed-run data is the source of
+truth; Datadog series are secondary.
+
+### citiming
+
+`go run ./scripts/citiming` collects deduplicated observations (one record
+per run, attempt, and job) plus one PR feedback record per PR revision,
+and compares two collected windows using baseline-frozen strata and
+baseline-frequency weights.
+
+Collection requires an authenticated `gh` with read access to workflow
+runs, jobs, logs, check runs, and the cache API. Raw job logs are input
+data only: they are never executed or republished in full.
+
+```bash
+# Collect one window of completed runs (daily cadence during measurement
+# programs; collects logs before they expire). Evidence stays outside the
+# source tree.
+go run ./scripts/citiming collect \
+  --repo DataDog/dd-trace-go \
+  --since 2026-09-14 --until 2026-09-20 \
+  --output-dir /tmp/ci-timing/baseline-week-1 \
+  --events pull_request --cache-snapshot
+
+# Compare two windows (offline, no API access needed).
+go run ./scripts/citiming compare \
+  --baseline /tmp/ci-timing/baseline-week-1 \
+  --candidate /tmp/ci-timing/candidate-week-1 \
+  --output-dir /tmp/ci-timing/comparison
+```
+
+Metric definitions (job wall time including post steps, post time, restore
+and save result classification, PR feedback time including the all-green
+delay, and the exact accepted check-name exclusions) live in the doc
+comment of `scripts/citiming/main.go` and are the report contract.
+
+Restores are classified from the structured `cache-observation:` record
+that the Go setup actions print into every job log (when a job emits
+several records, the collector keeps the last one): exact, prefix,
+`cold_miss`, disabled, error, or unknown. For isolated-cache providers a
+raw cache-hit of `false` is ambiguous between a prefix restore and a
+cold miss. This applies to the cloudx provider: the setup action adds an
+optional `restored` field to the restore entry (`"true"` when the module
+cache is non-empty after the restore), which classifies the restore as
+prefix (`"true"`) or `cold_miss` (`"false"`); without the field the
+collector reports `unknown`. `actions/setup-go` restores with the primary
+key only, so for the github-cache provider `false` is a cold miss. The
+Datadog count series keeps the contract it has always had, where `miss`
+means "not an exact hit", so every successful restore stays counted and
+existing dashboards remain continuous. The precise exact/prefix/cold
+split remains with completed-log classification in this tool. Saves are
+classified per event from completed log markers (`Cache saved with key:`, `Cache hit occurred on the
+primary key ... not saving cache`, reservation conflicts, failures); a
+successful job never counts as a successful save on its own.
+
+Observations are trusted, best-effort records read from the job log; they
+are not tamper-proof. A later step that prints a `cache-observation:` line
+replaces the setup record, because the last line wins. Job durations come
+from the GitHub API and are unaffected, but restore classification,
+workload family and resolved Go version (and therefore the
+toolchain-changed exclusion) can be skewed by such a line.
+
+Collection fetches one job log at a time and skips the log fetch for jobs
+whose stored record already has logs, so a refresh never loses stored
+evidence. When the API rate limit is reached it waits for the reset and
+retries once; a second failure aborts the collection before the store is
+written. The collect summary reports how many job observations have no
+logs.
+
+The filesystem sizes published by `.github/actions/cache-metrics` are
+end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
+with `phase:end_of_job` (the former
+`ci.step.cache.restore.disk_size_bytes` name was misleading and is
+retired; dashboards querying the old name must move to the new one at
+merge time). Compressed cache-service storage comes from the cache API
+`size_in_bytes` field in dated `cache_snapshot_<timestamp>.json` files,
+one per daily collection.
+
+Tests live in `scripts/citiming/citiming_test.go`; the payload builder of
+`.github/actions/cache-metrics` is tested in `scripts/actiontest`:
+
+```bash
+go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
+```
+
+### Weekly review procedure
+
+1. Collect each day of the window before job logs expire, with
+   `--cache-snapshot`.
+2. Collect lists runs in hourly slices (the GitHub list-runs endpoint
+   returns at most 1000 results per query) and fails if a slice reaches
+   that limit; the collector never truncates silently.
+3. Compare only windows collected with the same workflow and job set. A
+   stratum is one workflow file, full job name (which carries the matrix
+   dimensions, including those of a reusable-workflow caller), and runner
+   identity (`<group> (<sorted labels>)`);
+   workload family and resolved Go version are not part of the key, so a
+   treatment that changes them does not split a stratum. A stratum is
+   comparable when both windows have at least five distinct successful
+   first-attempt run IDs, it has candidate data, and its known resolved
+   Go versions do not differ between windows (reported as "toolchain
+   changed"; an unknown version never excludes). Extend the window rather
+   than triggering runs to reach a count.
+4. The headline is baseline-weighted job-minutes over the comparable
+   strata: each stratum's weight is its baseline success count, and the
+   improvement is `1 - sum(w * candidate p50) / sum(w * baseline p50)`.
+   PR feedback uses the same approach per selection signature, with the
+   baseline measured revisions as weight and a five-revision minimum per
+   window; it is computed from every `pull_request` run in the window,
+   regardless of `--workflows` and `--events`, starting at the earliest
+   `pull_request` run of the revision even when that run predates the
+   window. The report gives the
+   covered share of baseline weight and lists every excluded stratum
+   with its reason. The tool refuses the headline (improvement `n/a`,
+   non-zero exit for the job headline) when the comparable strata cover
+   less than 80% of the baseline weight.
+   Jobs whose log has no cache-observation record are counted per stratum
+   as "no observation" in the cache-behavior table; their restores are
+   missing evidence, not zero restores.
+5. Record failures, retries (runs with a later attempt, counted per
+   stratum from first attempts), cancellations, and unknown classifications
+   from the reports; skipped jobs are absent work, not zero durations.
+6. Publish aggregates and run URLs in the PR description, never raw logs.
+
 ## Guidelines
 
 - Scripts should be idempotent when possible
