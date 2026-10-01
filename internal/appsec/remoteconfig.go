@@ -168,7 +168,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
 	if err := a.SwapRootOperation(); err != nil {
-		log.Error("appsec: remote config: could not apply the new security rules: %s", err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		log.Error("appsec: remote config: could not apply the new security rules: %s", err.Error())
 		for k := range statuses {
 			if statuses[k].State == state.ApplyStateError || statuses[k].State == state.ApplyStateUnacknowledged {
 				// Leave failed & un-acknowledged configs as-is... This failure is not related to these...

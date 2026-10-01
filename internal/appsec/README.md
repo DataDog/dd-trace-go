@@ -212,6 +212,35 @@ All currently available features are the following ones:
 | WAF Context            | Setup of the request scoped context system of the WAF  |
 | Tracing                | Bridge between the tracer and AppSec features          |
 
+### Error Tracking eligibility
+
+The AppSec package marks each `log.Error` and `log.Warn` site with an
+`//errtrack:ignore` directive when the logged failure is not eligible for Error
+Tracking reporting. The directive carries the reason, so an audit does not have
+to re-derive it from the code.
+
+A site is ineligible only when its failure is outside the SDK's control or is
+reported through another channel:
+
+- The caller used the AppSec API while AppSec is disabled, or without the
+  request instrumentation that the API requires. These failures depend on the
+  application, not on the SDK.
+- The failure comes from a user-provided value, such as a blocked-response
+  template path.
+- The failure comes from the host or the native library, such as a
+  libddwaf compatibility issue on the host.
+- The failure is an expected limit on the request path: the global trace rate
+  limit (`DD_APPSEC_TRACE_RATE_LIMIT`) or the maximum number of WAF events per
+  request.
+- Remote Config reports the failure back to the backend through an apply
+  status. Only a site that always produces an apply status may use this reason.
+
+A site without a directive stays actionable in the audit. Do not add a
+directive to hide an unclassified site; remove or fix the site instead. Sites
+that run before the telemetry reporter is ready cannot be classified yet; see
+the startup-ordering work tracked in
+[#5250](https://github.com/DataDog/dd-trace-go/issues/5250).
+
 ### AppSec state checks
 
 `Enabled` and `RASPEnabled` load the active AppSec instance and its started state

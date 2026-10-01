@@ -162,7 +162,7 @@ func (op *ContextOperation) AddEvents(events ...any) bool {
 	}
 
 	if !op.limiter.Allow() {
-		log.Error("appsec: too many WAF events, stopping further reporting") //errtrack:ignore expected per-request capacity limit
+		log.Error("appsec: too many WAF events, stopping further reporting") //errtrack:ignore expected global trace rate limiting on the request path
 		return true
 	}
 
