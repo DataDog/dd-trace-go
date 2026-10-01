@@ -75,23 +75,26 @@ func StartApp(client Client) {
 	// Increment the WaitGroup before SwapClient makes the client visible so
 	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
 	startAppFlushWg.Add(1)
+	// Record the flush on the client before it becomes globally visible, so a
+	// close that races the installation still waits for the flush. Concurrent
+	// calls on the same client share the recorded channel.
+	var done chan struct{}
+	if c != nil {
+		done = c.markStartFlushPending()
+	}
 	if SwapClient(client) != nil {
 		// A concurrent StartApp call already set the client; undo the Add.
+		// No flush runs from here, and a concurrent winner may share the
+		// recorded channel, so leave that channel to the winner.
 		startAppFlushWg.Done()
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
-	// This call won the installation, so only this call records the flush on
-	// the client. A losing call must not overwrite the channel of the winner.
-	var done chan struct{}
-	if c != nil {
-		done = c.markStartFlushPending()
-	}
 	go func() {
 		defer startAppFlushWg.Done()
 		if c != nil {
-			defer close(done)
+			defer c.completeStartFlush(done)
 		}
 		client.Flush()
 	}()

@@ -251,18 +251,12 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 	}
 
 	// The cancel in Close unwinds the flush: the goroutine exits although the
-	// agent still holds the request, so Close leaves no waiter behind.
-	c.startFlushMu.Lock()
-	flushDone := c.startFlushDone
-	c.startFlushMu.Unlock()
-	require.NotNil(t, flushDone)
+	// agent still holds the request, so Close leaves no waiter behind. The
+	// client clears its pending channel when the flush returns.
 	require.Eventually(t, func() bool {
-		select {
-		case <-flushDone:
-			return true
-		default:
-			return false
-		}
+		c.startFlushMu.Lock()
+		defer c.startFlushMu.Unlock()
+		return c.startFlushDone == nil
 	}, 5*time.Second, 10*time.Millisecond, "the app-started flush goroutine did not exit after the cancel")
 }
 
@@ -351,22 +345,23 @@ func TestConcurrentStartAppSingleClientKeepsFlushWorking(t *testing.T) {
 	var barrier, started sync.WaitGroup
 	barrier.Add(1)
 	for range 2 {
-		started.Add(1)
-		go func() {
-			defer started.Done()
+		started.Go(func() {
 			barrier.Wait()
 			StartApp(c)
-		}()
+		})
 	}
 	barrier.Done()
 	started.Wait()
 
-	// The flush of the winning installation finishes and closes its channel.
-	c.startFlushMu.Lock()
-	flushDone := c.startFlushDone
-	c.startFlushMu.Unlock()
-	require.NotNil(t, flushDone)
+	// The flush of the winning installation finishes: the client either
+	// already cleared its pending channel or the pending channel is closed.
 	require.Eventually(t, func() bool {
+		c.startFlushMu.Lock()
+		flushDone := c.startFlushDone
+		c.startFlushMu.Unlock()
+		if flushDone == nil {
+			return true
+		}
 		select {
 		case <-flushDone:
 			return true
