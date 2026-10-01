@@ -75,6 +75,107 @@ jobs:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
     secrets: inherit
+  # Temporary diagnosis authorized only for PR #5474. Remove after collecting evidence.
+  goleak-diagnostic:
+    if: github.event.pull_request.number == 5474 && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+    runs-on:
+      group: "APM Larger Runners"
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-goleak-5474
+      GOTOOLCHAIN: local
+      GOPROXY: "https://proxy.golang.org|direct"
+      GODEBUG: "x509negativeserial=1"
+      DD_APPSEC_WAF_TIMEOUT: 1m
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start CI Agent
+        run: docker compose up -d datadog-agent
+      - name: Setup Go 1.27
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+      - name: Verify Linux and record inputs
+        run: |
+          set -euo pipefail
+          test "$(go env GOOS)" = linux
+          mkdir -p "${RUNNER_TEMP}/goleak-5474/baseline" "${RUNNER_TEMP}/goleak-5474/instrumented"
+          git log -1 --format='%H %P' > "${RUNNER_TEMP}/goleak-5474/checkout.txt"
+          go version > "${RUNNER_TEMP}/goleak-5474/go-version.txt"
+          docker compose up -d --wait --wait-timeout 120 datadog-agent
+          curl --fail --silent http://127.0.0.1:8126/info > "${RUNNER_TEMP}/goleak-5474/agent-info.json"
+      - name: Build baseline tracer tests
+        run: go test -c -race -cover -covermode=atomic -o "${RUNNER_TEMP}/goleak-5474/baseline/tracer.test" ./ddtrace/tracer
+      - name: Run baseline tracer tests
+        id: baseline
+        continue-on-error: true
+        run: |
+          "${RUNNER_TEMP}/goleak-5474/baseline/tracer.test" -test.v -test.timeout=5m > "${RUNNER_TEMP}/goleak-5474/baseline.log" 2>&1
+      - name: Build instrumented tracer tests
+        run: |
+          set -euo pipefail
+          python3 scripts/diagnose_goleak.py "${RUNNER_TEMP}/goleak-5474/overlay"
+          go test -overlay="${RUNNER_TEMP}/goleak-5474/overlay/overlay.json" -c -race -cover -covermode=atomic -o "${RUNNER_TEMP}/goleak-5474/instrumented/tracer.test" ./ddtrace/tracer
+      - name: Run instrumented tracer tests
+        id: instrumented
+        continue-on-error: true
+        run: |
+          GOLEAK_DIAGNOSTIC_FILE="${RUNNER_TEMP}/goleak-5474/connections.jsonl" \
+            "${RUNNER_TEMP}/goleak-5474/instrumented/tracer.test" -test.v -test.timeout=5m > "${RUNNER_TEMP}/goleak-5474/instrumented.log" 2>&1
+      - name: Verify diagnostic capture
+        if: always() && steps.instrumented.outcome != 'skipped'
+        run: |
+          set -euo pipefail
+          grep -q '"event":"snapshot"' "${RUNNER_TEMP}/goleak-5474/connections.jsonl"
+          if grep -q '"event":"trace-limit"' "${RUNNER_TEMP}/goleak-5474/connections.jsonl"; then
+            echo 'Diagnostic trace reached its 50 MiB limit.'
+            exit 1
+          fi
+      - name: Record outcomes and preserve failures
+        if: always()
+        env:
+          BASELINE: ${{ steps.baseline.outcome }}
+          INSTRUMENTED: ${{ steps.instrumented.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'baseline=%s\ninstrumented=%s\n' "$BASELINE" "$INSTRUMENTED" > "${RUNNER_TEMP}/goleak-5474/outcomes.txt"
+          test "$BASELINE" = success && test "$INSTRUMENTED" = success
+      - name: Check evidence size
+        id: evidence-size
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'goleak-5474'
+          files = [p for p in root.rglob('*') if p.is_file() and p.suffix != '.test']
+          size = sum(p.stat().st_size for p in files)
+          print(f'Diagnostic evidence: {size} bytes')
+          if size > 100 * 1024 * 1024:
+              raise SystemExit('Diagnostic evidence exceeds the 100 MiB limit')
+          PY
+      - name: Upload diagnostic evidence
+        if: always() && steps.evidence-size.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: goleak-pr5474-go127
+          path: |
+            ${{ runner.temp }}/goleak-5474/*.log
+            ${{ runner.temp }}/goleak-5474/*.json*
+            ${{ runner.temp }}/goleak-5474/*.txt
+            ${{ runner.temp }}/goleak-5474/overlay/input-hashes.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: Stop CI Agent
+        if: always()
+        run: docker compose down
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   pull-request-tests-done:
     name: PR Unit and Integration Tests / ${{ matrix.name }}
