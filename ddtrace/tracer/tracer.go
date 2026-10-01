@@ -527,9 +527,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 	s.SetUser(id, opts...)
 }
 
-// payloadQueueSize is the buffer size of the trace channel.
-const payloadQueueSize = 1000
-
 func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
@@ -591,7 +588,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		config:           c,
 		otlpExportMode:   otlpExportMode,
 		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
+		out:              make(chan *chunk, c.internalConfig.PayloadQueueSize()),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,

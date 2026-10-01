@@ -247,6 +247,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_OTEL_SEMANTICS_ENABLED":                                         {},
 	"DD_TRACE_PARTIAL_FLUSH_ENABLED":                                          {},
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                        {},
+	"DD_TRACE_PAYLOAD_QUEUE_SIZE":                                             {},
 	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":                                  {},
 	"DD_TRACE_PEER_SERVICE_MAPPING":                                           {},
 	"DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT":                                   {},

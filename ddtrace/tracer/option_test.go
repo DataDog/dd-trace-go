@@ -1097,6 +1097,57 @@ func TestTraceRetry(t *testing.T) {
 	})
 }
 
+func TestPayloadQueueSize(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	// Reading DD_TRACE_PAYLOAD_QUEUE_SIZE goes through internal/config's
+	// provider, whose env source reads via internal/env (never os.Getenv).
+	t.Run("env var", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, 2000, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("env var sets queue capacity", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		assert.Equal(t, 2000, cap(tr.out))
+	})
+	t.Run("env var below 1 falls back to default", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "0")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("non-numeric env var falls back to default", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "one-thousand")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(2500))
+		assert.NoError(t, err)
+		assert.Equal(t, 2500, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option overrides env var", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		c, err := newTestConfig(WithPayloadQueueSize(2500))
+		assert.NoError(t, err)
+		assert.Equal(t, 2500, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option below 1 falls back to default", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(0))
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+}
+
 func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
 		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {

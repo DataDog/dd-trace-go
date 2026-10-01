@@ -36,6 +36,9 @@ const (
 
 	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	DefaultMaxTagsHeaderLen = 512
+	// DefaultPayloadQueueSize is the default buffer size of the trace payload queue
+	// (DD_TRACE_PAYLOAD_QUEUE_SIZE).
+	DefaultPayloadQueueSize = 1000
 	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
 	defaultStatsAdditionalTagsCardinalityLimit = 100
 	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
@@ -222,6 +225,14 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 	}
 	if minSpans >= TraceMaxSize {
 		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: value %d is greater than the max number of spans that can be kept in memory for a single trace (%d spans)", minSpans, TraceMaxSize)
+		return false
+	}
+	return true
+}
+
+func validatePayloadQueueSize(size int) bool {
+	if size < 1 {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1, using default %d. A value below 1 would leave the queue unbuffered and drop almost every trace.", size, DefaultPayloadQueueSize)
 		return false
 	}
 	return true

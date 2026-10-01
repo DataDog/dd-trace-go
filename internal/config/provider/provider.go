@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -134,13 +135,14 @@ func (p *Provider) GetInt(key string, def int) int {
 func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
 	return get(p, key, def, func(v string) (int, bool) {
 		intVal, err := strconv.Atoi(v)
-		if err == nil {
-			if validate != nil && !validate(intVal) {
-				return 0, false
-			}
-			return intVal, true
+		if err != nil {
+			log.Warn("ignoring %s: value %q is not a valid integer, using default %d", key, v, def)
+			return 0, false
 		}
-		return 0, false
+		if validate != nil && !validate(intVal) {
+			return 0, false
+		}
+		return intVal, true
 	})
 }
 
