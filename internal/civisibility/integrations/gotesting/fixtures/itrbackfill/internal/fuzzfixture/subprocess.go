@@ -7,12 +7,12 @@ package fuzzfixture
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"reflect"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -229,7 +229,8 @@ func SkipScenarios() []string {
 }
 
 // CheckSkipLifecycle compares the actual native process result with CI on/off,
-// then checks that the deferred event includes cleanup time and its final status.
+// then checks the deferred event's final status and skip reason. Exact duration
+// and closure ordering are checked independently with virtual time and channels.
 func CheckSkipLifecycle(t *testing.T, scenario, mode string, target func(*testing.F)) {
 	t.Helper()
 	root := fuzzTargetName(target)
@@ -268,9 +269,6 @@ func CheckSkipLifecycle(t *testing.T, scenario, mode string, target func(*testin
 			if event.Type != constants.SpanTypeTest || !strings.HasSuffix(event.Content.Resource, "."+name) {
 				continue
 			}
-			if event.Content.Duration < int64(15*time.Millisecond) {
-				t.Fatalf("skip event closed before cleanup: %+v", event)
-			}
 			if mode == "orchestrion" && (parts[1] == "skip" || parts[1] == "skipf") && event.Content.Meta[constants.TestSkipReason] != "body skip sentinel" {
 				t.Fatalf("skip reason lost: %+v", event)
 			}
@@ -279,28 +277,27 @@ func CheckSkipLifecycle(t *testing.T, scenario, mode string, target func(*testin
 	}
 }
 
-// CheckParallelDuration verifies Go's printed durations and the native payload,
-// including root cleanup time but excluding the seeds' blocked execution.
+// CheckParallelDuration verifies that root cleanup follows both parallel seeds
+// and payload durations match Go's own printed result, not a wall-clock budget.
+// Exact wait subtraction is tested separately using synctest.
 func CheckParallelDuration(t *testing.T, target func(*testing.F)) {
 	t.Helper()
 	root := fuzzTargetName(target)
 	for _, enabled := range []string{"false", "true"} {
 		server := mockci.Start(net.SettingsResponseData{SubtestFeaturesEnabled: true}, nil, nil)
 		output, exit := runLifecycleChild(t, root, enabled)
-		if exit != 0 {
+		if exit != 0 || !strings.Contains(output, "PARALLEL_ROOT_CLEANUP_EXECUTED") {
 			t.Fatalf("CI=%s parallel test failed: %s", enabled, output)
 		}
-		rootDuration := printedDuration(t, output, root)
-		seedDuration := printedDuration(t, output, root+"/seed#0")
-		if rootDuration < 15*time.Millisecond || seedDuration-rootDuration < 100*time.Millisecond {
-			t.Fatalf("CI=%s root=%s seed=%s; root must include cleanup but not parallel seed wait: %s", enabled, rootDuration, seedDuration, output)
+		for _, name := range []string{root, root + "/seed#0", root + "/seed#1"} {
+			printedDuration(t, output, name)
 		}
 		if enabled == "true" {
 			for _, event := range server.Events() {
 				if event.Type == constants.SpanTypeTest {
 					name := event.Content.Meta[constants.TestName]
 					printed := printedDuration(t, output, name)
-					if delta := time.Duration(event.Content.Duration) - printed; delta < -10*time.Millisecond || delta > 10*time.Millisecond {
+					if reported := fmt.Sprintf("%.2f", time.Duration(event.Content.Duration).Seconds()); reported != printed {
 						t.Fatalf("payload duration differs from Go: %+v, printed %s", event, printed)
 					}
 				}
@@ -308,6 +305,8 @@ func CheckParallelDuration(t *testing.T, target func(*testing.F)) {
 			if got := server.EventTypeCount(constants.SpanTypeTest); got != 3 {
 				t.Fatalf("parallel events=%d, want root and two seeds", got)
 			}
+		} else if server.EventTypeCount(constants.SpanTypeTest) != 0 {
+			t.Fatal("disabled CI emitted parallel test events")
 		}
 		server.Close()
 	}
@@ -318,17 +317,13 @@ func fuzzTargetName(target func(*testing.F)) string {
 	return name[strings.LastIndex(name, ".")+1:]
 }
 
-func printedDuration(t *testing.T, output, name string) time.Duration {
+func printedDuration(t *testing.T, output, name string) string {
 	t.Helper()
 	match := regexp.MustCompile(`--- PASS: ` + regexp.QuoteMeta(name) + ` \(([0-9.]+)s\)`).FindStringSubmatch(output)
 	if len(match) != 2 {
 		t.Fatalf("missing Go duration for %s: %s", name, output)
 	}
-	seconds, err := strconv.ParseFloat(match[1], 64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return time.Duration(seconds * float64(time.Second))
+	return match[1]
 }
 
 func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (string, int) {

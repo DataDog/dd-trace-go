@@ -12,8 +12,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/internal/fuzzfixture"
 )
@@ -23,7 +23,6 @@ func FuzzRootSkipLifecycle(f *testing.F) {
 		f.Skip("skip lifecycle fixture requires its subprocess harness")
 	}
 	f.Cleanup(func() {
-		time.Sleep(15 * time.Millisecond)
 		fmt.Println("SKIP_CLEANUP_EXECUTED")
 		switch os.Getenv("DD_FUZZ_SKIP_CLEANUP") {
 		case "error":
@@ -57,7 +56,6 @@ func FuzzSeedSkipLifecycle(f *testing.F) {
 	f.Add(0)
 	f.Fuzz(func(t *testing.T, _ int) {
 		t.Cleanup(func() {
-			time.Sleep(15 * time.Millisecond)
 			fmt.Println("SKIP_CLEANUP_EXECUTED")
 			switch os.Getenv("DD_FUZZ_SKIP_CLEANUP") {
 			case "error":
@@ -91,10 +89,16 @@ func FuzzParallelDuration(f *testing.F) {
 	}
 	f.Add(0)
 	f.Add(1)
-	f.Cleanup(func() { time.Sleep(20 * time.Millisecond) })
+	var completed atomic.Int32
+	f.Cleanup(func() {
+		if got := completed.Load(); got != 2 {
+			f.Errorf("root cleanup ran before both parallel seeds finished: %d", got)
+		}
+		fmt.Println("PARALLEL_ROOT_CLEANUP_EXECUTED")
+	})
 	f.Fuzz(func(t *testing.T, _ int) {
 		t.Parallel()
-		time.Sleep(500 * time.Millisecond)
+		t.Cleanup(func() { completed.Add(1) })
 	})
 }
 

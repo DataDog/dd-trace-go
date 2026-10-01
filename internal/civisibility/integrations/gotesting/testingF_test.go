@@ -8,6 +8,7 @@ package gotesting
 import (
 	"runtime"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unsafe"
 
@@ -31,28 +32,46 @@ func TestCompleteFuzzTargetLifecycleCleanupErrorPreservesBodyPanic(t *testing.T)
 }
 
 func TestCompleteFuzzParallelSeedsOffsetsNativeDurationOnce(t *testing.T) {
-	f := &testing.F{}
-	fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f)))
-	seed := &testing.T{}
-	seedFields := getTestPrivateFields(seed)
-	*seedFields.signal = make(chan bool)
-	*fields.barrier = make(chan bool)
-	*fields.sub = []*testing.T{seed}
-	setFuzzNativeField(t, f, "duration", 20*time.Millisecond)
-	go func() {
-		<-*fields.barrier
-		*seedFields.signal <- true
-	}()
+	for _, tc := range []struct {
+		name  string
+		waits []time.Duration
+		wait  time.Duration
+	}{
+		{name: "no seeds"},
+		{name: "immediate seed", waits: []time.Duration{0}},
+		{name: "one seed", waits: []time.Duration{5 * time.Millisecond}, wait: 5 * time.Millisecond},
+		{name: "multiple seeds", waits: []time.Duration{3 * time.Millisecond, 7 * time.Millisecond}, wait: 7 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &testing.F{}
+				fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f)))
+				*fields.barrier = make(chan bool)
+				for _, wait := range tc.waits {
+					seed := &testing.T{}
+					seedFields := getTestPrivateFields(seed)
+					*seedFields.signal = make(chan bool)
+					*fields.sub = append(*fields.sub, seed)
+					go func() {
+						<-*fields.barrier
+						time.Sleep(wait) // Virtual time, independent of the host clock.
+						*seedFields.signal <- true
+					}()
+				}
+				setFuzzNativeField(t, f, "duration", 20*time.Millisecond)
 
-	completeFuzzParallelSeeds(f)
+				completeFuzzParallelSeeds(f)
 
-	event := fuzzTestEvent{native: f}
-	_, _, duration := event.nativeResult(true)
-	require.Less(t, duration, 20*time.Millisecond, "fRunner must exclude the already-drained wait")
-	require.Empty(t, *fields.sub)
-	completeFuzzParallelSeeds(f)
-	_, _, repeated := event.nativeResult(true)
-	require.Equal(t, duration, repeated, "a second drain must not subtract the wait again")
+				event := fuzzTestEvent{native: f}
+				_, _, duration := event.nativeResult(true)
+				require.Equal(t, 20*time.Millisecond-tc.wait, duration, "exclude exactly the drained wait")
+				require.Empty(t, *fields.sub)
+				completeFuzzParallelSeeds(f)
+				_, _, repeated := event.nativeResult(true)
+				require.Equal(t, duration, repeated, "a second drain must not subtract the wait again")
+			})
+		})
+	}
 }
 
 func TestRecordFuzzPanicPreservesFirstError(t *testing.T) {

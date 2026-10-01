@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unsafe"
 
@@ -53,19 +55,114 @@ func TestFuzzEventsReconcileNativeOutcome(t *testing.T) {
 }
 
 func TestFuzzEventsPreserveExecutionDuration(t *testing.T) {
-	native := &testing.F{}
-	setFuzzNativeField(t, native, "duration", 23*time.Millisecond)
-	start := time.Now().Add(-time.Hour)
-	event := &fuzzTimedRecordingTest{processRetryRecordingTest: newProcessRetryRecordingTestForTesting("duration"), start: start}
-	pending := fuzzTestEvent{native: native, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: start.Add(time.Millisecond)}
-	queue := &fuzzEventQueue{}
-	queue.add(pending)
-	queue.finishAfterNativeRun()
-	require.Equal(t, start.Add(23*time.Millisecond), event.finish, "use full native duration, not time spent waiting for M.Run")
-	queue = &fuzzEventQueue{}
-	queue.add(pending)
-	queue.finish()
-	require.Equal(t, pending.finishTime, event.finish, "an incomplete native lifecycle uses the original captured finish")
+	for _, kind := range []string{"root", "seed"} {
+		for _, nativeFinished := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/native_finished=%t", kind, nativeFinished), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var native testing.TB = &testing.T{}
+					if kind == "root" {
+						native = &testing.F{}
+					}
+					setFuzzNativeField(t, native, "duration", 23*time.Millisecond)
+					start := time.Now()
+					event := &fuzzTimedRecordingTest{processRetryRecordingTest: newProcessRetryRecordingTestForTesting("duration"), start: start}
+					pending := fuzzTestEvent{native: native, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: start.Add(time.Millisecond)}
+					queue := &fuzzEventQueue{}
+					queue.add(pending)
+					time.Sleep(time.Hour) // Package completion must not extend execution time.
+					require.Zero(t, event.closeCount)
+					wantFinish := pending.finishTime
+					if nativeFinished {
+						queue.finishAfterNativeRun()
+						wantFinish = start.Add(23 * time.Millisecond)
+					} else {
+						queue.finish()
+					}
+					require.Equal(t, wantFinish, event.finish)
+					require.Equal(t, 1, event.closeCount)
+					queue.finishAfterNativeRun()
+					require.Equal(t, wantFinish, event.finish)
+					require.Equal(t, 1, event.closeCount)
+					requireFuzzQueueDrained(t, queue)
+				})
+			})
+		}
+	}
+}
+
+func TestFuzzEventsSkipHooksWaitForCleanup(t *testing.T) {
+	oldEnabled := atomic.LoadInt32(&ciVisibilityEnabledValue)
+	atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
+	t.Cleanup(func() { atomic.StoreInt32(&ciVisibilityEnabledValue, oldEnabled) })
+	for _, kind := range []string{"root", "seed"} {
+		for _, hook := range []struct {
+			name   string
+			skip   func(testing.TB)
+			reason string
+		}{
+			{name: "Skip", skip: func(tb testing.TB) { instrumentCloseAndSkip(tb, "skip sentinel") }, reason: "skip sentinel"},
+			{name: "Skipf", skip: func(tb testing.TB) { instrumentCloseAndSkip(tb, "formatted sentinel") }, reason: "formatted sentinel"},
+			{name: "SkipNow", skip: instrumentSkipNow},
+		} {
+			for _, cleanupFails := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/cleanup_fails=%t", kind, hook.name, cleanupFails), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						nativeT := &testing.T{}
+						var native testing.TB = nativeT
+						if kind == "root" {
+							f := &testing.F{}
+							native, nativeT = f, (*testing.T)(unsafe.Pointer(f))
+						}
+						fields := getTestPrivateFields(nativeT)
+						fields.SetSkipped(true)
+						event := newProcessRetryRecordingTestForTesting("skip")
+						queue := &fuzzEventQueue{}
+						meta := createTestMetadata(native, nil)
+						defer deleteTestMetadata(native)
+						meta.test, meta.fuzzEvents = event, queue
+						queue.add(fuzzTestEvent{native: native, metadata: meta, test: event, suite: event.suite, module: event.suite.module, finishTime: time.Now()})
+						hook.skip(native)
+						require.Zero(t, event.closeCount, "skip must not close before cleanup starts")
+						require.Equal(t, hook.reason, meta.skipReason)
+
+						entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+						t.Cleanup(func() {
+							select {
+							case <-release:
+							default:
+								close(release)
+							}
+						})
+						native.Cleanup(func() {
+							close(entered)
+							<-release
+							if cleanupFails {
+								native.Error("cleanup error sentinel")
+							}
+						})
+						go func() {
+							runTestCleanupCallbacks(nativeT, &testCleanupResult{})
+							close(done)
+						}()
+						<-entered
+						synctest.Wait()
+						require.Zero(t, event.closeCount, "skip must not close while cleanup is blocked")
+						close(release)
+						<-done
+						require.Zero(t, event.closeCount, "native completion still owns finalization")
+						queue.finishAfterNativeRun()
+						want := processRetryStatusSkip
+						if cleanupFails {
+							want = processRetryStatusFail
+						}
+						require.Equal(t, want, event.status)
+						require.Equal(t, hook.reason, event.skipReason)
+						require.Equal(t, 1, event.closeCount)
+					})
+				})
+			}
+		}
+	}
 }
 
 func TestFuzzEventsPreserveCleanupPanicDetails(t *testing.T) {
