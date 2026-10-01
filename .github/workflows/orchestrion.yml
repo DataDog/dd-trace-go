@@ -406,7 +406,13 @@ jobs:
     name: Benchmark Apps Build
     needs:
       - changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.benchmark-apps == 'true'
+    # The apm-sdks-benchmarks access policy grants the workflow of this
+    # repository only. Runs from other repositories (the workflow_call from
+    # DataDog/orchestrion) skip this job, so they stay green until that policy
+    # covers them too.
+    if: >-
+      (github.event_name != 'pull_request' || needs.changes.outputs.benchmark-apps == 'true')
+      && github.repository == 'DataDog/dd-trace-go'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -421,10 +427,27 @@ jobs:
           path: dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ env.DD_TRACE_GO_REF }}
+      - name: Get token for apm-sdks-benchmarks
+        # apm-sdks-benchmarks is a private repository, so the repository-scoped
+        # GITHUB_TOKEN cannot clone it. This step mints a short-lived read token
+        # through the dd-trace-go.orchestrion-benchmark-apps.read policy, which
+        # the maintainers of that repository own under .github/chainguard/.
+        id: benchmarks-token
+        continue-on-error: true
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/apm-sdks-benchmarks
+          policy: dd-trace-go.orchestrion-benchmark-apps.read
+      - name: Check apm-sdks-benchmarks access
+        if: steps.benchmarks-token.outcome != 'success'
+        run: |-
+          echo "::error::This job needs a contents:read token for DataDog/apm-sdks-benchmarks. Ask the maintainers of that repository to add the dd-trace-go.orchestrion-benchmark-apps.read policy under .github/chainguard/."
+          exit 1
       - name: Checkout benchmark apps
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          token: ${{ steps.benchmarks-token.outputs.token }}
           repository: DataDog/apm-sdks-benchmarks
           ref: ${{ inputs.benchmarks-ref || 'main' }}
           fetch-depth: 1
@@ -614,8 +637,10 @@ jobs:
       # generate gets no strict clause: it carries its own
       # `inputs.orchestrion-version == ''` condition, so a legitimate skip on a
       # cross-repo workflow_call must stay a pass. benchmark-apps gets the same
-      # strict clause shape as integration-test: when its classifier gate is on,
-      # a skipped run (e.g. an upstream failure) must not read as a pass.
+      # strict clause shape as integration-test, plus the repository guard: the
+      # apm-sdks-benchmarks access policy grants this repository only, so the
+      # job legitimately skips on a cross-repo workflow_call and that skip must
+      # not read as a failure.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
@@ -627,6 +652,7 @@ jobs:
           || (needs.changes.outputs.orchestrion == 'true'
               && needs.integration-test.result != 'success')
           || (needs.changes.outputs.benchmark-apps == 'true'
+              && github.repository == 'DataDog/dd-trace-go'
               && needs.benchmark-apps.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
