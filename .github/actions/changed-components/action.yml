@@ -28,6 +28,9 @@ outputs:
   orchestrion:
     description: "Orchestrion integration tests"
     value: ${{ steps.classify.outputs.orchestrion }}
+  benchmark-apps:
+    description: "Benchmark apps build (DataDog/apm-sdks-benchmarks)"
+    value: ${{ steps.classify.outputs.benchmark-apps }}
   otelc:
     description: "OTelc integration tests"
     value: ${{ steps.classify.outputs.otelc }}
@@ -129,6 +132,7 @@ runs:
           # Keep this list in sync with `gates:` in .github/ci-components.yml.
           # scripts/ciselect/action_test.go fails if it drifts.
           for gate in \
+            benchmark-apps \
             codeql \
             generate \
             orchestrion \

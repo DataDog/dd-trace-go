@@ -11,8 +11,18 @@ on:
         type: boolean
         default: false
         required: false
+      benchmarks-ref:
+        description: Branch of DataDog/apm-sdks-benchmarks to build the benchmark apps from
+        type: string
+        default: main
+        required: false
   workflow_dispatch: # On-demand runs; the `push` trigger below only covers release-v* branches,
                      # so `main` is otherwise only exercised by the nightly schedule.
+    inputs:
+      benchmarks-ref:
+        description: Branch of DataDog/apm-sdks-benchmarks to build the benchmark apps from
+        type: string
+        default: main
   pull_request:
   push:
     branches:
@@ -29,6 +39,12 @@ on:
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  # The dd-trace-go commit the jobs in this workflow test. On a cross-repo
+  # workflow_call (from DataDog/orchestrion) the caller's own sha is meaningless
+  # here, so it is `main`, mirroring the repository:/ref: pattern of the other
+  # jobs. On a pull request it is the PR head sha, which the module proxy can
+  # resolve through refs/pull/N/head (github.sha is the ephemeral merge commit).
+  DD_TRACE_GO_REF: ${{ inputs.orchestrion-version != '' && 'main' || github.event.pull_request.head.sha || github.sha }}
 
 permissions:
   id-token: write
@@ -49,6 +65,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       orchestrion: ${{ steps.detect.outputs.orchestrion }}
+      benchmark-apps: ${{ steps.detect.outputs.benchmark-apps }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -369,6 +386,212 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+  benchmark-apps:
+    # Build the real benchmark apps from DataDog/apm-sdks-benchmarks against the
+    # dd-trace-go commit under test. The apps resolve dd-trace-go from the module
+    # proxy with their committed go.sum files and no replace directives.
+    #
+    # Every other consumer simulation in this repository neutralizes that
+    # resolution: internal/orchestrion/_integration and internal/setup-smoke-test
+    # replace dd-trace-go with the working tree, and check-orchestrion-all-resolves
+    # (smoke-tests.yml) tidies a throwaway module before it resolves.
+    #
+    # A merge that makes orchestrion/all/v2 import a package or a nested module
+    # that no published version contains breaks the app builds until the next
+    # dev tag is cut. The job reuses the apps' own build flow for the version
+    # selection on purpose. A `go mod edit -replace` pin of the root module at
+    # the commit under test would hide exactly that break: the commit contains
+    # the new package, and the published tags do not. The root module and every
+    # contrib module must keep resolving from published tags.
+    name: Benchmark Apps Build
+    needs:
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.benchmark-apps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The apps resolve dd-trace-go at the pseudo-version of the commit under
+      # test, which the checksum database has not necessarily indexed yet.
+      GOSUMDB: "off"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: dd-trace-go
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ env.DD_TRACE_GO_REF }}
+      - name: Checkout benchmark apps
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: DataDog/apm-sdks-benchmarks
+          ref: ${{ inputs.benchmarks-ref || 'main' }}
+          fetch-depth: 1
+          path: benchmarks
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Mirrors the golang:1.26 image the apps' Dockerfiles build with.
+          go-version: "1.26"
+          cache: false
+      - name: Resolve dd-trace-go pseudo-version
+        id: pin
+        shell: bash
+        env:
+          ORCHESTRION_VERSION: ${{ inputs.orchestrion-version || 'latest' }}
+        run: |-
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cd "${work}"
+          go mod init ddtrace-go-ci.local/pin >/dev/null
+          pseudo="$(go list -m -f '{{.Version}}' github.com/DataDog/dd-trace-go/v2@"${DD_TRACE_GO_REF}")"
+          echo "Resolved github.com/DataDog/dd-trace-go/v2@${DD_TRACE_GO_REF} to ${pseudo}"
+          echo "pseudo=${pseudo}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "TRACER_VERSION=${pseudo}"
+            echo "ORCHESTRION_VERSION=${ORCHESTRION_VERSION}"
+          } >> "${GITHUB_ENV}"
+      - name: Build go-prof-app (datadog-latest)
+        id: build-go-prof-app
+        shell: bash
+        run: |-
+          set -euo pipefail
+          source "${GITHUB_WORKSPACE}/dd-trace-go/.github/workflows/apps/go-retry.sh"
+          gobin="$(go env GOPATH)/bin"
+          export PATH="${gobin}:${PATH}"
+          bench="${GITHUB_WORKSPACE}/benchmarks"
+
+          # Stage the build root the way the app's Dockerfile assembles /app:
+          # the instrumentation diff is renamed, which is the name prepare.Makefile
+          # looks it up by in $(BUILDROOT).
+          buildroot="${RUNNER_TEMP}/go-prof-app-buildroot"
+          mkdir -p "${buildroot}"
+          cp "${bench}/app/go/go-prof-app/prepare.patch" "${buildroot}/prepare.patch"
+          cp "${bench}/tracing-libs/go/go-prof-app.orchestrion-instrumentation.diff" \
+            "${buildroot}/orchestrion-instrumentation.diff"
+          cp "${bench}/app/go/go-prof-app/prepare.Makefile" "${bench}/app/go/go-prof-app/build.Makefile" "${buildroot}/"
+
+          # Clone the application repository at the commit its Dockerfile pins.
+          app="${GITHUB_WORKSPACE}/go-prof-app"
+          git clone --quiet --depth 1 https://github.com/felixge/go-prof-app "${app}"
+          git -C "${app}" checkout --quiet 5c383265bb2999ff1789c66f01991ece59382a29
+          cd "${app}"
+          export BUILDROOT="${buildroot}"
+
+          # The same command sequence as the Dockerfile's builder stage, decomposed
+          # so each network-bound command retries individually:
+          #   - `prepare` applies prepare.patch (strips the upstream dd-trace-go
+          #     requirements, returning the app to its baseline state);
+          #   - the instrumentation diff adds the //dd:span directives;
+          #   - `orchestrion pin` writes the tools file and runs the last
+          #     `go mod tidy` the app sees, resolving dd-trace-go from published
+          #     versions only;
+          #   - the `go get` pair bumps orchestrion/all/v2 (and the root module
+          #     requirement, which MVS re-selects from published tags) to
+          #     ${TRACER_VERSION} -- nothing tidies after this point, so the first
+          #     build attempt runs against the go.sum state of an external
+          #     consumer that does not tidy;
+          #   - `go mod download`, then the -toolexec build.
+          retry_on_corruption make -f "${buildroot}/prepare.Makefile" prepare
+          retry_on_corruption go install "github.com/DataDog/orchestrion@${ORCHESTRION_VERSION}"
+          git apply "${buildroot}/orchestrion-instrumentation.diff"
+          retry_on_corruption orchestrion pin
+          retry_on_corruption go get "github.com/DataDog/dd-trace-go/v2@${TRACER_VERSION}"
+          retry_on_corruption go get "github.com/DataDog/dd-trace-go/orchestrion/all/v2@${TRACER_VERSION}"
+          retry_on_corruption go mod download
+          retry_on_corruption make -f "${buildroot}/build.Makefile" datadog-latest 2>&1 | tee "${RUNNER_TEMP}/go-prof-app-build.log"
+
+          # Guard against a false pass: the whole point is building against the
+          # commit under test, so the build must not have silently settled on a
+          # published orchestrion/all/v2 tag instead of ${TRACER_VERSION}.
+          resolved="$(go list -m -f '{{.Version}}' github.com/DataDog/dd-trace-go/orchestrion/all/v2)"
+          if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
+            echo "::error::expected github.com/DataDog/dd-trace-go/orchestrion/all/v2@${TRACER_VERSION}, resolved ${resolved}"
+            exit 1
+          fi
+      - name: Build fibonacci (datadog-orchestrion)
+        id: build-fibonacci
+        shell: bash
+        run: |-
+          set -euo pipefail
+          source "${GITHUB_WORKSPACE}/dd-trace-go/.github/workflows/apps/go-retry.sh"
+          bench="${GITHUB_WORKSPACE}/benchmarks"
+          work="${RUNNER_TEMP}/fibonacci"
+          mkdir -p "${work}"
+          cd "${work}"
+          # build.sh copies the baseline go.mod and the datadog-orchestrion main.go
+          # into the working directory, installs orchestrion, pins, resolves
+          # dd-trace-go at ${TRACER_VERSION} with its own `go get` pair, and builds
+          # with -toolexec. Every step it takes is idempotent, so the retry wrapper
+          # cannot corrupt a partial attempt. Nothing tidies after the version
+          # bump, so the build runs against the app's committed go.sum state.
+          export BP_PRODUCT=datadog-orchestrion
+          retry_on_corruption bash "${bench}/app/go/fibonacci/src/build.sh" 2>&1 | tee "${RUNNER_TEMP}/fibonacci-build.log"
+
+          # Same false-pass guard as the go-prof-app build.
+          resolved="$(go list -m -f '{{.Version}}' github.com/DataDog/dd-trace-go/orchestrion/all/v2)"
+          if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
+            echo "::error::expected github.com/DataDog/dd-trace-go/orchestrion/all/v2@${TRACER_VERSION}, resolved ${resolved}"
+            exit 1
+          fi
+      - name: Diagnose failure
+        if: failure()
+        shell: bash
+        run: |-
+          set -uo pipefail
+          {
+            echo "## Benchmark apps build failure"
+            echo
+            echo "Pinned dd-trace-go version: \`${TRACER_VERSION:-unresolved}\` (ref: \`${DD_TRACE_GO_REF}\`)."
+            echo "The apps resolved dd-trace-go from the module proxy, with committed"
+            echo "\`go.sum\` files and no \`replace\` directives -- the way their own"
+            echo "build scripts do. The decisive error:"
+            echo
+            for log in "${RUNNER_TEMP}/go-prof-app-build.log" "${RUNNER_TEMP}/fibonacci-build.log"; do
+              [ -f "${log}" ] || continue
+              echo "### $(basename "${log}")"
+              echo
+              echo '```'
+              decisive="$(grep -E -m 5 'no required module provides package|missing go\.sum entry|unknown revision|invalid version|cannot find module' "${log}" || true)"
+              if [ -n "${decisive}" ]; then
+                echo "${decisive}"
+              else
+                echo '(no known failure signature; tail of the build log:)'
+                tail -10 "${log}" || true
+              fi
+              echo '```'
+              echo
+            done
+            echo "Likely fixes:"
+            echo
+            echo "1. Cut a dev tag, so the packages and modules \`orchestrion/all/v2\` imports at this commit are resolvable from the module proxy:"
+            echo
+            echo '   ```sh'
+            echo '   git checkout -b dev-vX.Y.x origin/main'
+            echo '   go run ./scripts/autoreleasetagger --version vX.Y.0-dev.N --root .'
+            echo '   ```'
+            echo
+            echo "2. If the benchmark apps themselves need a change (e.g. an import was renamed), coordinate an \`apm-sdks-benchmarks\` update with the benchmarking team. This job never modifies that repository."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Post-failure diagnostics only: a `go mod tidy` names exactly what the
+          # apps' go.sum files are missing. Never run this before the first build
+          # attempt. A tidy adds the missing entries, and the failure stays hidden.
+          for dir in "${GITHUB_WORKSPACE}/go-prof-app" "${RUNNER_TEMP}/fibonacci"; do
+            [ -f "${dir}/go.mod" ] || continue
+            echo "::group::go mod tidy diagnostics (${dir})"
+            (
+              cd "${dir}"
+              cp go.mod go.mod.before
+              [ -f go.sum ] && cp go.sum go.sum.before
+              go mod tidy 2>&1 | head -10 || true
+              diff -u go.mod.before go.mod || true
+              [ -f go.sum.before ] && diff -u go.sum.before go.sum || true
+              rm -f go.mod.before go.sum.before
+            ) || true
+            echo "::endgroup::"
+          done
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests
@@ -378,6 +601,7 @@ jobs:
       - go-versions-matrix
       - service-containers
       - integration-test
+      - benchmark-apps
     runs-on: ubuntu-latest
     if: '!cancelled()'
     steps:
@@ -389,7 +613,9 @@ jobs:
       #
       # generate gets no strict clause: it carries its own
       # `inputs.orchestrion-version == ''` condition, so a legitimate skip on a
-      # cross-repo workflow_call must stay a pass.
+      # cross-repo workflow_call must stay a pass. benchmark-apps gets the same
+      # strict clause shape as integration-test: when its classifier gate is on,
+      # a skipped run (e.g. an upstream failure) must not read as a pass.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
@@ -397,8 +623,11 @@ jobs:
           || contains(fromJSON('["failure", "cancelled"]'), needs.go-versions-matrix.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.service-containers.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.integration-test.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.benchmark-apps.result)
           || (needs.changes.outputs.orchestrion == 'true'
               && needs.integration-test.result != 'success')
+          || (needs.changes.outputs.benchmark-apps == 'true'
+              && needs.benchmark-apps.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.integration-test.result == 'skipped'

@@ -76,6 +76,10 @@ Our CI pipeline includes several automated checks:
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
 
+#### Benchmark Apps Build
+
+- **Benchmark Apps Build**: Runs in the Orchestrion workflow, behind the `benchmark-apps` gate of [`.github/ci-components.yml`](./.github/ci-components.yml). It builds the real benchmark applications from [`DataDog/apm-sdks-benchmarks`](https://github.com/DataDog/apm-sdks-benchmarks) (`go-prof-app` with the `datadog-latest` product and `fibonacci` with `datadog-orchestrion`) against the pull request's pseudo-version, resolving dd-trace-go from the module proxy: with the apps' committed `go.sum` files and no `replace` directives, and no `go mod tidy` after the version bump. It catches merges that make `orchestrion/all/v2` import packages or modules that no published version contains, which is the one fidelity level no working-tree-based check can cover.
+
 #### Generate Workflow
 
 - **Code Generation**: Ensures all generated code is current and consistent
