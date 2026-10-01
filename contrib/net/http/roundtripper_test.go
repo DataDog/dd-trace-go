@@ -1087,33 +1087,6 @@ func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 	return recorder.Result(), nil
 }
 
-func BenchmarkRoundTripperOTelSemantics(b *testing.B) {
-	require.NoError(b, tracer.Start(tracer.WithTraceEnabled(false)))
-	b.Cleanup(tracer.Stop)
-
-	for _, enabled := range []bool{false, true} {
-		b.Run(strconv.FormatBool(enabled), func(b *testing.B) {
-			cfg := newRoundTripperConfig()
-			cfg.OTelSemanticsEnabled = enabled
-			cfg.ResourceNamer = func(*http.Request) string { return "GET" }
-			rt := &roundTripper{base: &emptyRoundTripper{}, cfg: cfg}
-			req := httptest.NewRequest(http.MethodGet, "http://example.com:8080/path?keep=value", nil)
-
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				resp, err := rt.RoundTrip(req)
-				if err != nil {
-					b.Fatal(err)
-				}
-				if err := resp.Body.Close(); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 func TestRoundTripperWithBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()
