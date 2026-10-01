@@ -737,3 +737,37 @@ func TestPollOnEachSubscribe(t *testing.T) {
 		t.Fatal("no poll within 2s after the second Subscribe")
 	}
 }
+
+// TestStopVsRegisterUnregisterRace reproduces issue #5479: Stop() writes the
+// client global under clientMux, while the Register*/Unregister*/Has* helpers
+// used to read it without holding that lock. Under -race, a shutdown racing a
+// capability (un)registration — the OpenFeature provider shutdown path racing
+// tracer.Stop() — reported a DATA RACE. All global reads now go through
+// currentClient(), which is synchronized with Stop/Reset. The synchronized
+// capture also fixes the nil-deref window of issue #5134.
+func TestStopVsRegisterUnregisterRace(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	cfg := DefaultClientConfig()
+	cfg.PollInterval = time.Hour
+	for range 50 {
+		Reset()
+		require.NoError(t, Start(cfg))
+		require.NoError(t, RegisterCapability(FFEFlagEvaluation))
+		require.NoError(t, RegisterProduct("TEST_PRODUCT"))
+		require.NoError(t, RegisterCallback(func(map[string]ProductUpdate) map[string]state.ApplyStatus {
+			return nil
+		}))
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			Stop()
+		}()
+		// ErrClientNotStarted is a valid outcome when Stop() wins the race.
+		_ = UnregisterCapability(FFEFlagEvaluation)
+		_ = UnregisterProduct("TEST_PRODUCT")
+		_, _ = HasCapability(FFEFlagEvaluation)
+		_, _ = HasProduct("TEST_PRODUCT")
+		<-done
+	}
+}
