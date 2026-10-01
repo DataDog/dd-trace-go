@@ -333,7 +333,7 @@ func (c *Config) checkProductConflict(field string, origin telemetry.Origin, val
 			"second_value:" + fmt.Sprint(value),
 		}).Submit(1)
 		log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
-			prev.product, field, p)
+			prev.product, field, p) //errtrack:ignore conflicting user configuration
 		return true
 	}
 	c.overrides[field] = programmaticOverride{product: p, value: value}
@@ -396,32 +396,32 @@ func loadConfig() *Config {
 	}
 	cfg.statsAdditionalTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", defaultStatsAdditionalTagsCardinalityLimit)
 	if cfg.statsAdditionalTagsCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value %d", cfg.statsAdditionalTagsCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value %d", cfg.statsAdditionalTagsCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsAdditionalTagsCardinalityLimit = defaultStatsAdditionalTagsCardinalityLimit
 	}
 	cfg.statsWholeKeyCardinalityLimit = p.GetInt("DD_TRACE_STATS_CARDINALITY_LIMIT", defaultStatsWholeKeyCardinalityLimit)
 	if cfg.statsWholeKeyCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsWholeKeyCardinalityLimit, defaultStatsWholeKeyCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsWholeKeyCardinalityLimit, defaultStatsWholeKeyCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsWholeKeyCardinalityLimit = defaultStatsWholeKeyCardinalityLimit
 	}
 	cfg.statsResourceCardinalityLimit = p.GetInt("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", defaultStatsResourceCardinalityLimit)
 	if cfg.statsResourceCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsResourceCardinalityLimit, defaultStatsResourceCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsResourceCardinalityLimit, defaultStatsResourceCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsResourceCardinalityLimit = defaultStatsResourceCardinalityLimit
 	}
 	cfg.statsHTTPEndpointCardinalityLimit = p.GetInt("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", defaultStatsHTTPEndpointCardinalityLimit)
 	if cfg.statsHTTPEndpointCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsHTTPEndpointCardinalityLimit, defaultStatsHTTPEndpointCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsHTTPEndpointCardinalityLimit, defaultStatsHTTPEndpointCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsHTTPEndpointCardinalityLimit = defaultStatsHTTPEndpointCardinalityLimit
 	}
 	cfg.statsPeerTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", defaultStatsPeerTagsCardinalityLimit)
 	if cfg.statsPeerTagsCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsPeerTagsCardinalityLimit, defaultStatsPeerTagsCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsPeerTagsCardinalityLimit, defaultStatsPeerTagsCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsPeerTagsCardinalityLimit = defaultStatsPeerTagsCardinalityLimit
 	}
 	cfg.statsOriginCardinalityLimit = p.GetInt("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", defaultStatsOriginCardinalityLimit)
 	if cfg.statsOriginCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
@@ -437,7 +437,7 @@ func loadConfig() *Config {
 	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+		log.Warn("OTEL_LOGS_EXPORTER is not supported") //errtrack:ignore unsupported user configuration
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
@@ -572,7 +572,7 @@ func loadConfig() *Config {
 	if p.GetBool("DD_TRACE_REPORT_HOSTNAME", false) {
 		hostname, err := os.Hostname()
 		if err != nil {
-			log.Warn("unable to look up hostname: %s", err.Error())
+			log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore host environment failure
 			cfg.hostnameLookupError = err
 		}
 		cfg.hostname = hostname
@@ -1166,7 +1166,7 @@ func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1186,7 +1186,7 @@ func (c *Config) SetStatsResourceCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1206,7 +1206,7 @@ func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int, origin telemetr
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1226,7 +1226,7 @@ func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1246,7 +1246,7 @@ func (c *Config) SetStatsOriginCardinalityLimit(limit int, origin telemetry.Orig
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", origin, limit, product...) {
