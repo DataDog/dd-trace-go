@@ -1350,15 +1350,17 @@ func runTestCleanupCallbacks(t *testing.T, result *testCleanupResult) {
 	go func() {
 		completed := false
 		defer func() {
-			if !completed {
+			result.panicData = recover()
+			if result.panicData != nil {
+				result.panicStacktrace = utils.GetStacktrace(1)
+			} else if !completed {
 				result.goexit = true
 			}
 			close(done)
 		}()
-		result.panicData = testingTRunCleanup(t, 1)
-		if result.panicData != nil {
-			result.panicStacktrace = utils.GetStacktrace(1)
-		}
+		// Recover here rather than inside testing so the panic's cleanup frames
+		// are still available. Native runCleanup still drains remaining callbacks.
+		testingTRunCleanup(t, 0)
 		completed = true
 	}()
 	<-done
@@ -1372,7 +1374,7 @@ func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFi
 	completeParallelSubtestsWithState(
 		localTPrivateFields,
 		getTestState(t),
-		isParallelTest(t, localTPrivateFields),
+		!isParallelTest(t, localTPrivateFields),
 		neutralizeNativeParallelRelease,
 	)
 }
@@ -1380,13 +1382,14 @@ func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFi
 func completeParallelSubtestsWithState(
 	localTPrivateFields *commonPrivateFields,
 	testState *testingTestState,
-	parentIsParallel bool,
+	reacquireParent bool,
 	neutralizeNativeParallelRelease bool,
-) {
+) time.Duration {
 	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
-		return
+		return 0
 	}
 
+	waitStart := time.Now()
 	subtests := *localTPrivateFields.sub
 	*localTPrivateFields.sub = nil
 	if testState != nil {
@@ -1401,16 +1404,17 @@ func completeParallelSubtestsWithState(
 			<-*pvSub.signal
 		}
 	}
-	if testState != nil && !parentIsParallel {
+	if testState != nil && reacquireParent {
 		testingTestStateWaitParallel(testState)
 	}
-	if neutralizeNativeParallelRelease && parentIsParallel && localTPrivateFields.isParallel != nil {
+	if neutralizeNativeParallelRelease && !reacquireParent && localTPrivateFields.isParallel != nil {
 		// A process-retry child drains native tRunner subtests before writing
 		// JSON. After we clear t.sub, Go's native tRunner would otherwise take
 		// its len(t.sub)==0 && t.isParallel release path and release the same
 		// scheduler slot twice.
 		*localTPrivateFields.isParallel = false
 	}
+	return time.Since(waitStart)
 }
 
 // isParallelTest reports whether the active test has entered Go's parallel-test

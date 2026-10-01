@@ -161,8 +161,12 @@ func (ddm *M) executeInternalFuzzTarget(info *testingFInfo) func(*testing.F) {
 		bodyReturned := false
 		defer func() {
 			bodyTerminal := recover()
+			if bodyTerminal != nil {
+				// Cleanup Error/Fatal hooks must not replace the original panic.
+				recordFuzzPanic(execMeta, bodyTerminal, utils.GetStacktrace(1))
+			}
 			terminal, terminalStack := completeFuzzTargetLifecycle(f, bodyReturned, bodyTerminal)
-			if terminal != nil {
+			if terminal != nil && execMeta.processRetryError.Load() == nil {
 				errorType := "panic"
 				if terminalErr, ok := terminal.(error); ok && errors.Is(terminalErr, errTestingDidNotReturn) {
 					errorType = "runtime.Goexit"
@@ -212,6 +216,12 @@ func completeFuzzTargetLifecycle(f *testing.F, bodyReturned bool, bodyTerminal a
 
 	terminal := bodyTerminal
 	terminalStack := ""
+	if cleanup.goexit {
+		// Goexit from native cleanup suppresses an in-flight body panic, even
+		// when Fatal has already marked the test failed. Telemetry keeps the
+		// original panic, but the process must retain native testing's exit code.
+		terminal = nil
+	}
 	if terminal != nil {
 		terminalStack = utils.GetStacktrace(1)
 		if cleanup.panicData != nil {
@@ -220,7 +230,9 @@ func completeFuzzTargetLifecycle(f *testing.F, bodyReturned bool, bodyTerminal a
 	} else if cleanup.panicData != nil {
 		terminal = cleanup.panicData
 		terminalStack = cleanup.panicStacktrace
-	} else if (!bodyReturned || cleanup.goexit) && !f.Failed() && !f.Skipped() {
+	} else if !bodyReturned && !f.Failed() && !f.Skipped() {
+		// Goexit in a cleanup does not undo a completed body. Only Goexit
+		// from the body itself is an unexpected native termination.
 		terminal = errTestingDidNotReturn
 		terminalStack = utils.GetStacktrace(1)
 	}
@@ -239,7 +251,30 @@ func completeFuzzParallelSeeds(f *testing.F) {
 	t := (*testing.T)(unsafe.Pointer(f))
 	fields := getTestPrivateFields(t)
 	state := getFuzzTestState(f)
-	completeParallelSubtestsWithState(fields, state, false, false)
+	// Unlike tRunner, fRunner releases its slot without reacquiring it.
+	wait := completeParallelSubtestsWithState(fields, state, false, false)
+	if wait == 0 {
+		return
+	}
+	duration, err := getFieldPointerFromWithType(f, "duration", reflect.TypeFor[time.Duration]())
+	if err != nil || fields.mu == nil {
+		log.Debug("gotesting: testing.F duration field unreadable; parallel seed wait cannot be excluded")
+		return
+	}
+	// fRunner will add elapsed time after this wrapper returns. Offset that
+	// accumulator by the wait we already drained, preserving its native result
+	// (including cleanup time) on all platforms without changing start's layout.
+	// Children have completed and fRunner resumes on this same goroutine.
+	fields.mu.Lock()
+	*(*time.Duration)(duration) -= wait
+	fields.mu.Unlock()
+	runtime.KeepAlive(f)
+}
+
+// recordFuzzPanic freezes the body's panic before cleanup hooks can record a
+// secondary Error/Fatal. It does not decide native panic/Goexit propagation.
+func recordFuzzPanic(meta *testExecutionMetadata, terminal any, stack string) {
+	meta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{Type: "panic", Message: fmt.Sprint(terminal), Stack: stack})
 }
 
 // getFuzzTestState reads testing.F's scheduler state. testing.F and testing.T

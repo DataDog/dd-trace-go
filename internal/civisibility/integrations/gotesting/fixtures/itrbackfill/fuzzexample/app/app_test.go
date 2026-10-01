@@ -63,6 +63,15 @@ func FuzzNativeTypes(f *testing.F) {
 	})
 }
 
+func FuzzRootCleanupGoexit(f *testing.F) {
+	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "root-cleanup-goexit" {
+		f.Skip("root cleanup Goexit regression is not selected")
+	}
+	f.Cleanup(runtime.Goexit)
+	f.Add(0)
+	gotesting.GetFuzz(f).Fuzz(func(*testing.T, int) {})
+}
+
 func FuzzSeedCleanupFailure(f *testing.F) {
 	if os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") != "seed-lifecycle" {
 		f.Skip("seed cleanup regression is not selected")

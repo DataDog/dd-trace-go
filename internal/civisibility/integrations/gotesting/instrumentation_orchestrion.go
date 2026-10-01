@@ -125,7 +125,7 @@ func instrumentTestingBuiltWithOrchestrion() {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
-	return instrumentTestingTFuncWithSource(f, nil, true)
+	return instrumentTestingTFuncWithSourceOptions(f, nil, true, false)
 }
 
 // instrumentTestingFuzzFunc preserves the callback's exact concrete type,
@@ -168,10 +168,6 @@ func instrumentTestingFuzzFunc(ff any) any {
 		instrumentTestingTFuncWithSourceOptions(seedBody, sourceFunc, false, true)(t)
 		return nil
 	}).Interface()
-}
-
-func instrumentTestingTFuncWithSource(f func(*testing.T), sourceFunc *runtime.Func, additionalFeatures bool) func(*testing.T) {
-	return instrumentTestingTFuncWithSourceOptions(f, sourceFunc, additionalFeatures, false)
 }
 
 func instrumentTestingTFuncWithSourceOptions(
@@ -326,25 +322,41 @@ func instrumentTestingTFuncWithSourceOptions(
 			defer func() {
 				r := recover()
 				bodyDuration := time.Since(startTime)
+				terminalStack := ""
+				if r != nil && execMeta.fuzzEvents != nil {
+					terminalStack = utils.GetStacktrace(1)
+					recordFuzzPanic(execMeta, r, terminalStack)
+				}
 
 				if execMeta.usesFreshRetryAttemptRuntime {
 					bodyTerminal := r
-					bodyStack := ""
-					if bodyTerminal != nil {
+					bodyStack := terminalStack
+					if bodyTerminal != nil && bodyStack == "" {
 						bodyStack = utils.GetStacktrace(1)
 					}
 					execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
 						terminal := bodyTerminal
 						terminalStack := bodyStack
-						if result.panicData != nil {
-							terminal = result.panicData
-							terminalStack = string(result.panicStack)
-						}
-						if result.cleanupPanicData != nil {
-							terminal = result.cleanupPanicData
-							terminalStack = string(result.cleanupPanicStack)
+						// Fuzz telemetry keeps the original body panic when cleanup
+						// also panics. Other retry attempts retain native precedence.
+						if execMeta.fuzzEvents == nil || bodyTerminal == nil {
+							if result.panicData != nil {
+								terminal = result.panicData
+								terminalStack = string(result.panicStack)
+							}
+							if result.cleanupPanicData != nil {
+								terminal = result.cleanupPanicData
+								terminalStack = string(result.cleanupPanicStack)
+							}
 						}
 						logFreshRetryAttemptState("finalize_orchestrion", currentT, result)
+						if execMeta.fuzzEvents != nil && terminal != nil {
+							// The fresh runner has already finalized this T's outcome.
+							// Preserve panic telemetry without calling Fail after done.
+							execMeta.panicData = terminal
+							execMeta.panicStacktrace = terminalStack
+							terminal = nil
+						}
 						finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, false)
 					}
 					if r != nil {
@@ -358,23 +370,37 @@ func instrumentTestingTFuncWithSourceOptions(
 				if unexpectedTermination {
 					r = unexpectedTestTerminationMessage
 				}
-				terminalStack := ""
-				if r != nil {
+				nativeTerminal := r
+				if execMeta.fuzzEvents != nil && execMeta.cleanupResult != nil && execMeta.cleanupResult.goexit {
+					// Cleanup Goexit replaces the body panic. Fatal/SkipNow keep
+					// their native outcome; bare Goexit still needs native exit 2.
+					nativeTerminal = nil
+					if !bodyReturned && !currentT.Skipped() && (currentPrivates == nil || !currentPrivates.GetFinished()) {
+						nativeTerminal = errTestingDidNotReturn
+						if r == nil {
+							r = nativeTerminal
+						}
+					}
+				}
+				if r != nil && terminalStack == "" {
 					terminalStack = utils.GetStacktrace(1)
 				}
 				if execMeta.fuzzEvents != nil {
 					collectAndWriteLogs(currentT, test, nil)
 					if r != nil {
-						currentT.Fail()
+						if nativeTerminal != nil {
+							currentT.Fail()
+						}
 						execMeta.panicData = r
 						execMeta.panicStacktrace = terminalStack
-						execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{Type: "panic", Message: fmt.Sprint(r), Stack: terminalStack})
+						if unexpectedTermination {
+							recordFuzzPanic(execMeta, r, terminalStack)
+						}
 					}
 					execMeta.fuzzEvents.add(fuzzTestEvent{native: t, metadata: execMeta, test: test, suite: suite, module: module, finishTime: time.Now(), failed: currentT.Failed(), skipped: currentT.Skipped(), closeContainers: !execMeta.hasAdditionalFeatureWrapper})
 				} else {
 					finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
 				}
-				nativeTerminal := r
 				if nativeTerminal == nil && execMeta.cleanupResult != nil {
 					nativeTerminal = execMeta.cleanupResult.panicData
 				}
@@ -400,13 +426,8 @@ func instrumentTestingTFuncWithSourceOptions(
 			bodyReturned = true
 		}
 
-		if additionalFeatures {
-			wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
-			wrappedFunc(t)
-		} else {
-			wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{testManagementOnly: true})
-			wrappedFunc(t)
-		}
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{testManagementOnly: !additionalFeatures})
+		wrappedFunc(t)
 	}
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
@@ -479,9 +500,8 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly. Store the skip reason for the defer block.
-		if ciTestItem.hasAdditionalFeatureWrapper {
+		// Retry wrappers and deferred fuzz events observe cleanup before closing.
+		if ciTestItem.hasAdditionalFeatureWrapper || ciTestItem.fuzzEvents != nil {
 			ciTestItem.skipReason = skipReason
 			return
 		}
@@ -517,9 +537,8 @@ func instrumentSkipNow(tb testing.TB) {
 			ciTestItem.skipReason = *formatted
 		}
 		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly.
-		if ciTestItem.hasAdditionalFeatureWrapper {
+		// Retry wrappers and deferred fuzz events observe cleanup before closing.
+		if ciTestItem.hasAdditionalFeatureWrapper || ciTestItem.fuzzEvents != nil {
 			return
 		}
 		// For single-execution tests (no wrapper), this is the final execution.

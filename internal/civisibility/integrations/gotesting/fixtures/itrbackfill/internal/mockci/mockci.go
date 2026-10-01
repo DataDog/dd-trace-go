@@ -74,6 +74,7 @@ type Event struct {
 // Content is the span content used by fixture assertions.
 type Content struct {
 	Resource string             `json:"resource"`
+	Duration int64              `json:"duration"`
 	Meta     map[string]string  `json:"meta"`
 	Metrics  map[string]float64 `json:"metrics"`
 }
@@ -228,16 +229,6 @@ func (s *Server) HasEventResourceMeta(resourceContains, key, value string) bool 
 			continue
 		}
 		if key == "" || event.Content.Meta[key] == value {
-			return true
-		}
-	}
-	return false
-}
-
-// HasEventResourceMetaKey returns true when a matching event contains a non-empty meta value.
-func (s *Server) HasEventResourceMetaKey(resourceContains, key string) bool {
-	for _, event := range s.Events() {
-		if strings.Contains(event.Content.Resource, resourceContains) && event.Content.Meta[key] != "" {
 			return true
 		}
 	}

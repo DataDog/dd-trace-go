@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -167,6 +168,8 @@ func finishFuzzTestEvent(failed, skipped bool, execMeta *testExecutionMetadata, 
 		status = integrations.ResultStatusFail
 		if captured := execMeta.processRetryError.Load(); captured != nil {
 			test.SetError(integrations.WithErrorInfo(captured.Type, captured.Message, captured.Stack))
+		} else if execMeta.panicData != nil {
+			test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
 		} else {
 			test.SetTag(ext.Error, true)
 		}

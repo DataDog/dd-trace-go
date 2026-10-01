@@ -8,9 +8,61 @@ package gotesting
 import (
 	"runtime"
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestCompleteFuzzTargetLifecycleCleanupFatalSuppressesBodyPanic(t *testing.T) {
+	f := &testing.F{}
+	f.Cleanup(func() { f.Fatal("cleanup fatal") })
+	terminal, _ := completeFuzzTargetLifecycle(f, false, "body panic")
+	require.Nil(t, terminal, "native cleanup Fatal replaces the panic with a normal failure")
+	require.True(t, f.Failed())
+}
+
+func TestCompleteFuzzTargetLifecycleCleanupErrorPreservesBodyPanic(t *testing.T) {
+	f := &testing.F{}
+	f.Cleanup(func() { f.Error("cleanup error") })
+	terminal, _ := completeFuzzTargetLifecycle(f, false, "body panic")
+	require.Equal(t, "body panic", terminal)
+	require.True(t, f.Failed())
+}
+
+func TestCompleteFuzzParallelSeedsOffsetsNativeDurationOnce(t *testing.T) {
+	f := &testing.F{}
+	fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f)))
+	seed := &testing.T{}
+	seedFields := getTestPrivateFields(seed)
+	*seedFields.signal = make(chan bool)
+	*fields.barrier = make(chan bool)
+	*fields.sub = []*testing.T{seed}
+	setFuzzNativeField(t, f, "duration", 20*time.Millisecond)
+	go func() {
+		<-*fields.barrier
+		*seedFields.signal <- true
+	}()
+
+	completeFuzzParallelSeeds(f)
+
+	event := fuzzTestEvent{native: f}
+	_, _, duration := event.nativeResult(true)
+	require.Less(t, duration, 20*time.Millisecond, "fRunner must exclude the already-drained wait")
+	require.Empty(t, *fields.sub)
+	completeFuzzParallelSeeds(f)
+	_, _, repeated := event.nativeResult(true)
+	require.Equal(t, duration, repeated, "a second drain must not subtract the wait again")
+}
+
+func TestRecordFuzzPanicPreservesFirstError(t *testing.T) {
+	meta := &testExecutionMetadata{}
+	recordFuzzPanic(meta, "body panic", "body stack")
+	meta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{Type: "Error", Message: "cleanup error"})
+	require.Equal(t, &processRetryErrorInfo{Type: "panic", Message: "body panic", Stack: "body stack"}, meta.processRetryError.Load())
+	recordFuzzPanic(meta, "secondary panic", "secondary stack")
+	require.Equal(t, "body panic", meta.processRetryError.Load().Message)
+}
 
 func TestCompleteFuzzTargetLifecycleObservesCleanupPanic(t *testing.T) {
 	f := &testing.F{}
@@ -62,14 +114,34 @@ func TestCompleteFuzzTargetLifecyclePreservesCleanupSkip(t *testing.T) {
 	require.False(t, f.Failed())
 }
 
-func TestCompleteFuzzTargetLifecycleRejectsCleanupGoexit(t *testing.T) {
-	f := &testing.F{}
-	f.Cleanup(runtime.Goexit)
+func TestCompleteFuzzTargetLifecycleHandlesGoexit(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		bodyReturned, fuzzCalled  bool
+		wantTerminal, wantFailure bool
+	}{
+		{name: "cleanup after F.Fuzz", bodyReturned: true, fuzzCalled: true},
+		{name: "unfinished body", fuzzCalled: true, wantTerminal: true, wantFailure: true},
+		{name: "missing F.Fuzz", bodyReturned: true, wantFailure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &testing.F{}
+			setFuzzNativeField(t, f, "fuzzCalled", tc.fuzzCalled)
+			remainingCleanupRan := false
+			f.Cleanup(func() { remainingCleanupRan = true })
+			f.Cleanup(runtime.Goexit)
 
-	terminal, _ := completeFuzzTargetLifecycle(f, true, nil)
+			terminal, _ := completeFuzzTargetLifecycle(f, tc.bodyReturned, nil)
 
-	require.ErrorIs(t, terminal.(error), errTestingDidNotReturn)
-	require.True(t, f.Failed())
+			if tc.wantTerminal {
+				require.ErrorIs(t, terminal.(error), errTestingDidNotReturn)
+			} else {
+				require.Nil(t, terminal)
+			}
+			require.Equal(t, tc.wantFailure, f.Failed())
+			require.True(t, remainingCleanupRan, "Goexit must not discard earlier cleanups")
+		})
+	}
 }
 
 func TestTestingFuzzWorkerRequested(t *testing.T) {

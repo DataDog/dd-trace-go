@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -65,6 +66,43 @@ func TestFuzzEventsPreserveExecutionDuration(t *testing.T) {
 	queue.add(pending)
 	queue.finish()
 	require.Equal(t, pending.finishTime, event.finish, "an incomplete native lifecycle uses the original captured finish")
+}
+
+func TestFuzzEventsPreserveCleanupPanicDetails(t *testing.T) {
+	for _, bodyPanic := range []bool{false, true} {
+		for _, quarantined := range []bool{false, true} {
+			t.Run(fmt.Sprintf("body_panic=%t/quarantined=%t", bodyPanic, quarantined), func(t *testing.T) {
+				native := &testing.T{}
+				remainingCleanupRan := false
+				native.Cleanup(func() { remainingCleanupRan = true })
+				native.Cleanup(func() { panic("cleanup panic sentinel") })
+				meta := &testExecutionMetadata{cleanupResult: &testCleanupResult{}, isQuarantined: quarantined}
+				runAndApplyTestCleanupWithDurationOptions(native, meta, time.Millisecond, true)
+				require.Equal(t, "cleanup panic sentinel", meta.panicData)
+				require.True(t, remainingCleanupRan)
+				require.False(t, meta.cleanupResult.goexit, "panic is not Goexit")
+				require.Contains(t, meta.panicStacktrace, "TestFuzzEventsPreserveCleanupPanicDetails")
+				wantMessage, wantStack := "cleanup panic sentinel", meta.panicStacktrace
+				if bodyPanic {
+					wantMessage, wantStack = "body panic sentinel", "body stack sentinel"
+					meta.processRetryError.Store(&processRetryErrorInfo{Type: "panic", Message: wantMessage, Stack: wantStack})
+				}
+				event := newProcessRetryRecordingTestForTesting("cleanup panic")
+				queue := &fuzzEventQueue{}
+				queue.add(fuzzTestEvent{native: native, metadata: meta, test: event, suite: event.suite, module: event.suite.module, failed: native.Failed(), finishTime: time.Now()})
+				queue.finishAfterNativeRun()
+				require.Equal(t, processRetryStatusFail, event.status)
+				require.Equal(t, "panic", event.errorType)
+				require.Equal(t, wantMessage, event.errorMessage)
+				require.Equal(t, wantStack, event.errorStack)
+				wantFinal := constants.TestStatusFail
+				if quarantined {
+					wantFinal = constants.TestStatusSkip
+				}
+				require.Equal(t, wantFinal, event.tags[constants.TestFinalStatus])
+			})
+		}
+	}
 }
 
 func TestFuzzEventsFatalDrainDoesNotReadUnprotectedDuration(t *testing.T) {

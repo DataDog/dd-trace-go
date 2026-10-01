@@ -27,6 +27,7 @@ var fixtureScenarios = []string{
 	"pass",
 	"fuzz-failure",
 	"seed-lifecycle",
+	"root-cleanup-goexit",
 	"fuzz-missing-call",
 	"example-mismatch",
 	"example-panic",
@@ -35,6 +36,8 @@ var fixtureScenarios = []string{
 	"active-fuzz",
 	"filtered",
 	"fatal-shutdown",
+	"skip-lifecycle",
+	"parallel-duration",
 	"corpus-lifecycle",
 	"repeat-run",
 }
@@ -128,8 +131,14 @@ func fixtureScenarioArgs(scenario, fuzzCacheDir string) []string {
 		return append(args, "-test.run=^FuzzNativeParity$")
 	case "fatal-shutdown":
 		return append(args, "-test.run=^TestFuzzFatalShutdown$")
+	case "skip-lifecycle":
+		return append(args, "-test.run=^TestFuzzSkipLifecycle$")
+	case "parallel-duration":
+		return append(args, "-test.run=^TestFuzzParallelDuration$")
 	case "seed-lifecycle":
 		return append(args, "-test.run=^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$")
+	case "root-cleanup-goexit":
+		return append(args, "-test.run=^FuzzRootCleanupGoexit$")
 	case "fuzz-missing-call":
 		return append(args, "-test.run=^FuzzMissingCall$")
 	case "example-panic-nil":
@@ -213,6 +222,7 @@ func TestFixtureScenarioArgs(t *testing.T) {
 		{scenario: "pass", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
 		{scenario: "fuzz-failure", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
 		{scenario: "seed-lifecycle", want: append(slices.Clone(common), "-test.run=^FuzzSeed(CleanupFailure|CleanupSkip|ParallelFailure)$")},
+		{scenario: "root-cleanup-goexit", want: append(slices.Clone(common), "-test.run=^FuzzRootCleanupGoexit$")},
 		{scenario: "fuzz-missing-call", want: append(slices.Clone(common), "-test.run=^FuzzMissingCall$")},
 		{scenario: "example-mismatch", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
 		{scenario: "example-panic", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")},
@@ -221,6 +231,8 @@ func TestFixtureScenarioArgs(t *testing.T) {
 		{scenario: "active-fuzz", want: append(slices.Clone(common), "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)},
 		{scenario: "filtered", want: append(slices.Clone(common), "-test.run=^TestNormalSelection$")},
 		{scenario: "fatal-shutdown", want: append(slices.Clone(common), "-test.run=^TestFuzzFatalShutdown$")},
+		{scenario: "skip-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzSkipLifecycle$")},
+		{scenario: "parallel-duration", want: append(slices.Clone(common), "-test.run=^TestFuzzParallelDuration$")},
 		{scenario: "corpus-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")},
 		{scenario: "repeat-run", want: append(slices.Clone(common), "-test.run=^FuzzNativeParity$")},
 	}
