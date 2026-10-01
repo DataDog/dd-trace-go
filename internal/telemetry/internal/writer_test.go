@@ -7,6 +7,7 @@ package internal
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,32 @@ func TestWriter_Flush_Success(t *testing.T) {
 	assert.NotZero(t, bytesSent)
 	assert.True(t, marshalJSONCalled.Load())
 	assert.True(t, payloadReceived.Load())
+}
+
+func TestWriter_NewRequest_PropagatesMarshalPanic(t *testing.T) {
+	tests := map[string]any{
+		"error":  errors.New("boom"),
+		"string": "boom",
+	}
+
+	for name, panicValue := range tests {
+		t.Run(name, func(t *testing.T) {
+			payload := &testPayload{
+				RequestTypeValue: "test",
+				marshalJSON: func() ([]byte, error) {
+					panic(panicValue)
+				},
+			}
+			w := &writer{body: newBody(TracerConfig{}, false)}
+			w.setPayloadToBody(payload)
+
+			request := w.newRequest(&http.Request{Header: make(http.Header)}, payload.RequestType())
+			defer request.Body.Close()
+
+			_, err := io.ReadAll(request.Body)
+			require.ErrorContains(t, err, "boom")
+		})
+	}
 }
 
 func TestWriter_Flush_Failure(t *testing.T) {
