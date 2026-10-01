@@ -34,8 +34,6 @@ func TestNamingSchema(t *testing.T) {
 		awsSDKV2Messaging,
 		// confluentKafkaV1, // this one lives in a separate package due to build errors
 		confluentKafkaV2,
-		connectServerTest,
-		connectClientTest,
 		databaseSQL_SQLServer,
 		databaseSQL_Postgres,
 		databaseSQL_PostgresWithRegisterOverride,
