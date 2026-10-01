@@ -416,43 +416,52 @@ func (c *client) AppStop() {
 
 func (c *client) Close() error {
 	c.flushTicker.Stop()
+	c.joinBounded(c.flushTicker.Done(), "the ticker flush")
+
 	c.startFlushMu.Lock()
 	done := c.startFlushDone
 	c.startFlushMu.Unlock()
 	if done == nil {
 		return nil
 	}
-	// Join the app-started flush. Callers close idle HTTP connections right
-	// after Close returns. When the flush still runs at that point, the close
-	// cannot reach its connection, and the connection stays orphaned in the
-	// idle pool until the transport IdleConnTimeout elapses.
-	bound := c.flushJoinBound()
-	select {
-	case <-done:
-		return nil
-	case <-time.After(bound):
-	}
-	// The flush spans several sequential requests, and each request may use
-	// the whole bound, so the flush can outlast the bound without anything
-	// being stuck. Cancel the flush requests instead of waiting longer: a
-	// canceled request closes its connection, so no orphan remains.
-	c.writer.Cancel()
-	log.Warn("telemetry: the app-started flush did not finish within %s of Close; canceled it", bound)
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		// The flush goroutine did not unwind after the cancel. Leave it; the
-		// cancel prevents any new request from this client.
-		log.Warn("telemetry: the app-started flush did not unwind after the cancel; Close continues without it")
-	}
+	c.joinBounded(done, "the app-started flush")
 	return nil
 }
 
-// flushJoinBound returns how long Close waits for the app-started flush
-// before it cancels the flush. The writer caps every client timeout above
-// five seconds, and a client without a timeout uses the writer's
-// five-second default, so five seconds is the longest request deadline in
-// flight. One second of grace covers scheduling delay.
+// joinBounded waits for a flush to finish within one request deadline plus a
+// second of grace. Callers close idle HTTP connections right after Close
+// returns, and a flush still in flight at that point leaves its connection
+// orphaned in the idle pool until the transport IdleConnTimeout elapses.
+//
+// A flush spans several sequential requests, and each request may use the
+// whole deadline, so a healthy flush can outlast the bound. When the bound
+// expires, joinBounded cancels the flush requests instead of waiting longer:
+// a canceled request closes its connection, so no orphan remains. A caller
+// inside the flush goroutine itself also returns this way: the cancel unblocks
+// the flush, which lets that caller's Close return.
+func (c *client) joinBounded(done <-chan struct{}, what string) {
+	bound := c.flushJoinBound()
+	select {
+	case <-done:
+		return
+	case <-time.After(bound):
+	}
+	c.writer.Cancel()
+	log.Warn("telemetry: %s did not finish within %s of Close; canceled it", what, bound)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		// The flush did not unwind after the cancel. Leave it; the cancel
+		// prevents any new request from this client.
+		log.Warn("telemetry: %s did not unwind after the cancel; Close continues without it", what)
+	}
+}
+
+// flushJoinBound returns how long Close waits for one flush before it
+// cancels that flush. The writer caps every client timeout above five
+// seconds, and a client without a timeout uses the writer's five-second
+// default, so five seconds is the longest request deadline in flight. One
+// second of grace covers scheduling delay.
 func (c *client) flushJoinBound() time.Duration {
 	deadline := 5 * time.Second
 	if client := c.clientConfig.HTTPClient; client != nil && client.Timeout > 0 && client.Timeout < deadline {

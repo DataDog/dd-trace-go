@@ -265,3 +265,55 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 		}
 	}, 5*time.Second, 10*time.Millisecond, "the app-started flush goroutine did not exit after the cancel")
 }
+
+// TestCloseFromFlushTickerCallbackReturns verifies that Close called from a
+// flush ticker callback returns instead of waiting for the ticker worker:
+// that worker runs the callback, so a joining stop would wait for itself and
+// block forever. Close returns after its bound expires, which lets the
+// callback return, which lets the worker exit.
+func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
+	// Force telemetry enabled: StartApp ignores calls while Disabled.
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { SwapClient(nil) })
+	SwapClient(nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{
+		AgentURL:   srv.URL,
+		HTTPClient: &http.Client{Timeout: 100 * time.Millisecond},
+	})
+	config.FlushInterval = internal.Range[time.Duration]{Min: 10 * time.Millisecond, Max: 20 * time.Millisecond}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+
+	var closing sync.Once
+	closedFromCallback := make(chan struct{})
+	c.AddFlushTicker(func(cl Client) {
+		closing.Do(func() {
+			cl.Close()
+			close(closedFromCallback)
+		})
+	})
+
+	select {
+	case <-closedFromCallback:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Close called from a flush ticker callback did not return")
+	}
+
+	// The worker exits once the callback returned.
+	require.Eventually(t, func() bool {
+		select {
+		case <-c.flushTicker.Done():
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond, "the ticker worker did not exit")
+}

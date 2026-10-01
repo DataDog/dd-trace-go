@@ -24,8 +24,9 @@ type Ticker struct {
 
 	tickFunc TickFunc
 
-	stopChan chan struct{}
 	stopOnce sync.Once
+	stop     chan struct{} // closed by Stop; the worker exits on a closed stop
+	done     chan struct{} // closed by the worker when it returns
 }
 
 func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
@@ -34,15 +35,17 @@ func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
 		tickSpeed: interval.Max,
 		interval:  interval,
 		tickFunc:  tickFunc,
-		stopChan:  make(chan struct{}),
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 
 	go func() {
+		defer close(ticker.done)
 		for {
 			select {
 			case <-ticker.ticker.C:
 				tickFunc()
-			case <-ticker.stopChan:
+			case <-ticker.stop:
 				return
 			}
 		}
@@ -81,14 +84,20 @@ func (t *Ticker) CanDecreaseSpeed() {
 	t.ticker.Reset(t.tickSpeed)
 }
 
-// Stop stops the ticker and waits for the worker goroutine to return when a
-// tick is still running. Stop is safe for concurrent use and can run on any
-// goroutine, including the worker itself: the caller then blocks until the
-// current tick ends.
+// Stop stops the ticker. Stop is safe for concurrent use and never
+// blocks: it only closes the stop channel, so a caller inside the worker's
+// own tickFunc can stop the ticker without waiting for itself. The worker
+// finishes the current tick before it exits. Wait for the worker through
+// Done.
 func (t *Ticker) Stop() {
 	t.stopOnce.Do(func() {
 		t.ticker.Stop()
-		t.stopChan <- struct{}{}
-		close(t.stopChan)
+		close(t.stop)
 	})
+}
+
+// Done closes when the worker goroutine returned. The worker returns after
+// Stop ran and the current tick ended.
+func (t *Ticker) Done() <-chan struct{} {
+	return t.done
 }
