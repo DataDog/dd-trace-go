@@ -231,10 +231,43 @@ func writeClient(t *testing.T, dir, root, orchestrionVersion, entry string) {
 	}
 }
 
+func TestClientEnv(t *testing.T) {
+	for _, test := range []struct{ key, want string }{
+		{"DD_CIVISIBILITY_ENABLED", ""},
+		{"dd_civisibility_enabled", ""},
+		{"Dd_CiVisibility_Enabled", ""},
+		{"OTEL_SERVICE_NAME", ""},
+		{"otel_service_name", ""},
+		{"Otel_Service_Name", ""},
+		{"GOFLAGS", "GOFLAGS=-mod=mod"},
+		{"goflags", "GOFLAGS=-mod=mod"},
+		{"GoFlags", "GOFLAGS=-mod=mod"},
+		{"GOWORK", "GOWORK=off"},
+		{"gowork", "GOWORK=off"},
+		{"GoWork", "GOWORK=off"},
+		{"CivizFixture_Keep", "CivizFixture_Keep=inherited=value"},
+	} {
+		t.Run(test.key, func(t *testing.T) {
+			t.Setenv(test.key, "inherited=value")
+			var got []string
+			for _, entry := range clientEnv() {
+				key, _, _ := strings.Cut(entry, "=")
+				if strings.EqualFold(key, test.key) {
+					got = append(got, entry)
+				}
+			}
+			if actual := strings.Join(got, "\n"); actual != test.want {
+				t.Fatalf("clientEnv entries for %q = %q, want %q", test.key, actual, test.want)
+			}
+		})
+	}
+}
+
 func clientEnv() []string {
 	var result []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
+		key = strings.ToUpper(key)
 		if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") || key == "GOFLAGS" || key == "GOWORK" {
 			continue
 		}
