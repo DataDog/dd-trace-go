@@ -63,6 +63,7 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          workload: multi-os
           tools-dir: ${{ env.normalized_workspace }}/_tools
           tools-bin: ${{ env.normalized_workspace }}/bin
       - name: Mac OS Coreutils
