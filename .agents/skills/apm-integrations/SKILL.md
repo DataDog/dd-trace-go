@@ -17,7 +17,11 @@ hand. Each is a nested Go module under `/contrib`.
 - [`/contrib/ORCHESTRION.md`](/contrib/ORCHESTRION.md), the auto-instrumentation guide.
 
 Every rule lives in those guides, not here. Open the linked section, not the whole file. Read
-INTEGRATIONS.md end to end only when building a new integration from scratch.
+INTEGRATIONS.md end to end only when building a new integration from scratch. For reviewing or
+debugging an existing integration, skip the workflow and open the section that matches the change:
+[§5](/contrib/INTEGRATIONS.md#5-spans-tags-and-naming) for spans, tags, and naming,
+[§10](/contrib/INTEGRATIONS.md#10-testing) for tests, and
+[ORCHESTRION.md](/contrib/ORCHESTRION.md) for weaving problems.
 
 ## Workflow
 

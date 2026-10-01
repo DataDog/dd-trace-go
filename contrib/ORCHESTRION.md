@@ -49,9 +49,11 @@ its surroundings:
   `{{ .Function.Argument 0 }}` fails if there is no such argument. Also `Name`, `Result`,
   `ArgumentOfType`, `ResultOfType`.
 - `{{ .DirectiveArgs "name" }}`: the arguments of a matching directive comment.
+- `{{ Version }}`: the version of Orchestrion weaving the build, as a plain function call.
 
 For the full set of join points and advice and when to use each, see the schema and contributor guide
-above. For patterns to copy, read the existing `contrib/*/orchestrion.yml` files.
+above. For patterns to copy, read the existing `contrib/*/orchestrion.yml` files. Keep the code you
+inject in an advice as minimal as possible, and use only public, exposed APIs.
 
 ## Common patterns
 
@@ -176,6 +178,12 @@ Auto-instrumentation is verified by the tests under
 [internal/orchestrion/_integration](../internal/orchestrion/_integration). See its
 [README](../internal/orchestrion/_integration/README.md) for how to write and run these tests.
 
+Some feature-owned acceptance tests live with their owning integration instead, when they need a
+specialized harness rather than the shared trace scenario runner. For example, CI Visibility's ITR
+coverage backfill fixture lives under
+[internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion](../internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion)
+and imports only the Go `testing` integration. It adds no new aspect or integration.
+
 - A test is a `TestCase` with `Setup`, `Run`, and `ExpectedTraces`.
 - Name the base case `TestCase`. For several cases in one package, keep the `TestCase` prefix, for
   example `TestCaseSubrouter`. The generator registers every type whose name starts with `TestCase`.
@@ -186,9 +194,10 @@ Auto-instrumentation is verified by the tests under
 - `ExpectedTraces` is a partial match, not a full one: it checks that the spans you list appear and
   ignores the rest. Make the assertions as complete as you can, asserting every span the trace should
   contain.
-- Write one file per distinct calling convention the library supports: function literal, interface,
-  closure, global convenience function, explicit construction, value versus pointer config. This
-  exercises the join-point matchers and catches build breaks at compile time.
+- Write one file per distinct calling convention the library supports, and one per reported-issue
+  regression. This exercises the join-point matchers and catches build breaks at compile time. The
+  [integration-test README](../internal/orchestrion/_integration/README.md) lists the conventions
+  and example files.
 
 New `TestCase` types are not run by the test runner until the generated test files are regenerated.
 After adding a `TestCase` or editing any `orchestrion.yml`, run `make generate`, which regenerates the
