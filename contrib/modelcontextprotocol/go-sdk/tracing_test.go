@@ -407,4 +407,44 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	assert.Contains(t, outputStr, "invalid input")
 }
 
+func TestToolCallNonCallToolResult(t *testing.T) {
+	tests := map[string]struct {
+		result mcp.Result
+	}{
+		"nil result":                     {result: nil},
+		"result is not a CallToolResult": {result: &mcp.InitializeResult{}},
+		"typed nil CallToolResult":       {result: (*mcp.CallToolResult)(nil)},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tt := testTracer(t)
+
+			handler := tracingMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+				return tc.result, nil
+			})
+			// The server always sets a session on requests it dispatches.
+			req := &mcp.CallToolRequest{
+				Session: &mcp.ServerSession{},
+				Params:  &mcp.CallToolParamsRaw{Name: "nil_result_tool"},
+			}
+
+			var (
+				got mcp.Result
+				err error
+			)
+			require.NotPanics(t, func() {
+				got, err = handler(context.Background(), "tools/call", req)
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.result, got)
+
+			tracer.Flush()
+			toolSpan := tt.RequireSpan(t, "nil_result_tool")
+			assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
+			assert.NotContains(t, toolSpan.Meta, "error.message")
+		})
+	}
+}
+
 // Shared helpers
