@@ -17,6 +17,7 @@
 // # Integrations
 //
 // Each integration is published as its own module:
+//   - [contrib/99designs/gqlgen/otelc/v2]
 //   - [contrib/99designs/gqlgen/v2]
 //   - [contrib/IBM/sarama/v2]
 //   - [contrib/Shopify/sarama/v2]
@@ -86,6 +87,7 @@
 //   - [contrib/valkey-io/valkey-go/v2]
 //   - [contrib/valyala/fasthttp/v2]
 //
+// [contrib/99designs/gqlgen/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2
 // [contrib/99designs/gqlgen/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
 // [contrib/IBM/sarama/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 // [contrib/Shopify/sarama/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2

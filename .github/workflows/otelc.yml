@@ -114,7 +114,8 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all; do
+          for dir in internal/orchestrion/_integration otelc/all \
+                     contrib/99designs/gqlgen/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -132,7 +133,8 @@ jobs:
             ${PREFIX}/otelc \
             ${PREFIX}/gls \
             ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart"
+            ${PREFIX}/otelc-autostart \
+            ${PREFIX}/99designs.gqlgen"
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
