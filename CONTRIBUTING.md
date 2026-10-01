@@ -78,7 +78,7 @@ Our CI pipeline includes several automated checks:
 
 #### Benchmark Apps Build
 
-- **Benchmark Apps Build**: Runs in the Orchestrion workflow, behind the `benchmark-apps` gate of [`.github/ci-components.yml`](./.github/ci-components.yml). It builds the real benchmark applications from [`DataDog/apm-sdks-benchmarks`](https://github.com/DataDog/apm-sdks-benchmarks) (`go-prof-app` with the `datadog-latest` product and `fibonacci` with `datadog-orchestrion`) against the pull request's pseudo-version, resolving dd-trace-go from the module proxy: with the apps' committed `go.sum` files and no `replace` directives, and no `go mod tidy` after the version bump. It catches merges that make `orchestrion/all/v2` import packages or modules that no published version contains, which is the one fidelity level no working-tree-based check can cover.
+- **Benchmark Apps Build**: Runs in a trusted workflow behind the `benchmark-apps` gate of [`.github/ci-components.yml`](./.github/ci-components.yml). It builds two Go applications against the pull request's pseudo-version. The builds resolve dd-trace-go from the module proxy. They use the committed `go.sum` files without a `replace` directive or a final `go mod tidy`. This check detects dependencies that have no published version. The workflow skips pull requests from forks.
 
 #### Generate Workflow
 

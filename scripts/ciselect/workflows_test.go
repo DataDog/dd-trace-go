@@ -347,11 +347,17 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 		{
 			workflow: "orchestrion.yml",
 			job:      "integration-test-done",
-			strict:   []string{"needs.changes.outputs.orchestrion == 'true'", "needs.changes.outputs.benchmark-apps == 'true'"},
+			strict:   []string{"needs.changes.outputs.orchestrion == 'true'"},
 			deps: []string{
 				"changes", "generate", "go-versions-matrix",
-				"service-containers", "integration-test", "benchmark-apps",
+				"service-containers", "integration-test",
 			},
+		},
+		{
+			workflow: "benchmark-apps.yml",
+			job:      "benchmark-apps-done",
+			strict:   []string{"needs.changes.outputs.benchmark-apps == 'true'"},
+			deps:     []string{"changes", "benchmark-apps"},
 		},
 		{
 			workflow: "unit-integration-tests.yml",

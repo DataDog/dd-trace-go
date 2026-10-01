@@ -91,8 +91,14 @@ var classifyCases = []classifyCase{
 		// editing an aspect file. build-metrics.yml had exactly this bug.
 		name:    "the orchestrion workflow is a workflow, not an aspect file",
 		files:   []string{".github/workflows/orchestrion.yml"},
-		want:    []string{"orchestrion", "benchmark-apps", "static-actions"},
-		notWant: []string{"generate", "pull-request-tests", "system-tests"},
+		want:    []string{"orchestrion", "static-actions"},
+		notWant: []string{"benchmark-apps", "generate", "pull-request-tests", "system-tests"},
+	},
+	{
+		name:    "the benchmark apps workflow owns its gate",
+		files:   []string{".github/workflows/benchmark-apps.yml"},
+		want:    []string{"benchmark-apps", "static-actions"},
+		notWant: []string{"generate", "orchestrion", "pull-request-tests", "system-tests"},
 	},
 	{
 		// The gitlink has no trailing slash and no children, so the
