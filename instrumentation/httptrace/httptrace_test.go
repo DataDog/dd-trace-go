@@ -1569,17 +1569,7 @@ func BenchmarkObfuscateAdversarial(b *testing.B) {
 }
 
 func BenchmarkStartRequestSpan(b *testing.B) {
-	benchmarkStartRequestSpan(b, false)
-}
-
-func BenchmarkStartRequestSpanOTelSemantics(b *testing.B) {
-	benchmarkStartRequestSpan(b, true)
-}
-
-func benchmarkStartRequestSpan(b *testing.B, otelSemanticsEnabled bool) {
-	oldCfg := cfg
-	b.Cleanup(func() { cfg = oldCfg })
-	cfg.otelSemanticsEnabled = otelSemanticsEnabled
+	b.ReportAllocs()
 	r, err := http.NewRequest("GET", "http://example.com", nil)
 	if err != nil {
 		b.Errorf("Failed to create request: %v", err)
@@ -1591,7 +1581,6 @@ func benchmarkStartRequestSpan(b *testing.B, otelSemanticsEnabled bool) {
 		tracer.ResourceName("SomeResource"),
 		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
 	}
-	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		StartRequestSpan(r, opts...)
