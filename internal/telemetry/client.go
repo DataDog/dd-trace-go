@@ -117,6 +117,9 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
+	// startFlushWg tracks the app-started flush goroutine that StartApp spawns.
+	// Close joins this group so the flush completes before Close returns.
+	startFlushWg sync.WaitGroup
 	// flushMu is used to ensure that only one flush is happening at a time
 	flushMu sync.Mutex
 
@@ -407,5 +410,10 @@ func (c *client) AppStop() {
 
 func (c *client) Close() error {
 	c.flushTicker.Stop()
+	// Join the app-started flush. Callers close idle HTTP connections right
+	// after Close returns. When the flush still runs at that point, the close
+	// cannot reach its connection, and the connection stays orphaned in the
+	// idle pool until the transport IdleConnTimeout elapses.
+	c.startFlushWg.Wait()
 	return nil
 }

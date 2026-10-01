@@ -49,6 +49,15 @@ func GlobalClient() Client {
 	return *client
 }
 
+// asClient returns the *client behind c, or nil when c is another Client
+// implementation such as a test double.
+func asClient(c Client) *client {
+	if cc, ok := c.(*client); ok {
+		return cc
+	}
+	return nil
+}
+
 // StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client)
 // then calls client.Flush on the client asynchronously.
 func StartApp(client Client) {
@@ -62,18 +71,29 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
+	c := asClient(client)
 	// Increment the WaitGroup before SwapClient makes the client visible so
 	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
 	startAppFlushWg.Add(1)
+	if c != nil {
+		// Track the flush on the client so Close joins it too.
+		c.startFlushWg.Add(1)
+	}
 	if SwapClient(client) != nil {
 		// A concurrent StartApp call already set the client; undo the Add.
 		startAppFlushWg.Done()
+		if c != nil {
+			c.startFlushWg.Done()
+		}
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
 	go func() {
 		defer startAppFlushWg.Done()
+		if c != nil {
+			defer c.startFlushWg.Done()
+		}
 		client.Flush()
 	}()
 }
