@@ -202,8 +202,6 @@ To keep them in agreement, entries are restricted to the subset on which both be
 
 Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
 
-Run the validator's unit tests with `go test ./scripts/check_codeowners.go ./scripts/check_codeowners_test.go`; its standalone files use the `ignore` build tag.
-
 ## Getting a PR Reviewed
 
 We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
