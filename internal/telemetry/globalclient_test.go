@@ -317,3 +317,67 @@ func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 		}
 	}, 5*time.Second, 10*time.Millisecond, "the ticker worker did not exit")
 }
+
+// TestConcurrentStartAppSingleClientKeepsFlushWorking verifies that two
+// concurrent StartApp calls on the same client leave a working client: the
+// call that loses the installation must not overwrite the flush channel of
+// the winner, because a later Close would then wait for a channel that
+// nothing closes, run into its bound, and cancel the writer of the installed
+// client.
+func TestConcurrentStartAppSingleClientKeepsFlushWorking(t *testing.T) {
+	// Force telemetry enabled: StartApp ignores calls while Disabled.
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { SwapClient(nil) })
+	SwapClient(nil)
+
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{
+		AgentURL:   srv.URL,
+		HTTPClient: &http.Client{Timeout: time.Second},
+	})
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+
+	// Race two installations of the same client.
+	var barrier, started sync.WaitGroup
+	barrier.Add(1)
+	for range 2 {
+		started.Add(1)
+		go func() {
+			defer started.Done()
+			barrier.Wait()
+			StartApp(c)
+		}()
+	}
+	barrier.Done()
+	started.Wait()
+
+	// The flush of the winning installation finishes and closes its channel.
+	c.startFlushMu.Lock()
+	flushDone := c.startFlushDone
+	c.startFlushMu.Unlock()
+	require.NotNil(t, flushDone)
+	require.Eventually(t, func() bool {
+		select {
+		case <-flushDone:
+			return true
+		default:
+			return false
+		}
+	}, 10*time.Second, 10*time.Millisecond)
+
+	// The client still sends. A canceled writer, which a corrupted Close
+	// leaves behind, fails every request.
+	c.Flush()
+	require.Eventually(t, func() bool { return requests.Load() > 0 }, 5*time.Second, 10*time.Millisecond,
+		"the client cannot send after concurrent StartApp: the writer was canceled")
+}

@@ -414,6 +414,18 @@ func (c *client) AppStop() {
 	c.flushMapper = mapper.NewAppClosingMapper(c.flushMapper)
 }
 
+// markStartFlushPending records that the app-started flush is about to run
+// and returns the channel that the flush goroutine closes when it returns.
+// Close joins the flush through that channel. Only the StartApp call that
+// installed the client records the channel, so a losing concurrent call
+// cannot replace the channel of the winner.
+func (c *client) markStartFlushPending() chan struct{} {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	c.startFlushDone = make(chan struct{})
+	return c.startFlushDone
+}
+
 func (c *client) Close() error {
 	c.flushTicker.Stop()
 	c.joinBounded(c.flushTicker.Done(), "the ticker flush")

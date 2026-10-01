@@ -19,14 +19,14 @@ type Ticker struct {
 
 	tickSpeedMu sync.Mutex
 	tickSpeed   time.Duration
+	stopped     bool // guarded by tickSpeedMu
 
 	interval Range[time.Duration]
 
 	tickFunc TickFunc
 
-	stopOnce sync.Once
-	stop     chan struct{} // closed by Stop; the worker exits on a closed stop
-	done     chan struct{} // closed by the worker when it returns
+	stop chan struct{} // closed by Stop; the worker exits on a closed stop
+	done chan struct{} // closed by the worker when it returns
 }
 
 func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
@@ -57,6 +57,9 @@ func NewTicker(tickFunc TickFunc, interval Range[time.Duration]) *Ticker {
 func (t *Ticker) CanIncreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
+	if t.stopped {
+		return
+	}
 
 	oldTickSpeed := t.tickSpeed
 	t.tickSpeed = t.interval.Clamp(t.tickSpeed / 2)
@@ -72,6 +75,9 @@ func (t *Ticker) CanIncreaseSpeed() {
 func (t *Ticker) CanDecreaseSpeed() {
 	t.tickSpeedMu.Lock()
 	defer t.tickSpeedMu.Unlock()
+	if t.stopped {
+		return
+	}
 
 	oldTickSpeed := t.tickSpeed
 	t.tickSpeed = t.interval.Clamp(t.tickSpeed * 2)
@@ -88,12 +94,18 @@ func (t *Ticker) CanDecreaseSpeed() {
 // blocks: it only closes the stop channel, so a caller inside the worker's
 // own tickFunc can stop the ticker without waiting for itself. The worker
 // finishes the current tick before it exits. Wait for the worker through
-// Done.
+// Done. Speed changes after Stop are ignored: they would call Reset on the
+// stopped runtime ticker and restart its wakeups with no worker left to
+// consume them.
 func (t *Ticker) Stop() {
-	t.stopOnce.Do(func() {
-		t.ticker.Stop()
-		close(t.stop)
-	})
+	t.tickSpeedMu.Lock()
+	defer t.tickSpeedMu.Unlock()
+	if t.stopped {
+		return
+	}
+	t.stopped = true
+	t.ticker.Stop()
+	close(t.stop)
 }
 
 // Done closes when the worker goroutine returned. The worker returns after
