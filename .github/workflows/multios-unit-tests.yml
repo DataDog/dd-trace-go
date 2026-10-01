@@ -72,9 +72,9 @@ jobs:
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          go list ./... | grep -v \
+          go list ./... | grep -Ev \
             -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof \
-            -e '^github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig/orchestrionfixture$' | sort >packages.txt
+            -e '^github.com/DataDog/dd-trace-go/v2/internal/civisibility(/|$)' | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
 
@@ -115,7 +115,7 @@ jobs:
           files: coverage.txt
           format: go-coverprofile
 
-  test-multi-os-civiz-orchestrion:
+  test-multi-os-civiz:
     runs-on: "${{ inputs.runs-on }}"
     env:
       REPORT: gotestsum-report.xml # path to where test results will be saved
@@ -155,13 +155,22 @@ jobs:
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
+      - name: "Runner: Test CI Visibility"
+        shell: bash
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          go list ./internal/civisibility/... | grep -v \
+            -e '^github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig/orchestrionfixture$' | sort >packages.txt
+          # shellcheck disable=SC2046
+          gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage-civiz.txt -covermode=atomic -timeout 15m
       - name: "Runner: Test Orchestrion Client Fixture"
+        if: ${{ !cancelled() && steps.setup-go.conclusion == 'success' }}
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # Cold Orchestrion configurations recompile the standard library. Run
           # these builds independently of other packages.
-          gotestsum --junitfile "${REPORT}" -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+          gotestsum --junitfile gotestsum-orchestrion-report.xml -- ./internal/civisibility/envconfig/orchestrionfixture -v -coverprofile=coverage-orchestrion.txt -covermode=atomic -timeout 15m
 
       - name: Get Datadog credentials
         id: dd-sts
@@ -178,7 +187,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ./
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},suite:orchestrionfixture
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},suite:civisibility
 
       - name: Report cache metrics to Datadog
         if: always()
@@ -197,5 +206,5 @@ jobs:
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-civiz.txt coverage-orchestrion.txt
           format: go-coverprofile
