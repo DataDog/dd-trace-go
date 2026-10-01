@@ -236,10 +236,15 @@ reported through another channel:
   status. Only a site that always produces an apply status may use this reason.
 
 A site without a directive stays actionable in the audit. Do not add a
-directive to hide an unclassified site; remove or fix the site instead. Sites
-that run before the telemetry reporter is ready cannot be classified yet; see
-the startup-ordering work tracked in
-[#5250](https://github.com/DataDog/dd-trace-go/issues/5250).
+directive to hide an unclassified site; remove or fix the site instead.
+
+Startup timing is not a reason to leave a site unclassified. A report made
+before `telemetry.StartApp` captures its stack trace eagerly at the call site
+and is replayed once telemetry starts, so the stack still points at the real
+call site. The failure mode to watch for is eviction from the 512-entry ring
+buffer shared by every global telemetry call, not a bad stack trace. Prefer a
+site that fires after `StartApp` when you have the choice; see the reporting
+policy in [internal/README.md](../README.md) for the full criteria.
 
 ### AppSec state checks
 
