@@ -33,6 +33,7 @@ type tslvTestSession struct {
 	workingDirectory string
 	framework        string
 	frameworkVersion string
+	skipIfNoModules  bool
 	efdAbortReasonMu locking.Mutex
 	efdAbortReason   string
 
@@ -99,6 +100,7 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 		workingDirectory: defaults.workingDirectory,
 		framework:        defaults.framework,
 		frameworkVersion: defaults.frameworkVersion,
+		skipIfNoModules:  defaults.skipIfNoModules,
 		modules:          map[string]TestModule{},
 		ciVisibilityCommon: ciVisibilityCommon{
 			startTime: defaults.startTime,
@@ -170,6 +172,7 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 		defaults.finishTime = time.Now()
 	}
 
+	empty := t.skipIfNoModules && len(t.modules) == 0
 	for _, m := range t.modules {
 		m.Close()
 	}
@@ -177,7 +180,13 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 
 	setCIVisibilitySpanTag(t.span, constants.TestCommandExitCode, exitCode)
 	if exitCode == 0 {
-		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
+		if empty {
+			setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusSkip)
+			setCIVisibilitySpanTag(t.span, constants.TestSkipReason, "No tests or benchmarks ran")
+			setCIVisibilitySpanTag(t.span, constants.TestSessionEmptyReason, "zero_tests")
+		} else {
+			setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
+		}
 	} else {
 		t.SetError(WithErrorInfo("ExitCode", "exit code is not zero.", ""))
 		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusFail)

@@ -126,6 +126,7 @@ func TestMain(m *testing.M) {
 		_, layoutReason := getRetryAttemptLayout()
 		layoutAvailable := layoutReason == ""
 		runTestControllerSubprocess("AdditionalFeatureAllocationUnitTests", "^TestAdditionalFeatureSelectorDoesNotAllocate$", "Bypass=true", "-test.parallel=1")
+		runTestControllerSubprocess("EmptySessionUnitTests", "^TestCanSkipEmptyTestSession$", "Bypass=true")
 		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {

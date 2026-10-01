@@ -8,6 +8,7 @@ package gotesting
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
@@ -311,7 +312,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	wrapperOpts.retryAttemptObserveOutput = logs.IsEnabled()
 
 	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	sessionOptions := []integrations.TestSessionStartOption{integrations.WithTestSessionFramework(testFramework, runtime.Version())}
+	if canSkipEmptyTestSession(m) {
+		sessionOptions = append(sessionOptions, integrations.WithTestSessionSkipIfNoModules())
+	}
+	session = integrations.CreateTestSession(sessionOptions...)
 	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
 	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
@@ -374,13 +379,20 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	// Instrument the internal tests for CI visibility.
 	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
 
-	// Instrument the internal benchmarks for CI visibility.
-	for _, v := range os.Args {
-		// check if benchmarking is enabled to instrument
-		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
-			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m), claim)
-			break
+	// TestMain can enable benchmarks with flag.Set without changing os.Args.
+	bench := flag.Lookup("test.bench")
+	benchmarksEnabled := bench != nil && bench.Value.String() != ""
+	if !flag.Parsed() {
+		// M.Run parses flags after instrumentation when TestMain hasn't done so.
+		for _, v := range os.Args {
+			if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
+				benchmarksEnabled = true
+				break
+			}
 		}
+	}
+	if benchmarksEnabled {
+		ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m), claim)
 	}
 
 	return true, func(exitCode int) int {
@@ -454,6 +466,15 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 		return exitCode
 	}
+}
+
+// Examples and fuzz targets do not create modules, so their absence from the
+// event hierarchy must not be treated as proof that no workload executed.
+func canSkipEmptyTestSession(m *testing.M) bool {
+	examples := getInternalExampleArray(m)
+	fuzzTargets := getInternalFuzzTargetArray(m)
+	return getInternalTestArray(m) != nil && getInternalBenchmarkArray(m) != nil &&
+		examples != nil && len(*examples) == 0 && fuzzTargets != nil && len(*fuzzTargets) == 0
 }
 
 func recordTestingMDeferredDisposition(claim *testingMInstrumentationClaim, summary processRetryCoordinatorSummary) {
