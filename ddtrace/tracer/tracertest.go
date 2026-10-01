@@ -179,7 +179,14 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 			}
 		}
 	drained:
-		tracer.traceWriter.flush()
+		// flush() defers when every outgoing connection slot is in flight; this
+		// handler promises the caller that the drained spans have been sent, so
+		// wait for a slot instead of leaving them buffered.
+		if fb, ok := tracer.traceWriter.(flushBlocker); ok {
+			fb.flushBlocking()
+		} else {
+			tracer.traceWriter.flush()
+		}
 		if w, ok := tracer.traceWriter.(flushWaiter); ok {
 			w.wait()
 		}

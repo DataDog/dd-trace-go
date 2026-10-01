@@ -819,7 +819,10 @@ func Flush() {
 	llmobs.Flush()
 }
 
-// Flush triggers a flush and waits for it to complete.
+// Flush triggers a flush and waits for it to complete. When every connection
+// to the agent is in flight, the flush defers to the next scheduled tick
+// instead of blocking, so the traces stay buffered until a connection frees
+// up. Stop() still sends every queued trace.
 func (t *tracer) Flush() {
 	done := make(chan struct{})
 	t.flush <- done
