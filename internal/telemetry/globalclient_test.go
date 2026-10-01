@@ -6,6 +6,8 @@
 package telemetry
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -193,5 +195,58 @@ func TestAppStartedFlushPanicStopsClientWithoutDeadlock(t *testing.T) {
 	case <-closed:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Close did not return: the panic recovery joined its own app-started flush goroutine")
+	}
+}
+
+// TestCloseBoundsWaitOnAppStartedFlush verifies that Close does not wait
+// forever for an app-started flush whose request the agent never answers.
+// The mock agent below accepts requests and never responds, and the client
+// has no request timeout, so only the bound in Close can return.
+func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
+	// Force telemetry enabled: StartApp ignores calls while Disabled.
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { SwapClient(nil) })
+	SwapClient(nil)
+
+	var requestSeen sync.Once
+	requested := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestSeen.Do(func() { close(requested) })
+		<-release // Hold every request: the agent never answers.
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{
+		AgentURL:   srv.URL,
+		HTTPClient: &http.Client{}, // No timeout: the flush cannot bound itself.
+	})
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+
+	StartApp(c)
+
+	select {
+	case <-requested:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no request reached the mock agent")
+	}
+
+	// Close returns even though the app-started flush is still waiting for
+	// the agent. With the default five-second deadline, Close gives up after
+	// six seconds at the latest.
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		c.Close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Close did not return: it waits without bound on the app-started flush")
 	}
 }

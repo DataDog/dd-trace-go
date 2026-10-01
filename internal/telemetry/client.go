@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/puzpuzpuz/xsync/v4"
 
@@ -417,6 +418,33 @@ func (c *client) Close() error {
 	// after Close returns. When the flush still runs at that point, the close
 	// cannot reach its connection, and the connection stays orphaned in the
 	// idle pool until the transport IdleConnTimeout elapses.
-	c.startFlushWg.Wait()
+	flushed := make(chan struct{})
+	go func() {
+		c.startFlushWg.Wait()
+		close(flushed)
+	}()
+	// The wait is bounded. A client without a request timeout cannot bound the
+	// flush, and an agent that accepts the request but never answers must not
+	// block Close forever. When the bound expires, the flush keeps running in
+	// the background.
+	bound := c.flushJoinBound()
+	select {
+	case <-flushed:
+	case <-time.After(bound):
+		log.Warn("telemetry: the app-started flush did not finish within %s of Close; continuing without it", bound)
+	}
 	return nil
+}
+
+// flushJoinBound returns how long Close waits for the app-started flush to
+// return. The flush sends one HTTP request. The writer caps every client
+// timeout above five seconds, and a client without a timeout uses the
+// writer's five-second default, so five seconds is the longest request
+// deadline in flight. One second of grace covers scheduling delay.
+func (c *client) flushJoinBound() time.Duration {
+	deadline := 5 * time.Second
+	if client := c.clientConfig.HTTPClient; client != nil && client.Timeout > 0 && client.Timeout < deadline {
+		deadline = client.Timeout
+	}
+	return deadline + time.Second
 }
