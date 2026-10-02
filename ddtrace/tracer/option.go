@@ -1309,10 +1309,11 @@ func WithPartialFlushing(numSpans int) StartOption {
 // traces are dropped and reported through the datadog.tracer.traces_dropped
 // metric with the reason:queue_full tag. The default is 1000. This can also
 // be configured by setting DD_TRACE_PAYLOAD_QUEUE_SIZE. Values outside the
-// range 1 to 100000 are ignored and the default is used: a value below 1
-// would leave the queue unbuffered and drop almost every trace, and a value
-// above 100000 could panic or exhaust memory when the queue is allocated,
-// or retain hundreds of megabytes of trace data.
+// range 1 to 10000 are ignored and the default is used: a value below 1
+// would leave the queue unbuffered and drop almost every trace, and each
+// queue slot retains a whole trace chunk until the worker drains it, so a
+// larger queue can retain large amounts of memory while the worker is
+// stalled.
 func WithPayloadQueueSize(size int) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetPayloadQueueSize(size, internalconfig.OriginCode)

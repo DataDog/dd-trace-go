@@ -41,9 +41,10 @@ const (
 	DefaultPayloadQueueSize = 1000
 	// MaxPayloadQueueSize is the largest accepted buffer size for the trace payload
 	// queue. Every slot retains a whole chunk (its spans, contexts, and tags) until
-	// the worker drains it, so a queue at this size can already hold hundreds of
-	// megabytes of trace data. A larger value is rejected.
-	MaxPayloadQueueSize = 100000
+	// the worker drains it, so even at this size the queue can retain tens of
+	// megabytes of trace data while the worker is stalled. A larger value is
+	// rejected.
+	MaxPayloadQueueSize = 10000
 	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
 	defaultStatsAdditionalTagsCardinalityLimit = 100
 	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
