@@ -17,6 +17,7 @@ import (
 	rt "runtime/trace"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -298,6 +299,11 @@ func Start(opts ...StartOption) error {
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
+		} else if isRuntimeMetricsAlreadyStarted(err) {
+			// Another component (e.g. an application framework calling
+			// runtimemetrics.Start) owns the process-wide emitter. This is a
+			// configuration conflict rather than a tracer failure.
+			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
 		}
@@ -330,6 +336,15 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// isRuntimeMetricsAlreadyStarted reports whether err is the error returned by
+// runtimemetrics.NewEmitter when another emitter is already running. The
+// library (go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d)
+// returns an unexported errors.New value without a sentinel, so the message is
+// matched.
+func isRuntimeMetricsAlreadyStarted(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "runtimemetrics has already been started")
 }
 
 // buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,

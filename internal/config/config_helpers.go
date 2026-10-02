@@ -523,11 +523,14 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
 // envVar is used in the warning message to identify which env var had the bad value.
-func validateOTLPProtocol(v, envVar string) bool {
+// The warning is only logged when warn is true.
+func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	if warn {
+		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	}
 	return false
 }
 
