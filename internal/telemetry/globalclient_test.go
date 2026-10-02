@@ -155,6 +155,7 @@ func TestAppStartedFlushPanicStopsClientWithoutDeadlock(t *testing.T) {
 	// Force telemetry enabled: StartApp ignores calls while Disabled.
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
 	t.Cleanup(func() { SwapClient(nil) })
 	SwapClient(nil)
 
@@ -206,6 +207,7 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 	// Force telemetry enabled: StartApp ignores calls while Disabled.
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
 	t.Cleanup(func() { SwapClient(nil) })
 	SwapClient(nil)
 
@@ -269,6 +271,7 @@ func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 	// Force telemetry enabled: StartApp ignores calls while Disabled.
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
 	t.Cleanup(func() { SwapClient(nil) })
 	SwapClient(nil)
 
@@ -322,6 +325,7 @@ func TestConcurrentStartAppSingleClientKeepsFlushWorking(t *testing.T) {
 	// Force telemetry enabled: StartApp ignores calls while Disabled.
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
 	t.Cleanup(func() { SwapClient(nil) })
 	SwapClient(nil)
 
