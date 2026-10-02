@@ -155,6 +155,153 @@ func TestQueueOverflowOnStalledAgent(t *testing.T) {
 	})
 }
 
+// TestFlushSendsOnSaturatedAgent pins the explicit Flush contract: Flush()
+// must hand the buffered traces to a send even when every
+// concurrentConnectionLimit outgoing connection is in flight. The scheduled
+// flush defers under those conditions (see TestQueueOverflowOnStalledAgent),
+// but an explicit flush has no next tick to defer to — its caller (a Lambda
+// handler between invocations, an OTel ForceFlush at shutdown) may never run
+// again — so it waits for a connection slot instead.
+func TestFlushSendsOnSaturatedAgent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
+		release := make(chan struct{})
+		bt := &blockingTransport{release: release}
+
+		trc, _, flush, stop, err := startTestTracer(t,
+			withTransport(bt),
+			withNoopInfoHTTPClient(),
+			withStatsdClient(&tg),
+		)
+		require.NoError(t, err)
+		defer stop()
+		var releaseOnce sync.Once
+		releaseStall := func() { releaseOnce.Do(func() { close(release) }) }
+		defer releaseStall()
+
+		// Saturate every outgoing connection slot, same choreography as
+		// TestQueueOverflowOnStalledAgent.
+		for range concurrentConnectionLimit {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("flush-saturated")}, willSend: true})
+			synctest.Wait()
+			flush(-1)
+			synctest.Wait()
+		}
+
+		// Queue more traces while every connection is in flight: the worker
+		// drains them into the payload buffer, which the stalled sends can't
+		// pick up yet.
+		const buffered = 3
+		for range buffered {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("flush-saturated")}, willSend: true})
+		}
+		synctest.Wait()
+
+		// Flush() runs on its own goroutine: it parks the worker inside the
+		// blocking flush variant, waiting for a connection slot, so the stall
+		// can be cleared from here.
+		flushed := make(chan struct{})
+		go func() {
+			defer close(flushed)
+			trc.Flush()
+		}()
+		synctest.Wait()
+
+		// The stall clears, and the parked flush proceeds through a freed slot.
+		releaseStall()
+		synctest.Wait()
+		<-flushed
+
+		var flushTraces, dropped int64
+		for _, c := range tg.GetCallsByName("datadog.tracer.flush_traces") {
+			flushTraces += c.IntVal()
+		}
+		for _, c := range tg.GetCallsByName("datadog.tracer.traces_dropped") {
+			dropped += c.IntVal()
+		}
+		assert.Equal(t, int64(concurrentConnectionLimit+buffered), flushTraces,
+			"Flush() must send every queued trace, including those buffered while all connections were in flight")
+		assert.Zero(t, dropped, "nothing should be dropped by an explicit flush")
+	})
+}
+
+// TestPayloadBoundWhileAgentStalled pins the payload bound: the deferred
+// flush can hold the payload for as long as every connection is in flight,
+// so add() must stop accepting traces once the payload holds
+// payloadSizeLimit bytes. Without the bound, a sustained stall grows the
+// payload without limit and later sends it as one request that exceeds the
+// agent's payloadMaxLimit, which drops every buffered trace at once.
+func TestPayloadBoundWhileAgentStalled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
+		release := make(chan struct{})
+		bt := &blockingTransport{release: release}
+
+		trc, _, flush, stop, err := startTestTracer(t,
+			withTransport(bt),
+			withNoopInfoHTTPClient(),
+			withStatsdClient(&tg),
+		)
+		require.NoError(t, err)
+		defer stop()
+		var releaseOnce sync.Once
+		releaseStall := func() { releaseOnce.Do(func() { close(release) }) }
+		defer releaseStall()
+
+		// Saturate every outgoing connection slot, same choreography as
+		// TestQueueOverflowOnStalledAgent.
+		for range concurrentConnectionLimit {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("payload-bound")}, willSend: true})
+			synctest.Wait()
+			flush(-1)
+			synctest.Wait()
+		}
+
+		// Push traces of roughly 1 MiB each until the payload crosses
+		// payloadSizeLimit (4.75 MiB). The trace that crosses it stays: the
+		// flush it triggers defers, and the bound only drops the traces that
+		// arrive after it.
+		big := strings.Repeat("a", 1<<20)
+		bigTrace := func() *chunk {
+			s := newBasicSpan("payload-bound")
+			s.SetTag("payload", big)
+			return &chunk{spans: []*Span{s}, willSend: true}
+		}
+		aw := trc.traceWriter.(*agentTraceWriter)
+		accepted := 0
+		for {
+			aw.mu.Lock()
+			size := aw.payload.size()
+			aw.mu.Unlock()
+			if size >= int(payloadSizeLimit) {
+				break
+			}
+			trc.pushChunk(bigTrace())
+			accepted++
+			synctest.Wait()
+		}
+
+		// One more trace past the bound: dropped, and the payload keeps its
+		// accepted traces.
+		trc.pushChunk(bigTrace())
+		synctest.Wait()
+
+		var payloadFullDrops int64
+		for _, c := range tg.GetCallsByName("datadog.tracer.traces_dropped") {
+			if slices.Contains(c.Tags(), "reason:payload_full") {
+				payloadFullDrops += c.IntVal()
+			}
+		}
+		assert.Equal(t, int64(1), payloadFullDrops,
+			"exactly one trace should be dropped for reason:payload_full once the payload holds payloadSizeLimit bytes")
+		aw.mu.Lock()
+		buffered := aw.payload.itemCount()
+		aw.mu.Unlock()
+		assert.Equal(t, accepted, buffered,
+			"the dropped trace must not enlarge the buffered payload")
+	})
+}
+
 // TestStopFlushesOnSaturatedAgent pins the shutdown half of the fix: Stop()
 // must still send every queued trace when all concurrentConnectionLimit
 // outgoing connections are saturated. The scheduled flush() defers under
