@@ -165,6 +165,13 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # OpenTelemetry Semantic Conventions
+//
+// DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
+// conventions, forces trace export through OTLP, and overrides
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
+// to false.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol
@@ -219,4 +226,14 @@
 // Other trace-agent implementations that do not follow this versioning
 // scheme (for example, an OpenTelemetry Collector exporter acting as a
 // Datadog trace-agent) are never affected by this override.
+// # Feature Flags Remote Config subscription
+//
+// The tracer eagerly subscribes to the FFE_FLAGS Remote Config product during Start, but only when
+// the resolved Feature Flags delivery source is remote_config. By default, and whenever
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE is agentless (the default) or Feature Flags are disabled,
+// this subscription is skipped: Feature Flags configuration is instead polled directly from Datadog
+// over HTTPS by the openfeature package's provider, once the application creates it, with no Agent
+// dependency and no Remote Config capability advertised. See the openfeature package's
+// documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
+// selection rules.
 package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

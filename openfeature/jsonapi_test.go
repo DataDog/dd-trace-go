@@ -17,7 +17,7 @@ import (
 
 // wrapUFCEnvelope wraps raw UFC attribute bytes in a JSON:API envelope, as the
 // Agentless configuration endpoint does.
-func wrapUFCEnvelope(t *testing.T, resourceType string, attributes json.RawMessage) []byte {
+func wrapUFCEnvelope(t testing.TB, resourceType string, attributes json.RawMessage) []byte {
 	t.Helper()
 	envelope := map[string]any{
 		"data": map[string]any{

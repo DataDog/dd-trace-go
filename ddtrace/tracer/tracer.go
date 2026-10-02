@@ -17,6 +17,7 @@ import (
 	rt "runtime/trace"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -297,6 +299,11 @@ func Start(opts ...StartOption) error {
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
+		} else if isRuntimeMetricsAlreadyStarted(err) {
+			// Another component (e.g. an application framework calling
+			// runtimemetrics.Start) owns the process-wide emitter. This is a
+			// configuration conflict rather than a tracer failure.
+			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
 		}
@@ -329,6 +336,15 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// isRuntimeMetricsAlreadyStarted reports whether err is the error returned by
+// runtimemetrics.NewEmitter when another emitter is already running. The
+// library (go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d)
+// returns an unexported errors.New value without a sentinel, so the message is
+// matched.
+func isRuntimeMetricsAlreadyStarted(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "runtimemetrics has already been started")
 }
 
 // buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
@@ -425,12 +441,28 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
+		// Not reported to Error Tracking: on Linux, memfd_create can fail
+		// because the runtime environment denies it (or sealing) via seccomp,
+		// kernel capabilities, or resource limits. That's a customer-environment
+		// condition, not an actionable SDK defect, and reporting it would create
+		// fleet-wide false positives for hardened deployments (e.g. gVisor,
+		// locked-down seccomp profiles).
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to publish the OTEL process context: %s", err.Error())
+		// Unlike the memfd site above, this stays reported: PublishProcessContext's
+		// error path is not exclusively an environment-hardening condition.
+		// otelcontextmapping_linux.go's updateOtelProcessContextMapping can return
+		// ErrPayloadTooLarge on a second-or-later Start() in the same process (e.g.
+		// Stop() then Start() with a longer ServiceName/Env/Version/ContainerID) if
+		// the new payload outgrows the mapping sized on the first call — a genuine
+		// dd-trace-go sizing bug across restarts within one process, not seccomp or
+		// kernel-capability denial. proto.Marshal failing in PublishProcessContext
+		// itself would likewise be our own defect. Silencing this site would also
+		// hide those, so it's kept distinct from the memfd sibling deliberately.
+		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }
 
@@ -535,6 +567,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
 	var otlpExportMode bool
+	var supportsOTLPSpanMetrics bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -545,8 +578,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 		otlpExportMode = true
+		supportsOTLPSpanMetrics = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
+		supportsOTLPSpanMetrics = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
@@ -561,11 +596,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	useOTLPSpanMetrics := c.internalConfig.OTLPSpanMetricsEnabled()
+	skipStats := c.internalConfig.OTLPExportMode()
+	if c.internalConfig.OTelSemanticsEnabled() {
+		useOTLPSpanMetrics = useOTLPSpanMetrics && supportsOTLPSpanMetrics
+		skipStats = otlpExportMode
+	}
 	var sc statsConcentrator
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
+	if useOTLPSpanMetrics {
 		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
-	} else if c.internalConfig.OTLPExportMode() {
+	} else if skipStats {
 		sc = &noopConcentrator{}
 	} else {
 		sc = newConcentrator(c, defaultStatsBucketSize, statsd)

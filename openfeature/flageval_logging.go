@@ -31,8 +31,8 @@ const (
 	// Dedicated 10 s timer; separate from exposureWriter's 1 s interval.
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
-	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
-	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
+	// flagEvalLoggingEndpoint is the direct EVP intake path for flag evaluation events.
+	flagEvalLoggingEndpoint = "/api/v2/flagevaluation"
 
 	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH
 	// and align with the cross-SDK RFC (see Java DDEvaluator.copyPrunedContext caps).
@@ -433,6 +433,10 @@ func (w *flagEvalLoggingWriter) stop() {
 }
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
+func reportFlagEvalPayloadEncodingError(err error) {
+	telemetrylog.LogAndReportError("openfeature: failed to encode flag evaluation payload", err)
+}
+
 func (w *flagEvalLoggingWriter) flush() {
 	// Drain the backpressure counters and surface them as telemetry metrics + best-effort debug
 	// logs. Each counter maps to a Java metric (FlagEvaluationWriterImpl) so Go's counts are
@@ -472,16 +476,16 @@ func (w *flagEvalLoggingWriter) flush() {
 
 	payloads, droppedPayloadLimit, degradedPayloadLimit, err := w.buildFlagEvalPayloads(events)
 	if err != nil {
-		log.Error("openfeature: failed to encode flag evaluation payload: %v", err.Error())
+		reportFlagEvalPayloadEncodingError(err)
 		return
 	}
 	if degradedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDegraded, degradedPayloadLimit, degradedReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit) //errtrack:ignore expected payload capacity fallback
 	}
 	if droppedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDropped, droppedPayloadLimit, dropReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit)
+		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit) //errtrack:ignore expected payload capacity limit
 	}
 	if len(payloads) > 1 {
 		countMetric(metricFlagEvalSplits, int64(len(payloads)-1), "")
@@ -490,7 +494,7 @@ func (w *flagEvalLoggingWriter) flush() {
 	sent := 0
 	for _, body := range payloads {
 		if err := w.evp.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
-			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
+			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error()) //errtrack:ignore remote request failure
 			return
 		}
 		sent++
@@ -516,7 +520,7 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 		w.aggregator.droppedDegradedOverflow = 0
 		w.aggregator.mu.Unlock()
 		if degradedOverflow > 0 {
-			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
 		}
 		return nil
 	}
@@ -531,7 +535,7 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	w.aggregator.mu.Unlock()
 
 	if degradedOverflow > 0 {
-		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
 	}
 
 	var events []flagEvalLoggingEvent

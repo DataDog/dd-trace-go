@@ -58,6 +58,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/bradfitz/gomemcache":                {"Memcache", false},
 	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
 	"cloud.google.com/go/pubsub/v2":                 {"Pub/Sub v2", false},
+	"github.com/cloudevents/sdk-go/v2":              {"CloudEvents SDK v2", false},
 	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
 	"database/sql":                                  {"SQL", false},
@@ -225,7 +226,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	namingschema.LoadFromEnv()
+	namingschema.LoadFromConfig(c.internalConfig)
 
 	for _, fn := range opts {
 		if fn == nil {
@@ -366,6 +367,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.otelRuntimeMetricsShouldBeEnabled = computeOtelRuntimeMetricsShouldBeEnabled(c)
 
+	// Must run after all startup overrides to DD_TRACE_AGENT_URL and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED are applied.
+	c.internalConfig.ResolveOTelSemanticsConfig()
 	return c, nil
 }
 
@@ -1380,9 +1383,7 @@ func WithStatsOriginCardinalityLimit(limit int) StartOption {
 	}
 }
 
-// WithDynamicInstrumentationEnabled enables or disables dynamic
-// instrumentation, allowing the tracer to place probes for the Live Debugger
-// and Dynamic Instrumentation products.
+// WithDynamicInstrumentationEnabled enables or explicitly disables dynamic instrumentation. (Default is false).
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)

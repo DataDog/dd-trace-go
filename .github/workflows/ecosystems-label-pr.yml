@@ -7,6 +7,7 @@ on:
       - edited
     paths:
       - "contrib/**"
+      - ".github/workflows/ecosystems-label-pr.yml"
 permissions:
   contents: read
   pull-requests: write

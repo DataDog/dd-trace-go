@@ -250,8 +250,8 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	metadata := provider.Metadata()
-	if metadata.Name != "Datadog Remote Config Provider" {
-		t.Errorf("expected provider name to be 'Datadog Remote Config Provider', got %q", metadata.Name)
+	if metadata.Name != "Datadog Provider" {
+		t.Errorf("expected provider name to be 'Datadog Provider', got %q", metadata.Name)
 	}
 
 	hooks := provider.Hooks()
@@ -612,6 +612,9 @@ func TestConcurrentEvaluations(t *testing.T) {
 }
 
 func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
+	openfeature.Shutdown()
+	t.Cleanup(openfeature.Shutdown)
+
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
 	provider := newDatadogProvider(ProviderConfig{})
@@ -620,20 +623,118 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Try to set the provider with context and wait - should timeout
 	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
-
-	// Verify that we get a timeout error
 	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+		t.Fatal("expected initialization timeout to report the provider as not ready")
+	}
+	if state := openfeature.NewDefaultClient().State(); state == openfeature.ReadyState {
+		t.Error("provider must not be READY before receiving configuration")
+	}
+}
+
+func TestInitWithContext_DeliveryErrFailsImmediately(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.mu.Lock()
+	provider.deliveryErr = errors.New("no delivery source could be started")
+	provider.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) {
+		t.Fatalf("expected *openfeature.ProviderInitError, got: %v", err)
+	}
+	if initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Errorf("expected ProviderNotReadyCode, got: %v", initErr.ErrorCode)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("a permanent delivery failure must fail immediately, not wait out the timeout; took %v", elapsed)
+	}
+}
+
+func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = provider.ShutdownWithContext(ctx)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderFatalCode {
+		t.Errorf("expected a ProviderInitError with ProviderFatalCode (configuration will never arrive), got: %v", err)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("Init must return promptly once Shutdown runs, not wait out its own timeout; took %v", elapsed)
+	}
+}
+
+func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	// Init gives up on its deadline while delivery is still running. It reports
+	// not ready, but the provider must still pick up a later configuration.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Fatalf("expected a ProviderInitError with ProviderNotReadyCode, got: %v", err)
+	}
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
 	}
 
-	// Check that the error is due to context deadline exceeded
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded error, got: %v", err)
+	// The configuration arrives late, after Init already returned.
+	provider.updateConfiguration(createTestConfig())
+
+	if provider.getConfiguration() == nil {
+		t.Error("a configuration arriving after Init's deadline must still be stored")
 	}
 
-	t.Logf("Successfully got timeout error as expected: %v", err)
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the late configuration, got %v", event.EventType)
+	}
+
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("the late configuration must promote the provider to ready")
+	}
+
+	// The periodic writers must be started by that late configuration too,
+	// otherwise they would never flush for the rest of the process.
+	provider.mu.RLock()
+	writersStarted := provider.writersStarted
+	provider.mu.RUnlock()
+	if !writersStarted {
+		t.Error("the late configuration must also start the periodic writers")
+	}
+
+	// Evaluation works, which is the user-visible point of all this.
+	result := provider.BooleanEvaluation(context.Background(), "bool-flag", false, openfeature.FlattenedContext{
+		"targetingKey": "user-123",
+		"country":      "US",
+	})
+	if result.Value != true {
+		t.Errorf("evaluation must succeed once the late configuration is applied, got %v (reason %s)", result.Value, result.Reason)
+	}
 }
 
 // runWithDeadline runs fn in a goroutine and fails the test if fn does not
@@ -654,9 +755,24 @@ func runWithDeadline(t *testing.T, timeout time.Duration, fn func() error) error
 	}
 }
 
+// assertInitCanceledError pins the contract for an explicitly cancelled Init:
+// a not-ready init error, so the SDK never reports success for a provider that
+// never received configuration.
+func assertInitCanceledError(t *testing.T, err error) {
+	t.Helper()
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) {
+		t.Fatalf("expected *openfeature.ProviderInitError, got: %v", err)
+	}
+	if initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Errorf("expected %s, got: %s", openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+}
+
 // TestInitWithContext_AlreadyCancelled pins a regression: InitWithContext
-// must return promptly with ctx.Err() when ctx is already cancelled before
-// the call, rather than deadlocking. The prior waitForConfigurationUpdate
+// must return promptly with an init error when ctx is already cancelled
+// before the call, rather than deadlocking. The prior waitForConfigurationUpdate
 // unlocked p.mu unconditionally on return via defer, including on the
 // already-cancelled path where it had never unlocked p.mu at all, so the
 // deferred lock call would try to lock a mutex this same goroutine already
@@ -671,9 +787,7 @@ func TestInitWithContext_AlreadyCancelled(t *testing.T) {
 		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
 	})
 
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got: %v", err)
-	}
+	assertInitCanceledError(t, err)
 }
 
 // TestInitWithContext_CancelledDuringWait pins the same contract as
@@ -696,11 +810,44 @@ func TestInitWithContext_CancelledDuringWait(t *testing.T) {
 
 	select {
 	case err := <-errCh:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("expected context.Canceled, got: %v", err)
-		}
+		assertInitCanceledError(t, err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("InitWithContext did not return after cancellation; likely deadlocked")
+	}
+}
+
+// TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady is the
+// cancellation counterpart of TestInitWithContext_LateConfigurationStillBecomesReady.
+// Cancelling Init hands the first ready event back to the provider, so a
+// configuration arriving afterwards must emit ProviderReady itself rather than
+// leaving the SDK stuck in a not-ready state.
+func TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runWithDeadline(t, 2*time.Second, func() error {
+		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	})
+	assertInitCanceledError(t, err)
+
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
+	}
+
+	provider.updateConfiguration(createTestConfig())
+
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the configuration arriving after cancellation, got %v", event.EventType)
+	}
+
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("a configuration arriving after cancellation must promote the provider to ready")
 	}
 }
 

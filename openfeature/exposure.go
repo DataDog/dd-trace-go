@@ -23,8 +23,8 @@ const (
 	// Matches the dd-trace-js implementation (1 second)
 	defaultExposureFlushInterval = 1 * time.Second
 
-	// exposureEndpoint is the EVP proxy endpoint for exposure events
-	exposureEndpoint = "/evp_proxy/v2/api/v2/exposures"
+	// exposureEndpoint is the direct EVP intake path for exposure events.
+	exposureEndpoint = "/api/v2/exposures"
 
 	// evpSubdomainHeader is the HTTP header name for EVP subdomain routing
 	evpSubdomainHeader = "X-Datadog-EVP-Subdomain"
@@ -271,7 +271,7 @@ func (w *exposureWriter) flush() {
 		Context:   w.context,
 		Exposures: events,
 	}); err != nil {
-		log.Error("openfeature: failed to send exposure events: %v", err.Error())
+		log.Error("openfeature: failed to send exposure events: %v", err.Error()) //errtrack:ignore remote request failure
 	} else {
 		log.Debug("openfeature: successfully sent %d exposure events", len(events))
 	}

@@ -1,10 +1,10 @@
 services:
   aerospike:
-    image: aerospike:ce-8.1.2.4_1@sha256:fb172169a3b0c217563a4c7eb88ef117c4d24ac64a3a66ad99a18c0dca36bd8c
+    image: aerospike:ce-8.1.2.5_1@sha256:de6efea0692dfc91f1f5b993b333a5c82040d5a7c282a643492f8bbc626a7aa4
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:d35e159439b302146f964919904f84fd3c2cebf347272b8cb8c4368c1cf200e5
+    image: cassandra:5@sha256:8819d1b7877ee6621751a761cc163332e9c3eaf671c8ef672f7c77a7c5bff05f
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -13,7 +13,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:26@sha256:66aec17cd21a956029b83f083b813073859e8355dc1a00e55df6ba02f0e32345
+    image: mysql:26@sha256:ade067ae2fb15eeb6143e81185afe22573e3b3addc58aaf90c41999fa6883991
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -22,7 +22,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -30,7 +30,7 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:2b5b581621126574f3d1f75e78d3eebe8d05aedb59ad0cfdf9aa42cb0634d726
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
@@ -41,11 +41,11 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:9@sha256:475ee65cc75c327407458f5096cdd36954b3de3fc83f4c8ac31a4a8edecbf49e
+    image: valkey/valkey:9@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     ports:
@@ -71,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -83,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -95,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.3@sha256:78728a98651ede4b5240bc97a29c8bc2d8838c6e161d977137057cc4d2a22694
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -108,7 +108,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:3e915817a38ad113551851015d56a0e50f83fb587bcbbb1ae703dc157b112538
+    image: registry.datadoghq.com/agent:latest@sha256:c5bf5ec9be0c51d3d2d47bdadbb82680b5c83ceb9cae8457fe44aa736a1784ad
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -116,7 +116,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.65.0@sha256:9c635df1361ab7cc3e608622a2035f74516c709b0fa14ad78dc724840f24ff63
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.66.0@sha256:80126beab0e39b171ab86601a99fa599317c5f6ee4cff9e26758ec8e567852ef
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -128,19 +128,19 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8@sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine@sha256:c29847751abb41f4c268c84fb3087fee05d4edcbda44409ccb5086e26148e8a7
+    image: memcached:1.6-alpine@sha256:9e4de012dc607573052061c0bcb38abc775e1dd59b24e7ac38d1892842094aaf
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:8.3.1@sha256:1e333105535e20a573d5d99048de4bdb484017e0a63b660dcbba3925208195f4
+    image: confluentinc/confluent-local:8.3.2@sha256:2d623f09f1cc46a38b3ace3ee055016617b8f749db1596440bd9ecbe57601d3f
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"

@@ -247,7 +247,13 @@ func lastVerb(format string) (verb byte, vFamilyCount int, finalVerbArg int) {
 			i, argIndex, hasIndex = ni, n, true // %[n]v: explicit index before width/verb
 		}
 		if i < len(format) && format[i] == '*' {
-			i++ // width via argument
+			i++       // width via argument
+			nextArg++ // '*' always consumes the next sequential implicit argument
+			// for the width itself, regardless of any index applied to the verb
+			// (confirmed against fmt's own behavior: %*[2]d still reads the width
+			// from the next sequential argument, not from index 2) — every verb
+			// after this one is shifted by one real call argument that a naive
+			// nextArg count would miss.
 		} else {
 			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
 				i++ // width
@@ -259,7 +265,8 @@ func lastVerb(format string) (verb byte, vFamilyCount int, finalVerbArg int) {
 				i, argIndex, hasIndex = ni, n, true // %.[n]*v: explicit index before precision
 			}
 			if i < len(format) && format[i] == '*' {
-				i++ // precision via argument
+				i++       // precision via argument
+				nextArg++ // same reasoning as the width '*' above
 			} else {
 				for i < len(format) && format[i] >= '0' && format[i] <= '9' {
 					i++ // precision

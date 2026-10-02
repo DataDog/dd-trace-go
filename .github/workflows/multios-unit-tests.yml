@@ -58,12 +58,24 @@ jobs:
           ref: ${{ github.sha }}
           clean: false
           submodules: recursive
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ env.normalized_workspace }}/_tools
-          tools-bin: ${{ env.normalized_workspace }}/bin
+          check-latest: "true"
+          workload: multi-os
+          variant: |-
+            {"runner":${{ toJSON(inputs.runs-on) }},
+             "modules":["core","contrib"]}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
@@ -77,6 +89,7 @@ jobs:
 
       - name: Get Datadog credentials
         id: dd-sts
+        if: always()
         continue-on-error: true
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
@@ -90,6 +103,17 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ./
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE costs tens of seconds on Windows, so only do it
+          # where no pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
 
       - name: Upload Coverage to Datadog
         if: always()
