@@ -146,8 +146,12 @@ jobs:
           cp "${bench}/app/go/go-prof-app/prepare.Makefile" "${bench}/app/go/go-prof-app/build.Makefile" "${buildroot}/"
 
           # Clone the application repository at the commit its Dockerfile pins.
+          # No --depth: a shallow clone only guarantees the default branch tip,
+          # and upstream history advancing past the pinned commit would make
+          # the checkout below fail. The repository is small enough that a full
+          # clone costs less than fetching the pinned SHA on demand.
           app="${GITHUB_WORKSPACE}/go-prof-app"
-          git clone --quiet --depth 1 https://github.com/felixge/go-prof-app "${app}"
+          git clone --quiet https://github.com/felixge/go-prof-app "${app}"
           git -C "${app}" checkout --quiet 5c383265bb2999ff1789c66f01991ece59382a29
           cd "${app}"
           export BUILDROOT="${buildroot}"
