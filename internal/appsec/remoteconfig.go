@@ -62,7 +62,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				}
 				cfg := UpdatedConfig{Product: product}
 				if err := json.Unmarshal(data, &cfg.Content); err != nil {
-					log.Error("appsec: unmarshaling remote config update for %s (%q): %s", product, path, err.Error())
+					log.Error("appsec: unmarshaling remote config update for %s (%q): %s", product, path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 					statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 					continue
 				}
@@ -216,7 +216,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	if len(u) > 1 {
-		log.Warn("appsec: Remote Config: received multiple ASM_FEATURES update; not processing any.")
+		log.Warn("appsec: Remote Config: received multiple ASM_FEATURES update; not processing any.") //errtrack:ignore failure is returned through Remote Config apply status
 		statuses := make(map[string]state.ApplyStatus, len(u))
 		for path := range u {
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateUnacknowledged}
@@ -246,7 +246,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	// Parse the config object we just received...
 	var parsed state.ASMFeaturesData
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		log.Error("appsec: remote config: error while unmarshalling %q: %s. Configuration won't be applied.", path, err.Error())
+		log.Error("appsec: remote config: error while unmarshalling %q: %s. Configuration won't be applied.", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 	}
 
@@ -254,7 +254,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	if parsed.ASM.Enabled && !a.started.Load() {
 		log.Debug("appsec: remote config: Starting AppSec")
 		if err := a.start(); err != nil {
-			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error())
+			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 		}
 		registerAppsecStartTelemetry(config.RCStandby, telemetry.OriginRemoteConfig)

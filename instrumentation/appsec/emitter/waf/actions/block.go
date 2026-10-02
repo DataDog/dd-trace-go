@@ -40,7 +40,7 @@ func init() {
 	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
 		if path, ok := env.Lookup(key); ok {
 			if t, err := os.ReadFile(path); err != nil {
-				log.Error("Could not read template at %q: %v", path, err.Error())
+				log.Error("Could not read template at %q: %v", path, err.Error()) //errtrack:ignore user-provided template path
 			} else {
 				*template = t
 			}
