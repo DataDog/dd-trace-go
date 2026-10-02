@@ -299,6 +299,30 @@ func TestPayloadBoundWhileAgentStalled(t *testing.T) {
 		aw.mu.Unlock()
 		assert.Equal(t, accepted, buffered,
 			"the dropped trace must not enlarge the buffered payload")
+
+		// The stall clears without any tick in between: every send finished,
+		// so a connection slot is free, but the payload still holds
+		// payloadSizeLimit bytes. The next add must retry the deferred flush
+		// instead of dropping: the retry acquires the freed slot, swaps the
+		// full payload into a send, and accepts the trace.
+		releaseStall()
+		synctest.Wait()
+		trc.pushChunk(bigTrace())
+		synctest.Wait()
+
+		payloadFullDrops = 0
+		for _, c := range tg.GetCallsByName("datadog.tracer.traces_dropped") {
+			if slices.Contains(c.Tags(), "reason:payload_full") {
+				payloadFullDrops += c.IntVal()
+			}
+		}
+		assert.Equal(t, int64(1), payloadFullDrops,
+			"a freed connection must accept the trace instead of dropping it for reason:payload_full")
+		aw.mu.Lock()
+		buffered = aw.payload.itemCount()
+		aw.mu.Unlock()
+		assert.Equal(t, 1, buffered,
+			"the retried flush must swap the full payload for a fresh one holding the new trace")
 	})
 }
 

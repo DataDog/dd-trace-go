@@ -116,13 +116,20 @@ func (h *agentTraceWriter) add(trace []*Span) {
 	// every connection is in flight, so this check is the only bound on its
 	// growth. A flush already fired for the bytes below: needsFlush triggers
 	// once a push crosses payloadSizeLimit, and under a stalled agent that
-	// flush defers. Trace past that size here, and every further trace
-	// drops instead of growing a payload that no flush can drain.
-	if size := h.payload.size(); size >= int(payloadSizeLimit) {
+	// flush defers. Retry that flush once before dropping the trace: a send
+	// may have freed a slot since the deferred flush returned. Only when
+	// every slot is still in flight does the trace drop. flush() takes h.mu
+	// itself, so it must run without the lock held here.
+	if h.payload.size() >= int(payloadSizeLimit) {
 		h.mu.Unlock()
-		h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:payload_full"}, 1)
-		log.Error("payload buffer holds %d bytes; dropping a trace of %d spans", size, len(trace))
-		return
+		h.flush()
+		h.mu.Lock()
+		if size := h.payload.size(); size >= int(payloadSizeLimit) {
+			h.mu.Unlock()
+			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:payload_full"}, 1)
+			log.Error("payload buffer holds %d bytes; dropping a trace of %d spans", size, len(trace))
+			return
+		}
 	}
 	stats, pushErr := h.payload.push(trace)
 	needsFlush := pushErr == nil && stats.size > payloadSizeLimit
