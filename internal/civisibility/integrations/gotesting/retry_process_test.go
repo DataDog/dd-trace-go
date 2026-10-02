@@ -1284,9 +1284,14 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 	oldSettings := *settings
 	flakyRetries := integrations.GetFlakyRetriesSettings()
 	oldFlakyRetryCount := flakyRetries.RetryCount
+	// This test covers legacy EFD/FTR behavior, so isolate the process-wide dynamic ATR setting.
+	originalDynamicATREnabled := integrations.IsDynamicATREnabled()
+	originalDynamicATRBuckets := integrations.GetDynamicATRCustomBuckets()
+	integrations.SetDynamicATRSettingsForTestingExport(false, nil)
 	t.Cleanup(func() {
 		*settings = oldSettings
 		flakyRetries.RetryCount = oldFlakyRetryCount
+		integrations.SetDynamicATRSettingsForTestingExport(originalDynamicATREnabled, originalDynamicATRBuckets)
 	})
 
 	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
@@ -1303,11 +1308,12 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 		wantFlakyRetrySemantics bool
 	}{
 		{name: "under five seconds", duration: time.Second, want: 4},
-		{name: "five seconds", duration: 5 * time.Second, want: 3},
-		{name: "ten seconds", duration: 10 * time.Second, want: 2},
-		{name: "thirty seconds", duration: 30 * time.Second, want: 1},
-		{name: "five minutes without flaky retries", duration: 5 * time.Minute, want: 0},
-		{name: "five minutes falls back to flaky retries", duration: 5 * time.Minute, flakyRetries: true, want: 7, wantFlakyRetrySemantics: true},
+		{name: "five seconds", duration: 5 * time.Second, want: 4},
+		{name: "ten seconds", duration: 10 * time.Second, want: 3},
+		{name: "thirty seconds", duration: 30 * time.Second, want: 2},
+		{name: "five minutes without flaky retries", duration: 5 * time.Minute, want: 1},
+		{name: "over five minutes without flaky retries", duration: 301 * time.Second, want: 0},
+		{name: "over five minutes falls back to flaky retries", duration: 301 * time.Second, flakyRetries: true, want: 7, wantFlakyRetrySemantics: true},
 	}
 
 	for _, tt := range tests {
@@ -1329,7 +1335,7 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 		isFlakyTestRetriesEnabled:    true,
 		hasAdditionalFeatureWrapper:  true,
 	}
-	require.Equal(t, int64(7), computeAdjustedRetryCount(flakyFallback, 5*time.Minute))
+	require.Equal(t, int64(7), computeAdjustedRetryCount(flakyFallback, 301*time.Second))
 	require.False(t, usesEfdRetrySemantics(flakyFallback))
 	require.True(t, usesFlakyRetryBudget(flakyFallback))
 	require.False(t, willRetryAfterExecution(false, false, flakyFallback, 6, 1), "FTR fallback must not retry a passing slow EFD test")
