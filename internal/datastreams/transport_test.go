@@ -37,23 +37,6 @@ func (t *errorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func TestHTTPTransportWithTransactions(t *testing.T) {
-	p := StatsPayload{
-		Env:         "env-1",
-		ProductMask: productAPM | productDSM,
-		Stats: []StatsBucket{{
-			Start:                    2,
-			Duration:                 10,
-			Transactions:             []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 't', 'x', '1'},
-			TransactionCheckpointIds: []byte{1, 3, 'i', 'n', 'g'},
-		}},
-	}
-	ft := fakeTransport{}
-	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
-	require.Nil(t, transport.sendPipelineStats(&p))
-	assert.Len(t, ft.requests, 1)
-}
-
 func TestHTTPTransportError(t *testing.T) {
 	et := &errorTransport{statusCode: 400, body: "bad request body"}
 	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: et})

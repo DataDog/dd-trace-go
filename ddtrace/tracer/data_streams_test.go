@@ -7,97 +7,97 @@ package tracer
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestTrackDataStreamsTransactionPublicAPI verifies that TrackDataStreamsTransaction correctly
-// delegates to the underlying DSM processor when one is active.
-func TestTrackDataStreamsTransactionPublicAPI(t *testing.T) {
+// The tag keys the removed transaction tracking used to set. Spelled out as
+// literals rather than referencing the deprecated ext constants, so this test
+// pins the wire keys that must no longer appear on spans.
+const (
+	dsmTransactionIDTag         = "dsm.transaction.id"
+	dsmTransactionCheckpointTag = "dsm.transaction.checkpoint"
+)
+
+// TestTrackDataStreamsTransactionIsNoop verifies that the deprecated transaction
+// tracking API is safe to call and records nothing: no panic, and no transaction
+// tags on the active span.
+func TestTrackDataStreamsTransactionIsNoop(t *testing.T) {
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	Start(withNoopStats())
 	defer Stop()
 
+	// The DSM processor is still running; the removed feature must simply not feed it.
 	tr, ok := getGlobalTracer().(dataStreamsContainer)
-	assert.True(t, ok, "global tracer should implement dataStreamsContainer")
-	assert.NotNil(t, tr.GetDataStreamsProcessor(), "DSM processor should be non-nil when DD_DATA_STREAMS_ENABLED=true")
+	require.True(t, ok, "global tracer should implement dataStreamsContainer")
+	require.NotNil(t, tr.GetDataStreamsProcessor(), "DSM processor should be non-nil when DD_DATA_STREAMS_ENABLED=true")
 
-	// Should not panic and should reach the processor.
-	TrackDataStreamsTransaction(context.Background(), "msg-001", "ingested")
-}
+	fixedTime := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
 
-// TestTrackDataStreamsTransactionTagsSpan verifies that the active span in the context
-// is tagged with the DSM transaction ID and checkpoint name.
-func TestTrackDataStreamsTransactionTagsSpan(t *testing.T) {
-	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	Start(withNoopStats())
-	defer Stop()
+	t.Run("safe with no span in context", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			TrackDataStreamsTransaction(context.Background(), "tx-no-span", "ingested")
+			TrackDataStreamsTransactionAt(context.Background(), "tx-no-span", "ingested", fixedTime)
+		})
+	})
 
-	span, ctx := StartSpanFromContext(context.Background(), "test.op")
-	defer span.Finish()
+	t.Run("safe with nil context", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			//nolint:staticcheck // SA1012: passing a nil context is exactly what this asserts is safe.
+			TrackDataStreamsTransaction(nil, "tx-nil-ctx", "ingested")
+		})
+	})
 
-	TrackDataStreamsTransaction(ctx, "tx-span-tag", "processed")
+	t.Run("does not tag the active span", func(t *testing.T) {
+		span, ctx := StartSpanFromContext(context.Background(), "test.op")
+		defer span.Finish()
 
-	s, ok := SpanFromContext(ctx)
-	require.True(t, ok)
-	v, _ := s.meta.Get(ext.DSMTransactionID)
-	assert.Equal(t, "tx-span-tag", v)
-	v, _ = s.meta.Get(ext.DSMTransactionCheckpoint)
-	assert.Equal(t, "processed", v)
-}
+		TrackDataStreamsTransaction(ctx, "tx-span-tag", "processed")
+		TrackDataStreamsTransactionAt(ctx, "tx-at-span", "delivered", fixedTime)
 
-// TestTrackDataStreamsTransactionNoSpanInContextNoops verifies that when the context
-// contains no span, tagging is silently skipped and the function does not panic.
-func TestTrackDataStreamsTransactionNoSpanInContextNoops(t *testing.T) {
-	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	Start(withNoopStats())
-	defer Stop()
-
-	assert.NotPanics(t, func() {
-		TrackDataStreamsTransaction(context.Background(), "tx-no-span", "ingested")
+		s, ok := SpanFromContext(ctx)
+		require.True(t, ok)
+		_, ok = s.meta.Get(dsmTransactionIDTag)
+		assert.False(t, ok, "transaction tracking was removed; %s must not be set", dsmTransactionIDTag)
+		_, ok = s.meta.Get(dsmTransactionCheckpointTag)
+		assert.False(t, ok, "transaction tracking was removed; %s must not be set", dsmTransactionCheckpointTag)
 	})
 }
 
-// TestTrackDataStreamsTransactionAtDelegatesToProcessor verifies that
-// TrackDataStreamsTransactionAt forwards the provided time to the processor.
-func TestTrackDataStreamsTransactionAtDelegatesToProcessor(t *testing.T) {
+// TestTrackDataStreamsTransactionWarnsOnce verifies that the deprecated no-ops
+// announce themselves, so a caller who keeps calling them finds out rather than
+// silently losing data, and that they warn only once per process.
+func TestTrackDataStreamsTransactionWarnsOnce(t *testing.T) {
+	// Reset the package-level guards so this test does not depend on whether
+	// another test in this package called the deprecated functions first.
+	warnTrackTransactionOnce = sync.Once{}
+	warnTrackTransactionAtOnce = sync.Once{}
+
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	Start(withNoopStats())
+	tp := new(log.RecordLogger)
+	Start(withNoopStats(), WithLogger(tp))
 	defer Stop()
+	tp.Reset()
 
 	fixedTime := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	assert.NotPanics(t, func() {
-		TrackDataStreamsTransactionAt(context.Background(), "tx-at-001", "delivered", fixedTime)
-	})
-}
+	for range 3 {
+		TrackDataStreamsTransaction(context.Background(), "tx-1", "ingested")
+		TrackDataStreamsTransactionAt(context.Background(), "tx-1", "ingested", fixedTime)
+	}
 
-// TestTrackDataStreamsTransactionAtTagsSpan verifies that TrackDataStreamsTransactionAt
-// also tags the active span in the context.
-func TestTrackDataStreamsTransactionAtTagsSpan(t *testing.T) {
-	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	Start(withNoopStats())
-	defer Stop()
-
-	span, ctx := StartSpanFromContext(context.Background(), "test.op")
-	defer span.Finish()
-
-	fixedTime := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	TrackDataStreamsTransactionAt(ctx, "tx-at-span", "delivered", fixedTime)
-
-	s, ok := SpanFromContext(ctx)
-	require.True(t, ok)
-	v, _ := s.meta.Get(ext.DSMTransactionID)
-	assert.Equal(t, "tx-at-span", v)
-	v, _ = s.meta.Get(ext.DSMTransactionCheckpoint)
-	assert.Equal(t, "delivered", v)
+	logs := strings.Join(tp.Logs(), "\n")
+	assert.Equal(t, 1, strings.Count(logs, "TrackDataStreamsTransaction is a no-op"),
+		"expected exactly one warning for TrackDataStreamsTransaction, got logs:\n%s", logs)
+	assert.Equal(t, 1, strings.Count(logs, "TrackDataStreamsTransactionAt is a no-op"),
+		"expected exactly one warning for TrackDataStreamsTransactionAt, got logs:\n%s", logs)
+	assert.Contains(t, logs, "transaction tracking has been removed")
 }
