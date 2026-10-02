@@ -257,8 +257,16 @@ func (h *agentTraceWriter) flush() {
 }
 
 // flushBlocking is the flush variant that waits for a connection slot; see
-// flushBlocker for who needs it.
+// flushBlocker for who needs it. It returns at once when the payload is
+// empty: a connection slot can only carry a payload, so an empty payload
+// must not make its caller wait for a stalled send to finish.
 func (h *agentTraceWriter) flushBlocking() {
+	h.mu.Lock()
+	empty := h.payload.itemCount() == 0
+	h.mu.Unlock()
+	if empty {
+		return
+	}
 	h.climit <- struct{}{}
 	h.flushHoldingSlot()
 }

@@ -326,6 +326,56 @@ func TestPayloadBoundWhileAgentStalled(t *testing.T) {
 	})
 }
 
+// TestEmptyFlushOnSaturatedAgent pins the empty-payload contract of an
+// explicit Flush(): when every connection is in flight and the payload holds
+// nothing, Flush() must return without waiting for a stalled send to finish.
+// There is nothing a connection slot could carry, and a Lambda handler must
+// not spend its invocation budget on a no-op flush.
+func TestEmptyFlushOnSaturatedAgent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
+		release := make(chan struct{})
+		bt := &blockingTransport{release: release}
+
+		trc, _, flush, stop, err := startTestTracer(t,
+			withTransport(bt),
+			withNoopInfoHTTPClient(),
+			withStatsdClient(&tg),
+		)
+		require.NoError(t, err)
+		defer stop()
+		var releaseOnce sync.Once
+		releaseStall := func() { releaseOnce.Do(func() { close(release) }) }
+		defer releaseStall()
+
+		// Saturate every outgoing connection slot, same choreography as
+		// TestQueueOverflowOnStalledAgent. Every trace now sits in a stalled
+		// send; the payload holds nothing.
+		for range concurrentConnectionLimit {
+			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("empty-flush")}, willSend: true})
+			synctest.Wait()
+			flush(-1)
+			synctest.Wait()
+		}
+
+		// Flush() must complete while every connection is still stalled. The
+		// non-blocking receive is safe: synctest.Wait() only returns once the
+		// Flush goroutine is either done or durably blocked, and a durably
+		// blocked Flush is the regression this test pins.
+		flushed := make(chan struct{})
+		go func() {
+			defer close(flushed)
+			trc.Flush()
+		}()
+		synctest.Wait()
+		select {
+		case <-flushed:
+		default:
+			t.Fatal("Flush() must not wait for a connection slot when the payload is empty")
+		}
+	})
+}
+
 // TestStopFlushesOnSaturatedAgent pins the shutdown half of the fix: Stop()
 // must still send every queued trace when all concurrentConnectionLimit
 // outgoing connections are saturated. The scheduled flush() defers under
