@@ -58,19 +58,23 @@ const (
 var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
 // buildOTLPMetricsRequest converts a ClientStatsPayload to OTLP ResourceMetrics (DELTA histogram).
-// Returns nil when empty.
-func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
+// Returns nil when empty and the first sketch decoding error, if any.
+func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) ([]*otlpmetrics.ResourceMetrics, error) {
 	var allPoints []*otlpmetrics.HistogramDataPoint
+	var firstSketchDecodeErr error
 	for _, bucket := range payload.Stats {
 		bucketEnd := bucket.Start + bucket.Duration
 		for _, gs := range bucket.Stats {
-			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd)
+			pts, err := buildGroupDataPoints(gs, bucket.Start, bucketEnd)
+			if err != nil && firstSketchDecodeErr == nil {
+				firstSketchDecodeErr = err
+			}
 			allPoints = append(allPoints, pts...)
 		}
 	}
 
 	if len(allPoints) == 0 {
-		return nil
+		return nil, firstSketchDecodeErr
 	}
 
 	resource := buildMetricsResource(payload, cfg.ReportHostname(), cfg.Hostname())
@@ -97,7 +101,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 			Resource:     resource,
 			ScopeMetrics: scopeMetrics,
 		},
-	}
+	}, firstSketchDecodeErr
 }
 
 // buildMetricsResource builds the OTLP Resource.
@@ -118,29 +122,36 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, reportHostname bool, h
 }
 
 // buildGroupDataPoints produces up to two OTLP histogram data points (ok + error) from a ClientGroupedStats.
-func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64) []*otlpmetrics.HistogramDataPoint {
+func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64) ([]*otlpmetrics.HistogramDataPoint, error) {
 	var pts []*otlpmetrics.HistogramDataPoint
+	var firstSketchDecodeErr error
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false); dp != nil {
+		if dp, err := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false); err != nil {
+			firstSketchDecodeErr = err
+		} else if dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true); dp != nil {
+		if dp, err := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true); err != nil {
+			if firstSketchDecodeErr == nil {
+				firstSketchDecodeErr = err
+			}
+		} else if dp != nil {
 			pts = append(pts, dp)
 		}
 	}
-	return pts
+	return pts, firstSketchDecodeErr
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool) *otlpmetrics.HistogramDataPoint {
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool) (*otlpmetrics.HistogramDataPoint, error) {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
-		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
-		return nil
+		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %s", err.Error())
+		return nil, err
 	}
 	if count == 0 {
-		return nil
+		return nil, nil
 	}
 	// count comes from the sketch so sum(BucketCounts) == Count by construction,
 	// satisfying the OTLP histogram invariant.
@@ -155,7 +166,7 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		BucketCounts:      bucketCounts,
 		Attributes:        buildDataPointAttributes(gs, isError),
 	}
-	return dp
+	return dp, nil
 }
 
 // buildDataPointAttributes returns OTLP data-point attributes.
