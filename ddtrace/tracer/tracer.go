@@ -819,7 +819,13 @@ func Flush() {
 	llmobs.Flush()
 }
 
-// Flush triggers a flush and waits for it to complete.
+// Flush triggers a flush and waits for it to complete. When every connection
+// to the agent is in flight, the flush waits for a free connection instead of
+// deferring: an explicitly requested flush has no scheduled tick to defer to
+// (a Lambda handler finishes between invocations, an OTel ForceFlush runs at
+// shutdown), so it hands the buffered traces to a send before it returns.
+// The scheduled tick is the only flush that defers; Stop() also sends every
+// queued trace.
 func (t *tracer) Flush() {
 	done := make(chan struct{})
 	t.flush <- done
@@ -865,7 +871,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // writer, statsd client, and stats concentrator.
 func (t *tracer) defaultFlushHandler(done chan<- struct{}) {
 	t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
-	t.traceWriter.flush()
+	// Blocking, unlike the scheduled tick: an explicitly invoked flush
+	// promises delivery, and its caller (a Lambda handler between
+	// invocations, an OTel ForceFlush at shutdown) may never run again, so
+	// there is no next tick to defer to. Waits for a connection slot and
+	// hands the buffered traces to a send instead.
+	if fb, ok := t.traceWriter.(flushBlocker); ok {
+		fb.flushBlocking()
+	} else {
+		t.traceWriter.flush()
+	}
 	t.statsd.Flush()
 	if !t.config.tracingAsTransport {
 		t.stats.flushAndSend(time.Now(), withCurrentBucket)
