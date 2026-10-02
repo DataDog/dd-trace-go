@@ -28,9 +28,10 @@ type clientStream struct {
 	// committed records that the stream attempt is committed. Reading the
 	// transport context is safe only after Header or RecvMsg has returned,
 	// because an earlier read commits the attempt and disables transparent
-	// retries. RecvMsg sets it once the first receive returned; the interceptor
-	// sets it when call tracing already read the transport context at stream
-	// creation, which commits the attempt as well.
+	// retries. Context, Header and RecvMsg set it after the underlying call
+	// returned, and the interceptor sets it at construction when call tracing
+	// already read the transport context at stream creation, which commits
+	// the attempt as well.
 	committed atomic.Bool
 }
 
@@ -44,10 +45,20 @@ type clientStream struct {
 // attempt and disable transparent retries (issue #4757).
 func (cs *clientStream) Context() context.Context {
 	sctx := cs.ClientStream.Context()
+	// The call above committed the stream attempt.
+	cs.committed.Store(true)
 	if span, ok := tracer.SpanFromContext(cs.ctx); ok {
 		return tracer.ContextWithSpan(sctx, span)
 	}
 	return sctx
+}
+
+// Header returns the headers of the stream. The underlying call commits the
+// stream attempt, so record the commit the same way Context does.
+func (cs *clientStream) Header() (metadata.MD, error) {
+	md, err := cs.ClientStream.Header()
+	cs.committed.Store(true)
+	return md, err
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {

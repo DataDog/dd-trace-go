@@ -569,6 +569,51 @@ func TestStreamMessagePeerTags(t *testing.T) {
 			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
 		}
 	})
+
+	// Context and Header commits the stream attempt as well. A caller that
+	// calls either method closes the retry window itself, so message spans
+	// after that point may read the transport context.
+	t.Run("messages only after Context and Header", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		// The caller closes the retry window through Context before the first
+		// send, so the send span may already read the transport context.
+		_ = stream.Context()
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		// The headers arrived with the first reply, so Header returns at once.
+		// The call commits the attempt, so the send span after it may read the
+		// transport context as well.
+		_, err = stream.Header()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
 }
 
 func TestPass(t *testing.T) {
