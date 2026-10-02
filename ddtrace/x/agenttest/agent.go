@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -96,7 +97,8 @@ type Agent interface {
 	// Spans returns a copy of every collected span in randomized order.
 	// Randomized order exists to break order-dependent assertions, which are a
 	// common source of test flakiness. Match spans by their attributes, not by
-	// position. Each call returns a fresh copy, so callers may mutate it.
+	// position. Each call returns a deep copy, so callers may mutate any field
+	// without changing the collected spans.
 	Spans() []*Span
 }
 
@@ -259,19 +261,48 @@ func (a *agent) CountSpans() int {
 // Spans returns a copy of every collected span in randomized order.
 // Randomized order exists to break order-dependent assertions, which are a
 // common source of test flakiness. Match spans by their attributes, not by
-// position. Each call returns a fresh copy, so callers may mutate it.
+// position. Each call returns a deep copy, so callers may mutate any field
+// without changing the collected spans.
 func (a *agent) Spans() []*Span {
 	a.mu.Lock()
 	spans := make([]*Span, len(a.spans))
 	copy(spans, a.spans)
 	a.mu.Unlock()
-	// Copy the span values too, so callers cannot mutate the collected spans.
 	for i, s := range spans {
-		clone := *s
-		spans[i] = &clone
+		spans[i] = cloneSpan(s)
 	}
 	rand.Shuffle(len(spans), func(i, j int) {
 		spans[i], spans[j] = spans[j], spans[i]
 	})
 	return spans
+}
+
+// cloneSpan returns a deep copy of s. Map and slice fields are cloned so that
+// mutating the copy never changes the collected span.
+func cloneSpan(s *Span) *Span {
+	if s == nil {
+		return nil
+	}
+	clone := &Span{
+		SpanID:    s.SpanID,
+		TraceID:   s.TraceID,
+		ParentID:  s.ParentID,
+		Service:   s.Service,
+		Operation: s.Operation,
+		Resource:  s.Resource,
+		Type:      s.Type,
+		Start:     s.Start,
+		Duration:  s.Duration,
+		Error:     s.Error,
+		Meta:      maps.Clone(s.Meta),
+		Metrics:   maps.Clone(s.Metrics),
+		Tags:      maps.Clone(s.Tags),
+	}
+	if s.Children != nil {
+		clone.Children = make([]*Span, len(s.Children))
+		for i, c := range s.Children {
+			clone.Children[i] = cloneSpan(c)
+		}
+	}
+	return clone
 }
