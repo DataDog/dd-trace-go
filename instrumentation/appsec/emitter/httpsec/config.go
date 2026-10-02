@@ -27,6 +27,15 @@ type Config struct {
 	Route string
 	// RouteParams is a map of route parameters to be used for the request.
 	RouteParams map[string]string
+	// Cookies are the request cookies as the application reads them. If nil,
+	// they are parsed from the request with r.Cookies(). Set them
+	// when the framework does not parse cookies like net/http: the WAF must see
+	// the cookies that the application sees.
+	Cookies map[string][]string
+	// QueryParams are the query parameters as the application reads them. If
+	// nil, they are parsed from the request with r.URL.Query(). Set them when
+	// the framework does not parse the query like net/http.
+	QueryParams map[string][]string
 }
 
 var defaultWrapHandlerConfig = &Config{
