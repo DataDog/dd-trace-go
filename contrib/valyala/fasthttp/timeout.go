@@ -29,8 +29,9 @@ import (
 // The first traced scope covers the whole worker, including subsequent traced calls.
 // Resource namers run before h starts, while the worker is paused, and again
 // after h returns. A timed-out request keeps the resource from the first call.
-// The worker limit defaults to fasthttp.DefaultConcurrency and is separate from
-// Server.Concurrency. Use WithTimeoutConcurrency to change it. Excess requests
+// The worker limit defaults to 1,024 and is separate from
+// Server.Concurrency. A timed-out worker keeps its slot until h returns. Use
+// WithTimeoutConcurrency to set a limit for your server. Excess requests
 // receive 429. A non-positive timeout disables this wrapper.
 //
 // Do not enable span pooling with [tracer.WithSpanPool] when using these wrappers.
@@ -42,12 +43,19 @@ func TimeoutHandler(h fasthttp.RequestHandler, timeout time.Duration, msg string
 
 // TimeoutWithCodeHandler is TimeoutHandler with a custom timeout status code.
 func TimeoutWithCodeHandler(h fasthttp.RequestHandler, timeout time.Duration, msg string, statusCode int, opts ...TimeoutOption) fasthttp.RequestHandler {
-	cfg := timeoutOptions{concurrency: fasthttp.DefaultConcurrency}
+	cfg := timeoutOptions{concurrency: defaultTimeoutConcurrency}
 	for _, option := range opts {
 		option(&cfg)
 	}
 	return timeoutWithCodeHandler(h, timeout, msg, statusCode, cfg.concurrency)
 }
+
+// defaultTimeoutConcurrency is the worker limit of one timeout wrapper when
+// WithTimeoutConcurrency is not given. It is less than
+// fasthttp.DefaultConcurrency on purpose: a timed-out worker keeps its handler
+// goroutine and RequestCtx until the handler returns, also after the server
+// has released its own concurrency slot.
+const defaultTimeoutConcurrency = 1024
 
 // TimeoutOption configures TimeoutHandler or TimeoutWithCodeHandler.
 type TimeoutOption func(*timeoutOptions)
@@ -330,7 +338,7 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 				if event.scope != l.rootWorker {
 					// The worker waits for this reply, so the resource namer
 					// can read what the handler stored in the context.
-					event.scope.setResource()
+					namerPanic := event.scope.setFinalResource()
 					l.finishScope(event.scope, &l.ctx.Response, true)
 					// Finished nested scopes must not accumulate in a long request.
 					for i, scope := range l.scopes {
@@ -341,24 +349,19 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 							break
 						}
 					}
+					// The scope is finished. A namer panic now aborts the
+					// request, as other owner callback panics do. If the
+					// handler panicked, its panic continues in the worker.
+					event.scope.raiseNamerPanic(namerPanic)
 				}
 				event.reply <- struct{}{}
 			case event.deadline != nil:
-				if event.addDeadline {
-					l.deadlines = append(l.deadlines, event.deadline)
-				} else {
-					for i, deadline := range l.deadlines {
-						if deadline == event.deadline {
-							l.deadlines = append(l.deadlines[:i], l.deadlines[i+1:]...)
-							break
-						}
-					}
-				}
-				timer.Reset(time.Until(l.earliestDeadline().at))
+				l.updateDeadline(timer, event)
 				event.reply <- struct{}{}
 			}
 		case <-l.workerDone:
 			l.workerPanicHandled = true
+			var namerPanic any
 			// No application code can now access the live response or values.
 			if l.rootWorker != nil {
 				if l.panicked {
@@ -366,7 +369,7 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 					// handler can panic, so its status is not the result.
 					l.rootWorker.panicked = true
 				}
-				l.rootWorker.setResource()
+				namerPanic = l.rootWorker.setFinalResource()
 				l.rootWorker.finishAppSec(&l.ctx.Response)
 				l.rootWorker.restore()
 			}
@@ -382,6 +385,12 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 			completed = true
 			if l.panicked {
 				panic(l.panicValue)
+			}
+			// The worker has exited, so the namer panic does not need abort.
+			// If application code in the worker recovered a panic of the
+			// root handler, discard the namer panic, as WrapHandler does.
+			if l.rootWorker != nil {
+				l.rootWorker.raiseNamerPanic(namerPanic)
 			}
 			return
 		case <-timer.C:
@@ -422,6 +431,23 @@ func (l *timeoutLayer) abort() {
 	l.ctx.TimeoutErrorWithResponse(&l.response)
 }
 
+// updateDeadline adds or removes the deadline of event. Then it sets timer to
+// the earliest active deadline. A removed deadline can have expired already,
+// so resetTimer must discard its tick.
+func (l *timeoutLayer) updateDeadline(timer *time.Timer, event timeoutEvent) {
+	if event.addDeadline {
+		l.deadlines = append(l.deadlines, event.deadline)
+	} else {
+		for i, deadline := range l.deadlines {
+			if deadline == event.deadline {
+				l.deadlines = append(l.deadlines[:i], l.deadlines[i+1:]...)
+				break
+			}
+		}
+	}
+	resetTimer(timer, time.Until(l.earliestDeadline().at))
+}
+
 func (l *timeoutLayer) earliestDeadline() *timeoutDeadline {
 	earliest := l.deadlines[0]
 	for _, deadline := range l.deadlines[1:] {
@@ -446,8 +472,9 @@ func (l *timeoutLayer) finishOuter(scope *handlerScope) {
 	}
 	// The worker has exited, so the resource namer can read what the handler
 	// stored in the context.
-	scope.setResource()
+	namerPanic := scope.setFinalResource()
 	l.finishScope(scope, &l.ctx.Response, true)
+	scope.raiseNamerPanic(namerPanic)
 }
 
 var timerPool sync.Pool
@@ -460,15 +487,31 @@ func acquireTimer(d time.Duration) *time.Timer {
 	return time.NewTimer(d)
 }
 
+// resetTimer changes the expiry of timer to d. The timer must not deliver a
+// value from an earlier expiry. With synchronous timer channels (the default
+// since Go 1.23), Stop guarantees this. The drain is for programs that use
+// asynchronous timer channels: GODEBUG=asynctimerchan=1, or a main module
+// that declares a Go version before 1.23. In those programs, an expired timer
+// keeps its value in the channel until a receive.
+func resetTimer(timer *time.Timer, d time.Duration) {
+	stopTimer(timer)
+	timer.Reset(d)
+}
+
 // releaseTimer puts timer back in the pool. A timer from the pool must not
-// deliver a value from its previous use. Since Go 1.23, Stop guarantees this.
-// The drain is for programs that set GODEBUG=asynctimerchan=1.
+// deliver a value from its previous use.
 func releaseTimer(timer *time.Timer) {
+	stopTimer(timer)
+	timerPool.Put(timer)
+}
+
+// stopTimer stops timer and removes a value that is in its channel. Only the
+// owner of the timer receives from the channel, so the drain cannot block.
+func stopTimer(timer *time.Timer) {
 	if !timer.Stop() {
 		select {
 		case <-timer.C:
 		default:
 		}
 	}
-	timerPool.Put(timer)
 }

@@ -68,9 +68,13 @@ Important behavior:
   its deadline gets the resource from the second call, as with `WrapHandler`
   alone. A request that times out keeps the resource from the first call, so
   it cannot include values that the handler sets later.
-- The worker limit defaults to `fasthttp.DefaultConcurrency`, independently of
-  `fasthttp.Server.Concurrency`. Set it with `WithTimeoutConcurrency`; timed-out
-  workers retain their slots until they exit. Requests above the limit receive
+- The worker limit defaults to 1,024, independently of
+  `fasthttp.Server.Concurrency`. Timed-out workers keep their handler
+  goroutines, request contexts (with request bodies up to
+  `Server.MaxRequestBodySize`), and slots until they exit, also after the
+  server has released its own slot. Use `WithTimeoutConcurrency` to set the
+  number of stalled workers that your memory budget allows. Do not copy
+  `Server.Concurrency` for this value: its default is 262,144. Requests above the limit receive
   status 429. Reuse the returned handler to share one limit across requests.
   Nested wrappers use only the outer worker limit.
 - Orchestrion can add the server tracing wrapper automatically. Use this

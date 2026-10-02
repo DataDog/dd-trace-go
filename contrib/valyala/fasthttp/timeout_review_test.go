@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -180,10 +181,86 @@ func TestTimeoutHandlerDoesNotRepeatHandledPanic(t *testing.T) {
 		}
 		return "resource"
 	})), time.Second, "timeout")
-	require.PanicsWithValue(t, "finish panic", func() { handler(ctx) })
+	// The namer panic must not replace the handler panic.
+	require.PanicsWithValue(t, "handler panic", func() { handler(ctx) })
 	waitTimeoutWorker(t, <-exited)
 	require.Nil(t, ctx.UserValue(timeoutContextKey{}))
 	require.Nil(t, ctx.UserValue(handlerScopeKey{}))
+	spans := timeoutServerSpans(mt)
+	require.Len(t, spans, 1)
+	require.Nil(t, spans[0].Tag(ext.HTTPCode))
+	require.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
+}
+
+// A resource namer can panic after the handler. A panic of the handler must
+// continue without change. If the handler returns normally, the namer panic
+// continues. In both cases, the span must not report fasthttp's default
+// status 200 as a success.
+type handlerDoneKey struct{}
+
+// panicAfterHandlerNamer panics only after the handler has stored
+// handlerDoneKey. With a timeout wrapper, a namer also runs once before the
+// handler.
+var panicAfterHandlerNamer = WithResourceNamer(func(ctx *fasthttp.RequestCtx) string {
+	if ctx.UserValue(handlerDoneKey{}) != nil {
+		panic("namer panic")
+	}
+	return "resource"
+})
+
+func TestResourceNamerPanicAfterHandler(t *testing.T) {
+	namer := panicAfterHandlerNamer
+	for _, handlerPanics := range []bool{false, true} {
+		exited := make(chan (<-chan struct{}), 1)
+		app := func(ctx *fasthttp.RequestCtx) {
+			if layer, ok := ctx.UserValue(timeoutContextKey{}).(*timeoutLayer); ok {
+				exited <- layer.workerExited
+			}
+			ctx.SetUserValue(handlerDoneKey{}, true)
+			if handlerPanics {
+				panic("handler panic")
+			}
+		}
+		want, wantErr := "namer panic", errResourceNamerPanic
+		if handlerPanics {
+			want, wantErr = "handler panic", errHandlerPanic
+		}
+		for _, tc := range []struct {
+			name    string
+			handler fasthttp.RequestHandler
+		}{
+			{"wrap", WrapHandler(app, namer)},
+			{"wrap-inside", TimeoutHandler(WrapHandler(app, namer), 5*time.Second, "timeout")},
+			{"wrap-outside", WrapHandler(TimeoutHandler(app, 5*time.Second, "timeout"), namer)},
+			// The span of the nested scope uses namer. It finishes first.
+			{"nested-scope", TimeoutHandler(WrapHandler(WrapHandler(app, namer)), 5*time.Second, "timeout")},
+		} {
+			name := tc.name + "/handler-returns"
+			if handlerPanics {
+				name = tc.name + "/handler-panics"
+			}
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				ctx := timeoutReviewContext()
+				require.PanicsWithValue(t, want, func() { tc.handler(ctx) })
+				if tc.name != "wrap" {
+					// An aborted request keeps its worker until it returns.
+					waitTimeoutWorker(t, <-exited)
+				}
+				require.Nil(t, ctx.UserValue(timeoutContextKey{}))
+				require.Nil(t, ctx.UserValue(handlerScopeKey{}))
+				spans := timeoutServerSpans(mt)
+				require.NotEmpty(t, spans)
+				for _, span := range spans {
+					// No span reports the live status 200 as the result.
+					require.NotEqual(t, "200", span.Tag(ext.HTTPCode))
+				}
+				require.Nil(t, spans[0].Tag(ext.HTTPCode))
+				require.Equal(t, wantErr.Error(), spans[0].Tag(ext.ErrorMsg))
+			})
+		}
+	}
 }
 
 func TestTimeoutExchangeKeepsQueuedReply(t *testing.T) {
@@ -226,6 +303,71 @@ func TestTimeoutHandlerSequentialWorkerLimit(t *testing.T) {
 		default:
 			t.Fatal("normal return left a worker slot occupied")
 		}
+	}
+}
+
+// Application code can recover the panic of a traced handler. The namer panic
+// after that handler must then be discarded, also when a timeout wrapper
+// finishes the span after the worker returns.
+func TestRecoveredHandlerPanicDiscardsNamerPanic(t *testing.T) {
+	traced := WrapHandler(func(ctx *fasthttp.RequestCtx) {
+		ctx.SetUserValue(handlerDoneKey{}, true)
+		panic("handler panic")
+	}, panicAfterHandlerNamer)
+	app := func(ctx *fasthttp.RequestCtx) {
+		func() {
+			defer func() { require.Equal(t, "handler panic", recover()) }()
+			traced(ctx)
+		}()
+		ctx.SetStatusCode(http.StatusCreated)
+	}
+	for _, tc := range []struct {
+		name    string
+		handler fasthttp.RequestHandler
+	}{
+		{"wrap", app},
+		{"timeout", TimeoutHandler(app, 5*time.Second, "timeout")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			ctx := timeoutReviewContext()
+			require.NotPanics(t, func() { tc.handler(ctx) })
+			require.Equal(t, http.StatusCreated, ctx.Response.StatusCode())
+			spans := timeoutServerSpans(mt)
+			require.Len(t, spans, 1)
+			require.Nil(t, spans[0].Tag(ext.HTTPCode))
+			require.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
+		})
+	}
+}
+
+// Timed-out workers keep their slots. Without WithTimeoutConcurrency, the
+// wrapper must refuse requests when defaultTimeoutConcurrency workers remain.
+func TestTimeoutHandlerDefaultWorkerLimit(t *testing.T) {
+	// The documented bound. A larger value must fail here, not start more
+	// blocked workers.
+	require.Equal(t, 1024, defaultTimeoutConcurrency)
+	release := make(chan struct{})
+	var once sync.Once
+	// An assertion failure must not leave workers blocked.
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	exited := make(chan (<-chan struct{}), defaultTimeoutConcurrency)
+	handler := TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+		exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
+		<-release
+	}, time.Millisecond, "timeout")
+	for range defaultTimeoutConcurrency {
+		ctx := timeoutReviewContext()
+		handler(ctx)
+		require.Equal(t, fasthttp.StatusRequestTimeout, ctx.LastTimeoutErrorResponse().StatusCode())
+	}
+	ctx := timeoutReviewContext()
+	handler(ctx)
+	require.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
+	once.Do(func() { close(release) })
+	for range defaultTimeoutConcurrency {
+		waitTimeoutWorker(t, <-exited)
 	}
 }
 

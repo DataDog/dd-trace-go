@@ -37,12 +37,19 @@ type handlerScope struct {
 	// panicked tells that the handler did not return normally. The response
 	// status then does not show the result of the handler.
 	panicked bool
+	// namerPanicked tells that the resource namer panicked after the handler.
+	// The response status then does not show the result of the request.
+	namerPanicked bool
 }
 
 // errHandlerPanic is the span error when the handler panics. It does not
 // contain the panic value, because that value can contain request data or
 // credentials.
 var errHandlerPanic = errors.New("handler panicked")
+
+// errResourceNamerPanic is the span error when the resource namer panics after
+// the handler. For the same reason, it does not contain the panic value.
+var errResourceNamerPanic = errors.New("resource namer panicked")
 
 func startHandlerScope(ctx *fasthttp.RequestCtx, cfg *config) *handlerScope {
 	parent, _ := ctx.UserValue(handlerScopeKey{}).(*handlerScope)
@@ -76,6 +83,31 @@ func (s *handlerScope) setResource() {
 	s.resourceSet = true
 }
 
+// setFinalResource sets the resource after the handler. It recovers a panic of
+// the resource namer, so that the span can still finish, and returns its value.
+// The span then reports an error, not the response status. The caller must
+// raise the returned value again only if the handler did not panic: the panic
+// of the handler must not be replaced.
+func (s *handlerScope) setFinalResource() (namerPanic any) {
+	defer func() {
+		// Since Go 1.21, panic(nil) recovers a *runtime.PanicNilError, so a
+		// nil value always means that the namer returned normally.
+		if namerPanic = recover(); namerPanic != nil {
+			s.namerPanicked = true
+		}
+	}()
+	s.setResource()
+	return nil
+}
+
+// raiseNamerPanic raises namerPanic again, unless the handler panicked. In that
+// case, the panic of the handler continues and the namer panic is discarded.
+func (s *handlerScope) raiseNamerPanic(namerPanic any) {
+	if namerPanic != nil && !s.panicked {
+		panic(namerPanic)
+	}
+}
+
 func (s *handlerScope) finishAppSec(response *fasthttp.Response) {
 	s.appsecOnce.Do(func() {
 		if s.appsec != nil {
@@ -95,6 +127,10 @@ func (s *handlerScope) finishSpan(response *fasthttp.Response) {
 			// The response still has the status that the handler had set
 			// before the panic (fasthttp's default is 200). Do not report it.
 			s.span.SetTag(ext.ErrorNoStackTrace, errHandlerPanic)
+			return
+		}
+		if s.namerPanicked {
+			s.span.SetTag(ext.ErrorNoStackTrace, errResourceNamerPanic)
 			return
 		}
 		status := response.StatusCode()
@@ -130,7 +166,8 @@ func (s *handlerScope) finish() {
 	// A completed timeout layer can have set a resource before the handler
 	// ran. Its worker has exited, so set the resource again from the final
 	// context.
-	s.setResource()
+	// The deferred calls run before the namer panic continues.
+	s.raiseNamerPanic(s.setFinalResource())
 }
 
 func restoreUserValue(ctx *fasthttp.RequestCtx, key, previous any) {
