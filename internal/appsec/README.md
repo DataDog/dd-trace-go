@@ -9,6 +9,61 @@ Most of the work is to forward information to the module `github.com/DataDog/go-
 connect the different parts of the application and the WAF engine while keeping up to date the various sources of
 configuration that the WAF engine uses.
 
+### Fiber request monitoring
+
+The Fiber v2 middleware starts the WAF operation before the handler chain. It
+keeps the raw request target for WAF inspection and uses fasthttp's parsed query
+values. Invalid escapes and semicolons must not disable monitoring or remove
+values that the application can read.
+
+With AppSec enabled, the middleware renders returned errors through Fiber's
+configured error handler before it reports the response to the WAF. The error
+handler runs once when needed. The original error is recorded on the span
+unless AppSec blocks the response; then the block is reported instead.
+Earlier middleware receives `nil` from `c.Next()` for these handled errors;
+error logging or counting belongs in the configured error handler. With AppSec
+disabled, error propagation is unchanged. A pending block takes priority over
+the error handler and replaces the handler's body and headers.
+
+Use `fibertrace.Wrap(app, opts...)` before registering routes or middleware, and
+wrap each mounted app. Without a child app's own `Wrap` call, its parameters are
+checked only after its handlers return, so a block cannot prevent their side
+effects. `Wrap` installs route guards during setup. Fiber's matcher
+supplies the parameters to these guards before they call user handlers, so a
+path-parameter block prevents those handlers from running. Consecutive route
+registrations can share a handler chain; every appended handler is guarded.
+Repeated `Wrap` calls apply options without adding another middleware. Mounted
+apps share the first wrapped app's request span and options. This includes
+`WithIgnoreRequest`: if the first app ignores the request, mounted apps also
+skip tracing and AppSec. Calls to `Wrap` on the same app must not run concurrently,
+and all route registration must finish before serving requests. A block in a
+parameterized group middleware reports that group's route; the endpoint has not
+been reached yet.
+
+Use `Wrap` instead of `app.Use(fibertrace.Middleware())`; do not install both.
+The older global `Middleware` form remains compatible, but it can only report
+endpoint parameters after the handler chain and cannot prevent those handler
+side effects. Orchestrion uses `Wrap` automatically. Parsed bodies still require
+an explicit `appsec.MonitorParsedHTTPBody(c.UserContext(), body)` call; there is
+no automatic `BodyParser` hook.
+
+Register panic-recovery middleware immediately after `Wrap`, or immediately
+after `Middleware` when using the older API, before other middleware and routes.
+Recovery then runs inside the monitored handler chain, so
+the configured error handler renders the response before the WAF inspects it.
+Recovery registered before tracing runs too late: AppSec cannot inspect its
+final response or prevent it from overwriting a pending block. That ordering
+is not supported for AppSec panic handling. Tracing does not install or replace
+recovery, and unrecovered panics still propagate. Custom recovery callbacks
+remain under application control. With AppSec disabled, Fiber still renders
+returned errors after tracing returns; the span's status can describe the
+pre-error response rather than the final wire status. This behavior is unchanged.
+
+The Fiber contrib tests cover parsing, error responses, blocking, and connection
+reuse. The Orchestrion Fiber case verifies blocking without manual middleware.
+The AppSec CI matrix includes Fiber, and `BenchmarkFiberMiddleware` measures
+requests with AppSec off and on.
+
 ### Instrumentation Gateway: Dyngo
 
 Having the customer (or orchestrion) instrument their code is the hardest part of the job. That's why we want to provide
