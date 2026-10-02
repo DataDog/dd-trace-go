@@ -1839,10 +1839,13 @@ func extractTraceID128(ctx *SpanContext, v string) error {
 }
 
 const (
-	baggageMaxItems     = 64
-	baggageMaxBytes     = 8192
-	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
-	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
+	baggageMaxItems = 64
+	baggageMaxBytes = 8192
+	// safeCharactersKey and safeCharactersValue intentionally exclude '+' and '%' so
+	// urlEncode escapes them. Extraction uses url.QueryUnescape, which treats '+' as a
+	// space and '%' as an escape prefix.
+	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*-.^_`|~"
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*-./:<>?@[]^_`{|}~"
 )
 
 // encodeKey encodes a key with the specified safe characters
