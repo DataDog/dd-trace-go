@@ -238,9 +238,9 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 		t.Fatal("no request reached the mock agent")
 	}
 
-	// Close returns even though the app-started flush is still waiting for
-	// the agent. With the default five-second deadline, Close gives up after
-	// six seconds at the latest.
+	// Close allows the app-started flush two seconds to deliver, then cancels
+	// its request. The cancel should unwind this flush without using the second
+	// two-second bound.
 	closed := make(chan struct{})
 	go func() {
 		defer close(closed)
@@ -248,7 +248,7 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 	}()
 	select {
 	case <-closed:
-	case <-time.After(15 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Close did not return: it waits without bound on the app-started flush")
 	}
 
@@ -265,8 +265,9 @@ func TestCloseBoundsWaitOnAppStartedFlush(t *testing.T) {
 // TestCloseFromFlushTickerCallbackReturns verifies that Close called from a
 // flush ticker callback returns instead of waiting for the ticker worker:
 // that worker runs the callback, so a joining stop would wait for itself and
-// block forever. Close returns after its bound expires, which lets the
-// callback return, which lets the worker exit.
+// block forever. Close returns after the two-second delivery grace and the
+// second two-second wait expire, which lets the callback return and the worker
+// exit.
 func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 	// Force telemetry enabled: StartApp ignores calls while Disabled.
 	telemetryEnabledOnce = sync.Once{}
@@ -300,7 +301,7 @@ func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 
 	select {
 	case <-closedFromCallback:
-	case <-time.After(15 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Close called from a flush ticker callback did not return")
 	}
 

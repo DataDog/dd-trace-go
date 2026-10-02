@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strconv"
@@ -266,7 +267,11 @@ func (c *client) Flush() {
 			}
 		}
 		if dependenciesFound {
-			log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
+			if errors.Is(err, context.Canceled) {
+				log.Debug("appsec: error while flushing SCA Security Data: %s", err.Error())
+			} else {
+				log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
+			}
 		} else {
 			log.Debug("telemetry: error while flushing telemetry data: %s", err.Error())
 		}
@@ -460,44 +465,32 @@ func (c *client) Close() error {
 	return nil
 }
 
-// joinBounded waits for a flush to finish within one request deadline plus a
-// second of grace. Callers close idle HTTP connections right after Close
-// returns, and a flush still in flight at that point leaves its connection
-// orphaned in the idle pool until the transport IdleConnTimeout elapses.
+// flushDeliveryGrace is how long Close allows an in-flight flush to deliver
+// before canceling it.
+const flushDeliveryGrace = 2 * time.Second
+
+// joinBounded gives a flush a fixed delivery grace before canceling its
+// requests. Callers close idle HTTP connections right after Close returns,
+// and a flush still in flight at that point leaves its connection orphaned in
+// the idle pool until the transport IdleConnTimeout elapses.
 //
-// A flush spans several sequential requests, and each request may use the
-// whole deadline, so a healthy flush can outlast the bound. When the bound
-// expires, joinBounded cancels the flush requests instead of waiting longer:
-// a canceled request closes its connection, so no orphan remains. A caller
-// inside the flush goroutine itself also returns this way: the cancel unblocks
-// the flush, which lets that caller's Close return.
+// A canceled request closes its connection, so no orphan remains. A Close
+// called from inside the flush, such as from a flush ticker callback, is not
+// released by the cancel, because the flush waits for that caller. The second
+// bounded wait below lets that Close return.
 func (c *client) joinBounded(done <-chan struct{}, what string) {
-	bound := c.flushJoinBound()
 	select {
 	case <-done:
 		return
-	case <-time.After(bound):
+	case <-time.After(flushDeliveryGrace):
 	}
 	c.writer.Cancel()
-	log.Warn("telemetry: %s did not finish within %s of Close; canceled it", what, bound)
+	log.Debug("telemetry: %s did not finish within %s of Close; canceled it", what, flushDeliveryGrace)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		// The flush did not unwind after the cancel. Leave it; the cancel
 		// prevents any new request from this client.
-		log.Warn("telemetry: %s did not unwind after the cancel; Close continues without it", what)
+		log.Debug("telemetry: %s did not unwind after the cancel; Close continues without it", what)
 	}
-}
-
-// flushJoinBound returns how long Close waits for one flush before it
-// cancels that flush. The writer caps every client timeout above five
-// seconds, and a client without a timeout uses the writer's five-second
-// default, so five seconds is the longest request deadline in flight. One
-// second of grace covers scheduling delay.
-func (c *client) flushJoinBound() time.Duration {
-	deadline := 5 * time.Second
-	if client := c.clientConfig.HTTPClient; client != nil && client.Timeout > 0 && client.Timeout < deadline {
-		deadline = client.Timeout
-	}
-	return deadline + time.Second
 }
