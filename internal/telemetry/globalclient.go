@@ -72,21 +72,28 @@ func StartApp(client Client) {
 
 	client.AppStart()
 	c := asClient(client)
-	// Increment the WaitGroup before SwapClient makes the client visible so
-	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	// Increment the WaitGroup and record the flush before the client becomes
+	// visible, so StopApp and Close cannot miss a flush that is about to start.
 	startAppFlushWg.Add(1)
-	// Record the flush on the client before it becomes globally visible, so a
-	// close that races the installation still waits for the flush. Concurrent
-	// calls on the same client share the recorded channel.
 	var done chan struct{}
 	if c != nil {
 		done = c.markStartFlushPending()
+		if done == nil {
+			startAppFlushWg.Done()
+			log.Debug("telemetry: StartApp called multiple times, ignoring")
+			return
+		}
 	}
-	if SwapClient(client) != nil {
-		// A concurrent StartApp call already set the client; undo the Add.
-		// No flush runs from here, and a concurrent winner may share the
-		// recorded channel, so leave that channel to the winner.
+
+	installedClient, installed := installClientIfEmpty(client)
+	if !installed {
 		startAppFlushWg.Done()
+		// Different concrete clients have different markers, so this call owns
+		// and completes its unused marker. Calls with the same client share the
+		// winner's marker and must leave it for the winning flush.
+		if c != nil && asClient(installedClient) != c {
+			c.completeStartFlush(done)
+		}
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
@@ -98,6 +105,30 @@ func StartApp(client Client) {
 		}
 		client.Flush()
 	}()
+}
+
+// installClientIfEmpty atomically installs and activates client only when the
+// global slot is empty. It returns the existing client when another caller won.
+func installClientIfEmpty(client Client) (Client, bool) {
+	for {
+		current := globalClient.Load()
+		if current != nil && *current != nil {
+			return *current, false
+		}
+		if globalClient.CompareAndSwap(current, &client) {
+			activateClient(client)
+			return nil, true
+		}
+	}
+}
+
+func activateClient(client Client) {
+	globalClientRecorder.Replay(client)
+	// Swap all metrics hot pointers to the new MetricHandle.
+	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
+		value.swap(value.maker(client))
+		return true
+	})
 }
 
 // clearGlobalClient removes the global client when it still is c, and
@@ -137,13 +168,7 @@ func SwapClient(client Client) Client {
 		return oldClient
 	}
 
-	globalClientRecorder.Replay(client)
-	// Swap all metrics hot pointers to the new MetricHandle
-	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
-		value.swap(value.maker(client))
-		return true
-	})
-
+	activateClient(client)
 	return oldClient
 }
 

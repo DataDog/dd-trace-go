@@ -419,26 +419,30 @@ func (c *client) AppStop() {
 // Close joins the flush through that channel. The channel exists before the
 // client becomes globally visible, so a close that races the installation
 // still observes it. Concurrent StartApp calls on the same client share one
-// channel, so a losing call cannot replace the channel of the winner.
+// channel, so a losing call cannot replace the channel of the winner. A nil
+// result means another client became visible before the marker was recorded.
 func (c *client) markStartFlushPending() chan struct{} {
 	c.startFlushMu.Lock()
 	defer c.startFlushMu.Unlock()
+	if GlobalClient() != nil {
+		return nil
+	}
 	if c.startFlushDone == nil {
 		c.startFlushDone = make(chan struct{})
 	}
 	return c.startFlushDone
 }
 
-// completeStartFlush clears the pending channel and then closes it. Clearing
-// first keeps the invariant that a non-nil channel is never closed, so a
-// concurrent StartApp that shares this channel always records a fresh one
-// for its own flush.
+// completeStartFlush clears and closes done if it is still the pending
+// channel. The winning flush uses this when it returns; a losing StartApp call
+// uses it only for a marker belonging to a different client.
 func (c *client) completeStartFlush(done chan struct{}) {
 	c.startFlushMu.Lock()
-	if c.startFlushDone == done {
-		c.startFlushDone = nil
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done {
+		return
 	}
-	c.startFlushMu.Unlock()
+	c.startFlushDone = nil
 	close(done)
 }
 

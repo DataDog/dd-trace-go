@@ -315,6 +315,83 @@ func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "the ticker worker did not exit")
 }
 
+type startAppRaceClient struct {
+	Client
+	arrived chan<- struct{}
+	release <-chan struct{}
+	flushes atomic.Int32
+	closes  atomic.Int32
+}
+
+func (c *startAppRaceClient) AppStart() {
+	c.arrived <- struct{}{}
+	<-c.release
+	c.Client.AppStart()
+}
+
+func (c *startAppRaceClient) Flush() {
+	c.flushes.Add(1)
+	c.Client.Flush()
+}
+
+func (c *startAppRaceClient) Close() error {
+	c.closes.Add(1)
+	return c.Client.Close()
+}
+
+// TestConcurrentStartAppDifferentClientsInstallsOnlyWinner deterministically
+// drives two StartApp calls past the initial empty-slot check. Exactly one
+// caller may install, activate, and flush its client; the loser must neither
+// replace the winner nor close either client.
+func TestConcurrentStartAppDifferentClientsInstallsOnlyWinner(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	SwapClient(nil)
+
+	newRaceClient := func(arrived chan<- struct{}, release <-chan struct{}) *startAppRaceClient {
+		tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+		config := defaultConfig(ClientConfig{})
+		config.AgentURL = "http://localhost:8126"
+		config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+		base, err := newClient(tracerConfig, config)
+		require.NoError(t, err)
+		base.writer = &internal.RecordWriter{}
+		return &startAppRaceClient{Client: base, arrived: arrived, release: release}
+	}
+
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	first := newRaceClient(arrived, release)
+	second := newRaceClient(arrived, release)
+	defer func() {
+		SwapClient(nil)
+		_ = first.Client.Close()
+		_ = second.Client.Close()
+	}()
+
+	var started sync.WaitGroup
+	started.Go(func() { StartApp(first) })
+	started.Go(func() { StartApp(second) })
+	for range 2 {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("concurrent StartApp calls did not both reach AppStart")
+		}
+	}
+	close(release)
+	started.Wait()
+
+	installed := GlobalClient()
+	require.True(t, installed == first || installed == second)
+	require.Eventually(t, func() bool {
+		return first.flushes.Load()+second.flushes.Load() == 1
+	}, 5*time.Second, 10*time.Millisecond, "exactly one StartApp caller must flush")
+	assert.Zero(t, first.closes.Load(), "StartApp closed the first client")
+	assert.Zero(t, second.closes.Load(), "StartApp closed the second client")
+}
+
 // TestConcurrentStartAppSingleClientKeepsFlushWorking verifies that two
 // concurrent StartApp calls on the same client leave a working client: the
 // call that loses the installation must not overwrite the flush channel of
@@ -373,6 +450,12 @@ func TestConcurrentStartAppSingleClientKeepsFlushWorking(t *testing.T) {
 			return false
 		}
 	}, 10*time.Second, 10*time.Millisecond)
+
+	select {
+	case <-c.flushTicker.Done():
+		t.Fatal("concurrent StartApp stopped the ticker of the installed client")
+	default:
+	}
 
 	// The client still sends. A canceled writer, which a corrupted Close
 	// leaves behind, fails every request.
