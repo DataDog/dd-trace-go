@@ -31,6 +31,7 @@
 //   - [contrib/cloudevents/sdk-go.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka/v2]
+//   - [contrib/database/sql/otelc/v2]
 //   - [contrib/database/sql/v2]
 //   - [contrib/dimfeld/httptreemux.v5/v2]
 //   - [contrib/elastic/go-elasticsearch.v6/v2]
@@ -101,6 +102,7 @@
 // [contrib/cloudevents/sdk-go.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2
+// [contrib/database/sql/otelc/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2
 // [contrib/database/sql/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 // [contrib/dimfeld/httptreemux.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2
 // [contrib/elastic/go-elasticsearch.v6/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
