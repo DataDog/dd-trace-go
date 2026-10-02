@@ -26,14 +26,27 @@ type clientStream struct {
 	method string
 }
 
+// Context returns the transport stream context with the stream call span
+// attached to it. gRPC attaches values such as the transport peer to the
+// transport context only, so callers must receive the transport context
+// and not the interceptor context. The span stays on the returned context
+// so that code which wraps this stream can parent new spans to the stream
+// call span. The merge happens lazily on each call. Calling
+// cs.ClientStream.Context() at stream creation would commit the stream
+// attempt and disable transparent retries (issue #4757).
 func (cs *clientStream) Context() context.Context {
-	return cs.ctx
+	sctx := cs.ClientStream.Context()
+	if span, ok := tracer.SpanFromContext(cs.ctx); ok {
+		return tracer.ContextWithSpan(sctx, span)
+	}
+	return sctx
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
+		sctx := cs.Context()
 		span, _ := startSpanFromContext(
-			cs.Context(),
+			sctx,
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
@@ -41,7 +54,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
+		if p, ok := peer.FromContext(sctx); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
 		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
@@ -52,8 +65,9 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
 	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
+		sctx := cs.Context()
 		span, _ := startSpanFromContext(
-			cs.Context(),
+			sctx,
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
@@ -61,7 +75,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
+		if p, ok := peer.FromContext(sctx); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
 		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
