@@ -38,6 +38,14 @@ var (
 	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can
 	// wait for it to finish before proceeding with the shutdown flush.
 	startAppFlushWg sync.WaitGroup
+
+	// globalClientLifecycle serializes publications and removals. Its generation
+	// advances whenever a shutdown/removal publishes an empty slot, so a start
+	// prepared against an older empty slot cannot publish after that shutdown.
+	globalClientLifecycle struct {
+		sync.Mutex
+		generation uint64
+	}
 )
 
 // GlobalClient returns the global telemetry client.
@@ -65,7 +73,8 @@ func StartApp(client Client) {
 		return
 	}
 
-	if GlobalClient() != nil {
+	generation, empty := captureStartGeneration()
+	if !empty {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
@@ -85,12 +94,26 @@ func StartApp(client Client) {
 		}
 	}
 
-	installedClient, installed := installClientIfEmpty(client)
-	if !installed {
-		startAppFlushWg.Done()
-		completeLosingStartFlush(c, done, installedClient)
+	if !finishStartApp(client, c, done, generation) {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
-		return
+	}
+}
+
+// captureStartGeneration snapshots the lifecycle generation only while the
+// global slot is empty. StartApp does this before preparing its startup state.
+func captureStartGeneration() (uint64, bool) {
+	globalClientLifecycle.Lock()
+	defer globalClientLifecycle.Unlock()
+	return globalClientLifecycle.generation, GlobalClient() == nil
+}
+
+// finishStartApp publishes and flushes a prepared start attempt, or cleans it
+// up when another client or a newer lifecycle generation won.
+func finishStartApp(client Client, c *client, done chan struct{}, generation uint64) bool {
+	if !installClientIfEmpty(client, c, done, generation) {
+		startAppFlushWg.Done()
+		completeLosingStartFlush(c, done)
+		return false
 	}
 
 	go func() {
@@ -100,21 +123,27 @@ func StartApp(client Client) {
 		}
 		client.Flush()
 	}()
+	return true
 }
 
-// installClientIfEmpty atomically installs and activates client only when the
-// global slot is empty. It returns the existing client when another caller won.
-func installClientIfEmpty(client Client) (Client, bool) {
-	for {
-		current := globalClient.Load()
-		if current != nil && *current != nil {
-			return *current, false
-		}
-		if globalClient.CompareAndSwap(current, &client) {
-			activateClient(client)
-			return nil, true
-		}
+// installClientIfEmpty installs and activates client only when the global slot
+// is still empty in generation. Publication and lifecycle changes are
+// serialized, while activation remains outside the lifecycle lock.
+func installClientIfEmpty(client Client, c *client, done chan struct{}, generation uint64) bool {
+	globalClientLifecycle.Lock()
+	if globalClientLifecycle.generation != generation || GlobalClient() != nil {
+		globalClientLifecycle.Unlock()
+		return false
 	}
+	if c != nil && !c.claimStartFlush(done) {
+		globalClientLifecycle.Unlock()
+		return false
+	}
+	globalClient.Store(&client)
+	globalClientLifecycle.Unlock()
+
+	activateClient(client)
+	return true
 }
 
 func activateClient(client Client) {
@@ -126,12 +155,11 @@ func activateClient(client Client) {
 	})
 }
 
-// completeLosingStartFlush completes an unused marker owned by a distinct
-// losing client. Same-client calls share the winner's marker and leave it for
-// the winning flush.
-func completeLosingStartFlush(c *client, done chan struct{}, installed Client) {
-	if c != nil && asClient(installed) != c {
-		c.completeStartFlush(done)
+// completeLosingStartFlush completes an unused marker. A marker claimed by a
+// same-client winner remains pending for the winning flush.
+func completeLosingStartFlush(c *client, done chan struct{}) {
+	if c != nil {
+		c.completeUnclaimedStartFlush(done)
 	}
 }
 
@@ -141,15 +169,15 @@ func completeLosingStartFlush(c *client, done chan struct{}, installed Client) {
 // function does not close it, because the caller may run on one of the
 // client's own goroutines, and Close joins those goroutines.
 func clearGlobalClient(c Client) Client {
-	var nilClient Client
-	cur := globalClient.Load()
-	if cur == nil || *cur == nil || *cur != c {
+	globalClientLifecycle.Lock()
+	defer globalClientLifecycle.Unlock()
+	cur := GlobalClient()
+	if cur == nil || cur != c {
 		return nil
 	}
-	if globalClient.CompareAndSwap(cur, &nilClient) {
-		return *cur
-	}
-	return nil
+	globalClientLifecycle.generation++
+	globalClient.Store(nil)
+	return cur
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -158,11 +186,15 @@ func SwapClient(client Client) Client {
 		return nil
 	}
 
-	oldClientPtr := globalClient.Swap(&client)
-	var oldClient Client
-	if oldClientPtr != nil && *oldClientPtr != nil {
-		oldClient = *oldClientPtr
+	globalClientLifecycle.Lock()
+	oldClient := GlobalClient()
+	if client == nil {
+		globalClientLifecycle.generation++
+		globalClient.Store(nil)
+	} else {
+		globalClient.Store(&client)
 	}
+	globalClientLifecycle.Unlock()
 
 	if oldClient != nil {
 		oldClient.Close()
@@ -190,11 +222,17 @@ func MockClient(client Client) func() {
 
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
-	if client := globalClient.Swap(nil); client != nil && *client != nil {
-		(*client).AppStop()
+	globalClientLifecycle.Lock()
+	globalClientLifecycle.generation++
+	client := GlobalClient()
+	globalClient.Store(nil)
+	globalClientLifecycle.Unlock()
+
+	if client != nil {
+		client.AppStop()
 		startAppFlushWg.Wait()
-		(*client).Flush()
-		(*client).Close()
+		client.Flush()
+		client.Close()
 	}
 }
 

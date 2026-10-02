@@ -339,6 +339,8 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 
 	winner := newConcreteClient()
 	loser := newConcreteClient()
+	generation, empty := captureStartGeneration()
+	require.True(t, empty)
 	winnerDone := winner.markStartFlushPending()
 	loserDone := loser.markStartFlushPending()
 	require.NotNil(t, winnerDone)
@@ -351,19 +353,21 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 		_ = loser.Close()
 	})
 
-	existing, installed := installClientIfEmpty(winner)
+	installed := installClientIfEmpty(winner, winner, winnerDone, generation)
 	require.True(t, installed)
-	require.Nil(t, existing)
 
-	existing, installed = installClientIfEmpty(loser)
+	installed = installClientIfEmpty(loser, loser, loserDone, generation)
 	require.False(t, installed)
-	require.Same(t, winner, existing)
-	completeLosingStartFlush(loser, loserDone, existing)
+	completeLosingStartFlush(loser, loserDone)
 
 	loser.startFlushMu.Lock()
 	loserPending := loser.startFlushDone
+	loserReservations := loser.startFlushReservations
+	loserClaimed := loser.startFlushClaimed
 	loser.startFlushMu.Unlock()
 	assert.Nil(t, loserPending, "losing distinct client retained an unused startup marker")
+	assert.Zero(t, loserReservations, "losing distinct client retained a startup marker reservation")
+	assert.False(t, loserClaimed, "losing distinct client retained a claimed startup marker")
 	select {
 	case <-loserDone:
 	default:
@@ -372,8 +376,12 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 
 	winner.startFlushMu.Lock()
 	winnerPending := winner.startFlushDone
+	winnerReservations := winner.startFlushReservations
+	winnerClaimed := winner.startFlushClaimed
 	winner.startFlushMu.Unlock()
 	assert.Equal(t, winnerDone, winnerPending, "loser cleanup changed the winner's startup marker")
+	assert.Zero(t, winnerReservations, "winner retained a startup marker reservation")
+	assert.True(t, winnerClaimed, "winner's startup marker was not claimed")
 	select {
 	case <-winnerDone:
 		t.Fatal("loser cleanup completed the winner's startup marker")
@@ -385,6 +393,103 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 	default:
 	}
 	require.Same(t, winner, GlobalClient())
+}
+
+// TestShutdownInvalidatesPreparedStart verifies that a shutdown which observes
+// an empty global slot still invalidates an older prepared start. The test
+// pauses at the same phase boundary StartApp uses: after AppStart, the
+// WaitGroup increment, and marker creation, but before installation.
+func TestShutdownInvalidatesPreparedStart(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		shutdown func()
+	}{
+		{name: "StopApp", shutdown: StopApp},
+		{name: "SwapClientNil", shutdown: func() { SwapClient(nil) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			telemetryEnabledOnce = sync.Once{}
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+			t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+			SwapClient(nil)
+
+			newConcreteClient := func() (*client, *internal.RecordWriter) {
+				tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+				config := defaultConfig(ClientConfig{})
+				config.AgentURL = "http://localhost:8126"
+				config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+				c, err := newClient(tracerConfig, config)
+				require.NoError(t, err)
+				writer := &internal.RecordWriter{}
+				c.writer = writer
+				return c, writer
+			}
+
+			stale, staleWriter := newConcreteClient()
+			var fresh *client
+			t.Cleanup(func() {
+				SwapClient(nil)
+				_ = stale.Close()
+				if fresh != nil {
+					_ = fresh.Close()
+				}
+			})
+
+			generation, empty := captureStartGeneration()
+			require.True(t, empty)
+			stale.AppStart()
+			startAppFlushWg.Add(1)
+			staleDone := stale.markStartFlushPending()
+			require.NotNil(t, staleDone)
+
+			tc.shutdown()
+			newGeneration, empty := captureStartGeneration()
+			require.True(t, empty)
+			require.NotEqual(t, generation, newGeneration, "shutdown did not advance the lifecycle generation")
+			require.False(t, finishStartApp(stale, stale, staleDone, generation),
+				"a start prepared before shutdown was installed")
+			require.Nil(t, GlobalClient())
+			assert.Empty(t, staleWriter.Payloads(), "stale start flushed after shutdown")
+
+			stale.startFlushMu.Lock()
+			stalePending := stale.startFlushDone
+			staleReservations := stale.startFlushReservations
+			staleClaimed := stale.startFlushClaimed
+			stale.startFlushMu.Unlock()
+			assert.Nil(t, stalePending, "stale start retained its pending marker")
+			assert.Zero(t, staleReservations, "stale start retained a marker reservation")
+			assert.False(t, staleClaimed, "stale start retained a claimed marker")
+			select {
+			case <-staleDone:
+			default:
+				t.Fatal("stale start marker was not completed")
+			}
+
+			startCountSettled := make(chan struct{})
+			go func() {
+				startAppFlushWg.Wait()
+				close(startCountSettled)
+			}()
+			select {
+			case <-startCountSettled:
+			case <-time.After(5 * time.Second):
+				t.Fatal("stale start did not release its WaitGroup count")
+			}
+
+			var freshWriter *internal.RecordWriter
+			fresh, freshWriter = newConcreteClient()
+			StartApp(fresh)
+			require.Eventually(t, func() bool { return GlobalClient() == fresh },
+				5*time.Second, 10*time.Millisecond, "fresh StartApp did not install after shutdown")
+			require.Eventually(t, func() bool { return len(freshWriter.Payloads()) > 0 },
+				5*time.Second, 10*time.Millisecond, "fresh StartApp did not flush after shutdown")
+			require.Eventually(t, func() bool {
+				fresh.startFlushMu.Lock()
+				defer fresh.startFlushMu.Unlock()
+				return fresh.startFlushDone == nil
+			}, 5*time.Second, 10*time.Millisecond, "fresh startup flush did not complete")
+		})
+	}
 }
 
 type startAppRaceClient struct {

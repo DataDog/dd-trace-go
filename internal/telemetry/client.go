@@ -122,8 +122,11 @@ type client struct {
 	// startFlushDone is closed when the app-started flush goroutine returns.
 	// It stays nil until StartApp marks that flush pending, so a Close before
 	// StartApp never waits.
-	startFlushMu   sync.Mutex
-	startFlushDone chan struct{}
+	startFlushMu           sync.Mutex
+	startFlushDone         chan struct{}
+	startFlushReservations int
+	// startFlushClaimed reports that the installed winner owns startFlushDone.
+	startFlushClaimed bool
 	// flushMu is used to ensure that only one flush is happening at a time
 	flushMu sync.Mutex
 
@@ -434,13 +437,44 @@ func (c *client) markStartFlushPending() chan struct{} {
 	}
 	if c.startFlushDone == nil {
 		c.startFlushDone = make(chan struct{})
+		c.startFlushClaimed = false
 	}
+	c.startFlushReservations++
 	return c.startFlushDone
 }
 
-// completeStartFlush clears and closes done if it is still the pending
-// channel. The winning flush uses this when it returns; a losing StartApp call
-// uses it only for a marker belonging to a different client.
+// claimStartFlush records that done belongs to the client published by the
+// winning start attempt. It runs before publication so a losing same-client
+// attempt cannot clear the winner's shared marker.
+func (c *client) claimStartFlush(done chan struct{}) bool {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done || c.startFlushReservations == 0 {
+		return false
+	}
+	c.startFlushReservations--
+	c.startFlushClaimed = true
+	return true
+}
+
+// completeUnclaimedStartFlush releases a losing attempt's marker reservation.
+// The marker remains pending while another attempt can still claim it or a
+// same-client winner owns it.
+func (c *client) completeUnclaimedStartFlush(done chan struct{}) {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done || c.startFlushReservations == 0 {
+		return
+	}
+	c.startFlushReservations--
+	if c.startFlushReservations != 0 || c.startFlushClaimed {
+		return
+	}
+	c.startFlushDone = nil
+	close(done)
+}
+
+// completeStartFlush clears and closes done when the winning flush returns.
 func (c *client) completeStartFlush(done chan struct{}) {
 	c.startFlushMu.Lock()
 	defer c.startFlushMu.Unlock()
@@ -448,6 +482,8 @@ func (c *client) completeStartFlush(done chan struct{}) {
 		return
 	}
 	c.startFlushDone = nil
+	c.startFlushReservations = 0
+	c.startFlushClaimed = false
 	close(done)
 }
 
