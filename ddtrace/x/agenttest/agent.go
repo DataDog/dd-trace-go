@@ -16,8 +16,9 @@
 //	// ... create spans, flush ...
 //	span := agent.RequireSpan(t, agenttest.With().Operation("http.request"))
 //
-// By design, this API does not expose span slices or iterators. Order-dependent
-// assertions are a common source of test flakiness; any future iterator must
+// By design, the Agent interface does not expose span slices or iterators.
+// Order-dependent assertions are a common source of test flakiness; any
+// interface that enumerates spans, like the optional SpanLister, must
 // randomize its traversal order.
 package agenttest
 
@@ -94,6 +95,14 @@ type Agent interface {
 	RequireSpan(testing.TB, ...*SpanMatch) *Span
 	// CountSpans returns the total number of spans collected so far.
 	CountSpans() int
+}
+
+// SpanLister is an optional interface that an Agent can implement to expose
+// every collected span. The agent returned by New implements it. A custom
+// agent passed to tracertest.Start keeps its spans private until it
+// implements SpanLister, so the Agent interface itself stays stable for
+// existing implementations.
+type SpanLister interface {
 	// Spans returns a copy of every collected span in randomized order.
 	// Randomized order exists to break order-dependent assertions, which are a
 	// common source of test flakiness. Match spans by their attributes, not by
@@ -101,6 +110,8 @@ type Agent interface {
 	// without changing the collected spans.
 	Spans() []*Span
 }
+
+var _ SpanLister = (*agent)(nil)
 
 type agent struct {
 	mu sync.Mutex

@@ -286,15 +286,17 @@ func (tt *TestTracer) SentPayloads() Payloads {
 
 // snapshot captures every payload collected so far. It does not flush. When
 // the tracer start failed, the agent or the collector can be nil, so snapshot
-// returns the payloads that exist.
+// returns the payloads that exist. A custom agent that does not implement
+// agenttest.SpanLister contributes no APM spans; the agent that Bootstrap
+// creates always implements it.
 func (tt *TestTracer) snapshot() *Payloads {
 	p := &Payloads{}
 	if tt.collector != nil {
 		p.LLMSpans = tt.collector.Spans()
 		p.LLMMetrics = tt.collector.Metrics()
 	}
-	if tt.agent != nil {
-		for _, s := range tt.agent.Spans() {
+	if lister, ok := tt.agent.(agenttest.SpanLister); ok {
+		for _, s := range lister.Spans() {
 			p.Spans = append(p.Spans, toSpan(s))
 		}
 	}

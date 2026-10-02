@@ -321,3 +321,13 @@ func stopTracerTest(tr *tracer) {
 	tr.Stop()
 	setGlobalTracer(&NoopTracer{})
 }
+
+// TestBootstrapInspectableTracerStartErrorStopsTracer verifies that a failed
+// start stops the tracer workers that newTracer created instead of leaking
+// them. goleak in TestMain fails the package when this regresses.
+func TestBootstrapInspectableTracerStartErrorStopsTracer(t *testing.T) {
+	// LLMObs enabled without an ML app makes llmobs.Start fail after
+	// newTracer has already started the tracer workers.
+	_, _, err := bootstrapInspectableTracer(t, WithLLMObsEnabled(true))
+	require.Error(t, err)
+}

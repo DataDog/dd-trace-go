@@ -279,9 +279,10 @@ func TestAgent_StatsEndpoint_AdvertisedIsReachable(t *testing.T) {
 	}
 }
 
-// TestAgent_Spans_MutationDoesNotAffectCollection verifies that Spans returns
-// deep copies: mutating a returned span, including its reference fields, must
-// not change the spans later FindSpan and Spans calls return.
+// TestAgent_Spans_MutationDoesNotAffectCollection verifies that the default
+// agent satisfies SpanLister and that Spans returns deep copies: mutating a
+// returned span, including its reference fields, must not change the spans
+// later FindSpan and Spans calls return.
 func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
 	a := New()
 	a.HandleTraces("/v0.4/traces", func(_ io.Reader) []*Span {
@@ -301,7 +302,11 @@ func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	spans := a.Spans()
+	lister, ok := a.(SpanLister)
+	if !ok {
+		t.Fatal("the agent returned by New must implement SpanLister")
+	}
+	spans := lister.Spans()
 	if len(spans) != 1 {
 		t.Fatalf("expected 1 span, got %d", len(spans))
 	}
