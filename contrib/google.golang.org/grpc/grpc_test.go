@@ -499,34 +499,76 @@ func TestStreamPeerFromContext(t *testing.T) {
 // peer host and port tags. The rig runs without the server interceptor so
 // every grpc.message span comes from the client stream wrapper.
 func TestStreamMessagePeerTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	t.Run("traced calls", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStreamInterceptor(StreamClientInterceptor()),
-	})
-	require.NoError(t, err, "error setting up rig")
-	defer func() { require.NoError(t, rig.Close()) }()
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor()),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
 
-	stream, err := rig.client.StreamPing(context.Background())
-	require.NoError(t, err)
-	require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
-	require.NoError(t, stream.CloseSend())
-	_, err = stream.Recv()
-	require.NoError(t, err)
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		require.NoError(t, stream.CloseSend())
+		_, err = stream.Recv()
+		require.NoError(t, err)
 
-	var msgSpans []*mocktracer.Span
-	for _, s := range mt.FinishedSpans() {
-		if s.OperationName() == "grpc.message" {
-			msgSpans = append(msgSpans, s)
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
 		}
-	}
-	require.NotEmpty(t, msgSpans)
-	for _, s := range msgSpans {
-		assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
-		assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
-	}
+		require.NotEmpty(t, msgSpans)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+
+	// With call tracing disabled, the interceptor never reads the transport
+	// context at stream creation, so transparent retries stay enabled until
+	// the first receive returns. Message spans must respect that window: the
+	// span of the first send carries no peer tags, every later span does.
+	t.Run("messages only", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetHost), "the first send must not read the transport context before any receive returned")
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetPort))
+		for _, s := range msgSpans[1:] {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
 }
 
 func TestPass(t *testing.T) {
