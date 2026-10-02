@@ -90,15 +90,27 @@ func TestQueueOverflowOnStalledAgent(t *testing.T) {
 			synctest.Wait()
 		}
 
-		// Fill t.out past its capacity while every connection is stalled: the
-		// worker must keep draining chunks, so none of these drops with
-		// reason:queue_full the way the last one did before the fix.
+		// Push more chunks than t.out can hold while every connection is
+		// stalled. The worker must keep draining chunks, so no chunk may drop
+		// with reason:queue_full.
+		//
+		// Batch the pushes, and drain t.out between batches. synctest
+		// virtualizes time, not CPU: a tight push loop races the worker's
+		// add(), which msgpack-encodes each chunk. When the loop outruns the
+		// worker, t.out fills, and pushChunk drops chunks with
+		// reason:queue_full. A batch never exceeds the queue capacity, so a
+		// drained queue accepts each batch in full, and the choreography
+		// stays deterministic.
 		const overCapacity = 25
 		queueSize := cap(trc.out)
-		for range queueSize + overCapacity {
-			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}, willSend: true})
+		for remaining := queueSize + overCapacity; remaining > 0; {
+			batch := min(queueSize, remaining)
+			for range batch {
+				trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}, willSend: true})
+			}
+			synctest.Wait()
+			remaining -= batch
 		}
-		synctest.Wait()
 		require.Zero(t, len(trc.out), "the worker must keep draining t.out while every connection is in flight")
 
 		// A tick with all connections saturated: flush() defers — it must not
