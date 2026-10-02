@@ -288,7 +288,7 @@ func Start(opts ...StartOption) error {
 
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
-			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+			reportOtelRuntimeMetricsStartError(err)
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
 		}
@@ -391,7 +391,7 @@ func (t *tracer) startAppSec() {
 			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 				log.Debug("remoteconfig: client not started, remote configuration is disabled")
 			} else {
-				log.Warn("Remote config startup error: %s", err.Error())
+				reportRemoteConfigStartupError(err)
 			}
 		}
 	}
@@ -432,7 +432,7 @@ func storeConfig(c *config) {
 		// condition, not an actionable SDK defect, and reporting it would create
 		// fleet-wide false positives for hardened deployments (e.g. gVisor,
 		// locked-down seccomp profiles).
-		log.Error("failed to store the configuration: %s", err.Error())
+		log.Error("failed to store the configuration: %s", err.Error()) //errtrack:ignore runtime environment can deny memfd creation
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
@@ -537,7 +537,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	statsd, err := newStatsdClient(c)
 	if err != nil {
-		log.Error("Runtime and health metrics disabled: %s", err.Error())
+		log.Error("Runtime and health metrics disabled: %s", err.Error()) //errtrack:ignore StatsD configuration or network failure
 		// We are not failing here because the error could be cause by
 		// a transitory issue.
 	}
@@ -574,7 +574,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	if v := c.internalConfig.LogDirectory(); v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
-			log.Warn("%s", err.Error())
+			log.Warn("%s", err.Error()) //errtrack:ignore user-selected log path failure
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
@@ -650,6 +650,20 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 // defaultAgentInfoPollInterval is the default interval at which the tracer
 // polls the agent's /info endpoint for capability updates.
 const defaultAgentInfoPollInterval = 5 * time.Second
+
+func reportOtelRuntimeMetricsStartError(err error) {
+	if registrationErr, ok := errors.AsType[*otelmetricsinstall.RuntimeRegistrationError](err); ok {
+		log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("Failed to start OTel runtime metrics", registrationErr.Err)
+		return
+	}
+	log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore metrics exporter configuration or environment failure
+}
+
+func reportRemoteConfigStartupError(err error) {
+	log.Warn("Remote config startup error: %s", err.Error()) //errtrack:ignore reported by ReportError below
+	telemetrylog.ReportError("Remote config startup error", err)
+}
 
 // newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
@@ -967,7 +981,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case <-t.logDroppedTraces.C:
 		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
-			log.Error("%d traces dropped through payload queue", t)
+			log.Error("%d traces dropped through payload queue", t) //errtrack:ignore expected queue capacity already reported as a count
 		}
 	default:
 	}
@@ -1150,7 +1164,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
 		default:
-			log.Error("Abandoned spans channel full, disregarding span.")
+			log.Error("Abandoned spans channel full, disregarding span.") //errtrack:ignore per-span queue capacity limit
 		}
 	}
 	if span.metrics[keyTopLevel] == 1 {
@@ -1262,7 +1276,7 @@ func (t *tracer) Stop() {
 		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
 		defer cancel()
 		if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
-			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+			log.Error("Failed to shut down OTel meter provider: %v", err.Error()) //errtrack:ignore exporter or network shutdown failure
 		}
 	}
 	t.statsd.Close()
@@ -1417,7 +1431,7 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, finished):
 		// ok
 	default:
-		log.Error("Abandoned spans channel full, disregarding span.")
+		log.Error("Abandoned spans channel full, disregarding span.") //errtrack:ignore per-span queue capacity limit
 	}
 }
 
