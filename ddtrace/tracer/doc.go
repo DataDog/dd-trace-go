@@ -165,6 +165,20 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # Data Streams Monitoring Intake Buffer Size
+//
+// The Data Streams Monitoring processor holds incoming checkpoints and Kafka
+// offsets in a fixed-size ring buffer. When the buffer is full, new entries
+// overwrite the oldest unread ones, and the drop count is reported on the
+// datadog.datastreams.processor.dropped_payloads metric, split by cause into
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall. Raise the
+// buffer size to trade memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol
