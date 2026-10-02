@@ -286,7 +286,11 @@ func TestAgent_StatsEndpoint_AdvertisedIsReachable(t *testing.T) {
 func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
 	a := New()
 	a.HandleTraces("/v0.4/traces", func(_ io.Reader) []*Span {
-		s := makeSpan("op", "svc", "res", "web", map[string]any{"top.key": "tag"})
+		s := makeSpan("op", "svc", "res", "web", map[string]any{
+			"top.key":  "tag",
+			"json.map": map[string]any{"nested": "value"},
+			"json.arr": []any{"item"},
+		})
 		s.Meta["meta.key"] = "value"
 		s.Metrics["metric.key"] = 1.5
 		return []*Span{s}
@@ -314,6 +318,8 @@ func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
 	spans[0].Meta["meta.key"] = "mutated"
 	spans[0].Metrics["metric.key"] = -1
 	spans[0].Tags["top.key"] = "mutated"
+	spans[0].Tags["json.map"].(map[string]any)["nested"] = "mutated"
+	spans[0].Tags["json.arr"].([]any)[0] = "mutated"
 
 	found := a.FindSpan(With().Operation("op"))
 	if found == nil {
@@ -324,5 +330,11 @@ func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
 	}
 	if found.Metrics["metric.key"] != 1.5 || found.Tags["top.key"] != "tag" {
 		t.Errorf("collected span maps were mutated through the copy")
+	}
+	if found.Tags["json.map"].(map[string]any)["nested"] != "value" {
+		t.Errorf("collected span Tags map value was mutated through the copy")
+	}
+	if found.Tags["json.arr"].([]any)[0] != "item" {
+		t.Errorf("collected span Tags slice value was mutated through the copy")
 	}
 }

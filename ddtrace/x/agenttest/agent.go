@@ -106,8 +106,11 @@ type SpanLister interface {
 	// Spans returns a copy of every collected span in randomized order.
 	// Randomized order exists to break order-dependent assertions, which are a
 	// common source of test flakiness. Match spans by their attributes, not by
-	// position. Each call returns a deep copy, so callers may mutate any field
-	// without changing the collected spans.
+	// position. Each call returns a copy, so callers may mutate the span and
+	// its maps without changing the collected spans. Copying covers the span
+	// struct, the Meta, Metrics, and Tags maps, and Tags values of the JSON
+	// shapes that trace decoders produce: nested maps and slices. Tags values
+	// of any other reference type are shared with the collected span.
 	Spans() []*Span
 }
 
@@ -272,8 +275,11 @@ func (a *agent) CountSpans() int {
 // Spans returns a copy of every collected span in randomized order.
 // Randomized order exists to break order-dependent assertions, which are a
 // common source of test flakiness. Match spans by their attributes, not by
-// position. Each call returns a deep copy, so callers may mutate any field
-// without changing the collected spans.
+// position. Each call returns a copy, so callers may mutate the span and its
+// maps without changing the collected spans. Copying covers the span struct,
+// the Meta, Metrics, and Tags maps, and Tags values of the JSON shapes that
+// trace decoders produce: nested maps and slices. Tags values of any other
+// reference type are shared with the collected span.
 func (a *agent) Spans() []*Span {
 	a.mu.Lock()
 	spans := make([]*Span, len(a.spans))
@@ -288,7 +294,7 @@ func (a *agent) Spans() []*Span {
 	return spans
 }
 
-// cloneSpan returns a deep copy of s. Map and slice fields are cloned so that
+// cloneSpan returns a copy of s. Map and slice fields are cloned so that
 // mutating the copy never changes the collected span.
 func cloneSpan(s *Span) *Span {
 	if s == nil {
@@ -307,7 +313,12 @@ func cloneSpan(s *Span) *Span {
 		Error:     s.Error,
 		Meta:      maps.Clone(s.Meta),
 		Metrics:   maps.Clone(s.Metrics),
-		Tags:      maps.Clone(s.Tags),
+	}
+	if s.Tags != nil {
+		clone.Tags = make(map[string]any, len(s.Tags))
+		for k, v := range s.Tags {
+			clone.Tags[k] = cloneTagValue(v)
+		}
 	}
 	if s.Children != nil {
 		clone.Children = make([]*Span, len(s.Children))
@@ -316,4 +327,26 @@ func cloneSpan(s *Span) *Span {
 		}
 	}
 	return clone
+}
+
+// cloneTagValue returns a copy of a Tags value. It recursively copies the
+// JSON shapes that trace decoders produce. Values of other reference types
+// are shared with the collected span.
+func cloneTagValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		c := make(map[string]any, len(t))
+		for k, vv := range t {
+			c[k] = cloneTagValue(vv)
+		}
+		return c
+	case []any:
+		c := make([]any, len(t))
+		for i, vv := range t {
+			c[i] = cloneTagValue(vv)
+		}
+		return c
+	default:
+		return v
+	}
 }
