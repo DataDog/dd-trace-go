@@ -16,6 +16,8 @@
 // flush in flight, so a slow transport can neither outlast the timeout and
 // stall the wait nor pile up flush goroutines. The retry loop covers spans
 // that background goroutines create.
+//
+// Deprecated: this package exists only to keep old test suites compiling.
 package testtracer
 
 import (
@@ -37,6 +39,8 @@ import (
 // AgentInfo defines the response from the agent /info endpoint. The
 // inspectable tracer fixes the /info response, so this type exists only so
 // existing test code compiles.
+//
+// Deprecated: no replacement exists.
 type AgentInfo struct {
 	Endpoints          []string    `json:"endpoints"`
 	ClientDropP0s      bool        `json:"client_drop_p0s"`
@@ -48,6 +52,8 @@ type AgentInfo struct {
 }
 
 // AgentConfig defines the agent config.
+//
+// Deprecated: no replacement exists.
 type AgentConfig struct {
 	StatsdPort int `json:"statsd_port"`
 }
@@ -55,6 +61,8 @@ type AgentConfig struct {
 // Span defines a span with the same format as it is sent to the agent.
 // MetaStruct and SpanLinks stay nil because the mock agent does not decode
 // them.
+//
+// Deprecated: use agenttest.Span.
 type Span struct {
 	Name       string             `json:"name"`
 	Service    string             `json:"service"`
@@ -73,6 +81,8 @@ type Span struct {
 }
 
 // SpanLink defines a span link with the same format as it is sent to the agent.
+//
+// Deprecated: no replacement exists. agenttest.Span does not expose span links.
 type SpanLink struct {
 	TraceID     uint64            `json:"trace_id"`
 	TraceIDHigh uint64            `json:"trace_id_high"`
@@ -83,18 +93,27 @@ type SpanLink struct {
 }
 
 // LLMObsSpan is an alias for the LLMObs span event type.
+//
+// Deprecated: use llmobstest.LLMObsSpan directly.
 type LLMObsSpan = llmobstest.LLMObsSpan
 
 // LLMObsMetric is an alias for the LLMObs metric type.
+//
+// Deprecated: use llmobstest.LLMObsMetric directly.
 type LLMObsMetric = llmobstest.LLMObsMetric
 
 // MockResponseFunc is a function to return mock responses. The inspectable
 // tracer owns its in-process transports, so this type exists only so existing
 // test code compiles.
+//
+// Deprecated: no replacement exists.
 type MockResponseFunc func(*http.Request) *http.Response
 
 // Payloads contains all captured payloads organized by type. The span order
 // within each field is arbitrary.
+//
+// Deprecated: read agenttest.SpanLister.Spans, llmobstest.Collector.Spans,
+// and llmobstest.Collector.Metrics.
 type Payloads struct {
 	Spans      []Span
 	LLMSpans   []LLMObsSpan
@@ -103,9 +122,15 @@ type Payloads struct {
 
 // WaitCondition is a function that checks if the wait condition is met. It
 // receives the current payloads and returns true if waiting should stop.
+//
+// Deprecated: no replacement exists. Flush the tracer, then assert on the
+// captured spans.
 type WaitCondition func(*Payloads) bool
 
 // TestTracer is an inspectable tracer useful for tests.
+//
+// Deprecated: use the tracer and the agent that tracertest.Bootstrap returns,
+// and llmobstest.Collector for LLMObs payloads.
 type TestTracer struct {
 	startError error
 	tracer     tracer.Tracer
@@ -118,6 +143,9 @@ type TestTracer struct {
 // in-process agent and LLMObs collector, and returns a TestTracer that
 // inspects the spans the application sends. The tracer stops automatically
 // when the test ends.
+//
+// Deprecated: use tracertest.Bootstrap. For LLMObs tests, pass the tracer
+// option that llmobstest.New returns to Bootstrap.
 func Start(t testing.TB, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
@@ -174,9 +202,13 @@ func defaultConfig() *config {
 }
 
 // Option configures the TestTracer.
+//
+// Deprecated: pass tracer.StartOption values to tracertest.Bootstrap.
 type Option func(*config)
 
 // WithTracerStartOpts sets [tracer.StartOption] values on the tracer.
+//
+// Deprecated: pass the options to tracertest.Bootstrap.
 func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 	return func(cfg *config) {
 		cfg.TracerStartOpts = append(cfg.TracerStartOpts, opts...)
@@ -187,6 +219,8 @@ func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 // /info response, and the LLMObs collector bypasses the agent capability gate
 // that the old mock served through this option. The option exists so existing
 // test code compiles.
+//
+// Deprecated: no replacement exists.
 func WithAgentInfoResponse(AgentInfo) Option {
 	return func(*config) {}
 }
@@ -194,6 +228,8 @@ func WithAgentInfoResponse(AgentInfo) Option {
 // WithRequestDelay introduces a fake delay before the LLMObs collector answers
 // a span batch. Unlike the delay in the old package, it does not apply to APM
 // trace flushes.
+//
+// Deprecated: use llmobstest.Collector.SetSpanResponseDelay.
 func WithRequestDelay(delay time.Duration) Option {
 	return func(cfg *config) {
 		cfg.RequestDelay = delay
@@ -204,12 +240,16 @@ func WithRequestDelay(delay time.Duration) Option {
 // transports, so the wrapper cannot intercept requests. Tests that depend on
 // mock responses must migrate to ddtrace/x/tracertest or ddtrace/x/llmobstest.
 // The option exists so existing test code compiles.
+//
+// Deprecated: no replacement exists.
 func WithMockResponses(MockResponseFunc) Option {
 	return func(*config) {}
 }
 
 // WithRequireNoTracerStartError controls whether Start fails the test when the
 // tracer returns a start error. The default is true.
+//
+// Deprecated: handle the error that tracertest.Bootstrap returns.
 func WithRequireNoTracerStartError(requireNoErr bool) Option {
 	return func(cfg *config) {
 		cfg.RequireNoError = requireNoErr
@@ -217,6 +257,8 @@ func WithRequireNoTracerStartError(requireNoErr bool) Option {
 }
 
 // StartError returns the error from the tracer start.
+//
+// Deprecated: handle the error that tracertest.Bootstrap returns.
 func (tt *TestTracer) StartError() error {
 	return tt.startError
 }
@@ -224,6 +266,8 @@ func (tt *TestTracer) StartError() error {
 // Stop has no effect. tracertest.Bootstrap registers the cleanup that stops
 // the tracer, the LLMObs subsystem, and the global tracer state when the test
 // ends. The method exists so existing test code compiles.
+//
+// Deprecated: no replacement exists.
 func (tt *TestTracer) Stop() {}
 
 // WaitFor waits for a condition to be met within the specified timeout.
@@ -235,6 +279,9 @@ func (tt *TestTracer) Stop() {}
 // flight, so a slow transport neither blocks the timeout from firing nor
 // piles up flush goroutines. The cleanup that Start registered waits for an
 // in-flight flush before the tracer stops.
+//
+// Deprecated: no replacement exists. Flush the tracer, then assert on the
+// captured spans.
 func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -284,6 +331,9 @@ func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCond
 // WaitForSpans waits for the specified number of spans to be captured.
 // It returns the captured spans or fails the test if the timeout is reached.
 // The span order is arbitrary.
+//
+// Deprecated: flush the tracer, then read the spans from
+// agenttest.SpanLister.Spans.
 func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	if count == 0 {
 		return nil
@@ -297,6 +347,8 @@ func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 // WaitForLLMObsSpans waits for the specified number of LLMObs spans to be
 // captured. It returns the captured LLMObs spans or fails the test if the
 // timeout is reached.
+//
+// Deprecated: flush the tracer, then read llmobstest.Collector.Spans.
 func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 	if count == 0 {
 		return nil
@@ -310,6 +362,8 @@ func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 // WaitForLLMObsMetrics waits for the specified number of LLMObs metrics to be
 // captured. It returns the captured LLMObs metrics or fails the test if the
 // timeout is reached.
+//
+// Deprecated: flush the tracer, then read llmobstest.Collector.Metrics.
 func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetric {
 	if count == 0 {
 		return nil
@@ -323,6 +377,9 @@ func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetr
 // SentPayloads returns a copy of all captured payloads. It does not flush;
 // call WaitFor or tracer.Flush first when the test created spans after the
 // last flush.
+//
+// Deprecated: read agenttest.SpanLister.Spans, llmobstest.Collector.Spans,
+// and llmobstest.Collector.Metrics.
 func (tt *TestTracer) SentPayloads() Payloads {
 	return *tt.snapshot()
 }
