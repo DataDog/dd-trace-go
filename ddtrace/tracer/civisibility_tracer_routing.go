@@ -6,11 +6,12 @@
 package tracer
 
 import (
+	_ "unsafe" // Needed for the private CI bootstrap entry point.
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	_ "unsafe" // Needed for the private CI bootstrap entry point.
 )
 
 // setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless the
