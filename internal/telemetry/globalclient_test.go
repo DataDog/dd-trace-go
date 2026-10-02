@@ -339,8 +339,12 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 
 	winner := newConcreteClient()
 	loser := newConcreteClient()
-	generation, empty := captureStartGeneration()
+	winnerAttempt, empty := prepareStartApp()
 	require.True(t, empty)
+	defer winnerAttempt.done()
+	loserAttempt, empty := prepareStartApp()
+	require.True(t, empty)
+	defer loserAttempt.done()
 	winnerDone := winner.markStartFlushPending()
 	loserDone := loser.markStartFlushPending()
 	require.NotNil(t, winnerDone)
@@ -353,10 +357,10 @@ func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
 		_ = loser.Close()
 	})
 
-	installed := installClientIfEmpty(winner, winner, winnerDone, generation)
+	installed := installClientIfEmpty(winner, winner, winnerDone, winnerAttempt.generation)
 	require.True(t, installed)
 
-	installed = installClientIfEmpty(loser, loser, loserDone, generation)
+	installed = installClientIfEmpty(loser, loser, loserDone, loserAttempt.generation)
 	require.False(t, installed)
 	completeLosingStartFlush(loser, loserDone)
 
@@ -435,18 +439,18 @@ func TestShutdownInvalidatesPreparedStart(t *testing.T) {
 				}
 			})
 
-			generation, empty := captureStartGeneration()
+			attempt, empty := prepareStartApp()
 			require.True(t, empty)
 			stale.AppStart()
-			startAppFlushWg.Add(1)
 			staleDone := stale.markStartFlushPending()
 			require.NotNil(t, staleDone)
 
 			tc.shutdown()
-			newGeneration, empty := captureStartGeneration()
+			newAttempt, empty := prepareStartApp()
 			require.True(t, empty)
-			require.NotEqual(t, generation, newGeneration, "shutdown did not advance the lifecycle generation")
-			require.False(t, finishStartApp(stale, stale, staleDone, generation),
+			newAttempt.done()
+			require.NotEqual(t, attempt.generation, newAttempt.generation, "shutdown did not advance the lifecycle generation")
+			require.False(t, finishStartApp(stale, stale, staleDone, attempt),
 				"a start prepared before shutdown was installed")
 			require.Nil(t, GlobalClient())
 			assert.Empty(t, staleWriter.Payloads(), "stale start flushed after shutdown")
@@ -467,7 +471,7 @@ func TestShutdownInvalidatesPreparedStart(t *testing.T) {
 
 			startCountSettled := make(chan struct{})
 			go func() {
-				startAppFlushWg.Wait()
+				attempt.flushes.Wait()
 				close(startCountSettled)
 			}()
 			select {
@@ -490,6 +494,97 @@ func TestShutdownInvalidatesPreparedStart(t *testing.T) {
 			}, 5*time.Second, 10*time.Millisecond, "fresh startup flush did not complete")
 		})
 	}
+}
+
+// TestStopAppWaitsForEveryPreparedStart proves that registration happens
+// before publication. StopApp removes the winner only after both attempts are
+// registered, then must keep waiting for the delayed contender to finish.
+func TestStopAppWaitsForEveryPreparedStart(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	SwapClient(nil)
+
+	newConcreteClient := func() (*client, *internal.RecordWriter) {
+		tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+		config := defaultConfig(ClientConfig{})
+		config.AgentURL = "http://localhost:8126"
+		config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+		c, err := newClient(tracerConfig, config)
+		require.NoError(t, err)
+		writer := &internal.RecordWriter{}
+		c.writer = writer
+		return c, writer
+	}
+
+	winner, winnerWriter := newConcreteClient()
+	delayed, delayedWriter := newConcreteClient()
+	t.Cleanup(func() {
+		SwapClient(nil)
+		_ = winner.Close()
+		_ = delayed.Close()
+	})
+
+	winnerAttempt, empty := prepareStartApp()
+	require.True(t, empty)
+	delayedAttempt, empty := prepareStartApp()
+	require.True(t, empty)
+	winner.AppStart()
+	delayed.AppStart()
+	winnerDone := winner.markStartFlushPending()
+	delayedDone := delayed.markStartFlushPending()
+	require.NotNil(t, winnerDone)
+	require.NotNil(t, delayedDone)
+
+	winnerHandedOff := false
+	defer func() {
+		if !winnerHandedOff {
+			winnerAttempt.done()
+			completeLosingStartFlush(winner, winnerDone)
+		}
+	}()
+	delayedHandedOff := false
+	defer func() {
+		if !delayedHandedOff {
+			delayedAttempt.done()
+			completeLosingStartFlush(delayed, delayedDone)
+		}
+	}()
+
+	winnerHandedOff = true
+	require.True(t, finishStartApp(winner, winner, winnerDone, winnerAttempt))
+	require.Eventually(t, func() bool { return len(winnerWriter.Payloads()) > 0 },
+		5*time.Second, 10*time.Millisecond, "winning startup flush did not run")
+	require.Same(t, winner, GlobalClient())
+
+	stopped := make(chan struct{})
+	go func() {
+		StopApp()
+		close(stopped)
+	}()
+	require.Eventually(t, func() bool { return GlobalClient() == nil },
+		5*time.Second, 10*time.Millisecond, "StopApp did not remove the winner")
+	select {
+	case <-stopped:
+		t.Error("StopApp returned before the delayed prepared start released its registration")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	delayedHandedOff = true
+	require.False(t, finishStartApp(delayed, delayed, delayedDone, delayedAttempt),
+		"the delayed start installed after StopApp")
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopApp did not return after every prepared start finished")
+	}
+	assert.Empty(t, delayedWriter.Payloads(), "delayed stale start flushed after StopApp")
+	delayed.startFlushMu.Lock()
+	delayedPending := delayed.startFlushDone
+	delayedReservations := delayed.startFlushReservations
+	delayed.startFlushMu.Unlock()
+	assert.Nil(t, delayedPending)
+	assert.Zero(t, delayedReservations)
 }
 
 type startAppRaceClient struct {

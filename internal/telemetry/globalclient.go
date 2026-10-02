@@ -26,6 +26,15 @@ import (
 // runtime.Callers internally.
 const telemetryQueuedLogStackSkip = 1
 
+type startAppAttempt struct {
+	generation uint64
+	flushes    *sync.WaitGroup
+}
+
+func (a startAppAttempt) done() {
+	a.flushes.Done()
+}
+
 var (
 	globalClient atomic.Pointer[Client]
 
@@ -35,17 +44,16 @@ var (
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
 	metricsHandleSwappablePointers = xsync.NewMap[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
 
-	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can
-	// wait for it to finish before proceeding with the shutdown flush.
-	startAppFlushWg sync.WaitGroup
-
-	// globalClientLifecycle serializes publications and removals. Its generation
-	// advances whenever a shutdown/removal publishes an empty slot, so a start
-	// prepared against an older empty slot cannot publish after that shutdown.
-	globalClientLifecycle struct {
+	// globalClientLifecycle serializes preparation, publication, and removal.
+	// Its generation advances whenever a shutdown/removal publishes an empty
+	// slot, so a start prepared against an older empty slot cannot publish after
+	// that shutdown. Each generation has its own WaitGroup so a shutdown waits
+	// only for attempts admitted before it advanced the generation.
+	globalClientLifecycle = struct {
 		sync.Mutex
-		generation uint64
-	}
+		generation      uint64
+		startAppFlushes *sync.WaitGroup
+	}{startAppFlushes: new(sync.WaitGroup)}
 )
 
 // GlobalClient returns the global telemetry client.
@@ -73,51 +81,73 @@ func StartApp(client Client) {
 		return
 	}
 
-	generation, empty := captureStartGeneration()
+	attempt, empty := prepareStartApp()
 	if !empty {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
+	finishOwnsRegistration := false
+	defer func() {
+		if !finishOwnsRegistration {
+			attempt.done()
+		}
+	}()
+
 	client.AppStart()
 	c := asClient(client)
-	// Increment the WaitGroup and record the flush before the client becomes
-	// visible, so StopApp and Close cannot miss a flush that is about to start.
-	startAppFlushWg.Add(1)
 	var done chan struct{}
 	if c != nil {
 		done = c.markStartFlushPending()
 		if done == nil {
-			startAppFlushWg.Done()
 			log.Debug("telemetry: StartApp called multiple times, ignoring")
 			return
 		}
 	}
 
-	if !finishStartApp(client, c, done, generation) {
+	finishOwnsRegistration = true
+	if !finishStartApp(client, c, done, attempt) {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 	}
 }
 
-// captureStartGeneration snapshots the lifecycle generation only while the
-// global slot is empty. StartApp does this before preparing its startup state.
-func captureStartGeneration() (uint64, bool) {
+// prepareStartApp admits a start only while the global slot is empty. It
+// registers the attempt before releasing the lifecycle lock, so a shutdown
+// that removes a concurrently published winner cannot begin waiting before a
+// delayed contender is included.
+func prepareStartApp() (startAppAttempt, bool) {
 	globalClientLifecycle.Lock()
 	defer globalClientLifecycle.Unlock()
-	return globalClientLifecycle.generation, GlobalClient() == nil
+	if GlobalClient() != nil {
+		return startAppAttempt{}, false
+	}
+	attempt := startAppAttempt{
+		generation: globalClientLifecycle.generation,
+		flushes:    globalClientLifecycle.startAppFlushes,
+	}
+	attempt.flushes.Add(1)
+	return attempt, true
 }
 
 // finishStartApp publishes and flushes a prepared start attempt, or cleans it
-// up when another client or a newer lifecycle generation won.
-func finishStartApp(client Client, c *client, done chan struct{}, generation uint64) bool {
-	if !installClientIfEmpty(client, c, done, generation) {
-		startAppFlushWg.Done()
+// up when another client or a newer lifecycle generation won. Once called, it
+// owns the attempt's WaitGroup registration on every return and panic path.
+func finishStartApp(client Client, c *client, done chan struct{}, attempt startAppAttempt) bool {
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			attempt.done()
+		}
+	}()
+
+	if !installClientIfEmpty(client, c, done, attempt.generation) {
 		completeLosingStartFlush(c, done)
 		return false
 	}
 
+	handedOff = true
 	go func() {
-		defer startAppFlushWg.Done()
+		defer attempt.done()
 		if c != nil {
 			defer c.completeStartFlush(done)
 		}
@@ -163,6 +193,16 @@ func completeLosingStartFlush(c *client, done chan struct{}) {
 	}
 }
 
+// advanceGlobalClientLifecycle starts a fresh generation and returns the
+// WaitGroup containing attempts admitted to the previous one. The caller must
+// hold globalClientLifecycle.
+func advanceGlobalClientLifecycle() *sync.WaitGroup {
+	flushes := globalClientLifecycle.startAppFlushes
+	globalClientLifecycle.generation++
+	globalClientLifecycle.startAppFlushes = new(sync.WaitGroup)
+	return flushes
+}
+
 // clearGlobalClient removes the global client when it still is c, and
 // returns the removed client. It returns nil when no global client is set or
 // another client replaced c. The caller must close the returned client: this
@@ -175,7 +215,7 @@ func clearGlobalClient(c Client) Client {
 	if cur == nil || cur != c {
 		return nil
 	}
-	globalClientLifecycle.generation++
+	advanceGlobalClientLifecycle()
 	globalClient.Store(nil)
 	return cur
 }
@@ -189,7 +229,7 @@ func SwapClient(client Client) Client {
 	globalClientLifecycle.Lock()
 	oldClient := GlobalClient()
 	if client == nil {
-		globalClientLifecycle.generation++
+		advanceGlobalClientLifecycle()
 		globalClient.Store(nil)
 	} else {
 		globalClient.Store(&client)
@@ -223,14 +263,14 @@ func MockClient(client Client) func() {
 // StopApp creates the app-stopped telemetry, adding to the queue and Flush all the queue before stopping the (*client).
 func StopApp() {
 	globalClientLifecycle.Lock()
-	globalClientLifecycle.generation++
+	flushes := advanceGlobalClientLifecycle()
 	client := GlobalClient()
 	globalClient.Store(nil)
 	globalClientLifecycle.Unlock()
 
 	if client != nil {
 		client.AppStop()
-		startAppFlushWg.Wait()
+		flushes.Wait()
 		client.Flush()
 		client.Close()
 	}
