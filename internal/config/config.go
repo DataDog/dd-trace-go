@@ -1041,13 +1041,19 @@ func (c *Config) PayloadQueueSize() int {
 }
 
 // SetPayloadQueueSize sets the buffer size of the trace payload queue. Values
-// below 1 are rejected: they would leave the queue unbuffered and drop almost
-// every trace, so the default is kept instead.
+// outside the range 1..MaxPayloadQueueSize are rejected with the default kept
+// instead: a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and a value above MaxPayloadQueueSize can panic with
+// "makechan: size out of range" or exhaust memory when the queue is allocated.
 func (c *Config) SetPayloadQueueSize(size int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if size < 1 {
 		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1, using default %d. A value below 1 would leave the queue unbuffered and drop almost every trace.", size, DefaultPayloadQueueSize)
+		size = DefaultPayloadQueueSize
+	}
+	if size > MaxPayloadQueueSize {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is above the maximum %d, using default %d. A value above the maximum can panic with \"makechan: size out of range\" or exhaust memory when the queue is allocated.", size, MaxPayloadQueueSize, DefaultPayloadQueueSize)
 		size = DefaultPayloadQueueSize
 	}
 	if c.checkProductConflict("DD_TRACE_PAYLOAD_QUEUE_SIZE", origin, size, product...) {

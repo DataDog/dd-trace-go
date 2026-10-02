@@ -172,8 +172,10 @@
 // the datadog.tracer.traces_dropped metric with the reason:queue_full tag. The
 // queue's buffer size defaults to 1000 and can be changed with
 // tracer.WithPayloadQueueSize or the DD_TRACE_PAYLOAD_QUEUE_SIZE environment
-// variable. Values below 1 are rejected (the default is kept) because they
-// would leave the queue unbuffered and drop almost every trace.
+// variable. Values outside the range 1 to 1048576 are rejected (the default
+// is kept): a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and a value above 1048576 could panic or exhaust memory when
+// the queue is allocated.
 //
 // # Trace Protocol
 //

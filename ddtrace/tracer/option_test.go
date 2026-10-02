@@ -1118,6 +1118,16 @@ func TestPayloadQueueSize(t *testing.T) {
 		defer tr.statsd.Close()
 		assert.Equal(t, 2000, cap(tr.out))
 	})
+	// The channel allocation in newUnstartedTracer panics with
+	// "makechan: size out of range" for unbounded values, so the config
+	// must clamp before it reaches make(chan *chunk, ...).
+	t.Run("env var above max keeps default capacity", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "1000000000000")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, cap(tr.out))
+	})
 	t.Run("env var below 1 falls back to default", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "0")
 		c, err := newTestConfig()
@@ -1126,6 +1136,13 @@ func TestPayloadQueueSize(t *testing.T) {
 	})
 	t.Run("non-numeric env var falls back to default", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "one-thousand")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("env var above max falls back to default", func(t *testing.T) {
+		// A value this large would panic with "makechan: size out of range".
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "1000000000000")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
@@ -1143,6 +1160,11 @@ func TestPayloadQueueSize(t *testing.T) {
 	})
 	t.Run("option below 1 falls back to default", func(t *testing.T) {
 		c, err := newTestConfig(WithPayloadQueueSize(0))
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option above max falls back to default", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(internalconfig.MaxPayloadQueueSize + 1))
 		assert.NoError(t, err)
 		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
 	})
