@@ -687,7 +687,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			var err error
 			scratch, err = msgp.AppendIntf(scratch[:0], v)
 			if err != nil {
-				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
+				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
 				scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
 			}
 			count++
@@ -1819,5 +1819,5 @@ func decodeAttributes(b []byte, strings *stringTable) (map[string]anyValue, []by
 
 //go:noinline
 func warnUnsupportedValue(t uint32) {
-	log.Warn("failed to serialize unsupported type: %d", t)
+	log.Warn("failed to serialize unsupported type: %d", t) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
 }

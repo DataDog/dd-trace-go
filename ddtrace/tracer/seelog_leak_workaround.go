@@ -9,7 +9,7 @@ import (
 	"github.com/cihub/seelog"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // This workaround fixes goroutine leaks caused by seelog.
@@ -19,6 +19,18 @@ import (
 // drop the agent dependency that causes this [1].
 //
 // [1] github.com/DataDog/datadog-agent/pkg/util/log
+func reportSeelogConstraintsError(err error) {
+	telemetrylog.LogAndReportError("failed to create seelog constraints", err)
+}
+
+func reportSeelogConsoleWriterError(err error) {
+	telemetrylog.LogAndReportError("failed to create seelog console writer", err)
+}
+
+func reportSeelogDispatcherError(err error) {
+	telemetrylog.LogAndReportError("failed to create seelog dispatcher", err)
+}
+
 func init() {
 	if env.Get("DD_TRACE_DEBUG_SEELOG_WORKAROUND") == "false" {
 		return
@@ -31,17 +43,17 @@ func init() {
 	// Setup a new seelog logger that doesn't leak goroutines.
 	constraints, err := seelog.NewMinMaxConstraints(seelog.TraceLvl, seelog.CriticalLvl)
 	if err != nil {
-		log.Error("failed to create seelog constraints: %v", err.Error())
+		reportSeelogConstraintsError(err)
 		return
 	}
 	console, err := seelog.NewConsoleWriter()
 	if err != nil {
-		log.Error("failed to create seelog console writer: %v", err.Error())
+		reportSeelogConsoleWriterError(err)
 		return
 	}
 	dispatcher, err := seelog.NewSplitDispatcher(seelog.DefaultFormatter, []any{console})
 	if err != nil {
-		log.Error("failed to create seelog dispatcher: %v", err.Error())
+		reportSeelogDispatcherError(err)
 		return
 	}
 	seelog.Default = seelog.NewSyncLogger(
