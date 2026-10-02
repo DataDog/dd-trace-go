@@ -197,6 +197,7 @@ To keep them in agreement, entries are restricted to the subset on which both be
 | --- | --- |
 | `/path/to/dir/` | Anchored at the repository root, applies to everything beneath the directory. The trailing slash is required. |
 | `/path/to/file.go` | Anchored at the repository root, matches exactly one file. |
+| `/path/to/prefix*` | Anchored filename prefix. Matches files and directories whose names start with `prefix` in that directory, including contents of matching directories. Only one trailing `*` after a nonempty filename prefix is supported. |
 | `*suffix` | Matches any path ending in `suffix`, at any depth. Only one leading `*` is supported, and the suffix may not contain `/`. |
 
 Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
