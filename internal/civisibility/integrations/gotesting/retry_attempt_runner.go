@@ -91,6 +91,7 @@ type retryAttemptResult struct {
 	terminalTrace          []retryAttemptTerminal
 	output                 []byte
 	nativeOutput           []byte
+	timing                 testExecutionTiming
 }
 
 var errRetryAttemptNilPanicOrGoexit = errors.New("test executed panic(nil) or runtime.Goexit")
