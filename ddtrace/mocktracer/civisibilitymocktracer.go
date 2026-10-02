@@ -24,11 +24,15 @@ type ciVisibilityRouter interface {
 	SetMockTracer(tracer.Tracer) bool
 	ClearMockTracer(tracer.Tracer) bool
 	SetApplicationTracer(tracer.Tracer) bool
+	SwapCIVisibilityTracer(tracer.Tracer) (tracer.Tracer, bool)
 	TracerForTrace(string, string) tracer.Tracer
 }
 
 //go:linkname attachMockTracerToCIVisibility github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.attachMockTracerToCIVisibility
-func attachMockTracerToCIVisibility(mockTracer tracer.Tracer) tracer.Tracer
+func attachMockTracerToCIVisibility(mockTracer, current tracer.Tracer) tracer.Tracer
+
+//go:linkname newCIVisibilityApplicationRouter github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.newCIVisibilityApplicationRouter
+func newCIVisibilityApplicationRouter(application tracer.Tracer) tracer.Tracer
 
 // civisibilitymocktracer is the user-facing handle returned by Start while CI
 // Visibility is active. Routing stays in the CI Visibility router; this handle
@@ -37,7 +41,8 @@ type civisibilitymocktracer struct {
 	mock *mocktracer
 
 	routerMu sync.RWMutex
-	router   ciVisibilityRouter
+	// +checklocks:routerMu
+	router ciVisibilityRouter
 
 	isnoop atomic.Bool
 }
@@ -47,7 +52,7 @@ var (
 	_ Tracer        = (*civisibilitymocktracer)(nil)
 )
 
-// Serializes mock publication and router restoration, without holding the lock
+// Serializes mock publication, adoption, and restoration, without holding the lock
 // while stopping delegates or routing spans.
 var ciVisibilityMockTracerMu sync.Mutex
 
@@ -56,24 +61,58 @@ var ciVisibilityMockTracerMu sync.Mutex
 // preserves the mocktracer.Tracer contract used by the v1 compatibility layer.
 func startCIVisibilityMockTracer() *civisibilitymocktracer {
 	ciVisibilityMockTracerMu.Lock()
-	defer ciVisibilityMockTracerMu.Unlock()
-	t := newCIVisibilityMockTracer()
-	internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
+	t := &civisibilitymocktracer{mock: newMockTracer()}
+	var displaced tracer.Tracer
+	for {
+		current := internal.SnapshotGlobalTracer[tracer.Tracer]()
+		t.bindRouter(current.Tracer())
+		if current.Replace(t) {
+			displaced = current.Tracer()
+			break
+		}
+	}
+	// Invalidate the old handle before another bootstrap adoption can observe
+	// it. Adoption and publication share this lock, including router-less handles.
+	if handle, ok := displaced.(*civisibilitymocktracer); ok {
+		handle.isnoop.Store(true)
+	}
+	ciVisibilityMockTracerMu.Unlock()
+	// Publication is complete. A previous handle owns its processor, while a
+	// router-less replacement also owns closing the displaced concrete tracer.
+	if handle, ok := displaced.(*civisibilitymocktracer); ok {
+		handle.mock.dsmProcessor.Stop()
+		if oldRouter := handle.currentRouter(); oldRouter != nil && oldRouter != t.currentRouter() {
+			oldRouter.Stop()
+		}
+	} else if t.currentRouter() == nil {
+		if mock, ok := displaced.(*mocktracer); ok {
+			mock.dsmProcessor.Stop()
+		} else {
+			displaced.Stop()
+		}
+	}
 	return t
 }
 
 func newCIVisibilityMockTracer() *civisibilitymocktracer {
 	t := &civisibilitymocktracer{mock: newMockTracer()}
-	current := getGlobalTracer()
+	t.bindRouter(getGlobalTracer())
+	return t
+}
+
+func (t *civisibilitymocktracer) bindRouter(current tracer.Tracer) {
 	if handle, ok := current.(*civisibilitymocktracer); ok {
 		current = handle.currentRouter()
 	}
+	var attached ciVisibilityRouter
 	if router, ok := current.(ciVisibilityRouter); ok && router.SetMockTracer(t.mock) {
-		t.router = router
-	} else if router, ok := attachMockTracerToCIVisibility(t.mock).(ciVisibilityRouter); ok {
-		t.router = router
+		attached = router
+	} else if router, ok := attachMockTracerToCIVisibility(t.mock, current).(ciVisibilityRouter); ok {
+		attached = router
 	}
-	return t
+	t.routerMu.Lock()
+	t.router = attached
+	t.routerMu.Unlock()
 }
 
 func (t *civisibilitymocktracer) currentRouter() ciVisibilityRouter {
@@ -90,15 +129,32 @@ func (t *civisibilitymocktracer) SetCIVisibilityTracer(candidate tracer.Tracer) 
 	if !ok || !router.SetMockTracer(t.mock) {
 		return false
 	}
+	ciVisibilityMockTracerMu.Lock()
 	t.routerMu.Lock()
 	if t.isnoop.Load() {
 		t.routerMu.Unlock()
+		ciVisibilityMockTracerMu.Unlock()
 		router.ClearMockTracer(t.mock)
 		return false
 	}
 	old := t.router
+	if old != nil {
+		previous, accepted := old.SwapCIVisibilityTracer(candidate)
+		if accepted {
+			t.routerMu.Unlock()
+			ciVisibilityMockTracerMu.Unlock()
+			if router != old {
+				router.ClearMockTracer(t.mock)
+			}
+			if previous != nil {
+				previous.Stop()
+			}
+			return true
+		}
+	}
 	t.router = router
 	t.routerMu.Unlock()
+	ciVisibilityMockTracerMu.Unlock()
 	if old != nil && old != router {
 		old.ClearMockTracer(t.mock)
 		old.Stop()
@@ -107,10 +163,20 @@ func (t *civisibilitymocktracer) SetCIVisibilityTracer(candidate tracer.Tracer) 
 }
 
 func (t *civisibilitymocktracer) SetApplicationTracer(application tracer.Tracer) bool {
-	if router := t.currentRouter(); router != nil {
-		return router.SetApplicationTracer(application)
+	ciVisibilityMockTracerMu.Lock()
+	t.routerMu.Lock()
+	router := t.router
+	if router == nil && application != nil && !t.isnoop.Load() && civisibility.GetState() == civisibility.StateInitializing {
+		router = newCIVisibilityApplicationRouter(application).(ciVisibilityRouter)
+		router.SetMockTracer(t.mock)
+		t.router = router
+		t.routerMu.Unlock()
+		ciVisibilityMockTracerMu.Unlock()
+		return true
 	}
-	return false
+	t.routerMu.Unlock()
+	ciVisibilityMockTracerMu.Unlock()
+	return router != nil && router.SetApplicationTracer(application)
 }
 
 func (t *civisibilitymocktracer) Stop() {
@@ -132,11 +198,11 @@ func (t *civisibilitymocktracer) Stop() {
 		return
 	}
 
-	current := getGlobalTracer()
-	if current == t || current == tracer.Tracer(router) {
-		internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
+	current := internal.SnapshotGlobalTracer[tracer.Tracer]()
+	if current.Tracer() == t || current.Tracer() == tracer.Tracer(router) {
+		current.Replace(&tracer.NoopTracer{})
 	}
-	if router != nil && tracer.Tracer(router) != current {
+	if router != nil {
 		router.Stop()
 	}
 }
@@ -146,15 +212,19 @@ func (t *civisibilitymocktracer) Stop() {
 func (t *civisibilitymocktracer) restoreCIVisibilityRouter(router ciVisibilityRouter) bool {
 	ciVisibilityMockTracerMu.Lock()
 	defer ciVisibilityMockTracerMu.Unlock()
-	current := getGlobalTracer()
-	if current == t {
-		internal.StoreGlobalTracer[ciVisibilityRouter, tracer.Tracer](router)
-		return true
+	for {
+		current := internal.SnapshotGlobalTracer[tracer.Tracer]()
+		if current.Tracer() == t {
+			if current.Replace(router) {
+				return true
+			}
+			continue
+		}
+		if active, ok := current.Tracer().(*civisibilitymocktracer); ok && active.currentRouter() == router {
+			return true
+		}
+		return current.Tracer() == tracer.Tracer(router)
 	}
-	if active, ok := current.(*civisibilitymocktracer); ok && active.currentRouter() == router {
-		return true
-	}
-	return current == tracer.Tracer(router)
 }
 
 // StartSpan delegates through the router so direct calls on the returned mock

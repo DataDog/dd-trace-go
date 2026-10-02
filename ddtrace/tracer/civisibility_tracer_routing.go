@@ -10,6 +10,7 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	_ "unsafe" // Needed for the private CI bootstrap entry point.
 )
 
 // setGlobalTracerPreservingCIVisibilityMockTracer installs globalTracer unless the
@@ -17,56 +18,75 @@ import (
 // the handoff here avoids coupling the normal tracer lifecycle to the router's
 // implementation details.
 func setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer Tracer, ciVisibilityEnabled bool) {
-	current := getGlobalTracer()
 	state := civisibility.GetState()
 	ciVisibilityStarting := ciVisibilityEnabled &&
 		(state == civisibility.StateUninitialized || state == civisibility.StateInitializing)
 	if ciVisibilityStarting {
-		candidate := globalTracer
-		if _, ok := candidate.(*ciVisibilityTracerRouter); !ok {
-			candidate = newCIVisibilityTracerRouter(candidate, false)
+		candidate, ok := globalTracer.(*ciVisibilityTracerRouter)
+		if !ok {
+			candidate = newCIVisibilityTracerRouter(globalTracer, false)
 		}
-		if setter, ok := current.(interface{ SetCIVisibilityTracer(Tracer) bool }); ok {
-			if setter.SetCIVisibilityTracer(candidate) {
+		for {
+			snapshot := internal.SnapshotGlobalTracer[Tracer]()
+			current := snapshot.Tracer()
+			if setter, ok := current.(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && setter.SetCIVisibilityTracer(candidate) {
+				return
+			}
+			// A background application start can precede the bootstrap's
+			// publication. Adopt it instead of closing it as a CI replacement.
+			application, isApplication := current.(*tracer)
+			isApplication = isApplication && !application.config.internalConfig.CIVisibilityEnabled()
+			candidate.detachApplicationTracer()
+			if isApplication {
+				candidate.SetApplicationTracer(application)
+			}
+			if snapshot.Replace(candidate) {
+				if !isApplication {
+					current.Stop()
+				}
 				return
 			}
 		}
-		setGlobalTracer(candidate)
-		return
-	} else {
-		// DD_CIVISIBILITY_ENABLED remains set after Test Optimization starts. A
-		// later tracer.Start is therefore an application tracer start even though
-		// its freshly built config still has CI Visibility enabled. Remove the
-		// transient router before installing its concrete tracer as the
-		// application delegate.
-		if router, ok := globalTracer.(*ciVisibilityTracerRouter); ok {
-			globalTracer = router.ciVisibilityTracer()
-		}
+	}
+
+	if router, ok := globalTracer.(*ciVisibilityTracerRouter); ok {
+		globalTracer = router.ciVisibilityTracer()
+	}
+	for {
+		snapshot := internal.SnapshotGlobalTracer[Tracer]()
+		current := snapshot.Tracer()
 		if setter, ok := current.(interface{ SetApplicationTracer(Tracer) bool }); ok && setter.SetApplicationTracer(globalTracer) {
 			return
 		}
 		if ciTracer, ok := current.(*tracer); ok && state == civisibility.StateInitialized {
+			// Bootstrap normally publishes a router before Initialized. This
+			// compatibility fallback assumes a plain tracer here owns CI events.
 			router := newCIVisibilityTracerRouter(ciTracer, false)
 			router.SetApplicationTracer(globalTracer)
-			storeCIVisibilityRouterWithoutStoppingCurrent(router)
+			if snapshot.Replace(router) {
+				return
+			}
+			continue
+		}
+		if snapshot.Replace(globalTracer) {
+			current.Stop()
 			return
 		}
 	}
-
-	setGlobalTracer(globalTracer)
 }
 
 // startOptionsForCIVisibilityLifecycle keeps later tracer.Start calls aligned
-// with their router role. Once CI Visibility is initialized, a new tracer is an
-// application delegate even when the process-level enablement variable remains
-// set for the test instrumentation.
-func startOptionsForCIVisibilityLifecycle(opts []StartOption) []StartOption {
-	if civisibility.GetState() != civisibility.StateInitialized {
+// with their router role. During bootstrap and after it, public Start creates an
+// application tracer even when process-level CI enablement remains set. Only
+// the private bootstrap entry point creates the CI delegate.
+func startOptionsForCIVisibilityLifecycle(opts []StartOption, bootstrap bool) []StartOption {
+	state := civisibility.GetState()
+	if !bootstrap && state == civisibility.StateUninitialized {
 		return opts
 	}
-	applicationOpts := append([]StartOption(nil), opts...)
-	return append(applicationOpts, func(c *config) {
-		c.internalConfig.SetCIVisibilityEnabled(false, internalconfig.OriginCode)
+	lifecycleOpts := append([]StartOption(nil), opts...)
+	return append(lifecycleOpts, func(c *config) {
+		c.internalConfig.SetCIVisibilityEnabled(bootstrap, internalconfig.OriginCode)
 	})
 }
 
@@ -89,18 +109,13 @@ func stopGlobalTracerPreservingCIVisibility() {
 	setGlobalTracer(&NoopTracer{})
 }
 
-func storeCIVisibilityRouterWithoutStoppingCurrent(router *ciVisibilityTracerRouter) {
-	internal.StoreGlobalTracer[*ciVisibilityTracerRouter, Tracer](router)
-}
-
-// attachMockTracerToCIVisibility installs mockTracer as a temporary ordinary-
-// span destination. It is linked from mocktracer to keep this lifecycle hook
-// private to the CI Visibility implementation.
-func attachMockTracerToCIVisibility(mockTracer Tracer) Tracer {
+// attachMockTracerToCIVisibility prepares routing for the captured global tracer.
+// Publication belongs to the caller: it must replace that same snapshot or
+// retry with the new owner, rather than publish an intermediate router.
+func attachMockTracerToCIVisibility(mockTracer, current Tracer) Tracer {
 	if mockTracer == nil {
 		return nil
 	}
-	current := getGlobalTracer()
 	if router, ok := current.(*ciVisibilityTracerRouter); ok {
 		if router.SetMockTracer(mockTracer) {
 			return router
@@ -111,17 +126,36 @@ func attachMockTracerToCIVisibility(mockTracer Tracer) Tracer {
 	if state != civisibility.StateInitializing && state != civisibility.StateInitialized {
 		return nil
 	}
-	ciTracer, ok := current.(*tracer)
+	concrete, ok := current.(*tracer)
 	if !ok {
 		return nil
 	}
-	router := newCIVisibilityTracerRouter(ciTracer, false)
-	if !router.SetMockTracer(mockTracer) {
-		return nil
+	var router *ciVisibilityTracerRouter
+	// At Initialized the plain-tracer compatibility path assumes CI ownership;
+	// during Initializing a plain application may precede bootstrap publication.
+	if state == civisibility.StateInitialized || concrete.config.internalConfig.CIVisibilityEnabled() {
+		router = newCIVisibilityTracerRouter(concrete, false)
+	} else {
+		router = newCIVisibilityApplicationRouter(concrete).(*ciVisibilityTracerRouter)
 	}
-	storeCIVisibilityRouterWithoutStoppingCurrent(router)
+	router.SetMockTracer(mockTracer)
 	return router
 }
+
+// newCIVisibilityApplicationRouter preserves an application which starts before
+// the CI delegate is published. Until bootstrap adopts it, CI spans have no
+// destination, while ordinary spans can still use the application or mock.
+func newCIVisibilityApplicationRouter(application Tracer) Tracer {
+	router := newCIVisibilityTracerRouter(nil, true)
+	router.SetApplicationTracer(application)
+	return router
+}
+
+// startCIVisibility is the bootstrap-only entry point. Public Start calls made
+// by background goroutines during Initializing retain the application role.
+//
+//go:linkname startCIVisibility
+func startCIVisibility(opts ...StartOption) error { return start(true, opts...) }
 
 type ciVisibilityTraceRouter interface {
 	TracerForTrace(string, string) Tracer

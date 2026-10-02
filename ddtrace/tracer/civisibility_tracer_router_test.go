@@ -16,14 +16,33 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	ddinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDetachedPropagationTracePreservesDecisionMaker(t *testing.T) {
+	for _, priority := range []int{ext.PriorityUserReject, ext.PriorityAutoReject, ext.PriorityAutoKeep, ext.PriorityUserKeep} {
+		t.Run(strconv.Itoa(priority), func(t *testing.T) {
+			source := newTrace()
+			source.setSamplingPriority(priority, samplernames.Unknown)
+			source.propagatingTags.Store(map[string]string{keyDecisionMaker: "-4"})
+			detached := detachedPropagationTrace(source)
+			require.Equal(t, "-4", detached.propagatingTag(keyDecisionMaker))
+			require.Equal(t, float64(priority), *detached.priority.Load())
+			detached.mu.Lock()
+			detached.setPropagatingTagLocked("_dd.p.test", "detached")
+			detached.mu.Unlock()
+			require.Empty(t, source.propagatingTag("_dd.p.test"))
+		})
+	}
+}
 
 type callbackTestTracer struct {
 	onStart     func()
@@ -237,7 +256,10 @@ func TestAttachMockTracerToActiveConcreteCITracer(t *testing.T) {
 		civisibility.SetState(previousState)
 	})
 
-	attached := attachMockTracerToCIVisibility(mockTracer)
+	snapshot := ddinternal.SnapshotGlobalTracer[Tracer]()
+	attached := attachMockTracerToCIVisibility(mockTracer, snapshot.Tracer())
+	require.Same(t, ciTracer, getGlobalTracer())
+	require.True(t, snapshot.Replace(attached))
 
 	router, ok := attached.(*ciVisibilityTracerRouter)
 	require.True(t, ok)
@@ -676,6 +698,7 @@ func TestCIVisibilityTracerRouter_SeparatesCrossTracerParentAndUsesApplicationFi
 	require.NotNil(t, testSpan)
 	testSpan.SetTag(ext.ManualKeep, true)
 	testSpan.SetBaggageItem("tenant", "acme")
+	testSpan.context.origin = "ciapp-test"
 	testSpan.context.errors.Store(1)
 	testSpan.context.trace.setTag("trace-tag", "preserved")
 	applicationSpan := StartSpan(
@@ -693,6 +716,10 @@ func TestCIVisibilityTracerRouter_SeparatesCrossTracerParentAndUsesApplicationFi
 	assert.Same(t, applicationSpan, applicationSpan.context.trace.root)
 	assert.Equal(t, "ci-service", applicationSpan.service)
 	assert.Equal(t, "acme", applicationSpan.BaggageItem("tenant"))
+	origin, ok := applicationSpan.meta.Get(keyOrigin)
+	require.True(t, ok)
+	assert.Equal(t, "ciapp-test", origin)
+	assert.Equal(t, "ciapp-test", applicationSpan.context.origin)
 	assert.EqualValues(t, 1, applicationSpan.context.errors.Load())
 	priority, ok := applicationSpan.context.SamplingPriority()
 	require.True(t, ok)

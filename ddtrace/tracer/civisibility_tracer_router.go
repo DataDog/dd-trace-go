@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -202,6 +203,8 @@ func detachedPropagationTrace(source *trace) *trace {
 	}
 
 	state := snapshotPropagationTrace(source)
+	// Unknown suppresses the _dd.p.dm write. Copy the propagating tags only
+	// afterwards so a non-positive priority cannot erase their decision maker.
 	if state.hasPriority {
 		detached.setSamplingPriority(state.priority, samplernames.Unknown)
 	}
@@ -269,15 +272,26 @@ func cloneUint64(value *uint64) *uint64 {
 
 // SetCIVisibilityTracer updates the concrete tracer used for CI test events.
 func (t *ciVisibilityTracerRouter) SetCIVisibilityTracer(ciTracer Tracer) bool {
+	old, accepted := t.SwapCIVisibilityTracer(ciTracer)
+	if old != nil {
+		old.Stop()
+	}
+	return accepted
+}
+
+// SwapCIVisibilityTracer updates the CI delegate without closing resources.
+// Mock adoption uses it while holding routerMu; delegate shutdown must follow
+// after that lock is released so callbacks can still consult the handle.
+func (t *ciVisibilityTracerRouter) SwapCIVisibilityTracer(ciTracer Tracer) (Tracer, bool) {
 	if ciTracer == nil {
-		return false
+		return nil, false
 	}
 	var dropApplicationSpans *bool
 	if router, ok := ciTracer.(*ciVisibilityTracerRouter); ok {
 		concrete, drop := router.ciVisibilityRoutingConfig()
 		ciTracer = concrete
 		if ciTracer == nil {
-			return false
+			return nil, false
 		}
 		dropApplicationSpans = &drop
 	}
@@ -288,10 +302,10 @@ func (t *ciVisibilityTracerRouter) SetCIVisibilityTracer(ciTracer Tracer) bool {
 		t.dropApplicationSpans = *dropApplicationSpans
 	}
 	t.delegatesMu.Unlock()
-	if old != nil && old != ciTracer {
-		old.Stop()
+	if old == ciTracer {
+		old = nil
 	}
-	return true
+	return old, true
 }
 
 // SetApplicationTracer installs the tracer used for ordinary application
@@ -434,9 +448,11 @@ func (t *ciVisibilityTracerRouter) Stop() {
 
 	state := civisibility.GetState()
 	ciVisibilityActive := state == civisibility.StateInitializing || state == civisibility.StateInitialized
-	if _, replacedByNoop := getGlobalTracer().(*NoopTracer); ciVisibilityActive && replacedByNoop {
-		setGlobalTracer(t)
-		return
+	current := internal.SnapshotGlobalTracer[Tracer]()
+	if _, replacedByNoop := current.Tracer().(*NoopTracer); ciVisibilityActive && replacedByNoop {
+		if current.Replace(t) {
+			return
+		}
 	}
 
 	if ciTracer := t.detachCIVisibilityTracer(); ciTracer != nil {

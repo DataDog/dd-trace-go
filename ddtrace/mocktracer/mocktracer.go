@@ -121,8 +121,12 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	// N.b.: The main reason for this call is to make TestTracerStop pass.
-	internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
+	// An old handle may outlive CI initialization or another mock. It owns its
+	// processor, but may only deactivate the global slot while it still owns it.
+	current := internal.SnapshotGlobalTracer[tracer.Tracer]()
+	if current.Tracer() == t {
+		current.Replace(&tracer.NoopTracer{})
+	}
 	t.dsmProcessor.Stop()
 }
 

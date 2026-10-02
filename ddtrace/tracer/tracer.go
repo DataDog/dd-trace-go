@@ -248,12 +248,16 @@ func reportInitTime(start time.Time) {
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	return start(false, opts...)
+}
+
+func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
 
-	opts = startOptionsForCIVisibilityLifecycle(opts)
+	opts = startOptionsForCIVisibilityLifecycle(opts, ciVisibilityBootstrap)
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err

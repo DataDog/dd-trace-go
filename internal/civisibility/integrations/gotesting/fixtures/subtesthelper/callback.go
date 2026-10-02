@@ -13,6 +13,15 @@ func Disabled(*testing.T) {
 
 func Pass(*testing.T) {}
 
+// Root returns a callback whose module and source belong to this helper.
+func Root(instrument func(func(*testing.T)) func(*testing.T), after func(*testing.T)) func(*testing.T) {
+	return func(t *testing.T) {
+		t.Run("disabled", instrument(Disabled))
+		t.Run("child", instrument(Pass))
+		after(t)
+	}
+}
+
 // TestifySuite exercises suites defined outside the consuming test package.
 type TestifySuite struct {
 	T      *testing.T

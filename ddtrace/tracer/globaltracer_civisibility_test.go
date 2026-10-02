@@ -12,7 +12,29 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
+
+func TestStartAfterCIVisibilityExitUsesApplicationConfiguration(t *testing.T) {
+	previousState := civisibility.GetState()
+	civisibility.SetState(civisibility.StateExited)
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	t.Cleanup(func() { Stop(); civisibility.SetState(previousState) })
+	transport := newDummyTransport()
+	require.NoError(t, Start(WithTestDefaults(nil), withTransport(transport)))
+	application, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	require.False(t, application.config.internalConfig.CIVisibilityEnabled())
+	require.False(t, application.config.internalConfig.CIVisibilityAgentlessActive())
+	span := StartSpan("application.after-ci-exit")
+	span.Finish()
+	Stop()
+	require.Equal(t, 1, transport.Len())
+	require.Equal(t, "application.after-ci-exit", transport.Traces()[0][0].name)
+	require.Equal(t, "true", env.Get(constants.CIVisibilityEnabledEnvironmentVariable))
+}
 
 type preservingTestTracer struct {
 	accept   bool

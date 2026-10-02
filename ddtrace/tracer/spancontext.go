@@ -1036,7 +1036,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
+	if s.service != "" && tc.ServiceTag != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
 		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
 	priority := t.priority.Load()
