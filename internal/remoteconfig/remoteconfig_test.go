@@ -38,25 +38,26 @@ func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
 	var err error
-	client, err = newClient(cfg)
+	c, err := newClient(cfg)
 	require.NoError(t, err)
+	client.Store(c)
 
 	t.Run("registerCallback", func(t *testing.T) {
-		client.callbacks = []Callback{}
+		c.callbacks = []Callback{}
 		nilCallback := func(map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
-		defer func() { client.callbacks = []Callback{} }()
-		require.Equal(t, 0, len(client.callbacks))
+		defer func() { c.callbacks = []Callback{} }()
+		require.Equal(t, 0, len(c.callbacks))
 		err = RegisterCallback(nilCallback)
 		require.NoError(t, err)
-		require.Equal(t, 1, len(client.callbacks))
-		require.Equal(t, 1, len(client.callbacks))
+		require.Equal(t, 1, len(c.callbacks))
+		require.Equal(t, 1, len(c.callbacks))
 		err = RegisterCallback(nilCallback)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(client.callbacks))
+		require.Equal(t, 2, len(c.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
-		client.callbacks = []Callback{}
+		c.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
 		err = RegisterProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
@@ -75,13 +76,14 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
-		err := client.applyUpdate(resp)
+		err := c.applyUpdate(resp)
 		require.NoError(t, err)
 	})
 
 	t.Run("subscribe", func(t *testing.T) {
-		client, err = newClient(cfg)
+		c, err = newClient(cfg)
 		require.NoError(t, err)
+		client.Store(c)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
 		updates := new(int)
@@ -98,7 +100,7 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
-		err = client.applyUpdate(resp)
+		err = c.applyUpdate(resp)
 		require.NoError(t, err)
 		require.Equal(t, 1, *updates)
 		*updates = 0
@@ -107,7 +109,7 @@ func TestRCClient(t *testing.T) {
 		err = Unsubscribe(tok)
 		cfgPath2 := "datadog/2/APM_TRACING/foo/baz"
 		resp = genUpdateResponse([]byte("test"), cfgPath2)
-		err = client.applyUpdate(resp)
+		err = c.applyUpdate(resp)
 		require.NoError(t, err)
 		require.Equal(t, 0, *updates)
 	})
@@ -296,15 +298,16 @@ func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
 func TestRegistration(t *testing.T) {
 	t.Run("callbacks", func(t *testing.T) {
 		var err error
-		client, err = newClient(DefaultClientConfig())
+		c, err := newClient(DefaultClientConfig())
 		require.NoError(t, err)
+		client.Store(c)
 
 		err = RegisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Len(t, client.callbacks, 1)
+		require.Len(t, c.callbacks, 1)
 		err = UnregisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Empty(t, client.callbacks)
+		require.Empty(t, c.callbacks)
 
 		err = RegisterCallback(dummyCallback2)
 		require.NoError(t, err)
@@ -314,60 +317,61 @@ func TestRegistration(t *testing.T) {
 		require.NoError(t, err)
 		err = RegisterCallback(dummyCallback4)
 		require.NoError(t, err)
-		require.Len(t, client.callbacks, 4)
+		require.Len(t, c.callbacks, 4)
 
 		err = UnregisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Len(t, client.callbacks, 3)
-		for _, c := range client.callbacks {
-			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(c))
+		require.Len(t, c.callbacks, 3)
+		for _, cb := range c.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(cb))
 		}
 
 		err = UnregisterCallback(dummyCallback3)
 		require.NoError(t, err)
-		require.Len(t, client.callbacks, 2)
-		for _, c := range client.callbacks {
-			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
+		require.Len(t, c.callbacks, 2)
+		for _, cb := range c.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(cb))
 		}
 	})
 }
 
 func TestSubscribe(t *testing.T) {
 	var err error
-	client, err = newClient(DefaultClientConfig())
+	c, err := newClient(DefaultClientConfig())
 	require.NoError(t, err)
+	client.Store(c)
 
 	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 
 	tok1, err := Subscribe("my-product", pCallback)
 	require.NoError(t, err)
-	require.Len(t, client.callbacks, 0)
-	require.Len(t, client.subscriptionsMu.subs, 1)
-	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(client.subscriptionsMu.subs[0].callback))
+	require.Len(t, c.callbacks, 0)
+	require.Len(t, c.subscriptionsMu.subs, 1)
+	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(c.subscriptionsMu.subs[0].callback))
 
 	err = RegisterProduct("my-product")
 	require.Error(t, err)
-	require.Len(t, client.subscriptionsMu.subs, 1)
+	require.Len(t, c.subscriptionsMu.subs, 1)
 
 	err = RegisterProduct("my-second-product")
 	require.NoError(t, err)
-	require.Len(t, client.subscriptionsMu.subs, 1)
+	require.Len(t, c.subscriptionsMu.subs, 1)
 
 	_, err = Subscribe("my-second-product", pCallback)
 	require.Error(t, err)
-	require.Len(t, client.subscriptionsMu.subs, 1)
+	require.Len(t, c.subscriptionsMu.subs, 1)
 
 	err = RegisterCallback(callback)
 	require.NoError(t, err)
-	require.Len(t, client.callbacks, 1)
-	require.Len(t, client.subscriptionsMu.subs, 1)
-	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(client.callbacks[0]))
+	require.Len(t, c.callbacks, 1)
+	require.Len(t, c.subscriptionsMu.subs, 1)
+	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(c.callbacks[0]))
 
 	err = Unsubscribe(tok1)
 	require.NoError(t, err)
-	require.Len(t, client.subscriptionsMu.subs, 0)
-	require.Len(t, client.callbacks, 1)
+	require.Len(t, c.subscriptionsMu.subs, 0)
+	require.Len(t, c.callbacks, 1)
 }
 
 func TestNewUpdateRequest(t *testing.T) {
@@ -377,8 +381,9 @@ func TestNewUpdateRequest(t *testing.T) {
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
 	var err error
-	client, err = newClient(cfg)
+	c, err := newClient(cfg)
 	require.NoError(t, err)
+	client.Store(c)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -387,7 +392,7 @@ func TestNewUpdateRequest(t *testing.T) {
 	_, err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
 	require.NoError(t, err)
 
-	b, err := client.newUpdateRequest()
+	b, err := c.newUpdateRequest()
 	require.NoError(t, err)
 
 	var req clientGetConfigsRequest
@@ -411,8 +416,9 @@ func TestProcessTags(t *testing.T) {
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
 	var err error
-	client, err = newClient(cfg)
+	c, err := newClient(cfg)
 	require.NoError(t, err)
+	client.Store(c)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -425,7 +431,7 @@ func TestProcessTags(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		processtags.Reload()
 
-		b, err := client.newUpdateRequest()
+		b, err := c.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
 		err = json.Unmarshal(b.Bytes(), &req)
@@ -440,7 +446,7 @@ func TestProcessTags(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 		processtags.Reload()
 
-		b, err := client.newUpdateRequest()
+		b, err := c.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
 		err = json.Unmarshal(b.Bytes(), &req)
@@ -450,8 +456,34 @@ func TestProcessTags(t *testing.T) {
 	})
 }
 
+// TestSubscribeConcurrentWithStop verifies that Subscribe does not panic or
+// race when Stop() clears the client singleton concurrently (regression test
+// for the capture added in #4958; see issues #5133 and #5134).
+func TestSubscribeConcurrentWithStop(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+
+	cb := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// ErrClientNotStarted is a valid outcome when Stop() wins the race.
+			_, _ = Subscribe(fmt.Sprintf("product-%d", i), cb)
+		}(i)
+	}
+	Stop()
+	wg.Wait()
+}
+
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
 func TestAsync(t *testing.T) {
+	Reset() // the RC client is a package-level singleton; guard against a dirty state from an earlier test
 	require.NoError(t, Start(DefaultClientConfig()))
 	defer Stop()
 	const iterations = 10000
@@ -545,9 +577,11 @@ func TestAsync(t *testing.T) {
 	wg.Wait()
 
 	// Verify we have 0 callbacks left after we're done.
-	client._callbacksMu.RLock()
-	defer client._callbacksMu.RUnlock()
-	require.Empty(t, client.callbacks)
+	c := currentClient()
+	require.NotNil(t, c)
+	c._callbacksMu.RLock()
+	defer c._callbacksMu.RUnlock()
+	require.Empty(t, c.callbacks)
 }
 
 // Ensure the lock ordering between capabilities and subscriptions does not deadlock.
@@ -557,7 +591,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	c, err := newClient(cfg)
 	require.NoError(t, err)
 
-	client = c
+	client.Store(c)
 	started = true
 	defer Reset()
 
@@ -735,5 +769,79 @@ func TestPollOnEachSubscribe(t *testing.T) {
 		// Second Subscribe triggered another poll.
 	case <-time.After(2 * time.Second):
 		t.Fatal("no poll within 2s after the second Subscribe")
+	}
+}
+
+// TestStopVsRegisterUnregisterRace reproduces issue #5479: Stop() writes the
+// client global under clientMux, while the Register*/Unregister*/Has* helpers
+// used to read it without holding that lock. Under -race, a shutdown racing a
+// capability (un)registration — the OpenFeature provider shutdown path racing
+// tracer.Stop() — reported a DATA RACE. All global reads now go through
+// currentClient(), which is synchronized with Stop/Reset. The synchronized
+// capture also fixes the nil-deref window of issue #5134.
+func TestStopVsRegisterUnregisterRace(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	cfg := DefaultClientConfig()
+	cfg.PollInterval = time.Hour
+	for range 50 {
+		Reset()
+		require.NoError(t, Start(cfg))
+		require.NoError(t, RegisterCapability(FFEFlagEvaluation))
+		require.NoError(t, RegisterProduct("TEST_PRODUCT"))
+		require.NoError(t, RegisterCallback(func(map[string]ProductUpdate) map[string]state.ApplyStatus {
+			return nil
+		}))
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			Stop()
+		}()
+		// ErrClientNotStarted is a valid outcome when Stop() wins the race.
+		_ = UnregisterCapability(FFEFlagEvaluation)
+		_ = UnregisterProduct("TEST_PRODUCT")
+		_, _ = HasCapability(FFEFlagEvaluation)
+		_, _ = HasProduct("TEST_PRODUCT")
+		<-done
+	}
+}
+
+// TestPollCallbackRegisterDuringStopWait reproduces a lock cycle found in the
+// Codex review of PR #5480. Stop holds clientMux while it waits for the poll
+// goroutine to exit, and a poll callback re-enters the package API (the AppSec
+// activation path does: handleASMFeatures -> enableRCBlocking ->
+// RegisterProduct/RegisterCapability). When currentClient read the global
+// under clientMux, the callback blocked until the wait of Stop elapsed (the
+// HTTP timeout plus one second, eleven seconds with the default client), then
+// failed with ErrClientNotStarted after Stop cleared the singleton.
+//
+// Driving a signed TUF update through the poll loop is out of scope for this
+// package (see the comment on testing at the top of this file), so the test
+// holds clientMux the way Stop does during its wait window and checks that a
+// registration still goes through.
+func TestPollCallbackRegisterDuringStopWait(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+
+	// Hold clientMux the way Stop does while it waits for the poll goroutine.
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
+	errCh := make(chan error, 1)
+	go func() {
+		// The poll callback re-enters the package API.
+		errCh <- RegisterProduct("TEST_PRODUCT")
+	}()
+	select {
+	case err := <-errCh:
+		// The registration captured the singleton without waiting for
+		// clientMux; Stop has not cleared the singleton yet.
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RegisterProduct blocked on clientMux: Stop holds that mutex while it waits for the poll goroutine")
 	}
 }
