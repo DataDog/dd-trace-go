@@ -152,6 +152,7 @@
 # feature flagging experiments
 /internal/openfeature/          @DataDog/feature-flagging-and-experimentation-sdk
 /openfeature/                   @DataDog/feature-flagging-and-experimentation-sdk
+/ddtrace/tracer/ffe_remote_config_test.go @DataDog/feature-flagging-and-experimentation-sdk
 
 # database monitoring
 /ddtrace/tracer/sqlcomment.go       @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
