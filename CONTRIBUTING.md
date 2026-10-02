@@ -76,10 +76,6 @@ Our CI pipeline includes several automated checks:
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
 
-#### Benchmark Apps Build
-
-- **Benchmark Apps Build**: Runs in a trusted workflow behind the `benchmark-apps` gate of [`.github/ci-components.yml`](./.github/ci-components.yml). It builds two Go applications against the pull request's pseudo-version. The builds resolve dd-trace-go from the module proxy. They use the committed `go.sum` files without a `replace` directive or a final `go mod tidy`. This check detects dependencies that have no published version. The workflow skips pull requests from forks.
-
 #### Generate Workflow
 
 - **Code Generation**: Ensures all generated code is current and consistent
