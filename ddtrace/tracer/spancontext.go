@@ -183,14 +183,14 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
-// FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
-// to start child spans.
 // spanContextWithTracestate is implemented by span contexts from other
 // tracers that carry a W3C tracestate, such as OpenTelemetry span contexts.
 type spanContextWithTracestate interface {
 	Tracestate() string
 }
 
+// FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
+// to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID.set(c.TraceIDBytes())
