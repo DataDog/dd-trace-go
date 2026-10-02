@@ -104,10 +104,13 @@ func TestWaitForAndSentPayloads(t *testing.T) {
 }
 
 func TestStartError(t *testing.T) {
-	// LLMObs enabled without an ML app makes the tracer start fail.
+	// LLMObs enabled with an empty ML app makes the tracer start fail. The
+	// explicit empty value overrides DD_LLMOBS_ML_APP when the test
+	// environment sets it, so the error path stays deterministic.
 	tt := testtracer.Start(t,
 		testtracer.WithTracerStartOpts(
 			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp(""),
 			tracer.WithLogStartup(false),
 		),
 		testtracer.WithRequireNoTracerStartError(false),
