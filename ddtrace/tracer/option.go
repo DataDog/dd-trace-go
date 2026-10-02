@@ -269,8 +269,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
-			if e, ok := v.(string); ok {
+			if e, ok := v.(string); ok && e != "" {
 				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
+			}
+		}
+		if c.internalConfig.Env() == "" {
+			if e := c.internalConfig.OTelResourceEnvironment(); e != "" {
+				c.internalConfig.SetEnv(e, telemetry.OriginEnvVar, internalconfig.ProductTracer)
 			}
 		}
 	}

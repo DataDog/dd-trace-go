@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	ddPrefix   = "config_datadog:"
-	otelPrefix = "config_opentelemetry:"
+	ddPrefix                  = "config_datadog:"
+	otelPrefix                = "config_opentelemetry:"
+	deploymentEnvironment     = "deployment.environment"
+	deploymentEnvironmentName = "deployment.environment.name"
 )
 
 type otelEnvConfigSource struct{}
@@ -92,9 +94,9 @@ var otelConfigs = map[string]*otelDDEnv{
 }
 
 var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+	"service.name":        "service",
+	deploymentEnvironment: "env",
+	"service.version":     "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -200,8 +202,29 @@ func mapPropagationStyle(ot string) (string, error) {
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
+	stableEnvironment, legacyEnvironment := deploymentEnvironmentValues(ot)
+
 	ddTags := make([]string, 0)
+	environmentMapped := false
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		if key == deploymentEnvironmentName {
+			if stableEnvironment != "" && !environmentMapped && val != "" {
+				ddTags = append([]string{"env" + internal.DDTagsDelimiter + stableEnvironment}, ddTags...)
+				environmentMapped = true
+			}
+			return
+		}
+		if key == deploymentEnvironment {
+			if stableEnvironment == "" && legacyEnvironment != "" && !environmentMapped {
+				ddTags = append([]string{"env" + internal.DDTagsDelimiter + legacyEnvironment}, ddTags...)
+				environmentMapped = true
+			}
+			return
+		}
+		if key == "env" && (stableEnvironment != "" || legacyEnvironment != "") {
+			return
+		}
+
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
@@ -216,4 +239,24 @@ func mapDDTags(ot string) (string, error) {
 	}
 
 	return strings.Join(ddTags, ","), nil
+}
+
+func deploymentEnvironmentValues(ot string) (stable, legacy string) {
+	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		switch key {
+		case deploymentEnvironmentName:
+			stable = val
+		case deploymentEnvironment:
+			legacy = val
+		}
+	})
+	return stable, legacy
+}
+
+func OTelResourceEnvironment() string {
+	stable, legacy := deploymentEnvironmentValues(env.Get("OTEL_RESOURCE_ATTRIBUTES"))
+	if stable != "" {
+		return stable
+	}
+	return legacy
 }

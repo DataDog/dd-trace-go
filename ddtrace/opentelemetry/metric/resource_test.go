@@ -105,6 +105,110 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 	assert.Equal(t, "otel-version", attrMap["service.version"])
 }
 
+func TestBuildDatadogResource_DeploymentEnvironment(t *testing.T) {
+	tests := []struct {
+		name               string
+		ddEnv              string
+		ddTags             string
+		resourceAttributes string
+		expected           string
+	}{
+		{
+			name:               "stable key only",
+			resourceAttributes: "deployment.environment.name=stable,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "legacy key only",
+			resourceAttributes: "deployment.environment=legacy,custom=value",
+			expected:           "legacy",
+		},
+		{
+			name:               "stable key before legacy key",
+			resourceAttributes: "deployment.environment.name=stable,deployment.environment=legacy,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "legacy key before stable key",
+			resourceAttributes: "deployment.environment=legacy,deployment.environment.name=stable,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "last duplicate stable key wins",
+			resourceAttributes: "deployment.environment.name=old,deployment.environment.name=new,custom=value",
+			expected:           "new",
+		},
+		{
+			name:               "empty last stable key falls back to legacy key",
+			resourceAttributes: "deployment.environment.name=old,deployment.environment=legacy,deployment.environment.name=,custom=value",
+			expected:           "legacy",
+		},
+		{
+			name:               "last duplicate legacy key wins",
+			resourceAttributes: "deployment.environment=old,deployment.environment=new,custom=value",
+			expected:           "new",
+		},
+		{
+			name:               "empty last legacy key is unset",
+			resourceAttributes: "deployment.environment=old,deployment.environment=,custom=value",
+			expected:           "",
+		},
+		{
+			name:               "unrelated DD_TAGS preserves stable environment",
+			ddTags:             "team:platform",
+			resourceAttributes: "deployment.environment.name=stable,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "stable key overrides generic env",
+			resourceAttributes: "deployment.environment.name=stable,env=custom,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "DD_ENV takes precedence",
+			ddEnv:              "datadog",
+			resourceAttributes: "deployment.environment=legacy,deployment.environment.name=stable,custom=value",
+			expected:           "datadog",
+		},
+		{
+			name:               "DD_TAGS takes precedence",
+			ddTags:             "env:datadog",
+			resourceAttributes: "deployment.environment=legacy,deployment.environment.name=stable,custom=value",
+			expected:           "datadog",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(envDDEnv, tt.ddEnv)
+			t.Setenv(envDDTags, tt.ddTags)
+			t.Setenv(envOtelResourceAttributes, tt.resourceAttributes)
+
+			res, err := buildDatadogResource(context.Background())
+			require.NoError(t, err)
+
+			attributes := make(map[string]string)
+			stableEnvironmentCount := 0
+			for _, attr := range res.Attributes() {
+				key := string(attr.Key)
+				attributes[key] = attr.Value.AsString()
+				if attr.Key == semconv.DeploymentEnvironmentNameKey {
+					stableEnvironmentCount++
+				}
+			}
+
+			assert.Equal(t, tt.expected, attributes["deployment.environment.name"])
+			expectedEnvironmentCount := 1
+			if tt.expected == "" {
+				expectedEnvironmentCount = 0
+			}
+			assert.Equal(t, expectedEnvironmentCount, stableEnvironmentCount)
+			assert.NotContains(t, attributes, "deployment.environment")
+			assert.Equal(t, "value", attributes["custom"])
+		})
+	}
+}
+
 // TestBuildDatadogResource_Hostname verifies hostname resolution priority:
 // 1. OTEL_RESOURCE_ATTRIBUTES[host.name] (always wins)
 // 2. DD_HOSTNAME (only if DD_TRACE_REPORT_HOSTNAME=true)
