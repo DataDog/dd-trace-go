@@ -168,3 +168,31 @@ func TestSourceCompat(t *testing.T) {
 	require.Len(t, sent.LLMSpans, 1)
 	assert.Equal(t, "compat_tool", sent.LLMSpans[0].Name)
 }
+
+// TestWaitForTimesOutDespiteRequestDelay verifies that a slow transport does
+// not stall the timeout: WaitFor fails at its deadline while the flush is
+// still answering the delayed request. The cleanup that Start registered
+// waits for the in-flight flush.
+func TestWaitForTimesOutDespiteRequestDelay(t *testing.T) {
+	tt := startLLMObs(t, testtracer.WithRequestDelay(2*time.Second))
+
+	// Buffer a span so the flush actually sends a request the delay slows.
+	span, _ := llmobs.StartToolSpan(context.Background(), "delayed_tool")
+	span.Finish()
+
+	done := make(chan struct{})
+	start := time.Now()
+	fresh := new(testing.T)
+	go func() {
+		defer close(done)
+		tt.WaitFor(fresh, 200*time.Millisecond, func(*testtracer.Payloads) bool {
+			return false
+		})
+	}()
+	<-done
+	elapsed := time.Since(start)
+
+	assert.True(t, fresh.Failed(), "WaitFor must fail the test on timeout")
+	assert.Less(t, elapsed, 1500*time.Millisecond,
+		"WaitFor must fail at its deadline, not when the delayed flush returns")
+}

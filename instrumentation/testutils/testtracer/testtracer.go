@@ -11,13 +11,14 @@
 //
 // The wrapper starts the global tracer through tracertest.Bootstrap, backed by
 // an in-process mock agent and an in-process LLMObs collector. No request
-// leaves the test process. Flushes are synchronous: WaitFor flushes the tracer
-// before every check, so spans the test created before the call arrive without
-// polling. The retry loop only covers spans that background goroutines create.
+// leaves the test process. WaitFor flushes the tracer in the background
+// while it polls, so a slow transport cannot outlast the timeout and stall
+// the test. The retry loop covers spans that background goroutines create.
 package testtracer
 
 import (
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // AgentInfo defines the response from the agent /info endpoint. The
@@ -107,6 +109,7 @@ type TestTracer struct {
 	tracer     tracer.Tracer
 	agent      agenttest.Agent
 	collector  *llmobstest.Collector
+	flushWg    sync.WaitGroup
 }
 
 // Start starts the global tracer through tracertest.Bootstrap with an
@@ -128,20 +131,30 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 		tracer.WithEnv("TestTracer"),
 		tracer.WithService("TestTracer"),
 		tracer.WithServiceVersion("1.0.0"),
-		tracer.WithLogger(&testLogger{T: t}),
 		coll.TracerOption(),
 	}, cfg.TracerStartOpts...)
+
+	// Install the test logger before Bootstrap so startup logs forward to the
+	// test output. The undo restores the previous process-wide logger; without
+	// it, later tests would log on this test's completed testing.TB and panic,
+	// and parallel tests would replace one another's logger.
+	undo := log.UseLogger(&testLogger{T: t})
+	t.Cleanup(undo)
 
 	tr, agent, err := tracertest.Bootstrap(t, startOpts...)
 	if cfg.RequireNoError {
 		require.NoError(t, err)
 	}
-	return &TestTracer{
+	tt := &TestTracer{
 		startError: err,
 		tracer:     tr,
 		agent:      agent,
 		collector:  coll,
 	}
+	// Registered after the Bootstrap cleanups, so LIFO runs it before the
+	// tracer stops: the worker is then still alive to serve the pending flush.
+	t.Cleanup(tt.flushWg.Wait)
+	return tt
 }
 
 type config struct {
@@ -214,16 +227,16 @@ func (tt *TestTracer) Stop() {}
 // WaitFor waits for a condition to be met within the specified timeout.
 // The condition function receives the current payloads and should return true
 // when the wait should stop. It fails the test if the condition is not met
-// within the timeout.
+// within the timeout. WaitFor flushes the tracer in the background before
+// every check, so a slow transport cannot outlast the timeout and stall the
+// test; the cleanup that Start registered waits for every in-flight flush.
 func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
 	timeoutChan := time.After(timeout)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
-		if tt.tracer != nil {
-			tt.tracer.Flush()
-		}
+		tt.flush()
 		p := tt.snapshot()
 		if cond(p) {
 			return p
@@ -236,6 +249,19 @@ func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCond
 				len(p.Spans), len(p.LLMSpans), len(p.LLMMetrics))
 		}
 	}
+}
+
+// flush flushes the tracer in a background goroutine so that a slow
+// transport cannot block the timeout in WaitFor. The cleanup that Start
+// registered waits for every flush goroutine before the tracer stops, so an
+// in-flight flush cannot leak a goroutine blocked on a stopped tracer.
+func (tt *TestTracer) flush() {
+	if tt.tracer == nil {
+		return
+	}
+	tt.flushWg.Go(func() {
+		tt.tracer.Flush()
+	})
 }
 
 // WaitForSpans waits for the specified number of spans to be captured.
