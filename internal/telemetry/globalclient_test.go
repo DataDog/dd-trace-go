@@ -316,6 +316,77 @@ func TestCloseFromFlushTickerCallbackReturns(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "the ticker worker did not exit")
 }
 
+// TestInstallClientIfEmptyCompletesDistinctLoserMarker covers the concrete
+// client marker lifecycle directly. Both clients prepare a startup marker,
+// but only the CAS winner keeps its marker; the distinct loser's marker is
+// completed without stopping or otherwise changing the winner.
+func TestInstallClientIfEmptyCompletesDistinctLoserMarker(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	SwapClient(nil)
+
+	newConcreteClient := func() *client {
+		tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+		config := defaultConfig(ClientConfig{})
+		config.AgentURL = "http://localhost:8126"
+		config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+		c, err := newClient(tracerConfig, config)
+		require.NoError(t, err)
+		c.writer = &internal.RecordWriter{}
+		return c
+	}
+
+	winner := newConcreteClient()
+	loser := newConcreteClient()
+	winnerDone := winner.markStartFlushPending()
+	loserDone := loser.markStartFlushPending()
+	require.NotNil(t, winnerDone)
+	require.NotNil(t, loserDone)
+	t.Cleanup(func() {
+		winner.completeStartFlush(winnerDone)
+		loser.completeStartFlush(loserDone)
+		SwapClient(nil)
+		_ = winner.Close()
+		_ = loser.Close()
+	})
+
+	existing, installed := installClientIfEmpty(winner)
+	require.True(t, installed)
+	require.Nil(t, existing)
+
+	existing, installed = installClientIfEmpty(loser)
+	require.False(t, installed)
+	require.Same(t, winner, existing)
+	completeLosingStartFlush(loser, loserDone, existing)
+
+	loser.startFlushMu.Lock()
+	loserPending := loser.startFlushDone
+	loser.startFlushMu.Unlock()
+	assert.Nil(t, loserPending, "losing distinct client retained an unused startup marker")
+	select {
+	case <-loserDone:
+	default:
+		t.Fatal("losing distinct client's unused startup marker was not completed")
+	}
+
+	winner.startFlushMu.Lock()
+	winnerPending := winner.startFlushDone
+	winner.startFlushMu.Unlock()
+	assert.Equal(t, winnerDone, winnerPending, "loser cleanup changed the winner's startup marker")
+	select {
+	case <-winnerDone:
+		t.Fatal("loser cleanup completed the winner's startup marker")
+	default:
+	}
+	select {
+	case <-winner.flushTicker.Done():
+		t.Fatal("loser cleanup stopped the winner's ticker")
+	default:
+	}
+	require.Same(t, winner, GlobalClient())
+}
+
 type startAppRaceClient struct {
 	Client
 	arrived chan<- struct{}

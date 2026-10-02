@@ -88,12 +88,7 @@ func StartApp(client Client) {
 	installedClient, installed := installClientIfEmpty(client)
 	if !installed {
 		startAppFlushWg.Done()
-		// Different concrete clients have different markers, so this call owns
-		// and completes its unused marker. Calls with the same client share the
-		// winner's marker and must leave it for the winning flush.
-		if c != nil && asClient(installedClient) != c {
-			c.completeStartFlush(done)
-		}
+		completeLosingStartFlush(c, done, installedClient)
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
@@ -129,6 +124,15 @@ func activateClient(client Client) {
 		value.swap(value.maker(client))
 		return true
 	})
+}
+
+// completeLosingStartFlush completes an unused marker owned by a distinct
+// losing client. Same-client calls share the winner's marker and leave it for
+// the winning flush.
+func completeLosingStartFlush(c *client, done chan struct{}, installed Client) {
+	if c != nil && asClient(installed) != c {
+		c.completeStartFlush(done)
+	}
 }
 
 // clearGlobalClient removes the global client when it still is c, and
