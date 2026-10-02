@@ -24,6 +24,9 @@ const (
 	RPCSystemGRPC = "grpc"
 	// RPCSystemTwirp identifies Twirp.
 	RPCSystemTwirp = "twirp"
+	// RPCSystemConnectRPC identifies Connect RPC. The value matches the OpenTelemetry
+	// rpc.system.name well-known value.
+	RPCSystemConnectRPC = "connectrpc"
 )
 
 // gRPC specific tags.

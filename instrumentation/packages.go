@@ -28,6 +28,7 @@ const (
 	PackageCloudEventsSDKGoV2   Package = "cloudevents/sdk-go.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageConnectRPC           Package = "connectrpc.com/connect"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -310,6 +311,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("kafka.send"),
 			},
 		},
+	},
+	PackageConnectRPC: {
+		TracedPackage: "connectrpc.com/connect",
+		EnvVarPrefix:  "CONNECT",
 	},
 	PackageDatabaseSQL: {
 		TracedPackage: "database/sql",
