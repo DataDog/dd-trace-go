@@ -216,3 +216,28 @@ func TestWaitForRejectsConditionAfterDeadline(t *testing.T) {
 	<-done
 	assert.True(t, fresh.Failed(), "WaitFor must reject a condition that the deadline overtook")
 }
+
+// TestWaitForFlushesBeforeAccepting verifies that WaitFor does not accept a
+// condition on a stale snapshot: the old package flushed synchronously before
+// its first check, so spans the test created before the call must be in the
+// returned payloads even when an earlier payload already satisfies the
+// condition.
+func TestWaitForFlushesBeforeAccepting(t *testing.T) {
+	tt := startLLMObs(t)
+
+	// Capture a first span, so later snapshots already satisfy a count-based
+	// condition.
+	span, _ := llmobs.StartToolSpan(context.Background(), "first")
+	span.Finish()
+	require.Len(t, tt.WaitForLLMObsSpans(t, 1), 1)
+
+	// The condition below is satisfied by the first span alone.
+	span, _ = llmobs.StartToolSpan(context.Background(), "second")
+	span.Finish()
+
+	p := tt.WaitFor(t, 5*time.Second, func(p *testtracer.Payloads) bool {
+		return len(p.LLMSpans) >= 1
+	})
+	require.NotNil(t, p)
+	assert.Len(t, p.LLMSpans, 2, "WaitFor must flush spans created before the call")
+}

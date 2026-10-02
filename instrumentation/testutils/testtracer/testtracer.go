@@ -11,10 +11,11 @@
 //
 // The wrapper starts the global tracer through tracertest.Bootstrap, backed by
 // an in-process mock agent and an in-process LLMObs collector. No request
-// leaves the test process. WaitFor keeps at most one background flush in
-// flight while it polls, so a slow transport can neither outlast the timeout
-// and stall the test nor pile up flush goroutines. The retry loop covers
-// spans that background goroutines create.
+// leaves the test process. Like the old package, WaitFor flushes before it
+// accepts a condition. The flush runs in the background with at most one
+// flush in flight, so a slow transport can neither outlast the timeout and
+// stall the wait nor pile up flush goroutines. The retry loop covers spans
+// that background goroutines create.
 package testtracer
 
 import (
@@ -228,19 +229,39 @@ func (tt *TestTracer) Stop() {}
 // WaitFor waits for a condition to be met within the specified timeout.
 // The condition function receives the current payloads and should return true
 // when the wait should stop. It fails the test if the condition is not met
-// within the timeout. WaitFor keeps at most one background flush in flight
-// while it polls, so a slow transport neither blocks the timeout from firing
-// nor piles up flush goroutines; the cleanup that Start registered waits for
-// an in-flight flush before the tracer stops.
+// within the timeout. Like the old package, WaitFor flushes before it accepts
+// a condition, so spans the test created before the call are in the returned
+// payloads. The flush runs in the background and at most one flush is in
+// flight, so a slow transport neither blocks the timeout from firing nor
+// piles up flush goroutines. The cleanup that Start registered waits for an
+// in-flight flush before the tracer stops.
 func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	deadline := time.Now().Add(timeout)
 
 	// inFlight is closed by the current flush goroutine; nil means no flush
-	// is running, so the next iteration starts one.
+	// is running, so the next iteration starts one. flushed reports that a
+	// flush finished since WaitFor began; a start error leaves no tracer to
+	// flush, so flushed starts true then.
 	var inFlight chan struct{}
+	flushed := tt.tracer == nil
 	for {
+		p := tt.snapshot()
+		// Accept only after a flush finished: the old API flushed
+		// synchronously before its first check, and accepting an earlier
+		// snapshot could drop spans the test created before the call.
+		// A wall-clock deadline is safe here where a timer channel is not:
+		// cond or the flush can run past the timeout, and a drained timer
+		// would then read as not fired and admit a late condition as success.
+		if flushed && cond(p) && time.Now().Before(deadline) {
+			return p
+		}
+		if !time.Now().Before(deadline) {
+			assert.FailNowf(t, "timeout waiting for condition",
+				"Current payloads: %d spans, %d LLM spans, %d LLM metrics",
+				len(p.Spans), len(p.LLMSpans), len(p.LLMMetrics))
+		}
 		if tt.tracer != nil && inFlight == nil {
 			inFlight = make(chan struct{})
 			done := inFlight
@@ -251,23 +272,11 @@ func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCond
 				tt.tracer.Flush()
 			})
 		}
-		p := tt.snapshot()
-		// Accept a condition only before the deadline. A wall-clock check is
-		// safe here where a timer channel is not: cond or the flush can run
-		// past the timeout, and a drained timer would then read as not fired
-		// and admit a late condition as success.
-		if cond(p) && time.Now().Before(deadline) {
-			return p
-		}
-		if !time.Now().Before(deadline) {
-			assert.FailNowf(t, "timeout waiting for condition",
-				"Current payloads: %d spans, %d LLM spans, %d LLM metrics",
-				len(p.Spans), len(p.LLMSpans), len(p.LLMMetrics))
-		}
 		select {
 		case <-ticker.C:
 		case <-inFlight:
 			inFlight = nil
+			flushed = true
 		}
 	}
 }
