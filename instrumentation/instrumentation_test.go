@@ -15,8 +15,17 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
+
+func TestInstrumentationReportsOTelSemanticsEnabled(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	internalconfig.CreateNew()
+
+	require.True(t, new(Instrumentation).OTelSemanticsEnabled())
+}
 
 func TestInstrumentationStackTrace(t *testing.T) {
 	instr := &Instrumentation{}
