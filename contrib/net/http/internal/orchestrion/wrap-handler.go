@@ -25,6 +25,8 @@ func WrapHandler(handler http.Handler) http.Handler {
 		tracedMux.ServeMux = handler
 		return tracedMux
 	default:
+		// wrap.Handler skips routers that already start their own server span
+		// (see DD_TRACE_HTTP_ROUTER_ROOT_SPAN), so no router check is needed here.
 		if options.GetBoolEnv("DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE", false) {
 			return wrap.Handler(handler, "", "", config.WithResourceNamer(quantizeResourceNamer))
 		}
