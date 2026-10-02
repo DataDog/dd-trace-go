@@ -38,6 +38,7 @@ type fixtureScenario struct {
 type testExpectation struct {
 	status  string
 	skipped bool
+	module  string
 }
 
 func TestMain(m *testing.M) {
@@ -73,6 +74,9 @@ func TestMain(m *testing.M) {
 		skippedByITR := server.HasEventMeta(testName, constants.TestSkippedByITR, "true")
 		if skippedByITR != expectation.skipped {
 			panic("unexpected ITR skip decision for " + testName)
+		}
+		if expectation.module != "" && !server.HasEventResourceMeta(testName, constants.TestModule, expectation.module) {
+			panic("unexpected test module for " + testName)
 		}
 	}
 	if value, ok := server.SessionMeta(constants.ITRTestsSkippingEnabled); !ok || value != scenario.expectSkippingEnabled {
@@ -212,6 +216,15 @@ func orchestrionScenario() fixtureScenario {
 			defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		} else {
 			defaultScenario.expectPositiveCoverage = false
+		}
+		return defaultScenario
+	case "production-helper-subtest-module":
+		defaultScenario.tests = nil
+		defaultScenario.expectTests = map[string]testExpectation{
+			"TestProductionHelperSubtestModule/from-production-helper": {
+				status: constants.TestStatusPass,
+				module: "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/app",
+			},
 		}
 		return defaultScenario
 	default:
