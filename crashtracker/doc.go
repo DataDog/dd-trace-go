@@ -62,6 +62,32 @@
 // goroutine in the crash dump. Set GOTRACEBACK=all in the process environment
 // to include all goroutines in the crash report's error.threads field.
 //
+// # Cgo and foreign threads
+//
+// A fault while Go is calling into C through cgo is captured normally on
+// Unix: the Go runtime cannot safely convert it to a recoverable panic, so
+// it prints a fatal crash report instead, and that report reaches
+// SetCrashOutput and this package's parser the same way an ordinary Go-code
+// fault does.
+//
+// On Windows this only holds when the faulting instruction is itself
+// Go-compiled code. runtime/signal_windows.go's isgoexception checks the
+// faulting PC against the Go binary's own compiled-code range and does not
+// treat an exception outside it as Go's to handle, so a fault entirely
+// inside C code compiled by cgo's own C toolchain — not Go's compiler — is
+// invisible to SetCrashOutput there: no crash report of any kind, silently,
+// the same blind spot foreign threads have below, verified directly against
+// that check rather than assumed identical to Unix.
+//
+// A fault on a thread created entirely by native code — a pthread spawned
+// directly by a C library, which never entered Go — is different.
+// SetCrashOutput cannot observe it at all: with no saved native signal
+// handler and no signal notification requested, the Go runtime restores the
+// default signal action and the process terminates with no Go crash report
+// of any kind, silently. [WithForeignThreadSignals] opts into best-effort
+// visibility for exactly this case, with real limitations documented on
+// that option — it is not a full report and not crash recovery.
+//
 // # Containers and PID 1
 //
 // The monitor is a child of the application process, in the same PID
