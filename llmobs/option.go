@@ -96,6 +96,15 @@ func WithIntegration(integration string) StartSpanOption {
 	}
 }
 
+// WithAgentVersion sets the user-supplied version of the agent, recorded as an
+// agent_version tag on the agent span itself and not on its children.
+// Only applicable to agent spans; ignored with a warning on any other span kind.
+func WithAgentVersion(version string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.AgentVersion = version
+	}
+}
+
 // ------------- Finish options -------------
 
 // FinishSpanOption configures span finishing. Use with span.Finish().
@@ -194,6 +203,15 @@ func WithIntent(intent string) AnnotateOption {
 func WithAnnotatedIntent(intent string) AnnotateOption {
 	return func(a *illmobs.SpanAnnotations) {
 		a.Intent = intent
+	}
+}
+
+// WithAnnotatedAgentVersion sets the user-supplied version of the agent, recorded as an
+// agent_version tag on the agent span itself and not on its children.
+// Only applicable to agent spans; ignored with a warning on any other span kind.
+func WithAnnotatedAgentVersion(version string) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.AgentVersion = version
 	}
 }
 
