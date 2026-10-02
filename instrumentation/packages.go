@@ -28,6 +28,7 @@ const (
 	PackageCloudEventsSDKGoV2   Package = "cloudevents/sdk-go.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageClickHouseV2         Package = "ClickHouse/clickhouse-go.v2"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -795,6 +796,9 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageJmoironSQLx: {
 		TracedPackage: "github.com/jmoiron/sqlx",
+	},
+	PackageClickHouseV2: {
+		TracedPackage: "github.com/ClickHouse/clickhouse-go/v2",
 	},
 	PackageJackcPGXV5: {
 		TracedPackage: "github.com/jackc/pgx/v5",
