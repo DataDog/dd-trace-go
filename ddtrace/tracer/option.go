@@ -1304,6 +1304,22 @@ func WithPartialFlushing(numSpans int) StartOption {
 	}
 }
 
+// WithPayloadQueueSize sets the size of the buffer that holds finished traces
+// waiting to be encoded and sent to the agent. When the queue is full, new
+// traces are dropped and reported through the datadog.tracer.traces_dropped
+// metric with the reason:queue_full tag. The default is 1000. This can also
+// be configured by setting DD_TRACE_PAYLOAD_QUEUE_SIZE. Values outside the
+// range 1 to 10000 are ignored and the default is used: a value below 1
+// would leave the queue unbuffered and drop almost every trace, and each
+// queue slot retains a whole trace chunk until the worker drains it, so a
+// larger queue can retain large amounts of memory while the worker is
+// stalled.
+func WithPayloadQueueSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetPayloadQueueSize(size, internalconfig.OriginCode)
+	}
+}
+
 // WithStatsComputation enables or disables client-side stats computation,
 // allowing the tracer to compute stats from traces. This can reduce network
 // traffic to the Datadog Agent, and produce more accurate stats data.

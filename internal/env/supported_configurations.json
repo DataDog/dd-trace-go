@@ -1682,6 +1682,13 @@
         "default": "1000"
       }
     ],
+    "DD_TRACE_PAYLOAD_QUEUE_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1000"
+      }
+    ],
     "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": [
       {
         "implementation": "A",
