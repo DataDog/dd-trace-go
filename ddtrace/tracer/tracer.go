@@ -1095,15 +1095,35 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
 		// The root span of the trace is always a local root (top-level) span.
-		span.setMetricInit(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.metrics, keyMeasured)
+		markTopLevel(span)
 	}
 	// The child top-level decision is deferred to StartSpan: the service name
 	// may still change there (default service, global tags, service mapping),
 	// and the span is a local root span only if its final service differs from
 	// its parent's. See https://github.com/DataDog/dd-trace-go/issues/5487.
 	return span, isRootSpan, parentService
+}
+
+// markTopLevel marks the span as a local root (top-level) span. It sets
+// _dd.top_level and removes the redundant _dd.measured tag, because every
+// top-level span is measured.
+// +checklocksignore — Initialization time, span not yet shared.
+func markTopLevel(s *Span) {
+	s.setMetricInit(keyTopLevel, 1)
+	// all top level spans are measured. So the measured tag is redundant.
+	delete(s.metrics, keyMeasured)
+}
+
+// markChildTopLevel marks a child span as top-level when its service differs
+// from its parent's service. StartSpan runs this decision after applying every
+// service mutation (default service, global tags, service mapping). The mock
+// tracer applies none of them, so it linknames this function to run the same
+// decision on the services from the span options alone.
+// +checklocksignore — Initialization time, span not yet shared.
+func markChildTopLevel(s *Span, isRootSpan bool, parentService string) {
+	if !isRootSpan && parentService != s.service {
+		markTopLevel(s)
+	}
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
@@ -1157,11 +1177,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	// compared with its parent's: a child span that ends up in a different
 	// service is the local root span (service entry point) of that service.
 	// See https://github.com/DataDog/dd-trace-go/issues/5487.
-	if !isRootSpan && parentService != span.service {
-		span.setMetricInit(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.metrics, keyMeasured)
-	}
+	markChildTopLevel(span, isRootSpan, parentService)
 	// Apply the pprof labels before t.sample: a custom Sampler receives the span
 	// and may publish it to another goroutine, after which writing span fields
 	// here would race with that goroutine (e.g. SetTag or Finish).
