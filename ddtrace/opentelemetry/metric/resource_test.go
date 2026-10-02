@@ -134,6 +134,37 @@ func TestBuildDatadogResource_DeploymentEnvironment(t *testing.T) {
 			expected:           "stable",
 		},
 		{
+			name:               "last duplicate stable key wins",
+			resourceAttributes: "deployment.environment.name=old,deployment.environment.name=new,custom=value",
+			expected:           "new",
+		},
+		{
+			name:               "empty last stable key falls back to legacy key",
+			resourceAttributes: "deployment.environment.name=old,deployment.environment=legacy,deployment.environment.name=,custom=value",
+			expected:           "legacy",
+		},
+		{
+			name:               "last duplicate legacy key wins",
+			resourceAttributes: "deployment.environment=old,deployment.environment=new,custom=value",
+			expected:           "new",
+		},
+		{
+			name:               "empty last legacy key is unset",
+			resourceAttributes: "deployment.environment=old,deployment.environment=,custom=value",
+			expected:           "",
+		},
+		{
+			name:               "unrelated DD_TAGS preserves stable environment",
+			ddTags:             "team:platform",
+			resourceAttributes: "deployment.environment.name=stable,custom=value",
+			expected:           "stable",
+		},
+		{
+			name:               "stable key overrides generic env",
+			resourceAttributes: "deployment.environment.name=stable,env=custom,custom=value",
+			expected:           "stable",
+		},
+		{
 			name:               "DD_ENV takes precedence",
 			ddEnv:              "datadog",
 			resourceAttributes: "deployment.environment=legacy,deployment.environment.name=stable,custom=value",
@@ -167,7 +198,11 @@ func TestBuildDatadogResource_DeploymentEnvironment(t *testing.T) {
 			}
 
 			assert.Equal(t, tt.expected, attributes["deployment.environment.name"])
-			assert.Equal(t, 1, stableEnvironmentCount)
+			expectedEnvironmentCount := 1
+			if tt.expected == "" {
+				expectedEnvironmentCount = 0
+			}
+			assert.Equal(t, expectedEnvironmentCount, stableEnvironmentCount)
 			assert.NotContains(t, attributes, "deployment.environment")
 			assert.Equal(t, "value", attributes["custom"])
 		})

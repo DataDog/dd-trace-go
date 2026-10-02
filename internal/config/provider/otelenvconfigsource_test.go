@@ -188,6 +188,46 @@ func TestMapDDTagsDeploymentEnvironment(t *testing.T) {
 			want: "env:stable",
 		},
 		{
+			name: "last duplicate stable key wins",
+			in:   "deployment.environment.name=old,deployment.environment.name=new",
+			want: "env:new",
+		},
+		{
+			name: "empty last stable key falls back to legacy key",
+			in:   "deployment.environment.name=old,deployment.environment=legacy,deployment.environment.name=",
+			want: "env:legacy",
+		},
+		{
+			name: "last duplicate legacy key wins",
+			in:   "deployment.environment=old,deployment.environment=new",
+			want: "env:new",
+		},
+		{
+			name: "empty last legacy key is unset",
+			in:   "deployment.environment=old,deployment.environment=",
+			want: "",
+		},
+		{
+			name: "stable key overrides generic env before it",
+			in:   "env=custom,deployment.environment.name=stable",
+			want: "env:stable",
+		},
+		{
+			name: "stable key overrides generic env after it",
+			in:   "deployment.environment.name=stable,env=custom",
+			want: "env:stable",
+		},
+		{
+			name: "legacy key overrides generic env",
+			in:   "deployment.environment=legacy,env=custom",
+			want: "env:legacy",
+		},
+		{
+			name: "preserves generic env without deployment environment",
+			in:   "env=custom",
+			want: "env:custom",
+		},
+		{
 			name: "preserves mapped and unrelated attributes",
 			in:   "custom.before=one,service.name=my-service,deployment.environment=legacy,custom.middle=two,deployment.environment.name=stable,service.version=1.2.3,custom.after=three",
 			want: "version:1.2.3,env:stable,service:my-service,custom.before:one,custom.middle:two,custom.after:three",

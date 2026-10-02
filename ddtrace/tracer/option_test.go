@@ -1632,6 +1632,34 @@ func TestEnvConfig(t *testing.T) {
 		assert.Equal("testing", c.internalConfig.Env())
 	})
 
+	t.Run("unrelated DD_TAGS preserves stable OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
+		t.Setenv("DD_TAGS", "team:platform")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=opentelemetry")
+		assert := assert.New(t)
+		c, err := newTestConfig()
+
+		assert.NoError(err)
+		assert.Equal("opentelemetry", c.internalConfig.Env())
+	})
+
+	t.Run("last duplicate legacy OTEL_RESOURCE_ATTRIBUTES key wins", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=old,deployment.environment=new")
+		assert := assert.New(t)
+		c, err := newTestConfig()
+
+		assert.NoError(err)
+		assert.Equal("new", c.internalConfig.Env())
+	})
+
+	t.Run("stable OTEL_RESOURCE_ATTRIBUTES key overrides generic env", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=stable,env=custom")
+		assert := assert.New(t)
+		c, err := newTestConfig()
+
+		assert.NoError(err)
+		assert.Equal("stable", c.internalConfig.Env())
+	})
+
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()

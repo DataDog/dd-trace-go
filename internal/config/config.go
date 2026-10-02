@@ -97,7 +97,8 @@ type Config struct {
 	// configured service get the version tag.
 	universalVersion bool
 	// env contains the environment that this application will run under.
-	env string
+	env                     string
+	otelResourceEnvironment string
 	// site specifies the Datadog site to send data to
 	site string
 	// serviceMappings holds a set of service mappings to dynamically rename services.
@@ -376,6 +377,7 @@ func loadConfig() *Config {
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
+	cfg.otelResourceEnvironment = provider.OTelResourceEnvironment()
 	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
@@ -1355,6 +1357,12 @@ func (c *Config) Env() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.env
+}
+
+func (c *Config) OTelResourceEnvironment() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelResourceEnvironment
 }
 
 func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product) {

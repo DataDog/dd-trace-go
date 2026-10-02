@@ -202,24 +202,26 @@ func mapPropagationStyle(ot string) (string, error) {
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
-	stableEnvironment := ""
-	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
-		if key == deploymentEnvironmentName && stableEnvironment == "" && val != "" {
-			stableEnvironment = val
-		}
-	})
+	stableEnvironment, legacyEnvironment := deploymentEnvironmentValues(ot)
 
 	ddTags := make([]string, 0)
-	stableEnvironmentMapped := false
+	environmentMapped := false
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
 		if key == deploymentEnvironmentName {
-			if stableEnvironment != "" && !stableEnvironmentMapped && val != "" {
+			if stableEnvironment != "" && !environmentMapped && val != "" {
 				ddTags = append([]string{"env" + internal.DDTagsDelimiter + stableEnvironment}, ddTags...)
-				stableEnvironmentMapped = true
+				environmentMapped = true
 			}
 			return
 		}
-		if key == deploymentEnvironment && stableEnvironment != "" {
+		if key == deploymentEnvironment {
+			if stableEnvironment == "" && legacyEnvironment != "" && !environmentMapped {
+				ddTags = append([]string{"env" + internal.DDTagsDelimiter + legacyEnvironment}, ddTags...)
+				environmentMapped = true
+			}
+			return
+		}
+		if key == "env" && (stableEnvironment != "" || legacyEnvironment != "") {
 			return
 		}
 
@@ -237,4 +239,24 @@ func mapDDTags(ot string) (string, error) {
 	}
 
 	return strings.Join(ddTags, ","), nil
+}
+
+func deploymentEnvironmentValues(ot string) (stable, legacy string) {
+	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		switch key {
+		case deploymentEnvironmentName:
+			stable = val
+		case deploymentEnvironment:
+			legacy = val
+		}
+	})
+	return stable, legacy
+}
+
+func OTelResourceEnvironment() string {
+	stable, legacy := deploymentEnvironmentValues(env.Get("OTEL_RESOURCE_ATTRIBUTES"))
+	if stable != "" {
+		return stable
+	}
+	return legacy
 }

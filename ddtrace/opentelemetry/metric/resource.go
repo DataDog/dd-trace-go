@@ -39,7 +39,8 @@ const (
 //
 // Priority order for each attribute:
 //   - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-//   - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+//   - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+//     → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 //   - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
 //   - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
 //     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
@@ -65,7 +66,8 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		attrs = append(attrs, semconv.ServiceName(serviceName))
 	}
 
-	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+	// → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 	envName := environmentName(ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
