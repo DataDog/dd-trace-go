@@ -8,6 +8,7 @@ package grpc
 import (
 	"context"
 	"net"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 
@@ -24,16 +25,47 @@ type clientStream struct {
 	ctx    context.Context
 	cfg    *config
 	method string
+	// committed records that the stream attempt is committed. Reading the
+	// transport context is safe only after Header or RecvMsg has returned,
+	// because an earlier read commits the attempt and disables transparent
+	// retries. Context, Header and RecvMsg set it after the underlying call
+	// returned, and the interceptor sets it at construction when call tracing
+	// already read the transport context at stream creation, which commits
+	// the attempt as well.
+	committed atomic.Bool
 }
 
+// Context returns the transport stream context with the stream call span
+// attached to it. gRPC attaches values such as the transport peer to the
+// transport context only, so callers must receive the transport context
+// and not the interceptor context. The span stays on the returned context
+// so that code which wraps this stream can parent new spans to the stream
+// call span. The merge happens lazily on each call. Calling
+// cs.ClientStream.Context() at stream creation would commit the stream
+// attempt and disable transparent retries (issue #4757).
 func (cs *clientStream) Context() context.Context {
-	return cs.ctx
+	sctx := cs.ClientStream.Context()
+	// The call above committed the stream attempt.
+	cs.committed.Store(true)
+	if span, ok := tracer.SpanFromContext(cs.ctx); ok {
+		return tracer.ContextWithSpan(sctx, span)
+	}
+	return sctx
+}
+
+// Header returns the headers of the stream. The underlying call commits the
+// stream attempt, so record the commit the same way Context does.
+func (cs *clientStream) Header() (metadata.MD, error) {
+	md, err := cs.ClientStream.Header()
+	cs.committed.Store(true)
+	return md, err
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
+	var span *tracer.Span
 	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
-		span, _ := startSpanFromContext(
-			cs.Context(),
+		span, _ = startSpanFromContext(
+			cs.ctx,
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
@@ -41,19 +73,25 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
-			setSpanTargetFromPeer(span, *p)
-		}
 		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
+	if span != nil {
+		// RecvMsg has returned, so the retry window is closed and reading the
+		// transport context no longer disables retries.
+		cs.committed.Store(true)
+		if p, ok := peer.FromContext(cs.ClientStream.Context()); ok {
+			setSpanTargetFromPeer(span, *p)
+		}
+	}
 	return err
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
+	var span *tracer.Span
 	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
-		span, _ := startSpanFromContext(
-			cs.Context(),
+		span, _ = startSpanFromContext(
+			cs.ctx,
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
@@ -61,12 +99,16 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
-			setSpanTargetFromPeer(span, *p)
-		}
 		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.SendMsg(m)
+	// SendMsg does not close the retry window, so read the transport context
+	// only once the attempt is already committed.
+	if span != nil && cs.committed.Load() {
+		if p, ok := peer.FromContext(cs.ClientStream.Context()); ok {
+			setSpanTargetFromPeer(span, *p)
+		}
+	}
 	return err
 }
 
@@ -92,6 +134,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			}
 		}
 		var stream grpc.ClientStream
+		var committed bool
 		if _, ok := cfg.untracedMethods[method]; cfg.traceStreamCalls && !ok {
 			var (
 				span *tracer.Span
@@ -113,6 +156,9 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			if p, ok := peer.FromContext(stream.Context()); ok {
 				setSpanTargetFromPeer(span, *p)
 			}
+			// The read above committed the stream attempt (#4757), so message
+			// spans may read the transport context from now on.
+			committed = true
 
 			go func() {
 				<-stream.Context().Done()
@@ -132,12 +178,16 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 				return nil, err
 			}
 		}
-		return &clientStream{
+		sc := &clientStream{
 			ClientStream: stream,
 			cfg:          cfg,
 			method:       method,
 			ctx:          ctx,
-		}, nil
+		}
+		if committed {
+			sc.committed.Store(true)
+		}
+		return sc, nil
 	}
 }
 
