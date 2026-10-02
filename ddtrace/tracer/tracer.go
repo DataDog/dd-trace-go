@@ -1274,6 +1274,8 @@ func (t *tracer) Stop() {
 	appsec.Stop()
 	remoteconfig.Stop()
 	// Flush telemetry before closing the log file so StopApp diagnostics still land.
+	// Interim tracer/profiler ownership handshake for the global telemetry client;
+	// to be superseded by shared client control (see TODO at newTracer, APMAPI-1771).
 	t.telemetryStopOnce.Do(func() {
 		client := t.telemetry
 		t.telemetry = nil
@@ -1290,6 +1292,11 @@ func (t *tracer) Stop() {
 		if traceprof.ProfilerEnabled() {
 			// Profiler started after us and still shares this client. Mark the
 			// tracer product stopped and flush, but leave the app running.
+			// TODO: profiler.Stop() never stops telemetry, so when the profiler is
+			// the last product to stop, app-stopped is never sent and the client's
+			// ticker goroutine lives until process exit. Follow-up: profiler.Stop()
+			// should send ProductStopped(NamespaceProfilers) and StopApp() when it
+			// owns the global client.
 			client.Flush()
 			return
 		}

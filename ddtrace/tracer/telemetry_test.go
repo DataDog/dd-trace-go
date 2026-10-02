@@ -256,6 +256,9 @@ func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
 	// not call StopApp on it.
 	assert.False(t, telemetryClient.Stopped)
 	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
+	// ProductStopped(tracers) must still propagate to the foreign client
+	// (ProductStarted set it true during Start; Stop sets it back to false).
+	assert.False(t, telemetryClient.Products[telemetry.NamespaceTracers])
 }
 
 func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
@@ -274,4 +277,20 @@ func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
 	// Profiler started after the tracer and still shares the client, so Stop
 	// must flush without emitting app-stopped / clearing the global client.
 	assert.NotNil(t, telemetry.GlobalClient())
+}
+
+func TestTracerStopStopsTelemetryAfterProfilerStopped(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	wasEnabled := traceprof.SetProfilerEnabled(true)
+	defer traceprof.SetProfilerEnabled(wasEnabled)
+	// The profiler started after the tracer, then stopped before tracer.Stop().
+	traceprof.SetProfilerEnabled(false)
+
+	Stop()
+
+	// Nobody else needs the client anymore, so Stop must fully stop the app.
+	assert.Nil(t, telemetry.GlobalClient())
 }
