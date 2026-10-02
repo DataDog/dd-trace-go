@@ -44,7 +44,7 @@ func LoadFromEnv() {
 		setVersion(v)
 	} else {
 		setVersion(SchemaV0)
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v) //errtrack:ignore invalid user configuration
 	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.

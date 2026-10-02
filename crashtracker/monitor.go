@@ -128,7 +128,7 @@ func runMonitor(cfg *config) {
 		// Emit one line so operators know a crash report was attempted but
 		// failed — without this, the failure is invisible. Routed through the
 		// shared logger (see spawnMonitor) rather than a raw os.Stderr write.
-		log.Warn("crashtracker: upload failed: %v", err.Error())
+		log.Warn("crashtracker: upload failed: %v", err.Error()) //errtrack:ignore remote upload failure
 	}
 	os.Exit(0)
 }
