@@ -877,6 +877,78 @@ func TestTracerStartChildSpan(t *testing.T) {
 	})
 }
 
+func TestSpanTopLevelServiceResolution(t *testing.T) {
+	t.Run("empty-service", func(t *testing.T) {
+		// A child span started with an explicitly empty service name gets the
+		// tracer's default service, the same service as its parent. It must
+		// not be marked top-level and must keep _dd.measured.
+		tracer, err := newTracer(WithService("connect.test"))
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent")
+		child := tracer.StartSpan("child.empty_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName(""),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "connect.test", child.service)
+		assert.NotContains(t, child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, child.metrics[keyMeasured])
+	})
+
+	t.Run("empty-service-other-parent-service", func(t *testing.T) {
+		// When the parent runs a different service than the tracer default, a
+		// child with an empty service name ends up in the default service. It
+		// is the entry point of that service and must be top-level.
+		tracer, err := newTracer(WithService("default-service"))
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("parent-service"))
+		child := tracer.StartSpan("child.empty_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName(""),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "default-service", child.service)
+		assert.Equal(t, 1.0, child.metrics[keyTopLevel])
+		assert.NotContains(t, child.metrics, keyMeasured)
+	})
+
+	t.Run("service-mapping", func(t *testing.T) {
+		// A child explicitly started with a service name that the tracer maps
+		// to the parent's (already mapped) service ends up in the same service
+		// as its parent. It must not be marked top-level.
+		tracer, err := newTracer(
+			WithService("connect.test"),
+			WithServiceMapping("map.me", "mapped-service"),
+		)
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("map.me"))
+		child := tracer.StartSpan("child.mapped_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName("map.me"),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "mapped-service", parent.service)
+		assert.Equal(t, "mapped-service", child.service)
+		assert.NotContains(t, child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, child.metrics[keyMeasured])
+	})
+}
+
 func TestTracerBaggagePropagation(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer()
