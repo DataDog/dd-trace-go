@@ -26,7 +26,13 @@ func isWellFormedEdgeTag(t string) bool {
 	return false
 }
 
-func nodeHash(service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
+// nodeHash computes the identity hash of a DSM node from service, env and edge tags.
+// It intentionally excludes processTags and containerTagsHash: those are agent/process
+// metadata that can change on every rolling deploy without any real change in topology,
+// and folding them in here would needlessly inflate the cardinality of the
+// (hash, parentHash) pairs that DSM's pathway stats are keyed and quota-limited on.
+// See BaseHash for the DBM-facing hash that still folds those two in.
+func nodeHash(service, env string, edgeTags []string) uint64 {
 	h := fnv.New64()
 	sort.Strings(edgeTags)
 	h.Write([]byte(service))
@@ -38,17 +44,14 @@ func nodeHash(service, env string, edgeTags, processTags []string, containerTags
 			fmt.Println("not formatted correctly", t)
 		}
 	}
-	for _, t := range processTags {
-		h.Write([]byte(t))
-	}
-	if containerTagsHash != "" {
-		h.Write([]byte(containerTagsHash))
-	}
 	return h.Sum64()
 }
 
 // BaseHash computes the FNV-1 64-bit hash of service, env, processTags and containerTagsHash,
-// using the same algorithm as nodeHash but without edge tags.
+// using the same algorithm as nodeHash but without edge tags. It is used by DBM for
+// per-container SQL comment attribution (see sqlcomment.go) and is intentionally kept
+// independent of nodeHash/pathwayHash so DSM's cardinality-sensitive path is not affected
+// by these volatile, agent-supplied values.
 func BaseHash(service, env string, processTags []string, containerTagsHash string) uint64 {
 	h := fnv.New64()
 	h.Write([]byte(service))
