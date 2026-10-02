@@ -450,6 +450,13 @@
         "default": "false"
       }
     ],
+    "DD_DATA_STREAMS_INTAKE_BUFFER_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
     "DD_DBM_PROPAGATION_MODE": [
       {
         "implementation": "A",

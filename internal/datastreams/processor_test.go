@@ -323,7 +323,7 @@ func TestSetCheckpoint(t *testing.T) {
 	processor := Processor{
 		hashCache:  newHashCache(),
 		stopped:    1,
-		in:         newFastQueue(),
+		in:         newFastQueue(defaultQueueSize),
 		service:    "service-1",
 		env:        "env",
 		timeSource: time.Now,
@@ -357,7 +357,7 @@ func TestSetCheckpointProcessTags(t *testing.T) {
 	processor := Processor{
 		hashCache:  newHashCache(),
 		stopped:    1,
-		in:         newFastQueue(),
+		in:         newFastQueue(defaultQueueSize),
 		service:    "service-1",
 		env:        "env",
 		timeSource: time.Now,
@@ -395,7 +395,7 @@ func TestSetCheckpointContainerTagsHash(t *testing.T) {
 	processor := Processor{
 		hashCache:  newHashCache(),
 		stopped:    1,
-		in:         newFastQueue(),
+		in:         newFastQueue(defaultQueueSize),
 		service:    "service-1",
 		env:        "env",
 		timeSource: time.Now,
@@ -428,7 +428,7 @@ func TestSetCheckpointContainerTagsHashRequiresProcessTags(t *testing.T) {
 	processor := Processor{
 		hashCache:  newHashCache(),
 		stopped:    1,
-		in:         newFastQueue(),
+		in:         newFastQueue(defaultQueueSize),
 		service:    "service-1",
 		env:        "env",
 		timeSource: time.Now,

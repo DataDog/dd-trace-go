@@ -301,7 +301,20 @@ func (p *Processor) time() time.Time {
 	return time.Now()
 }
 
-func NewProcessor(statsd internal.StatsdClient, env, service, version string, agentURL *url.URL, httpClient *http.Client) *Processor {
+// ProcessorOption configures optional, rarely-changed Processor behavior.
+type ProcessorOption func(*Processor)
+
+// WithQueueSize overrides the number of slots in the processor's input ring
+// buffer. Sizes <= 0 are ignored and the default is kept.
+func WithQueueSize(size int) ProcessorOption {
+	return func(p *Processor) {
+		if size > 0 {
+			p.in = newFastQueue(size)
+		}
+	}
+}
+
+func NewProcessor(statsd internal.StatsdClient, env, service, version string, agentURL *url.URL, httpClient *http.Client, opts ...ProcessorOption) *Processor {
 	if service == "" {
 		service = defaultServiceName
 	}
@@ -309,7 +322,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		tsTypeCurrentBuckets: make(map[bucketKey]bucket),
 		tsTypeOriginBuckets:  make(map[bucketKey]bucket),
 		hashCache:            newHashCache(),
-		in:                   newFastQueue(),
+		in:                   newFastQueue(defaultQueueSize),
 		stopped:              1,
 		statsd:               statsd,
 		env:                  env,
@@ -318,6 +331,9 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		transport:            newHTTPTransport(agentURL, httpClient),
 		timeSource:           time.Now,
 		checkpoints:          newCheckpointRegistry(),
+	}
+	for _, opt := range opts {
+		opt(p)
 	}
 	return p
 }
