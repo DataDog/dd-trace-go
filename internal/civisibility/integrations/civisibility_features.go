@@ -117,7 +117,7 @@ func ensureSettingsInitialization(serviceName string) {
 		// Create the CI Visibility client
 		ciVisibilityClient = newCIVisibilityClientWithServiceNameFunc(serviceName)
 		if ciVisibilityClient == nil {
-			log.Error("civisibility: error getting the ci visibility http client")
+			log.Error("civisibility: error getting the ci visibility http client") //errtrack:ignore invalid user network configuration
 			return
 		}
 
@@ -137,7 +137,7 @@ func ensureSettingsInitialization(serviceName string) {
 				}()
 				bytes, err := repositoryUpload.run()
 				if err != nil {
-					log.Error("civisibility: error uploading repository changes: %s", err.Error())
+					log.Error("civisibility: error uploading repository changes: %s", err.Error()) //errtrack:ignore repository or network failure
 				} else {
 					log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
 				}
@@ -158,7 +158,7 @@ func ensureSettingsInitialization(serviceName string) {
 				// All ok, upload succeeded
 				return true
 			case <-time.After(timeout):
-				log.Warn("civisibility: timeout waiting for upload repository changes")
+				log.Warn("civisibility: timeout waiting for upload repository changes") //errtrack:ignore repository upload timeout
 				return false
 			}
 		}
@@ -186,7 +186,7 @@ func ensureSettingsInitialization(serviceName string) {
 		if uploadEnabled && ciSettings.RequireGit {
 			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
 			if !waitUpload(1 * time.Minute) {
-				log.Error("civisibility: error getting CI visibility settings due to timeout")
+				log.Error("civisibility: error getting CI visibility settings due to timeout") //errtrack:ignore remote request timeout
 				return
 			}
 			ciSettings, err = ciVisibilityClient.GetSettings()
@@ -208,19 +208,19 @@ func ensureSettingsInitialization(serviceName string) {
 
 		// check if impacted tests is disabled by env-vars
 		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
-			log.Warn("civisibility: impacted tests was disabled by the environment variable")
+			log.Warn("civisibility: impacted tests was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
 		// check if code coverage report upload is disabled by env-vars
 		if ciSettings.CoverageReportUploadEnabled && !internal.BoolEnv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: code coverage report upload was disabled by the environment variable")
+			log.Warn("civisibility: code coverage report upload was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.CoverageReportUploadEnabled = false
 		}
 
 		// check if test management is disabled by env-vars
 		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: test management was disabled by the environment variable")
+			log.Warn("civisibility: test management was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.TestManagement.Enabled = false
 		}
 
@@ -288,7 +288,7 @@ func applyFlakyRetryEnabledEnvironmentOverride(ciSettings *net.SettingsResponseD
 	if enabled {
 		state = "enabled"
 	}
-	log.Warn("civisibility: automatic test retries were %s by the %s environment variable", state, constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable)
+	log.Warn("civisibility: automatic test retries were %s by the %s environment variable", state, constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable) //errtrack:ignore expected user configuration override
 	ciSettings.FlakyTestRetriesEnabled = enabled
 }
 
@@ -310,17 +310,17 @@ func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.Settings
 	if enabled {
 		state = "enabled"
 	}
-	log.Warn("civisibility: early flake detection was %s by the %s environment variable", state, constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
+	log.Warn("civisibility: early flake detection was %s by the %s environment variable", state, constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable) //errtrack:ignore expected user configuration override
 	ciSettings.EarlyFlakeDetection.Enabled = enabled
 }
 
 // logSettingsFetchError reports a failed or empty CI Visibility settings response.
 func logSettingsFetchError(err error) {
 	if err != nil {
-		log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+		log.Error("civisibility: error getting CI visibility settings: %s", err.Error()) //errtrack:ignore remote service response
 		return
 	}
-	log.Error("civisibility: error getting CI visibility settings: empty response")
+	log.Error("civisibility: error getting CI visibility settings: empty response") //errtrack:ignore remote service response
 }
 
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
@@ -393,7 +393,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				ciEfdData, err := ciVisibilityClient.GetKnownTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error()) //errtrack:ignore remote service response
 				} else if ciEfdData != nil {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
@@ -407,7 +407,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				// get the skippable tests
 				response, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error()) //errtrack:ignore remote service response
 				} else if response != nil {
 					log.Debug("civisibility: skippable tests loaded: %d suites", len(response.Skippables))
 					setAdditionalTags(constants.ItrCorrelationIDTag, response.CorrelationID)
@@ -422,7 +422,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error()) //errtrack:ignore remote service response
 				} else if testManagementTests != nil {
 					ciVisibilityTestManagementTests = *testManagementTests
 					log.Debug("civisibility: test management loaded [attemptToFixRetries: %d]", currentSettings.TestManagement.AttemptToFixRetries)
@@ -435,7 +435,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error()) //errtrack:ignore repository analysis failure
 				} else {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
@@ -580,7 +580,7 @@ func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64,
 	hasBeenUnshallowed, err := hooks.unshallowGitRepository()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
-			log.Warn("%s", err.Error())
+			log.Warn("%s", err.Error()) //errtrack:ignore repository command failure
 		}
 		// if unshallowing the repository failed or if there's nothing to unshallow then we try to upload the packfiles from
 		// the initial commit data
