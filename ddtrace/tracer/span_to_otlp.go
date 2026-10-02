@@ -27,14 +27,20 @@ const maxAttributesCount = 128
 // Resource construction
 // -----------------------------------------------------------------------------
 
-// buildBaseResourceAttrs returns the telemetry.sdk.* and service.* resource attributes
-// shared by both trace and metrics OTLP exports.
-func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.KeyValue {
+// buildBaseResourceAttrs returns the telemetry.sdk.*, service.* and SDK adoption
+// resource attributes shared by both trace and metrics OTLP exports.
+func buildBaseResourceAttrs(serviceName, svcVersion, env string, otelSemantics bool) []*otlpcommon.KeyValue {
+	semantics := "datadog"
+	if otelSemantics {
+		semantics = "otel"
+	}
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("service.name", otlpStringValue(serviceName)),
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
 		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
+		otlpKeyValue("datadog.sdk.semantics", otlpStringValue(semantics)),
 	}
 	if env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
@@ -51,7 +57,9 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	return &otlpresource.Resource{Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env())}
+	return &otlpresource.Resource{
+		Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env(), cfg.OTelSemanticsEnabled()),
+	}
 }
 
 // -----------------------------------------------------------------------------
