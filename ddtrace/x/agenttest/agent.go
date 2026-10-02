@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -92,6 +93,11 @@ type Agent interface {
 	RequireSpan(testing.TB, ...*SpanMatch) *Span
 	// CountSpans returns the total number of spans collected so far.
 	CountSpans() int
+	// Spans returns a copy of every collected span in randomized order.
+	// Randomized order exists to break order-dependent assertions, which are a
+	// common source of test flakiness. Match spans by their attributes, not by
+	// position. Each call returns a fresh copy, so callers may mutate it.
+	Spans() []*Span
 }
 
 type agent struct {
@@ -248,4 +254,24 @@ func (a *agent) CountSpans() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return len(a.spans)
+}
+
+// Spans returns a copy of every collected span in randomized order.
+// Randomized order exists to break order-dependent assertions, which are a
+// common source of test flakiness. Match spans by their attributes, not by
+// position. Each call returns a fresh copy, so callers may mutate it.
+func (a *agent) Spans() []*Span {
+	a.mu.Lock()
+	spans := make([]*Span, len(a.spans))
+	copy(spans, a.spans)
+	a.mu.Unlock()
+	// Copy the span values too, so callers cannot mutate the collected spans.
+	for i, s := range spans {
+		clone := *s
+		spans[i] = &clone
+	}
+	rand.Shuffle(len(spans), func(i, j int) {
+		spans[i], spans[j] = spans[j], spans[i]
+	})
+	return spans
 }
