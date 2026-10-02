@@ -49,6 +49,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -3818,10 +3819,46 @@ func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
 	require.NoError(t, err)
 	Stop()
 
+	// log.Error output is buffered until flushed; without this the assertion
+	// below could never observe the message.
+	log.Flush()
+
 	// Check that runtime metrics emitters lifetimes did not overlap.
 	for _, logMsg := range tp.Logs() {
 		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
 	}
+}
+
+// TestTracerStartRuntimeMetricsAlreadyStartedElsewhere covers a process where
+// another component already runs a runtime metrics emitter. Only one emitter
+// may run per process, so the tracer cannot start its own and logs a warning
+// instead of an error.
+func TestTracerStartRuntimeMetricsAlreadyStartedElsewhere(t *testing.T) {
+	other, err := runtimemetrics.NewEmitter(&statsd.NoOpClientDirect{}, nil)
+	require.NoError(t, err)
+	t.Cleanup(other.Stop)
+
+	tp := new(log.RecordLogger)
+	require.NoError(t, Start(WithLogger(tp)))
+	defer Stop()
+
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	assert.Nil(t, tr.runtimeMetrics)
+
+	log.Flush()
+	var found bool
+	for _, logMsg := range tp.Logs() {
+		if !strings.Contains(logMsg, "Failed to enable runtime metrics v2") {
+			continue
+		}
+		found = true
+		assert.Contains(t, logMsg, "WARN")
+		assert.NotContains(t, logMsg, "ERROR")
+		assert.Contains(t, logMsg, "another runtime metrics emitter is already running in this process")
+		assert.Contains(t, logMsg, "err=runtimemetrics has already been started")
+	}
+	assert.True(t, found, "expected the runtime metrics v2 warning")
 }
 
 // TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
