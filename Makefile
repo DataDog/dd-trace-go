@@ -170,3 +170,7 @@ upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 .PHONY: config-audit
 config-audit: ## Report which DD_* configs are migrated to internal/config
 	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table
+
+.PHONY: errtrack-audit
+errtrack-audit: ## Report internal/log Error/Warn sites that may adopt Error Tracking reporting
+	@cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format table
