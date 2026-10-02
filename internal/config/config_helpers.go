@@ -40,9 +40,10 @@ const (
 	// (DD_TRACE_PAYLOAD_QUEUE_SIZE).
 	DefaultPayloadQueueSize = 1000
 	// MaxPayloadQueueSize is the largest accepted buffer size for the trace payload
-	// queue. A larger value can panic with "makechan: size out of range" or
-	// exhaust memory when the channel is allocated, so it is rejected.
-	MaxPayloadQueueSize = 1 << 20
+	// queue. Every slot retains a whole chunk (its spans, contexts, and tags) until
+	// the worker drains it, so a queue at this size can already hold hundreds of
+	// megabytes of trace data. A larger value is rejected.
+	MaxPayloadQueueSize = 100000
 	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
 	defaultStatsAdditionalTagsCardinalityLimit = 100
 	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
@@ -236,11 +237,11 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 
 func validatePayloadQueueSize(size int) bool {
 	if size < 1 {
-		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1, using default %d. A value below 1 would leave the queue unbuffered and drop almost every trace.", size, DefaultPayloadQueueSize)
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1. A value below 1 would leave the queue unbuffered and drop almost every trace.", size)
 		return false
 	}
 	if size > MaxPayloadQueueSize {
-		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is above the maximum %d, using default %d. A value above the maximum can panic with \"makechan: size out of range\" or exhaust memory when the queue is allocated.", size, MaxPayloadQueueSize, DefaultPayloadQueueSize)
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is above the maximum %d. A value above the maximum can panic with \"makechan: size out of range\" or exhaust memory when the queue is allocated.", size, MaxPayloadQueueSize)
 		return false
 	}
 	return true

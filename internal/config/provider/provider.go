@@ -136,7 +136,9 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 	return get(p, key, def, func(v string) (int, bool) {
 		intVal, err := strconv.Atoi(v)
 		if err != nil {
-			log.Warn("ignoring %s: value %q is not a valid integer, using default %d", key, v, def)
+			// A lower-priority source may still supply a valid value, so the
+			// warning must not claim the default is used.
+			log.Warn("ignoring %s: value %q is not a valid integer", key, v)
 			return 0, false
 		}
 		if validate != nil && !validate(intVal) {
