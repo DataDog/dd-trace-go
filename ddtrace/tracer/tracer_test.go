@@ -947,6 +947,46 @@ func TestSpanTopLevelServiceResolution(t *testing.T) {
 		assert.NotContains(t, child.metrics, keyTopLevel)
 		assert.Equal(t, 1.0, child.metrics[keyMeasured])
 	})
+
+	t.Run("reentrant-sampler", func(t *testing.T) {
+		// A custom sampler may synchronously start a child span while the
+		// parent is still being started. The child must read the parent's
+		// resolved service, not the empty service from the parent's
+		// not-yet-published snapshot.
+		sampler := &childStartingSampler{}
+		tracer, err := newTracer(WithService("connect.test"), WithSampler(sampler))
+		require.NoError(t, err)
+		defer tracer.Stop()
+		sampler.tr = tracer
+
+		parent := tracer.StartSpan("parent")
+		parent.Finish()
+		require.NotNil(t, sampler.child)
+
+		assert.Equal(t, "connect.test", sampler.child.service)
+		assert.NotContains(t, sampler.child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, sampler.child.metrics[keyMeasured])
+	})
+}
+
+// childStartingSampler starts a child span of every span it samples. It is
+// used to test spans that are started while their parent is still being
+// started.
+type childStartingSampler struct {
+	tr         *tracer
+	child      *Span
+	reentrancy bool
+}
+
+func (s *childStartingSampler) Sample(span *Span) bool {
+	if s.reentrancy || s.tr == nil {
+		return true
+	}
+	s.reentrancy = true
+	s.child = s.tr.StartSpan("child.reentrant", ChildOf(span.Context()), Measured())
+	s.child.Finish()
+	s.reentrancy = false
+	return true
 }
 
 func TestTracerBaggagePropagation(t *testing.T) {

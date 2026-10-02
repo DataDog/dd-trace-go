@@ -1172,6 +1172,13 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Publish the resolved service to the context snapshot before the sampler
+	// runs. A custom Sampler may synchronously start a child span that reads
+	// this span's snapshot in spanStart; without this write the child would
+	// still see the empty, pre-default service of its parent and falsely
+	// compare services. The full snapshot is synced again at the end of
+	// StartSpan, after the pprof labels have been applied.
+	span.context.setSpanSnapshotService(span.service, span.serviceSource)
 	// Every service mutation (default service, service tags, global tags,
 	// service mapping) has been applied above, so the span service can now be
 	// compared with its parent's: a child span that ends up in a different
