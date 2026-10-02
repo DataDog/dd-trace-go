@@ -186,6 +186,12 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
 
+// Tracestate returns the W3C tracestate of the span context, so that the
+// Datadog tracer can restore the state carried in its dd= member.
+func (c *otelCtxToDDCtx) Tracestate() string {
+	return c.oc.TraceState().String()
+}
+
 // SamplingDecision returns the sampling decision associated with this span context.
 // According to the OpenTelemetry specification, the sampling decision is made when the span is started.
 // Therefore, not having the Sampled TraceFlag set means that the trace should be dropped.
