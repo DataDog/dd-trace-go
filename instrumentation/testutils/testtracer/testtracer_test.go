@@ -196,3 +196,23 @@ func TestWaitForTimesOutDespiteRequestDelay(t *testing.T) {
 	assert.Less(t, elapsed, 1500*time.Millisecond,
 		"WaitFor must fail at its deadline, not when the delayed flush returns")
 }
+
+// TestWaitForRejectsConditionAfterDeadline verifies that a condition the
+// deadline overtook does not count as success: WaitFor must fail at its
+// timeout even when cond itself reports true once it finally runs.
+func TestWaitForRejectsConditionAfterDeadline(t *testing.T) {
+	tt := startLLMObs(t)
+
+	done := make(chan struct{})
+	fresh := new(testing.T)
+	go func() {
+		defer close(done)
+		tt.WaitFor(fresh, 200*time.Millisecond, func(*testtracer.Payloads) bool {
+			// Run past the deadline, then claim success.
+			time.Sleep(500 * time.Millisecond)
+			return true
+		})
+	}()
+	<-done
+	assert.True(t, fresh.Failed(), "WaitFor must reject a condition that the deadline overtook")
+}
