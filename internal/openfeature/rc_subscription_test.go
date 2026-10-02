@@ -171,3 +171,29 @@ func TestSubscribeRCAfterTracerRestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, has, "FFE_FLAGS should be subscribed on the new RC client after restart")
 }
+
+func TestSubscribeProviderUsesStartedClientForPendingTracerClaim(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "60")
+	ResetForTest()
+	defer ResetForTest()
+	defer remoteconfig.Reset()
+
+	ClaimRCSubscription()
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+
+	callbackCalled := false
+	callback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+		callbackCalled = true
+		return nil
+	}
+	tracerOwnsSubscription, err := SubscribeProvider(callback)
+	require.NoError(t, err)
+	require.True(t, tracerOwnsSubscription)
+
+	has, err := remoteconfig.HasProduct(FFEProductName)
+	require.NoError(t, err)
+	require.True(t, has, "the tracer should subscribe FFE_FLAGS on an already-running shared RC client")
+	require.True(t, AttachCallback(callback))
+	forwardingCallback(remoteconfig.ProductUpdate{"path/config": []byte(`{"format":"SERVER"}`)})
+	require.True(t, callbackCalled)
+}

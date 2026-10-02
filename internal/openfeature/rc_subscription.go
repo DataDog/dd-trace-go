@@ -12,6 +12,7 @@ package openfeature
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -34,9 +35,19 @@ type Callback func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus
 // with the late-created DatadogProvider (during NewDatadogProvider).
 var rcState struct {
 	sync.Mutex
-	subscribed bool
-	callback   Callback
-	buffered   remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	tracerOwned bool
+	subscribed  bool
+	callback    Callback
+	buffered    remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+}
+
+// ClaimRCSubscription reserves the FFE_FLAGS subscription for the tracer. The
+// provider can attach its callback before the Agent advertises Remote Config;
+// the tracer will register the actual RC subscription when support is discovered.
+func ClaimRCSubscription() {
+	rcState.Lock()
+	defer rcState.Unlock()
+	rcState.tracerOwned = true
 }
 
 // SubscribeRC subscribes to the FFE_FLAGS RC product using a forwarding
@@ -45,6 +56,7 @@ var rcState struct {
 func SubscribeRC() error {
 	rcState.Lock()
 	defer rcState.Unlock()
+	rcState.tracerOwned = true
 
 	if rcState.subscribed {
 		// Verify the subscription is still live (it won't be after a tracer restart
@@ -62,10 +74,13 @@ func SubscribeRC() error {
 		return nil
 	}
 
+	return subscribeRCLocked()
+}
+
+func subscribeRCLocked() error {
 	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteconfig.FFEFlagEvaluation); err != nil {
 		return err
 	}
-
 	rcState.subscribed = true
 	log.Debug("openfeature: subscribed to RC product %s via tracer", FFEProductName)
 	return nil
@@ -97,15 +112,14 @@ func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplySt
 	return statuses
 }
 
-// AttachCallback wires the given callback to the global RC subscription.
-// If SubscribeRC() was called (i.e. the tracer subscribed), it replays any
-// buffered config and returns true. Otherwise returns false, meaning the
-// caller should fall back to its own RC subscription.
+// AttachCallback wires the given callback to the tracer-owned RC subscription.
+// The actual remoteconfig subscription may still be pending Agent capability
+// discovery. Any buffered config is replayed before this function returns.
 func AttachCallback(cb Callback) bool {
 	rcState.Lock()
 	defer rcState.Unlock()
 
-	if !rcState.subscribed {
+	if !rcState.tracerOwned && !rcState.subscribed {
 		return false
 	}
 
@@ -133,6 +147,25 @@ func AttachCallback(cb Callback) bool {
 func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription bool, err error) {
 	rcState.Lock()
 	defer rcState.Unlock()
+
+	if rcState.tracerOwned {
+		if !rcState.subscribed {
+			hasProduct, productErr := remoteconfig.HasProduct(FFEProductName)
+			switch {
+			case errors.Is(productErr, remoteconfig.ErrClientNotStarted):
+				// The tracer owns the subscription, but Agent capability discovery
+				// has not started the shared client yet. The caller will attach its
+				// callback and SubscribeRC will register the product after discovery.
+			case productErr != nil:
+				return true, productErr
+			case !hasProduct:
+				if err := subscribeRCLocked(); err != nil {
+					return true, err
+				}
+			}
+		}
+		return true, nil
+	}
 
 	if rcState.subscribed {
 		return true, nil
