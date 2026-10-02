@@ -137,6 +137,10 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 // transforms kgo.NewClient(opts...) calls where options are spread from a
 // []kgo.Opt slice. The transformation is non-trivial for this form since
 // kgo.NewClient(opts..., extra) is invalid Go.
+//
+// The slices deliberately have spare capacity (len < cap): the injected options
+// must never leak into it, which would silently mutate the caller's slice or
+// race across concurrent calls (DataDog/dd-trace-go#5486).
 type TestCaseEllipsis struct {
 	TestCase
 }
@@ -149,20 +153,28 @@ func (tc *TestCaseEllipsis) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	produceOpts := []kgo.Opt{kgo.SeedBrokers(tc.addr)}
+	// Spare capacity is observable through a wider view of the same backing array.
+	produceOpts := make([]kgo.Opt, 1, 4)
+	produceOpts[0] = kgo.SeedBrokers(tc.addr)
+	produceSpare := produceOpts[:cap(produceOpts)]
 	producer, err := kgo.NewClient(produceOpts...)
 	require.NoError(t, err)
 	defer producer.Close()
+	require.Len(t, produceOpts, 1, "woven call must not grow the caller's option slice")
+	assert.Nil(t, produceSpare[1], "woven call must not write into the caller's spare capacity")
 
 	record := &kgo.Record{Topic: tc.topic, Key: []byte("key1"), Value: []byte("Hello World!")}
 	require.NoError(t, producer.ProduceSync(ctx, record).FirstErr())
 
-	consumeOpts := []kgo.Opt{
-		kgo.SeedBrokers(tc.addr),
-		kgo.ConsumeTopics(tc.topic),
-		kgo.ConsumerGroup(tc.group),
-	}
+	consumeOpts := make([]kgo.Opt, 3, 6)
+	consumeOpts[0] = kgo.SeedBrokers(tc.addr)
+	consumeOpts[1] = kgo.ConsumeTopics(tc.topic)
+	consumeOpts[2] = kgo.ConsumerGroup(tc.group)
+	consumeSpare := consumeOpts[:cap(consumeOpts)]
 	consumer, err := kgo.NewClient(consumeOpts...)
+	require.NoError(t, err)
+	require.Len(t, consumeOpts, 3, "woven call must not grow the caller's option slice")
+	assert.Nil(t, consumeSpare[3], "woven call must not write into the caller's spare capacity")
 	require.NoError(t, err)
 
 	fetchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
