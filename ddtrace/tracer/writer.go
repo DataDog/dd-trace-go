@@ -112,6 +112,18 @@ func (h *agentTraceWriter) add(trace []*Span) {
 	} else {
 		h.rotateStalePayload(protocol)
 	}
+	// The deferred flush (see flush()) can hold this payload for as long as
+	// every connection is in flight, so this check is the only bound on its
+	// growth. A flush already fired for the bytes below: needsFlush triggers
+	// once a push crosses payloadSizeLimit, and under a stalled agent that
+	// flush defers. Trace past that size here, and every further trace
+	// drops instead of growing a payload that no flush can drain.
+	if size := h.payload.size(); size >= int(payloadSizeLimit) {
+		h.mu.Unlock()
+		h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:payload_full"}, 1)
+		log.Error("payload buffer holds %d bytes; dropping a trace of %d spans", size, len(trace))
+		return
+	}
 	stats, pushErr := h.payload.push(trace)
 	needsFlush := pushErr == nil && stats.size > payloadSizeLimit
 	if pushErr == nil {
@@ -224,8 +236,9 @@ func (h *agentTraceWriter) rotateStalePayload(protocol float64) {
 // scheduled tick to retry. Its caller is the tracer's single worker
 // goroutine, so blocking it here would also stop it draining t.out, and once
 // t.out fills, pushChunk starts dropping chunks with reason:queue_full
-// (see #5135). The deferral is bounded by the payload buffer: a trace that
-// no longer fits in it is dropped by add() with reason:encoding_error.
+// (see #5135). The deferral is bounded: once the payload holds
+// payloadSizeLimit bytes, add() drops further traces with
+// reason:payload_full instead of growing a payload that no flush can drain.
 func (h *agentTraceWriter) flush() {
 	select {
 	case h.climit <- struct{}{}:
