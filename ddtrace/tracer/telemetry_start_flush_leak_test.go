@@ -43,7 +43,6 @@ type connCountConn struct {
 	net.Conn
 	listener *connCountListener
 	once     sync.Once
-	// TEMPORARY diagnostic: last request path seen on this connection.
 }
 
 func (c *connCountConn) Close() error {
