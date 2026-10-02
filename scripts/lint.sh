@@ -65,6 +65,7 @@ lint_misc_files() {
   # has no catch-all entry, so a new top-level directory is a lint failure until
   # someone classifies it.
   run "go test ./scripts/ciselect/"
+  run "go test ./scripts/citiming/ ./scripts/actiontest/"
   run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile profiler/internal/fastdelta/Makefile"
 }
 
