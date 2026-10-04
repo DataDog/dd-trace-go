@@ -254,6 +254,12 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 	if !ok {
 		return
 	}
+	// Handlers receive r.Context, the same context that carries the consume
+	// span. Downstream checkpoints (a later produce through this hook, another
+	// integration, or tracer.SetDataStreamsCheckpoint) read the pathway from
+	// that context. ctx is derived from r.Context, so the consume span stays
+	// on it. Headers stay populated for callers that re-read them.
+	r.Context = ctx
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 	if groupID != "" {
 		tracer.TrackKafkaCommitOffset(groupID, r.Topic, r.Partition, r.Offset)
