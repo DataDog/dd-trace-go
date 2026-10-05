@@ -8,6 +8,7 @@ require (
 	github.com/99designs/gqlgen v0.17.92
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/DataDog/go-libddwaf/v5 v5.0.0
 	github.com/DataDog/orchestrion v1.13.0
@@ -70,7 +71,7 @@ require (
 	go.mongodb.org/mongo-driver/v2 v2.4.2
 	go.uber.org/zap v1.28.0
 	google.golang.org/api v0.273.1
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
@@ -214,7 +215,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
-	github.com/go-chi/chi v1.5.4 // indirect
+	github.com/go-chi/chi v1.5.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -378,7 +379,7 @@ require (
 	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
@@ -496,3 +497,5 @@ replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers
 
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
+
+replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
