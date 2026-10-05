@@ -134,7 +134,7 @@ func TestPerform(t *testing.T) {
 			assert.Equal(t, string(instrumentation.PackageOpenSearchProjectOpenSearchGoV4), span.Tag(ext.Component))
 			assert.Equal(t, string(instrumentation.PackageOpenSearchProjectOpenSearchGoV4), span.Integration())
 			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
-			assert.Equal(t, ext.DBSystemOpensearch, span.Tag(ext.DBSystem))
+			assert.Equal(t, ext.DBSystemOpenSearch, span.Tag(ext.DBSystem))
 			assert.Equal(t, ext.SpanTypeOpenSearch, span.Tag(ext.SpanType))
 			assert.Equal(t, srvURL.Hostname(), span.Tag(ext.NetworkDestinationName))
 			assert.Equal(t, srvURL.Hostname(), span.Tag(ext.TargetHost))

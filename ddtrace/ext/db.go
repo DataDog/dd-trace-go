@@ -35,7 +35,7 @@ const (
 	DBSystemOtherSQL      = "other_sql"
 	DBSystemElasticsearch = "elasticsearch"
 	DBSystemRedis         = "redis"
-	DBSystemOpensearch    = "opensearch"
+	DBSystemOpenSearch    = "opensearch"
 	DBSystemValkey        = "valkey"
 	DBSystemMongoDB       = "mongodb"
 	DBSystemCassandra     = "cassandra"

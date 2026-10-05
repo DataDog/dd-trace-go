@@ -104,7 +104,7 @@ func newTransport(origin opensearchtransport.Interface, cfg *config) *transport 
 			tracer.SpanType(ext.SpanTypeOpenSearch),
 			tracer.Tag(ext.Component, string(instrumentation.PackageOpenSearchProjectOpenSearchGoV4)),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-			tracer.Tag(ext.DBSystem, ext.DBSystemOpensearch),
+			tracer.Tag(ext.DBSystem, ext.DBSystemOpenSearch),
 		),
 	}
 }
