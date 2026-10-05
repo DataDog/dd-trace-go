@@ -1311,6 +1311,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_CONNECT_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
