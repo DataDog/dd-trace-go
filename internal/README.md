@@ -6,7 +6,7 @@ Contains private methods and functionality used by the library itself. Code that
 
 ### Appsec
 
-Handles application security code. This is commonly refer to as "ASM", "Appsec", or "k9 Security". It includes WAF (Web Application Firewall) and Dyngo support. For more information of implementation details, refer to the [README](./appsec/README.md).
+Handles application security code. This is commonly refer to as "ASM", "Appsec", "k9 Security", or "App & API Protection/AAP". It includes WAF (Web Application Firewall) and Dyngo support. For more information of implementation details, refer to the [README](./appsec/README.md).
 
 ### Config
 

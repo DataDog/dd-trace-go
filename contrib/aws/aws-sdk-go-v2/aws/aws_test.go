@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -60,7 +61,8 @@ func TestAppendMiddleware(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -108,7 +110,7 @@ func TestAppendMiddleware(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -139,7 +141,8 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -186,7 +189,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -217,7 +220,8 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -264,7 +268,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -373,7 +377,8 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -415,7 +420,8 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
+			assert.Contains(t, s.Tag(ext.HTTPURL), "/MyBucketName")
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -472,7 +478,8 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -524,7 +531,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -576,7 +583,8 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -623,7 +631,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -654,7 +662,8 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -711,7 +720,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -762,7 +771,8 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -804,7 +814,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1054,7 +1064,8 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -1096,7 +1107,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1203,6 +1214,48 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 
 }
 
+// wireRecorder captures the request path a mock AWS server actually received.
+type wireRecorder struct {
+	mu   sync.Mutex
+	seen string
+}
+
+func (w *wireRecorder) record(r *http.Request) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.seen = r.URL.Path
+}
+
+func (w *wireRecorder) path() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.seen
+}
+
+// assertHTTPURL asserts that the http.url span tag equals the URL a mock AWS
+// server actually received. The AWS SDK's exact path serialization is an
+// internal detail that shifts across releases -- smithy-go v1.28.2 made
+// JoinPath preserve a trailing slash, which turned the S3 ListObjects path
+// from "/Bucket" into "/Bucket/" -- so this compares against the real wire
+// request instead of a hardcoded path.
+func assertHTTPURL(t *testing.T, server *httptest.Server, wire *wireRecorder, span *mocktracer.Span) {
+	t.Helper()
+	got, ok := span.Tag(ext.HTTPURL).(string)
+	require.True(t, ok, "http.url tag missing or not a string")
+	assert.Equal(t, server.URL+wire.path(), got)
+}
+
+// mockAWSRecording is mockAWS plus recording of the request path it received.
+func mockAWSRecording(statusCode int, rec *wireRecorder) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			rec.record(r)
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(statusCode)
+			w.Write([]byte(`{}`))
+		}))
+}
+
 func mockAWS(statusCode int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) {
@@ -1298,8 +1351,10 @@ func TestHTTPCredentials(t *testing.T) {
 
 	var auth string
 
+	var wire wireRecorder
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			wire.record(r)
 			if enc, ok := r.Header["Authorization"]; ok {
 				encoded := strings.TrimPrefix(enc[0], "Basic ")
 				if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
@@ -1339,7 +1394,7 @@ func TestHTTPCredentials(t *testing.T) {
 	spans := mt.FinishedSpans()
 
 	s := spans[0]
-	assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+	assertHTTPURL(t, server, &wire, s)
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "mypassword")
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "myuser")
 	// Make sure we haven't modified the outgoing request, and the server still

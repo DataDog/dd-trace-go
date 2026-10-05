@@ -137,6 +137,10 @@ func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 // time.Duration without overflowing int64 into a negative duration.
 const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
 
+// maxDurationSeconds is the largest whole-second value that converts to a
+// time.Duration without overflowing.
+const maxDurationSeconds = float64(math.MaxInt64 / int64(time.Second))
+
 // validateFlaggingProviderInitTimeout rejects an overflow-prone value so the caller falls
 // back to the default rather than Init receiving an already-expired context.
 func validateFlaggingProviderInitTimeout(ms int) bool {
@@ -498,11 +502,14 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
 // envVar is used in the warning message to identify which env var had the bad value.
-func validateOTLPProtocol(v, envVar string) bool {
+// The warning is only logged when warn is true.
+func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	if warn {
+		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	}
 	return false
 }
 

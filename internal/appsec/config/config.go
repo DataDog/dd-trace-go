@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -203,7 +204,12 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
 	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
-	if origin != telemetry.OriginDefault {
+	// A non-default origin means a valid value was provided. A non-nil error together with a non-empty
+	// raw value means a value was provided but was not a valid boolean (stableconfig.Bool then reports
+	// OriginDefault): in both cases the variable was explicitly set and must be treated as an explicit
+	// (false-y) value rather than unset, so an invalid local value is not silently overridden by remote
+	// config. An empty value is treated as unset, matching the env conventions used elsewhere.
+	if origin != telemetry.OriginDefault || (err != nil && env.Get(EnvEnabled) != "") {
 		set = true
 	}
 	return enabled, set, err

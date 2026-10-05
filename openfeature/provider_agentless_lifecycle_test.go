@@ -24,16 +24,21 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 	backend := newFakeUFCBackend(t)
 	backend.setResponses("valid")
 
-	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
+	settings := internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}
+	p := newDatadogProviderWithSourceAndEVP(
+		ProviderConfig{},
+		internalffe.SourceAgentless,
+		newAgentlessEVPClient(settings),
+	)
 	p.mu.Lock()
 	p.shutdownCalled = true
 	p.mu.Unlock()
 
-	src, err := newAgentlessSource(internalffe.Settings{
-		AgentlessBaseURL: backend.server.URL,
-		PollInterval:     time.Hour,
-		RequestTimeout:   2 * time.Second,
-	}, p.updateConfiguration)
+	src, err := newAgentlessSource(settings, p.updateConfiguration)
 	require.NoError(t, err)
 
 	assert.False(t, p.tryRegisterAgentless(src))
@@ -82,8 +87,45 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 	assert.Less(t, elapsed, 3*time.Second, "Shutdown must not wait out the full request timeout")
 }
 
+func TestStartWithAgentless_ConfiguresAgentlessEVP(t *testing.T) {
+	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
+
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("valid")
+
+	settings := internalffe.Settings{
+		AgentlessBaseURL: backend.server.URL,
+		APIKey:           "api-key",
+		Site:             "datadoghq.eu",
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}
+	p, err := startWithAgentless(ProviderConfig{}, settings)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, p.ShutdownWithContext(ctx))
+	})
+
+	require.NotNil(t, p.exposureWriter)
+	require.NotNil(t, p.flagEvalLoggingWriter)
+	require.Same(t, p.exposureWriter.evp, p.flagEvalLoggingWriter.evp)
+
+	evp := p.exposureWriter.evp
+	assert.Equal(t, settings.APIKey, evp.apiKey)
+	require.NotNil(t, evp.directURL)
+	assert.Equal(t, "https://event-platform-intake.datadoghq.eu", evp.directURL.String())
+	assert.False(t, evp.fixedLocalRoute)
+}
+
 func TestInitWithContext_DeliveryErrFailsFast(t *testing.T) {
-	p := newDatadogProviderWithSource(ProviderConfig{}, internalffe.SourceAgentless)
+	settings := internalffe.Settings{}
+	p := newDatadogProviderWithSourceAndEVP(
+		ProviderConfig{},
+		internalffe.SourceAgentless,
+		newAgentlessEVPClient(settings),
+	)
 	p.mu.Lock()
 	p.deliveryErr = errors.New("no API key for managed agentless endpoint")
 	p.mu.Unlock()
@@ -146,4 +188,93 @@ func TestDatadogProvider_ConcurrentLifecycleRace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, p.ShutdownWithContext(ctx))
+}
+
+// TestInitWithContext_UndeadlinedContextHonorsInitTimeout pins the regression
+// that hung the parametric weblog: the OpenFeature SDK's SetProviderAndWait
+// calls InitWithContext directly with context.Background(), never Init, so a
+// timeout applied only in Init left the caller waiting forever.
+func TestInitWithContext_UndeadlinedContextHonorsInitTimeout(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
+
+	p := newDatadogProvider(ProviderConfig{})
+
+	start := time.Now()
+	err := runWithDeadline(t, 10*time.Second, func() error {
+		return p.InitWithContext(context.Background(), openfeature.EvaluationContext{})
+	})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if assert.ErrorAs(t, err, &initErr) {
+		assert.Equal(t, openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+	// Guard both sides of the configured timeout: returning immediately and
+	// silently substituting the much longer default must both fail this test.
+	assert.GreaterOrEqual(t, elapsed, 100*time.Millisecond,
+		"initialization must wait for the configured timeout before reporting not ready")
+	// A small multiple of the configured 200ms, so a hard-coded longer timeout
+	// (the 10s default included) still fails this.
+	assert.Less(t, elapsed, 2*time.Second,
+		"an undeadlined context must be bounded by the configured init timeout, not a fixed one")
+}
+
+// TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady
+// exercises the complete customer-visible lifecycle. SetProviderAndWait must
+// not report READY when its wait ends without configuration, while delivery
+// must remain registered so a later configuration can recover the provider.
+func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
+
+	openfeature.Shutdown() // drop providers and handlers left by other tests
+	t.Cleanup(openfeature.Shutdown)
+
+	readyEvents := make(chan openfeature.EventDetails, 2)
+	readyCallback := func(details openfeature.EventDetails) {
+		readyEvents <- details
+	}
+	openfeature.AddHandler(openfeature.ProviderReady, &readyCallback)
+
+	p := newDatadogProvider(ProviderConfig{})
+
+	err := runWithDeadline(t, 10*time.Second, func() error {
+		return openfeature.SetProviderAndWait(p)
+	})
+
+	var initErr *openfeature.ProviderInitError
+	if assert.ErrorAs(t, err, &initErr) {
+		assert.Equal(t, openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+	assert.Nil(t, p.getConfiguration())
+	assert.NotEqual(t, openfeature.ReadyState, openfeature.NewDefaultClient().State(),
+		"SetProviderAndWait must not report READY before the first configuration")
+
+	select {
+	case <-readyEvents:
+		t.Error("ProviderReady was emitted before the first configuration")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Delivery continues after the bounded initialization wait. The first late
+	// configuration must be observable as the recovery transition to READY.
+	p.updateConfiguration(createTestConfig())
+
+	select {
+	case <-readyEvents:
+	case <-time.After(time.Second):
+		t.Fatal("late configuration did not emit ProviderReady")
+	}
+	assert.Eventually(t, func() bool {
+		return openfeature.NewDefaultClient().State() == openfeature.ReadyState
+	}, time.Second, time.Millisecond, "late configuration must promote the SDK state to READY")
+
+	result := p.BooleanEvaluation(context.Background(), "bool-flag", false, openfeature.FlattenedContext{
+		"targetingKey": "user-123",
+		"country":      "US",
+	})
+	assert.True(t, result.Value, "evaluation must succeed after late readiness recovery")
 }

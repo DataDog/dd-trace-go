@@ -11,6 +11,7 @@ on:
       - "instrumentation/**"
       - "internal/**"
       - "orchestrion/**"
+      - "otelc/**"
       - "scripts/**"
   workflow_call:
     inputs:
@@ -39,12 +40,45 @@ permissions:
   checks: write
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  #
+  # These jobs set no `name:`, so their check-run names are the job keys, and
+  # `DataDog/ensure-ci-success` in all-green.yml counts a 'skipped' conclusion
+  # as success. No join job is needed here.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      any: ${{ steps.detect.outputs.static-any }}
+      actions: ${{ steps.detect.outputs.static-actions }}
+      copyright: ${{ steps.detect.outputs.static-copyright }}
+      modules: ${{ steps.detect.outputs.static-modules }}
+      docs: ${{ steps.detect.outputs.static-docs }}
+      format: ${{ steps.detect.outputs.static-format }}
+      lint: ${{ steps.detect.outputs.static-lint }}
+      supported-config: ${{ steps.detect.outputs.static-supported-config }}
+      checklocks: ${{ steps.detect.outputs.static-checklocks }}
+      cross-compile: ${{ steps.detect.outputs.static-cross-compile }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   # Populate the shared tools cache once, before the jobs below need it. When every
   # job races to install tools and save the same cache key on a miss, only one wins
   # the cache reservation and a failing job never saves at all (actions/cache skips
   # the post step), so the cache can stay permanently cold. Mirrors the
   # warm-repo-cache pattern in pull-request.yml.
   warm-tools-cache:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,15 +86,24 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-warm-tools-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.copyright == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -68,12 +111,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-copyright
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Copyright
         run: |
           go run ./scripts/check_copyright.go
@@ -83,7 +136,8 @@ jobs:
           make lint/misc
 
   check-github-actions:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.actions == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -91,19 +145,42 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-github-actions
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Lint GitHub Actions workflows
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/action
+      # These validate CI configuration, not Go code: that every workflow is
+      # registered in .github/ci-components.yml, that native paths: filters are
+      # declared and still live, that each join job depends on `changes`, and
+      # that the GitLab benchmark filter covers every benchmark it gates. They
+      # also run under `make lint/misc` in the copyright job, but that gate is
+      # off for a CI-config-only change -- which is exactly when these files are
+      # the thing being edited. scripts/ciselect/workflows_test.go asserts this
+      # step exists.
+      - name: Verify CI component table and workflow invariants
+        run: go test ./scripts/ciselect/
+      - name: Test CI tooling scripts
+        run: go test ./scripts/citiming/ ./scripts/actiontest/
 
   check-modules:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.modules == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -111,12 +188,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-modules
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run fixmodules
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -125,7 +211,8 @@ jobs:
         run: git diff --exit-code
 
   check-docs:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -133,12 +220,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-docs
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Update documentation
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -147,7 +244,8 @@ jobs:
         run: git diff --exit-code
 
   check-format:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.format == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -155,12 +253,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-format
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Format
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -169,7 +277,8 @@ jobs:
         run: git diff --exit-code
 
   lint:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.lint == 'true'
     runs-on:
       group: "APM Larger Runners"
     permissions:
@@ -187,6 +296,7 @@ jobs:
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
+          cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
@@ -197,6 +307,7 @@ jobs:
       - name: golangci-lint (internal/orchestrion/_integration)
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
+          cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
           golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
@@ -205,12 +316,24 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-lint
+          cache: "false"
+
+      # With cache "false" this job has no module cache, so a tools-cache
+      # miss downloads the whole _tools module set and compiles every tool.
+      # It therefore depends on warm-tools-cache producing an exact tools hit.
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
@@ -223,7 +346,7 @@ jobs:
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
-        uses: reviewdog/action-shellcheck@0722bbdb0d47f04c1b53b8734d2422ac63a45ec6 # v1.32.1
+        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
@@ -233,6 +356,8 @@ jobs:
           filter_mode: nofilter
 
   check-supported-config:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.supported-config == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -248,7 +373,8 @@ jobs:
         run: go run ./scripts/configinverter/main.go check
 
   checklocks:
-    needs: [warm-tools-cache]
+    needs: [changes, warm-tools-cache]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.checklocks == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -256,18 +382,29 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-checklocks
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run checklocks
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/checklocks.sh
 
   cross-compile:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.cross-compile == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

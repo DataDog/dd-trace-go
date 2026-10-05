@@ -30,7 +30,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	statuses := make(map[string]state.ApplyStatus)
 
 	// If appsec was deactivated through RC, stop here
-	if !a.started {
+	if !a.started.Load() {
 		for _, pu := range updates {
 			for path := range pu {
 				// We are not acknowledging anything... since we are ignoring all these updates...
@@ -251,7 +251,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	// RC triggers activation of ASM; ASM is not started yet... Starting it!
-	if parsed.ASM.Enabled && !a.started {
+	if parsed.ASM.Enabled && !a.started.Load() {
 		log.Debug("appsec: remote config: Starting AppSec")
 		if err := a.start(); err != nil {
 			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error())
@@ -261,7 +261,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	// RC triggers desactivation of ASM; ASM is started... Stopping it!
-	if !parsed.ASM.Enabled && a.started {
+	if !parsed.ASM.Enabled && a.started.Load() {
 		log.Debug("appsec: remote config: Stopping AppSec")
 		a.stop()
 		registerAppsecStartTelemetry(config.ForcedOff, telemetry.OriginRemoteConfig)
