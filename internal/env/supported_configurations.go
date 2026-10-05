@@ -6,27 +6,38 @@
 package env
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+type configurationImplementation struct {
+	Implementation string   `json:"implementation"`
+	Type           string   `json:"type"`
+	Default        *string  `json:"default"`
+	Aliases        []string `json:"aliases,omitempty"`
+	// Sensitive marks a configuration whose value must not be reported in
+	// configuration telemetry.
+	Sensitive bool `json:"sensitive,omitempty"`
+}
+
 // SupportedConfiguration represents the content of the supported_configurations.json file.
-type SupportedConfiguration struct {
-	SupportedConfigurations map[string][]string `json:"supportedConfigurations"`
-	Aliases                 map[string][]string `json:"aliases"`
+type supportedConfiguration struct {
+	Version                 string                                   `json:"version"`
+	SupportedConfigurations map[string][]configurationImplementation `json:"supportedConfigurations"`
 }
 
 var (
 	configFilePath string
 	once           sync.Once
 	mu             sync.Mutex
-	skipLock       bool
 )
 
 // getConfigFilePath returns the path to the supported_configurations.json file
@@ -65,7 +76,14 @@ func addSupportedConfigurationToFile(name string) {
 	}
 
 	if _, ok := cfg.SupportedConfigurations[name]; !ok {
-		cfg.SupportedConfigurations[name] = []string{"A"}
+		defaultValue := "FIX_ME"
+		cfg.SupportedConfigurations[name] = []configurationImplementation{
+			{
+				Implementation: "A",
+				Type:           defaultValue,
+				Default:        &defaultValue,
+			},
+		}
 	}
 
 	if err := writeSupportedConfigurations(filePath, cfg); err != nil {
@@ -73,26 +91,50 @@ func addSupportedConfigurationToFile(name string) {
 	}
 }
 
-func readSupportedConfigurations(filePath string) (*SupportedConfiguration, error) {
+// IsSensitive reports whether the given configuration name must not have its value
+// reported in configuration telemetry. A name is sensitive if it is listed in the
+// generated SensitiveConfigurations set, or if it is an alias of such a key.
+func IsSensitive(name string) bool {
+	if _, ok := SensitiveConfigurations[name]; ok {
+		return true
+	}
+	for key, aliases := range KeyAliases {
+		if _, ok := SensitiveConfigurations[key]; !ok {
+			continue
+		}
+		if slices.Contains(aliases, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func readSupportedConfigurations(filePath string) (*supportedConfiguration, error) {
 	// read the json file
 	jsonFile, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open supported_configurations.json: %w", err)
 	}
 
-	var cfg SupportedConfiguration
+	var cfg supportedConfiguration
 	if err := json.Unmarshal(jsonFile, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal SupportedConfiguration: %w", err)
 	}
 	return &cfg, nil
 }
 
-func writeSupportedConfigurations(filePath string, cfg *SupportedConfiguration) error {
-	// write the json file - Go's json.MarshalIndent automatically sorts map keys
-	jsonFile, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+func writeSupportedConfigurations(filePath string, cfg *supportedConfiguration) error {
+	// Write the JSON file. We explicitly disable HTML escaping so strings like "&"
+	// remain readable (and stable across test runs) instead of being rendered as
+	// "\u0026". Map keys are still deterministically sorted by encoding/json.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("failed to marshal SupportedConfiguration: %w", err)
 	}
+	jsonFile := bytes.TrimRight(buf.Bytes(), "\n")
 
 	if err := os.WriteFile(filePath, jsonFile, 0644); err != nil {
 		return fmt.Errorf("failed to write supported_configurations.json: %w", err)

@@ -7,16 +7,16 @@ package fiber
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -27,9 +27,10 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.App = fiber.New(fiber.Config{DisableStartupMessage: true})
 	tc.App.Get("/ping", func(c *fiber.Ctx) error { return c.JSON(map[string]any{"message": "pong"}) })
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
 
-	go func() { assert.NoError(t, tc.App.Listen(tc.addr)) }()
+	go func() { assert.NoError(t, tc.App.Listener(ln)) }()
 	t.Cleanup(func() {
 		assert.NoError(t, tc.App.ShutdownWithTimeout(10*time.Second))
 	})
@@ -38,11 +39,12 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.addr + "/ping"
+	httpURL := "http://" + tc.addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: Top-level span is from the HTTP Client, which is library-side instrumented.
@@ -54,12 +56,16 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
 			Children: trace.Traces{
 				{
+					// Single Fiber server span. The intermediate valyala/fasthttp span is
+					// suppressed by the gofiber orchestrion.yml aspect, which marks
+					// app.Server().DD_Instrumented at construction so the FastHTTP Serve
+					// aspect skips wrapping Fiber's internal fasthttp server.
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",

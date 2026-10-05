@@ -15,6 +15,7 @@ import (
 
 	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -43,6 +44,10 @@ var gorillaMux = harness.TestCase{
 		Defaults:        []string{"mux.router"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGorillaMux)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

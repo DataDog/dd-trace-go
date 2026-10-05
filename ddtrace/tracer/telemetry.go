@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -28,6 +28,7 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 // event is sent with tracer config data.
 // Note that the tracer is not considered as a standalone product by telemetry so we cannot send
 // an app-product-change event for the tracer.
+// TODO (APMAPI-1771): This function should be deleted once config migration is complete
 func startTelemetry(c *config) telemetry.Client {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
@@ -35,38 +36,31 @@ func startTelemetry(c *config) telemetry.Client {
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
+	// Hoist to local var so both fields come from the same atomic snapshot.
+	a := c.agent.load()
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
+		{Name: "agent_feature_drop_p0s", Value: a.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
-		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
-		{Name: "lambda_mode", Value: c.logToStdout},
-		{Name: "send_retries", Value: c.sendRetries},
-		{Name: "retry_interval", Value: c.retryInterval},
-		{Name: "trace_startup_logs_enabled", Value: c.logStartup},
-		{Name: "service", Value: c.serviceName},
-		{Name: "universal_version", Value: c.universalVersion},
-		{Name: "env", Value: c.env},
-		{Name: "version", Value: c.version},
-		{Name: "trace_agent_url", Value: c.agentURL.String()},
-		{Name: "agent_hostname", Value: c.hostname},
-		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
-		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
-		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
-		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
-		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
-		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
-		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
-		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
-		{Name: "trace_log_directory", Value: c.logDirectory},
-		c.traceSampleRate.toTelemetry(),
-		c.headerAsTags.toTelemetry(),
-		c.globalTags.toTelemetry(),
-		c.traceSampleRules.toTelemetry(),
-		{Name: "span_sample_rules", Value: c.spanRules},
+		{Name: "dogstatsd_port", Value: a.StatsdPort},
+		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
+		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
+		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
+		{Name: "service", Value: c.internalConfig.ServiceName()},
+		{Name: "env", Value: c.internalConfig.Env()},
+		{Name: "version", Value: c.internalConfig.Version()},
+		{Name: "trace_agent_url", Value: c.internalConfig.AgentURL().String()},
+		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
+		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
+		{Name: "dogstatsd_addr", Value: c.internalConfig.DogstatsdAddr()},
+		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
+		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
+		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
+		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
+		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
+		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 	}
 	var peerServiceMapping []string
-	for key, value := range c.peerServiceMappings {
+	for key, value := range c.internalConfig.PeerServiceMappings() {
 		peerServiceMapping = append(peerServiceMapping, fmt.Sprintf("%s:%s", key, value))
 	}
 	telemetryConfigs = append(telemetryConfigs,
@@ -77,17 +71,16 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_behavior_extract", Value: chained.propagationBehaviorExtract})
 	}
-	for k, v := range c.featureFlags {
+	for k, v := range c.internalConfig.FeatureFlags() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
 	}
-	for k, v := range c.serviceMappings {
+	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
 	}
-	for k, v := range c.globalTags.get() {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
-	}
-	rules := append(c.spanRules, c.traceRules...)
+	rules := append(c.internalConfig.SpanSamplingRules(), c.internalConfig.TraceSamplingRules()...)
 	for _, rule := range rules {
 		var service string
 		var name string
@@ -98,30 +91,37 @@ func startTelemetry(c *config) telemetry.Client {
 			name = rule.Name.String()
 		}
 		telemetryConfigs = append(telemetryConfigs,
-			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
+			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.RuleType().String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	if c.orchestrionCfg.Enabled {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
+	if orchestrion.Enabled() {
+		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: orchestrion.Version, Origin: telemetry.OriginCode})
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 	cfg := telemetry.ClientConfig{
 		HTTPClient: c.httpClient,
-		AgentURL:   c.agentURL.String(),
 	}
-	if c.logToStdout || c.ciVisibilityAgentless {
-		cfg.APIKey = env.Get("DD_API_KEY")
+	// Only omit the agent URL when the agent was reachable but explicitly does not
+	// expose the telemetry proxy endpoint (e.g. the Datadog Lambda extension).
+	// When the agent was unreachable at startup, we still set the URL so that
+	// telemetry is attempted rather than silently dropped.
+	// When the spans are emitted on stdout it means there is no agent at all in the env.
+	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
+		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
-	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
+	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
+		cfg.APIKey = c.internalConfig.APIKey()
+	}
+	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return nil
 	}
 
-	if c.orchestrionCfg.Enabled {
+	if orchestrion.Enabled() {
 		// If orchestrion is enabled, report it to the back-end via a telemetry metric on every flush.
-		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + c.orchestrionCfg.Metadata.Version})
+		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + orchestrion.Version})
 		client.AddFlushTicker(func(_ telemetry.Client) { handle.Submit(1) })
 	}
 

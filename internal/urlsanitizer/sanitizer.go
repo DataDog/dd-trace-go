@@ -50,13 +50,13 @@ func containsCredentials(rawURL string) bool {
 	}
 
 	// Find the scheme part.
-	schemeEnd := strings.Index(rawURL, "://")
-	if schemeEnd == -1 {
+	_, after, ok := strings.Cut(rawURL, "://")
+	if !ok {
 		return false
 	}
 
 	// Look in the part after the scheme for credentials.
-	rest := rawURL[schemeEnd+3:]
+	rest := after
 
 	// If we see a colon followed by an @ sign, likely credentials.
 	colonIndex := strings.Index(rest, ":")

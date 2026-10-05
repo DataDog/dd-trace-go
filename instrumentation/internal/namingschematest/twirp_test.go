@@ -13,12 +13,13 @@ import (
 
 	twitchtvtrace "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
 	"github.com/twitchtv/twirp/example"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 var twitchTVTwirp = harness.TestCase{
@@ -54,6 +55,10 @@ var twitchTVTwirp = harness.TestCase{
 		Defaults:        []string{"twirp-server", "twirp-server", "twirp-client"},
 		DDService:       harness.RepeatString(harness.TestDDService, 3),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 3),
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageTwitchTVTwirp), 3),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 3),
 	},
 }
 

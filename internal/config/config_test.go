@@ -1,0 +1,2134 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package config
+
+import (
+	"net/url"
+	"os"
+	"reflect"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+)
+
+func TestGet(t *testing.T) {
+	t.Run("returns non-nil config", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.NotNil(t, cfg, "Get() should never return nil")
+	})
+
+	t.Run("singleton behavior - returns same instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg1 := Get()
+		cfg2 := Get()
+		cfg3 := Get()
+
+		// All calls should return the same instance
+		assert.Same(t, cfg1, cfg2, "First and second Get() calls should return the same instance")
+		assert.Same(t, cfg1, cfg3, "First and third Get() calls should return the same instance")
+	})
+
+	t.Run("fresh config flag forces new instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Get the first instance
+		cfg1 := Get()
+		require.NotNil(t, cfg1)
+
+		// Enable fresh config to allow us to create new instances
+		SetUseFreshConfig(true)
+
+		// Get should now return a new instance
+		cfg2 := Get()
+		require.NotNil(t, cfg2)
+		assert.NotSame(t, cfg1, cfg2, "With useFreshConfig=true, Get() should return a new instance")
+
+		// Another call with useFreshConfig still true should return another new instance
+		cfg3 := Get()
+		require.NotNil(t, cfg3)
+		assert.NotSame(t, cfg2, cfg3, "With useFreshConfig=true, each Get() call should return a new instance")
+
+		// Disable fresh config to allow us to cache the same instance
+		SetUseFreshConfig(false)
+
+		// Now it should cache the same instance
+		cfg4 := Get()
+		cfg5 := Get()
+		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
+	})
+
+	t.Run("GetNew forces new instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Get the first instance
+		cfg1 := Get()
+		require.NotNil(t, cfg1)
+
+		// Get should return the same instance
+		cfg2 := Get()
+		require.NotNil(t, cfg2)
+		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
+
+		// CreateNew should return a new instance
+		cfg3 := CreateNew()
+		require.NotNil(t, cfg3)
+		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
+
+		// Now it should cache the same instance
+		cfg4 := Get()
+		assert.Same(t, cfg3, cfg4, "Get() should return the same instance")
+		assert.NotSame(t, cfg1, cfg4, "Get() should not return the same instance as the first one")
+	})
+
+	t.Run("concurrent access is safe", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		const numGoroutines = 100
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// All goroutines should get a non-nil config
+		configs := make([]*Config, numGoroutines)
+
+		for i := range numGoroutines {
+			go func(j int) {
+				defer wg.Done()
+				configs[j] = Get()
+			}(i)
+		}
+
+		wg.Wait()
+
+		// All configs should be non-nil
+		for i, cfg := range configs {
+			assert.NotNil(t, cfg, "Config at index %d should not be nil", i)
+		}
+
+		// All configs should be the same instance (singleton)
+		firstConfig := configs[0]
+		for i, cfg := range configs[1:] {
+			assert.Same(t, firstConfig, cfg, "Config at index %d should be the same instance", i+1)
+		}
+	})
+
+	t.Run("concurrent access with fresh config", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Enable fresh config to allow us to create new instances
+		SetUseFreshConfig(true)
+
+		const numGoroutines = 50
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// Track if we get different instances (which is expected with useFreshConfig=true)
+		var uniqueInstances sync.Map
+		var configCount atomic.Int32
+
+		for range numGoroutines {
+			go func() {
+				defer wg.Done()
+				cfg := Get()
+				require.NotNil(t, cfg, "Get() should not return nil even under concurrent access")
+
+				// Track unique instances
+				if _, loaded := uniqueInstances.LoadOrStore(cfg, true); !loaded {
+					configCount.Add(1)
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		// With useFreshConfig=true, we should get multiple different instances
+		count := configCount.Load()
+		assert.Greater(t, count, int32(1), "With useFreshConfig=true, should get multiple different instances")
+	})
+
+	t.Run("config is properly initialized with values", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Set an environment variable to ensure it's loaded
+		t.Setenv("DD_TRACE_DEBUG", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// Verify that config values are accessible (using the Debug() method)
+		debug := cfg.Debug()
+		assert.True(t, debug, "Config should have loaded DD_TRACE_DEBUG=true")
+	})
+
+	t.Run("Setter methods update config and maintain thread-safety", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		initialDebug := cfg.Debug()
+		cfg.SetDebug(!initialDebug, "test")
+		assert.Equal(t, !initialDebug, cfg.Debug(), "Debug setting should have changed")
+
+		// Verify concurrent reads don't panic
+		const numReaders = 100
+		var wg sync.WaitGroup
+		wg.Add(numReaders)
+
+		for range numReaders {
+			go func() {
+				defer wg.Done()
+				_ = cfg.Debug()
+			}()
+		}
+
+		wg.Wait()
+	})
+
+	t.Run("SetDebug concurrent with reads is safe", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		var wg sync.WaitGroup
+		const numOperations = 100
+
+		// Start readers
+		wg.Add(numOperations)
+		for range numOperations {
+			go func() {
+				defer wg.Done()
+				_ = cfg.Debug()
+			}()
+		}
+
+		// Start writers
+		wg.Add(numOperations)
+		for i := range numOperations {
+			go func(val bool) {
+				defer wg.Done()
+				cfg.SetDebug(val, "test")
+			}(i%2 == 0)
+		}
+
+		wg.Wait()
+
+		// Should not panic and should have a valid boolean value
+		finalDebug := cfg.Debug()
+		assert.IsType(t, true, finalDebug)
+	})
+}
+
+// settersWithoutTelemetry lists Set methods that don't report telemetry.
+// Add your setter here with a reason if telemetry reporting is not needed.
+var settersWithoutTelemetry = map[string]string{
+	"SetLogToStdout":      "not user-configurable",
+	"SetIsLambdaFunction": "not user-configurable",
+}
+
+// specialCaseSetters handles setters with non-standard signatures.
+// Add here if signature is not: SetX(value T, origin telemetry.Origin)
+var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
+	"SetServiceMapping": func(c *Config, origin telemetry.Origin) {
+		c.SetServiceMapping("from-service", "to-service", origin)
+	},
+	"SetPeerServiceMappings": func(c *Config, origin telemetry.Origin) {
+		c.SetPeerServiceMappings(map[string]string{"old": "new"}, origin)
+	},
+	"SetPeerServiceMapping": func(c *Config, origin telemetry.Origin) {
+		c.SetPeerServiceMapping("old-peer", "new-peer", origin)
+	},
+	"SetTraceSamplingRules": func(c *Config, origin telemetry.Origin) {
+		c.SetTraceSamplingRules([]samplingrules.SamplingRule{}, origin)
+	},
+	"SetSpanSamplingRules": func(c *Config, origin telemetry.Origin) {
+		c.SetSpanSamplingRules([]samplingrules.SamplingRule{}, origin)
+	},
+	"SetGlobalTag": func(c *Config, origin telemetry.Origin) {
+		c.SetGlobalTag("tag-key", "tag-value", origin)
+	},
+}
+
+// TestAllSettersReportTelemetry verifies Set* methods report telemetry with seqID > defaultSeqID.
+// If this fails: call reportTelemetry() in your setter, OR add to settersWithoutTelemetry, OR add to specialCaseSetters.
+func TestAllSettersReportTelemetry(t *testing.T) {
+	// Get all methods on *Config
+	configType := reflect.TypeFor[*Config]()
+
+	for method := range configType.Methods() {
+		// Capture method
+		methodName := method.Name
+
+		// Skip if not a Set method
+		if len(methodName) < 3 || methodName[:3] != "Set" {
+			continue
+		}
+
+		// Skip if in exclusion list
+		if reason, excluded := settersWithoutTelemetry[methodName]; excluded {
+			t.Logf("Skipping %s: %s", methodName, reason)
+			continue
+		}
+
+		t.Run(methodName, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			// Mock telemetry client
+			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+			defer telemetry.MockClient(telemetryClient)()
+
+			cfg := Get()
+			testOrigin := telemetry.OriginCode
+
+			// Check if this is a special case
+			if callFunc, isSpecial := specialCaseSetters[methodName]; isSpecial {
+				callFunc(cfg, testOrigin)
+			} else {
+				// Try to call the method generically
+				callSetter(t, cfg, method, testOrigin)
+			}
+
+			// Verify telemetry was reported with seqID > defaultSeqID
+			foundTelemetry := false
+			for _, call := range telemetryClient.Calls {
+				if call.Method == "RegisterAppConfigs" {
+					if len(call.Arguments) > 0 {
+						if configs, ok := call.Arguments[0].([]telemetry.Configuration); ok && len(configs) > 0 {
+							config := configs[0]
+							if config.Origin == testOrigin {
+								foundTelemetry = true
+								break
+							}
+						}
+					}
+				}
+			}
+
+			assert.True(t, foundTelemetry,
+				"%s: no telemetry with origin=%v. Fix: call configtelemetry.Report() OR add to settersWithoutTelemetry/specialCaseSetters",
+				methodName, testOrigin)
+		})
+	}
+}
+
+// callSetter attempts to call a setter method with appropriate test values.
+// It finds the telemetry.Origin parameter by type and fills all other parameters
+// with test values via getTestValueForType.
+func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemetry.Origin) {
+	methodType := method.Type
+
+	if methodType.NumIn() < 3 {
+		t.Fatalf("%s: expected ≥3 params (receiver, value, origin), got %d. Add to specialCaseSetters if non-standard.",
+			method.Name, methodType.NumIn())
+	}
+
+	originType := reflect.TypeFor[telemetry.Origin]()
+	originIdx := -1
+	for i := 1; i < methodType.NumIn(); i++ {
+		if methodType.In(i) == originType {
+			originIdx = i
+			break
+		}
+	}
+	if originIdx == -1 {
+		t.Fatalf("%s: no telemetry.Origin param found. Add to specialCaseSetters if non-standard.", method.Name)
+	}
+
+	numParams := methodType.NumIn()
+	if methodType.IsVariadic() {
+		numParams--
+	}
+
+	args := []reflect.Value{reflect.ValueOf(cfg)}
+	for i := 1; i < numParams; i++ {
+		if i == originIdx {
+			args = append(args, reflect.ValueOf(origin))
+		} else {
+			paramType := methodType.In(i)
+			testValue := getTestValueForType(paramType)
+			args = append(args, reflect.ValueOf(testValue).Convert(paramType))
+		}
+	}
+
+	method.Func.Call(args)
+}
+
+// getTestValueForType generates appropriate test values based on parameter type.
+// Add support for new types here as setters with new parameter types are added.
+func getTestValueForType(t reflect.Type) any {
+	// Check for specific named types first (before kind checks)
+	if t == reflect.TypeFor[time.Duration]() {
+		return 10 * time.Second
+	}
+	if t == reflect.TypeFor[*url.URL]() {
+		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
+	}
+	// Optional tri-state bools (e.g. SetLLMObsAgentlessEnabled).
+	if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Bool {
+		b := true
+		return &b
+	}
+
+	// Then check by kind
+	switch t.Kind() {
+	case reflect.Bool:
+		return true
+	case reflect.String:
+		return "test-value"
+	case reflect.Int:
+		return 42
+	case reflect.Float64:
+		return 0.75
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.String {
+			return []string{"feature1", "feature2"}
+		}
+	}
+
+	panic("getTestValueForType: unsupported parameter type: " + t.String() +
+		". Add support for this type in getTestValueForType() or add your setter to specialCaseSetters.")
+}
+
+// resetGlobalState resets all global singleton state for testing
+func resetGlobalState() {
+	mu = sync.Mutex{}
+	instance = nil
+	useFreshConfig = false
+}
+
+func TestStatsAdditionalTagsExperimentalGate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		gate    string
+		want    []string
+		wantOn  bool
+		wantNil bool
+	}{
+		{name: "unset", wantNil: true},
+		{name: "false", gate: "false", wantNil: true},
+		{name: "true", gate: "true", want: []string{"region", "tenant_id"}, wantOn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region,tenant_id")
+			if tc.gate != "" {
+				t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", tc.gate)
+			}
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.wantOn, cfg.ExperimentalFeaturesEnabled())
+			if tc.wantNil {
+				assert.Nil(t, cfg.StatsAdditionalTags())
+				return
+			}
+			assert.Equal(t, tc.want, cfg.StatsAdditionalTags())
+		})
+	}
+}
+
+func TestStatsAdditionalTagsKeyCap(t *testing.T) {
+	// 9 inputs, 1 duplicate (alpha) → 8 unique by input order.
+	// First 6 kept: zeta, alpha, beta, eta, delta, gamma. Dropped: theta, epsilon.
+	// Kept keys are then sorted for stable emission.
+	input := []string{"zeta", "alpha", "beta", "alpha", "eta", "delta", "gamma", "theta", "epsilon"}
+	want := []string{"alpha", "beta", "delta", "eta", "gamma", "zeta"}
+	wantDropped := "dropping configured tag keys: theta,epsilon"
+
+	t.Run("env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", strings.Join(input, ","))
+		tp := new(log.RecordLogger)
+		defer log.UseLogger(tp)()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, want, cfg.StatsAdditionalTags())
+		assert.Contains(t, strings.Join(tp.Logs(), "\n"), wantDropped)
+	})
+
+	t.Run("setter", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tp := new(log.RecordLogger)
+		defer log.UseLogger(tp)()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		cfg.SetStatsAdditionalTags(input, telemetry.OriginCode)
+		assert.Equal(t, want, cfg.StatsAdditionalTags())
+		assert.Contains(t, strings.Join(tp.Logs(), "\n"), wantDropped)
+	})
+}
+
+func TestStatsAdditionalTagsCardinalityLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		envValue string
+		want     int
+		wantWarn bool
+	}{
+		{name: "default", want: defaultStatsAdditionalTagsCardinalityLimit},
+		{name: "valid", envValue: "42", want: 42},
+		{name: "zero", envValue: "0", want: defaultStatsAdditionalTagsCardinalityLimit, wantWarn: true},
+		{name: "negative", envValue: "-1", want: defaultStatsAdditionalTagsCardinalityLimit, wantWarn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tc.envValue != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", tc.envValue)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.want, cfg.StatsAdditionalTagsCardinalityLimit())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value")
+				return
+			}
+			assert.Empty(t, logs)
+		})
+	}
+}
+
+func TestSetFeatureFlagsReportsFullList(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+
+	cfg.SetFeatureFlags([]string{"b", "a"}, telemetry.OriginCode)
+	cfg.SetFeatureFlags([]string{"c"}, telemetry.OriginCode)
+
+	var (
+		found bool
+		got   telemetry.Configuration
+	)
+	for _, c := range slices.Backward(rec.Configuration) {
+		if c.Name == "DD_TRACE_FEATURES" && c.Origin == telemetry.OriginCode {
+			found = true
+			got = c
+			break
+		}
+	}
+	require.True(t, found, "expected telemetry to include DD_TRACE_FEATURES with OriginCode")
+	require.IsType(t, "", got.Value)
+	parts := strings.Split(got.Value.(string), ",")
+	sort.Strings(parts)
+	assert.Equal(t, []string{"a", "b", "c"}, parts)
+}
+
+func TestSetServiceMappingReportsFullList(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+
+	cfg.SetServiceMapping("b", "2", telemetry.OriginCode)
+	cfg.SetServiceMapping("a", "1", telemetry.OriginCode)
+	cfg.SetServiceMapping("a", "3", telemetry.OriginCode) // update existing
+
+	var (
+		found bool
+		got   telemetry.Configuration
+	)
+	for _, c := range slices.Backward(rec.Configuration) {
+		if c.Name == "DD_SERVICE_MAPPING" && c.Origin == telemetry.OriginCode {
+			found = true
+			got = c
+			break
+		}
+	}
+	require.True(t, found, "expected telemetry to include DD_SERVICE_MAPPING with OriginCode")
+	require.IsType(t, "", got.Value)
+	parts := strings.Split(got.Value.(string), ",")
+	sort.Strings(parts)
+	assert.Equal(t, []string{"a:3", "b:2"}, parts)
+}
+
+func TestOTLPTraceURLResolution(t *testing.T) {
+	t.Run("default OTLP port from agent host", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Contains(t, cfg.OTLPTraceURL(), ":4318/v1/traces")
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT overrides", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://collector:4318/v1/traces")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_AGENT_HOST", "custom-agent")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("independent OTLP export does not follow programmatic agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export follows resolved agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+}
+
+func TestOTLPHeaders(t *testing.T) {
+	t.Run("always populated with at least Content-Type", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		require.NotNil(t, headers)
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+		assert.Len(t, headers, 1)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS parsed into map", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=secret,x-custom=value")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "secret", headers["api-key"])
+		assert.Equal(t, "value", headers["x-custom"])
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=SENTINEL_OTLP_TRACES,x-custom=value")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// The value is still resolved and parsed for export use.
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
+
+		// But it must not be reported in configuration telemetry, and no reported
+		// configuration value may contain the sentinel.
+		for _, c := range rec.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_TRACES_HEADERS", c.Name,
+				"OTEL_EXPORTER_OTLP_TRACES_HEADERS should not be reported in configuration telemetry")
+			if s, ok := c.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP_TRACES",
+					"configuration value for %s must not contain the OTLP traces headers sentinel", c.Name)
+			}
+		}
+	})
+
+}
+
+func TestOTLPExportMode(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("enabled by OTEL_TRACES_EXPORTER=otlp", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("not enabled by unsupported exporter value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "jaeger")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("not enabled by OTEL_TRACES_EXPORTER=none", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set")
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
+	})
+
+	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 still overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set, even to the default value")
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+	})
+
+	t.Run("SetOTLPExportMode toggles mode", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+
+		cfg.SetOTLPExportMode(true, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.False(t, cfg.OTLPExportMode())
+	})
+}
+
+func TestInvalidSpanAttributeSchemaFallsBackWithoutSharedWarning(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+	const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, setting to default of v0"
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), warning)
+}
+
+func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
+	const (
+		protocolOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out"
+		schemaOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
+		peerOverrideLog     = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
+	)
+
+	t.Run("forces OTLP export", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "OTEL_TRACES_EXPORTER" && c.Value == "otlp" && c.Origin == telemetry.OriginCalculated
+		}))
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("wins over Datadog trace protocol", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+	})
+
+	t.Run("calculates conflicting schema and peer service defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+		t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == "true" && c.Origin == telemetry.OriginEnvVar
+		}))
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA" && c.Value == "v0" && c.Origin == telemetry.OriginCalculated
+		}))
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED" && c.Value == false && c.Origin == telemetry.OriginCalculated
+		}))
+	})
+
+	t.Run("schema v1 implication also calculates peer defaults false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("does not log non-conflicting defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("resolution overrides programmatic peer defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		cfg.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCode)
+		assert.True(t, cfg.PeerServiceDefaultsEnabled())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+	})
+}
+
+func TestOTLPSpanMetricsConfig(t *testing.T) {
+	t.Run("disabled by default when OTLP trace export is off", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("auto-enabled when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("not auto-enabled when OTEL_TRACES_EXPORTER=otlp but DD_METRICS_OTEL_ENABLED unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("auto-disabled when OTLP trace export is off even if DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit true overrides auto-detection", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit false overrides auto-detection", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit false reports calculated stats-computation via setter", func(t *testing.T) {
+		// OTEL_TRACES_SPAN_METRICS_ENABLED=false with DD_TRACE_STATS_COMPUTATION_ENABLED
+		// left at its default must disable native stats computation, and — unlike
+		// the old raw field write — report the change to config telemetry.
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.StatsComputationEnabled())
+
+		var found bool
+		for _, c := range rec.Configuration {
+			if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+				found = true
+				assert.Equal(t, false, c.Value)
+			}
+		}
+		assert.True(t, found, "expected a calculated-origin DD_TRACE_STATS_COMPUTATION_ENABLED report")
+	})
+
+	t.Run("does not force v0.4 trace protocol", func(t *testing.T) {
+		// Regression pin: RequestedTraceProtocol used to special-case
+		// OTLPSpanMetricsEnabled and return v0.4 unconditionally. The Agent has
+		// always accepted v1.0 payloads regardless of whether OTLP span metrics
+		// are in use, so that coupling is removed.
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
+	})
+
+	t.Run("OTelSemanticsEnabled disabled by default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTelSemanticsEnabled())
+	})
+
+	t.Run("OTelSemanticsEnabled via DD_TRACE_OTEL_SEMANTICS_ENABLED", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTelSemanticsEnabled())
+	})
+}
+
+func TestOTLPMetricsURLResolution(t *testing.T) {
+	t.Run("defaults to localhost:4318/v1/metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT overrides", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://collector:4317")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("endpoint with path is used as-is", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://collector:4318/v1/metrics")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT is fallback for metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://shared-collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://shared-collector:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT with path prefix always appends /v1/metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/prefix")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// Generic endpoint is a base URL per OTel spec; /v1/metrics must be appended
+		// even when the base URL already has a path prefix (e.g. a reverse proxy).
+		assert.Equal(t, "http://collector:4318/prefix/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT takes precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://metrics-specific:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_AGENT_HOST", "custom-agent")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://custom-agent:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("invalid endpoint falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "not-a-url")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+}
+
+func TestOTLPMetricsHeaders(t *testing.T) {
+	t.Run("nil when no headers configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Nil(t, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("generic OTEL_EXPORTER_OTLP_HEADERS used as fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret123,x-tenant=acme")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("signal-specific headers take precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=shared")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metrics-key")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		h := cfg.OTLPMetricsHeaders()
+		assert.Equal(t, "metrics-key", h["api-key"])
+		assert.Equal(t, "shared", h["x-tenant"])
+	})
+}
+
+func TestOTLPMetricsFlushInterval(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
+	})
+
+	t.Run("_DD_TRACE_STATS_INTERVAL overrides in milliseconds", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("_DD_TRACE_STATS_INTERVAL", "1000")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, time.Second, cfg.OTLPMetricsFlushInterval())
+	})
+
+	t.Run("invalid value falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("_DD_TRACE_STATS_INTERVAL", "not-a-number")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
+	})
+}
+
+func TestOTLPMetricsProtocol(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("http/json via OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("falls back to OTEL_EXPORTER_OTLP_PROTOCOL when signal-specific not set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("signal-specific takes precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("unknown value in signal-specific falls back to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("unknown value in generic falls back to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+}
+
+func TestHostnameConfiguration(t *testing.T) {
+	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Empty(t, cfg.Hostname(), "Hostname should be empty by default")
+		assert.False(t, cfg.ReportHostname(), "ReportHostname should be false by default")
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME=true enables hostname lookup", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.NotEmpty(t, cfg.Hostname(), "Hostname should be set when DD_TRACE_REPORT_HOSTNAME=true")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_REPORT_HOSTNAME=true")
+		assert.NoError(t, cfg.HostnameLookupError(), "HostnameLookupError should be nil on successful lookup")
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME=false keeps hostname empty", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Empty(t, cfg.Hostname(), "Hostname should be empty when DD_TRACE_REPORT_HOSTNAME=false")
+		assert.False(t, cfg.ReportHostname(), "ReportHostname should be false when DD_TRACE_REPORT_HOSTNAME=false")
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME sets explicit hostname", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "custom-hostname")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "custom-hostname", cfg.Hostname(), "Hostname should match DD_TRACE_SOURCE_HOSTNAME")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_SOURCE_HOSTNAME is set")
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME takes precedence over DD_TRACE_REPORT_HOSTNAME", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "override-hostname")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "override-hostname", cfg.Hostname(), "DD_TRACE_SOURCE_HOSTNAME should take precedence")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true")
+	})
+
+	t.Run("empty DD_TRACE_SOURCE_HOSTNAME is used when explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// Empty string explicitly set should override the looked-up hostname
+		assert.Empty(t, cfg.Hostname(), "Empty DD_TRACE_SOURCE_HOSTNAME should override hostname lookup")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_SOURCE_HOSTNAME is explicitly set")
+	})
+}
+
+func TestProductConflict(t *testing.T) {
+	t.Run("first-in-wins", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("tracer-svc", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer-svc", cfg.ServiceName())
+
+		cfg.SetServiceName("profiler-svc", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer-svc", cfg.ServiceName(), "first-in-wins: profiler should be rejected")
+	})
+
+	t.Run("same product can update", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetEnv("staging", OriginCode, ProductTracer)
+		assert.Equal(t, "staging", cfg.Env())
+
+		cfg.SetEnv("production", OriginCode, ProductTracer)
+		assert.Equal(t, "production", cfg.Env(), "same product should be allowed to update")
+	})
+
+	t.Run("env var bypasses gate", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetVersion("1.0", OriginCode, ProductTracer)
+		assert.Equal(t, "1.0", cfg.Version())
+
+		cfg.SetVersion("2.0", telemetry.OriginEnvVar)
+		assert.Equal(t, "2.0", cfg.Version(), "env var origin should bypass the gate")
+	})
+
+	t.Run("no product bypasses gate", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("first", OriginCode, ProductTracer)
+		assert.Equal(t, "first", cfg.ServiceName())
+
+		cfg.SetServiceName("second", OriginCode)
+		assert.Equal(t, "second", cfg.ServiceName(), "call without product should bypass the gate")
+	})
+
+	t.Run("independent fields", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("tracer-svc", OriginCode, ProductTracer)
+		cfg.SetEnv("profiler-env", OriginCode, ProductProfiler)
+
+		assert.Equal(t, "tracer-svc", cfg.ServiceName())
+		assert.Equal(t, "profiler-env", cfg.Env(), "different fields should not conflict")
+	})
+
+	t.Run("same value different products is not a conflict", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("my-svc", OriginCode, ProductTracer)
+		cfg.SetServiceName("my-svc", OriginCode, ProductProfiler)
+
+		assert.Equal(t, "my-svc", cfg.ServiceName(),
+			"same value from different products should be allowed")
+	})
+
+	t.Run("site first-in-wins", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetSite("tracer.datadoghq.com", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site())
+
+		cfg.SetSite("profiler.datadoghq.com", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site(), "first-in-wins: profiler should be rejected")
+	})
+}
+
+func TestAdditiveConfigs(t *testing.T) {
+	t.Run("feature flags merge across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetFeatureFlags([]string{"feat_a", "feat_b"}, OriginCode, ProductTracer)
+		cfg.SetFeatureFlags([]string{"feat_c"}, OriginCode, ProductProfiler)
+
+		flags := cfg.FeatureFlags()
+		assert.Contains(t, flags, "feat_a")
+		assert.Contains(t, flags, "feat_b")
+		assert.Contains(t, flags, "feat_c")
+	})
+
+	t.Run("feature flags deduplicate across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetFeatureFlags([]string{"shared_feat"}, OriginCode, ProductTracer)
+		cfg.SetFeatureFlags([]string{"shared_feat"}, OriginCode, ProductProfiler)
+
+		flags := cfg.FeatureFlags()
+		assert.Contains(t, flags, "shared_feat")
+		assert.Len(t, flags, 1, "duplicate flags should be deduplicated")
+	})
+
+	t.Run("service mappings merge across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("db", "backend", OriginCode, ProductProfiler)
+
+		mappings := cfg.ServiceMappings()
+		assert.Equal(t, "frontend", mappings["web"])
+		assert.Equal(t, "backend", mappings["db"])
+	})
+
+	t.Run("service mappings deduplicate across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductProfiler)
+
+		mappings := cfg.ServiceMappings()
+		assert.Equal(t, "frontend", mappings["web"])
+		assert.Len(t, mappings, 1, "identical mapping from two products should not create duplicates")
+	})
+
+	t.Run("service mapping same key different value overwrites", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend-v1", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("web", "frontend-v2", OriginCode, ProductProfiler)
+
+		to, ok := cfg.ServiceMapping("web")
+		assert.True(t, ok)
+		assert.Equal(t, "frontend-v2", to, "last write wins for same mapping key")
+	})
+}
+
+func TestAPIKey(t *testing.T) {
+	t.Run("from env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_API_KEY", "test-api-key-32charslongfake12")
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "test-api-key-32charslongfake12", cfg.APIKey())
+	})
+	t.Run("default empty when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "", cfg.APIKey())
+	})
+}
+
+func TestCIVisibilityAgentlessActive(t *testing.T) {
+	// Agentless is only "active" when CI Visibility is also enabled.
+	// Agentless alone must not flip agent-bypass behavior in normal tracer mode.
+	cases := []struct {
+		name      string
+		ciVis     string
+		agentless string
+		want      bool
+	}{
+		{"both unset", "", "", false},
+		{"agentless only", "", "true", false},
+		{"ci vis only", "true", "", false},
+		{"both set", "true", "true", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if tc.ciVis != "" {
+				t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, tc.ciVis)
+			}
+			if tc.agentless != "" {
+				t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, tc.agentless)
+			}
+			cfg := CreateNew()
+			assert.Equal(t, tc.want, cfg.CIVisibilityAgentlessActive())
+		})
+	}
+}
+
+func TestAgentTimeout(t *testing.T) {
+	t.Run("default is 10s when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("DD_TRACE_AGENT_TIMEOUT overrides default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "30")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 30*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("invalid DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "not-a-number")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("negative DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "-5")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("SetAgentTimeout updates value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		cfg.SetAgentTimeout(45*time.Second, OriginCalculated)
+		assert.Equal(t, 45*time.Second, cfg.AgentTimeout())
+	})
+}
+
+func TestSamplingRulesFileFallback(t *testing.T) {
+	writeRulesFile := func(t *testing.T, contents string) string {
+		t.Helper()
+		f, err := os.CreateTemp(t.TempDir(), "sampling-rules-*.json")
+		require.NoError(t, err)
+		_, err = f.WriteString(contents)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+		return f.Name()
+	}
+
+	t.Run("DD_TRACE_SAMPLING_RULES_FILE is used when inline is unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		path := writeRulesFile(t, `[{"name": "web.request", "sample_rate": 1.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES_FILE", path)
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		require.Len(t, cfg.TraceSamplingRules(), 1)
+	})
+
+	t.Run("DD_TRACE_SAMPLING_RULES takes precedence over _FILE", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		path := writeRulesFile(t, `[{"name": "from-file", "sample_rate": 1.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES_FILE", path)
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.5}]`)
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		require.Len(t, cfg.TraceSamplingRules(), 1)
+		assert.True(t, cfg.TraceSamplingRules()[0].Name.MatchString("web.request"))
+	})
+
+	t.Run("DD_SPAN_SAMPLING_RULES_FILE is used when inline is unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		path := writeRulesFile(t, `[{"service": "test.?", "name": "web.*", "sample_rate": 1.0, "max_per_second": 100}]`)
+		t.Setenv("DD_SPAN_SAMPLING_RULES_FILE", path)
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		require.Len(t, cfg.SpanSamplingRules(), 1)
+	})
+
+	t.Run("unreadable _FILE path does not panic and yields no rules", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_SAMPLING_RULES_FILE", "/nonexistent/path/rules.json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Empty(t, cfg.TraceSamplingRules())
+	})
+}
+
+// TestSamplingRulesEnvPrecedenceOverCode verifies that DD_TRACE_SAMPLING_RULES and
+// DD_SPAN_SAMPLING_RULES (whether inline or via _FILE) take precedence over
+// programmatic WithSamplingRules calls (origin=OriginCode), per the precedence
+// documented in ddtrace/tracer/doc.go.
+func TestSamplingRulesEnvPrecedenceOverCode(t *testing.T) {
+	codeRules := samplingrules.TraceSamplingRules(samplingrules.Rule{Rate: 0.9})
+	codeSpanRules := samplingrules.SpanSamplingRules(samplingrules.Rule{Rate: 0.9})
+
+	t.Run("trace: env-set rules block a later code call", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.5}]`)
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		before := cfg.TraceSamplingRules()
+		require.Len(t, before, 1)
+
+		cfg.SetTraceSamplingRules(codeRules, telemetry.OriginCode, ProductTracer)
+
+		assert.Equal(t, before, cfg.TraceSamplingRules(),
+			"WithSamplingRules must not override rules already set via DD_TRACE_SAMPLING_RULES")
+	})
+
+	t.Run("span: env-set rules block a later code call", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test.?", "name": "web.*", "sample_rate": 1.0}]`)
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		before := cfg.SpanSamplingRules()
+		require.Len(t, before, 1)
+
+		cfg.SetSpanSamplingRules(codeSpanRules, telemetry.OriginCode, ProductTracer)
+
+		assert.Equal(t, before, cfg.SpanSamplingRules(),
+			"WithSamplingRules must not override rules already set via DD_SPAN_SAMPLING_RULES")
+	})
+
+	t.Run("trace: code call applies when nothing else set it", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		require.Empty(t, cfg.TraceSamplingRules())
+
+		cfg.SetTraceSamplingRules(codeRules, telemetry.OriginCode, ProductTracer)
+
+		assert.Equal(t, codeRules, cfg.TraceSamplingRules())
+	})
+
+	t.Run("trace: a second code call from the same product still applies", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		cfg.SetTraceSamplingRules(codeRules, telemetry.OriginCode, ProductTracer)
+		otherRules := samplingrules.TraceSamplingRules(samplingrules.Rule{Rate: 0.1})
+		cfg.SetTraceSamplingRules(otherRules, telemetry.OriginCode, ProductTracer)
+
+		assert.Equal(t, otherRules, cfg.TraceSamplingRules())
+	})
+}
+
+func TestLLMObsEnvVars(t *testing.T) {
+	t.Run("defaults when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		assert.False(t, cfg.LLMObsEnabled())
+		assert.Empty(t, cfg.LLMObsMLApp())
+		assert.Empty(t, cfg.LLMObsProjectName())
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("loads from env vars", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_LLMOBS_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_ML_APP", "my-app")
+		t.Setenv("DD_LLMOBS_PROJECT_NAME", "my-project")
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+
+		cfg := Get()
+		assert.True(t, cfg.LLMObsEnabled())
+		assert.Equal(t, "my-app", cfg.LLMObsMLApp())
+		assert.Equal(t, "my-project", cfg.LLMObsProjectName())
+		require.NotNil(t, cfg.LLMObsAgentlessEnabled())
+		assert.False(t, *cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unset stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard for the p.IsSet check in loadConfig: unset must stay
+		// nil (tri-state), not collapse to GetBool's zero-value false.
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+
+	t.Run("DD_LLMOBS_AGENTLESS_ENABLED unparseable value stays nil, not false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (nil), not silently coerced into an explicit false. Before the
+		// fix, IsSet only checked the string was non-empty, so GetBool's
+		// parse-error fallback to its default (false) was mistaken for an
+		// explicit false.
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
+		cfg := Get()
+		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+}
+
+func TestLLMObsPromptEnvVars(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		assert.Equal(t, time.Minute, cfg.LLMObsPromptsCacheTTL())
+		assert.Equal(t, 5*time.Second, cfg.LLMObsPromptsTimeout())
+		assert.False(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Empty(t, cfg.LLMObsPromptsCacheDir())
+	})
+
+	for _, test := range []struct {
+		name, ttl, ttlAlias, timeout, timeoutAlias string
+		wantTTL, wantTimeout                       time.Duration
+	}{
+		{name: "values", ttl: "1.5", timeout: "0", wantTTL: 1500 * time.Millisecond, wantTimeout: 0},
+		{name: "aliases", ttlAlias: "2", timeoutAlias: "3", wantTTL: 2 * time.Second, wantTimeout: 3 * time.Second},
+		{name: "canonical wins over alias", ttl: "4", ttlAlias: "2", timeout: "6", timeoutAlias: "3", wantTTL: 4 * time.Second, wantTimeout: 6 * time.Second},
+		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
+		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "maximum duration", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxDurationSeconds) * time.Second, wantTimeout: time.Duration(maxDurationSeconds) * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if test.ttl != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL", test.ttl)
+			}
+			if test.ttlAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS", test.ttlAlias)
+			}
+			if test.timeout != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT", test.timeout)
+			}
+			if test.timeoutAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS", test.timeoutAlias)
+			}
+			cfg := Get()
+			assert.Equal(t, test.wantTTL, cfg.LLMObsPromptsCacheTTL())
+			assert.Equal(t, test.wantTimeout, cfg.LLMObsPromptsTimeout())
+		})
+	}
+
+	t.Run("file cache", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
+		cfg := Get()
+		assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
+	})
+}
+
+func TestReportEffectiveStatsComputation(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	before := cfg.StatsComputationEnabled()
+
+	// The first report must fire even though false is the zero value — this
+	// is exactly what the tri-state (vs. a plain atomic.Bool) buys.
+	assert.True(t, cfg.ReportEffectiveStatsComputation(false))
+	assert.False(t, cfg.ReportEffectiveStatsComputation(false), "repeating the same value must not re-report")
+	assert.True(t, cfg.ReportEffectiveStatsComputation(true), "a changed value must report")
+	assert.False(t, cfg.ReportEffectiveStatsComputation(true), "repeating the new value must not re-report")
+
+	// StatsComputationEnabled itself must be untouched by any of this.
+	assert.Equal(t, before, cfg.StatsComputationEnabled())
+
+	var reports []bool
+	for _, c := range rec.Configuration {
+		if c.Name == "DD_TRACE_STATS_COMPUTATION_ENABLED" && c.Origin == telemetry.OriginCalculated {
+			reports = append(reports, c.Value.(bool))
+		}
+	}
+	assert.Equal(t, []bool{false, true}, reports)
+}
+
+func TestExperimentalFlaggingProviderEnabled(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.False(t, enabled)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.ExperimentalFlaggingProviderEnabled()
+		assert.True(t, enabled)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsEnabled(t *testing.T) {
+	t.Run("unset stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("explicit true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.True(t, enabled)
+	})
+
+	t.Run("explicit false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "false")
+		cfg := Get()
+		enabled, explicit := cfg.FeatureFlagsEnabled()
+		assert.True(t, explicit)
+		assert.False(t, enabled)
+	})
+
+	t.Run("unparseable value stays not-explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Regression guard: an unparseable value must be treated the same as
+		// unset (not explicit), not silently coerced into an explicit false.
+		t.Setenv("DD_FEATURE_FLAGS_ENABLED", "garbage")
+		cfg := Get()
+		_, explicit := cfg.FeatureFlagsEnabled()
+		assert.False(t, explicit)
+	})
+}
+
+func TestFeatureFlagsConfigurationSource(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "agentless", source)
+		assert.False(t, explicit)
+	})
+
+	t.Run("explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "remote_config", source)
+		assert.True(t, explicit)
+	})
+
+	t.Run("blank but set is still explicit", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// A whitespace-only value is explicit here on purpose: deciding what a
+		// blank source means belongs to openfeature.resolveSource, which falls
+		// through to the later precedence rules. Coercing it to non-explicit at
+		// this layer would hide the distinction from that decision.
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "   ")
+		cfg := Get()
+		source, explicit := cfg.FeatureFlagsConfigurationSource()
+		assert.Equal(t, "   ", source)
+		assert.True(t, explicit)
+	})
+}
+
+func TestFeatureFlagsAgentlessBaseURL(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "https://example.com")
+	cfg := Get()
+	assert.Equal(t, "https://example.com", cfg.FeatureFlagsAgentlessBaseURL())
+}
+
+func TestFeatureFlagsAgentlessPollInterval(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 30 * time.Second},
+		{"0", 30 * time.Second},
+		{"-1", 30 * time.Second},
+		{"3601", 30 * time.Second},
+		{"abc", 30 * time.Second},
+		{"3600", 3600 * time.Second},
+		{"60", 60 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessPollInterval())
+		})
+	}
+}
+
+func TestFeatureFlagsAgentlessRequestTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 5 * time.Second},
+		{"0", 5 * time.Second},
+		{"-5", 5 * time.Second},
+		{"x", 5 * time.Second},
+		{"10", 10 * time.Second},
+		{"300", 300 * time.Second},
+		{"301", 5 * time.Second},
+		// Regression guard: without an upper bound, this value overflows int64
+		// once converted to a time.Duration and multiplied by time.Second,
+		// wrapping to a negative duration that would disable the HTTP client's
+		// timeout enforcement entirely.
+		{"9223372037", 5 * time.Second},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FeatureFlagsAgentlessRequestTimeout())
+		})
+	}
+}
+
+func TestFlaggingProviderInitTimeout(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{"", 10000 * time.Millisecond},
+		{"0", 10000 * time.Millisecond},
+		{"-1", 10000 * time.Millisecond},
+		{"abc", 10000 * time.Millisecond},
+		{"5000", 5000 * time.Millisecond},
+		{"9223372036854775807", 10000 * time.Millisecond}, // math.MaxInt64: overflows on conversion, must fall back
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tt.value != "" {
+				t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", tt.value)
+			}
+			cfg := Get()
+			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
+		})
+	}
+}

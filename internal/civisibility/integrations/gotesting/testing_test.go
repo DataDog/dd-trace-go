@@ -119,6 +119,10 @@ func TestParallelSubTests(gt *testing.T) {
 var testRetryWithPanicRunNumber atomic.Int32
 
 func TestRetryWithPanic(t *testing.T) {
+	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
+		t.Skip("no CI Visibility retry wrapper active; skipping panic injection")
+	}
+
 	t.Cleanup(func() {
 		if testRetryWithPanicRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
@@ -135,6 +139,10 @@ func TestRetryWithPanic(t *testing.T) {
 var testRetryWithFailRunNumber atomic.Int32
 
 func TestRetryWithFail(t *testing.T) {
+	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
+		t.Skip("no CI Visibility retry wrapper active; skipping failure injection")
+	}
+
 	t.Cleanup(func() {
 		if testRetryWithFailRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
@@ -179,13 +187,13 @@ func BenchmarkFirst(gb *testing.B) {
 
 	var mapArray []map[string]string
 	b.Run("child01", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			mapArray = append(mapArray, map[string]string{})
 		}
 	})
 
 	b.Run("child02", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			mapArray = append(mapArray, map[string]string{})
 		}
 	})
@@ -213,8 +221,8 @@ func assertTest(t *testing.T) {
 	hasSuite := false
 	hasTest := false
 
-	assertCommon := func(spanTags map[string]interface{}) {
-		assert.Subset(spanTags, map[string]interface{}{
+	assertCommon := func(spanTags map[string]any) {
+		assert.Subset(spanTags, map[string]any{
 			constants.Origin:          constants.CIAppTestOrigin,
 			constants.TestType:        constants.TestTypeTest,
 			constants.LogicalCPUCores: float64(runtime.NumCPU()),
@@ -247,7 +255,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Session
 		if spanTags[ext.SpanType] == constants.SpanTypeTestSession {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -257,7 +265,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Module
 		if spanTags[ext.SpanType] == constants.SpanTypeTestModule {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
@@ -270,7 +278,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Suite
 		if spanTags[ext.SpanType] == constants.SpanTypeTestSuite {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
@@ -285,7 +293,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Test
 		if spanTags[ext.SpanType] == constants.SpanTypeTest {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 				constants.TestSuite:     "testing_test.go",

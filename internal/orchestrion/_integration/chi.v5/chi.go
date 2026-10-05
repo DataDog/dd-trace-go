@@ -12,11 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -26,8 +27,9 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	router := chi.NewRouter()
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 
@@ -35,7 +37,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -47,6 +49,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 

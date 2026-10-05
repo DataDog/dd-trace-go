@@ -15,6 +15,7 @@ import (
 
 	echotrace "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -44,6 +45,10 @@ var labstackEchoV4 = harness.TestCase{
 		Defaults:        []string{"echo"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageLabstackEchoV4)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

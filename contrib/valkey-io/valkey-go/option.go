@@ -6,15 +6,18 @@
 package valkey
 
 import (
+	"github.com/valkey-io/valkey-go"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/valkey-io/valkey-go"
 )
 
 type config struct {
-	rawCommand  bool
-	serviceName string
-	errCheck    func(err error) bool
+	rawCommand       bool
+	serviceName      string
+	serviceSource    string
+	errCheck         func(err error) bool
+	createClientFunc func(clientOption valkey.ClientOption) (valkey.Client, error)
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -23,11 +26,13 @@ type Option func(*config)
 func defaultConfig() *config {
 	return &config{
 		// Do not include the raw command by default since it could contain sensitive data.
-		rawCommand:  options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
-		serviceName: instr.ServiceName(instrumentation.ComponentDefault, nil),
+		rawCommand:    options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageValkeyIoValkeyGo),
 		errCheck: func(err error) bool {
 			return err != nil && !valkey.IsValkeyNil(err)
 		},
+		createClientFunc: valkey.NewClient,
 	}
 }
 
@@ -43,6 +48,7 @@ func WithRawCommand(rawCommand bool) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
@@ -51,5 +57,25 @@ func WithService(name string) Option {
 func WithErrorCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = fn
+	}
+}
+
+// WithCreateClientFunc sets a custom function to create the underlying valkey.Client.
+// This is useful when you need to wrap or decorate the client before tracing is applied,
+// for example to add a valkeyhook:
+//
+//	valkeytrace.NewClient(
+//	    clientOpt,
+//	    valkeytrace.WithCreateClientFunc(func(clientOption valkey.ClientOption) (valkey.Client, error) {
+//	        cl, err := valkey.NewClient(clientOption)
+//	        if err != nil {
+//	            return nil, err
+//	        }
+//	        return valkeyhook.WithHook(cl, &myHook{}), nil
+//	    }),
+//	)
+func WithCreateClientFunc(fn func(clientOption valkey.ClientOption) (valkey.Client, error)) Option {
+	return func(cfg *config) {
+		cfg.createClientFunc = fn
 	}
 }

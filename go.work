@@ -1,17 +1,20 @@
-go 1.24.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.26.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
+	./contrib/azure/apim-callout
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
+	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
@@ -29,6 +32,7 @@ use (
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
 	./contrib/go.mongodb.org/mongo-driver.v2
+	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gomodule/redigo
@@ -48,17 +52,22 @@ use (
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
+	./contrib/labstack/echo.v5
 	./contrib/log/slog
+	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
+	./contrib/modelcontextprotocol/go-sdk
 	./contrib/net/http
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
+	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
+	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
@@ -74,7 +83,10 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./otelc/all
+	./scripts/autoreleasetagger
 	./scripts/fixmodules
+	./scripts/gencontribdoc
 	./tools/v2fix
 	./tools/v2fix/_stage
 )

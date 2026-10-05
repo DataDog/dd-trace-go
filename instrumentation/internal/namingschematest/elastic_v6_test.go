@@ -17,6 +17,7 @@ import (
 
 	elastictrace "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -54,6 +55,10 @@ var elasticV6 = harness.TestCase{
 		Defaults:        []string{"elastic.client"},
 		DDService:       []string{"elastic.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGoElasticSearchV6)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

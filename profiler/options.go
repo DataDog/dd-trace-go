@@ -10,16 +10,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -27,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -106,7 +106,6 @@ type config struct {
 	cpuDuration          time.Duration
 	cpuProfileRate       int
 	uploadTimeout        time.Duration
-	maxGoroutinesWait    int
 	mutexFraction        int
 	blockRate            int
 	outputDir            string
@@ -141,7 +140,7 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err.Error())
+		telemetrylog.LogAndReportError("Marshaling profiler configuration", err)
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -151,19 +150,6 @@ func urlForSite(site string) (string, error) {
 	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
 	_, err := url.Parse(u)
 	return u, err
-}
-
-// isAPIKeyValid reports whether the given string is a structurally valid API key
-func isAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
 }
 
 func (c *config) addProfileType(t ProfileType) {
@@ -184,7 +170,6 @@ func defaultConfig() (*config, error) {
 		blockRate:            DefaultBlockRate,
 		mutexFraction:        DefaultMutexFraction,
 		uploadTimeout:        DefaultUploadTimeout,
-		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
@@ -243,9 +228,7 @@ func defaultConfig() (*config, error) {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
-	for key, val := range internal.GetGitMetadataTags() {
-		tags[key] = val
-	}
+	maps.Copy(tags, internal.GetGitMetadataTags())
 	for key, val := range tags {
 		if val != "" {
 			WithTags(key + ":" + val)(&c)
@@ -270,14 +253,6 @@ func defaultConfig() (*config, error) {
 	if v := env.Get("DD_PROFILING_OUTPUT_DIR"); v != "" {
 		withOutputDir(v)(&c)
 	}
-	if v := env.Get("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
-		}
-		c.maxGoroutinesWait = n
-	}
-
 	return &c, nil
 }
 
@@ -449,11 +424,10 @@ func WithUDS(socketPath string) Option {
 		// The HTTP client needs a valid URL. The host portion of the
 		// url in particular can't just be the socket path, or else that
 		// will be interpreted as part of the request path and the
-		// request will fail.  Clean up the path here so we get
-		// something resembling the desired path in any profiler logs.
-		// TODO(darccio): use internal.UnixDataSocketURL instead
-		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
-		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
+		// request will fail.
+		u := internal.UnixDataSocketURL(socketPath)
+		u.Path = "/profiling/v1/input"
+		c.agentURL = u.String()
 		WithHTTPClient(&http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {

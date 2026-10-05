@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -41,6 +42,7 @@ type RecordClient struct {
 	Products      map[telemetry.Namespace]bool
 	Metrics       map[MetricKey]*RecordMetricHandle
 	knownMetrics  bool
+	AppEndpoints  map[string]map[string][]telemetry.AppEndpointAttributes
 }
 
 func (r *RecordClient) Close() error {
@@ -177,16 +179,34 @@ func (r *RecordClient) RegisterAppConfig(key string, value any, origin telemetry
 func (r *RecordClient) RegisterAppConfigs(kvs ...telemetry.Configuration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for i := range kvs {
-		kvs[i].Value = telemetry.SanitizeConfigValue(kvs[i].Value)
+	for _, kv := range kvs {
+		// Mirror the production sink: configurations marked sensitive are not
+		// reported in configuration telemetry.
+		if env.IsSensitive(kv.Name) {
+			continue
+		}
+		kv.Value = telemetry.SanitizeConfigValue(kv.Value)
+		r.Configuration = append(r.Configuration, kv)
 	}
-	r.Configuration = append(r.Configuration, kvs...)
 }
 
 func (r *RecordClient) MarkIntegrationAsLoaded(integration telemetry.Integration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Integrations = append(r.Integrations, integration)
+}
+
+func (r *RecordClient) RegisterAppEndpoint(opName string, resName string, attrs telemetry.AppEndpointAttributes) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.AppEndpoints == nil {
+		r.AppEndpoints = make(map[string]map[string][]telemetry.AppEndpointAttributes)
+	}
+	if r.AppEndpoints[opName] == nil {
+		r.AppEndpoints[opName] = make(map[string][]telemetry.AppEndpointAttributes)
+	}
+	r.AppEndpoints[opName][resName] = append(r.AppEndpoints[opName][resName], attrs)
 }
 
 func (r *RecordClient) Flush() {}
@@ -206,10 +226,19 @@ func (r *RecordClient) AppStop() {
 func (r *RecordClient) AddFlushTicker(func(telemetry.Client)) {
 }
 
+// normalizeConfigName maps env-var-style names (e.g. DD_TRACE_SAMPLE_RATE)
+// to the telemetry-style names (e.g. trace_sample_rate) so that callers of
+// CheckConfig don't need to know which style a given reporter uses.
+func normalizeConfigName(name string) string {
+	name = strings.TrimPrefix(name, "DD_")
+	return strings.ToLower(name)
+}
+
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {
 	t.Helper()
+	normKey := normalizeConfigName(key)
 	for _, c := range cfgs {
-		if c.Name == key && reflect.DeepEqual(c.Value, value) {
+		if normalizeConfigName(c.Name) == normKey && reflect.DeepEqual(c.Value, value) {
 			return
 		}
 	}

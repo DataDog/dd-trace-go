@@ -7,7 +7,9 @@ package instrumentation
 
 import (
 	"fmt"
+	"maps"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -16,12 +18,14 @@ type Package string
 
 const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAerospikeClientGoV7  Package = "aerospike/aerospike-client-go.v7"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
+	PackageCloudEventsSDKGoV2   Package = "cloudevents/sdk-go.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
@@ -32,6 +36,7 @@ const (
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
 	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
+	PackageGoUberOrgZap         Package = "go.uber.org/zap"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -53,16 +58,20 @@ const (
 	PackageTidwallBuntDB                   Package = "tidwall/buntdb"
 	PackageSyndtrGoLevelDB                 Package = "syndtr/goleveldb"
 	PackageSirupsenLogrus                  Package = "sirupsen/logrus"
+	PackageRsZerolog                       Package = "rs/zerolog"
 	PackageShopifySarama                   Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo                Package = "segmentio/kafka-go"
+	PackageTwmbFranzGo                     Package = "twmb/franz-go"
 	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
 	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go/v4"
 	PackageMiekgDNS                        Package = "miekg/dns"
 	PackageLabstackEchoV4                  Package = "labstack/echo.v4"
+	PackageLabstackEchoV5                  Package = "labstack/echo.v5"
 	PackageK8SClientGo                     Package = "k8s.io/client-go"
 	PackageK8SGatewayAPI                   Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter         Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo                  Package = "mark3labs/mcp-go"
 	PackageJmoironSQLx                     Package = "jmoiron/sqlx"
 	PackageJackcPGXV5                      Package = "jackc/pgx.v5"
 	PackageHashicorpConsulAPI              Package = "hashicorp/consul"
@@ -73,8 +82,10 @@ const (
 	PackageGorillaMux                      Package = "gorilla/mux"
 	PackageUptraceBun                      Package = "uptrace/bun"
 	PackageLogSlog                         Package = "log/slog"
+	PackageModelContextProtocolGoSDK       Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
+	PackageAzureAPIMCallout               Package = "azure/apim-callout"
 	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
 	PackageHAProxyStreamProcessingOffload Package = "haproxy/stream-processing-offload"
 	PackageOS                             Package = "os"
@@ -101,6 +112,9 @@ const (
 	ComponentConsumer
 )
 
+// componentNames holds the legacy per-component service and operation name builders for the
+// naming-schema feature (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations should not use these; see
+// the naming field on PackageInfo.
 type componentNames struct {
 	useDDServiceV0     bool
 	buildServiceNameV0 func(opCtx OperationContext) string
@@ -115,9 +129,13 @@ type PackageInfo struct {
 	IsStdLib      bool
 	EnvVarPrefix  string
 
+	// naming is the legacy naming-schema table (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations
+	// should leave it unset: ServiceName then returns the global DD_SERVICE, and operation names
+	// should be hardcoded string literals. See contrib/INTEGRATIONS.md.
 	naming map[Component]componentNames
 }
 
+var packagesMu sync.RWMutex
 var packages = map[Package]PackageInfo{
 	Package99DesignsGQLGen: {
 		TracedPackage: "github.com/99designs/gqlgen",
@@ -182,6 +200,18 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageAerospikeClientGoV7: {
+		TracedPackage: "github.com/aerospike/aerospike-client-go/v7",
+		EnvVarPrefix:  "AEROSPIKE",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("aerospike"),
+				buildOpNameV0:      staticName("aerospike.command"),
+				buildOpNameV1:      staticName("aerospike.command"),
+			},
+		},
+	},
 	PackageBradfitzGoMemcache: {
 		TracedPackage: "github.com/bradfitz/gomemcache",
 		EnvVarPrefix:  "MEMCACHE",
@@ -210,6 +240,12 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
 	},
 	PackageGCPPubsubV2: {
@@ -228,7 +264,17 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
+	},
+	PackageCloudEventsSDKGoV2: {
+		TracedPackage: "github.com/cloudevents/sdk-go/v2",
+		EnvVarPrefix:  "CLOUDEVENTS",
 	},
 	PackageConfluentKafkaGo: {
 		TracedPackage: "github.com/confluentinc/confluent-kafka-go",
@@ -277,13 +323,13 @@ var packages = map[Package]PackageInfo{
 					if svc := opCtx["registerService"]; svc != "" {
 						return svc
 					}
-					return fmt.Sprintf("%s.db", opCtx["driverName"])
+					return opCtx["driverName"] + ".db"
 				},
 				buildOpNameV0: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx["driverName"])
+					return opCtx["driverName"] + ".query"
 				},
 				buildOpNameV1: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
+					return opCtx[ext.DBSystem] + ".query"
 				},
 			},
 		},
@@ -565,7 +611,7 @@ var packages = map[Package]PackageInfo{
 					if rpcService == "" || !ok {
 						return "twirp.service"
 					}
-					return fmt.Sprintf("twirp.%s", rpcService)
+					return "twirp." + rpcService
 				},
 				buildOpNameV1: staticName("twirp.server.request"),
 			},
@@ -605,6 +651,14 @@ var packages = map[Package]PackageInfo{
 		TracedPackage: "github.com/sirupsen/logrus",
 		EnvVarPrefix:  "LOGRUS",
 	},
+	PackageRsZerolog: {
+		TracedPackage: "github.com/rs/zerolog",
+		EnvVarPrefix:  "ZEROLOG",
+	},
+	PackageGoUberOrgZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
+	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
 		EnvVarPrefix:  "SARAMA",
@@ -625,6 +679,24 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageSegmentioKafkaGo: {
 		TracedPackage: "github.com/segmentio/kafka-go",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageTwmbFranzGo: {
+		TracedPackage: "github.com/twmb/franz-go",
 		EnvVarPrefix:  "KAFKA",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
@@ -694,6 +766,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLabstackEchoV4: {
 		TracedPackage: "github.com/labstack/echo/v4",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageLabstackEchoV5: {
+		TracedPackage: "github.com/labstack/echo/v5",
 		EnvVarPrefix:  "ECHO",
 		naming: map[Component]componentNames{
 			ComponentServer: {
@@ -800,6 +884,12 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGormIOGormV1: {
 		TracedPackage: "gorm.io/gorm",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("gorm.db"),
+			},
+		},
 	},
 	PackageGorillaMux: {
 		TracedPackage: "github.com/gorilla/mux",
@@ -836,6 +926,9 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageAzureAPIMCallout: {
+		TracedPackage: "azure/apim-callout",
+	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
 	},
@@ -844,6 +937,30 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageOS: {
 		TracedPackage: "os",
+	},
+	PackageMark3LabsMCPGo: {
+		TracedPackage: "github.com/mark3labs/mcp-go",
+		EnvVarPrefix:  "MCP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mcp-server"),
+				buildOpNameV0:      staticName("mcp.server.request"),
+				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
+	},
+	PackageModelContextProtocolGoSDK: {
+		TracedPackage: "github.com/modelcontextprotocol/go-sdk",
+		EnvVarPrefix:  "MCP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mcp-server"),
+				buildOpNameV0:      staticName("mcp.server.request"),
+				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
 	},
 	PackageEmickleiGoRestful: {
 		TracedPackage: "github.com/emicklei/go-restful",
@@ -944,9 +1061,10 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	cp := make(map[Package]PackageInfo)
-	for pkg, info := range packages {
-		cp[pkg] = info
-	}
+	maps.Copy(cp, packages)
 	return cp
 }

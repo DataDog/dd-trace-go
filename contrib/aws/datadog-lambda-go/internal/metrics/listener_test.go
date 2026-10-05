@@ -21,8 +21,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -37,14 +38,14 @@ func captureOutput(f func()) string {
 
 func TestHandlerAddsItselfToContext(t *testing.T) {
 	listener := MakeListener(Config{}, &extension.ExtensionManager{})
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 	pr := GetListener(ctx)
 	assert.NotNil(t, pr)
 }
 
 func TestHandlerFinishesProcessing(t *testing.T) {
 	listener := MakeListener(Config{}, &extension.ExtensionManager{})
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 
 	listener.HandlerFinished(ctx, nil)
 	assert.False(t, listener.processor.IsProcessing())
@@ -61,7 +62,7 @@ func TestAddDistributionMetricWithAPI(t *testing.T) {
 	defer server.Close()
 
 	listener := MakeListener(Config{APIKey: "12345", Site: server.URL}, &extension.ExtensionManager{})
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 	listener.AddDistributionMetric("the-metric", 2, time.Now(), false, "tag:a", "tag:b")
 	listener.HandlerFinished(ctx, nil)
 	assert.True(t, called)
@@ -76,7 +77,7 @@ func TestAddDistributionMetricWithLogForwarder(t *testing.T) {
 	defer server.Close()
 
 	listener := MakeListener(Config{APIKey: "12345", Site: server.URL, ShouldUseLogForwarder: true}, &extension.ExtensionManager{})
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 	listener.AddDistributionMetric("the-metric", 2, time.Now(), false, "tag:a", "tag:b")
 	listener.HandlerFinished(ctx, nil)
 	assert.False(t, called)
@@ -90,7 +91,7 @@ func TestAddDistributionMetricWithForceLogForwarder(t *testing.T) {
 	defer server.Close()
 
 	listener := MakeListener(Config{APIKey: "12345", Site: server.URL, ShouldUseLogForwarder: false}, &extension.ExtensionManager{})
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 	listener.AddDistributionMetric("the-metric", 2, time.Now(), true, "tag:a", "tag:b")
 	listener.HandlerFinished(ctx, nil)
 	assert.False(t, called)
@@ -116,7 +117,7 @@ func TestAddDistributionMetricWithFIPSMode(t *testing.T) {
 	assert.Nil(t, listener.apiClient, "API client should be nil when FIPS mode is enabled")
 
 	// Initialize the listener
-	ctx := listener.HandlerStarted(context.Background(), json.RawMessage{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
 
 	// Verify processor wasn't initialized
 	assert.Nil(t, listener.processor, "Processor should be nil when FIPS mode is enabled")
@@ -195,7 +196,7 @@ func TestSubmitEnhancedMetrics(t *testing.T) {
 	ctx := context.WithValue(context.Background(), "cold_start", false)
 
 	output := captureOutput(func() {
-		ctx = ml.HandlerStarted(ctx, json.RawMessage{})
+		ctx, _ = ml.HandlerStarted(ctx, json.RawMessage{})
 		ml.HandlerFinished(ctx, nil)
 	})
 
@@ -225,7 +226,7 @@ func TestDoNotSubmitEnhancedMetrics(t *testing.T) {
 	ctx := context.WithValue(context.Background(), "cold_start", true)
 
 	output := captureOutput(func() {
-		ctx = ml.HandlerStarted(ctx, json.RawMessage{})
+		ctx, _ = ml.HandlerStarted(ctx, json.RawMessage{})
 		ml.HandlerFinished(ctx, nil)
 	})
 
@@ -254,7 +255,7 @@ func TestSubmitEnhancedMetricsOnlyErrors(t *testing.T) {
 	ctx := context.WithValue(context.Background(), "cold_start", true)
 
 	output := captureOutput(func() {
-		ctx = ml.HandlerStarted(ctx, json.RawMessage{})
+		ctx, _ = ml.HandlerStarted(ctx, json.RawMessage{})
 		ml.config.EnhancedMetrics = true
 		err := errors.New("something went wrong")
 		ml.HandlerFinished(ctx, err)

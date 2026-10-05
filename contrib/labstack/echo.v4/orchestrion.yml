@@ -15,11 +15,5 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            echo: github.com/labstack/echo/v4
             echotrace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2
-          template: |-
-            func() *echo.Echo {
-              e := {{ . }}
-              e.Use(echotrace.Middleware())
-              return e
-            }()
+          template: echotrace.Wrap({{ . }})

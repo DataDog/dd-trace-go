@@ -21,6 +21,7 @@ const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
 	serviceName       string
+	serviceSource     string
 	analyticsRate     float64
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
@@ -48,6 +49,7 @@ type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageLabstackEchoV4)
 	cfg.analyticsRate = math.NaN()
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
@@ -69,6 +71,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
@@ -143,8 +146,9 @@ func WithHeaderTags(headers []string) OptionFn {
 	}
 }
 
-// WithErrorCheck sets the func which determines if err would be ignored (if it returns true, the error is not tagged).
-// This function also checks the errors created from the WithStatusCheck option.
+// WithErrorCheck specifies a function fn which determines whether the passed error
+// should be marked as an error. If fn returns true the error is tagged on the span,
+// otherwise it is ignored. This also applies to errors created from the WithStatusCheck option.
 func WithErrorCheck(errCheck func(error) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.errCheck = errCheck

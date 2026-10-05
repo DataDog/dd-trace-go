@@ -20,8 +20,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Constants for common strings
@@ -42,23 +43,24 @@ const (
 
 // FormFile represents a file to be uploaded in a multipart form request.
 type FormFile struct {
-	FieldName   string      // The name of the form field
-	FileName    string      // The name of the file
-	Content     interface{} // The content of the file (can be []byte, map, struct, etc.)
-	ContentType string      // The MIME type of the file (e.g., "application/json", "application/octet-stream")
+	FieldName   string // The name of the form field
+	FileName    string // The name of the file
+	Content     any    // The content of the file (can be []byte, map, struct, etc.)
+	ContentType string // The MIME type of the file (e.g., "application/json", "application/octet-stream")
 }
 
 // RequestConfig holds configuration for a request.
 type RequestConfig struct {
-	Method     string            // HTTP method: GET or POST
-	URL        string            // Request URL
-	Headers    map[string]string // Additional HTTP headers
-	Body       interface{}       // Request body for JSON, MessagePack, or raw bytes
-	Format     string            // Format: "json" or "msgpack"
-	Compressed bool              // Whether to use gzip compression
-	Files      []FormFile        // Files to be uploaded in a multipart form data request
-	MaxRetries int               // Maximum number of retries
-	Backoff    time.Duration     // Initial backoff duration for retries
+	Method             string            // HTTP method: GET or POST
+	URL                string            // Request URL
+	Headers            map[string]string // Additional HTTP headers
+	Body               any               // Request body for JSON, MessagePack, or raw bytes
+	Format             string            // Format: "json" or "msgpack"
+	Compressed         bool              // Whether to use gzip compression
+	Files              []FormFile        // Files to be uploaded in a multipart form data request
+	MaxRetries         int               // Maximum number of retries
+	Backoff            time.Duration     // Initial backoff duration for retries
+	ExpectJSONResponse bool              // When true, a 2xx response with a non-JSON Content-Type is retried instead of being returned as-is
 }
 
 // Response represents the HTTP response with deserialization capabilities and status code.
@@ -71,7 +73,7 @@ type Response struct {
 }
 
 // Unmarshal deserializes the response body into the provided target based on the response format.
-func (r *Response) Unmarshal(target interface{}) error {
+func (r *Response) Unmarshal(target any) error {
 	if !r.CanUnmarshal {
 		return fmt.Errorf("cannot unmarshal response with status code %d", r.StatusCode)
 	}
@@ -95,12 +97,31 @@ type RequestHandler struct {
 	Client *http.Client
 }
 
+// CloseIdleConnections closes idle connections owned by the request handler's
+// HTTP client. Active requests are left running by the standard library.
+func (rh *RequestHandler) CloseIdleConnections() {
+	if rh == nil || rh.Client == nil {
+		return
+	}
+	rh.Client.CloseIdleConnections()
+}
+
 // We copy the transport to avoid using the default one, as it might be
 // augmented with tracing and we don't want these calls to be recorded.
 // This also permits orchestrion to disable tracing on this client.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
 // Except we use a higher timeout for this
 var defaultHTTPClient = createNewHTTPClient()
+
+// CloseIdleConnections closes idle connections owned by the shared CI
+// Visibility HTTP client. It is safe to call during shutdown after CI
+// Visibility components have finished sending their final payloads.
+func CloseIdleConnections() {
+	if defaultHTTPClient == nil {
+		return
+	}
+	defaultHTTPClient.CloseIdleConnections()
+}
 
 // createNewHTTPClient creates a new HTTP client with custom transport settings.
 func createNewHTTPClient() *http.Client {
@@ -150,6 +171,32 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 		return nil, errors.New("URL is required")
 	}
 
+	// Buffer one-shot io.Reader payloads so every retry attempt re-sends the
+	// full body rather than a drained reader. config is a local copy (value
+	// receiver), so we can safely overwrite its fields here.
+	if r, ok := config.Body.(io.Reader); ok {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		config.Body = buf
+	}
+	if len(config.Files) > 0 {
+		// Copy the slice to avoid mutating the caller's FormFile backing array.
+		files := make([]FormFile, len(config.Files))
+		copy(files, config.Files)
+		for i := range files {
+			if r, ok := files[i].Content.(io.Reader); ok {
+				buf, err := io.ReadAll(r)
+				if err != nil {
+					return nil, err
+				}
+				files[i].Content = buf
+			}
+		}
+		config.Files = files
+	}
+
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
@@ -163,8 +210,8 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (stopRetries bool, response *Response, requestError error) {
 	var req *http.Request
 
-	// Check if it's a multipart form data request
 	if len(config.Files) > 0 {
+		// Check if it's a multipart form data request
 		// Create multipart form data body
 		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
 		if err != nil {
@@ -299,7 +346,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return true, nil, err
+		log.Debug("ciVisibilityHttpClient: error reading response body = %s", err.Error())
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	// Decompress response if it is gzip compressed
@@ -308,7 +357,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		compressedResponse = true
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
-			return true, nil, err
+			log.Debug("ciVisibilityHttpClient: error decompressing response body = %s", err.Error())
+			exponentialBackoff(attempt, config.Backoff)
+			return false, nil, nil
 		}
 	}
 
@@ -319,6 +370,18 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
 		}
+	}
+
+	// When the caller requires a JSON response but the server returned something
+	// unrecognised (e.g. a keep-alive reuse EOF that Go promotes to a 200 with an
+	// empty/plain-text body), treat it as a transient failure and retry.  Upload
+	// endpoints that never decode the response body must leave ExpectJSONResponse
+	// false so they are unaffected.
+	if config.ExpectJSONResponse && responseFormat == "unknown" && statusCode >= 200 && statusCode < 300 {
+		log.Debug("ciVisibilityHttpClient: expected JSON response but got format %q [method: %s, url: %s, status_code: %d]; retrying",
+			responseFormat, config.Method, config.URL, statusCode)
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	if log.DebugEnabled() {
@@ -336,7 +399,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 // Helper functions for data serialization, compression, and handling multipart form data
 
 // serializeData serializes the data based on the format.
-func serializeData(data interface{}, format string) ([]byte, error) {
+func serializeData(data any, format string) ([]byte, error) {
 	switch v := data.(type) {
 	case []byte:
 		// If it's already a byte array, use it directly
@@ -397,15 +460,14 @@ func exponentialBackoff(retryCount int, initialDelay time.Duration) {
 // getExponentialBackoffDuration calculates the backoff duration based on the retry count and initial delay.
 func getExponentialBackoffDuration(retryCount int, initialDelay time.Duration) time.Duration {
 	maxDelay := 10 * time.Second
-	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
-	if delay > maxDelay {
-		delay = maxDelay
-	}
+	delay := min(
+		// Exponential backoff
+		initialDelay*(1<<uint(retryCount)), maxDelay)
 	return delay
 }
 
 // prepareContent prepares the content for a FormFile by serializing it if needed.
-func prepareContent(content interface{}, contentType string) ([]byte, error) {
+func prepareContent(content any, contentType string) ([]byte, error) {
 	if contentType == ContentTypeJSON {
 		return serializeData(content, FormatJSON)
 	} else if contentType == ContentTypeMessagePack {

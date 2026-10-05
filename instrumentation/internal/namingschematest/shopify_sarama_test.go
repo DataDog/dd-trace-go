@@ -10,11 +10,12 @@ import (
 
 	saramatrace "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func shopifySaramaGenSpans() harness.GenSpansFn {
@@ -89,6 +90,10 @@ var shopifySarama = harness.TestCase{
 		Defaults:        harness.RepeatString("kafka", 2),
 		DDService:       []string{"kafka", harness.TestDDService},
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageShopifySarama), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

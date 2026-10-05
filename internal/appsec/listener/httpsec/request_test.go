@@ -10,30 +10,34 @@ import (
 	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
+	"net/http"
 	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
+
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
-	"github.com/DataDog/go-libddwaf/v4"
 )
 
 func TestClientIP(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		addr             net.Addr
-		md               metadata.MD
+		md               map[string][]string // previously google.golang.org/grpc/metadata.MD
 		expectedClientIP string
 	}{
 		{
@@ -67,7 +71,6 @@ func TestClientIP(t *testing.T) {
 			addr: &net.UnixAddr{Name: "/var/my.sock"},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			_, clientIP := ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
@@ -119,7 +122,7 @@ type MockSpan struct {
 	Tags map[string]any
 }
 
-func (m *MockSpan) SetTag(key string, value interface{}) {
+func (m *MockSpan) SetTag(key string, value any) {
 	if m.Tags == nil {
 		m.Tags = make(map[string]any)
 	}
@@ -154,11 +157,10 @@ func TestTags(t *testing.T) {
 			expectedTag: `{"triggers":["one","two"]}`,
 		},
 	} {
-		eventCase := eventCase
 		for _, reqHeadersCase := range []struct {
 			name         string
 			headers      map[string][]string
-			expectedTags map[string]interface{}
+			expectedTags map[string]any
 		}{
 			{
 				name: "zero-headers",
@@ -169,7 +171,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4", "4.5.6.7"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]interface{}{
+				expectedTags: map[string]any{
 					"http.request.headers.x-forwarded-for": "1.2.3.4,4.5.6.7",
 				},
 			},
@@ -179,7 +181,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]interface{}{
+				expectedTags: map[string]any{
 					"http.request.headers.x-forwarded-for": "1.2.3.4",
 				},
 			},
@@ -190,11 +192,10 @@ func TestTags(t *testing.T) {
 				},
 			},
 		} {
-			reqHeadersCase := reqHeadersCase
 			for _, respHeadersCase := range []struct {
 				name         string
 				headers      map[string][]string
-				expectedTags map[string]interface{}
+				expectedTags map[string]any
 			}{
 				{
 					name: "zero-headers",
@@ -205,7 +206,7 @@ func TestTags(t *testing.T) {
 						"Content-Type": {"application/json"},
 						"my-header":    {"something"},
 					},
-					expectedTags: map[string]interface{}{
+					expectedTags: map[string]any{
 						"http.response.headers.content-type": "application/json",
 					},
 				},
@@ -216,7 +217,6 @@ func TestTags(t *testing.T) {
 					},
 				},
 			} {
-				respHeadersCase := respHeadersCase
 				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, reqHeadersCase.name, respHeadersCase.name), func(t *testing.T) {
 					var span MockSpan
 					waf.SetEventSpanTags(&span)
@@ -233,7 +233,7 @@ func TestTags(t *testing.T) {
 					setResponseHeadersTags(&span, respHeadersCase.headers)
 
 					if eventCase.events != nil {
-						require.Subset(t, span.Tags, map[string]interface{}{
+						require.Subset(t, span.Tags, map[string]any{
 							"_dd.appsec.json": eventCase.expectedTag,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
@@ -252,6 +252,62 @@ func TestTags(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
+	var span MockSpan
+	setRequestHeadersTags(&span, map[string][]string{
+		"X-Datadog-Endpoint-Scan": {"scan-uuid"},
+		"X-Datadog-Security-Test": {"test-uuid"},
+		"X-Forwarded-For":         {"1.2.3.4"},
+	})
+
+	require.Equal(t, "1.2.3.4", span.Tags["http.request.headers.x-forwarded-for"])
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-endpoint-scan")
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
+}
+
+func TestSecurityTestingHeaderTagValues(t *testing.T) {
+	headers := http.Header{
+		"X-Datadog-Endpoint-Scan": {" scan-uuid "},
+		"X-Datadog-Security-Test": {"test-uuid", "second-value"},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderTagValues(headers)
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
+}
+
+func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
+	values := [][2][]byte{
+		{[]byte("X-Datadog-Endpoint-Scan"), []byte(" scan-uuid ")},
+		{[]byte("X-Datadog-Security-Test"), []byte("test-uuid")},
+		{[]byte("x-datadog-security-test"), []byte("second-value")},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(visit func(key, value []byte)) {
+		for _, value := range values {
+			key := append([]byte(nil), value[0]...)
+			headerValue := append([]byte(nil), value[1]...)
+			visit(key, headerValue)
+			for i := range key {
+				key[i] = 'x'
+			}
+			for i := range headerValue {
+				headerValue[i] = 'x'
+			}
+		}
+	})
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
 }
 
 //go:embed testdata/trace_tagging_rules.json
@@ -329,6 +385,7 @@ func TestTraceTagging(t *testing.T) {
 				RequestRoute: "/fake/:id/uri",
 				Host:         "localhost",
 				RemoteAddr:   "127.0.0.1:4242",
+				ClientIP:     netip.MustParseAddr("127.0.0.1"),
 				Headers:      map[string][]string{"user-agent": {tc.UserAgent}},
 				Cookies:      map[string][]string{},
 				QueryParams:  map[string][]string{},
@@ -339,4 +396,100 @@ func TestTraceTagging(t *testing.T) {
 			require.Subset(t, span.Tags, tc.ExpectedTags)
 		})
 	}
+}
+
+// BenchmarkSecurityTestingHeaderTagValues measures the hot-path cost of
+// scanning for security testing headers on every HTTP request.
+// The "absent" case represents real user traffic (headers never present);
+// the "present" case represents Datadog scan/test traffic.
+func BenchmarkSecurityTestingHeaderTagValues(b *testing.B) {
+	// Realistic ~20-header request without security testing headers.
+	baseHeaders := http.Header{
+		"Accept":            {"text/html,application/xhtml+xml"},
+		"Accept-Encoding":   {"gzip, deflate, br"},
+		"Accept-Language":   {"en-US,en;q=0.9"},
+		"Cache-Control":     {"no-cache"},
+		"Connection":        {"keep-alive"},
+		"Content-Type":      {"application/json"},
+		"Host":              {"example.com"},
+		"Pragma":            {"no-cache"},
+		"Referer":           {"https://example.com/"},
+		"User-Agent":        {"Mozilla/5.0 (compatible; BenchmarkBot/1.0)"},
+		"X-Forwarded-For":   {"1.2.3.4"},
+		"X-Real-Ip":         {"1.2.3.4"},
+		"X-Request-Id":      {"abc-123-def"},
+		"X-Forwarded-Host":  {"example.com"},
+		"X-Forwarded-Port":  {"443"},
+		"X-Forwarded-Proto": {"https"},
+		"X-Amzn-Trace-Id":   {"Root=1-abc-def"},
+		"Cf-Ray":            {"abc123-LAX"},
+		"Cf-Connecting-Ip":  {"1.2.3.4"},
+		"Via":               {"1.1 proxy.example.com"},
+	}
+
+	headersPresent := make(http.Header, len(baseHeaders)+2)
+	maps.Copy(headersPresent, baseHeaders)
+	headersPresent["X-Datadog-Endpoint-Scan"] = []string{"scan-uuid"}
+	headersPresent["X-Datadog-Security-Test"] = []string{"test-uuid"}
+
+	cases := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"absent", baseHeaders},
+		{"present", headersPresent},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				SecurityTestingHeaderTagValues(tc.headers)
+			}
+		})
+	}
+}
+
+func TestHeadersRemoveCookies(t *testing.T) {
+	h := http.Header{
+		"Cookie":       []string{"session=secret"},
+		"Set-Cookie":   []string{"session=secret; HttpOnly"},
+		"Content-Type": []string{"application/json"},
+	}
+	out := headersRemoveCookies(h)
+	if _, ok := out["cookie"]; ok {
+		t.Fatalf("request cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["set-cookie"]; ok {
+		t.Fatalf("response set-cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["content-type"]; !ok {
+		t.Fatalf("non-cookie headers must be preserved")
+	}
+}
+
+// TestSSRFOnStartNilMetricsNoPanic reproduces the nil-metrics dereference in the SSRF listener's
+// OnStart: when the WAF handle is unavailable (no context, no metrics set), an outbound request still
+// reaches the listener, which must not panic.
+func TestSSRFOnStartNilMetricsNoPanic(t *testing.T) {
+	// Context operation with NO metrics instance and NO WAF context (mirrors the handle==nil path,
+	// where listener/waf.onStart returns before SetMetricsInstance).
+	ctxOp, _ := wafemitter.StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+	t.Cleanup(ctxOp.Finish)
+	require.Nil(t, ctxOp.GetMetricsInstance(), "precondition: metrics must be nil")
+
+	handlerOp := &httpsec.HandlerOperation{
+		Operation:        dyngo.NewOperation(ctxOp),
+		ContextOperation: ctxOp,
+	}
+	rtOp := &httpsec.RoundTripOperation{
+		Operation:           dyngo.NewOperation(handlerOp),
+		SubcontextOperation: handlerOp.NewSubcontextOp(),
+		HandlerOp:           handlerOp,
+	}
+
+	feature := &DownwardRequestFeature{}
+	require.NotPanics(t, func() {
+		feature.OnStart(rtOp, httpsec.RoundTripOperationArgs{URL: "http://example.com", Method: "GET"})
+	})
 }

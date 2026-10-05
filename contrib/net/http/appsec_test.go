@@ -7,6 +7,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,12 +16,13 @@ import (
 	"strings"
 	"testing"
 
-	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAppsec(t *testing.T) {
@@ -29,17 +31,13 @@ func TestAppsec(t *testing.T) {
 	client := WrapRoundTripper(&emptyRoundTripper{})
 
 	for _, enabled := range []bool{true, false} {
-
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+		t.Run(fmt.Sprintf("DD_APPSEC_RASP_ENABLED=%v", enabled), func(t *testing.T) {
 			t.Setenv("DD_APPSEC_RASP_ENABLED", strconv.FormatBool(enabled))
 
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
 			testutils.StartAppSec(t)
-			if !internal.Instrumentation.AppSecEnabled() {
-				t.Skip("appsec not enabled")
-			}
 
 			w := httptest.NewRecorder()
 			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
@@ -91,7 +89,7 @@ func TestAppsec(t *testing.T) {
 
 func TestAppsecAPI10(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
-	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+	t.Setenv("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
 
 	var b strings.Builder
 	b.WriteString(`{"payload_in":"%s"`)
@@ -217,9 +215,6 @@ func TestAppsecAPI10(t *testing.T) {
 			defer mt.Stop()
 
 			testutils.StartAppSec(t)
-			if !internal.Instrumentation.AppSecEnabled() {
-				t.Skip("appsec not enabled")
-			}
 
 			w := httptest.NewRecorder()
 			r, err := http.NewRequest("GET", "", nil)
@@ -242,22 +237,46 @@ func TestAppsecAPI10(t *testing.T) {
 
 			require.Contains(t, serviceSpan.Tags(), tc.tagName)
 			require.Equal(t, serviceSpan.Tags()[tc.tagName], tc.tagValue)
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.downstream_request")
+			require.Equal(t, serviceSpan.Tags()["_dd.appsec.downstream_request"], float64(1))
 		})
 	}
 }
 
 func TestAppsecHTTP30X(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
-	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+	t.Setenv("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		require.NoError(t, r.Body.Close())
+
+		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/move":
+			http.Redirect(w, r, "/redirect", http.StatusPermanentRedirect)
+			err := json.NewEncoder(w).Encode(map[string]any{"redirect_style": "move"})
+			require.NoError(t, err)
 		case "/redirect":
 			http.Redirect(w, r, "/final", http.StatusTemporaryRedirect)
-		case "/move":
-			http.Redirect(w, r, "/final", http.StatusMovedPermanently)
+			err := json.NewEncoder(w).Encode(map[string]any{"redirect_style": "redirect"})
+			require.NoError(t, err)
 		case "/final":
 			w.WriteHeader(http.StatusOK)
+			err := json.NewEncoder(w).Encode(payload.Token)
+			require.NoError(t, err)
 		default:
 			require.Failf(t, "unexpected request", "path: %s", r.URL.Path)
 		}
@@ -265,76 +284,106 @@ func TestAppsecHTTP30X(t *testing.T) {
 
 	defer srv.Close()
 
-	httpClient := srv.Client()
-	httpClient.Transport = WrapRoundTripper(httpClient.Transport)
+	httpClient := WrapClient(srv.Client())
 
-	t.Run("move", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-		testutils.StartAppSec(t)
-		if !internal.Instrumentation.AppSecEnabled() {
-			t.Skip("appsec not enabled")
-		}
+	testutils.StartAppSec(t)
 
-		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", srv.URL+"/move", nil)
+	w := httptest.NewRecorder()
+	r, err := http.NewRequest("POST", srv.URL+"/move", strings.NewReader(`{"token": "kqehf09123r4lnksef"}`))
+	require.NoError(t, err)
+	r.Header.Set("Content-Type", "application/json")
+
+	TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		resp, err := httpClient.Do(r)
 		require.NoError(t, err)
-
-		TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			resp, err := httpClient.Do(r)
-			require.NoError(t, err)
-			if resp != nil && resp.Body != nil {
-				defer resp.Body.Close()
-			}
-		}), w, r, &ServeConfig{
-			Service:  "service",
-			Resource: "resource",
-		})
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 3) // service entry serviceSpan & http request serviceSpan
-		serviceSpan := spans[2]
-
-		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.move_target")
-		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.move_target"], "/final")
-
-		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.nothing")
-		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.nothing"], float64(1))
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+	}), w, r, &ServeConfig{
+		Service:  "service",
+		Resource: "resource",
 	})
 
-	t.Run("redirect", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	spans := mt.FinishedSpans()
 
-		testutils.StartAppSec(t)
-		if !internal.Instrumentation.AppSecEnabled() {
-			t.Skip("appsec not enabled")
-		}
+	// Logically: Handler, Downstream, Redirect 1, Redirect 2
+	// The last one finished is the Handler, which is the service entry span we tag onto.
+	require.Len(t, spans, 4)
 
-		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", srv.URL+"/redirect", nil)
-		require.NoError(t, err)
+	serviceSpan := spans[3] // The last one closed...
+	// First has been moved to /redirect...
+	assert.Equal(t, "/redirect", serviceSpan.Tags()["appsec.api.redirection.move_target"], "unexpected or missing appsec.api.redirection.move_target tag")
+	// Then has been redirected to /final...
+	assert.Equal(t, "/final", serviceSpan.Tags()["appsec.api.redirection.redirect_target"], "unexpected or missing appsec.api.redirection.redirect_target tag")
+	// And finally, has received a non-redirect response
+	assert.Equal(t, float64(1), serviceSpan.Tags()["appsec.api.redirection.nothing"], "unexpected or missing appsec.api.redirection.nothing tag")
+	// Which makes a total of 3 downstream requests for this redirect chain
+	assert.Equal(t, float64(3), serviceSpan.Tags()["_dd.appsec.downstream_request"], "unexpected or missing _dd.appsec.downstream_request tag")
 
-		TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			resp, err := httpClient.Do(r)
-			require.NoError(t, err)
-			if resp != nil && resp.Body != nil {
-				defer resp.Body.Close()
+	// We have analyzed the final response body alright
+	assert.Equal(t, "TAG_API10_RES_BODY", serviceSpan.Tags()["_dd.appsec.trace.res_body"], "unexpected or missing _dd.appsec.trace.res_body tag")
+	// But we have not analyzed any of the redirect response bodies
+	assert.NotContains(t, serviceSpan.Tags(), "_dd.appsec.trace.3xx_res_body")
+}
+
+// TestAppsecHTTP30XRedirectChainKeepsFirstHop guards against the #4938 regression surfaced by
+// system-tests Test_API10_redirect_status: when every hop of a redirect chain returns the SAME
+// status (302 here), the same api-010 rule fires on every hop and writes the same redirection
+// attribute from each hop's Location header. The value reported must be the FIRST hop's, not the
+// last. Per-hop ephemeral WAF subcontexts (#4938) had regressed this to last-write-wins.
+func TestAppsecHTTP30XRedirectChainKeepsFirstHop(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
+
+	// Uniform-302 chain: /redirect?totalRedirects=3 -> 2 -> 1 -> 0 -> /final, mirroring the
+	// system-tests internal_server. api10.json's api-010-110 rule maps 302 -> redirect_target.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/redirect"):
+			n, _ := strconv.Atoi(r.URL.Query().Get("totalRedirects"))
+			loc := "/final"
+			if n > 0 {
+				loc = fmt.Sprintf("/redirect?totalRedirects=%d", n-1)
 			}
-		}), w, r, &ServeConfig{
-			Service:  "service",
-			Resource: "resource",
-		})
+			http.Redirect(w, r, loc, http.StatusFound)
+		case r.URL.Path == "/final":
+			w.WriteHeader(http.StatusOK)
+		default:
+			require.Failf(t, "unexpected request", "path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
 
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 3) // service entry serviceSpan & http request serviceSpan
-		serviceSpan := spans[2]
+	httpClient := WrapClient(srv.Client())
 
-		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.redirect_target")
-		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.redirect_target"], "/final")
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.nothing")
-		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.nothing"], float64(1))
+	testutils.StartAppSec(t)
+
+	w := httptest.NewRecorder()
+	r, err := http.NewRequest("GET", srv.URL+"/redirect?totalRedirects=3", nil)
+	require.NoError(t, err)
+
+	TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		resp, err := httpClient.Do(r)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+	}), w, r, &ServeConfig{
+		Service:  "service",
+		Resource: "resource",
 	})
+
+	spans := mt.FinishedSpans()
+
+	// 1 handler span + 5 downstream requests (4x 302 + the final 200).
+	require.Len(t, spans, 6)
+	serviceSpan := spans[len(spans)-1]
+
+	assert.Equal(t, "/redirect?totalRedirects=2", serviceSpan.Tags()["appsec.api.redirection.redirect_target"], "redirect_target must reflect the FIRST redirect hop, not the last")
+	assert.Equal(t, float64(5), serviceSpan.Tags()["_dd.appsec.downstream_request"], "unexpected or missing _dd.appsec.downstream_request tag")
 }

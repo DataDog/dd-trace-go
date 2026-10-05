@@ -15,6 +15,7 @@ import (
 
 	restfultrace "github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -49,6 +50,10 @@ var goRestfulV3 = harness.TestCase{
 		Defaults:        []string{"go-restful"},
 		DDService:       []string{"go-restful"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageEmickleiGoRestfulV3)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

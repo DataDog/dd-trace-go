@@ -36,7 +36,7 @@ type DatadogMiddleware struct {
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	opts := options.Expand(m.cfg.spanOpts, 0, 4) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
 	opts = append(opts,
-		tracer.ServiceName(m.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(m.cfg.serviceName, m.cfg.serviceSource),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),
 		httptrace.HeaderTagsFromRequest(r, m.cfg.headerTags))
 	if !math.IsNaN(m.cfg.analyticsRate) {

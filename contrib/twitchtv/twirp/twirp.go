@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 
 	"github.com/twitchtv/twirp"
 )
@@ -60,7 +61,7 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ServiceName(wc.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(wc.cfg.serviceName, wc.cfg.serviceSource),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 		tracer.Tag(ext.Component, component),
@@ -130,7 +131,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		spanOpts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
 			tracer.Tag(ext.Component, component),
@@ -148,6 +149,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}
+		spanOpts = appsechttpsec.AppendSecurityTestingHeaderTags(spanOpts, r.Header)
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", spanOpts...)
 		defer span.Finish()
 
@@ -191,7 +193,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 	return func(ctx context.Context) (context.Context, error) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 			tracer.Measured(),
 			tracer.Tag(ext.Component, component),
 			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),

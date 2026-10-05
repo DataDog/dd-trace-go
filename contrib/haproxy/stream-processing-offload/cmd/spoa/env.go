@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	streamprocessingoffload "github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
@@ -48,4 +49,16 @@ func ipEnv(key string, def net.IP) net.IP {
 	}
 	streamprocessingoffload.Instrumentation().TelemetryRegisterAppConfig(key, vv, instrumentation.TelemetryOriginEnvVar)
 	return ip
+}
+
+// stringEnv returns the string value of an environment variable, or
+// def otherwise.
+func stringEnv(key, def string) string {
+	v, ok := env.Lookup(key)
+	if !ok {
+		streamprocessingoffload.Instrumentation().TelemetryRegisterAppConfig(key, v, instrumentation.TelemetryOriginDefault)
+		return def
+	}
+	streamprocessingoffload.Instrumentation().TelemetryRegisterAppConfig(key, v, instrumentation.TelemetryOriginEnvVar)
+	return v
 }

@@ -12,8 +12,9 @@ import (
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 func TestValidateConfiguration(t *testing.T) {
@@ -411,9 +412,144 @@ func TestValidateFlag(t *testing.T) {
 	})
 }
 
+func TestValidateFlagConditionOperands(t *testing.T) {
+	newFlag := func(operator conditionOperator, value any) *flag {
+		return &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Rules: []*rule{
+						{Conditions: []*condition{{Operator: operator, Attribute: "attribute", Value: value}}},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		operator conditionOperator
+		value    any
+		valid    bool
+	}{
+		{name: "numeric", operator: operatorGT, value: 1.5, valid: true},
+		{name: "numeric requires number", operator: operatorGT, value: "1.5"},
+		{name: "regex", operator: operatorMatches, value: "^value$", valid: true},
+		{name: "regex requires string", operator: operatorMatches, value: true},
+		{name: "list", operator: operatorOneOf, value: []any{"value"}, valid: true},
+		{name: "list requires array", operator: operatorOneOf, value: "value"},
+		{name: "null", operator: operatorIsNull, value: true, valid: true},
+		{name: "null requires boolean", operator: operatorIsNull, value: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFlag("test-flag", newFlag(tt.operator, tt.value))
+			if tt.valid {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestValidateFlagSemverConditions(t *testing.T) {
+	newFlag := func(operator conditionOperator, value any) *flag {
+		return &flag{
+			Key:           "test-flag",
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Rules: []*rule{
+						{
+							Conditions: []*condition{
+								{Operator: operator, Attribute: "version", Value: value},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	operators := []conditionOperator{
+		operatorSemverEQ,
+		operatorSemverNEQ,
+		operatorSemverLT,
+		operatorSemverLTE,
+		operatorSemverGT,
+		operatorSemverGTE,
+	}
+	for _, operator := range operators {
+		t.Run(string(operator), func(t *testing.T) {
+			flag := newFlag(operator, "1.2.3-alpha.1+build.5")
+			require.NoError(t, validateFlag("test-flag", flag))
+			require.Equal(t, &parsedSemver{major: 1, minor: 2, patch: 3, prerelease: "alpha.1"},
+				flag.Allocations[0].Rules[0].Conditions[0].semverComparand)
+		})
+	}
+
+	invalidValues := []struct {
+		name  string
+		value any
+	}{
+		{name: "non-string", value: 1.2},
+		{name: "invalid", value: "not-a-version"},
+		{name: "v prefix", value: "v1.2.3"},
+		{name: "leading zero", value: "01.2.3"},
+		{name: "overflow", value: "18446744073709551616.0.0"},
+	}
+	for _, tt := range invalidValues {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorIs(t, validateFlag("test-flag", newFlag(operatorSemverEQ, tt.value)), errInvalidSemverComparand)
+		})
+	}
+}
+
+func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
+	data := []byte(`{
+		"format": "SERVER",
+		"flags": {
+			"invalid-semver": {
+				"key": "invalid-semver",
+				"enabled": true,
+				"variationType": "BOOLEAN",
+				"variations": {"on": {"key": "on", "value": true}},
+				"allocations": [{
+					"key": "targeted",
+					"rules": [{"conditions": [{
+						"attribute": "version",
+						"operator": "SEMVER_EQ",
+						"value": "not-a-version"
+					}]}],
+					"splits": [{"shards": [], "variationKey": "on"}]
+				}]
+			}
+		}
+	}`)
+
+	var config universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal(data, &config))
+	require.NotContains(t, config.Flags, "invalid-semver")
+	require.ErrorIs(t, config.invalidFlags["invalid-semver"], errInvalidSemverComparand)
+
+	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now())
+	require.Equal(t, false, result.Value)
+	require.Equal(t, "ERROR", string(result.Reason))
+	require.ErrorIs(t, result.Error, errParseError)
+	require.ErrorIs(t, result.Error, errInvalidSemverComparand)
+}
+
 func TestProcessConfigUpdate(t *testing.T) {
 	t.Run("valid configuration update", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		config := universalFlagsConfiguration{
 			CreatedAt: time.Now(),
@@ -454,8 +590,60 @@ func TestProcessConfigUpdate(t *testing.T) {
 		}
 	})
 
+	t.Run("nil shard range does not reject valid flags", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		data := []byte(`{
+			"format": "SERVER",
+			"flags": {
+				"valid-flag": {
+					"key": "valid-flag",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": [{
+						"key": "static",
+						"rules": [],
+						"splits": [{"shards": [], "variationKey": "on"}]
+					}]
+				},
+				"invalid-flag": {
+					"key": "invalid-flag",
+					"enabled": true,
+					"variationType": "BOOLEAN",
+					"variations": {"on": {"key": "on", "value": true}},
+					"allocations": [{
+						"key": "invalid",
+						"rules": [],
+						"splits": [{
+							"shards": [{"totalShards": 8192, "ranges": [null]}],
+							"variationKey": "on"
+						}]
+					}]
+				}
+			}
+		}`)
+
+		status := processConfigUpdate(provider, "test-path", data)
+		require.Equal(t, rc.ApplyStateAcknowledged, status.State)
+
+		updatedConfig := provider.getConfiguration()
+		require.NotNil(t, updatedConfig)
+		require.Contains(t, updatedConfig.Flags, "valid-flag")
+		require.NotContains(t, updatedConfig.Flags, "invalid-flag")
+		require.Contains(t, updatedConfig.invalidFlags, "invalid-flag")
+
+		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now())
+		require.Equal(t, true, validResult.Value)
+		require.Equal(t, "STATIC", string(validResult.Reason))
+
+		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
+		require.Equal(t, false, invalidResult.Value)
+		require.Equal(t, "ERROR", string(invalidResult.Reason))
+		require.ErrorIs(t, invalidResult.Error, errParseError)
+	})
+
 	t.Run("configuration deletion", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		// First set a configuration
 		config := &universalFlagsConfiguration{
@@ -487,7 +675,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		invalidJSON := []byte("{invalid json")
 		status := processConfigUpdate(provider, "test-path", invalidJSON)
@@ -501,7 +689,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("invalid configuration", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		config := universalFlagsConfiguration{
 			Format: "INVALID",
@@ -521,8 +709,8 @@ func TestProcessConfigUpdate(t *testing.T) {
 }
 
 func TestCreateRemoteConfigCallback(t *testing.T) {
-	provider := newDatadogProvider()
-	callback := createRemoteConfigCallback(provider)
+	provider := newDatadogProvider(ProviderConfig{})
+	callback := provider.rcCallback
 
 	// Create a valid configuration
 	config := universalFlagsConfiguration{
@@ -579,8 +767,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 	// connect to Remote Config (would require a running agent)
 
 	t.Run("callback handles multiple updates", func(t *testing.T) {
-		provider := newDatadogProvider()
-		callback := createRemoteConfigCallback(provider)
+		provider := newDatadogProvider(ProviderConfig{})
+		callback := provider.rcCallback
 
 		// Create two different configurations
 		config1 := universalFlagsConfiguration{
@@ -645,8 +833,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 	})
 
 	t.Run("callback handles mixed success and failure", func(t *testing.T) {
-		provider := newDatadogProvider()
-		callback := createRemoteConfigCallback(provider)
+		provider := newDatadogProvider(ProviderConfig{})
+		callback := provider.rcCallback
 
 		validConfig := universalFlagsConfiguration{
 			Format: "SERVER",
@@ -683,10 +871,10 @@ func TestRemoteConfigIntegration(t *testing.T) {
 }
 
 func TestConfigurationPersistence(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Simulate multiple Remote Config updates
-	callback := createRemoteConfigCallback(provider)
+	callback := provider.rcCallback
 
 	configs := []universalFlagsConfiguration{
 		{

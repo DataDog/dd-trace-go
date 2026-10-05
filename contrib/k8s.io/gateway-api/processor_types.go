@@ -33,7 +33,7 @@ func (r requestHeader) ExtractRequest(_ context.Context) (proxy.PseudoRequest, e
 		Method:     r.Method,
 		Headers:    r.Header,
 		Scheme:     r.URL.Scheme,
-		Path:       r.URL.Path,
+		Path:       r.RequestURI,
 		RemoteAddr: r.RemoteAddr,
 		Authority:  r.URL.Host,
 	}, nil

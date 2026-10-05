@@ -17,10 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/negasus/haproxy-spoe-go/agent"
 
-	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+
+	streamprocessingoffload "github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
@@ -105,11 +107,12 @@ func startService(config haProxySpoaConfig) error {
 }
 
 func startHealthCheck(ctx context.Context, config haProxySpoaConfig) error {
+	imageVersion := stringEnv("DD_VERSION", instrumentation.Version())
 	muxServer := http.NewServeMux()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + imageVersion + `"}}`))
 	})
 
 	server := &http.Server{

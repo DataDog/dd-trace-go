@@ -13,18 +13,18 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type esClient interface {
@@ -36,14 +36,8 @@ type base struct {
 	client    esClient
 }
 
-func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
+func (b *base) Setup(ctx context.Context, t *testing.T, containerName, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
 	containers.SkipIfProviderIsNotHealthy(t)
-
-	parts := strings.Split(image, ":")
-	require.Len(t, parts, 2)
-	version := parts[1]
-	major := strings.Split(version, ".")[0]
-	containerName := "elasticsearch" + major
 
 	var err error
 	b.container, err = testelasticsearch.Run(ctx,

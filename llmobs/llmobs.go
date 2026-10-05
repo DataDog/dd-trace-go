@@ -140,11 +140,19 @@ type (
 	// It is used to annotate output of retrieval spans.
 	RetrievedDocument = illmobs.RetrievedDocument
 
-	// Prompt represents a structured prompt template used with LLMs.
+	// Prompt represents a structured prompt template used with LLM spans.
+	// Template and ChatTemplate are mutually exclusive; if both are set, Template is dropped
+	// and ChatTemplate is used. Nonempty ChatTemplateItems takes precedence over both.
 	Prompt = illmobs.Prompt
 
 	// ToolDefinition represents the definition of a tool/function that an LLM can call.
 	ToolDefinition = illmobs.ToolDefinition
+
+	// ToolCall represents a call to a tool within an LLM message.
+	ToolCall = illmobs.ToolCall
+
+	// ToolResult represents the result of a tool call within an LLM message.
+	ToolResult = illmobs.ToolResult
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.
@@ -421,7 +429,7 @@ func (s *LLMSpan) AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOpti
 func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (*baseSpan, context.Context, bool) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err.Error())
+		log.Warn("llmobs: failed to start llmobs span: %v", err.Error()) //errtrack:ignore invalid caller span configuration
 		return nil, ctx, false
 	}
 	cfg := illmobs.StartSpanConfig{}

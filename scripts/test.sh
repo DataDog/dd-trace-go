@@ -22,6 +22,15 @@ contrib=""
 sleeptime=10
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
+unset __DD_TRACE_SQL_TEST
+
+# Build tags support (e.g., BUILD_TAGS=deadlock or BUILD_TAGS=debug,deadlock)
+# Use an array to avoid shellcheck warnings about word splitting with empty strings
+TAGS_FLAG=()
+if [[ -n "${BUILD_TAGS:-}" ]]; then
+  TAGS_FLAG=("-tags=${BUILD_TAGS}")
+  message "Using build tags: ${BUILD_TAGS}"
+fi
 
 if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
   # Needed to run integration tests on Apple Silicon
@@ -36,6 +45,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -i | --integration)
       export INTEGRATION=true
+      export __DD_TRACE_SQL_TEST=true
       shift
       ;;
     -c | --contrib)
@@ -47,6 +57,7 @@ while [[ $# -gt 0 ]]; do
       export DD_APPSEC_ENABLED=true
       export DD_TEST_APPS_ENABLED=true
       export INTEGRATION=true
+      export __DD_TRACE_SQL_TEST=true
       shift
       ;;
     -s | --sleep)
@@ -64,6 +75,9 @@ while [[ $# -gt 0 ]]; do
       echo "  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
       echo "  -t | --tools       - Install gotestsum and goimports"
       echo "  -h | --help        - Print this help message"
+      echo ""
+      echo "Environment Variables:"
+      echo "  BUILD_TAGS         - Comma-separated Go build tags (e.g., BUILD_TAGS=deadlock or BUILD_TAGS=debug,deadlock)"
       exit 0
       ;;
     *)
@@ -73,7 +87,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$INTEGRATION" != "" ]]; then
+if [[ "${INTEGRATION:-}" != "" ]]; then
   ## Make sure we shut down the docker containers on exit.
   function finish {
     message "Cleaning up..."
@@ -91,14 +105,14 @@ fi
 
 ## CORE
 message "Testing core..."
-mapfile -t pkg_names < <(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names[@]}" && true
+mapfile -t pkg_names < <(go list "${TAGS_FLAG[@]}" ./...)
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- "${TAGS_FLAG[@]}" -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names[@]}" && true
 
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
   message "Testing contrib..."
 
-  if [[ "$INTEGRATION" != "" ]]; then
+  if [[ "${INTEGRATION:-}" != "" ]]; then
     ## wait for all the docker containers to be "ready"
     message "Waiting for docker for ${sleeptime} seconds"
     sleep "${sleeptime}"
@@ -113,14 +127,14 @@ if [[ "$contrib" != "" ]]; then
 
     cd "$dir"
     message "Testing $dir"
-    mapfile -t pkgs < <(go list ./... | grep -v -e google.golang.org/api)
+    mapfile -t pkgs < <(go list "${TAGS_FLAG[@]}" ./... | grep -v -e google.golang.org/api)
     if [[ ${#pkgs[@]} -eq 0 ]]; then
       cd - > /dev/null
       continue
     fi
     pkg_id="${pkgs[0]#github.com/DataDog/dd-trace-go/v2}"
     pkg_id="${pkg_id//\//_}"
-    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs[@]}"
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- "${TAGS_FLAG[@]}" -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs[@]}"
     cd - > /dev/null
   done
 fi

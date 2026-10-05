@@ -1,0 +1,178 @@
+name: Dynamic Analysis Checks
+
+on:
+  workflow_dispatch: # manually
+  schedule: # nightly
+    - cron: "0 2 * * *"
+  pull_request: # on pull requests touching locking-related files
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - ".github/workflows/dynamic-checks.yml"
+      # It calls unit-integration-tests.yml twice, so an edit there changes what
+      # this workflow actually runs.
+      - ".github/workflows/unit-integration-tests.yml"
+      - "internal/locking/**"
+      # GLS is the other half of what the deadlock detector exercises.
+      - "internal/orchestrion/gls*.go"
+      - "ddtrace/tracer/**"
+      - "scripts/ci_test_*.sh"
+      # Root module only. "**/go.mod" matched every Dependabot contrib bump and
+      # fired two full unit-integration-tests runs (debug + deadlock build
+      # tags), each with a 6-chunk contrib matrix -- measured at 85 job-minutes.
+      # A contrib dependency bump cannot change root-module locking behaviour.
+      - "go.mod"
+      - "go.sum"
+      - "go.work"
+  push:
+    branches:
+      - mq-working-branch-**
+      - release-v*
+    tags-ignore:
+      - "contrib/**"
+      - "instrumentation/**"
+      - "internal/**"
+      - "orchestrion/**"
+      - "otelc/**"
+      - "scripts/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # test-with-debug and test-with-deadlock are probabilistic detectors: a rare
+  # non-deterministic failure here was blocking unrelated merges. Both retry, so
+  # a real deadlock still fails (twice over) and gotestsum keeps every attempt
+  # in the test report.
+  test-with-debug:
+    name: Dynamic Analysis with Debug Detection
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: "1.27"
+      build_tags: "debug"
+      rerun-fails: "2"
+    secrets: inherit
+
+  test-with-deadlock:
+    name: Dynamic Analysis with Deadlock Detection
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: "1.27"
+      build_tags: "deadlock"
+      rerun-fails: "2"
+    secrets: inherit
+
+  # Test internal/locking specifically with different Go versions and build tags.
+  test-locking-package:
+    name: Test internal/locking with Build Tags
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["oldstable", "1.27"]
+        build_tags: ["debug", "debug,deadlock"]
+      fail-fast: false
+    env:
+      BUILD_TAGS: ${{ matrix.build_tags }}
+      TEST_RESULT_PATH: /tmp/test-results
+    steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+
+      - name: Setup Go
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: "true"
+          workload: dynamic-locking
+          variant: |-
+            {"runner":"ubuntu-latest",
+             "modules":["internal/locking"],
+             "tags":"${{ matrix.build_tags }}"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      - name: Test internal/locking package
+        env:
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          mkdir -p "$TEST_RESULTS"
+          cd internal/locking
+          echo "Testing internal/locking with build tags: $BUILD_TAGS"
+          TAGS_ARG="-tags="
+          if [[ -n "$BUILD_TAGS" ]]; then
+            TAGS_ARG="-tags=$BUILD_TAGS"
+          fi
+          # Retries for the same reason as the two jobs above, and with no
+          # coverage caveat: this job writes a coverprofile but never uploads
+          # one, so a rerun overwriting it costs nothing. Packages move to
+          # --packages because --rerun-fails rejects them as go test args.
+          gotestsum --rerun-fails=2 --junitfile "${TEST_RESULTS}/gotestsum-report-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.xml" --packages=./... -- -v -race "$TAGS_ARG" -timeout=10m -coverprofile="coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt" -covermode=atomic
+
+      - name: Upload test results
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: internal/locking/coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt
+          format: go-coverprofile
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # No pull request ever waits on this workflow's jobs directly, but
+          # keep the walk off the pull_request path for consistency.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
+  # Summary job to ensure all dynamic checks pass
+  dynamic-checks-summary:
+    name: Dynamic Checks Summary
+    needs:
+      - test-with-debug
+      - test-with-deadlock
+      - test-locking-package
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [[ "${{ needs.test-with-debug.result }}" != "success" ]] || \
+             [[ "${{ needs.test-with-deadlock.result }}" != "success" ]] || \
+             [[ "${{ needs.test-locking-package.result }}" != "success" ]]; then
+            echo "One or more dynamic analysis jobs failed"
+            exit 1
+          fi
+          echo "All dynamic analysis checks passed!"

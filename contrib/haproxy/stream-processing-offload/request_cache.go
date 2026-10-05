@@ -16,14 +16,15 @@ import (
 )
 
 // initRequestStateCache creates a new cache for request states with a cleanup function that is called when a request state is evicted.
-func initRequestStateCache(cleanup func(*proxy.RequestState)) *ttlcache.Cache[uint64, *proxy.RequestState] {
+func initRequestStateCache(cleanup func(*proxy.RequestState, bool)) *ttlcache.Cache[uint64, *proxy.RequestState] {
 	const requestStateTTL = time.Minute // Default TTL but will be overridden by the timeout value of the HAProxy configuration
 	requestStateCache := ttlcache.New[uint64, *proxy.RequestState](
 		ttlcache.WithTTL[uint64, *proxy.RequestState](requestStateTTL),
 	)
 
+	// Called for every item that is evicted (manual deletion, timeout, ...)
 	requestStateCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[uint64, *proxy.RequestState]) {
-		cleanup(item.Value())
+		cleanup(item.Value(), reason == ttlcache.EvictionReasonExpired)
 	})
 
 	go requestStateCache.Start()

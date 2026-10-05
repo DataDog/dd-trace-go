@@ -1,0 +1,24 @@
+{
+  "method": "POST",
+  "url": "https://<dd-apim-callout-host>:8080/",
+  "headers": [
+    { "name": "Content-Type", "value": "application/json" }
+  ],
+  "body": "{ \"addresses\": { \"method\": \"{#request.method}\", \"scheme\": \"{#request.scheme}\", \"authority\": \"{#request.headers['Host']}\", \"path\": \"{#request.uri}\", \"remote_addr\": \"{#request.remoteAddress}\", \"headers\": {#context.attributes['dd-serialized-headers']}, \"body\": \"{#context.attributes['dd-request-body-b64']}\" }, \"gateway\": \"boomi\", \"phase\": \"<RequestHeaders>\" }",
+  "fireAndForget": false,
+  "cacheEnabled": false,
+  "cacheKey": "not-applicable",
+  "variables": [
+    { "name": "dd-request-id", "value": "{#jsonPath(#calloutResponse.content, '$.request-id')}" },
+    { "name": "dd-block", "value": "{#jsonPath(#calloutResponse.content, '$.block')}" },
+    { "name": "dd-block-status", "value": "{#jsonPath(#calloutResponse.content, '$.block.status')}" },
+    { "name": "dd-block-headers", "value": "{#jsonPath(#calloutResponse.content, '$.block.headers')}" },
+    { "name": "dd-block-content", "value": "{#jsonPath(#calloutResponse.content, '$.block.content')}" },
+    { "name": "dd-propagate-headers", "value": "{#jsonPath(#calloutResponse.content, '$.propagate-headers')}" }
+  ],
+  "exitOnError": false,
+  "errorCondition": "{#calloutResponse.status >= 500}",
+  "errorStatusCode": 502,
+  "errorContent": "Security processor unavailable",
+  "scope": "REQUEST"
+}

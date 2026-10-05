@@ -7,23 +7,33 @@ package pgx
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -74,25 +84,25 @@ func TestMain(m *testing.M) {
 func TestConnect(t *testing.T) {
 	testCases := []struct {
 		name           string
-		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		newConnCreator func() createConnFn
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+			newConnCreator: func() createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},
@@ -103,8 +113,7 @@ func TestConnect(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			opts := append(tracingAllDisabled(), WithTraceConnect(true))
-			runAllOperations(t, newPoolCreator(nil, opts...))
+			runAllOperations(t, tc.newConnCreator())
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
@@ -125,36 +134,56 @@ func TestConnect(t *testing.T) {
 }
 
 func TestQuery(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	// A pool and a standalone connection snapshot the connection metadata from different
+	// configs, so the tags asserted by assertCommonTags are only covered for whichever
+	// path runs here.
+	testCases := []struct {
+		name       string
+		createConn func(opts ...Option) createConnFn
+	}{
+		{
+			name:       "pool",
+			createConn: func(opts ...Option) createConnFn { return newPoolCreator(nil, opts...) },
+		},
+		{
+			name:       "conn",
+			createConn: func(opts ...Option) createConnFn { return newConnCreator(nil, nil, opts...) },
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceQuery(true))
-	runAllOperations(t, newPoolCreator(nil, opts...))
+			opts := append(tracingAllDisabled(), WithTraceQuery(true))
+			runAllOperations(t, tc.createConn(opts...))
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 3)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 3)
 
-	ps := spans[2]
-	assert.Equal(t, "parent", ps.OperationName())
-	assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
+			ps := spans[2]
+			assert.Equal(t, "parent", ps.OperationName())
+			assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
 
-	s := spans[0]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s := spans[0]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
 
-	s = spans[1]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.query", s.OperationName())
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
-	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s = spans[1]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.query", s.OperationName())
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag("db.operation"))
+			assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
+			assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
+		})
+	}
 }
 
 func TestIgnoreError(t *testing.T) {
@@ -271,6 +300,98 @@ func TestBatch(t *testing.T) {
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
 }
 
+// TestBatchQuerySpanDurations asserts that each batched query's span duration
+// reflects the time spent on that query, not on the query queued before it. pgx
+// reports a batch query only once its result is read, so the wait for a slow query
+// must be attributed to that query's span rather than to its predecessor's.
+func TestBatchQuerySpanDurations(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceBatch(true))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+
+	pool, err := NewPool(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	// The second query streams a large result set, so reading its rows takes
+	// meaningfully longer than reading the first query's result. pgx reports each
+	// batch query only once its result is consumed, so the read time must be
+	// attributed to the slow query's own span rather than to the fast query queued
+	// before it.
+	const slowQuery = `SELECT * FROM generate_series(1, 3000000)`
+	batch := &pgx.Batch{}
+	batch.Queue(`SELECT 1`)
+	batch.Queue(slowQuery)
+
+	br := pool.SendBatch(ctx, batch)
+	_, err = br.Exec() // SELECT 1: its result is available at the first flush
+	require.NoError(t, err)
+	rows, err := br.Query() // large result: reading the rows streams for a while
+	require.NoError(t, err)
+	for rows.Next() {
+	}
+	require.NoError(t, rows.Err())
+	rows.Close()
+	require.NoError(t, br.Close())
+
+	parent.Finish()
+
+	spans := mt.FinishedSpans()
+	fast := findBatchQuery(t, spans, "SELECT 1")
+	slow := findBatchQuery(t, spans, slowQuery)
+
+	assert.Greater(t, slow.Duration(), fast.Duration(),
+		"the streaming query's span should carry its own read time, not the fast query queued before it")
+	assert.GreaterOrEqual(t, slow.Duration(), 20*time.Millisecond,
+		"the streaming query's span should reflect the time spent reading its rows")
+}
+
+// TestConcurrentBatchRace asserts that concurrent batches executing on different
+// pool connections do not race on shared pgxTracer state. Run with -race.
+// Regression test for https://github.com/DataDog/dd-trace-go/issues/4668.
+func TestConcurrentBatchRace(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceBatch(true))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	pool, err := NewPool(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	const (
+		numGoroutines = 10
+		numIterations = 20
+	)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numIterations; j++ {
+				batch := &pgx.Batch{}
+				batch.Queue(`SELECT 1`)
+				batch.Queue(`SELECT 2`)
+				batch.Queue(`SELECT 3`)
+				br := pool.SendBatch(ctx, batch)
+				var x int
+				_ = br.QueryRow().Scan(&x)
+				_ = br.QueryRow().Scan(&x)
+				_ = br.QueryRow().Scan(&x)
+				require.NoError(t, br.Close())
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func TestCopyFrom(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -319,6 +440,60 @@ func TestAcquire(t *testing.T) {
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
+func TestPoolName(t *testing.T) {
+	t.Run("with pool name", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true), WithPoolName("my-pool"))
+		runAllOperations(t, newPoolCreator(nil, opts...))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+
+		for _, s := range spans {
+			if s.OperationName() == "parent" {
+				continue
+			}
+			assert.Equal(t, "my-pool", s.Tag(ext.DBClientConnectionPoolName))
+		}
+	})
+	t.Run("with auto-generated default pool name", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true))
+		runAllOperations(t, newPoolCreator(nil, opts...))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+
+		for _, s := range spans {
+			if s.OperationName() == "parent" {
+				continue
+			}
+			assert.Equal(t, "127.0.0.1:5432/postgres", s.Tag(ext.DBClientConnectionPoolName))
+		}
+	})
+	t.Run("without pool name for non-pool connection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true))
+		runAllOperations(t, newConnCreator(nil, nil, opts...))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+
+		for _, s := range spans {
+			if s.OperationName() == "parent" {
+				continue
+			}
+			assert.Nil(t, s.Tag(ext.DBClientConnectionPoolName))
+		}
+	})
+}
+
 // https://github.com/DataDog/dd-trace-go/issues/2908
 func TestWrapTracer(t *testing.T) {
 	testCases := []struct {
@@ -336,7 +511,7 @@ func TestWrapTracer(t *testing.T) {
 				return newPoolCreator(cfg)
 			},
 			wantSpans: 15,
-			wantHooks: 13,
+			wantHooks: 14,
 		},
 		{
 			name: "conn",
@@ -347,7 +522,7 @@ func TestWrapTracer(t *testing.T) {
 				return newConnCreator(cfg, nil)
 			},
 			wantSpans: 11,
-			wantHooks: 11, // 13 - 2 pool tracer hooks
+			wantHooks: 11, // 14 - 3 pool tracer hooks
 		},
 	}
 	for _, tc := range testCases {
@@ -365,6 +540,143 @@ func TestWrapTracer(t *testing.T) {
 			assert.Len(t, prevTracer.called, tc.wantHooks, "some hook(s) on the previous tracer were not called")
 		})
 	}
+}
+
+func TestNewConnInfo(t *testing.T) {
+	t.Run("nil", func(t *testing.T) {
+		assert.Equal(t, connInfo{}, newConnInfo(nil))
+	})
+	t.Run("populated", func(t *testing.T) {
+		cfg, err := pgx.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+
+		assert.Equal(t, connInfo{host: "127.0.0.1", port: 5432, db: "postgres", user: "postgres"}, newConnInfo(cfg))
+	})
+}
+
+func TestConnInfoFor(t *testing.T) {
+	cached := connInfo{host: "cached", port: 1, db: "cached", user: "cached"}
+
+	t.Run("static pool uses the cache", func(t *testing.T) {
+		tr := &pgxTracer{connInfo: cached}
+		// A nil conn would panic if the per-connection branch were taken.
+		assert.Same(t, &tr.connInfo, tr.connInfoFor(nil))
+	})
+	t.Run("dynamic pool tolerates a nil conn", func(t *testing.T) {
+		tr := &pgxTracer{connInfo: cached, perConnInfo: true}
+		assert.Same(t, &tr.connInfo, tr.connInfoFor(nil))
+	})
+}
+
+func TestPoolPerConnInfo(t *testing.T) {
+	for name, tc := range map[string]struct {
+		beforeConnect func(context.Context, *pgx.ConnConfig) error
+		want          bool
+	}{
+		"without BeforeConnect": {beforeConnect: nil, want: false},
+		"with BeforeConnect":    {beforeConnect: func(context.Context, *pgx.ConnConfig) error { return nil }, want: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := pgxpool.ParseConfig(postgresDSN)
+			require.NoError(t, err)
+			cfg.BeforeConnect = tc.beforeConnect
+
+			pool, err := NewPoolWithConfig(context.Background(), cfg, tracingAllDisabled()...)
+			require.NoError(t, err)
+			t.Cleanup(pool.Close)
+
+			tr, ok := cfg.ConnConfig.Tracer.(*pgxTracer)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, tr.perConnInfo)
+		})
+	}
+}
+
+// A pool's BeforeConnect hook receives a copy of the base config and may rewrite the
+// connection metadata, so connection-scoped spans must report what the connection was
+// actually established with rather than the pool's base config.
+func TestPoolBeforeConnectTags(t *testing.T) {
+	t.Run("connect span reports the rewritten database", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cfg, err := pgxpool.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+		cfg.BeforeConnect = func(_ context.Context, connConfig *pgx.ConnConfig) error {
+			connConfig.Database = "rewritten_by_before_connect"
+			return nil
+		}
+
+		opts := append(tracingAllDisabled(), WithTraceConnect(true), WithTraceAcquire(true))
+		pool, err := NewPoolWithConfig(context.Background(), cfg, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+
+		// The rewritten database does not exist, so the connection fails. The spans are
+		// still emitted, and they are what this test asserts on.
+		_, err = pool.Acquire(context.Background())
+		require.Error(t, err)
+
+		connect := findSpan(t, mt.FinishedSpans(), "pgx.connect")
+		assert.Equal(t, "rewritten_by_before_connect", connect.Tag(ext.DBName))
+
+		// Acquire is scoped to the pool, not to a single connection, so it keeps
+		// reporting the pool's base config as it did before.
+		acquire := findSpan(t, mt.FinishedSpans(), "pgx.pool.acquire")
+		assert.Equal(t, "postgres", acquire.Tag(ext.DBName))
+	})
+
+	t.Run("query span reports the rewritten database", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cfg, err := pgxpool.ParseConfig(postgresDSN)
+		require.NoError(t, err)
+		// template1 always exists and accepts connections, so the rewrite diverges from
+		// the pool's base config while still yielding a usable connection.
+		cfg.BeforeConnect = func(_ context.Context, connConfig *pgx.ConnConfig) error {
+			connConfig.Database = "template1"
+			return nil
+		}
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true))
+		pool, err := NewPoolWithConfig(context.Background(), cfg, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+
+		var db string
+		require.NoError(t, pool.QueryRow(context.Background(), `SELECT current_database()`).Scan(&db))
+		require.Equal(t, "template1", db)
+
+		query := findSpan(t, mt.FinishedSpans(), "pgx.query")
+		assert.Equal(t, "template1", query.Tag(ext.DBName))
+		// Fields the hook left alone still match the base config.
+		assert.Equal(t, "127.0.0.1", query.Tag(ext.NetworkDestinationName))
+		assert.Equal(t, float64(5432), query.Tag(ext.NetworkDestinationPort))
+		assert.Equal(t, "postgres", query.Tag(ext.DBUser))
+	})
+}
+
+func findBatchQuery(t *testing.T, spans []*mocktracer.Span, resource string) *mocktracer.Span {
+	t.Helper()
+	for _, s := range spans {
+		if s.OperationName() == "pgx.batch.query" && s.Tag(ext.ResourceName) == resource {
+			return s
+		}
+	}
+	t.Fatalf("no pgx.batch.query span with resource %q found in %d spans", resource, len(spans))
+	return nil
+}
+
+func findSpan(t *testing.T, spans []*mocktracer.Span, operationName string) *mocktracer.Span {
+	t.Helper()
+	for _, s := range spans {
+		if s.OperationName() == operationName {
+			return s
+		}
+	}
+	t.Fatalf("no %q span found in %d spans", operationName, len(spans))
+	return nil
 }
 
 func tracingAllDisabled() []Option {
@@ -554,4 +866,239 @@ func (p *pgxMockTracer) TraceAcquireStart(ctx context.Context, _ *pgxpool.Pool, 
 
 func (p *pgxMockTracer) TraceAcquireEnd(_ context.Context, _ *pgxpool.Pool, _ pgxpool.TraceAcquireEndData) {
 	p.called["pool.acquire.end"] = true
+}
+
+func (p *pgxMockTracer) TraceRelease(_ *pgxpool.Pool, _ pgxpool.TraceReleaseData) {
+	p.called["pool.release"] = true
+}
+
+const sqlInjection = "' OR 1 = 1 --"
+const injectedQuery = "SELECT 1 WHERE 'safe' = '" + sqlInjection + "'"
+
+type sqlClient interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	SendBatch(context.Context, *pgx.Batch) pgx.BatchResults
+}
+
+func startSQLAppSec(t *testing.T, enabled bool) {
+	t.Helper()
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/rasp.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	if enabled {
+		t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	} else {
+		t.Setenv("DD_APPSEC_RASP_ENABLED", "false")
+	}
+	testutils.StartAppSec(t)
+}
+
+func sqlRequest(t *testing.T, run func(context.Context), status int) *mocktracer.Span {
+	t.Helper()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := httptracemock.NewServeMux()
+	mux.HandleFunc("/query", func(_ http.ResponseWriter, r *http.Request) {
+		run(r.Context())
+	})
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/query?input="+url.QueryEscape(sqlInjection), nil))
+	require.Equal(t, status, w.Code)
+	for _, span := range mt.FinishedSpans() {
+		if span.OperationName() == "http.request" {
+			return span
+		}
+	}
+	t.Fatal("missing HTTP span")
+	return nil
+}
+
+func TestRASPSQLMonitoring(t *testing.T) {
+	startSQLAppSec(t, true)
+	for _, traceEnabled := range []bool{true, false} {
+		opts := []Option{WithTraceQuery(traceEnabled), WithTraceBatch(traceEnabled)}
+		conn, err := Connect(context.Background(), postgresDSN, opts...)
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close(context.Background()) })
+		pool, err := NewPool(context.Background(), postgresDSN, opts...)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+		tx, err := pool.Begin(context.Background())
+		require.NoError(t, err)
+		t.Cleanup(func() { tx.Rollback(context.Background()) })
+		for name, client := range map[string]sqlClient{"conn": conn, "pool": pool, "tx": tx} {
+			for operation, run := range map[string]func(*testing.T, context.Context){
+				"exec": func(t *testing.T, ctx context.Context) {
+					tag, err := client.Exec(ctx, injectedQuery)
+					require.NoError(t, err)
+					require.EqualValues(t, 1, tag.RowsAffected())
+				},
+				"query": func(t *testing.T, ctx context.Context) {
+					rows, err := client.Query(ctx, injectedQuery)
+					require.NoError(t, err)
+					defer rows.Close()
+					require.True(t, rows.Next())
+					require.NoError(t, rows.Err())
+				},
+				"query-row": func(t *testing.T, ctx context.Context) {
+					var value int
+					require.NoError(t, client.QueryRow(ctx, injectedQuery).Scan(&value))
+					require.Equal(t, 1, value)
+				},
+				"batch": func(t *testing.T, ctx context.Context) {
+					batch := &pgx.Batch{}
+					batch.Queue(injectedQuery)
+					br := client.SendBatch(ctx, batch)
+					var value int
+					require.NoError(t, br.QueryRow().Scan(&value))
+					require.NoError(t, br.Close())
+					require.Equal(t, 1, value)
+				},
+			} {
+				t.Run(name+"/"+operation+"/tracing="+strconv.FormatBool(traceEnabled), func(t *testing.T) {
+					span := sqlRequest(t, func(ctx context.Context) { run(t, ctx) }, http.StatusOK)
+					require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+					require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+					require.Nil(t, span.Tag("appsec.blocked"))
+				})
+			}
+		}
+	}
+}
+
+func TestRASPSQLMonitoringParameterized(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		var value string
+		require.NoError(t, conn.QueryRow(ctx, "SELECT $1::text", sqlInjection).Scan(&value))
+		require.Equal(t, sqlInjection, value)
+	}, http.StatusOK)
+	require.Nil(t, span.Tag("_dd.appsec.json"))
+	require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringDisabled(t *testing.T) {
+	startSQLAppSec(t, false)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		_, err := conn.Exec(ctx, injectedQuery)
+		require.NoError(t, err)
+	}, http.StatusOK)
+	require.Nil(t, span.Tag("_dd.appsec.json"))
+	require.Nil(t, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringBatchStatements(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		batch := &pgx.Batch{}
+		batch.Queue("SELECT 1")
+		batch.Queue(injectedQuery)
+		batch.Queue(injectedQuery)
+		br := conn.SendBatch(ctx, batch)
+		defer br.Close()
+		for range 3 {
+			var value int
+			require.NoError(t, br.QueryRow().Scan(&value))
+			require.Equal(t, 1, value)
+		}
+		require.NoError(t, br.Close())
+	}, http.StatusOK)
+	require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+	require.EqualValues(t, 3, span.Tag("_dd.appsec.rasp.rule.eval"))
+	require.Nil(t, span.Tag("appsec.blocked"))
+}
+
+func TestRASPSQLMonitoringCheckedOperation(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	span := sqlRequest(t, func(ctx context.Context) {
+		// Model an outer integration that checked SQL before adding DBM comments.
+		require.NoError(t, sqlsec.ProtectSQLOperation(ctx, "SELECT 1", "pgx"))
+		checked := sqlsec.WithSQLOperationChecked(ctx)
+		_, err := conn.Exec(checked, "/* dbm */ SELECT 1")
+		require.NoError(t, err)
+		require.NoError(t, sqlsec.ProtectSQLOperation(ctx, "SELECT 1", "pgx"))
+		checked = sqlsec.WithSQLOperationChecked(ctx)
+		rows, err := conn.Query(checked, "/* dbm */ SELECT 1")
+		require.NoError(t, err)
+		rows.Close()
+		require.NoError(t, rows.Err())
+		// The marker must not suppress another call with the original context.
+		_, err = conn.Exec(ctx, "SELECT 1")
+		require.NoError(t, err)
+	}, http.StatusOK)
+	require.EqualValues(t, 3, span.Tag("_dd.appsec.rasp.rule.eval"))
+}
+
+func TestRASPSQLMonitoringDatabaseSQLPrepared(t *testing.T) {
+	startSQLAppSec(t, true)
+	cfg, err := pgx.ParseConfig(postgresDSN)
+	require.NoError(t, err)
+	cfg.Tracer = wrapPgxTracer(cfg)
+	db := sql.OpenDB(stdlib.GetConnector(*cfg))
+	defer db.Close()
+	for _, operation := range []string{"exec", "query"} {
+		t.Run(operation, func(t *testing.T) {
+			span := sqlRequest(t, func(ctx context.Context) {
+				stmt, err := db.PrepareContext(ctx, injectedQuery)
+				require.NoError(t, err)
+				defer stmt.Close()
+				if operation == "exec" {
+					result, err := stmt.ExecContext(ctx)
+					require.NoError(t, err)
+					count, err := result.RowsAffected()
+					require.NoError(t, err)
+					require.EqualValues(t, 1, count)
+				} else {
+					var value int
+					require.NoError(t, stmt.QueryRowContext(ctx).Scan(&value))
+					require.Equal(t, 1, value)
+				}
+			}, http.StatusOK)
+			require.Contains(t, span.Tag("_dd.appsec.json"), "rasp-942-100")
+			require.EqualValues(t, 1, span.Tag("_dd.appsec.rasp.rule.eval"))
+			require.Nil(t, span.Tag("appsec.blocked"))
+		})
+	}
+}
+
+func TestRASPSQLMonitoringTransactionControl(t *testing.T) {
+	startSQLAppSec(t, true)
+	conn, err := Connect(context.Background(), postgresDSN)
+	require.NoError(t, err)
+	defer conn.Close(context.Background())
+	for _, commit := range []bool{true, false} {
+		t.Run("commit="+strconv.FormatBool(commit), func(t *testing.T) {
+			span := sqlRequest(t, func(ctx context.Context) {
+				tx, err := conn.Begin(ctx)
+				require.NoError(t, err)
+				defer tx.Rollback(context.Background())
+				if commit {
+					_, err = tx.Exec(ctx, "SELECT 1")
+					require.NoError(t, err)
+					require.NoError(t, tx.Commit(ctx))
+				} else {
+					require.NoError(t, tx.Rollback(ctx))
+				}
+			}, http.StatusOK)
+			expected := 2
+			if commit {
+				expected = 3
+			}
+			require.EqualValues(t, expected, span.Tag("_dd.appsec.rasp.rule.eval"))
+			require.Nil(t, span.Tag("_dd.appsec.json"))
+		})
+	}
 }

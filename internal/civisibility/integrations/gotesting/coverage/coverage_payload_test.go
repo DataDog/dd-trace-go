@@ -14,11 +14,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 )
 
 func newCoverageData(n int) []*ciTestCoverageData {
 	list := make([]*ciTestCoverageData, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cov := newCiTestCoverageData(NewTestCoverage(uint64(i), uint64(i), uint64(i), uint64(i), "").(*testCoverage))
 		list[i] = cov
 	}
@@ -37,7 +39,7 @@ func TestCoveragePayloadIntegrity(t *testing.T) {
 			p := newCoveragePayload()
 			var allEvents ciTestCoverages
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCoverageData(i%5 + 1)
 				allEvents = append(allEvents, list...)
 				for _, event := range list {
@@ -65,7 +67,7 @@ func TestCoveragePayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newCoveragePayload()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCoverageData(i%5 + 1)
 				for _, event := range list {
 					p.push(event)
@@ -75,6 +77,48 @@ func TestCoveragePayloadDecode(t *testing.T) {
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
 		})
+	}
+}
+
+func TestCoveragePayloadEncodesFileBitmaps(t *testing.T) {
+	tCoverage := &testCoverage{
+		sessionID: 1,
+		suiteID:   2,
+		testID:    3,
+		filesCovered: []coveredFile{
+			{name: "main_test.go"},
+			{name: "lib/lib.go", bitmap: filebitmap.FromActiveRange(1, 8).ToArray()},
+		},
+	}
+
+	coverageData := newCiTestCoverageData(tCoverage)
+	if len(coverageData.Files) != 2 {
+		t.Fatalf("expected two files, got %d", len(coverageData.Files))
+	}
+	if coverageData.Files[0].FileName != "main_test.go" || coverageData.Files[0].Bitmap != nil {
+		t.Fatalf("expected filename-only test file entry, got %#v", coverageData.Files[0])
+	}
+	if coverageData.Files[1].FileName != "lib/lib.go" {
+		t.Fatalf("unexpected source filename: %s", coverageData.Files[1].FileName)
+	}
+	if !bytes.Equal(coverageData.Files[1].Bitmap, []byte{0xff}) {
+		t.Fatalf("unexpected bitmap bytes: %08b", coverageData.Files[1].Bitmap)
+	}
+
+	p := newCoveragePayload()
+	if err := p.push(coverageData); err != nil {
+		t.Fatal(err)
+	}
+
+	var got ciTestCoverages
+	if err := msgp.Decode(p, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Files[0].FileName != "main_test.go" || got[0].Files[0].Bitmap != nil {
+		t.Fatalf("decoded filename-only entry should not include bitmap: %#v", got[0].Files[0])
+	}
+	if !bytes.Equal(got[0].Files[1].Bitmap, []byte{0xff}) {
+		t.Fatalf("decoded bitmap mismatch: %08b", got[0].Files[1].Bitmap)
 	}
 }
 

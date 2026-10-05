@@ -19,6 +19,10 @@ func main() {
 		&v2fix.WithServiceName{},
 		&v2fix.WithDogstatsdAddr{},
 		&v2fix.DeprecatedSamplingRules{},
+		&v2fix.ChildOfStartChild{},
+		&v2fix.AppSecLoginEvents{},
+		&v2fix.DeprecatedWithPrioritySampling{},
+		&v2fix.DeprecatedWithHTTPRoundTripper{},
 	)
 	c.Run(singlechecker.Main)
 }

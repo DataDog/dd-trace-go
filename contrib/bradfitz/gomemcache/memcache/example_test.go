@@ -9,6 +9,7 @@ import (
 	"context"
 
 	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/bradfitz/gomemcache/memcache"

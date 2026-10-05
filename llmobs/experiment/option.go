@@ -15,6 +15,7 @@ type newCfg struct {
 	tags              map[string]string
 	experimentCfg     map[string]any
 	summaryEvaluators []SummaryEvaluator
+	runs              int
 }
 
 func defaultNewCfg(globalCfg *config.Config) *newCfg {
@@ -24,6 +25,7 @@ func defaultNewCfg(globalCfg *config.Config) *newCfg {
 		tags:              nil,
 		experimentCfg:     nil,
 		summaryEvaluators: nil,
+		runs:              1,
 	}
 }
 
@@ -59,6 +61,17 @@ func WithExperimentConfig(experimentCfg map[string]any) Option {
 func WithSummaryEvaluators(summaryEvaluators ...SummaryEvaluator) Option {
 	return func(cfg *newCfg) {
 		cfg.summaryEvaluators = summaryEvaluators
+	}
+}
+
+// WithRuns sets the number of times the experiment will be executed end-to-end.
+// Each run gets a unique run ID and a 1-indexed iteration number, both propagated
+// as tags on spans and evaluation metric events. Defaults to 1.
+func WithRuns(n int) Option {
+	return func(cfg *newCfg) {
+		if n > 0 {
+			cfg.runs = n
+		}
 	}
 }
 

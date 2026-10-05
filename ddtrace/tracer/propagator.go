@@ -13,10 +13,10 @@ import (
 // SpanContexts into an implementation specific carrier.
 type Propagator interface {
 	// Inject takes the SpanContext and injects it into the carrier.
-	Inject(context *SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier any) error
 
 	// Extract returns the SpanContext from the given carrier.
-	Extract(carrier interface{}) (*SpanContext, error)
+	Extract(carrier any) (*SpanContext, error)
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying

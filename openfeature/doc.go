@@ -4,18 +4,22 @@
 // Copyright 2025 Datadog, Inc.
 
 // Package openfeature provides an OpenFeature-compatible feature flag provider
-// that integrates with Datadog Remote Config for server-side feature flag evaluation.
+// for server-side feature flag evaluation, backed by configuration delivered
+// from Datadog.
 //
 // # Overview
 //
 // This package implements the OpenFeature Provider interface, allowing applications
-// to evaluate feature flags using configurations delivered dynamically through
-// Datadog's Remote Config system. The provider supports all standard OpenFeature
-// flag types: boolean, string, integer, float, and JSON objects.
+// to evaluate feature flags using configurations delivered dynamically from Datadog.
+// Configuration reaches the provider one of two ways: Agentless, polling a Datadog
+// endpoint directly over HTTPS (the default), or through the Agent's Remote Config.
+// Both feed the same evaluator; only delivery differs. See "# Configuration Source"
+// below. The provider supports all standard OpenFeature flag types: boolean, string,
+// integer, float, and JSON objects.
 //
 // # Key Features
 //
-//   - Dynamic flag configuration via Datadog Remote Config
+//   - Dynamic flag configuration via Agentless polling or Datadog Remote Config
 //   - Support for all OpenFeature flag types (boolean, string, integer, float, JSON)
 //   - Advanced targeting with attribute-based conditions
 //   - Traffic sharding for gradual rollouts and A/B testing
@@ -28,37 +32,40 @@
 // To use the Datadog OpenFeature provider, create a new provider instance and
 // register it with the OpenFeature SDK:
 //
-//		import (
-//		    "github.com/DataDog/dd-trace-go/v2/openfeature"
-//		    of "github.com/open-feature/go-sdk/openfeature"
-//		)
+//	import (
+//	    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
+//	    of "github.com/open-feature/go-sdk/openfeature"
+//	)
 //
-//		// Create and register the provider
-//		provider, err := openfeature.NewDatadogProvider()
-//		if err != nil {
-//		    log.Fatal(err)
-//		}
-//		defer provider.Shutdown()
+//	// Create and register the provider
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer provider.Shutdown()
 //
-//	 // This can take a few seconds to complete as it waits for Remote Config initialization
-//		err = of.SetProviderAndWait(provider)
-//		if err != nil {
-//		    log.Fatal(err)
-//		}
+//	// Blocks while waiting for the first configuration, bounded by
+//	// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS (default 10s).
+//	// On expiry it returns a recoverable PROVIDER_NOT_READY error: delivery keeps
+//	// running and a later configuration transitions the provider to ready.
+//	if err = of.SetProviderAndWait(provider); err != nil {
+//	    log.Printf("feature flags are not ready yet: %v", err)
+//	}
 //
-//		// Create a client and evaluate flags
-//		client := of.NewClient("my-app")
-//		ctx := context.Background()
+//	// Create a client and evaluate flags
+//	client := of.NewClient("my-app")
+//	ctx := context.Background()
 //
-//		// Evaluate a boolean flag
-//		enabled, err := client.BooleanValue(ctx, "new-feature", false, of.EvaluationContext{})
-//		if err != nil {
-//		    log.Printf("Failed to evaluate flag: %v", err)
-//		}
+//	// Evaluate a boolean flag with a targetless context
+//	evalCtx := of.NewTargetlessEvaluationContext()
+//	enabled, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//	if err != nil {
+//	    log.Printf("Failed to evaluate flag: %v", err)
+//	}
 //
-//		if enabled {
-//		    // Execute new feature code
-//		}
+//	if enabled {
+//	    // Execute new feature code
+//	}
 //
 // # Targeting Context
 //
@@ -107,6 +114,9 @@
 //
 // Numeric comparisons:
 //   - LT, LTE, GT, GTE: Compare numeric attributes
+//
+// Semantic version comparisons:
+//   - SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE: Compare semantic version strings
 //
 // String matching:
 //   - MATCHES, NOT_MATCHES: Regex pattern matching
@@ -182,23 +192,153 @@
 // while configuration updates are in progress. Configuration updates use a
 // read-write mutex to ensure consistency.
 //
-// # Remote Config Integration
+// # Configuration Source
 //
-// The provider automatically subscribes to Datadog Remote Config updates using
-// the FFE_FLAGS product (capability 46). When new configurations are received,
-// they are validated and applied atomically.
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE selects how configuration is delivered:
 //
-// Configuration updates are acknowledged back to Remote Config with appropriate
-// status codes (acknowledged for success, error for validation failures).
+//   - "agentless" (default): the provider polls a Datadog endpoint directly over
+//     HTTPS on an interval. No Agent dependency. Requires DD_API_KEY unless a
+//     custom endpoint is configured; DD_SITE optionally selects the managed
+//     endpoint's host and has no effect without DD_API_KEY. See
+//     "# Environment Variables" below.
+//   - "remote_config": the provider subscribes to Datadog Remote Config updates
+//     using the FFE_FLAGS product (capability 46), via the Agent. Configuration
+//     updates are acknowledged back to Remote Config with appropriate status
+//     codes (acknowledged for success, error for validation failures).
+//
+// Both sources feed the same validation and evaluation logic; only how
+// configuration arrives differs. Requesting configuration is billable. For the
+// agentless source, nothing is sent to Datadog until NewDatadogProvider is
+// called — creating the provider is the point at which billing begins. For
+// the remote_config source, this guarantee does not hold if tracer.Start runs
+// first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
+// and may fetch and buffer configuration before NewDatadogProvider is called.
+//
+// # Configuration
+//
+// The provider can be configured using ProviderConfig when creating a new instance:
+//
+//	config := ddopenfeature.ProviderConfig{
+//	    ExposureFlushInterval: 5 * time.Second,  // Optional: defaults to 1 second
+//	}
+//	provider, err := ddopenfeature.NewDatadogProvider(config)
+//
+// Configuration Options:
+//
+//   - ExposureFlushInterval: Duration between automatic flushes of exposure events
+//     to the Datadog agent. Defaults to 1 second if not specified. Exposure events
+//     track which feature flags are evaluated and by which users, providing visibility
+//     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
+//
+// # Environment Variables
+//
+//   - DD_FEATURE_FLAGS_ENABLED: Stable kill switch, default "true". Set to "false"
+//     to disable the provider entirely: NewDatadogProvider() returns a NoopProvider
+//     instead of the actual Datadog provider, regardless of any other setting below.
+//     Important: When using the NoopProvider, all flag evaluations will silently
+//     return the default values you specify, with no errors. This allows your
+//     application to run without feature flags being active. The NoopProvider
+//     can also be combined with the OpenFeature multi-provider
+//     (https://github.com/open-feature/go-sdk/tree/main/openfeature/multi)
+//     to implement local overrides during development or testing.
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE: "agentless" (default), "remote_config",
+//     or "offline" (explicitly disables configuration delivery). See
+//     "# Configuration Source" above. An unrecognized non-blank value also disables
+//     the provider (fails closed, to avoid silently starting billed polling on a typo).
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL: Optional override of
+//     the Agentless endpoint. Leave unset to use the managed, Datadog-hosted endpoint
+//     derived from DD_SITE (requires DD_API_KEY). Set only to point at a custom
+//     collector; a custom endpoint never receives DD_API_KEY.
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: Agentless
+//     poll interval in seconds, default 30, valid range (0, 3600]. An out-of-range or
+//     unparseable value falls back to the default rather than being clamped.
+//
+//   - DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: Per-request
+//     timeout in seconds for Agentless polls, default 5, valid range (0, 300]. An
+//     out-of-range or unparseable value falls back to the default rather than being
+//     clamped.
+//
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED: Deprecated. Kept only to grandfather
+//     existing adopters onto DD_FEATURE_FLAGS_CONFIGURATION_SOURCE=remote_config:
+//     if DD_FEATURE_FLAGS_CONFIGURATION_SOURCE is not explicitly set and this legacy
+//     variable is "true", the provider uses Remote Config as before. Prefer setting
+//     DD_FEATURE_FLAGS_CONFIGURATION_SOURCE explicitly instead.
+//
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED: When set to
+//     "true", enables span enrichment — feature flag evaluation details are
+//     recorded as tags on the active trace's root span. Default: false. Note:
+//     the added span tags may affect APM billing.
+//
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
+//     milliseconds to wait for the first configuration before returning. Used by
+//     Init, and by InitWithContext when the caller's context carries no deadline
+//     (a context with its own deadline keeps it). This covers the OpenFeature
+//     SDK's SetProviderAndWait, which calls InitWithContext with a background
+//     context. Expiration returns a PROVIDER_NOT_READY initialization error;
+//     delivery continues and a later configuration transitions the provider to
+//     ready. Default 10000. An out-of-range (<= 0, or large enough to overflow
+//     when converted to a time.Duration) or unparseable value falls back to the
+//     default rather than being clamped.
+//
+// Example (Agentless, the default):
+//
+//	export DD_API_KEY=<your API key>
+//	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED=true
+//
+// Standard Datadog environment variables also apply:
+//
+//   - DD_API_KEY: Required for the default, managed Agentless endpoint.
+//   - DD_SITE: Datadog site (default: datadoghq.com). Determines the managed
+//     Agentless endpoint's host.
+//   - DD_AGENT_HOST: Datadog agent host (default: localhost). Only relevant to
+//     the remote_config source.
+//   - DD_TRACE_AGENT_PORT: Datadog agent port (default: 8126). Only relevant to
+//     the remote_config source.
+//   - DD_SERVICE: Service name for tagging
+//   - DD_ENV: Environment name (e.g., production, staging)
+//   - DD_VERSION: Application version
 //
 // # Prerequisites
 //
-// Before creating the provider, ensure that:
-//   - The Datadog tracer is started (tracer.Start()) OR
-//   - Remote Config client is properly configured
+// Calling tracer.Start() before creating the provider is recommended but not
+// required. It matters for two things: the DD_TAGS "env:" fallback (used by
+// the Agentless endpoint's dd_env query parameter) is only applied during
+// tracer.Start, and for the remote_config source, if the tracer has already
+// subscribed to Remote Config, the provider attaches to that existing
+// subscription instead of starting its own client. If tracer.Start has not
+// run, the remote_config source falls back to starting its own default
+// Remote Config client — this does not require the tracer and does not error,
+// though it means the application runs its own Remote Config client separate
+// from the tracer's, if the tracer is started later.
 //
-// If the default Remote Config setup fails, the provider creation will return
-// an error asking you to call tracer.Start first.
+// # Exposure Events and Deduplication
+//
+// The provider automatically tracks exposure events when feature flags are evaluated.
+// Exposure events record which flags are evaluated and for which subjects (users),
+// providing visibility into feature flag usage for analytics and experimentation.
+//
+// To avoid sending duplicate exposure events for repeated evaluations, the provider
+// implements an LRU (Least Recently Used) cache for deduplication:
+//
+//   - Cache key: combination of flag key and subject ID
+//   - Cache value: allocation key and variant
+//   - Capacity: 65536 entries (2^16, ~6.5MB max memory)
+//
+// Deduplication behavior:
+//
+//   - Same subject evaluating the same flag multiple times: 1 exposure (deduplicated)
+//   - Different subjects evaluating the same flag: 1 exposure per subject
+//   - Same subject with variant change (A→B→A): 3 exposures (each change tracked)
+//   - Same subject with allocation change: new exposure generated
+//
+// The cache uses LRU eviction when capacity is reached, ensuring recently active
+// flag/subject combinations remain cached while older entries are evicted.
+//
+// Exposure events are buffered and flushed periodically to the Datadog Agent
+// (default: every 1 second, configurable via ExposureFlushInterval).
 //
 // # Performance Considerations
 //
@@ -206,6 +346,7 @@
 //   - Read locks are used for flag evaluation (multiple concurrent reads)
 //   - Write locks only during configuration updates
 //   - MD5 hashing is used for sharding (fast, non-cryptographic)
+//   - Exposure deduplication uses O(1) LRU cache operations
 //
 // # Example: Complete Integration
 //
@@ -216,7 +357,7 @@
 //	    "log"
 //
 //	    "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-//	    "github.com/DataDog/dd-trace-go/v2/openfeature"
+//	    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 //	    of "github.com/open-feature/go-sdk/openfeature"
 //	)
 //
@@ -226,7 +367,7 @@
 //	    defer tracer.Stop()
 //
 //	    // Create OpenFeature provider
-//	    provider, err := openfeature.NewDatadogProvider(openfeature.ProviderConfig{})
+//	    provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
 //	    if err != nil {
 //	        log.Fatalf("Failed to create provider: %v", err)
 //	    }
@@ -271,33 +412,63 @@
 //
 // # Testing
 //
-// For testing purposes, you can create a provider without Remote Config and
-// manually update its configuration:
+// For unit testing code that uses feature flags, use the OpenFeature SDK's
+// InMemoryProvider to define specific flag values:
 //
-//	// Use the internal constructor for testing
-//	provider := openfeature.newDatadogProvider()
+//	import (
+//	    of "github.com/open-feature/go-sdk/openfeature"
+//	    "github.com/open-feature/go-sdk/openfeature/memprovider"
+//	)
 //
-//	// Manually set test configuration
-//	config := &universalFlagConfiguration{
-//	    Format: "SERVER",
-//	    Flags: map[string]*flag{
-//	        "test-flag": {
-//	            Key: "test-flag",
-//	            Enabled: true,
-//	            VariationType: valueTypeBoolean,
-//	            Variations: map[string]*variant{
-//	                "on": {Key: "on", Value: true},
+//	func TestMyFeature(t *testing.T) {
+//	    // Create an in-memory provider with test flag values
+//	    provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+//	        "my-feature": {
+//	            Key:            "my-feature",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "on",
+//	            Variants: map[string]any{
+//	                "on":  true,
+//	                "off": false,
 //	            },
-//	            Allocations: []*allocation{},
 //	        },
-//	    },
+//	        "api-version": {
+//	            Key:            "api-version",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "v2",
+//	            Variants: map[string]any{
+//	                "v1": "v1",
+//	                "v2": "v2",
+//	            },
+//	        },
+//	    })
+//
+//	    of.SetProviderAndWait(provider)
+//	    defer of.Shutdown()
+//
+//	    client := of.NewClient("test-app")
+//	    ctx := context.Background()
+//
+//	    // This will return true (the "on" variant)
+//	    enabled, _ := client.BooleanValue(ctx, "my-feature", false,
+//	        of.NewEvaluationContext("test-user", nil))
+//
+//	    if !enabled {
+//	        t.Error("expected feature to be enabled")
+//	    }
 //	}
-//	provider.updateConfiguration(config)
+//
+// The InMemoryProvider also supports context-based evaluation using ContextEvaluator
+// for more complex test scenarios where the returned value depends on user attributes.
+//
+// For integration testing with real Remote Config delivery, set
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE=remote_config and ensure the Datadog
+// agent is running in your test environment.
 //
 // # Limitations
 //
 //   - Configuration updates replace the entire flag set (no incremental updates)
-//   - Provider shutdown doesn't fully unsubscribe from Remote Config yet
+//   - Provider shutdown doesn't fully unsubscribe from Remote Config yet (remote_config source only)
 //   - Multi-config tracking (multiple Remote Config paths) not yet supported
 //
 // # Additional Resources

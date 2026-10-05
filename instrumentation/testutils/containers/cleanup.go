@@ -12,14 +12,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 // RegisterContainerCleanup registers a function to terminate the provided container to be executed after the test finishes.
 func RegisterContainerCleanup(t testing.TB, container testcontainers.Container) {
 	t.Cleanup(func() {
+		// Always stop log production to prevent goroutines from logging after the test completes
+		if err := container.StopLogProducer(); err != nil {
+			t.Logf("failed to stop log producer: %v", err)
+		}
+
+		// In CI, we skip container termination to allow container reuse
 		if _, ok := env.Lookup("CI"); ok {
 			t.Log("skipping container cleanup in CI environment")
 			return

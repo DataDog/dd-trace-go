@@ -116,7 +116,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -172,7 +172,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -218,7 +218,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	// 3) Read header
 	header, err := r.Read()
 	if err == io.EOF || (err == nil && len(header) == 0) {
-		return nil, fmt.Errorf("CSV file appears to be empty or header is missing")
+		return nil, errors.New("CSV file appears to be empty or header is missing")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header: %w", err)
@@ -305,7 +305,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 	}
 
 	// Validate required fields
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.AgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
 
@@ -324,13 +324,18 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
-	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID)
+	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID, cfg.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
 
 	records := make([]*Record, 0, len(recordsResp))
+	missingRecordID := false
 	for _, rec := range recordsResp {
+		if rec.ID == "" {
+			missingRecordID = true
+			continue
+		}
 		records = append(records, &Record{
 			id:             rec.ID,
 			Input:          rec.Input,
@@ -339,12 +344,22 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			version:        rec.Version,
 		})
 	}
+	if missingRecordID {
+		log.Error("llmobs: backend returned dataset records without IDs; discarding malformed records") //errtrack:ignore caller request path; malformed records are logged locally only
+	}
+	// When pulling a specific historical version, report that version so that
+	// experiment.Run registers the run against the correct dataset snapshot
+	// rather than the latest current_version returned by GetDatasetByName.
+	dsVersion := dsResp.CurrentVersion
+	if cfg.version != nil {
+		dsVersion = *cfg.version
+	}
 	ds := &Dataset{
 		id:          dsResp.ID,
 		name:        dsResp.Name,
 		description: dsResp.Description,
 		records:     records,
-		version:     dsResp.CurrentVersion,
+		version:     dsVersion,
 	}
 	return ds, nil
 }
@@ -372,8 +387,8 @@ func (d *Dataset) Append(records ...Record) {
 	d.initialize()
 
 	for _, rec := range records {
-		// This id will be discarded after push, since the backend will generate a new one.
-		// It is used for tracking new records locally before the push.
+		// The id tracks the record locally before the push, and Push sends it as
+		// the record's id, so it stays valid afterwards.
 		id := uuid.New().String()
 		rec.id = id
 
@@ -388,18 +403,18 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range updating dataset record", index)
+		log.Warn("llmobs: index %d out of range updating dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 	if update.Input == nil && update.Metadata == nil && update.ExpectedOutput == nil {
-		log.Warn("llmobs: invalid dataset update (no changes)")
+		log.Warn("llmobs: invalid dataset update (no changes)") //errtrack:ignore invalid caller update
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -424,14 +439,14 @@ func (d *Dataset) Delete(index int) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range deleting dataset record", index)
+		log.Warn("llmobs: index %d out of range deleting dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -457,9 +472,7 @@ func (d *Dataset) estimateDeltaSize() (int, error) {
 	return len(encoded), nil
 }
 
-// Push pushes the Dataset changes to DataDog.
-// For large changes (>5MB), it uses bulk upload via CSV.
-// For smaller changes, it uses batch update API.
+// Push pushes the pending Dataset changes to Datadog.
 func (d *Dataset) Push(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -473,51 +486,19 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 	d.initialize()
 
-	// Estimate delta size to choose between bulk upload and batch update
 	deltaSize, err := d.estimateDeltaSize()
 	if err != nil {
 		return err
 	}
 
-	// If delta is large, use bulk upload
-	if deltaSize > batchUpdateThreshold {
-		log.Debug("llmobs: dataset delta is %d bytes, using bulk upload", deltaSize)
-
-		// Convert all current records to transport format
-		allRecords := make([]transport.DatasetRecordView, 0, len(d.records))
-		for _, rec := range d.records {
-			allRecords = append(allRecords, transport.DatasetRecordView{
-				ID:             rec.id,
-				Input:          rec.Input,
-				ExpectedOutput: rec.ExpectedOutput,
-				Metadata:       rec.Metadata,
-				Version:        rec.version,
-			})
-		}
-
-		if err := ll.Transport.BulkUploadDataset(ctx, d.id, allRecords); err != nil {
-			return fmt.Errorf("failed to bulk upload dataset: %w", err)
-		}
-
-		// TODO: Backend doesn't return version from bulk upload yet
-		d.version++
-
-		// Clear pending changes
-		d.appendRecords = make(map[string]*Record)
-		d.updateRecords = make(map[string]*RecordUpdate)
-		d.deleteRecords = make(map[string]struct{})
-
-		return nil
-	}
-
-	// Use batch update for smaller changes
-	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
-
-	insertOldIDs := make([]string, 0, len(d.appendRecords))
+	// Build slices for inserts, updates, and deletes from the pending maps.
+	// Inserts carry the id Append already minted, and the backend persists it.
+	// That is what makes the response uninteresting: nothing has to be matched
+	// back to what was sent.
 	insert := make([]transport.DatasetRecordCreate, 0, len(d.appendRecords))
 	for id, rec := range d.appendRecords {
-		insertOldIDs = append(insertOldIDs, id)
 		insert = append(insert, transport.DatasetRecordCreate{
+			ID:             id,
 			Input:          rec.Input,
 			ExpectedOutput: rec.ExpectedOutput,
 			Metadata:       rec.Metadata,
@@ -528,7 +509,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 		update = append(update, transport.DatasetRecordUpdate{
 			ID:             id,
 			Input:          rec.Input,
-			ExpectedOutput: transport.AnyPtr(rec.ExpectedOutput),
+			ExpectedOutput: new(rec.ExpectedOutput),
 			Metadata:       rec.Metadata,
 		})
 	}
@@ -537,33 +518,70 @@ func (d *Dataset) Push(ctx context.Context) error {
 		del = append(del, id)
 	}
 
-	// newRecordIDs should go in the same order
-	newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
+	// When the delta exceeds the threshold, chunk inserts across multiple batch_update
+	// requests instead of falling back to bulk CSV upload. Bulk upload is a single large
+	// multipart request that is rejected by the Datadog Agent EVP proxy with
+	// "read limit reached" (502) on large payloads.
+	if deltaSize > batchUpdateThreshold && len(insert) > 0 {
+		log.Debug("llmobs: dataset delta is %d bytes, chunking inserts across multiple batch_update calls", deltaSize)
+
+		numBatches := (deltaSize + batchUpdateThreshold - 1) / batchUpdateThreshold
+		chunkSize := (len(insert) + numBatches - 1) / numBatches
+
+		var lastVersion int
+		for i := 0; i < len(insert); i += chunkSize {
+			end := min(i+chunkSize, len(insert))
+			chunkInsert := insert[i:end]
+			chunkNum := (i / chunkSize) + 1
+
+			log.Debug("llmobs: uploading dataset chunk %d/%d (%d records)", chunkNum, numBatches, len(chunkInsert))
+
+			// Attach updates and deletes to the last chunk only.
+			var chunkUpdate []transport.DatasetRecordUpdate
+			var chunkDel []string
+			if end == len(insert) {
+				chunkUpdate = update
+				chunkDel = del
+			}
+
+			newVersion, err := ll.Transport.BatchUpdateDataset(ctx, d.id, chunkInsert, chunkUpdate, chunkDel)
+			if err != nil {
+				return fmt.Errorf("failed to batch update dataset (chunk %d): %w", chunkNum, err)
+			}
+			log.Debug("llmobs: successfully uploaded dataset chunk %d/%d", chunkNum, numBatches)
+			if newVersion > 0 {
+				lastVersion = newVersion
+			}
+		}
+
+		if lastVersion > 0 {
+			d.version = lastVersion
+		} else {
+			d.version++
+		}
+		d.appendRecords = make(map[string]*Record)
+		d.updateRecords = make(map[string]*RecordUpdate)
+		d.deleteRecords = make(map[string]struct{})
+		return nil
+	}
+
+	// Small delta: a single batch_update request is sufficient.
+	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
+
+	newVersion, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
 	if err != nil {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}
 
-	// TODO(rarguelloF): migrate to new backend response format so this is not necessary
-	if len(insertOldIDs) != len(newRecordIDs) {
-		return fmt.Errorf("received a different number of new records than what it was sent (want: %d, got :%d)", len(insertOldIDs), len(newRecordIDs))
-	}
-
-	// FIXME(rarguelloF): we don't get version numbers in responses to deletion requests
+	// A batch containing only deletions comes back without a version.
 	if newVersion > 0 {
 		d.version = newVersion
 	} else {
 		d.version++
 	}
-
-	// update the inserted records with the new IDs generated by the backend
-	for i, newID := range newRecordIDs {
-		oldID := insertOldIDs[i]
-		d.appendRecords[oldID].id = newID
-	}
 	d.appendRecords = make(map[string]*Record)
 	d.updateRecords = make(map[string]*RecordUpdate)
 	d.deleteRecords = make(map[string]struct{})
-
 	return nil
 }
 

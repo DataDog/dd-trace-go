@@ -7,17 +7,17 @@ package k8sclientgo
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type base struct {
@@ -57,7 +57,7 @@ func (b *base) expectedTraces() trace.Traces {
 			"http.useragent":   rest.DefaultKubernetesUserAgent(),
 			"http.status_code": "200",
 			"http.host":        b.serverURL.Host,
-			"http.url":         fmt.Sprintf("%s/api/v1/namespaces", b.server.URL),
+			"http.url":         b.server.URL + "/api/v1/namespaces",
 			"http.method":      "GET",
 		},
 	}
@@ -73,7 +73,7 @@ func (b *base) expectedTraces() trace.Traces {
 			"network.destination.name": "127.0.0.1",
 			"http.status_code":         "200",
 			"http.method":              "GET",
-			"http.url":                 fmt.Sprintf("%s/api/v1/namespaces", b.server.URL),
+			"http.url":                 b.server.URL + "/api/v1/namespaces",
 		},
 		Children: trace.Traces{httpServerSpan},
 	}

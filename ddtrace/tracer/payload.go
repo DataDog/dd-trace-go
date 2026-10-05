@@ -7,7 +7,8 @@ package tracer
 
 import (
 	"io"
-	"sync"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 // payloadStats contains the statistics of a payload.
@@ -50,7 +51,7 @@ type payload interface {
 func newPayload(protocol float64) payload {
 	if protocol == traceProtocolV1 {
 		return &safePayload{
-			p: newPayloadV1(),
+			p: getPayloadV1(),
 		}
 	}
 	return &safePayload{
@@ -73,7 +74,7 @@ const (
 
 // safePayload provides a thread-safe wrapper around payload.
 type safePayload struct {
-	mu sync.RWMutex
+	mu locking.RWMutex
 	p  payload
 }
 

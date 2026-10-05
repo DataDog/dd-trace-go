@@ -7,33 +7,109 @@ package kafkatrace
 
 import (
 	"context"
+	"hash/maphash"
 	"math"
 	"net"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
+const dsmEdgeTagCacheMax = 1000
+
+var dsmEdgeTagSeed = maphash.MakeSeed()
+
+// edgeFingerprint is a zero-alloc cache key for an edge-tag set
+func edgeFingerprint(direction, topic, group, cluster string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(dsmEdgeTagSeed)
+	h.WriteString(direction)
+	h.WriteByte(0)
+	h.WriteString(topic)
+	h.WriteByte(0)
+	h.WriteString(group)
+	h.WriteByte(0)
+	h.WriteString(cluster)
+	return h.Sum64()
+}
+
+type dsmEdgeTagCache struct {
+	m    sync.Map
+	size atomic.Int32
+}
+
+func (c *dsmEdgeTagCache) get(key uint64) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	return nil
+}
+
+func (c *dsmEdgeTagCache) getOrStore(key uint64, tags []string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	sort.Strings(tags)
+	// Reserve a slot atomically; give it back if we'd exceed the bound or the key is already present.
+	if c.size.Add(1) > dsmEdgeTagCacheMax {
+		c.size.Add(-1)
+		return tags
+	}
+	actual, loaded := c.m.LoadOrStore(key, tags)
+	if loaded {
+		c.size.Add(-1)
+	}
+	return actual.([]string)
+}
+
 type Tracer struct {
 	PrevSpan            *tracer.Span
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	tagFns              map[string]func(msg Message) interface{}
+	clusterID           string
+	clusterIDMu         sync.RWMutex
+	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
+	dsmTagCache         dsmEdgeTagCache
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every message consumed/produced through this Tracer (component,
+	// span kind, messaging system, service name, bootstrap servers, and any
+	// static analytics rate). They are built once the options have been
+	// applied (see newConsumerSpanConfig/newProducerSpanConfig) and merged
+	// into each message span via WithStartSpanConfig, instead of rebuilding
+	// a Tag() closure per tag on every message.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 func (tr *Tracer) DSMEnabled() bool {
 	return tr.dsmEnabled
+}
+
+func (tr *Tracer) ClusterID() string {
+	tr.clusterIDMu.RLock()
+	defer tr.clusterIDMu.RUnlock()
+	return tr.clusterID
+}
+
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterIDMu.Lock()
+	defer tr.clusterIDMu.Unlock()
+	tr.clusterID = id
 }
 
 type Option interface {
@@ -62,6 +138,11 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 
 	tr.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
 	tr.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
+	if ckgoVersion == CKGoVersion2 {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGoV2)
+	} else {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGo)
+	}
 	tr.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
 	tr.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
@@ -71,6 +152,8 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 		}
 		opt.apply(tr)
 	}
+	tr.consumerSpanCfg = newConsumerSpanConfig(tr)
+	tr.producerSpanCfg = newProducerSpanConfig(tr)
 	return tr
 }
 
@@ -88,6 +171,7 @@ func WithService(serviceName string) OptionFn {
 	return func(cfg *Tracer) {
 		cfg.consumerServiceName = serviceName
 		cfg.producerServiceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
@@ -116,10 +200,10 @@ func WithAnalyticsRate(rate float64) OptionFn {
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
-func WithCustomTag(tag string, tagFn func(msg Message) interface{}) OptionFn {
+func WithCustomTag(tag string, tagFn func(msg Message) any) OptionFn {
 	return func(cfg *Tracer) {
 		if cfg.tagFns == nil {
-			cfg.tagFns = make(map[string]func(msg Message) interface{})
+			cfg.tagFns = make(map[string]func(msg Message) any)
 		}
 		cfg.tagFns[tag] = tagFn
 	}
@@ -132,7 +216,7 @@ func WithConfig(cg ConfigMap) OptionFn {
 			tr.groupID = groupID.(string)
 		}
 		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
-			for _, addr := range strings.Split(bs.(string), ",") {
+			for addr := range strings.SplitSeq(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
 				if err == nil {
 					tr.bootstrapServers = host

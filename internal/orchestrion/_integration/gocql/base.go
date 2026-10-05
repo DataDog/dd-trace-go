@@ -13,13 +13,14 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
 	testcassandra "github.com/testcontainers/testcontainers-go/modules/cassandra"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type base struct {
@@ -34,7 +35,7 @@ func (b *base) setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	b.container, err = testcassandra.Run(ctx,
-		"cassandra:4.1",
+		containers.Image("cassandra"),
 		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 	)

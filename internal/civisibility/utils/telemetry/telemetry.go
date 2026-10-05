@@ -31,7 +31,9 @@ var (
 	TravisCiTestSessionType       TestSessionType = []string{"provider:travisci"}
 	BuddyCiTestSessionType        TestSessionType = []string{"provider:buddyci"}
 	AwsCodePipelineSessionType    TestSessionType = []string{"provider:aws"}
-	UnsupportedTestSessionType    TestSessionType = []string{"provider:unsupported"}
+	// BazelTestSessionType tags test-session telemetry emitted when Bazel mode is the only detected CI context.
+	BazelTestSessionType       TestSessionType = []string{"provider:bazel"}
+	UnsupportedTestSessionType TestSessionType = []string{"provider:unsupported"}
 
 	IsAutoInstrumentationTestSessionType TestSessionType = []string{"auto_injected:true"}
 )
@@ -50,6 +52,7 @@ var (
 	IsNewEventType               TestingEventType = []string{"is_new:true"}
 	IsRetryEventType             TestingEventType = []string{"is_retry:true"}
 	EfdAbortSlowEventType        TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
+	EfdAbortFaultyEventType      TestingEventType = []string{"early_flake_detection_abort_reason:faulty"}
 	IsBenchmarkEventType         TestingEventType = []string{"is_benchmark"}
 	IsAttemptToFixEventType      TestingEventType = []string{"is_attempt_to_fix:true"}
 	IsQuarantinedEventType       TestingEventType = []string{"is_quarantined:true"}

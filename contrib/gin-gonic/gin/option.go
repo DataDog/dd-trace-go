@@ -19,10 +19,15 @@ import (
 // envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
 const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
+// serviceSourceGinMiddleware is the service source value used when the service
+// name is set via gin's Middleware(serviceName) parameter.
+const serviceSourceGinMiddleware = "opt.gin_middleware"
+
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
+	serviceSource string
 	ignoreRequest func(c *gin.Context) bool
 	isStatusError func(statusCode int) bool
 	useGinErrors  bool
@@ -30,13 +35,16 @@ type config struct {
 }
 
 func newConfig(serviceName string) *config {
+	serviceSource := serviceSourceGinMiddleware
 	if serviceName == "" {
 		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+		serviceSource = string(instrumentation.PackageGin)
 	}
 	cfg := &config{
 		analyticsRate: instr.AnalyticsRate(true),
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
+		serviceSource: serviceSource,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
 		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),

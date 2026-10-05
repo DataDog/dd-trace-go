@@ -4,7 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build ignore
-// +build ignore
 
 // This program generates wrapper implementations of http.ResponseWriter that
 // also satisfy http.Flusher, http.Pusher, http.CloseNotifier and http.Hijacker,

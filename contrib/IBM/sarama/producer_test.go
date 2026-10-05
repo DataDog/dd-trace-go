@@ -6,14 +6,18 @@
 package sarama
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestSyncProducer(t *testing.T) {
@@ -183,7 +187,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 		}
 		producer.Input() <- msg1
 
-		waitForSpans(mt, 1)
+		waitForSpans(t, mt, 1, 5*time.Second)
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
@@ -248,4 +252,289 @@ func TestWrapAsyncProducer(t *testing.T) {
 			assertDSMProducerPathway(t, topic, msg1)
 		}
 	})
+}
+
+func TestWrapAsyncProducerDrainsSuccessesWhileInputIsBlocked(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	cfg.Producer.Return.Successes = true
+	raw := &blockedAsyncProducer{
+		input:     make(chan *sarama.ProducerMessage),
+		successes: make(chan *sarama.ProducerMessage),
+		errors:    make(chan *sarama.ProducerError),
+	}
+	producer := WrapAsyncProducer(cfg, raw)
+
+	blocked := &sarama.ProducerMessage{Topic: "blocked"}
+	producer.Input() <- blocked
+
+	completed := &sarama.ProducerMessage{Topic: "completed"}
+	go func() {
+		raw.successes <- completed
+	}()
+
+	select {
+	case msg := <-producer.Successes():
+		require.Same(t, completed, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not drain the underlying success")
+	}
+
+	select {
+	case msg := <-raw.input:
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the pending input")
+	}
+
+	go func() {
+		raw.successes <- blocked
+	}()
+
+	select {
+	case msg := <-producer.Successes():
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not return the pending input success")
+	}
+
+	close(raw.successes)
+	select {
+	case _, ok := <-producer.Successes():
+		require.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not shut down after the underlying producer closed")
+	}
+}
+
+func TestWrapAsyncProducerFinishesSpanOnDeliveryNotIntake(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	raw := newBlockedAsyncProducer()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer := WrapAsyncProducer(cfg, raw)
+	blocked := &sarama.ProducerMessage{Topic: "blocked"}
+	producer.Input() <- blocked
+
+	require.Never(t, func() bool {
+		return len(mt.FinishedSpans()) > 0
+	}, 250*time.Millisecond, 25*time.Millisecond)
+
+	select {
+	case msg := <-raw.input:
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the pending input")
+	}
+
+	require.Eventually(t, func() bool {
+		return len(mt.FinishedSpans()) == 1
+	}, time.Second, 10*time.Millisecond)
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, "kafka.produce", span.OperationName())
+	assert.Nil(t, span.Tag(ext.MessagingKafkaPartition))
+	assert.Nil(t, span.Tag("offset"))
+	assert.Nil(t, span.Tag(ext.ErrorMsg))
+
+	close(raw.successes)
+	assertWrappedSuccessesClosed(t, producer)
+}
+
+func TestWrapAsyncProducerDrainsErrorsWhileInputIsBlocked(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	cfg.Producer.Return.Successes = true
+	raw := newBlockedAsyncProducer()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer := WrapAsyncProducer(cfg, raw)
+	first := &sarama.ProducerMessage{Topic: "first"}
+	producer.Input() <- first
+	select {
+	case msg := <-raw.input:
+		require.Same(t, first, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the first message")
+	}
+
+	blocked := &sarama.ProducerMessage{Topic: "blocked"}
+	producer.Input() <- blocked
+	producerError := &sarama.ProducerError{Msg: first, Err: context.Canceled}
+	go func() {
+		raw.errors <- producerError
+	}()
+
+	select {
+	case err := <-producer.Errors():
+		require.Same(t, producerError, err)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not drain the underlying error")
+	}
+
+	require.Eventually(t, func() bool {
+		return len(mt.FinishedSpans()) == 1
+	}, time.Second, 10*time.Millisecond)
+	span := mt.FinishedSpans()[0]
+	assert.Equal(t, "kafka.produce", span.OperationName())
+	assert.Equal(t, producerError.Error(), span.Tag(ext.ErrorMsg))
+
+	select {
+	case msg := <-raw.input:
+		require.Same(t, blocked, msg)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the pending input after the error")
+	}
+
+	close(raw.errors)
+	close(raw.successes)
+	assertWrappedSuccessesClosed(t, producer)
+}
+
+func TestWrapAsyncProducerFinishesPendingSpanOnClose(t *testing.T) {
+	for _, exit := range []struct {
+		name  string
+		close func(*blockedAsyncProducer)
+	}{
+		{"successes closed", func(raw *blockedAsyncProducer) { close(raw.successes) }},
+		{"errors closed", func(raw *blockedAsyncProducer) { close(raw.errors) }},
+	} {
+		t.Run(exit.name, func(t *testing.T) {
+			cfg := sarama.NewConfig()
+			cfg.Version = sarama.V0_11_0_0
+			cfg.Producer.Return.Successes = true
+			raw := newBlockedAsyncProducer()
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			producer := WrapAsyncProducer(cfg, raw)
+			producer.Input() <- &sarama.ProducerMessage{Topic: "blocked"}
+			exit.close(raw)
+			assertWrappedSuccessesClosed(t, producer)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, sarama.ErrShuttingDown.Error(), spans[0].Tag(ext.ErrorMsg))
+		})
+	}
+}
+
+type blockedAsyncProducer struct {
+	sarama.AsyncProducer
+	input     chan *sarama.ProducerMessage
+	successes chan *sarama.ProducerMessage
+	errors    chan *sarama.ProducerError
+}
+
+func newBlockedAsyncProducer() *blockedAsyncProducer {
+	return &blockedAsyncProducer{
+		input:     make(chan *sarama.ProducerMessage),
+		successes: make(chan *sarama.ProducerMessage),
+		errors:    make(chan *sarama.ProducerError),
+	}
+}
+
+func assertWrappedSuccessesClosed(t *testing.T, producer sarama.AsyncProducer) {
+	t.Helper()
+	select {
+	case _, ok := <-producer.Successes():
+		require.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not shut down after the underlying producer closed")
+	}
+}
+
+func (p *blockedAsyncProducer) Input() chan<- *sarama.ProducerMessage {
+	return p.input
+}
+
+func (p *blockedAsyncProducer) Successes() <-chan *sarama.ProducerMessage {
+	return p.successes
+}
+
+func (p *blockedAsyncProducer) Errors() <-chan *sarama.ProducerError {
+	return p.errors
+}
+
+func TestSyncProducerWithClusterID(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
+	require.NoError(t, err)
+
+	wrapped := WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(kafkaBrokers))
+
+	// Wait for the async cluster ID fetch to complete
+	require.Eventually(t, func() bool {
+		return wrapped.(*syncProducer).cfg.ClusterID() != ""
+	}, 5*time.Second, 10*time.Millisecond)
+
+	clusterID := wrapped.(*syncProducer).cfg.ClusterID()
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    topic,
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = wrapped.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	s := spans[0]
+
+	// Verify cluster ID is set as a span tag
+	assert.Equal(t, clusterID, s.Tag(ext.MessagingKafkaClusterID))
+	assert.NotEmpty(t, clusterID)
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(), NewProducerMessageCarrier(msg1),
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka", "kafka_cluster_id:"+clusterID,
+	)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
+
+	assert.NoError(t, wrapped.Close())
+}
+
+// TestStartProducerSpanCustomTagPrecedence is a regression test for a Codex
+// review finding on PR #5007: WithProducerCustomTag lets a caller override a
+// tag also set by the cached spanCfg base (e.g. component, span.kind).
+// Custom tags must win on key collision, matching pre-migration behavior
+// where custom-tag options were appended last in the option list. Uses
+// startProducerSpan directly, no live broker needed.
+func TestStartProducerSpanCustomTagPrecedence(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cfg := new(config)
+	defaults(cfg)
+	cfg.producerCustomTags[ext.Component] = func(*sarama.ProducerMessage) any {
+		return "custom-component"
+	}
+	spanCfg := newProducerSpanConfig(cfg)
+	msg := &sarama.ProducerMessage{Topic: "test-topic"}
+
+	span := startProducerSpan(cfg, spanCfg, sarama.MinVersion, msg)
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "custom-component", spans[0].Tag(ext.Component))
 }

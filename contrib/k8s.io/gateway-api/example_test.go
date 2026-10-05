@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	gatewayapi "github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

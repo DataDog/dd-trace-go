@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type TestCase struct {
@@ -28,27 +29,31 @@ type TestCase struct {
 	*testing.T
 }
 
-func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+func (tc *TestCase) PreBootstrap(_ context.Context, t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("appsec does not support Windows")
+		return
 	}
 	if ok, err := libddwaf.Usable(); !ok {
 		t.Skip("WAF is not available:", err)
+		return
 	}
-
 	t.Setenv("DD_APPSEC_RULES", "../testdata/rasp-only-rules.json")
-	t.Setenv("DD_APPSEC_ENABLED", "true")
 	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h")
+}
+
+func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	mux := http.NewServeMux()
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: mux,
 	}
 
 	mux.HandleFunc("/", tc.handleRoot)
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -61,6 +66,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	tc.T = t
 	resp, err := http.Get(fmt.Sprintf("http://%s/?path=/etc/passwd", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	dnstrace "github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
@@ -169,6 +170,7 @@ func TestWrapHandler(t *testing.T) {
 	assert.Equal(t, "miekg/dns", span.Tag(ext.Component))
 	assert.Equal(t, "miekg/dns", span.Integration())
 	assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal(t, "miekg/dns", span.Tag(ext.KeyServiceSource))
 }
 
 func newMessage() *dns.Msg {
@@ -193,6 +195,7 @@ func assertClientSpan(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
 	assert.Equal(t, "miekg/dns", s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+	assert.Equal(t, "miekg/dns", s.Tag(ext.KeyServiceSource))
 }
 
 func waitForSpans(mt mocktracer.Tracer, sz int) {

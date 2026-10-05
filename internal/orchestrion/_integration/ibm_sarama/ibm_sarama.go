@@ -15,12 +15,13 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/IBM/sarama"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 const (
@@ -95,7 +96,7 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	defer func() { assert.NoError(t, partitionConsumer.Close(), "failed to close partition consumer") }()
 
 	expectedMessages := []string{"Hello, World!", "Another message to avoid flaky tests"}
-	for i := 0; i < len(expectedMessages); i++ {
+	for i := range len(expectedMessages) {
 		select {
 		case msg := <-partitionConsumer.Messages():
 			require.Equal(t, expectedMessages[i], string(msg.Value))

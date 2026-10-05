@@ -30,6 +30,9 @@ type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	provider    *TracerProvider
 	DD          tracer.Tracer
+	// otelSemanticsEnabled is resolved once when the provider is created, so spans
+	// don't read the global configuration on every SetAttributes call.
+	otelSemanticsEnabled bool
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
@@ -55,7 +58,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	}
 	telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Submit(1.0)
 	var cfg tracer.StartSpanConfig
-	cfg.Tags = make(map[string]interface{})
+	cfg.Tags = make(map[string]any)
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {
@@ -95,31 +98,39 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
-	s := tracer.StartSpan(spanName, ddopts...)
+	//
+	// The parent is decided above, so detach any ambient Datadog span to keep
+	// StartSpanFromContext from choosing its own. It is used for its context handling:
+	// the caller's context becomes the span's context, which keeps the application's
+	// pprof labels on the goroutine, and the context it returns carries this span's
+	// profiling labels to its children.
+	s, ctx := tracer.StartSpanFromContext(tracer.ContextWithSpan(ctx, nil), spanName, ddopts...)
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
-	mergedBag := mergeBaggageFromContext(ctx)
-	for _, m := range mergedBag.Members() {
-		ctx = baggage.Set(ctx, m.Key(), m.Value())
-	}
+	mergedBag, ddBag := mergeBaggageFromContext(ctx)
+	ctx = baggage.SetAll(ctx, ddBag)
 	ctx = otelbaggage.ContextWithBaggage(ctx, mergedBag)
 
 	os := oteltrace.Span(&span{
-		DD:         s,
-		oteltracer: t,
-		spanKind:   ssConfig.SpanKind(),
-		attributes: cfg.Tags,
+		DD:                   s,
+		oteltracer:           t,
+		spanKind:             ssConfig.SpanKind(),
+		attributes:           cfg.Tags,
+		otelSemanticsEnabled: t.otelSemanticsEnabled,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
-	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
-	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
+	// Wrap the span in the OpenTelemetry context to propagate span context values.
+	// StartSpanFromContext already put the Datadog span on the context.
+	ctx = oteltrace.ContextWithSpan(ctx, os)
 	return ctx, os
 }
 
-// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context.
-// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values are overwritten.
-func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
+// mergeBaggageFromContext merges Datadog baggage found on the context into the OpenTelemetry baggage found on the context,
+// adding key-value pairs only if the key doesn't already exist in the OpenTelemetry baggage. It ensures no existing values
+// are overwritten. It returns the merged OTel baggage along with the equivalent map[string]string used to update Datadog
+// baggage.
+func mergeBaggageFromContext(ctx context.Context) (otelbaggage.Baggage, map[string]string) {
 	otelBag := otelbaggage.FromContext(ctx)
 	for key, value := range baggage.All(ctx) {
 		if otelBag.Member(key).Value() == "" {
@@ -134,7 +145,15 @@ func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
 			}
 		}
 	}
-	return otelBag
+	members := otelBag.Members()
+	if len(members) == 0 {
+		return otelBag, nil
+	}
+	ddBag := make(map[string]string, len(members))
+	for _, m := range members {
+		ddBag[m.Key()] = m.Value()
+	}
+	return otelBag, ddBag
 }
 
 type otelCtxToDDCtx struct {
@@ -166,3 +185,29 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 }
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
+
+// SamplingDecision returns the sampling decision associated with this span context.
+// According to the OpenTelemetry specification, the sampling decision is made when the span is started.
+// Therefore, not having the Sampled TraceFlag set means that the trace should be dropped.
+// - https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/tracer.go#L109
+// - https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/tracer.go#L126
+func (c *otelCtxToDDCtx) SamplingDecision() uint32 {
+	if c.oc.IsSampled() {
+		return 2 // decisionKeep
+	}
+	return 1 // decisionDrop
+}
+
+// Priority returns the sampling priority associated with this span context.
+// According to the OpenTelemetry specification, the sampling decision is made when the span is started.
+// Therefore, not having the Sampled TraceFlag set means that the trace should be dropped.
+// - https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/tracer.go#L109
+// - https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk/trace/tracer.go#L126
+func (c *otelCtxToDDCtx) Priority() *float64 {
+	if c.oc.IsSampled() {
+		p := float64(ext.PriorityAutoKeep)
+		return &p
+	}
+	p := float64(ext.PriorityAutoReject)
+	return &p
+}

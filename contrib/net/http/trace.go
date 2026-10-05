@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 

@@ -9,9 +9,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestBool(t *testing.T) {

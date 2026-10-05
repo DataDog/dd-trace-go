@@ -1,0 +1,11 @@
+# Configuration file for actionlint
+# https://github.com/rhysd/actionlint/blob/main/docs/config.md
+
+self-hosted-runner:
+  # Labels for self-hosted runners used in workflows
+  labels:
+    - APM Larger Runners
+
+# Configuration variables used in workflows
+config-variables:
+  - DD_K9_LIBRARY_GO_APP_ID

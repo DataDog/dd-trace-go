@@ -9,17 +9,22 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"runtime/pprof"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelbaggage "go.opentelemetry.io/otel/baggage"
@@ -84,6 +89,136 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
 	assert.Equal(parent.Context().TraceID(), child.SpanContext().TraceID().String())
+}
+
+func TestStartPreservesPprofLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		parent string
+	}{
+		{name: "root"},
+		{name: "OTel remote parent", parent: "otel"},
+		{name: "Datadog remote parent", parent: "datadog"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+			defer tp.Shutdown()
+			tr := tp.Tracer("")
+
+			pprof.Do(context.Background(), pprof.Labels(testLabelKey, "expected"), func(ctx context.Context) {
+				switch tc.parent {
+				case "otel":
+					ctx = oteltrace.ContextWithRemoteSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+						TraceID: oteltrace.TraceID{1},
+						SpanID:  oteltrace.SpanID{1},
+						Remote:  true,
+					}))
+				case "datadog":
+					parent, err := tracer.Extract(tracer.TextMapCarrier{
+						"traceparent": "00-00000000000000000000000000000001-0000000000000001-01",
+					})
+					require.NoError(t, err)
+					ctx = ContextWithStartOptions(ctx, tracer.ChildOf(parent))
+				}
+				_, span := tr.Start(ctx, "operation")
+				assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"expected"`)
+
+				span.End()
+				assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"expected"`)
+			})
+		})
+	}
+}
+
+// A local parent span must not hide labels the application set after that parent
+// started.
+func TestStartPreservesPprofLabelsUnderLocalParent(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	pprof.Do(context.Background(), pprof.Labels(testLabelKey, "parent"), func(ctx context.Context) {
+		ctx, parent := tr.Start(ctx, "parent")
+		assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"parent"`)
+
+		pprof.Do(ctx, pprof.Labels(testLabelKey, "child"), func(ctx context.Context) {
+			_, child := tr.Start(ctx, "child")
+			assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"child"`)
+
+			child.End()
+			assert.Contains(t, goroutineLabels(), `"`+testLabelKey+`":"child"`)
+		})
+		parent.End()
+	})
+}
+
+func TestStartRestoresParentPprofLabels(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	ctx, parent := tr.Start(context.Background(), "parent")
+	parentID := strconv.FormatUint(parent.(*span).DD.Context().SpanID(), 10)
+	_, child := tr.Start(ctx, "child")
+	child.End()
+
+	assert.Contains(t, goroutineLabels(), `"span id":"`+parentID+`"`)
+	parent.End()
+}
+
+// A parent named through ContextWithStartOptions on a context that does not carry it
+// leaves the labels to that context, the same as tracer.StartSpanFromContext does.
+func TestStartWithDetachedParentMatchesTracerCore(t *testing.T) {
+	tp := NewTracerProvider(tracer.WithProfilerCodeHotspots(true))
+	defer tp.Shutdown()
+	tr := tp.Tracer("")
+
+	pprof.Do(context.Background(), pprof.Labels(testLabelKey, "expected"), func(ctx context.Context) {
+		_, parent := tr.Start(ctx, "parent")
+		parentCtx := parent.(*span).DD.Context()
+
+		_, bridgeChild := tr.Start(ContextWithStartOptions(ctx, tracer.ChildOf(parentCtx)), "bridge child")
+		bridgeChild.End()
+		viaBridge := goroutineLabels()
+
+		coreChild, _ := tracer.StartSpanFromContext(ctx, "core child", tracer.ChildOf(parentCtx))
+		coreChild.Finish()
+		viaCore := goroutineLabels()
+
+		assert.Equal(t, viaCore, viaBridge)
+		parent.End()
+	})
+}
+
+const testLabelKey = "otel_bridge_test_label"
+
+// goroutineLabels returns the pprof labels of the calling goroutine, as the
+// "# labels: {...}" line of a goroutine profile, or "" when it carries none.
+func goroutineLabels() string {
+	// The profile is written from a child goroutine, which inherits the caller's
+	// labels, so its own record in the profile is the one to read back.
+	done := make(chan string, 1)
+	go func() { done <- writeGoroutineLabels() }()
+	return <-done
+}
+
+func writeGoroutineLabels() string {
+	var profile strings.Builder
+	if err := pprof.Lookup("goroutine").WriteTo(&profile, 1); err != nil {
+		return ""
+	}
+	// Each goroutine is one blank-line separated record holding its labels and stack.
+	for record := range strings.SplitSeq(profile.String(), "\n\n") {
+		if !strings.Contains(record, "writeGoroutineLabels") {
+			continue
+		}
+		for line := range strings.SplitSeq(record, "\n") {
+			if strings.HasPrefix(line, "# labels: ") {
+				return line
+			}
+		}
+	}
+	return ""
 }
 
 func TestTracerOptions(t *testing.T) {
@@ -215,7 +350,7 @@ func TestConcurrentSetAttributes(_ *testing.T) {
 	defer span.End()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		i := i
 		go func(_ int) {
@@ -237,7 +372,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.op)
 			sp.End()
 		}
@@ -247,7 +382,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.op)
 			sp.Finish()
 		}
@@ -266,7 +401,7 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.oldOp)
 			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
 			sp.SetName(testData.newOp)
@@ -278,7 +413,40 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
+			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
+			sp.SetTag(testData.tagKey, testData.tagValue)
+			sp.SetOperationName(testData.newOp)
+			sp.Finish()
+		}
+	})
+}
+
+func BenchmarkOTelApiWithCustomTagsSpanPool(b *testing.B) {
+	testData := struct {
+		env, srv, oldOp, newOp, tagKey, tagValue string
+	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
+
+	tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv), tracer.WithSpanPool(true))
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	b.Run("otel_api", func(b *testing.B) {
+		for b.Loop() {
+			_, sp := tr.Start(context.Background(), testData.oldOp)
+			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
+			sp.SetName(testData.newOp)
+			sp.End()
+		}
+	})
+
+	tracer.Start(tracer.WithEnv(testData.env), tracer.WithService(testData.srv), tracer.WithSpanPool(true))
+	defer tracer.Stop()
+	b.ResetTimer()
+	b.Run("datadog_otel_api", func(b *testing.B) {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
 			sp.SetTag(testData.tagKey, testData.tagValue)
 			sp.SetOperationName(testData.newOp)
@@ -294,23 +462,21 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tr := otel.Tracer("")
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				ctx := context.Background()
 				newCtx, parent := tr.Start(ctx, "parent")
 				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
 					attribute.String("ResourceName", "/"))
 				defer parent.End()
 
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					_, child := tr.Start(newCtx, "child")
 					child.End()
 				}
-			}()
+			})
 		}
 	}
 }
@@ -397,4 +563,90 @@ func TestMergeOtelDDBaggage(t *testing.T) {
 		assert.True(ok)
 		assert.Equal("otelValue", value)
 	})
+}
+
+func Test_DDOpenTelemetryTracer(t *testing.T) {
+	traceID, err := oteltrace.TraceIDFromHex("5b8aa5a2d2c872e8321cf37308d69df1")
+	assert.NoError(t, err)
+	spanID, err := oteltrace.SpanIDFromHex("051581bf3cb55c11")
+	assert.NoError(t, err)
+	parentSpanCtx := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+
+	testCases := []struct {
+		isSampled      bool
+		ddRate         float64
+		expectedResult bool
+	}{
+		{
+			isSampled:      true,
+			ddRate:         1.0,
+			expectedResult: true,
+		},
+		{
+			isSampled:      false,
+			ddRate:         1.0,
+			expectedResult: false,
+		},
+		{
+			isSampled:      true,
+			ddRate:         0,
+			expectedResult: true,
+		},
+		{
+			isSampled:      false,
+			ddRate:         0,
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("OTel %t DD rate %f", tc.isSampled, tc.ddRate), func(t *testing.T) {
+			ddOTelTracer := NewTracerProvider(
+				tracer.WithLogStartup(false),
+				tracer.WithSamplingRules([]tracer.SamplingRule{
+					{Rate: tc.ddRate}, // This should be applied only when a brand new root span is started and should be ignored for a non-root span
+				}),
+			).Tracer("")
+
+			parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(tc.isSampled))
+
+			ctx := oteltrace.ContextWithSpanContext(context.Background(), parentSpanCtx)
+			_, span := ddOTelTracer.Start(ctx, "test")
+			span.End()
+
+			childSpanContext := span.SpanContext()
+			assert.Equal(t, parentSpanCtx.TraceID(), childSpanContext.TraceID())
+			assert.Equal(t, tc.expectedResult, childSpanContext.IsSampled(),
+				"inconsistent sampling decision between OTel and DD")
+		})
+	}
+}
+
+func Test_otelCtxToDDCtx_SamplingDecision_Priority(t *testing.T) {
+	parentSpanCtx := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID: oteltrace.TraceID{0xAA},
+		SpanID:  oteltrace.SpanID{0x01},
+	})
+
+	// Zero value TraceFlags sampling decision - In an OTel Span the sampling decision is taken at start, this
+	// means that the sampling decision we will receive will always be filled.
+	// Zero value means that the trace should be dropped
+	ctx := &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(1), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoReject, *ctx.Priority())
+
+	// Set sampling decision to true
+	parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(true))
+	ctx = &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(2), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoKeep, *ctx.Priority())
+
+	// Set sampling decision to false
+	parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(false))
+	ctx = &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(1), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoReject, *ctx.Priority())
 }

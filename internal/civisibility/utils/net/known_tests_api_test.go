@@ -11,24 +11,57 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestKnownTestsApiRequest(t *testing.T) {
 	var c *client
-	expectedResponse := knownTestsResponse{}
-	expectedResponse.Data.Type = settingsRequestType
-	expectedResponse.Data.Attributes.Tests = KnownTestsResponseDataModules{
+	page1Response := knownTestsResponse{}
+	page1Response.Data.Type = settingsRequestType
+	page1Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
 		"MyModule1": KnownTestsResponseDataSuites{
 			"MySuite1": []string{"Test1", "Test2"},
 		},
-		"MyModule2": KnownTestsResponseDataSuites{
-			"MySuite2": []string{"Test3", "Test4"},
-		},
+	}
+	page1Response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{
+		Cursor:  "cursor_page2",
+		Size:    2,
+		HasNext: true,
 	}
 
+	page2Response := knownTestsResponse{}
+	page2Response.Data.Type = settingsRequestType
+	page2Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
+		"MyModule1": KnownTestsResponseDataSuites{
+			"MySuite1": []string{"Test3"},
+		},
+		"MyModule2": KnownTestsResponseDataSuites{
+			"MySuite2": []string{"Test4", "Test5"},
+		},
+	}
+	page2Response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{
+		Cursor:  "cursor_page3",
+		Size:    3,
+		HasNext: true,
+	}
+
+	page3Response := knownTestsResponse{}
+	page3Response.Data.Type = settingsRequestType
+	page3Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
+		"MyModule2": KnownTestsResponseDataSuites{
+			"MySuite2": []string{"Test6"},
+		},
+	}
+	// Last page: no PageInfo (nil) means no more pages
+
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -38,7 +71,7 @@ func TestKnownTestsApiRequest(t *testing.T) {
 
 		if r.Header.Get(HeaderContentType) == ContentTypeJSON {
 			var request knownTestsRequest
-			json.Unmarshal(body, &request)
+			assert.NoError(t, json.Unmarshal(body, &request))
 			assert.Equal(t, c.id, request.Data.ID)
 			assert.Equal(t, knownTestsRequestType, request.Data.Type)
 			assert.Equal(t, knownTestsURLPath, r.URL.Path[1:])
@@ -46,10 +79,42 @@ func TestKnownTestsApiRequest(t *testing.T) {
 			assert.Equal(t, c.repositoryURL, request.Data.Attributes.RepositoryURL)
 			assert.Equal(t, c.serviceName, request.Data.Attributes.Service)
 			assert.Equal(t, c.testConfigurations, request.Data.Attributes.Configurations)
+			assert.NotNil(t, request.Data.Attributes.PageInfo, "page_info should always be present under attributes")
+
+			var envelope map[string]json.RawMessage
+			assert.NoError(t, json.Unmarshal(body, &envelope))
+			assert.NotContains(t, envelope, "page_info", "page_info should not be top-level")
+
+			var requestData struct {
+				Attributes map[string]json.RawMessage `json:"attributes"`
+			}
+			assert.NoError(t, json.Unmarshal(envelope["data"], &requestData))
+			pageInfoRaw, ok := requestData.Attributes["page_info"]
+			assert.True(t, ok, "page_info should be present under data.attributes")
+			var pageInfo map[string]any
+			assert.NoError(t, json.Unmarshal(pageInfoRaw, &pageInfo))
 
 			w.Header().Set(HeaderContentType, ContentTypeJSON)
-			expectedResponse.Data.ID = request.Data.ID
-			json.NewEncoder(w).Encode(expectedResponse)
+			requestCount++
+			var resp knownTestsResponse
+			switch requestCount {
+			case 1:
+				assert.Empty(t, request.Data.Attributes.PageInfo.PageState, "first request should have empty page_state")
+				assert.Empty(t, pageInfo, "first request should not send pagination fields")
+				resp = page1Response
+			case 2:
+				assert.Equal(t, "cursor_page2", request.Data.Attributes.PageInfo.PageState)
+				assert.Equal(t, map[string]any{"page_state": "cursor_page2"}, pageInfo)
+				resp = page2Response
+			case 3:
+				assert.Equal(t, "cursor_page3", request.Data.Attributes.PageInfo.PageState)
+				assert.Equal(t, map[string]any{"page_state": "cursor_page3"}, pageInfo)
+				resp = page3Response
+			default:
+				t.Fatalf("unexpected request count: %d", requestCount)
+			}
+			resp.Data.ID = request.Data.ID
+			json.NewEncoder(w).Encode(resp)
 		}
 	}))
 	defer server.Close()
@@ -62,9 +127,14 @@ func TestKnownTestsApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	efdData, err := cInterface.GetKnownTests()
+	knownTests, err := cInterface.GetKnownTests()
 	assert.Nil(t, err)
-	assert.Equal(t, expectedResponse.Data.Attributes, *efdData)
+	assert.Equal(t, 3, requestCount, "should have made 3 paginated requests")
+
+	// Verify merged results
+	assert.Len(t, knownTests.Tests, 2, "should have 2 modules")
+	assert.Equal(t, []string{"Test1", "Test2", "Test3"}, knownTests.Tests["MyModule1"]["MySuite1"])
+	assert.Equal(t, []string{"Test4", "Test5", "Test6"}, knownTests.Tests["MyModule2"]["MySuite2"])
 }
 
 func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
@@ -103,4 +173,145 @@ func TestKnownTestsApiRequestFailToGet(t *testing.T) {
 	assert.Nil(t, efdData)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sending known tests request")
+}
+
+func TestKnownTestsApiRequestFromManifestCache(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	expectedResponse := knownTestsResponse{}
+	expectedResponse.Data.Attributes.Tests = KnownTestsResponseDataModules{
+		"moduleA": {
+			"suiteA": {"test1", "test2"},
+		},
+	}
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	rawResponse, err := json.Marshal(expectedResponse)
+	if err != nil {
+		t.Fatalf("marshal cache response: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "known_tests.json"), rawResponse, 0o644); err != nil {
+		t.Fatalf("write known tests cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetKnownTests()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedResponse.Data.Attributes, *responseData)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsLogLine(recordLogger.Logs(), "reading .testoptimization/cache/http/known_tests.json"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "loaded known tests from .testoptimization/cache/http/known_tests.json [modules:1 suites:1 tests:2]"))
+}
+
+func TestKnownTestsApiRequestFromManifestCacheMissingFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetKnownTests()
+	assert.NoError(t, err)
+	assert.Equal(t, KnownTestsResponseData{Tests: KnownTestsResponseDataModules{}}, *responseData)
+	assert.Equal(t, 0, hits)
+}
+
+func TestKnownTestsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "known_tests.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("write malformed known tests cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetKnownTests()
+	assert.NoError(t, err)
+	assert.Equal(t, KnownTestsResponseData{Tests: KnownTestsResponseDataModules{}}, *responseData)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsLogLine(recordLogger.Logs(), "invalid known tests file"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "returning empty known tests because manifest cache is unavailable or invalid"))
+}
+
+func containsLogLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
 }

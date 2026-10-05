@@ -8,6 +8,7 @@ package httpsec
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -15,8 +16,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
@@ -70,13 +73,23 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 	builder := addresses.NewAddressesBuilder().
 		WithDownwardURL(args.URL).
 		WithDownwardMethod(args.Method).
-		WithDownwardRequestHeaders(args.Headers)
+		WithDownwardRequestHeaders(headersToLower(args.Headers))
 
+	// Increment the span metric for downward requests. Metrics is nil when the WAF context could not
+	// be created (no WAF handle, or NewContext failed) yet the listener still runs on an outbound
+	// request, so guard the dereference the same way runWAF does.
+	if metrics := op.HandlerOp.ContextOperation.GetMetricsInstance(); metrics != nil {
+		metrics.SumDownstreamRequestsCalls.Add(1)
+	}
+
+	// Increment the internal sampling counter for downward requests
 	requestCount := feature.downstreamRequestAnalysis.Add(1)
+
+	hasDownstreamOverride := op.HandlerOp.HasDownstreamRequestOverride(op.URL())
 
 	// Sampling algorithm based on:
 	// https://docs.google.com/document/d/1DIGuCl1rkhx5swmGxKO7Je8Y4zvaobXBlgbm6C89yzU/edit?tab=t.0#heading=h.qawhep7pps5a
-	if op.HandlerOp.DownstreamRequestBodyAnalysis() < feature.maxDownstreamRequestBodyAnalysis &&
+	if !hasDownstreamOverride && op.HandlerOp.DownstreamRequestBodyAnalysis() < feature.maxDownstreamRequestBodyAnalysis &&
 		requestCount*knuthFactor <= uint64(feature.analysisSampleRate*maxUint64) {
 		op.HandlerOp.IncrementDownstreamRequestBodyAnalysis()
 		op.SetAnalyseBody()
@@ -86,12 +99,16 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
-			telemetrylog.Warn("Unsupported request body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:" + wafemitter.ExceptionTypeInstrumentation}),
+				telemetry.WithStacktrace(),
+			).Warn("Unsupported request body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
+		op.SetRequestBody(encodable)
 		builder = builder.WithDownwardRequestBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.Run(op, builder.Build())
 }
 
 func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationRes) {
@@ -99,14 +116,59 @@ func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, 
 		WithDownwardResponseStatus(args.StatusCode).
 		WithDownwardResponseHeaders(headersToLower(args.Headers))
 
-	if op.AnalyseBody() && args.Body != nil && *args.Body != nil && *args.Body != http.NoBody {
+	location := http.Header(args.Headers).Get("Location")
+	isRedirect := args.StatusCode >= 300 && args.StatusCode <= 399 && location != ""
+
+	var (
+		analyzeBody         bool
+		requestBody         = op.RequestBody()
+		resubmitRequestBody = false
+	)
+	if override, found := op.HandlerOp.ConsumeDownstreamRequestOverride(op.URL()); found {
+		// We are in a downstream request identified as part of a redirect chain. We use the original
+		// sampling decision instead of making a new one.
+		analyzeBody = override.AnalyzeBody
+		requestBody = override.OriginalRequestBody
+		// If we're at the end of a redirect chain, we re-submit the request body to assess data leakage
+		// to un-trusted authorities.
+		resubmitRequestBody = true
+	} else {
+		analyzeBody = op.AnalyseBody()
+	}
+
+	if isRedirect {
+		opURL, err := url.Parse(op.URL())
+		if err == nil {
+			url, err := opURL.Parse(location)
+			if err == nil {
+				event := httpsec.DownstreamRequestOverride{
+					DownstreamURL: url.String(),
+					AnalyzeBody:   analyzeBody,
+				}
+				// Only HTTP 307 and 308 result in the body being re-submitted by the client.
+				if args.StatusCode == http.StatusTemporaryRedirect || args.StatusCode == http.StatusPermanentRedirect {
+					event.OriginalRequestBody = requestBody
+				}
+				dyngo.EmitData(op.HandlerOp, event)
+			}
+		}
+	}
+
+	if analyzeBody && !isRedirect && resubmitRequestBody && requestBody != nil {
+		builder = builder.WithDownwardRequestBody(requestBody)
+	}
+
+	if analyzeBody && !isRedirect && args.Body != nil && *args.Body != nil && *args.Body != http.NoBody {
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
-			telemetrylog.Warn("Unsupported response body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:" + wafemitter.ExceptionTypeInstrumentation}),
+				telemetry.WithStacktrace(),
+			).Warn("Unsupported response body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		builder = builder.WithDownwardResponseBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.Run(op, builder.Build())
 }

@@ -6,12 +6,10 @@
 package addresses
 
 import (
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 )
 
-// Scope is used to divide the time spend in go-libddwaf between multiple parts. These scopes are then fed into
-// [liddwaf.RunAddressData.TimerKey] to decide where to store the time spent in the WAF.
-// Time which is then added to [libddwaf.Context.Timer].
+// Scope divides the time spent in go-libddwaf between multiple parts before it is passed to libddwaf as a TimerKey.
 type Scope = timer.Key
 
 const (

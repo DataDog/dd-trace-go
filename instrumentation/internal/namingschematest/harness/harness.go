@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -32,14 +33,31 @@ type ServiceNameAssertions struct {
 	ServiceOverride []string
 }
 
+// ServiceSourceAssertions holds the expected _dd.svc_src values for each scenario.
+type ServiceSourceAssertions struct {
+	// Defaults is the expected service source when no service override is provided.
+	Defaults []string
+	// ServiceOverride is the expected service source when WithService is used.
+	ServiceOverride []string
+}
+
 type GenSpansFn func(t *testing.T, serviceOverride string) []*mocktracer.Span
 
 type TestCase struct {
 	Name              instrumentation.Package
 	GenSpans          GenSpansFn
 	WantServiceNameV0 ServiceNameAssertions
+	WantServiceSource ServiceSourceAssertions
 	AssertOpV0        AssertSpansFn
 	AssertOpV1        AssertSpansFn
+}
+
+func loadTracerConfig(t *testing.T, opts ...tracer.StartOption) {
+	t.Helper()
+	testutils.SetGlobalServiceName(t, "")
+	opts = append(opts, tracer.WithTestDefaults(nil))
+	require.NoError(t, tracer.Start(opts...))
+	t.Cleanup(tracer.Stop)
 }
 
 func RunTest(t *testing.T, tc TestCase) {
@@ -52,21 +70,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v0_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v0_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.DDService)
 			})
 			t.Run("v0_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, tc.WantServiceNameV0.ServiceOverride)
 			})
@@ -74,7 +92,7 @@ func RunTest(t *testing.T, tc TestCase) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
 				t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				// in this setup, we should always have DD_SERVICE even if using schema v0
 				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
@@ -82,9 +100,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v0_dd_service_remove_integration_service_names_tracer_option", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
-				// this option is equivalent to setting the environment variable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED
-				tracer.WithGlobalServiceName(true)(nil)
+				loadTracerConfig(t, tracer.WithGlobalServiceName(true))
 
 				spans := tc.GenSpans(t, "")
 				// in this setup, we should always have DD_SERVICE even if using schema v0
@@ -95,21 +111,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v1_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v1_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
 			})
 			t.Run("v1_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, RepeatString(TestServiceOverride, len(tc.WantServiceNameV0.ServiceOverride)))
 			})
@@ -118,18 +134,52 @@ func RunTest(t *testing.T, tc TestCase) {
 		t.Run("SpanName", func(t *testing.T) {
 			t.Run("v0", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV0(t, spans)
 			})
 			t.Run("v1", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-				instrumentation.ReloadConfig()
+				loadTracerConfig(t)
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV1(t, spans)
 			})
 		})
+
+		if len(tc.WantServiceSource.Defaults) > 0 || len(tc.WantServiceSource.ServiceOverride) > 0 {
+			t.Run("ServiceSource", func(t *testing.T) {
+				t.Run("defaults", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					loadTracerConfig(t)
+					spans := tc.GenSpans(t, "")
+					assertServiceSource(t, spans, tc.WantServiceSource.Defaults)
+				})
+				t.Run("service_override", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					loadTracerConfig(t)
+					spans := tc.GenSpans(t, TestServiceOverride)
+					assertServiceSource(t, spans, tc.WantServiceSource.ServiceOverride)
+				})
+			})
+		}
 	})
+}
+
+func assertServiceSource(t *testing.T, spans []*mocktracer.Span, wantSources []string) {
+	t.Helper()
+	require.Len(t, spans, len(wantSources), "the number of spans and number of assertions should be the same")
+	for i := 0; i < len(spans); i++ {
+		want := wantSources[i]
+		got := spans[i].Tag(ext.KeyServiceSource)
+		spanName := spans[i].OperationName()
+		if want == "" {
+			assert.Nil(t, got, "expected no service source for span: %s", spanName)
+		} else {
+			assert.Equal(t, want, got, "incorrect service source for span: %s", spanName)
+		}
+	}
 }
 
 func assertServiceNames(t *testing.T, spans []*mocktracer.Span, wantServiceNames []string) {

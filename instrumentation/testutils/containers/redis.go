@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
@@ -36,7 +35,7 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 			wait.ForAll(
 				wait.ForLog("* Ready to accept connections"),
 				wait.ForExposedPort(),
-				wait.ForListeningPort(nat.Port(exposedPort)),
+				wait.ForListeningPort(exposedPort),
 				wait.ForExec(waitReadyCmd),
 			),
 		),
@@ -51,7 +50,7 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 		}),
 	}
 	container, err := redis.Run(ctx,
-		"redis:7-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		Image("redis"),
 		opts...,
 	)
 	AssertTestContainersError(t, err)

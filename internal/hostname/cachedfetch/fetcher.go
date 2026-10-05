@@ -35,10 +35,10 @@ type Fetcher struct {
 	// value.  This function is not called if there is no last successful value.
 	// If left at its zero state, a default log message will be generated, using
 	// Name.
-	LogFailure func(error, interface{})
+	LogFailure func(error, any)
 
 	// previous successfully fetched value
-	lastValue interface{}
+	lastValue any
 
 	// mutex to protect access to lastValue
 	sync.Mutex

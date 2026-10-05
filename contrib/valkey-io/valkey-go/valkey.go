@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/valkey-io/valkey-go"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/valkey-io/valkey-go"
 )
 
 var instr *instrumentation.Instrumentation
@@ -36,6 +37,11 @@ type client struct {
 	port    string
 	dbIndex string
 	user    string
+	// spanCfg holds the tags that are constant for every command issued by
+	// this client (component, span kind, db system, target host/port/db/user).
+	// It is built once and merged into each request via WithStartSpanConfig,
+	// instead of rebuilding a Tag() closure per tag on every call.
+	spanCfg *tracer.StartSpanConfig
 }
 
 func (c *client) B() valkey.Builder {
@@ -48,13 +54,13 @@ func (c *client) Close() {
 
 // NewClient returns a new valkey.Client enhanced with tracing.
 func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client, error) {
-	valkeyClient, err := valkey.NewClient(clientOption)
-	if err != nil {
-		return nil, err
-	}
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
+	}
+	valkeyClient, err := cfg.createClientFunc(clientOption)
+	if err != nil {
+		return nil, err
 	}
 	tClient := &client{
 		client:  valkeyClient,
@@ -69,7 +75,32 @@ func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client,
 			tClient.port = port
 		}
 	}
+	tClient.spanCfg = newSpanConfig(cfg, tClient.host, tClient.port, tClient.dbIndex, tClient.user)
 	return tClient, nil
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every command issued through a client with the given static
+// attributes, so per-request calls don't need to rebuild them.
+func newSpanConfig(cfg *config, host, port, dbIndex, user string) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.SpanType(ext.SpanTypeValkey),
+		tracer.Tag(ext.Component, instrumentation.PackageValkeyIoValkeyGo),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
+		tracer.Tag(ext.TargetDB, dbIndex),
+	}
+	if host != "" {
+		opts = append(opts, tracer.Tag(ext.TargetHost, host))
+	}
+	if port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, port))
+	}
+	if user != "" {
+		opts = append(opts, tracer.Tag(ext.DBUser, user))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 func (c *client) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
@@ -151,6 +182,7 @@ func (c *client) Nodes() map[string]valkey.Client {
 			port:    port,
 			dbIndex: c.dbIndex,
 			user:    c.user,
+			spanCfg: newSpanConfig(c.cfg, host, port, c.dbIndex, c.user),
 		}
 	}
 	return nodes
@@ -173,36 +205,50 @@ func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error 
 	return c.dedicatedClient.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedClient) SetOnInvalidations(fn func([]valkey.ValkeyMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
+}
+
+func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
+	span, ctx := c.startSpan(ctx, processCommand(&cmd))
+	resp := c.dedicatedClient.Do(ctx, cmd)
+	setClientCacheTags(span, resp)
+	c.finishSpan(span, resp.Error())
+	return resp
+}
+
+func (c *dedicatedClient) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
+	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	resp := c.dedicatedClient.DoMulti(ctx, multi...)
+	c.finishSpan(span, c.firstError(resp))
+	return resp
+}
+
+func (c *dedicatedClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) error {
+	span, ctx := c.startSpan(ctx, processCommand(&subscribe))
+	err := c.dedicatedClient.Receive(ctx, subscribe, fn)
+	c.finishSpan(span, err)
+	return err
+}
+
+func (c *dedicatedClient) Close() {
+	c.dedicatedClient.Close()
+}
+
 type command struct {
 	statement string
 	raw       string
 }
 
 func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(c.cfg.serviceName),
-		tracer.ResourceName(cmd.statement),
-		tracer.SpanType(ext.SpanTypeValkey),
-		tracer.Tag(ext.TargetHost, c.host),
-		tracer.Tag(ext.TargetPort, c.port),
-		tracer.Tag(ext.Component, instrumentation.PackageValkeyIoValkeyGo),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
-		tracer.Tag(ext.TargetDB, c.dbIndex),
-	}
+	tags := map[string]any{ext.ResourceName: cmd.statement}
 	if c.cfg.rawCommand {
-		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, cmd.raw))
+		tags[ext.ValkeyRawCommand] = cmd.raw
 	}
-	if c.host != "" {
-		opts = append(opts, tracer.Tag(ext.TargetHost, c.host))
-	}
-	if c.port != "" {
-		opts = append(opts, tracer.Tag(ext.TargetPort, c.port))
-	}
-	if c.user != "" {
-		opts = append(opts, tracer.Tag(ext.DBUser, c.user))
-	}
-	return tracer.StartSpanFromContext(ctx, "valkey.command", opts...)
+	return tracer.StartSpanFromContext(ctx, "valkey.command",
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(c.spanCfg),
+	)
 }
 
 func (c *client) finishSpan(span *tracer.Span, err error) {
@@ -266,7 +312,11 @@ func multiCommand(cmds []command) command {
 		statement.WriteString(cmd.statement)
 		raw.WriteString(cmd.raw)
 		if i != len(cmds)-1 {
-			statement.WriteString(" ")
+			// Commands are joined with newlines so that the Datadog agent's Redis
+			// quantizer correctly identifies each token as a separate command.
+			// The quantizer splits on '\n' to process pipeline commands individually:
+			// https://github.com/DataDog/datadog-agent/blob/main/pkg/obfuscate/redis.go#L39
+			statement.WriteString("\n")
 			raw.WriteString(" ")
 		}
 	}

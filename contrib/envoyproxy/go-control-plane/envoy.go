@@ -42,10 +42,14 @@ const (
 
 // AppsecEnvoyConfig contains configuration for the AppSec Envoy processor
 type AppsecEnvoyConfig struct {
-	Integration          Integration
-	BlockingUnavailable  bool
-	Context              context.Context
-	BodyParsingSizeLimit *int
+	Integration Integration
+	// TrustGCLBXForwardedFor enables the positional X-Forwarded-For contract used
+	// by Google Cloud load balancers. It must be false for self-managed Envoy,
+	// which appends one entry instead of two.
+	TrustGCLBXForwardedFor bool
+	BlockingUnavailable    bool
+	Context                context.Context
+	BodyParsingSizeLimit   *int
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
@@ -147,7 +151,7 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *proxy.RequestState) (err error) {
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
-		*currentRequest, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration})
+		*currentRequest, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration, trustGCLBXForwardedFor: s.config.TrustGCLBXForwardedFor})
 		return err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:

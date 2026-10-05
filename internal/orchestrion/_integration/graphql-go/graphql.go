@@ -14,10 +14,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -52,7 +53,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer req.Body.Close()
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -102,6 +103,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"component": "graphql-go/graphql",
 								"span.kind": "server",
 							},
+							// parse, validate, and execute are chained (each a child of the previous)
+							// because StartSpanFromContext context is propagated back through the
+							// graphql-go extension interface. resolve is a child of execute.
 							Children: trace.Traces{
 								{
 									Tags: map[string]any{
@@ -114,45 +118,49 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 										"component": "graphql-go/graphql",
 										"span.kind": "server",
 									},
-								},
-								{
-									Tags: map[string]any{
-										"name":     "graphql.validate",
-										"resource": "graphql.validate",
-										"service":  "graphql.server",
-										"type":     "graphql",
-									},
-									Meta: map[string]string{
-										"component":      "graphql-go/graphql",
-										"graphql.source": "{ hello }",
-										"span.kind":      "server",
-									},
-								},
-								{
-									Tags: map[string]any{
-										"name":     "graphql.execute",
-										"resource": "graphql.execute",
-										"service":  "graphql.server",
-										"type":     "graphql",
-									},
-									Meta: map[string]string{
-										"component":      "graphql-go/graphql",
-										"graphql.source": "{ hello }",
-										"span.kind":      "server",
-									},
 									Children: trace.Traces{
 										{
 											Tags: map[string]any{
-												"name":     "graphql.resolve",
-												"resource": "Query.hello",
+												"name":     "graphql.validate",
+												"resource": "graphql.validate",
 												"service":  "graphql.server",
 												"type":     "graphql",
 											},
 											Meta: map[string]string{
-												"component":              "graphql-go/graphql",
-												"graphql.field":          "hello",
-												"graphql.operation.type": "query",
-												"span.kind":              "server",
+												"component":      "graphql-go/graphql",
+												"graphql.source": "{ hello }",
+												"span.kind":      "server",
+											},
+											Children: trace.Traces{
+												{
+													Tags: map[string]any{
+														"name":     "graphql.execute",
+														"resource": "graphql.execute",
+														"service":  "graphql.server",
+														"type":     "graphql",
+													},
+													Meta: map[string]string{
+														"component":      "graphql-go/graphql",
+														"graphql.source": "{ hello }",
+														"span.kind":      "server",
+													},
+													Children: trace.Traces{
+														{
+															Tags: map[string]any{
+																"name":     "graphql.resolve",
+																"resource": "Query.hello",
+																"service":  "graphql.server",
+																"type":     "graphql",
+															},
+															Meta: map[string]string{
+																"component":              "graphql-go/graphql",
+																"graphql.field":          "hello",
+																"graphql.operation.type": "query",
+																"span.kind":              "server",
+															},
+														},
+													},
+												},
 											},
 										},
 									},

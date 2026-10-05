@@ -27,7 +27,7 @@ type StartSpanConfig struct {
 
 	// Tags holds a set of key/value pairs that should be set as metadata on the
 	// new span.
-	Tags map[string]interface{}
+	Tags map[string]any
 
 	// SpanID will be the SpanID of the Span, overriding the random number that would
 	// be generated. If no Parent SpanContext is present, then this will also set the

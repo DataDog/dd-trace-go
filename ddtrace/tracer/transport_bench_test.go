@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 func BenchmarkHTTPTransportSend(b *testing.B) {
@@ -22,7 +24,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 
 	payloadSizes := []struct {
 		name     string
@@ -41,7 +43,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			spans := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("transport-test")
-				span.meta["data"] = strings.Repeat("x", size.spanSize*1024)
+				span.meta.Set("data", strings.Repeat("x", size.spanSize*1024))
 				spans[i] = span
 			}
 			_, _ = payload.push(spans)
@@ -49,7 +51,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				payload.reset()
 				rc, err := transport.send(payload)
 				if err == nil {
@@ -67,7 +69,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {
@@ -75,13 +77,11 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 
 						payload := newPayload(traceProtocolV04)
 						spans := []*Span{newBasicSpan("concurrent-transport-test")}
@@ -91,7 +91,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 						if err == nil {
 							rc.Close()
 						}
-					}()
+					})
 				}
 
 				wg.Wait()

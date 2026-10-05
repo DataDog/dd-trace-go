@@ -19,6 +19,7 @@ import (
 
 	vaulttrace "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -110,6 +111,10 @@ var hashicorpVault = harness.TestCase{
 		Defaults:        harness.RepeatString("vault", 2),
 		DDService:       harness.RepeatString("vault", 2),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageHashicorpVaultAPI), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

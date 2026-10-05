@@ -15,6 +15,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 var instr *instrumentation.Instrumentation
@@ -25,6 +27,17 @@ func init() {
 
 // WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
+	return wrapHandler(h, opts...)
+}
+
+// wrapHandlerWithDefaults is used by go:linkname in orchestrion aspects
+// to avoid circular dependencies. It has a simple signature without variadic
+// arguments so it can be safely referenced via linkname.
+func wrapHandlerWithDefaults(h fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return wrapHandler(h)
+}
+
+func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	cfg := newConfig()
 	for _, fn := range opts {
 		fn.apply(cfg)
@@ -36,7 +49,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			return
 		}
 		spanOpts := []tracer.StartSpanOption{
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		}
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
 		fcc := &HTTPHeadersCarrier{
@@ -55,7 +68,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
 		status := fctx.Response.StatusCode()
 		if cfg.isStatusError(status) {
-			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
+			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, fasthttp.StatusMessage(status)))
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	}
@@ -67,12 +80,24 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),
-		tracer.Tag(ext.HTTPURL, string(fctx.URI().FullURI())),
+		tracer.Tag(ext.HTTPURL, httpURLTag(fctx)),
 		tracer.Tag(ext.HTTPUserAgent, string(fctx.UserAgent())),
 		tracer.Measured(),
 	}
 	if host := string(fctx.Host()); len(host) > 0 {
 		opts = append(opts, tracer.Tag("http.host", host))
 	}
+	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.VisitAll)
 	return opts
+}
+
+// httpURLTag builds the http.url span tag. It obfuscates the query string because
+// fctx.URI().FullURI() returns it verbatim.
+func httpURLTag(fctx *fasthttp.RequestCtx) string {
+	uri := fctx.URI()
+	url := string(uri.Scheme()) + "://" + string(uri.Host()) + string(uri.PathOriginal())
+	if query := instrhttptrace.ObfuscateQueryString(string(uri.QueryString())); query != "" {
+		url += "?" + query
+	}
+	return url
 }

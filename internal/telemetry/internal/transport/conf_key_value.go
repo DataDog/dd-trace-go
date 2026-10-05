@@ -11,7 +11,7 @@ type ConfKeyValue struct {
 	Value  any    `json:"value"` // can be any type of integer, float, string, or boolean
 	Origin Origin `json:"origin"`
 	ID     string `json:"config_id,omitempty"`
-	Error  Error  `json:"error,omitempty"`
+	Error  Error  `json:"error"`
 
 	// SeqID is used to track the total number of configuration key value pairs applied across the tracer
 	SeqID uint64 `json:"seq_id,omitempty"`

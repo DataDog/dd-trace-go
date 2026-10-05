@@ -14,6 +14,7 @@ import (
 	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
@@ -31,6 +32,10 @@ var (
 			Defaults:        harness.RepeatString("grpc.server", 4),
 			DDService:       harness.RepeatString(harness.TestDDService, 4),
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 4),
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)
@@ -52,6 +57,10 @@ var (
 			Defaults:        harness.RepeatString("grpc.client", 4),
 			DDService:       harness.RepeatString("grpc.client", 4),
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 4),
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)

@@ -6,26 +6,29 @@
 package appsec
 
 import (
+	"context"
 	"embed"
 	"strings"
 
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 //go:embed "testdata/custom-data-classification/*.json"
@@ -97,29 +100,29 @@ func TestASMFeaturesCallback(t *testing.T) {
 			if tc.startBefore {
 				require.NoError(t, a.start())
 			}
-			require.Equal(t, tc.startBefore, a.started)
+			require.Equal(t, tc.startBefore, a.started.Load())
 			a.handleASMFeatures(tc.update)
-			require.Equal(t, tc.startedAfter, a.started)
+			require.Equal(t, tc.startedAfter, a.started.Load())
 		})
 	}
 
 	t.Run("enabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.True(t, a.started)
+		require.True(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.True(t, a.started)
+		require.True(t, a.started.Load())
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 		a.handleASMFeatures(update)
-		require.False(t, a.started)
+		require.False(t, a.started.Load())
 	})
 }
 
@@ -135,7 +138,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
-		require.NotNil(t, activeAppSec)
+		require.NotNil(t, activeAppSec.Load())
 		require.False(t, Enabled())
 		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
 		require.NoError(t, err)
@@ -162,7 +165,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				remoteconfig.Reset()
@@ -184,18 +187,18 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "false")
 		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
-		require.Nil(t, activeAppSec)
+		require.Nil(t, activeAppSec.Load())
 		require.False(t, Enabled())
 	})
 
 	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 				defer Stop()
-				require.Nil(t, activeAppSec)
+				require.Nil(t, activeAppSec.Load())
 				require.False(t, Enabled())
 			})
 		}
@@ -241,7 +244,7 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 			}
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
 			defer Stop()
-			if !Enabled() && activeAppSec == nil {
+			if !Enabled() && activeAppSec.Load() == nil {
 				t.Skip()
 			}
 
@@ -284,7 +287,7 @@ func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
 			}
 			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
 			defer Stop()
-			if !Enabled() && activeAppSec == nil {
+			if !Enabled() && activeAppSec.Load() == nil {
 				t.Skip()
 			}
 
@@ -432,16 +435,16 @@ func TestOnRCUpdate(t *testing.T) {
 
 				// Craft and process the RC updates
 				updates := craftRCUpdates(tc.edits)
-				statuses := activeAppSec.onRCRulesUpdate(updates)
+				statuses := activeAppSec.Load().onRCRulesUpdate(updates)
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				expected := []string{"::/go-libddwaf/default/recommended.json"}
+				expected := []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
 				for path := range tc.statuses {
 					expected = append(expected, path)
 				}
 				slices.Sort(expected)
-				actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+				actual := activeAppSec.Load().cfg.WAFManager.ConfigPaths("")
 				slices.Sort(actual)
 				require.Equal(t, expected, actual)
 			})
@@ -512,20 +515,25 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}, activeAppSec.Load().cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
 
-			statuses := activeAppSec.onRCRulesUpdate(updates)
+			statuses := activeAppSec.Load().onRCRulesUpdate(updates)
 			require.Equal(t, tc.statuses, statuses)
 
 			// Compare rulesets base paths to make sure the updates were processed correctly
 			expected := tc.expectedConfigPaths
 			if expected == nil {
-				expected = []string{"::/go-libddwaf/default/recommended.json"}
+				expected = []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
+			} else {
+				expected = append([]string{"obfuscator/config"}, expected...)
 			}
-			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			actual := activeAppSec.Load().cfg.WAFManager.ConfigPaths("")
+			slices.Sort(expected)
+			slices.Sort(actual)
+			require.Equal(t, expected, actual)
 		})
 	}
 
@@ -564,7 +572,7 @@ func TestOnRCUpdate(t *testing.T) {
 			}
 			productUpdates[path] = data
 		}
-		status := activeAppSec.onRCRulesUpdate(rcRulesUpdate)
+		status := activeAppSec.Load().onRCRulesUpdate(rcRulesUpdate)
 		for path, status := range status {
 			assert.Equal(t, state.ApplyStatus{State: state.ApplyStateAcknowledged}, status, "did not acknowledge update to %s", path)
 		}
@@ -572,21 +580,22 @@ func TestOnRCUpdate(t *testing.T) {
 		// At this point, ASM should be fully enabled
 		require.True(t, Enabled())
 
-		handle, _ := activeAppSec.cfg.WAFManager.NewHandle()
+		handle, _ := activeAppSec.Load().cfg.WAFManager.NewHandle()
 		require.NotNil(t, handle)
 		defer handle.Close()
 
-		ctx, err := handle.NewContext(timer.WithUnlimitedBudget())
+		ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer ctx.Close()
 
-		res, err := ctx.Run(libddwaf.RunAddressData{
-			Persistent: map[string]any{
+		res, err := ctx.Run(context.Background(), addresses.RunAddressData{
+			Data: map[string]any{
 				"waf.context.processor": map[string]bool{"extract-schema": true},
 				addresses.ServerRequestBodyAddr: map[string]any{
 					"testcard": "1234567890",
 				},
 			},
+			TimerKey: addresses.WAFScope,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
@@ -616,20 +625,20 @@ func TestOnRCUpdate(t *testing.T) {
 
 		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 		// Activate appsec
-		status := activeAppSec.handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
+		status := activeAppSec.Load().handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
 		require.True(t, Enabled())
 		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
 		// Deactivate appsec
-		status = activeAppSec.handleASMFeatures(map[string][]byte{"features/config": nil})
+		status = activeAppSec.Load().handleASMFeatures(map[string][]byte{"features/config": nil})
 		require.False(t, Enabled())
 		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
-		status = activeAppSec.onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
+		status = activeAppSec.Load().onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
 			state.ProductASMDD: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
 		})
 		require.Equal(t, map[string]state.ApplyStatus{"irrelevant/config": {State: state.ApplyStateUnacknowledged}}, status)
-		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
+		require.NotContains(t, activeAppSec.Load().cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
 	})
 }
 
@@ -678,7 +687,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]*RulesFragment{"invalid": &invalidOverrides}),
-			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
+			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
 		},
 		{
 			name:     "multiple/ack",
@@ -690,14 +699,14 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "invalid": &invalidOverrides}),
 			expected: map[string]state.ApplyStatus{
 				"overrides": ackStatus,
-				"invalid":   {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 			},
 		},
 		{
 			name:    "multiple/all-errors",
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &invalidOverrides, "invalid": &invalidRules}),
 			expected: map[string]state.ApplyStatus{
-				"overrides": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"overrides": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 				"invalid":   {State: state.ApplyStateError, Error: `{"rules":{"errors":{"rule has no valid conditions":["id"]}}}`},
 			},
 		},
@@ -710,7 +719,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				t.Skip("AppSec needs to be enabled for this test")
 			}
 
-			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
+			statuses := activeAppSec.Load().onRCRulesUpdate(tc.updates)
 			require.Equal(t, tc.expected, statuses)
 		})
 	}
@@ -736,12 +745,13 @@ func TestWafRCUpdate(t *testing.T) {
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := config.NewStartConfig().NewConfig()
 		require.NoError(t, err)
-		appsec := appsec{cfg: cfg, started: true}
+		appsec := appsec{cfg: cfg}
+		appsec.started.Store(true)
 
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		wafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]any{
@@ -749,7 +759,7 @@ func TestWafRCUpdate(t *testing.T) {
 		}
 
 		// Make sure the rule matches as expected
-		result, err := wafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
@@ -760,11 +770,11 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		newWafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result, err = newWafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")
@@ -790,4 +800,122 @@ type RulesFragment struct {
 	CustomRules   []any                   `json:"custom_rules,omitempty"`
 	Processors    []any                   `json:"processors,omitempty"`
 	Scanners      []any                   `json:"scanners,omitempty"`
+}
+
+func TestActiveAppSecState(t *testing.T) {
+	previous := activeAppSec.Swap(nil)
+	t.Cleanup(func() { activeAppSec.Store(previous) })
+	require.False(t, Enabled())
+	require.False(t, RASPEnabled())
+	for _, rasp := range []bool{false, true} {
+		a := newAppSec(&config.Config{RASP: rasp})
+		activeAppSec.Store(a)
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+		a.started.Store(true)
+		require.True(t, Enabled())
+		require.Equal(t, rasp, RASPEnabled())
+		a.started.Store(false)
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+	}
+}
+
+func TestAppSecStateDoesNotTakeLifecycleLock(t *testing.T) {
+	a := newAppSec(&config.Config{RASP: true})
+	a.started.Store(true)
+	previous := activeAppSec.Swap(a)
+	t.Cleanup(func() { activeAppSec.Store(previous) })
+
+	mu.Lock()
+	done := make(chan struct{})
+	defer func() {
+		mu.Unlock()
+		<-done
+	}()
+	var enabled, raspEnabled bool
+	go func() {
+		enabled, raspEnabled = Enabled(), RASPEnabled()
+		close(done)
+	}()
+	select {
+	case <-done:
+		require.True(t, enabled)
+		require.True(t, raspEnabled)
+	case <-time.After(time.Second):
+		t.Fatal("AppSec state reads waited for the lifecycle lock")
+	}
+}
+
+func TestAppSecLifecycleConcurrentReaders(t *testing.T) {
+	if supported, _ := libddwaf.Usable(); !supported {
+		t.Skip("WAF cannot be used")
+	}
+	t.Setenv("DD_APPSEC_RASP_ENABLED", "true")
+	done := make(chan struct{})
+	var readers sync.WaitGroup
+	t.Cleanup(func() {
+		close(done)
+		readers.Wait()
+		Stop()
+	})
+	for range 4 {
+		readers.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					_ = Enabled()
+					_ = RASPEnabled()
+				}
+			}
+		})
+	}
+	for range 5 {
+		Start(config.WithEnablementMode(config.ForcedOn))
+		require.True(t, Enabled())
+		require.True(t, RASPEnabled())
+		Stop()
+		require.False(t, Enabled())
+		require.False(t, RASPEnabled())
+	}
+}
+
+// TestStartedFieldConcurrentAccess exercises instance replacement and remote
+// activation while Enabled and RASPEnabled read the state. Run with -race.
+func TestStartedFieldConcurrentAccess(t *testing.T) {
+	a := &appsec{cfg: &config.Config{RASP: true}}
+	prev := activeAppSec.Swap(a)
+	t.Cleanup(func() { activeAppSec.Store(prev) })
+
+	var done atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(3)
+	// Replace the active instance while readers also observe remote activation.
+	go func() {
+		defer wg.Done()
+		for !done.Load() {
+			activeAppSec.Store(nil)
+			activeAppSec.Store(a)
+		}
+	}()
+	// Writer: mimics the RC goroutine flipping started without holding mu (appsec.go start/stop).
+	go func() {
+		defer wg.Done()
+		for !done.Load() {
+			a.started.Store(true)
+			a.started.Store(false)
+		}
+	}()
+	// Reader: the public API paths use atomic loads.
+	go func() {
+		defer wg.Done()
+		for range 200000 {
+			_ = Enabled()
+			_ = RASPEnabled()
+		}
+		done.Store(true)
+	}()
+	wg.Wait()
 }

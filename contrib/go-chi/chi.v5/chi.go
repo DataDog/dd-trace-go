@@ -10,12 +10,13 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/go-chi/chi/v5"
 
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -36,7 +37,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn.apply(cfg)
 	}
 	instr.Logger().Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+	spanOpts := append(cfg.spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {

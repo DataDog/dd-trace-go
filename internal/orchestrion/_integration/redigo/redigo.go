@@ -15,14 +15,15 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gomodule/redigo/redis"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	testredis "github.com/testcontainers/testcontainers-go/modules/redis"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -121,7 +122,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"service":  "redis.conn",
 					},
 					Meta: map[string]string{
-						"redis.raw_command": fmt.Sprintf("GET %s", tc.key),
+						"redis.raw_command": "GET " + tc.key,
 						"db.system":         "redis",
 						"component":         "gomodule/redigo",
 						"out.network":       "tcp",

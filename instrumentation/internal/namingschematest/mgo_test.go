@@ -14,6 +14,7 @@ import (
 
 	mgotrace "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -42,6 +43,10 @@ var globalsignMgo = harness.TestCase{
 		Defaults:        []string{"mongodb"},
 		DDService:       []string{"mongodb"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGlobalsignMgo)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

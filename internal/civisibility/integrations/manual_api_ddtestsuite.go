@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) T
 	resourceName := name
 
 	// Suite tags should include module and session tags so the backend can calculate the module and session fingerprint from the suite.
-	suiteTags := append(slices.Clone(module.tags), tracer.Tag(constants.TestSuite, name))
+	suiteTags := append(slices.Clone(module.tags), ciVisibilityTag(constants.TestSuite, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTestSuite),
@@ -55,10 +56,10 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) T
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	suiteID := span.Context().SpanID()
 	if module.session != nil {
-		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(module.session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(module.session.sessionID, 10))
 	}
-	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(module.moduleID))
-	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suiteID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, strconv.FormatUint(module.moduleID, 10))
+	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, strconv.FormatUint(suiteID, 10))
 
 	suite := &tslvTestSuite{
 		module:  module,

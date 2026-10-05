@@ -266,7 +266,7 @@ func (it *Iterator) Release() {
 func startSpan(cfg *config, name string) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeLevelDB),
-		tracer.ServiceName(cfg.serviceName),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.ResourceName(name),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),

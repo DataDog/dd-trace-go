@@ -7,6 +7,8 @@ package llmobs
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,6 +32,8 @@ type StartSpanConfig struct {
 	MLApp string
 	// StartTime sets a custom start time for the span. If zero, uses current time.
 	StartTime time.Time
+	// Name of the tracing integration.
+	Integration string
 }
 
 // FinishSpanConfig contains configuration options for finishing an LLMObs span.
@@ -40,55 +44,58 @@ type FinishSpanConfig struct {
 	Error error
 }
 
-// EvaluationConfig contains configuration for submitting evaluation metrics.
-type EvaluationConfig struct {
-	// Method 1: Direct span/trace ID join
-	// SpanID is the span ID to evaluate.
-	SpanID string
-	// TraceID is the trace ID to evaluate.
-	TraceID string
-
-	// Method 2: Tag-based join
-	// TagKey is the tag key to search for spans.
-	TagKey string
-	// TagValue is the tag value to match for spans.
-	TagValue string
-
-	// Required fields
-	// Label is the name of the evaluation metric.
-	Label string
-
-	// Value fields (exactly one must be provided)
-	// CategoricalValue is the categorical value of the evaluation metric.
-	CategoricalValue *string
-	// ScoreValue is the score value of the evaluation metric.
-	ScoreValue *float64
-	// BooleanValue is the boolean value of the evaluation metric.
-	BooleanValue *bool
-
-	// Optional fields
-	// Tags are optional string key-value pairs to tag the evaluation metric.
-	Tags []string
-	// MLApp is the ML application name. If empty, uses the global config.
-	MLApp string
-	// TimestampMS is the timestamp in milliseconds. If zero, uses current time.
-	TimestampMS int64
-}
-
 // Prompt represents a prompt template used with LLM spans.
 type Prompt struct {
-	// Template is the prompt template string.
-	Template string `json:"template,omitempty"`
-	// ID is the unique identifier for the prompt.
+	// ID is the unique identifier for the prompt within the ML app.
 	ID string `json:"id,omitempty"`
 	// Version is the version of the prompt.
 	Version string `json:"version,omitempty"`
+	// PromptUUID is the backend UUID of the managed prompt.
+	PromptUUID string `json:"prompt_uuid,omitempty"`
+	// PromptVersionUUID is the backend UUID of the managed prompt version.
+	PromptVersionUUID string `json:"prompt_version_uuid,omitempty"`
+	// Label is the deployment label (e.g., "production", "staging").
+	Label string `json:"label,omitempty"`
+	// Template is the prompt template string.
+	// Mutually exclusive with ChatTemplate; if both are set, Template is dropped and ChatTemplate is used.
+	Template string `json:"template,omitempty"`
+	// ChatTemplate is a list of messages forming the prompt.
+	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
+	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
+	// ChatTemplateItems is the complete ordered template, including message placeholders.
+	// Set this instead of ChatTemplate for mixed templates. When nonempty, it takes
+	// precedence over ChatTemplate and Template. The SDK emits it as chat_template;
+	// direct JSON encoding of Prompt retains the chat_template_items field.
+	ChatTemplateItems []ChatTemplateItem `json:"chat_template_items,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
+	// Tags contains custom tags for the prompt.
+	Tags map[string]string `json:"tags,omitempty"`
 	// RAGContextVariables specifies which variables contain RAG context.
-	RAGContextVariables []string `json:"rag_context_variables,omitempty"`
+	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
-	RAGQueryVariables []string `json:"rag_query_variables,omitempty"`
+	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
+}
+
+// promptPayload is the JSON encoding shape for Prompt.
+// It exists as a separate type so that fields like MLApp, which are set internally
+// from the span context, cannot be set directly by users on the public Prompt type.
+type promptPayload struct {
+	Prompt
+	MLApp string `json:"ml_app,omitempty"`
+}
+
+func (p promptPayload) MarshalJSON() ([]byte, error) {
+	type alias promptPayload
+	if len(p.ChatTemplateItems) == 0 {
+		return json.Marshal(alias(p))
+	}
+	chatTemplate := p.ChatTemplateItems
+	p.ChatTemplateItems = nil
+	return json.Marshal(struct {
+		*alias
+		ChatTemplate []ChatTemplateItem `json:"chat_template,omitempty"`
+	}{alias: (*alias)(&p), ChatTemplate: chatTemplate})
 }
 
 // ToolDefinition represents a tool definition for LLM spans.
@@ -97,6 +104,8 @@ type ToolDefinition struct {
 	Name string `json:"name"`
 	// Description is the description of what the tool does.
 	Description string `json:"description,omitempty"`
+	// ToolVersion is the version of the tool.
+	ToolVersion string `json:"version,omitempty"`
 	// Schema is the JSON schema defining the tool's parameters.
 	Schema json.RawMessage `json:"schema,omitempty"`
 }
@@ -189,6 +198,9 @@ type SpanAnnotations struct {
 	// ToolDefinitions are the tool definitions for LLM spans.
 	ToolDefinitions []ToolDefinition
 
+	// Intent is a description of a reason for calling an MCP tool on tool spans
+	Intent string
+
 	// AgentManifest is the agent manifest for agent spans.
 	AgentManifest string
 
@@ -198,6 +210,9 @@ type SpanAnnotations struct {
 	Metrics map[string]float64
 	// Tags contains string tags key-value pairs.
 	Tags map[string]string
+	// CostTags contains tag keys to propagate to LLMObs cost and token metrics.
+	// Each key must reference a tag already present on the span.
+	CostTags []string
 }
 
 // Span represents an LLMObs span with its associated metadata and context.
@@ -225,6 +240,12 @@ type Span struct {
 	finishTime time.Time
 
 	spanLinks []SpanLink
+
+	// parentAgentName and parentAgentSpanID identify the nearest agent ancestor.
+	// Both are set exactly once in StartSpan and never mutated, so concurrent
+	// reads (e.g. from Annotate) are safe without holding the mutex.
+	parentAgentName   string
+	parentAgentSpanID string
 }
 
 func (s *Span) Name() string {
@@ -253,6 +274,32 @@ func (s *Span) TraceID() string {
 // MLApp returns the ML application name for this span.
 func (s *Span) MLApp() string {
 	return s.mlApp
+}
+
+// SessionID returns the resolved session ID for this span.
+func (s *Span) SessionID() string {
+	return s.sessionID
+}
+
+// PropagatedParentAgentName returns the parent-agent name that a downstream
+// process should inherit via the x-datadog-tags header. If this span is itself
+// an Agent it IS the parent for any downstream child, so its own name is
+// returned. Otherwise the already-resolved attribution is forwarded unchanged.
+func (s *Span) PropagatedParentAgentName() string {
+	if s.spanKind == SpanKindAgent {
+		return s.name
+	}
+	return s.parentAgentName
+}
+
+// PropagatedParentAgentSpanID returns the parent-agent span ID that a downstream
+// process should inherit via the x-datadog-tags header. If this span is an Agent
+// its own span ID is returned; otherwise the already-resolved span ID is forwarded.
+func (s *Span) PropagatedParentAgentSpanID() string {
+	if s.spanKind == SpanKindAgent {
+		return s.SpanID()
+	}
+	return s.parentAgentSpanID
 }
 
 // AddLink adds a span link to this span.
@@ -316,7 +363,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Warn("llmobs: failed to annotate span: %v", err.Error())
+			log.Warn("llmobs: failed to annotate span: %v", err.Error()) //errtrack:ignore invalid caller annotation
 		}
 		trackSpanAnnotations(s, err)
 	}()
@@ -336,9 +383,18 @@ func (s *Span) Annotate(a SpanAnnotations) {
 		}
 	}
 
+	if a.CostTags != nil {
+		trackCostTagsAnnotated(s, "annotate")
+		for _, costTag := range a.CostTags {
+			if !slices.Contains(s.llmCtx.costTags, costTag) {
+				s.llmCtx.costTags = append(s.llmCtx.costTags, costTag)
+			}
+		}
+	}
+
 	if a.Prompt != nil {
 		if s.spanKind != SpanKindLLM {
-			log.Warn("llmobs: input prompt can only be annotated on llm spans, ignoring")
+			log.Warn("llmobs: input prompt can only be annotated on llm spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			if a.Prompt.RAGContextVariables == nil {
 				a.Prompt.RAGContextVariables = []string{"context"}
@@ -346,13 +402,20 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.RAGQueryVariables == nil {
 				a.Prompt.RAGQueryVariables = []string{"question"}
 			}
+			if a.Prompt.ID == "" {
+				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
+			}
+			if a.Prompt.Template != "" && (len(a.Prompt.ChatTemplate) > 0 || len(a.Prompt.ChatTemplateItems) > 0) {
+				log.Warn("llmobs: both text and chat templates were provided in the prompt; Template will be dropped in favour of the chat template") //errtrack:ignore conflicting caller annotation
+				a.Prompt.Template = ""
+			}
 			s.llmCtx.prompt = a.Prompt
 		}
 	}
 
 	if len(a.ToolDefinitions) > 0 {
 		if s.spanKind != SpanKindLLM {
-			log.Warn("llmobs: tool definitions can only be annotated on llm spans, ignoring")
+			log.Warn("llmobs: tool definitions can only be annotated on llm spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			s.llmCtx.toolDefinitions = a.ToolDefinitions
 		}
@@ -360,9 +423,17 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 	if a.AgentManifest != "" {
 		if s.spanKind != SpanKindAgent {
-			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring")
+			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring") //errtrack:ignore invalid caller annotation
 		} else {
 			s.llmCtx.agentManifest = a.AgentManifest
+		}
+	}
+
+	if a.Intent != "" {
+		if s.spanKind != SpanKindTool {
+			log.Warn("llmobs: intent can only be annotated on tool spans, ignoring") //errtrack:ignore invalid caller annotation
+		} else {
+			s.llmCtx.intent = a.Intent
 		}
 	}
 
@@ -371,10 +442,10 @@ func (s *Span) Annotate(a SpanAnnotations) {
 
 func (s *Span) annotateIO(a SpanAnnotations) {
 	if a.OutputRetrievedDocs != nil && s.spanKind != SpanKindRetrieval {
-		log.Warn("llmobs: retrieve docs can only be used to annotate outputs for retrieval spans, ignoring")
+		log.Warn("llmobs: retrieve docs can only be used to annotate outputs for retrieval spans, ignoring") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputEmbeddedDocs != nil && s.spanKind != SpanKindEmbedding {
-		log.Warn("llmobs: embedding docs can only be used to annotate inputs for embedding spans, ignoring")
+		log.Warn("llmobs: embedding docs can only be used to annotate inputs for embedding spans, ignoring") //errtrack:ignore invalid caller annotation
 	}
 	switch s.spanKind {
 	case SpanKindLLM:
@@ -405,10 +476,10 @@ func (s *Span) annotateIOLLM(a SpanAnnotations) {
 
 func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
 	if a.InputText != "" || a.InputMessages != nil {
-		log.Warn("llmobs: embedding spans can only be annotated with input embedded docs, ignoring other inputs")
+		log.Warn("llmobs: embedding spans can only be annotated with input embedded docs, ignoring other inputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
-		log.Warn("llmobs: embedding spans can only be annotated with output text, ignoring other outputs")
+		log.Warn("llmobs: embedding spans can only be annotated with output text, ignoring other outputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputEmbeddedDocs != nil {
 		s.llmCtx.inputDocuments = a.InputEmbeddedDocs
@@ -420,10 +491,10 @@ func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
 
 func (s *Span) annotateIORetrieval(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
-		log.Warn("llmobs: retrieval spans can only be annotated with input text, ignoring other inputs")
+		log.Warn("llmobs: retrieval spans can only be annotated with input text, ignoring other inputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputText != "" || a.OutputMessages != nil {
-		log.Warn("llmobs: retrieval spans can only be annotated with output retrieved docs, ignoring other outputs")
+		log.Warn("llmobs: retrieval spans can only be annotated with output retrieved docs, ignoring other outputs") //errtrack:ignore invalid caller annotation
 	}
 	if a.InputText != "" {
 		s.llmCtx.inputText = a.InputText
@@ -447,10 +518,10 @@ func (s *Span) annotateIOExperiment(a SpanAnnotations) {
 
 func (s *Span) annotateIOText(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
-		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind) //errtrack:ignore invalid caller annotation
 	}
 	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
-		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind) //errtrack:ignore invalid caller annotation
 	}
 	if a.InputText != "" {
 		s.llmCtx.inputText = a.InputText
@@ -474,6 +545,11 @@ func (s *Span) propagatedSessionID() string {
 		}
 		curSpan = curSpan.parent
 		usingParent = true
+	}
+
+	if s.propagated != nil && s.propagated.SessionID != "" {
+		log.Debug("llmobs: using session_id from propagated span: %s", s.propagated.SessionID)
+		return s.propagated.SessionID
 	}
 	return ""
 }
@@ -506,6 +582,23 @@ func (s *Span) propagatedMLApp() string {
 	return ""
 }
 
+// resolvedToolVersion walks the parent chain to find the nearest LLM ancestor and returns the
+// ToolVersion for the tool matching this span's name in its tool_definitions, if any.
+func (s *Span) resolvedToolVersion() string {
+	for cur := s.parent; cur != nil; cur = cur.parent {
+		if cur.spanKind != SpanKindLLM {
+			continue
+		}
+		for _, td := range cur.llmCtx.toolDefinitions {
+			if td.Name == s.name {
+				return td.ToolVersion
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
 // updateMapKeys adds key/values from updates into src, overriding existing keys.
 func updateMapKeys[K comparable, V any](src map[K]V, updates map[K]V) map[K]V {
 	if len(updates) == 0 {
@@ -514,8 +607,6 @@ func updateMapKeys[K comparable, V any](src map[K]V, updates map[K]V) map[K]V {
 	if src == nil {
 		src = make(map[K]V, len(updates))
 	}
-	for k, v := range updates {
-		src[k] = v
-	}
+	maps.Copy(src, updates)
 	return src
 }

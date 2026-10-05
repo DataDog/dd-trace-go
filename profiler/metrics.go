@@ -21,7 +21,7 @@ type point struct {
 
 // MarshalJSON serialize points as array tuples
 func (p point) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]interface{}{
+	return json.Marshal([]any{
 		p.metric,
 		p.value,
 	})
@@ -114,7 +114,7 @@ func maxPauseNs(stats *runtime.MemStats, periodStart time.Time) (maxPause uint64
 	// stats.PauseNs is a circular buffer of recent GC pause times in nanoseconds.
 	// The most recent pause is indexed by (stats.NumGC+255)%256
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		offset := (int(stats.NumGC) + 255 - i) % 256
 		// Stop searching if we find a PauseEnd outside the period
 		if time.Unix(0, int64(stats.PauseEnd[offset])).Before(periodStart) {

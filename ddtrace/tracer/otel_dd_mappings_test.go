@@ -15,8 +15,9 @@ import (
 )
 
 func TestAssessSource(t *testing.T) {
+	// regression test
 	t.Run("invalid", func(t *testing.T) {
-		assert.Panics(t, func() { getDDorOtelConfig("invalid") }, "invalid config should panic")
+		assert.NotPanics(t, func() { getDDorOtelConfig("invalid") }, "invalid config should not panic")
 	})
 
 	t.Run("dd", func(t *testing.T) {

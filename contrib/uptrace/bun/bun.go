@@ -9,11 +9,12 @@ package bun
 import (
 	"context"
 
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect"
 )
 
 var instr *instrumentation.Instrumentation
@@ -57,7 +58,7 @@ func (qh *queryHook) BeforeQuery(ctx context.Context, qe *bun.QueryEvent) contex
 		opts  = []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeSQL),
 			tracer.ResourceName(string(query)),
-			tracer.ServiceName(qh.cfg.serviceName),
+			instrumentation.ServiceNameWithSource(qh.cfg.serviceName, qh.cfg.serviceSource),
 			tracer.Tag(ext.Component, instrumentation.PackageUptraceBun),
 			tracer.Tag(ext.DBSystem, dbSystem),
 		}

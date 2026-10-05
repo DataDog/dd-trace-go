@@ -6,8 +6,31 @@ on:
       go-version:
         required: true
         type: string
+      build_tags:
+        description: 'Build tags to use for testing (e.g., "debug,deadlock")'
+        required: false
+        type: string
+        default: ""
+      rerun-fails:
+        description: >-
+          Retry failed tests up to this many times. A gotestsum rerun overwrites
+          -coverprofile with its partial profile, so setting this also disables
+          the coverage uploads below.
+        required: false
+        type: string
+        default: ""
+      contrib-modules:
+        description: >-
+          Space-separated contrib/instrumentation module directories to test, or
+          the token ALL. Computed by the caller's `changes` job. Defaults to ALL
+          so callers that do not narrow (main-branch-tests, dynamic-checks) keep
+          testing every module.
+        required: false
+        type: string
+        default: "ALL"
 
 env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
   # go.mod file specifies a newer Go version than their local toolchain, their
@@ -16,10 +39,10 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -27,377 +50,454 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      has-contribs: ${{ steps.matrix.outputs.has-contribs }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
 
       - name: Compute Matrix
         id: matrix
+        env:
+          CONTRIB_MODULES: ${{ inputs.contrib-modules }}
         run: |-
-          echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
+          set -euo pipefail
+          # One module per line; ALL (or an unset value) means every module.
+          printf '%s' "${CONTRIB_MODULES:-ALL}" | tr ' ' '\n' > "${RUNNER_TEMP}/contrib-select.txt"
+          matrix="$(go run ./scripts/ci_contrib_matrix.go -select "${RUNNER_TEMP}/contrib-select.txt")"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          # An empty matrix would still schedule nothing useful while making the
+          # downstream job look mysteriously absent; gate it explicitly instead.
+          if [[ "${matrix}" == "[]" ]]; then
+            echo "has-contribs=false" >> "${GITHUB_OUTPUT}"
+            echo "No changed module requires contrib tests." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "has-contribs=true" >> "${GITHUB_OUTPUT}"
+          fi
 
   test-contrib-matrix:
     needs: set-up
+    if: needs.set-up.outputs.has-contribs == 'true'
     runs-on:
       group: "APM Larger Runners"
     env:
       INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
     strategy:
+      fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-      cassandra:
-        image: cassandra:3.11
-        env:
-          JVM_OPTS: "-Xms750m -Xmx750m"
-          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
-          CASSANDRA_DC: "dd-trace-go-test-datacenter"
-          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
-        ports:
-          - 9042:9042
-      mysql:
-        image: cimg/mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: admin
-          MYSQL_PASSWORD: test
-          MYSQL_USER: test
-          MYSQL_DATABASE: test
-        ports:
-          - 3306:3306
-      postgres:
-        image: cimg/postgres:16.4
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-      mssql:
-        image: mcr.microsoft.com/mssql/server:2019-latest
-        env:
-          SA_PASSWORD: myPassw0rd
-          ACCEPT_EULA: Y
-        ports:
-          - 1433:1433
-      consul:
-        image: consul:1.6.0
-        ports:
-          - 8500:8500
-      redis:
-        image: redis:3.2
-        ports:
-          - 6379:6379
-      valkey:
-        image: valkey/valkey:8
-        env:
-          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
-        ports:
-          - 6380:6380
-      elasticsearch2:
-        image: elasticsearch:2
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9200:9200
-      elasticsearch5:
-        image: elasticsearch:5
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9201:9200
-      elasticsearch6:
-        image: elasticsearch:6.8.13
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-        ports:
-          - 9202:9200
-      elasticsearch7:
-        image: elasticsearch:7.14.1
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-        ports:
-          - 9203:9200
-      elasticsearch8:
-        image: elasticsearch:8.6.2
-        env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-          discovery.type: single-node
-          xpack.security.enabled: false
-        ports:
-          - 9204:9200
-      opensearch2:
-        image: public.ecr.aws/opensearchproject/opensearch:2
-        env:
-          discovery.type: single-node
-          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ADMIN-passw0rd
-          DISABLE_SECURITY_PLUGIN: "true"
-        ports:
-          - 9212:9200
-      mongo3:
-        image: mongo:3
-        ports:
-          - 27018:27017
-      mongo:
-        image: mongo:8
-        ports:
-          - 27017:27017
-      memcached:
-        image: memcached:1.5.9
-        ports:
-          - 11211:11211
-      kafka:
-        image: confluentinc/confluent-local:7.5.0
-        env:
-          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
-          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
-          KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
-          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-          KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
-          KAFKA_BROKER_ID: "1"
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-          KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
-          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
-          KAFKA_NODE_ID: "1"
-          KAFKA_PROCESS_ROLES: "broker,controller"
-          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-        ports:
-          - 9092:9092
-          - 9093:9093
-        options: >-
-          --name "kafka"
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - 4566:4566
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
+          submodules: recursive
 
-      - name: Setup Go and development tools
+      - name: Start CI service containers
+        run: docker compose up -d
+
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: unit-contrib
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":${{ toJson(matrix.chunk) }},
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
+             "coverage":"contrib"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120
+
       - name: Test Contrib
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+          BUILD_TAGS: ${{ inputs.build_tags }}
+          RERUN_FAILS: ${{ inputs.rerun-fails }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
+      - name: Get Datadog credentials
+        id: dd-sts
+        if: always()
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
+      - name: Report cache metrics to Datadog
         if: always()
         continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE adds wall clock, so only do it where no pull
+          # request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
 
-      # Check for changes in the supported_configurations.json file
-      - name: Supported Configurations Diff Check
+      - name: Merge contrib coverage files
         if: always()
-        uses: ./.github/actions/supported_configurations_validation
-
-  test-contrib:
-    needs:
-      - test-contrib-matrix
-    runs-on:
-      group: "APM Larger Runners"
-    if: success() || failure()
-    continue-on-error: true
-    steps:
-      - name: Success
-        if: needs.test-contrib-matrix.result == 'success'
-        run: echo "Success!"
-      - name: Failure
-        if: needs.test-contrib-matrix.result != 'success'
-        run: echo "Failure!" && exit 1
-
-  test-core:
-    runs-on:
-      group: "APM Larger Runners"
-    env:
-       INTEGRATION: true
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-    steps:
-      - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .git
-          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
-      - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        if: always()
-        with:
-          ref: ${{ github.sha }}
-          clean: false
-      - name: Setup Go and development tools
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
-      - name: Test Core
-        env:
-          DD_APPSEC_WAF_TIMEOUT: 1h
-          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ls -al "${{ github.workspace }}/bin"
-          ./scripts/ci_test_core.sh
-      - name: Upload the results to Datadog CI App
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
-      - name: Upload Coverage
-        if: always()
+      - name: Upload Coverage to Datadog
+        if: always() && (inputs.rerun-fails == '' || inputs.rerun-fails == '0')
         continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-contrib-merged.txt
+          format: go-coverprofile
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
 
-  upload-test-results:
-    needs:
-      - test-contrib
-      - test-core
-    if: always() # Make sure this always runs, even if test-contrib or test-core fails
-    runs-on:
-      group: "APM Larger Runners"
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-    steps:
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
-        run: docker logs ${{ job.services.testagent.id }}
+        run: docker compose logs testagent
 
       - name: Get Datadog APM Test Agent Trace Check Summary Results
         if: always()
         shell: bash
         run: |
-              RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
-              RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
-              SUMMARY_RESPONSE=$(curl -s -w "\n%{http_code}" -o summary_response.txt "http://127.0.0.1:9126/test/trace_check/summary?return_all=true")
-              SUMMARY_RESPONSE_CODE=$(echo "$SUMMARY_RESPONSE" | awk 'END {print $NF}')
-              if [[ $RESPONSE_CODE -eq 200 ]]; then
-                  echo " "
-                  cat response.txt
-                  echo " - All APM Test Agent Check Traces returned successful!"
-                  echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq "."
-              else
-                  echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
-                  echo "Failures:"
-                  cat response.txt
-                  echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq "."
-                  exit 1
+          mkdir -p /tmp/trace-check-results
+          RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+          curl -s -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
+          echo "$RESPONSE_CODE" > /tmp/trace-check-results/response_code-${{ strategy.job-index }}.txt
+          echo "APM Test Agent Check Traces Summary Results:"
+          jq "." /tmp/trace-check-results/summary-${{ strategy.job-index }}.json
+          if [[ $RESPONSE_CODE -eq 200 ]]; then
+              echo " - All APM Test Agent Check Traces returned successful!"
+          else
+              echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
+              echo "Failures:"
+              cat /tmp/trace-check-results/failures-${{ strategy.job-index }}.json
+              exit 1
+          fi
+
+      - name: Upload Trace Check Results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trace-check-results-${{ strategy.job-index }}
+          path: /tmp/trace-check-results/
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down
+
+  test-contrib:
+    needs:
+      - set-up
+      - test-contrib-matrix
+    runs-on:
+      group: "APM Larger Runners"
+    if: '!cancelled()'
+    continue-on-error: true
+    steps:
+      - name: Download Trace Check Results
+        if: needs.test-contrib-matrix.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/trace-check-results
+          pattern: trace-check-results-*
+          merge-multiple: true
+
+      - name: Aggregate Trace Check Results
+        if: needs.test-contrib-matrix.result != 'skipped'
+        shell: bash
+        run: |
+          echo "=== Aggregated APM Test Agent Trace Check Results ==="
+          FOUND_RESPONSE_CODES=0
+          FAILED=0
+          for rc_file in /tmp/trace-check-results/response_code-*.txt; do
+              if [[ -f "$rc_file" ]]; then
+                  FOUND_RESPONSE_CODES=1
+                  RC=$(cat "$rc_file")
+                  if [[ "$RC" -ne 200 ]]; then
+                      FAILED=1
+                  fi
               fi
+          done
+          if [[ $FOUND_RESPONSE_CODES -eq 0 ]]; then
+              echo "::warning::No trace-check artifacts were downloaded; skipping strict aggregation."
+              exit 0
+          fi
+          for summary in /tmp/trace-check-results/summary-*.json; do
+              if [[ -f "$summary" ]]; then
+                  echo "Summary ($summary):"
+                  jq "." "$summary"
+              fi
+          done
+          if [[ $FAILED -ne 0 ]]; then
+              echo "Trace check failures detected:"
+              for f in /tmp/trace-check-results/failures-*.json; do
+                  if [[ -f "$f" ]]; then
+                      echo "--- $f ---"
+                      cat "$f"
+                  fi
+              done
+              exit 1
+          fi
+          echo " - All APM Test Agent Check Traces returned successful!"
+
+      # 'skipped' is only a pass when set-up decided no module needed testing.
+      # A failing set-up also skips test-contrib-matrix, and accepting that skip
+      # would report a green contrib gate having tested nothing.
+      - name: Failure
+        if: >-
+          needs.set-up.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'), needs.test-contrib-matrix.result)
+          || (needs.set-up.outputs.has-contribs == 'true'
+              && needs.test-contrib-matrix.result != 'success')
+        run: echo "Failure!" && exit 1
+      - name: Success
+        run: echo "Success!"
+
+  test-core:
+    runs-on:
+      group: "APM Larger Runners"
+    # Without this the job inherits GitHub's 360-minute default, so a hang burns
+    # six hours of a larger runner. A healthy run is well under 20 minutes.
+    timeout-minutes: 45
+    env:
+      INTEGRATION: true
+      COMPOSE_FILE: .github/testservices/docker-compose.yaml
+      COMPOSE_PROJECT_NAME: dd-trace-go-ci
+    steps:
+      - name: Restore repo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: always()
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          clean: false
+          submodules: recursive
+
+      - name: Start CI service containers
+        run: docker compose up -d datadog-agent
+
+      - name: Setup Go
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: "true"
+          workload: unit-core
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["core"],
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
+             "coverage":"core"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # Containers were started (non-blocking) before Go setup above, so most of
+      # the wait time already overlapped with it; this just waits out whatever's left.
+      - name: Wait for CI service containers
+        run: docker compose up -d --wait --wait-timeout 120 datadog-agent
+
+      - name: Test Core
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+          BUILD_TAGS: ${{ inputs.build_tags }}
+          RERUN_FAILS: ${{ inputs.rerun-fails }}
+        run: |
+          set -euo pipefail
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ls -al "${{ github.workspace }}/bin"
+
+          # Sample host memory alongside the tests. A runner shutdown can prevent
+          # the EXIT notice from running, so print the running peak on each sample
+          # as well. These host-wide readings show headroom, not the test process's
+          # RSS; compare the build_tags variants on their separate runners.
+          mem_total_mib() { awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo; }
+          mem_used_mib() {
+            awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print int((t-a)/1024)}' /proc/meminfo
+          }
+
+          peak_file="$(mktemp)"
+          printf '0\n' >"$peak_file"
+          (
+            peak_used=0
+            while :; do
+              used="$(mem_used_mib)"
+              if (( used > peak_used )); then
+                peak_used="$used"
+                printf '%s\n' "$peak_used" >"$peak_file"
+              fi
+              printf 'mem-sample used=%sMiB peak_used=%sMiB total=%sMiB load=%s\n' \
+                "$used" "$peak_used" "$(mem_total_mib)" "$(cut -d ' ' -f 1-3 /proc/loadavg)"
+              sleep 5
+            done
+          ) &
+          sampler_pid=$!
+
+          report_peak() {
+            kill "$sampler_pid" 2>/dev/null || true
+            printf '::notice title=test-core peak memory::build_tags=%s peak_used=%sMiB of %sMiB\n' \
+              "${BUILD_TAGS:-none}" "$(cat "$peak_file")" "$(mem_total_mib)"
+          }
+          trap report_peak EXIT
+
+          ./scripts/ci_test_core.sh
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        if: always()
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
+
+      - name: Upload Coverage to Datadog
+        if: always() && (inputs.rerun-fails == '' || inputs.rerun-fails == '0')
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
+          format: go-coverprofile
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE adds wall clock; skip it when a
+          # pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
+
+      - name: Stop CI service containers
+        if: always()
+        run: docker compose down
+
+  # Automates internal/apps/telemetry-errors/README.md's memfd/OTel-process-context
+  # recipe: runs the harness in a Docker container whose seccomp profile blocks
+  # memfd_create, forcing storeConfig's two error sites (ddtrace/tracer/tracer.go)
+  # and asserting on the resulting payload-file dump - no real agent or backend
+  # needed. The memfd site's assertions are hard (require/assert) and must fail
+  # the job on regression; only the OTel process-context assertion inside the
+  # test itself is best-effort (t.Log, not a failure) because its own dependency
+  # on the runner's kernel supporting the mmap/prctl fallback isn't fully
+  # understood yet (see the harness README's "Known gaps"). No job-level
+  # continue-on-error here, so the deterministic memfd assertion can actually
+  # fail CI.
+  test-telemetry-errors-e2e:
+    runs-on:
+      group: "APM Larger Runners"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          clean: false
+          submodules: recursive
+
+      - name: Setup Go
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: "true"
+          workload: unit-telemetry
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["internal/apps/telemetry-errors"],
+             "coverage":"none"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      - name: Test telemetry-errors seccomp E2E
+        working-directory: internal/apps
+        env:
+          INTEGRATION: true
+        run: go test ./telemetry-errors/... -run TestSeccompMemfdBlocked -v

@@ -8,7 +8,6 @@ package version
 import (
 	"bytes"
 	"os/exec"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,67 +54,6 @@ func unixDate(u string) (time.Time, error) {
 	return time.Unix(sec, 0), nil
 }
 
-func TestFindV1Version(t *testing.T) {
-	tests := []struct {
-		deps     []*debug.Module
-		expected *v1version
-	}{
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.2.3-rc.12"},
-			},
-			expected: &v1version{
-				Version: "v1.2.3-rc.12",
-			},
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.74.0"},
-			},
-			expected: &v1version{
-				Version:      "v1.74.0",
-				Transitional: true,
-			},
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.73.1"},
-			},
-			expected: &v1version{
-				Version: "v1.73.1",
-			},
-		},
-		{
-			deps:     []*debug.Module{},
-			expected: nil,
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "github.com/DataDog/dd-trace-go/v2", Version: "v2.0.0"},
-			},
-			expected: nil,
-		},
-	}
-	for _, c := range tests {
-		vt := findV1Version(c.deps)
-		if c.expected == nil {
-			if vt != nil {
-				t.Fatalf("got %v, expected nil", vt)
-			}
-			continue
-		}
-		if vt == nil {
-			t.Fatalf("got nil, expected *v1version")
-		}
-		if vt.Version != c.expected.Version {
-			t.Fatalf("got %s, expected %s", vt.Version, c.expected.Version)
-		}
-		if vt.Transitional != c.expected.Transitional {
-			t.Fatalf("got %t, expected %t", vt.Transitional, c.expected.Transitional)
-		}
-	}
-}
-
 func TestParseVersion(t *testing.T) {
 	tc := []struct {
 		version string
@@ -127,7 +65,9 @@ func TestParseVersion(t *testing.T) {
 		{"v1.2.3-rc.12", 1, 2, 3, 12},
 		{"v2.0.0-rc.1", 2, 0, 0, 1},
 		{"v2.1.0-dev", 2, 1, 0, 0},
+		{"v2.1.0-alpha", 2, 1, 0, 0},
 		{"v2.1.0-alpha.21", 2, 1, 0, 21},
+		{"v2.5.0-rc.11", 2, 5, 0, 11},
 		{"v2.1.0-beta.9", 2, 1, 0, 9},
 	}
 	for _, c := range tc {
@@ -143,6 +83,25 @@ func TestParseVersion(t *testing.T) {
 		}
 		if v.RC != c.rc {
 			t.Errorf("RC is %d", v.RC)
+		}
+	}
+}
+
+func BenchmarkParseVersion(b *testing.B) {
+	version := "v2.1.0-rc.21"
+	for b.Loop() {
+		v := parseVersion(version)
+		if got, want := v.Major, 2; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.Minor, 1; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.Patch, 0; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.RC, 21; got != want {
+			b.Fatalf("got %d, want %d", got, want)
 		}
 	}
 }

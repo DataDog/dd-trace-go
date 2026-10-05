@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,9 +32,6 @@ func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 0)
@@ -181,9 +179,6 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 256)
@@ -376,10 +371,11 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	})
 
 	// NOTE: This test simulates a scenario where the response body is never sent, even though it was requested by the processor.
-	// In reality, if HAProxy fails to send the body (e.g., due to a timeout or backend error), the processor times out and marks the request as blocked in the trace.
-	// However, this does not necessarily reflect what the client actually received, since we have no visibility into the real response.
-	// This test is validating this internal timeout/blocking behavior, not the actual client experience.
+	// If HAProxy fails to send the body, the processor times out without an active message on which it could return a blocking response.
+	// The trace therefore records the security event, but does not claim that the request was blocked.
 	t.Run("blocking-event-on-response-headers-with-body-not-sent", func(t *testing.T) {
+		telemetryClient := testutils.StartTelemetryRecorder(t)
+
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
@@ -390,7 +386,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
 		bodyRequested, blockedAct = sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", spanId)
 
-		// Res should be an immediate response with the blocking event
+		// No blocking response can be returned because the expected body message never arrives.
 		require.Nil(t, blockedAct)
 		require.True(t, bodyRequested)
 
@@ -403,7 +399,17 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		// Check for tags
 		span := finished[0]
 		require.Equal(t, "true", span.Tag("appsec.event"))
-		require.Equal(t, "true", span.Tag("appsec.blocked"))
+		require.NotEqual(t, "true", span.Tag("appsec.blocked"))
+
+		failedBlockMetrics := 0.0
+		for key, metric := range telemetryClient.Metrics {
+			if key.Name == "waf.requests" &&
+				strings.Contains(key.Tags, "block_failure:true") &&
+				strings.Contains(key.Tags, "request_blocked:false") {
+				failedBlockMetrics += metric.Get()
+			}
+		}
+		require.Equal(t, 1.0, failedBlockMetrics)
 	})
 }
 
@@ -412,9 +418,6 @@ func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
 	t.Setenv("_DD_APPSEC_PROXY_ENVIRONMENT", "true") // Enable API Security proxy sampler
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 256)
@@ -586,9 +589,6 @@ func TestGeneratedSpan(t *testing.T) {
 
 func TestMalformedHAProxyProcessing(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 0)

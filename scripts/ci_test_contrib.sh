@@ -6,7 +6,13 @@ set +e
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/unit-integration-tests.yml.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
+
 [[ -d ./contrib ]] || exit 0
+
+BUILD_TAGS="${BUILD_TAGS:-}"
 
 if [ $# -eq 2 ]; then
   CONTRIBS="$2"
@@ -16,34 +22,53 @@ else
   INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
-export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
+export DD_APPSEC_ENABLED=1
+export DD_APPSEC_WAF_TIMEOUT=1m
+export __DD_TRACE_SQL_TEST=true
 
 report_error=0
+
+# Opt-in flaky-failure retry; see ci_test_core.sh for the coverprofile,
+# off-switch and bash 3.2 caveats. Packages move to --packages below because --rerun-fails
+# rejects them as go test args after `--`.
+RERUN_ARGS=()
+if [[ -n "${RERUN_FAILS:-}" && "${RERUN_FAILS}" != "0" ]]; then
+  RERUN_ARGS=(--rerun-fails="${RERUN_FAILS}")
+  echo "Retrying failed tests up to ${RERUN_FAILS} time(s); coverage from a rerun is not trustworthy"
+fi
+
+# Build the tags argument if BUILD_TAGS is set
+TAGS_ARG="-tags="
+if [[ -n "$BUILD_TAGS" ]]; then
+  TAGS_ARG="-tags=$BUILD_TAGS"
+  echo "Running contrib tests with build tags: $BUILD_TAGS"
+else
+  echo "Running standard contrib tests"
+fi
 
 for contrib in $CONTRIBS; do
   echo "Testing contrib module: $contrib"
   contrib_id=$(echo "$contrib" | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd "$contrib" || exit 1
   if [[ "$1" = "smoke" ]]; then
-    go get -u -t ./...
-    go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
-    go get go.opentelemetry.io/collector/pdata@v1.39.0
+    # set +e is in effect, so capture dependency-upgrade/tidy failures explicitly — otherwise a
+    # failed `go get -u` (the whole point of smoke mode) would be silently ignored as long as the
+    # tests still happen to pass.
+    retry_on_corruption go get -u -t ./... || report_error=1
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
-    go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+    retry_on_corruption go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59 || report_error=1
+    # Another temporary workaround caused by the upgrade introduced by this commit: https://github.com/kubernetes/client-go/commit/f4d210639bbc61f2f2a8596662d7ad50abaa6544
+    retry_on_corruption go get k8s.io/client-go@v0.35.0 || report_error=1
   fi
-  go mod tidy
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
+    # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441
+    retry_on_corruption go get github.com/quic-go/qpack@v0.5.1 || report_error=1
+  fi
+  retry_on_corruption go mod tidy || report_error=1
+  retry_on_corruption gotestsum ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" --packages=./... -- -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -53,13 +78,10 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
   echo "Testing instrumentation submodule: $mod"
   mod_id=$(echo "$mod" | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd "$mod" || exit 1
-  [[ "$1" = "smoke" ]] && go get -u -t ./...
-  if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
-    # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
-    # When the issue is resolved, this line can be removed.
-    go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+  if [[ "$1" = "smoke" ]]; then
+    retry_on_corruption go get -u -t ./... || report_error=1
   fi
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" --packages=./... -- -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1

@@ -10,6 +10,7 @@ import (
 	"log"
 
 	buntdbtrace "github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

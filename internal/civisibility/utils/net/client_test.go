@@ -10,18 +10,25 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
+// saveEnv captures the current process environment so tests can restore it after mutating globals.
 func saveEnv() []string {
 	return os.Environ()
 }
 
+// restoreEnv replaces the process environment and clears cached CI Visibility state derived from it.
 func restoreEnv(env []string) {
 	os.Clearenv()
 	for _, e := range env {
 		kv := strings.SplitN(e, "=", 2)
 		os.Setenv(kv[0], kv[1])
 	}
+	civisibilityutils.ResetCITags()
+	bazel.ResetForTesting()
 }
 
 func TestNewClient_DefaultValues(t *testing.T) {
@@ -222,10 +229,16 @@ func TestNewClient_TestConfigurations(t *testing.T) {
 	}
 }
 
+// setCiVisibilityEnv configures a minimal agentless CI Visibility environment for client constructor tests.
 func setCiVisibilityEnv(path string, url string) {
 	os.Clearenv()
 	os.Setenv("PATH", path)
 	os.Setenv("DD_CIVISIBILITY_AGENTLESS_ENABLED", "true")
 	os.Setenv("DD_API_KEY", "test_api_key")
 	os.Setenv("DD_CIVISIBILITY_AGENTLESS_URL", url)
+	os.Setenv("DD_GIT_REPOSITORY_URL", "https://github.com/DataDog/dd-trace-go.git")
+	os.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
+	os.Setenv("DD_GIT_BRANCH", "refs/heads/main")
+	civisibilityutils.ResetCITags()
+	bazel.ResetForTesting()
 }

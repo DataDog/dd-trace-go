@@ -1,0 +1,13 @@
+# Policy for: .github/workflows/needs-triage.yml in DataDog/dd-trace-go
+issuer: https://token.actions.githubusercontent.com
+subject: repo:DataDog/dd-trace-go:ref:refs/heads/main
+
+claim_pattern:
+  event_name: (issues|schedule|workflow_dispatch)
+  job_workflow_ref: DataDog/dd-trace-go/\.github/workflows/needs-triage\.yml@refs/heads/main
+  ref: refs/heads/main
+  repository: DataDog/dd-trace-go
+
+permissions:
+  issues: write
+  members: read

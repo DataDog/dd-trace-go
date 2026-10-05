@@ -12,13 +12,14 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
 	testvault "github.com/testcontainers/testcontainers-go/modules/vault"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -31,7 +32,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	tc.server, err = testvault.Run(ctx,
-		"vault:1.7.3", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		containers.Image("vault"),
 		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testvault.WithToken("root"),

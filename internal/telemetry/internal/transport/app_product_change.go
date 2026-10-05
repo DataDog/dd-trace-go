@@ -18,5 +18,5 @@ func (AppProductChange) RequestType() RequestType {
 type Product struct {
 	Version string `json:"version,omitempty"`
 	Enabled bool   `json:"enabled"`
-	Error   Error  `json:"error,omitempty"`
+	Error   Error  `json:"error"`
 }

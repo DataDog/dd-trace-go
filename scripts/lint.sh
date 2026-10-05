@@ -22,6 +22,7 @@ run() {
 lint_go=false
 lint_shell=false
 lint_misc=false
+lint_action=false
 
 usage() {
   cat << EOF
@@ -34,6 +35,7 @@ Options:
   --go           Run linters for Go code
   --shell        Run linters for Shell scripts
   --misc         Run miscellaneous linters
+  --action       Run linters for GitHub Actions workflows
   -t, --tools    Install linting tools
   -h, --help     Show this help message
 EOF
@@ -45,9 +47,9 @@ lint_go_files() {
   local gopath_bin
   gopath_bin="$(go env GOPATH)/bin"
   export PATH="$gopath_bin:$PATH"
-  run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
   run "golangci-lint run ./..."
-  run "./scripts/check_locks.sh --ignore-errors ./ddtrace/tracer"
+  run "(cd internal/orchestrion/_integration && golangci-lint run --disable=gocritic ./...)"
+  run "./scripts/checklocks.sh --ignore-known-issues ./ddtrace/tracer"
 }
 
 lint_shell_files() {
@@ -58,6 +60,20 @@ lint_shell_files() {
 lint_misc_files() {
   message "Running miscellaneous linters..."
   run "go run ./scripts/check_copyright.go"
+  run "go run ./scripts/check_codeowners.go"
+  # Keeps .github/ci-components.yml in step with the tree. Like CODEOWNERS, it
+  # has no catch-all entry, so a new top-level directory is a lint failure until
+  # someone classifies it.
+  run "go test ./scripts/ciselect/"
+  run "go test ./scripts/citiming/ ./scripts/actiontest/"
+  run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile profiler/internal/fastdelta/Makefile"
+}
+
+lint_action_files() {
+  message "Linting GitHub Actions workflows..."
+  # Ignore 'if: false' warnings - used intentionally for disabled jobs like checklocks.
+  # The ignore is only available through the command line, not the configuration file.
+  run "actionlint -ignore 'condition .false. is always evaluated to false'"
 }
 
 # Parse command line arguments
@@ -66,6 +82,8 @@ while [[ $# -gt 0 ]]; do
     --all)
       lint_go=true
       lint_shell=true
+      lint_misc=true
+      lint_action=true
       shift
       ;;
     --go)
@@ -80,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       lint_misc=true
       shift
       ;;
+    --action)
+      lint_action=true
+      shift
+      ;;
     -h | --help)
       usage
       ;;
@@ -91,10 +113,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Default behavior: run linters
-if [[ ${lint_go} == false && ${lint_shell} == false && ${lint_misc} == false ]]; then
+if [[ ${lint_go} == false && ${lint_shell} == false && ${lint_misc} == false && ${lint_action} == false ]]; then
   lint_go=true
   lint_shell=true
   lint_misc=true
+  lint_action=true
 fi
 
 if [[ ${lint_go} == true ]]; then
@@ -107,4 +130,8 @@ fi
 
 if [[ ${lint_misc} == true ]]; then
   lint_misc_files
+fi
+
+if [[ ${lint_action} == true ]]; then
+  lint_action_files
 fi

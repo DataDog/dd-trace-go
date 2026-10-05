@@ -12,9 +12,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 )
 
 func TestSendPackFilesApiRequest(t *testing.T) {
@@ -152,4 +155,37 @@ func TestSendPackFilesApiRequestNoFile(t *testing.T) {
 	bytes, err := cInterface.SendPackFiles("", nil)
 	assert.Zero(t, bytes)
 	assert.Nil(t, err)
+}
+
+func TestSendPackFilesApiRequestManifestModeNoop(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	cInterface := NewClient()
+	bytes, err := cInterface.SendPackFiles("commit-sha", []string{"definitely-missing.pack"})
+	assert.NoError(t, err)
+	assert.Zero(t, bytes)
+	assert.Equal(t, 0, hits)
 }

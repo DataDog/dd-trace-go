@@ -9,11 +9,11 @@
 
 //go:build tools
 
-//go:generate go run github.com/DataDog/orchestrion pin
+//go:generate go run github.com/DataDog/orchestrion pin -generate
 
 package tools
 
-// Imports in this file determine which tracer intergations are enabled in
+// Imports in this file determine which tracer integrations are enabled in
 // orchestrion. New integrations can be automatically discovered by running
 // `orchestrion pin` again. You can also manually add new imports here to
 // enable additional integrations. When doing so, you can run `orchestrion pin`
@@ -22,7 +22,7 @@ package tools
 import (
 	// Ensures `orchestrion` is present in `go.mod` so that builds are repeatable.
 	// Do not remove.
-	_ "github.com/DataDog/orchestrion"
+	_ "github.com/DataDog/orchestrion" // integration
 
 	_ "github.com/DataDog/dd-trace-go/orchestrion/all/v2" // integration
 )

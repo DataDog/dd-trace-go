@@ -12,15 +12,19 @@ import (
 	"database/sql/driver"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"testing"
+	"time"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -38,6 +42,8 @@ func TestDBMPropagation(t *testing.T) {
 		peerServiceTag           string
 		peerServiceCtx           string
 		peerServiceCustomOpenTag string
+		containerTagsHash        string
+		assertExecuted           func(t *testing.T, d *internal.MockDriver)
 	}{
 		{
 			name: "prepare",
@@ -76,6 +82,15 @@ func TestDBMPropagation(t *testing.T) {
 			dsn:            "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb?sslmode=disable",
 			prepared:       []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',ddh='127.0.0.1',dddb='fakepreparedb',ddprs='test-peer-service'*/ SELECT 1 from DUAL"},
 			peerServiceCtx: "test-peer-service",
+		},
+		{
+			name: "prepare-dynamic_service-no-container-hash",
+			opts: []Option{WithDBMPropagation(tracer.DBMPropagationModeDynamicService)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
 			name: "query",
@@ -199,6 +214,35 @@ func TestDBMPropagation(t *testing.T) {
 			peerServiceCtx:           "test-peer-service-ctx",
 			peerServiceCustomOpenTag: "test-peer-service-custom-tag",
 		},
+		{
+			name: "dynamic_service-exec-no-container-hash",
+			opts: []Option{WithDBMPropagation(tracer.DBMPropagationModeDynamicService)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1")
+				return err
+			},
+			executed: []*regexp.Regexp{
+				regexp.MustCompile(`/\*.*dddbs=.*\*/`),
+			},
+		},
+		{
+			name:              "dynamic_service-exec-with-hash",
+			opts:              []Option{WithDBMPropagation(tracer.DBMPropagationModeDynamicService)},
+			containerTagsHash: "testhash42",
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1")
+				return err
+			},
+			executed: []*regexp.Regexp{
+				regexp.MustCompile(`/\*.*ddsh='[^']+'.*\*/`),
+			},
+			assertExecuted: func(t *testing.T, d *internal.MockDriver) {
+				require.Len(t, d.Executed, 1)
+				assert.NotContains(t, d.Executed[0], "traceparent=", "dynamic_service must not inject traceparent")
+				expectedHash := testutils.DBMBaseHash("test-service", "testhash42")
+				assert.Contains(t, d.Executed[0], "ddsh='"+expectedHash+"'", "ddsh must equal computed base hash")
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -212,6 +256,9 @@ func TestDBMPropagation(t *testing.T) {
 			require.NoError(t, err)
 			defer tracer.Stop()
 			testutils.SetGlobalServiceName(t, "test-service")
+			if tc.containerTagsHash != "" {
+				testutils.SetContainerTagsHash(t, tc.containerTagsHash)
+			}
 
 			d := &internal.MockDriver{}
 			Register("test", d, tc.opts...)
@@ -252,8 +299,46 @@ func TestDBMPropagation(t *testing.T) {
 				// the injected span ID should not be the parent's span ID
 				assert.NotContains(t, d.Executed[i], "traceparent='00-00000000000000000000000000000001-0000000000000001")
 			}
+			if tc.assertExecuted != nil {
+				tc.assertExecuted(t, d)
+			}
 		})
 	}
+}
+
+func TestDBMPropagationFullOnPqCopy(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("skipping integration test")
+	}
+	tr := mocktracer.Start()
+	defer tr.Stop()
+
+	Register("postgres", &pq.Driver{}, WithDBMPropagation(tracer.DBMPropagationModeFull))
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
+		_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		assert.NoError(t, db.Close())
+	})
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	s := pq.CopyInSchema("public", "testsql", "name")
+	stmt, err := tx.Prepare(s)
+	require.NoError(t, err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec("name-0")
+	require.NoError(t, err)
+
+	spans := tr.FinishedSpans()
+	require.Len(t, spans, 4) // 1 for the connection, 1 for the transaction, 1 for the copy's prepare, 1 for the copy's exec
+	assert.Equal(t, `COPY "public"."testsql" ("name") FROM STDIN`, spans[3].Tags()[ext.ResourceName])
 }
 
 func TestDBMTraceContextTagging(t *testing.T) {
@@ -512,6 +597,110 @@ func TestDBMFullModeUnsupported(t *testing.T) {
 			dbSystem, unsupported := dbmFullModeUnsupported(tc.driverName, tc.driver, tc.dsn)
 			assert.Equal(t, tc.wantDBSystem, dbSystem)
 			assert.Equal(t, tc.wantUnsupported, unsupported)
+		})
+	}
+}
+
+func TestDBMDynamicServicePropagatedHashTag(t *testing.T) {
+	// Start real tracer first to populate service/env config used by computeBaseHash.
+	// Register its cleanup before mocktracer so that t.Cleanup (LIFO) stops the mock
+	// first and the real tracer second — matching reverse start order.
+	err := tracer.Start(tracer.WithService("test-svc"), tracer.WithEnv("test-env"))
+	require.NoError(t, err)
+	t.Cleanup(tracer.Stop)
+
+	testutils.SetContainerTagsHash(t, "testhash42")
+	expectedHash := testutils.DBMBaseHash("test-svc", "testhash42")
+
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+
+	Register("mock", &internal.MockDriver{}, WithDBMPropagation(tracer.DBMPropagationModeDynamicService))
+	defer unregister("mock")
+	db, err := Open("mock", "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	_, err = db.ExecContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+	require.Len(t, execSpans, 1)
+	assert.Equal(t, expectedHash, execSpans[0].Tag("_dd.propagated_hash"),
+		"_dd.propagated_hash must equal the computed base hash")
+	assert.Nil(t, execSpans[0].Tag("_dd.dbm_trace_injected"),
+		"dynamic_service must not set _dd.dbm_trace_injected (that is full mode only)")
+}
+
+func TestDBMDynamicServicePrepareContextWithHash(t *testing.T) {
+	err := tracer.Start(tracer.WithService("test-svc"), tracer.WithEnv("test-env"))
+	require.NoError(t, err)
+	t.Cleanup(tracer.Stop)
+
+	testutils.SetContainerTagsHash(t, "testhash42")
+	expectedHash := testutils.DBMBaseHash("test-svc", "testhash42")
+
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+
+	d := &internal.MockDriver{}
+	Register("mock", d, WithDBMPropagation(tracer.DBMPropagationModeDynamicService))
+	defer unregister("mock")
+	db, err := Open("mock", "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	stmt, err := db.PrepareContext(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	require.Len(t, d.Prepared, 1)
+	assert.Contains(t, d.Prepared[0], "ddsh='"+expectedHash+"'",
+		"ddsh must be baked into the prepared statement (dynamic_service is not downgraded)")
+	assert.NotContains(t, d.Prepared[0], "traceparent=",
+		"dynamic_service PrepareContext must not inject traceparent")
+
+	prepareSpans := spansOfType(mt.FinishedSpans(), QueryTypePrepare)
+	require.Len(t, prepareSpans, 1)
+	assert.Equal(t, expectedHash, prepareSpans[0].Tag("_dd.propagated_hash"),
+		"_dd.propagated_hash must be set on the prepare span")
+
+	_, err = stmt.ExecContext(context.Background())
+	require.NoError(t, err)
+
+	execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+	require.Len(t, execSpans, 1)
+	assert.Equal(t, expectedHash, execSpans[0].Tag("_dd.propagated_hash"),
+		"_dd.propagated_hash must be set on prepared-statement exec spans")
+}
+
+func TestDBMNoPropagatedHashTagInOtherModes(t *testing.T) {
+	err := tracer.Start(tracer.WithService("test-svc"), tracer.WithEnv("test-env"))
+	require.NoError(t, err)
+	t.Cleanup(tracer.Stop)
+
+	testutils.SetContainerTagsHash(t, "testhash42")
+
+	for _, mode := range []tracer.DBMPropagationMode{
+		tracer.DBMPropagationModeService,
+		tracer.DBMPropagationModeFull,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			mt := mocktracer.Start()
+			t.Cleanup(mt.Stop)
+
+			Register("mock", &internal.MockDriver{}, WithDBMPropagation(mode))
+			defer unregister("mock")
+			db, err := Open("mock", "")
+			require.NoError(t, err)
+			defer db.Close()
+
+			_, err = db.ExecContext(context.Background(), "SELECT 1")
+			require.NoError(t, err)
+
+			execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+			require.Len(t, execSpans, 1)
+			assert.Nil(t, execSpans[0].Tag("_dd.propagated_hash"),
+				"_dd.propagated_hash must not be set in %s mode", mode)
 		})
 	}
 }

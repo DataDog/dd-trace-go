@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
+	"github.com/aws/aws-lambda-go/lambdacontext"
 
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -40,6 +41,8 @@ const (
 
 	DdSeverlessSpan  ddTraceContext = "dd-tracer-serverless-span"
 	DdLambdaResponse ddTraceContext = "dd-response"
+
+	lambdaRuntimeAwsRequestIdHeader = "lambda-runtime-aws-request-id"
 )
 
 const (
@@ -116,6 +119,13 @@ func (em *ExtensionManager) checkAgentRunning() {
 func (em *ExtensionManager) SendStartInvocationRequest(ctx context.Context, eventPayload json.RawMessage) context.Context {
 	body := bytes.NewBuffer(eventPayload)
 	req, _ := http.NewRequest(http.MethodPost, em.startInvocationUrl, body)
+
+	if lc, ok := lambdacontext.FromContext(ctx); ok {
+		req.Header.Set(lambdaRuntimeAwsRequestIdHeader, lc.AwsRequestID)
+	} else {
+		logger.Error(fmt.Errorf("missing AWS Lambda context. Unable to set lambda-runtime-aws-request-id header"))
+	}
+
 	response, err := em.httpClient.Do(req)
 	if response != nil && response.Body != nil {
 		defer func() {
@@ -153,11 +163,16 @@ func (em *ExtensionManager) SendEndInvocationRequest(ctx context.Context, functi
 	}
 	body := bytes.NewBuffer(content)
 	req, _ := http.NewRequest(http.MethodPost, em.endInvocationUrl, body)
+	if lc, ok := lambdacontext.FromContext(ctx); ok {
+		req.Header.Set(lambdaRuntimeAwsRequestIdHeader, lc.AwsRequestID)
+	} else {
+		logger.Error(fmt.Errorf("missing AWS Lambda context. Unable to set lambda-runtime-aws-request-id header"))
+	}
 
 	// Mark the invocation as an error if any
 	if cfg.Error != nil {
 		req.Header.Set(string(DdInvocationError), "true")
-		req.Header.Set(string(DdInvocationErrorMsg), cfg.Error.Error())
+		req.Header.Set(string(DdInvocationErrorMsg), hdrEncode(cfg.Error.Error()))
 		req.Header.Set(string(DdInvocationErrorType), reflect.TypeOf(cfg.Error).String())
 		req.Header.Set(string(DdInvocationErrorStack), takeStacktrace(cfg))
 	}
@@ -232,7 +247,12 @@ func takeStacktrace(opts ddtracer.FinishConfig) string {
 		}
 	}
 
-	return base64.StdEncoding.EncodeToString([]byte(builder.String()))
+	return hdrEncode(builder.String())
+}
+
+// hdrEncode encodes a header value to base64.
+func hdrEncode(value string) string {
+	return base64.StdEncoding.EncodeToString([]byte(value))
 }
 
 func (em *ExtensionManager) IsExtensionRunning() bool {

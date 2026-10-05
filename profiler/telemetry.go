@@ -50,13 +50,12 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "cpu_profile_rate", Value: c.cpuProfileRate},
 		{Name: "block_profile_rate", Value: c.blockRate},
 		{Name: "mutex_profile_fraction", Value: c.mutexFraction},
-		{Name: "max_goroutines_wait", Value: c.maxGoroutinesWait},
 		{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
 		{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
 		{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
 		{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
 		{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
-		{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
+		{Name: "goroutine_leak_profile_enabled", Value: profileEnabled(GoroutineLeakProfile)},
 		{Name: "upload_timeout", Value: c.uploadTimeout.String()},
 		{Name: "execution_trace_enabled", Value: c.traceConfig.Enabled},
 		{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
@@ -65,5 +64,6 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
 		{Name: "flush_on_exit", Value: c.flushOnExit},
 		{Name: "debug_compression_settings", Value: c.compressionConfig},
+		{Name: "appsec_enabled", Value: appsecEnabled()},
 	}
 }

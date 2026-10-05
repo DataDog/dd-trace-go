@@ -6,13 +6,15 @@
 package elastic
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"math"
 	"net/http"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type clientConfig struct {
 	serviceName   string
+	serviceSource string
 	operationName string
 	transport     http.RoundTripper
 	analyticsRate float64
@@ -33,6 +35,7 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageGoElasticSearchV6)
 	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
@@ -50,6 +53,7 @@ func WithTransport(t http.RoundTripper) ClientOptionFn {
 func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

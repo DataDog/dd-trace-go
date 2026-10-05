@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type base struct {
@@ -25,14 +26,15 @@ type base struct {
 }
 
 func (b *base) Setup(_ context.Context, t *testing.T) {
+	ln := net.FreeListener(t)
 	b.srv = &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:         ln.Addr().String(),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 	b.srv.Handler = b.handler
 
-	go func() { assert.ErrorIs(t, b.srv.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, b.srv.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -44,6 +46,7 @@ func (b *base) Setup(_ context.Context, t *testing.T) {
 func (b *base) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/", b.srv.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 

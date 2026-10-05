@@ -23,6 +23,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2/internal/tree"
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -94,7 +95,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 				setTagsWithoutEndpointMetadata(req, span)
 			}
 			if cfg.serviceName != "" {
-				span.SetTag(ext.ServiceName, cfg.serviceName)
+				span.SetTag(ext.KeyServiceSource, instrumentation.ServiceOverride{Name: cfg.serviceName, Source: cfg.serviceSource})
 			}
 			span.SetTag(ext.Component, componentName)
 			span.SetTag(ext.SpanKind, ext.SpanKindClient)
@@ -109,7 +110,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 func setTagsWithEndpointMetadata(req *http.Request, span *tracer.Span) {
 	e, ok := apiEndpointsTree.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 	if ok {
-		span.SetTag(ext.ServiceName, e.ServiceName)
+		span.SetTag(ext.KeyServiceSource, instrumentation.ServiceOverride{Name: e.ServiceName, Source: string(instrumentation.PackageGoogleAPI)})
 		span.SetTag(ext.ResourceName, e.ResourceName)
 	} else {
 		setTagsWithoutEndpointMetadata(req, span)
@@ -117,6 +118,6 @@ func setTagsWithEndpointMetadata(req *http.Request, span *tracer.Span) {
 }
 
 func setTagsWithoutEndpointMetadata(req *http.Request, span *tracer.Span) {
-	span.SetTag(ext.ServiceName, "google")
+	span.SetTag(ext.KeyServiceSource, instrumentation.ServiceOverride{Name: "google", Source: string(instrumentation.PackageGoogleAPI)})
 	span.SetTag(ext.ResourceName, req.Method+" "+req.URL.Hostname())
 }

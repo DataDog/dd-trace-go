@@ -10,6 +10,7 @@ import (
 	"net"
 
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
@@ -36,13 +37,14 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
+			cs.cfg.serviceSource,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
+		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
 	return err
@@ -55,13 +57,14 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
+			cs.cfg.serviceSource,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
+		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.SendMsg(m)
 	return err
@@ -101,7 +104,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 					return err
 				})
 			if err != nil {
-				finishWithError(span, err, cfg)
+				finishWithError(span, err, method, cfg)
 				return nil, err
 			}
 
@@ -113,7 +116,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 
 			go func() {
 				<-stream.Context().Done()
-				finishWithError(span, stream.Context().Err(), cfg)
+				finishWithError(span, stream.Context().Err(), method, cfg)
 			}()
 		} else {
 			// if call tracing is disabled, just call streamer, but still return
@@ -155,7 +158,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
-		finishWithError(span, err, cfg)
+		finishWithError(span, err, method, cfg)
 		return err
 	}
 }
@@ -172,6 +175,7 @@ func doClientRequest(
 		method,
 		cfg.spanName,
 		cfg.serviceName.String(),
+		cfg.serviceSource,
 		cfg.startSpanOptions(
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,

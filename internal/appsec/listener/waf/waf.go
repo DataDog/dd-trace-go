@@ -6,12 +6,15 @@
 package waf
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
@@ -21,22 +24,23 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
 )
 
 type Feature struct {
 	timeout         time.Duration
-	limiter         *limiter.TokenTicker
+	limiter         limiter.Limiter
 	handle          *libddwaf.Handle
 	supportedAddrs  config.AddressSet
 	rulesVersion    string
 	reportRulesTags sync.Once
 
-	telemetryMetrics waf.HandleMetrics
+	telemetryMetrics    waf.HandleMetrics
+	stackTrace          config.StackTraceConfig
+	blockingUnavailable bool
 
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
@@ -52,7 +56,10 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		logger := telemetrylog.With(telemetry.WithTags([]string{"product:appsec"}))
+		logger := telemetrylog.With(
+			telemetry.WithTags([]string{"product:appsec", "log_type:" + waf.ExceptionTypeWAF}),
+			telemetry.WithStacktrace(),
+		)
 		logger.Warn("appsec: non-critical error while loading libddwaf", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 
@@ -71,15 +78,14 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
 
-	tokenTicker := limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit)
-	tokenTicker.Start()
-
 	feature := &Feature{
 		handle:              newHandle,
 		timeout:             cfg.WAFTimeout,
-		limiter:             tokenTicker,
+		limiter:             limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit),
 		supportedAddrs:      cfg.SupportedAddresses,
 		telemetryMetrics:    telemetryMetrics,
+		stackTrace:          cfg.StackTrace,
+		blockingUnavailable: cfg.BlockingUnavailable,
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
 	}
@@ -92,17 +98,26 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.reportRulesTags.Do(func() {
-		AddRulesMonitoringTags(op)
+		AddRulesMonitoringTags(op, remoteconfig.ClientID())
 	})
 
-	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
+	if waf.handle == nil {
+		log.Debug("appsec: no WAF handle available, skipping WAF context creation")
+		return
+	}
+
+	ctx, err := waf.handle.NewContext(context.Background(), timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
 	if err != nil {
 		log.Debug("appsec: failed to create WAF context: %s", err.Error())
+		return
 	}
 
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 	op.SetSupportedAddresses(waf.supportedAddrs)
+	if waf.blockingUnavailable {
+		op.SetBlockingUnavailable()
+	}
 	op.SetMetricsInstance(waf.telemetryMetrics.NewContextMetrics())
 
 	// Run the WAF with the given address data
@@ -111,16 +126,14 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.SetupActionHandlers(op)
 }
 
-func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
-	// Set the blocking tag on the operation when a blocking event is received
-	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-		log.Debug("appsec: blocking event detected")
-		op.SetTag(blockedRequestTag, true)
-		op.SetRequestBlocked()
-	})
+func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+	op.SetStackTraceConfig(f.stackTrace)
 
-	// Register the stacktrace if one is requested by a WAF action
+	// Register the stacktrace if one is requested by a WAF action.
 	dyngo.OnData(op, func(action *actions.StackTraceAction) {
+		if f.stackTrace.Disabled || action.Event == nil {
+			return
+		}
 		log.Debug("appsec: registering stack trace for security purposes")
 		op.AddStackTraces(action.Event)
 	})
@@ -137,12 +150,16 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		return
 	}
 
-	ctx.Close()
-
+	// Subcontext owners defer Close before their request operation finishes, and
+	// go-libddwaf rc.2 folds subcontext timer/truncations into the Context on Close,
+	// so the values read here already include subcontext contributions.
 	truncations := ctx.Truncations()
 	timerStats := ctx.Timer.Stats()
+	ctx.Close()
+
 	metrics := op.GetMetricsInstance()
 	AddWAFMonitoringTags(op, metrics, waf.rulesVersion, truncations, timerStats)
+	addDownwardRequestTag(op, int(metrics.SumDownstreamRequestsCalls.Load()))
 	metrics.Submit(truncations, timerStats)
 
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
@@ -156,7 +173,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
-		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))
+		stacktrace.AddToSpan(op, stacks...)
 	}
 }
 
@@ -165,6 +182,5 @@ func (*Feature) String() string {
 }
 
 func (waf *Feature) Stop() {
-	waf.limiter.Stop()
 	waf.handle.Close()
 }

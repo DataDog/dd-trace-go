@@ -129,12 +129,10 @@ func BenchmarkGraphQL(b *testing.B) {
 	b.Run("version_baseline", func(b *testing.B) {
 		for name, tc := range testCases {
 			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
-				b.StopTimer()
 				b.ReportAllocs()
 				schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: rootQuery})
 				require.NoError(b, err)
-				for i := 0; i < b.N; i++ {
-					b.StartTimer()
+				for b.Loop() {
 					resp := graphql.Do(graphql.Params{
 						Schema:         schema,
 						RequestString:  tc.query,
@@ -143,6 +141,7 @@ func BenchmarkGraphQL(b *testing.B) {
 					})
 					b.StopTimer()
 					require.Empty(b, resp.Errors)
+					b.StartTimer()
 				}
 			})
 		}
@@ -151,7 +150,6 @@ func BenchmarkGraphQL(b *testing.B) {
 	b.Run("version_dyngo", func(b *testing.B) {
 		for name, tc := range testCases {
 			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
-				b.StopTimer()
 				b.ReportAllocs()
 				opts := []Option{WithService("test-graphql-service")}
 				schema, err := NewSchema(
@@ -162,8 +160,7 @@ func BenchmarkGraphQL(b *testing.B) {
 				require.NoError(b, err)
 				mt := mocktracer.Start()
 				defer mt.Stop()
-				for i := 0; i < b.N; i++ {
-					b.StartTimer()
+				for b.Loop() {
 					resp := graphql.Do(graphql.Params{
 						Schema:         schema,
 						RequestString:  tc.query,
@@ -175,6 +172,7 @@ func BenchmarkGraphQL(b *testing.B) {
 					spans := mt.FinishedSpans()
 					require.Len(b, spans, 6)
 					mt.Reset()
+					b.StartTimer()
 				}
 			})
 		}

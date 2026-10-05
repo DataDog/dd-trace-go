@@ -39,6 +39,26 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						},
 					},
 				},
+				// Nil *customCtx arguments fall back to context.TODO(), but GLS
+				// propagates the parent span, so these appear as children of test.root.
+				{
+					Tags: map[string]any{
+						"name": "spanWithNilNamedCtx",
+					},
+					Meta: map[string]string{
+						"function-name": "spanWithNilNamedCtx",
+						"nil.ctx":       "named",
+					},
+				},
+				{
+					Tags: map[string]any{
+						"name": "spanWithNilOtherCtx",
+					},
+					Meta: map[string]string{
+						"function-name": "spanWithNilOtherCtx",
+						"nil.ctx":       "other",
+					},
+				},
 			},
 		},
 	}

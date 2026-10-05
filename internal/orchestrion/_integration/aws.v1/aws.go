@@ -13,13 +13,14 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -35,8 +36,8 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 
 	tc.cfg = &aws.Config{
 		Credentials: credentials.NewStaticCredentials("NOTANACCESSKEY", "NOTASECRETKEY", ""),
-		Endpoint:    aws.String(fmt.Sprintf("http://%s:%s", host, port)),
-		Region:      aws.String("test-region-1337"),
+		Endpoint:    new(fmt.Sprintf("http://%s:%s", host, port)),
+		Region:      new("test-region-1337"),
 	}
 }
 

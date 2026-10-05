@@ -10,6 +10,7 @@ import (
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
@@ -31,8 +32,23 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.Component, internal.ComponentName))
 	instr.Logger().Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
+
+	// wrap the provided ServeMux, if any, otherwise create a new one
+	mux := cfg.Mux
+	if mux == nil {
+		mux = http.NewServeMux()
+	} else if internal.Instrumentation.AppSecEnabled() {
+		// Routes registered directly on a caller-provided *http.ServeMux (e.g. before it
+		// was passed to WithServeMux) never go through this package's Handle/HandleFunc,
+		// so they never call httpsec.RouteMatched: the WAF never sees the resolved path
+		// parameters for those routes, and can't block on rules that key off of them.
+		instr.Logger().Warn("contrib/net/http: WithServeMux was used while AppSec is enabled; " +
+			"path-parameter WAF rules only apply to routes registered via ServeMux.Handle or " +
+			"ServeMux.HandleFunc, not to routes already registered on the wrapped *http.ServeMux")
+	}
+
 	return &ServeMux{
-		ServeMux: http.NewServeMux(),
+		ServeMux: mux,
 		cfg:      cfg,
 	}
 }
@@ -82,8 +98,9 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
 	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
-		Framework:     "net/http",
 		Service:       mux.cfg.ServiceName,
+		ServiceSource: mux.cfg.ServiceSource,
+		Framework:     "net/http",
 		Resource:      resource,
 		SpanOpts:      so,
 		Route:         route,

@@ -10,7 +10,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -112,7 +111,7 @@ func BenchmarkDelta(b *testing.B) {
 						b.SetBytes(int64(len(before)))
 						b.ReportAllocs()
 
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							deltaFn := impl.Func()
 							if err := deltaFn(before, io.Discard); err != nil {
 								b.Fatal(err)
@@ -132,7 +131,7 @@ func BenchmarkDelta(b *testing.B) {
 						}
 
 						b.ResetTimer()
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							if err := deltaFn(after, ioutil.Discard); err != nil {
 								b.Fatal(err)
 							}
@@ -196,7 +195,7 @@ func BenchmarkMakeGolden(b *testing.B) {
 			}
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				psink = makeGolden(b, before, after,
 					vt("alloc_objects", "count"), vt("alloc_space", "bytes"))
 			}
@@ -705,7 +704,7 @@ func TestRepeatedHeapProfile(t *testing.T) {
 	}
 	for i := 0; i < iters; i++ {
 		// Create a bunch of new allocations so there's something to diff.
-		for j := 0; j < 200; j++ {
+		for range 200 {
 			left(10)
 		}
 		after := readProfile("heap")
@@ -731,8 +730,8 @@ func TestRepeatedHeapProfile(t *testing.T) {
 			t.Errorf("got: %v", delta)
 			t.Errorf("want: %v", golden)
 			now := time.Now().Format(time.RFC3339)
-			os.WriteFile(fmt.Sprintf("failure-before-%s", now), before, 0660)
-			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
+			os.WriteFile("failure-before-"+now, before, 0660)
+			os.WriteFile("failure-after-"+now, after, 0660)
 		}
 		before = after
 	}
@@ -847,7 +846,7 @@ func TestDuplicateSample(t *testing.T) {
 
 	err = dc.Delta(a, io.Discard)
 	require.NoError(t, err)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		buf := new(bytes.Buffer)
 		err = dc.Delta(a, buf)
 		require.NoError(t, err)

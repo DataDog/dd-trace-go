@@ -10,10 +10,11 @@ import (
 
 	buntdbtrace "github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func buntDBGenSpans() harness.GenSpansFn {
@@ -46,6 +47,10 @@ var tidwallBuntDB = harness.TestCase{
 		Defaults:        []string{"buntdb"},
 		DDService:       []string{"buntdb"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageTidwallBuntDB)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

@@ -19,6 +19,7 @@ import (
 
 	graphqltrace "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -30,6 +31,10 @@ var graphqlGo = harness.TestCase{
 		Defaults:        harness.RepeatString("graphql.server", 5),
 		DDService:       harness.RepeatString(harness.TestDDService, 5),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 5),
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageGraphQLGoGraphQL), 5),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 5),
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)

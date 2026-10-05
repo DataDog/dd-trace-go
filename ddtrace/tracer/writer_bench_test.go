@@ -10,8 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func BenchmarkAgentTraceWriterAdd(b *testing.B) {
@@ -31,7 +32,7 @@ func BenchmarkAgentTraceWriterAdd(b *testing.B) {
 			cfg, err := newTestConfig()
 			require.NoError(b, err)
 
-			writer := newAgentTraceWriter(cfg, nil, &statsd)
+			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &statsd)
 
 			trace := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
@@ -41,7 +42,7 @@ func BenchmarkAgentTraceWriterAdd(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				writer.add(trace)
 			}
 		})
@@ -53,13 +54,13 @@ func BenchmarkAgentTraceWriterFlush(b *testing.B) {
 	cfg, err := newTestConfig()
 	require.NoError(b, err)
 
-	writer := newAgentTraceWriter(cfg, nil, &statsd)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &statsd)
 	trace := []*Span{newBasicSpan("flush-test")}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		writer.add(trace)
 		writer.flush()
 		writer.wg.Wait()
@@ -75,21 +76,19 @@ func BenchmarkAgentTraceWriterConcurrent(b *testing.B) {
 			cfg, err := newTestConfig()
 			require.NoError(b, err)
 
-			writer := newAgentTraceWriter(cfg, nil, &statsd)
+			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &statsd)
 			trace := []*Span{newBasicSpan("concurrent-test")}
 
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						writer.add(trace)
-					}()
+					})
 				}
 
 				wg.Wait()
@@ -103,9 +102,9 @@ func BenchmarkAgentTraceWriterStats(b *testing.B) {
 	cfg, err := newTestConfig()
 	require.NoError(b, err)
 
-	writer := newAgentTraceWriter(cfg, nil, &statsd)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &statsd)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		trace := []*Span{newBasicSpan("stats-test")}
 		writer.add(trace)
 	}
@@ -113,7 +112,7 @@ func BenchmarkAgentTraceWriterStats(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		writer.mu.Lock()
 		stats := writer.payload.stats()
 		writer.mu.Unlock()

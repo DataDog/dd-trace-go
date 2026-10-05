@@ -6,7 +6,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -17,10 +16,35 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestIsAPIKeyValid(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{name: "empty", key: "", want: false},
+		{name: "too short", key: "1234567890123456789012345678901", want: false},
+		{name: "too long", key: "123456789012345678901234567890123", want: false},
+		{name: "numeric", key: "12345678901234567890123456789012", want: true},
+		{name: "lowercase", key: "abcdefabcdabcdefabcdefabcdefabcd", want: true},
+		{name: "alphanumeric", key: "abcdefabcdabcdef7890abcdef789012", want: true},
+		{name: "uppercase", key: "abcdefabcdabcdef7890Abcdef789012", want: false},
+		{name: "symbol", key: "abcdefabcdabcdef7890@bcdef789012", want: false},
+		{name: "non-ASCII over length", key: "abcdefabcdabcdef7890ábcdef789012", want: false},
+		{name: "non-ASCII exact byte length", key: "abcdefabcdabcdef7890ábcdef78901", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsAPIKeyValid(tt.key))
+		})
+	}
+}
+
 func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Iter(func(_ string, _ string) {})
 	}
 }
@@ -30,7 +54,7 @@ func TestLockMapThrash(t *testing.T) {
 	t.Cleanup(cancel)
 	lm := NewLockMap(map[string]string{})
 	wg.Add(6)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		// Readers
 		go func() {
 			defer wg.Done()
@@ -89,11 +113,9 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 		for range 10 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -111,7 +133,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			// We increment the first key w 75% probability and the rest
 			// increment the rest of the keys.
 			// This is to benchmark the expected case of most spans starting
@@ -134,7 +156,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			cm.Inc("key-" + strconv.Itoa(i))
 		}
 
@@ -150,12 +172,10 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
 
 		wg := sync.WaitGroup{}
-		for range b.N {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for b.Loop() {
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -170,7 +190,7 @@ func TestToFloat64(t *testing.T) {
 	)
 
 	for i, tt := range [...]struct {
-		value interface{}
+		value any
 		f     float64
 		ok    bool
 	}{
@@ -195,7 +215,7 @@ func TestToFloat64(t *testing.T) {
 		18: {intLowerLimit + 1, float64(intLowerLimit + 1), true},
 		19: {-1024, -1024.0, true},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			f, ok := ToFloat64(tt.value)
 			if ok != tt.ok {
 				t.Fatalf("expected ok: %t", tt.ok)

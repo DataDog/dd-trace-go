@@ -284,7 +284,7 @@ func BenchmarkHandler(b *testing.B) {
 	logger = logger.With("attr1", "val1").WithGroup("group1").With("attr2", "val2").WithGroup("group3").With("attr3", "val3")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		logger.InfoContext(ctx, "some message")
 	}
 }

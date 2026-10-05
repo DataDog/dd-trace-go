@@ -1,5 +1,5 @@
 issuer: https://token.actions.githubusercontent.com
-subject: repo:DataDog/dd-trace-go:issues
+subject: repo:DataDog/dd-trace-go:ref:refs/heads/main
 claim_pattern:
   event_name: issues
   repository: DataDog/dd-trace-go

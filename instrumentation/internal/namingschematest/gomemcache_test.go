@@ -19,6 +19,7 @@ import (
 
 	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -52,6 +53,10 @@ var gomemcache = harness.TestCase{
 		Defaults:        []string{"memcached"},
 		DDService:       []string{"memcached"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageBradfitzGoMemcache)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

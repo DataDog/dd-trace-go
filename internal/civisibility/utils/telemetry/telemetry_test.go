@@ -67,3 +67,36 @@ func TestRemoveEmptyStrings(t *testing.T) {
 		})
 	}
 }
+
+func TestGetProviderTestSessionTypeFromProviderString(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		want     TestSessionType
+	}{
+		{
+			name:     "Bazel provider",
+			provider: "bazel",
+			want:     BazelTestSessionType,
+		},
+		{
+			name:     "Existing provider",
+			provider: "github",
+			want:     GithubActionsTestSessionType,
+		},
+		{
+			name:     "Unknown provider",
+			provider: "something-else",
+			want:     UnsupportedTestSessionType,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := getProviderTestSessionTypeFromProviderString(tc.provider)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("getProviderTestSessionTypeFromProviderString(%q) = %v; expected %v", tc.provider, got, tc.want)
+			}
+		})
+	}
+}

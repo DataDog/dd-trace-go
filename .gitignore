@@ -27,5 +27,15 @@ static-analysis.datadog.yml
 .vscode/settings.json
 coverage-*.txt
 
-# Cursor
+# otelc build workspace (otelc writes matched rules and post-instrumentation
+# sources here; see otelc go build / otelc setup)
+.otelc-build/
+
+# Editors and Agents
+/.codex/
 /.cursor
+/.vscode
+/.claude/*
+!/.claude/commands/
+!/.claude/settings.json
+!/.claude/skills/

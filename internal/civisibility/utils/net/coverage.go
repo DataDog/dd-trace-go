@@ -6,12 +6,16 @@
 package net
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -31,11 +35,39 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 	return c.SendCoveragePayloadWithFormat(ciTestCovPayload, FormatMessagePack)
 }
 
-// SendCoveragePayload sends a code coverage payload to the backend.
+// SendCoveragePayloadWithFormat sends coverage as msgpack or JSON, either as an HTTP multipart upload or as a Bazel payload file.
 func (c *client) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error {
 	if ciTestCovPayload == nil {
 		return errors.New("coverage payload is nil")
 	}
+
+	if bazel.IsPayloadFilesModeEnabled() {
+		log.Debug("civisibility.coverage: payload transport mode is file [format:%s]", format)
+		payloadBytes, err := io.ReadAll(ciTestCovPayload)
+		if err != nil {
+			return fmt.Errorf("failed to read coverage payload: %w", err)
+		}
+
+		switch format {
+		case FormatMessagePack:
+			jsonPayload, err := bazel.MsgpackToJSON(payloadBytes)
+			if err != nil {
+				return fmt.Errorf("failed to convert coverage payload to json: %w", err)
+			}
+			return bazel.WritePayloadFile(bazel.PayloadKindCoverage, jsonPayload)
+		case FormatJSON:
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, payloadBytes); err != nil {
+				return fmt.Errorf("invalid coverage json payload: %w", err)
+			}
+			return bazel.WritePayloadFile(bazel.PayloadKindCoverage, compact.Bytes())
+		default:
+			return fmt.Errorf("unsupported format: %s", format)
+		}
+	}
+
+	log.Debug("civisibility.coverage: payload transport mode is http [format:%s url:%s]", format, c.getURLPath(coverageURLPath))
+
 	// Create a dummy event to send with the coverage payload.
 	dummyEvent := FormFile{
 		FieldName:   "event",

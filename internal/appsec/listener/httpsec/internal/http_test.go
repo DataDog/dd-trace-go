@@ -12,6 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -20,9 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 )
 
 var (
@@ -46,13 +48,17 @@ func TestFeature_headerCollection(t *testing.T) {
 	irrelevantRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, irrelevantRules)
 	require.NoError(t, err)
 
+	requestHeaders := map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}}
+	_, clientIP := clientip.Resolve(requestHeaders, true, "1.2.3.4")
+
 	var (
 		request = emitter.HandlerOperationArgs{
 			Method:     http.MethodGet,
 			RequestURI: "https://datadoghq.com/",
 			Host:       "datadoghq.com",
 			RemoteAddr: "1.2.3.4",
-			Headers:    map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}},
+			ClientIP:   clientIP,
+			Headers:    requestHeaders,
 		}
 		response = emitter.HandlerOperationRes{
 			Headers: map[string][]string{"Content-Type": {"application/json"}, "Content-Length": {"1337"}},
@@ -122,6 +128,11 @@ func TestFeature_headerCollection(t *testing.T) {
 			span := mt.StartSpan("test")
 			req, _, _ := emitter.StartOperation(ctx, request, span)
 			assert.Equal(t, tc.ExpectedBlocked, blocked)
+			if blocked {
+				// Stand in for the integration applying the blocking response,
+				// which is what marks the request as blocked.
+				req.ContextOperation.SetRequestBlocked()
+			}
 			req.Finish(response)
 			span.Finish()
 

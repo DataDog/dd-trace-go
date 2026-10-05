@@ -25,8 +25,6 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 // LogError is the function used to log errors in the dyngo package.
@@ -96,10 +94,6 @@ type operation struct {
 
 	disabled bool
 	mu       sync.RWMutex
-
-	// inContext is used to determine if RegisterOperation was called to put the Operation in the context tree.
-	// If so we need to remove it from the context tree when the Operation is finished.
-	inContext bool
 }
 
 func (o *operation) Parent() Operation {
@@ -152,11 +146,12 @@ func NewOperation(parent Operation) Operation {
 
 // FromContext looks into the given context (or the GLS if orchestrion is enabled) for a parent Operation and returns it.
 func FromContext(ctx context.Context) (Operation, bool) {
-	ctx = orchestrion.WrapContext(ctx)
 	if ctx == nil {
 		return nil, false
 	}
-
+	// Plain context lookup. Orchestrion builds weave a GLS fallback here (it
+	// wraps ctx so this read also consults the goroutine-local operation when
+	// the explicit chain has none — see internal/orchestrion/gls.orchestrion.yml).
 	op, ok := ctx.Value(contextKey{}).(Operation)
 	return op, ok
 }
@@ -200,23 +195,22 @@ func StartAndRegisterOperation[O Operation, E ArgOf[O]](ctx context.Context, op 
 // RegisterOperation registers the operation in the context tree. All operations that plan to have children operations
 // should call this function to ensure the operation is properly linked in the context tree.
 func RegisterOperation(ctx context.Context, op Operation) context.Context {
-	op.unwrap().inContext = true
-	return orchestrion.CtxWithValue(ctx, contextKey{}, op)
+	// Plain context value. Orchestrion builds weave a GLS push (and the matching
+	// pop into FinishOperation) here so the operation is reachable across
+	// un-instrumented call sites; see internal/orchestrion/gls.orchestrion.yml.
+	// Without orchestrion this is a bare context.WithValue.
+	return context.WithValue(ctx, contextKey{}, op)
 }
 
 // FinishOperation finishes the operation along with its results and emits a
 // finish event with the operation results.
-// The operation is then disabled and its event listeners removed.
+// The operation is then disabled and its listeners removed.
 func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	o := op.unwrap()
 	defer o.disable() // This will need the RLock below to be released...
 
 	o.mu.RLock()
 	defer o.mu.RUnlock() // Deferred and stacked on top of the previously deferred call to o.disable()
-
-	if o.inContext {
-		orchestrion.GLSPopValue(contextKey{})
-	}
 
 	if o.disabled {
 		return
@@ -228,7 +222,7 @@ func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	}
 }
 
-// Disable the operation and remove all its event listeners.
+// Disable the operation and remove all its listeners.
 func (o *operation) disable() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -239,6 +233,7 @@ func (o *operation) disable() {
 
 	o.disabled = true
 	o.eventRegister.clear()
+	o.dataBroadcaster.clear()
 }
 
 // On registers and event listener that will be called when the operation
@@ -362,6 +357,12 @@ func (r *eventRegister) clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.listeners = nil
+}
+
+func (b *dataBroadcaster) clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = nil
 }
 
 func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {

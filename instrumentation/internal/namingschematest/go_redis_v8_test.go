@@ -15,6 +15,7 @@ import (
 
 	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -39,6 +40,10 @@ var goRedisV8Test = harness.TestCase{
 		Defaults:        []string{"redis.client"},
 		DDService:       []string{"redis.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGoRedisV8)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

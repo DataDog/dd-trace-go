@@ -66,6 +66,7 @@ Targets:
   help                 Show this help message
   all                  Run complete build pipeline (tools, generate, lint, test)
   tools-install        Install development tools
+  tools-install/checkmake Install checkmake binary for Makefile linting
   clean                Clean build artifacts
   clean-all            Clean everything including tools and temporary files
   generate             Run code generation
@@ -73,15 +74,27 @@ Targets:
   lint/go              Run Go linting checks
   lint/go/fix          Fix linting issues automatically
   lint/shell           Run shell script linting checks
+  lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
+  lint/action          Lint GitHub Actions workflows
+  lint/errlog          Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
   format               Format code
+  format/go            Format Go code
   format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
+  test/unit            Run unit tests
   test/appsec          Run tests with AppSec enabled
   test/contrib         Run contrib package tests
   test/integration     Run integration tests
+  test-deadlock        Run tests with deadlock detection
+  test-debug-deadlock  Run tests with debug and deadlock detection
   fix-modules          Fix module dependencies and consistency
+  fix/go               Apply go fix modernizations to Go code
+  fix/go/diff          Preview go fix modernizations (dry-run)
+  apidiff              Run semantic API diff for ddtrace/tracer against main
+  apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
+  config-audit         Report which DD_* configs are migrated to internal/config
 ```
 
 **Direct Script Usage**:

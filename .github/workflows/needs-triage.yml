@@ -17,14 +17,14 @@ jobs:
     if: github.event_name == 'issues'
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      id-token: write
     steps:
-      - name: Generate a GitHub token
+      - name: Get GitHub token (DataDog/dd-trace-go)
         id: generate-token
-        uses: actions/create-github-app-token@a8d616148505b5069dccd32f177bb87d7f39123b # v2.1.1
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
         with:
-          app-id: ${{ vars.DD_K9_LIBRARY_GO_APP_ID }}
-          private-key: ${{ secrets.DD_K9_LIBRARY_GO_APP_PRIVATE_KEY }}
+          scope: DataDog/dd-trace-go
+          policy: self.github.needs-triage.issues
       - name: Create needs-triage label if needed
         run: |-
           gh label create                                                       \
@@ -81,10 +81,12 @@ jobs:
             --json='number,title,body,createdAt'                                \
             | tee issues.json
 
-          echo "count=$(jq -r '. | length' < issues.json)" >> "${GITHUB_OUTPUT}"
-          echo "json<<EOJSON"                              >> "${GITHUB_OUTPUT}"
-          cat issues.json                                  >> "${GITHUB_OUTPUT}"
-          echo "EOJSON"                                    >> "${GITHUB_OUTPUT}"
+          {
+            echo "count=$(jq -r '. | length' < issues.json)"
+            echo "json<<EOJSON"
+            cat issues.json
+            echo "EOJSON"
+          } >> "${GITHUB_OUTPUT}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -102,7 +104,7 @@ jobs:
 
     steps:
       - name: Notify about ${{ matrix.number }}
-        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a # v2.1.1
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook: ${{ secrets.NEEDS_TRIAGE_SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

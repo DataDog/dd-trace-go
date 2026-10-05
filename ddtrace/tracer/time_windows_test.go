@@ -7,29 +7,45 @@ package tracer
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
+	"time"
 )
 
+func init() {
+	// Override now and nowTime to use time.Now() in tests. Production code
+	// calls GetSystemTimePreciseAsFileTime() directly for higher precision, but
+	// that syscall bypasses testing/synctest's fake clock. time.Now() is
+	// intercepted by synctest, so this makes the fake clock work correctly on
+	// Windows without changing production behavior.
+	now = func() int64 { return time.Now().UnixNano() }
+	nowTime = func() time.Time { return time.Now() }
+}
+
 func BenchmarkNormalTimeNow(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		lowPrecisionNow()
 	}
 }
 
 func BenchmarkHighPrecisionTime(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		highPrecisionNow()
 	}
 }
 
 func TestHighPrecisionTimerIsMoreAccurate(t *testing.T) {
-	startLow := lowPrecisionNow()
-	startHigh := highPrecisionNow()
-	stopHigh := highPrecisionNow()
-	for stopHigh == startHigh {
-		stopHigh = highPrecisionNow()
+	// A busy Windows CI goroutine can be preempted between the two timer samples,
+	// making both advance together. Retry until we get an uninterrupted measurement.
+	const maxAttempts = 20
+	for range maxAttempts {
+		startLow := lowPrecisionNow()
+		startHigh := highPrecisionNow()
+		stopHigh := startHigh
+		for stopHigh == startHigh {
+			stopHigh = highPrecisionNow()
+		}
+		if stopLow := lowPrecisionNow(); stopLow == startLow {
+			return // highPrecisionNow advanced within a single lowPrecisionNow tick
+		}
 	}
-	stopLow := lowPrecisionNow()
-	assert.Equal(t, int64(0), stopLow-startLow)
+	t.Errorf("highPrecisionNow never advanced within a single lowPrecisionNow tick after %d attempts", maxAttempts)
 }

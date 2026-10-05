@@ -28,8 +28,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"golang.org/x/mod/modfile"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const outputPath = "./contrib/supported_integrations.md"

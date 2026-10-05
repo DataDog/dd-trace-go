@@ -16,6 +16,7 @@ func tags() map[string]string {
 func main() {
 	_ = tracer.ServiceRule("test-service", 1.0)                                                // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.NameRule("http.request", 1.0)                                                   // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.RateRule(0.5)                                                                   // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.NameServiceRule("http.request", "test-service", 1.0)                            // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.NameServiceRule("http.*", "test-*", 1.0)                                        // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.ServiceRule("other-service-1", 0.0)                                             // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`

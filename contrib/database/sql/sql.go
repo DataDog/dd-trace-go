@@ -25,6 +25,7 @@ import (
 	"time"
 
 	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
@@ -168,6 +169,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,
+		spanCfg:    newSpanConfig(t.cfg, t.driverName),
 	}
 	if dsn != "" {
 		tp.meta, _ = sqlinternal.ParseDSN(t.driverName, dsn)

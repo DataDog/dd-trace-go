@@ -17,21 +17,19 @@ import (
 	pappsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
-	e := echo.New()
-	e.Use(Middleware())
+	e := Wrap(echo.New())
 
 	// Add some testing routes
 	e.POST("/path0.0/:myPathParam0/path0.1/:myPathParam1/path0.2/:myPathParam2/path0.3/*myPathParam3", func(c echo.Context) error {
@@ -238,9 +236,6 @@ func TestAppSec(t *testing.T) {
 // scenarios.
 func TestControlFlow(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
@@ -548,13 +543,9 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
-	e := echo.New()
-	e.Use(Middleware())
+	e := Wrap(echo.New())
 	e.Any("/ip", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello World!\n")
 	})
@@ -656,4 +647,59 @@ func TestBlocking(t *testing.T) {
 
 		})
 	}
+}
+
+func TestOnAddRouteHandler(t *testing.T) {
+	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=false", func(t *testing.T) {
+		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "false")
+
+		e := Wrap(echo.New())
+
+		telemetry := testutils.StartTelemetryRecorder(t)
+
+		e.Any("/ping", func(c echo.Context) error { return errors.ErrUnsupported })
+		e.Group("/test").GET("/:id", func(c echo.Context) error { return errors.ErrUnsupported })
+
+		assert.Nil(t, telemetry.AppEndpoints)
+	})
+
+	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=true", func(t *testing.T) {
+		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "true") // Default value
+
+		e := Wrap(echo.New())
+
+		telemetry := testutils.StartTelemetryRecorder(t)
+
+		e.Any("/ping", func(c echo.Context) error { return errors.ErrUnsupported })
+		e.Group("/test").GET("/:id", func(c echo.Context) error { return errors.ErrUnsupported })
+
+		expectedRoutes := make(map[string][]instrumentation.AppEndpointAttributes, 1)
+		for _, method := range []string{
+			http.MethodConnect,
+			http.MethodDelete,
+			http.MethodGet,
+			http.MethodHead,
+			http.MethodOptions,
+			http.MethodPatch,
+			http.MethodPost,
+			"PROPFIND",
+			http.MethodPut,
+			http.MethodTrace,
+			"REPORT",
+		} {
+			expectedRoutes[method+" /ping"] = []instrumentation.AppEndpointAttributes{{
+				Kind:     "REST",
+				Method:   method,
+				Path:     "/ping",
+				Metadata: map[string]any{"component": instrumentation.PackageLabstackEchoV4},
+			}}
+		}
+		expectedRoutes["GET /test/:id"] = []instrumentation.AppEndpointAttributes{{
+			Kind:     "REST",
+			Method:   "GET",
+			Path:     "/test/:id",
+			Metadata: map[string]any{"component": instrumentation.PackageLabstackEchoV4},
+		}}
+		assert.Equal(t, map[string]map[string][]instrumentation.AppEndpointAttributes{"http.request": expectedRoutes}, telemetry.AppEndpoints)
+	})
 }

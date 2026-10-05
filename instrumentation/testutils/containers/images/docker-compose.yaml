@@ -1,0 +1,49 @@
+# Image catalog for Testcontainers-based tests (this package and the
+# orchestrion integration suite). Never `up`'d as a stack — the only field
+# that matters per service is `image:`. It exists so the `docker-compose`
+# Dependabot ecosystem can keep every digest fresh; Go code reads the image
+# strings via the embedded-and-parsed Image() helper in images.go, and
+# .github/workflows/orchestrion.yml's pre-pull step reads the same file.
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest@sha256:d89f8fcc6b1a39cb35976c248ed42a28c66ae00dc043099210f5571e42648ab4
+
+  postgres:
+    image: docker.io/postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+
+  vault:
+    image: vault:1.7.3@sha256:55d8cb0a995c0e4a4426b9f00c8944583700edb35917d2d950ed9b2379e61830
+
+  cassandra:
+    image: cassandra:4.1@sha256:d25e8ee78d648fade002d0d176b7e8c953c69164b9f316ccbccf62f524c9dfbf
+
+  elasticsearch6:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.8.23@sha256:ca5dac2352e09263e55cccac445d69a0d2eec9c8c26a4c95c3b1430de1f427f2
+
+  elasticsearch7:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.24@sha256:70a20649aef54770cc31e59fd91c79cbc00cb6b9ea6c92015bad995b965f8f4c
+
+  elasticsearch8:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3@sha256:01c1732062b4a846c5ca687b0094b89bad0bfed00c6d71626db32fb8f3131a78
+
+  redis:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+
+  valkey:
+    image: valkey/valkey:8-alpine@sha256:a038175878d66b9d274fbf8be73c0305e93798b83917647f167e18cef3c71eec
+
+  # Intentionally kept in lockstep with the same-named entry in
+  # .github/testservices/docker-compose.yaml (unlike the other entries here,
+  # which pin different versions for different test purposes). Dependabot
+  # scans both files independently, so a digest bump to one won't
+  # automatically update the other — keep them in sync manually.
+  kafka:
+    image: confluentinc/confluent-local:7.5.0@sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd
+
+  mongo:
+    image: mongo:8@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3
+
+  # See the "kept in lockstep" note on kafka above — applies here too.
+  aerospike:
+    image: aerospike:ce-7.2.0.6@sha256:79c30951edab8878b14b650f32db416106a21d458be994344e488756fe8b651f

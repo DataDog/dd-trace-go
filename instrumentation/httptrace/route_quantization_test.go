@@ -196,7 +196,7 @@ func BenchmarkQuantization(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		runtime.KeepAlive(QuantizeURL(path))
 	}
 }
@@ -207,7 +207,7 @@ func BenchmarkQuantizationHappyPath(b *testing.B) {
 	path := "/foo/bar"
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		runtime.KeepAlive(quantizer.Quantize(path))
 	}
 }

@@ -11,11 +11,12 @@ import (
 
 	elastictrace "github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/olivere/elastic.v5"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func olivereElasticV5GenSpans() harness.GenSpansFn {
@@ -56,6 +57,10 @@ var olivereElasticV5 = harness.TestCase{
 		Defaults:        []string{"elastic.client"},
 		DDService:       []string{"elastic.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageOlivereElasticV5)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

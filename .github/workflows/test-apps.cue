@@ -50,12 +50,12 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
-        key: "DD_TEST_APP_API_KEY",
+        policy: "dd-trace-go",
     },
     {
         name: "staging",
         site: "datad0g.com",
-        key: "DD_TEST_AND_DEMO_API_KEY",
+        policy: "dd-trace-go-staging",
     },
 ]
 
@@ -111,12 +111,16 @@ on: {
 }
 
 env: {
+  // Fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410,
+  // which is all a comma-separated GOPROXY falls through on.
+  GOPROXY: "https://proxy.golang.org|direct",
   DD_ENV: "github",
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
 
 permissions: {
     contents: "read",
+    "id-token": "write",
 }
 
 jobs: {
@@ -133,20 +137,31 @@ jobs: {
                 steps: [
                     {
                         name: "Checkout Code",
-                        uses: "actions/checkout@v3",
-                        with: {ref: "${{ inputs.ref || github.ref }}"},
+                        uses: "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", // v7.0.1
+                        with: {
+                        "persist-credentials": false,
+                        ref:                   "${{ inputs.ref || github.ref }}",
+                    },
+                    },
+                    {
+                        name: "Get Datadog credentials",
+                        id: "dd-sts",
+                        uses: "DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2",
+                        with: {
+                            policy: "\(env.policy)",
+                        },
                     },
                     {
                         name: "Start Agent",
-                        uses: "datadog/agent-github-action@v1.3",
+                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a", // v1.3.1
                         with: {
-                            api_key: "${{ secrets['\(env.key)'] }}",
+                            api_key: "${{ steps.dd-sts.outputs.api_key }}",
                             datadog_site: "\(env.site)",
                         },
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@v3",
+                        uses: "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", // v7.0.0
                         with: {
                             "go-version": "stable",
                             "check-latest": true,

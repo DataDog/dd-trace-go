@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -110,6 +111,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Framework:     "github.com/gorilla/mux",
 		Service:       r.config.serviceName,
+		ServiceSource: r.config.serviceSource,
 		Resource:      resource,
 		FinishOpts:    r.config.finishOpts,
 		SpanOpts:      spanopts,

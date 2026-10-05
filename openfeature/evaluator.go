@@ -11,12 +11,14 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	of "github.com/open-feature/go-sdk/openfeature"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	of "github.com/open-feature/go-sdk/openfeature"
 )
 
 // evaluationResult contains the result of a flag evaluation.
@@ -29,11 +31,36 @@ type evaluationResult struct {
 	Reason of.Reason
 	// Error contains any error that occurred during evaluation
 	Error error
+	// Metadata contains additional evaluation metadata for hooks
+	Metadata map[string]any
 }
 
-// evaluateFlag evaluates a feature flag with the given context.
+const (
+	metadataAllocationKey    = "dd.allocation.key"
+	metadataDoLogKey         = "__dd_do_log"
+	metadataSplitSerialIDKey = "__dd_split_serial_id"
+	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time. The
+	// __dd_ prefix marks it as internal-only (never serialized to the wire); matches Java's
+	// DDEvaluator.METADATA_EVAL_TIMESTAMP_MS.
+	metadataEvalTimeKey = "__dd_eval_timestamp_ms"
+	// metadataObserveFullEvaluationDataKey carries the environment's consent snapshot, stamped
+	// in DatadogProvider.evaluate. Travels with the evaluation so a later Remote Config update
+	// cannot retroactively change the policy at flush time. Unprefixed snake_case — this is the
+	// cross-SDK contract key (confirmed in the PII RFC and the Java pilot); every SDK stamps and
+	// reads consent under this exact key so the same identifier appears across SDK sources.
+	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
+)
+
+// evaluateFlag evaluates a feature flag with the given context. The caller supplies the
+// evaluation time (now) so a single timestamp is shared between the allocation time-window
+// checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
+// second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
+	if flag == nil {
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
 	// Check if flag is enabled
 	if !flag.Enabled {
 		return evaluationResult{
@@ -42,10 +69,16 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 		}
 	}
 
-	// Evaluate allocations in order - first match wins
-	now := time.Now()
+	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
-		split, matched := evaluateAllocation(allocation, context, now)
+		split, matched, err := evaluateAllocation(allocation, context, now)
+		if err != nil {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  err,
+			}
+		}
 		if matched && split != nil {
 			// Find the variant for this split
 			variant, ok := flag.Variations[split.VariationKey]
@@ -62,14 +95,48 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				return evaluationResult{
 					Value:  defaultValue,
 					Reason: of.ErrorReason,
-					Error:  fmt.Errorf("variant type mismatch: %w", err),
+					Error:  fmt.Errorf("%w: variant type mismatch: %v", errParseError, err),
 				}
+			}
+
+			// Three keys set here plus two stamped by DatadogProvider.evaluate.
+			metadata := make(map[string]any, 5)
+			metadata[metadataAllocationKey] = allocation.Key
+
+			// Get doLog value (defaults to true if not specified)
+			doLog := true
+			if allocation.DoLog != nil {
+				doLog = *allocation.DoLog
+			}
+			metadata[metadataDoLogKey] = doLog
+
+			if split.SerialID != nil {
+				metadata[metadataSplitSerialIDKey] = *split.SerialID
+			}
+
+			// Determine reason:
+			//   rules matched                         → TARGETING_MATCH
+			//   temporal allocation with one split   → DEFAULT
+			//   no rules, shards used                 → SPLIT
+			//   no rules, no shards                   → STATIC
+			var reason of.Reason
+			switch {
+			case len(allocation.Rules) > 0:
+				reason = of.TargetingMatchReason
+			case (allocation.StartAt != nil || allocation.EndAt != nil) &&
+				len(allocation.Splits) == 1 && len(split.Shards) == 0:
+				reason = of.DefaultReason
+			case len(split.Shards) > 0:
+				reason = of.SplitReason
+			default:
+				reason = of.StaticReason
 			}
 
 			return evaluationResult{
 				Value:      variant.Value,
 				VariantKey: variant.Key,
-				Reason:     of.TargetingMatchReason,
+				Reason:     reason,
+				Metadata:   metadata,
 			}
 		}
 	}
@@ -81,14 +148,41 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 	}
 }
 
+// evaluateConfiguredFlag evaluates a flag from a parsed configuration. Invalid
+// flags return PARSE_ERROR. Missing flags return FLAG_NOT_FOUND.
+func evaluateConfiguredFlag(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+) evaluationResult {
+	flag, exists := config.Flags[flagKey]
+	if exists {
+		return evaluateFlag(flag, defaultValue, context, now)
+	}
+	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: of.ErrorReason,
+			Error:  fmt.Errorf("%w: invalid configuration for flag %q: %w", errParseError, flagKey, configErr),
+		}
+	}
+	return evaluationResult{
+		Value:  defaultValue,
+		Reason: of.ErrorReason,
+		Error:  fmt.Errorf("%w: %q", errFlagNotFound, flagKey),
+	}
+}
+
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
-func evaluateAllocation(allocation *allocation, context map[string]any, currentTime time.Time) (*split, bool) {
+func evaluateAllocation(allocation *allocation, context map[string]any, currentTime time.Time) (*split, bool, error) {
 	// Check time window constraints
 	if allocation.StartAt != nil && currentTime.Before(*allocation.StartAt) {
-		return nil, false
+		return nil, false, nil
 	}
 	if allocation.EndAt != nil && currentTime.After(*allocation.EndAt) {
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Check if any rule matches (OR logic between rules)
@@ -102,17 +196,21 @@ func evaluateAllocation(allocation *allocation, context map[string]any, currentT
 	}
 
 	if !ruleMatched {
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Evaluate splits to determine which variant
 	for _, split := range allocation.Splits {
-		if evaluateSplit(split, context) {
-			return split, true
+		matched, err := evaluateSplit(split, context)
+		if err != nil {
+			return nil, false, err
+		}
+		if matched {
+			return split, true, nil
 		}
 	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 // evaluateRule evaluates a rule by checking all conditions (AND logic).
@@ -163,6 +261,9 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		return !isOneOf(attributeValue, condition.Value)
 	case operatorGT, operatorGTE, operatorLT, operatorLTE:
 		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
+	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator)
 	default:
 		return false
 	}
@@ -181,7 +282,9 @@ func loadRegex(pattern string) (*regexp.Regexp, error) {
 	}
 
 	// Not in cache, compile it (we are probably in the remote config goroutine, so this is acceptable)
-	compiled, err := regexp.Compile(pattern)
+	// Go regular expressions are Unicode-aware by default and do not support
+	// the explicit (?u) mode accepted by some other SDK runtimes.
+	compiled, err := regexp.Compile(strings.TrimPrefix(pattern, "(?u)"))
 	if err != nil {
 		return nil, err
 	}
@@ -314,23 +417,61 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 	}
 }
 
+// evaluateSemverCondition evaluates semantic version comparison operators.
+func evaluateSemverCondition(attributeValue any, comparand *parsedSemver, operator conditionOperator) bool {
+	attribute, ok := attributeValue.(string)
+	if !ok {
+		return false
+	}
+	if comparand == nil {
+		return false
+	}
+
+	parsedAttribute, ok := parseSemver(attribute)
+	if !ok {
+		return false
+	}
+	ordering := compareSemver(parsedAttribute, *comparand)
+
+	switch operator {
+	case operatorSemverEQ:
+		return ordering == 0
+	case operatorSemverNEQ:
+		return ordering != 0
+	case operatorSemverLT:
+		return ordering < 0
+	case operatorSemverLTE:
+		return ordering <= 0
+	case operatorSemverGT:
+		return ordering > 0
+	case operatorSemverGTE:
+		return ordering >= 0
+	default:
+		return false
+	}
+}
+
 // evaluateSplit determines if a split matches by evaluating all its shards.
-func evaluateSplit(split *split, context map[string]any) bool {
+func evaluateSplit(split *split, context map[string]any) (bool, error) {
 	// All shards must match (AND logic)
 	for _, shard := range split.Shards {
-		if !evaluateShard(shard, context) {
-			return false
+		matched, err := evaluateShard(shard, context)
+		if err != nil {
+			return false, err
+		}
+		if !matched {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // evaluateShard evaluates a shard using consistent hashing.
-func evaluateShard(shard *shard, context map[string]any) bool {
+func evaluateShard(shard *shard, context map[string]any) (bool, error) {
 	// Get targeting key from context
 	targetingKey, ok := context[of.TargetingKey].(string)
 	if !ok {
-		return false
+		return false, errTargetingKeyMissing
 	}
 
 	// Compute shard index using MD5 hash (matching Eppo's implementation)
@@ -339,10 +480,10 @@ func evaluateShard(shard *shard, context map[string]any) bool {
 	// Check if shard index falls within any of the ranges
 	for _, shardRange := range shard.Ranges {
 		if shardIndex >= shardRange.Start && shardIndex < shardRange.End {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // computeShardIndex computes the shard index using MD5 hash.

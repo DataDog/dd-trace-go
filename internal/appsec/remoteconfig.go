@@ -8,13 +8,14 @@ package appsec
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/go-libddwaf/v5"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -22,7 +23,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
-	"github.com/DataDog/go-libddwaf/v4"
 )
 
 // onRCRulesUpdate is the RC callback called when security rules related RC updates are available
@@ -30,7 +30,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	statuses := make(map[string]state.ApplyStatus)
 
 	// If appsec was deactivated through RC, stop here
-	if !a.started {
+	if !a.started.Load() {
 		for _, pu := range updates {
 			for path := range pu {
 				// We are not acknowledging anything... since we are ignoring all these updates...
@@ -63,7 +63,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				cfg := UpdatedConfig{Product: product}
 				if err := json.Unmarshal(data, &cfg.Content); err != nil {
 					log.Error("appsec: unmarshaling remote config update for %s (%q): %s", product, path, err.Error())
-					statuses[product] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
+					statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 					continue
 				}
 				addOrUpdates[path] = cfg
@@ -136,7 +136,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if data, err := json.Marshal(errs); err == nil {
 					errMsg = string(data)
 				} else {
-					telemetrylog.Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
+					telemetrylog.With(
+						telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+						telemetry.WithStacktrace(),
+					).Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
 				}
 			}
 
@@ -150,7 +153,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	if len(a.cfg.WAFManager.ConfigPaths(`^(?:datadog/\d+|employee)/ASM_DD/.+`)) == 0 {
 		log.Debug("appsec: remote config: no ASM_DD config loaded; restoring default config if available")
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
-			telemetrylog.Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+				telemetry.WithStacktrace(),
+			).Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 	}
 
@@ -245,7 +251,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	// RC triggers activation of ASM; ASM is not started yet... Starting it!
-	if parsed.ASM.Enabled && !a.started {
+	if parsed.ASM.Enabled && !a.started.Load() {
 		log.Debug("appsec: remote config: Starting AppSec")
 		if err := a.start(); err != nil {
 			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error())
@@ -255,7 +261,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	// RC triggers desactivation of ASM; ASM is started... Stopping it!
-	if !parsed.ASM.Enabled && a.started {
+	if !parsed.ASM.Enabled && a.started.Load() {
 		log.Debug("appsec: remote config: Stopping AppSec")
 		a.stop()
 		registerAppsecStartTelemetry(config.ForcedOff, telemetry.OriginRemoteConfig)
@@ -281,14 +287,14 @@ func (a *appsec) stopRC() {
 
 func (a *appsec) registerRCProduct(p string) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterCapability(c)
 }
@@ -306,7 +312,8 @@ func (a *appsec) enableRemoteActivation() error {
 		return errors.New("no valid remote configuration client")
 	}
 	log.Debug("appsec: Remote Config: subscribing to ASM_FEATURES updates...")
-	return remoteconfig.Subscribe(state.ProductASMFeatures, a.handleASMFeatures, remoteconfig.ASMActivation)
+	_, err := remoteconfig.Subscribe(state.ProductASMFeatures, a.handleASMFeatures, remoteconfig.ASMActivation)
+	return err
 }
 
 var baseCapabilities = [...]remoteconfig.Capability{
@@ -382,6 +389,9 @@ func (a *appsec) enableRASP() {
 	if orchestrion.Enabled() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
 			log.Debug("appsec: remote config: couldn't register RASP LFI: %s", err.Error())
+		}
+		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPCommandInjection); err != nil {
+			log.Debug("appsec: remote config: couldn't register RASP CMDi: %s", err.Error())
 		}
 	}
 }

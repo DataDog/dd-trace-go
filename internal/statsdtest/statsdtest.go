@@ -7,12 +7,14 @@ package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdt
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 type callType int64
@@ -199,7 +201,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 func (tg *TestStatsdClient) CallNames() []string {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	var n []string
+	n := make([]string, 0, len(tg.gaugeCalls)+len(tg.incrCalls)+len(tg.countCalls)+len(tg.timingCalls))
 	for _, c := range tg.gaugeCalls {
 		n = append(n, c.name)
 	}
@@ -289,9 +291,7 @@ func (tg *TestStatsdClient) Counts() map[string]int64 {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make(map[string]int64)
-	for key, value := range tg.counts {
-		c[key] = value
-	}
+	maps.Copy(c, tg.counts)
 	return c
 }
 

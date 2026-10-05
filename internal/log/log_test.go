@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -53,66 +54,67 @@ func TestLogDirectory(t *testing.T) {
 		assert.Error(t, err)
 	})
 	t.Run("valid", func(t *testing.T) {
-		// ensure File is created successfully
-		dir, err := os.MkdirTemp("", "example")
-		if err != nil {
-			t.Fatalf("Failure creating directory %v", err)
-		}
-		f, err := OpenFileAtPath(dir)
-		assert.Nil(t, err)
-		fp := dir + "/" + LoggerFile
-		assert.NotNil(t, f.file)
-		assert.Equal(t, fp, f.file.Name())
-		assert.False(t, f.closed)
+		synctest.Test(t, func(t *testing.T) {
+			// ensure File is created successfully
+			dir, err := os.MkdirTemp("", "example")
+			if err != nil {
+				t.Fatalf("Failure creating directory %v", err)
+			}
+			f, err := OpenFileAtPath(dir)
+			assert.Nil(t, err)
+			fp := dir + "/" + LoggerFile
+			assert.NotNil(t, f.file)
+			assert.Equal(t, fp, f.file.Name())
+			assert.False(t, f.closed)
 
-		// ensure this setting plays nicely with other log features
-		oldLvl := levelThreshold
-		SetLevel(LevelDebug)
-		defer func() {
-			SetLevel(oldLvl)
-		}()
-		Info("info!")
-		Warn("warn!")
-		Debug("debug!")
-		// shorten errrate to test Error() behavior in a reasonable amount of time
-		oldRate := errrate
-		errrate = time.Microsecond
-		defer func() {
-			errrate = oldRate
-		}()
-		Error("error!")
-		time.Sleep(1 * time.Second)
-
-		b, err := os.ReadFile(fp)
-		if err != nil {
-			t.Fatalf("Failure reading file: %v", err)
-		}
-		// convert file content to []string{}, split by \n, to easily check its contents
-		lines := bytes.Split(b, []byte{'\n'})
-		var logs []string
-		for _, line := range lines {
-			logs = append(logs, string(line))
-		}
-
-		assert.True(t, containsMessage("INFO", "info!", logs))
-		assert.True(t, containsMessage("WARN", "warn!", logs))
-		assert.True(t, containsMessage("DEBUG", "debug!", logs))
-		assert.True(t, containsMessage("ERROR", "error!", logs))
-
-		f.Close()
-		assert.True(t, f.closed)
-
-		//ensure f.Close() is concurrent-safe and free of deadlocks
-		var wg sync.WaitGroup
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				f.Close()
+			// ensure this setting plays nicely with other log features
+			oldLvl := Level(levelThreshold.Load())
+			SetLevel(LevelDebug)
+			defer func() {
+				SetLevel(oldLvl)
 			}()
-		}
-		wg.Wait()
-		assert.True(t, f.closed)
+			Info("info!")
+			Warn("warn!")
+			Debug("debug!")
+			// shorten errrate to test Error() behavior in a reasonable amount of time
+			oldRate := errrate
+			errrate = time.Microsecond
+			defer func() {
+				errrate = oldRate
+			}()
+			Error("error!")
+			time.Sleep(1 * time.Second) // instant: fake clock advances 1s past the errrate timer
+			synctest.Wait()             // wait for time.AfterFunc(errrate, Flush) to fire
+
+			b, err := os.ReadFile(fp)
+			if err != nil {
+				t.Fatalf("Failure reading file: %v", err)
+			}
+			// convert file content to []string{}, split by \n, to easily check its contents
+			lines := bytes.Split(b, []byte{'\n'})
+			logs := make([]string, 0, len(lines))
+			for _, line := range lines {
+				logs = append(logs, string(line))
+			}
+
+			assert.True(t, containsMessage("INFO", "info!", logs))
+			assert.True(t, containsMessage("WARN", "warn!", logs))
+			assert.True(t, containsMessage("DEBUG", "debug!", logs))
+			assert.True(t, containsMessage("ERROR", "error!", logs))
+
+			f.Close()
+			assert.True(t, f.closed)
+
+			//ensure f.Close() is concurrent-safe and free of deadlocks
+			var wg sync.WaitGroup
+			for range 100 {
+				wg.Go(func() {
+					f.Close()
+				})
+			}
+			wg.Wait()
+			assert.True(t, f.closed)
+		})
 	})
 }
 
@@ -130,7 +132,7 @@ func TestLog(t *testing.T) {
 	t.Run("Debug", func(t *testing.T) {
 		t.Run("on", func(t *testing.T) {
 			tp.Reset()
-			defer func(old Level) { levelThreshold = old }(levelThreshold)
+			defer func(old Level) { levelThreshold.Store(int32(old)) }(Level(levelThreshold.Load()))
 			SetLevel(LevelDebug)
 			assert.True(t, DebugEnabled())
 
@@ -180,7 +182,7 @@ func TestLog(t *testing.T) {
 
 		t.Run("limit", func(t *testing.T) {
 			tp.Reset()
-			for i := 0; i < defaultErrorLimit+1; i++ {
+			for i := range defaultErrorLimit + 1 {
 				Error("fifth message %d", i)
 			}
 
@@ -241,7 +243,6 @@ func TestSetLoggingRate(t *testing.T) {
 		},
 	}
 	for _, tC := range testCases {
-		tC := tC
 		errrate = time.Minute // reset global variable
 		t.Run(tC.input, func(t *testing.T) {
 			setLoggingRate(tC.input)
@@ -252,7 +253,7 @@ func TestSetLoggingRate(t *testing.T) {
 
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Error("k %s", "a")
 	}
 }
@@ -282,7 +283,7 @@ func containsMessage(lvl, m string, lines []string) bool {
 func BenchmarkLog(b *testing.B) {
 	UseLogger(DiscardLogger{})
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Warn("test")
 	}
 }

@@ -9,8 +9,10 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -32,7 +34,7 @@ var (
 // In case it's not, the returned error contains the details of the failure.
 func ValidHostname(hostname string) error {
 	if hostname == "" {
-		return fmt.Errorf("hostname is empty")
+		return errors.New("hostname is empty")
 	} else if isLocal(hostname) {
 		return fmt.Errorf("%s is a local hostname", hostname)
 	} else if len(hostname) > maxLength {
@@ -48,10 +50,5 @@ func ValidHostname(hostname string) error {
 // check whether the name is in the list of local hostnames
 func isLocal(name string) bool {
 	name = strings.ToLower(name)
-	for _, val := range localhostIdentifiers {
-		if val == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(localhostIdentifiers, name)
 }

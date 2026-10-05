@@ -6,6 +6,8 @@
 package sarama
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,4 +38,36 @@ func TestDataStreamsActivation(t *testing.T) {
 		WithDataStreams()(cfg)
 		assert.True(t, cfg.dataStreamsEnabled)
 	})
+}
+
+func TestClusterIDConcurrency(t *testing.T) {
+	cfg := new(config)
+	defaults(cfg)
+
+	const numReaders = 10
+	const numIterations = 1000
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for range numIterations {
+			cfg.SetClusterID(fmt.Sprintf("cluster-%d", 0))
+		}
+	})
+
+	for range numReaders {
+		wg.Go(func() {
+			for range numIterations {
+				id := cfg.ClusterID()
+				// The ID should either be empty (not yet set) or a valid cluster ID
+				if id != "" {
+					assert.Contains(t, id, "cluster-")
+				}
+			}
+		})
+	}
+
+	wg.Wait()
+
+	assert.NotEmpty(t, cfg.ClusterID())
 }

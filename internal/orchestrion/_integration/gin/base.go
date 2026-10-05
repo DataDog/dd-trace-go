@@ -7,16 +7,16 @@ package gin
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCaseBase struct {
@@ -27,14 +27,15 @@ func (tc *TestCaseBase) Setup(_ context.Context, t *testing.T) {
 	gin.SetMode(gin.ReleaseMode) // Silence start-up logging
 	engine := gin.New()
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: engine.Handler(),
 	}
 
 	engine.GET("/ping", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"message": "pong"}) })
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -46,11 +47,12 @@ func (tc *TestCaseBase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCaseBase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.Server.Addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.Server.Addr + "/ping"
+	httpURL := "http://" + tc.Server.Addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
@@ -61,7 +63,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -74,7 +76,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  httpUrl,
+						"http.url":  httpURL,
 						"component": "net/http",
 						"span.kind": "server",
 					},
@@ -88,7 +90,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 								"type":     "web",
 							},
 							Meta: map[string]string{
-								"http.url":  httpUrl,
+								"http.url":  httpURL,
 								"component": "gin-gonic/gin",
 								"span.kind": "server",
 							},

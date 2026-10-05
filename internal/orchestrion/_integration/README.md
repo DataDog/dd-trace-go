@@ -33,9 +33,13 @@ $ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
 
 ### Running the test suite
 
-You can locally run this test suite using the following commands:
+First, `cd` into the _integration directory: `cd internal/orchestrion/_integration`. From there, you can locally run this test suite using the following commands:
 ```console
 $ go run github.com/DataDog/orchestrion go test ./...
+```
+Run a specific integration test (for example, gorilla_mux):
+```console
+$ go run github.com/DataDog/orchestrion go test ./gorilla_mux/...
 ```
 
 [1]: https://github.com/DataDog/orchestrion
@@ -50,6 +54,15 @@ $ go run github.com/DataDog/orchestrion go test ./...
 To add a new integration test, follow these steps:
 
 1. **Create a test case structure**: Implement a new struct that satisfies the [`harness.TestCase`](./internal/harness/harness.go) interface. If adding to an existing package that already has a `TestCase`, use a descriptive name like `TestCaseSomething` to avoid naming conflicts.
+
+   Write one file per test case: a distinct calling convention the library supports (function
+   literal vs interface, closure, global convenience function vs explicit construction, value vs
+   pointer config, and so on), or a regression test for a specific reported issue. Auto-instrumentation
+   matches on how code is written, not just which library is called, so a calling convention with no
+   dedicated test case can build fine in one form and silently fail to weave, or outright fail to
+   compile, in another. See [`contrib/ORCHESTRION.md`](../../../contrib/ORCHESTRION.md#integration-tests)
+   and, for example, `net_http`'s `func_handler.go` and `global_functions.go` (calling conventions) or
+   `issue_400.go` (a regression test) in this package.
 
 2. **Implement the required methods**: Ensure your test case implements all three methods defined by the `harness.TestCase` interface:
    - **`Setup`**: Prepare everything needed for the test, such as starting services (e.g., database servers) or setting up test data. The tracer is not yet started during setup.

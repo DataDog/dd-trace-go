@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSetPropagatingTag(t *testing.T) {

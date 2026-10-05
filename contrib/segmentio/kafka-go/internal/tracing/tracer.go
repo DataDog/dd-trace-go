@@ -7,7 +7,9 @@ package tracing
 
 import (
 	"math"
+	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
@@ -20,11 +22,22 @@ func init() {
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
+	clusterID           atomic.Value // +checkatomic
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every message consumed/produced through this Tracer (component,
+	// span kind, messaging system, service name, bootstrap servers, and any
+	// static analytics rate). They are built once the options have been
+	// applied (see newConsumerSpanConfig/newProducerSpanConfig) and merged
+	// into each message span via WithStartSpanConfig, instead of rebuilding
+	// a Tag() closure per tag on every message.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 // Option describes options for the Kafka integration.
@@ -36,6 +49,7 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	tr := &Tracer{
 		consumerServiceName: instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		producerServiceName: instr.ServiceName(instrumentation.ComponentProducer, nil),
+		serviceSource:       string(instrumentation.PackageSegmentioKafkaGo),
 		consumerSpanName:    instr.OperationName(instrumentation.ComponentConsumer, nil),
 		producerSpanName:    instr.OperationName(instrumentation.ComponentProducer, nil),
 		analyticsRate:       instr.AnalyticsRate(false),
@@ -45,6 +59,8 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	for _, opt := range opts {
 		opt.apply(tr)
 	}
+	tr.consumerSpanCfg = newConsumerSpanConfig(tr)
+	tr.producerSpanCfg = newProducerSpanConfig(tr)
 	return tr
 }
 
@@ -60,6 +76,7 @@ func WithService(serviceName string) Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.consumerServiceName = serviceName
 		tr.producerServiceName = serviceName
+		tr.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	})
 }
 
@@ -91,6 +108,19 @@ func WithDataStreams() Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.dataStreamsEnabled = true
 	})
+}
+
+func (tr *Tracer) DSMEnabled() bool {
+	return tr.dataStreamsEnabled
+}
+
+func (tr *Tracer) ClusterID() string {
+	v, _ := tr.clusterID.Load().(string)
+	return v
+}
+
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterID.Store(id)
 }
 
 func Logger() instrumentation.Logger {

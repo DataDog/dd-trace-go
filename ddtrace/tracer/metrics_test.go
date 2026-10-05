@@ -31,11 +31,9 @@ func TestReportRuntimeMetrics(t *testing.T) {
 	assert.NoError(t, err)
 	defer trc.statsd.Close()
 
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
+	trc.wg.Go(func() {
 		trc.reportRuntimeMetrics(time.Millisecond)
-	}()
+	})
 	assert := assert.New(t)
 	err = tg.Wait(assert, 35, 1*time.Second)
 	trc.Stop()
@@ -50,9 +48,6 @@ func TestReportRuntimeMetrics(t *testing.T) {
 func TestReportHealthMetricsAtInterval(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
 
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 	assert.Nil(err)
@@ -75,14 +70,11 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
 
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Nanosecond
-
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 	assert.Nil(err)
 	defer stop()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tracer.StartSpan("operation").Finish()
 	}
 	flush(3)
@@ -95,11 +87,25 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert.Equal(uint32(0), atomic.LoadUint32(&w.tracesQueued))
 }
 
+// TestQueueLengthMetric confirms that the tracer's internal payload queue
+// backlog (len(t.out)) is reported as a gauge on every scheduled flush tick.
+func TestQueueLengthMetric(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
+	defer stop()
+
+	tracer.StartSpan("operation").Finish()
+	flush(1)
+
+	assert.Eventually(func() bool {
+		return len(tg.GetCallsByName("datadog.tracer.queue.length")) >= 1
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestSpansStartedTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
 
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
@@ -108,13 +114,12 @@ func TestSpansStartedTags(t *testing.T) {
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
-		assert.Eventually(func() bool {
-			return tg.Counts()["datadog.tracer.spans_started"] == 1
-		}, 1*time.Second, 10*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
+		// calling flush(0) tends to flake too.
+		tracer.reportHealthMetrics()
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
+		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			assert.Equal([]string{"integration:manual"}, c.Tags())
 		}
@@ -130,13 +135,11 @@ func TestSpansStartedTags(t *testing.T) {
 		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
 		defer sp.Finish()
 
-		assert.Eventually(func() bool {
-			return tg.Counts()["datadog.tracer.spans_started"] == 1
-		}, 1*time.Second, 10*time.Millisecond)
-		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
-
+		// calling flush(0) tends to flake too.
+		tracer.reportHealthMetrics()
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
+		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 		for _, c := range statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.tracer.spans_started") {
 			assert.Equal([]string{"integration:contrib"}, c.Tags())
 		}
@@ -146,19 +149,15 @@ func TestSpansStartedTags(t *testing.T) {
 func TestSpansFinishedTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
-
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 		assert.Nil(err)
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
-		assert.Eventually(func() bool {
-			return tg.Counts()["datadog.tracer.spans_finished"] == 1
-		}, 1*time.Second, 10*time.Millisecond)
+
+		flush(1)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
@@ -171,15 +170,13 @@ func TestSpansFinishedTags(t *testing.T) {
 	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
-		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 		assert.Nil(err)
 		defer stop()
 
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 
-		assert.Eventually(func() bool {
-			return tg.Counts()["datadog.tracer.spans_finished"] == 1
-		}, 1*time.Second, 10*time.Millisecond)
+		flush(1)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
@@ -193,9 +190,6 @@ func TestSpansFinishedTags(t *testing.T) {
 func TestMultipleSpanIntegrationTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 	tg.Reset()
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
 
 	assert := assert.New(t)
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
@@ -217,16 +211,10 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 	}
 	flush(10)
-	assert.Eventually(func() bool {
-		counts := tg.Counts()
-		return counts["datadog.tracer.spans_started"] == 10 && counts["datadog.tracer.spans_finished"] == 10
-	}, 1*time.Second, 10*time.Millisecond)
 
-	require.Eventually(t, func() bool {
-		counts := tg.Counts()
-		return counts["datadog.tracer.spans_started"] == 10 &&
-			counts["datadog.tracer.spans_finished"] == 10
-	}, 5*time.Minute, 100*time.Millisecond)
+	counts := tg.Counts()
+	require.Equal(t, int64(10), counts["datadog.tracer.spans_started"])
+	require.Equal(t, int64(10), counts["datadog.tracer.spans_finished"])
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
@@ -240,14 +228,10 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 	assert.Equal(int64(5), tg.CountCallsByTag(finishedCalls, "integration:manual"))
 	assert.Equal(int64(3), tg.CountCallsByTag(finishedCalls, "integration:net/http"))
 	assert.Equal(int64(2), tg.CountCallsByTag(finishedCalls, "integration:contrib"))
-
 }
 
 func TestHealthMetricsRaceCondition(t *testing.T) {
 	assert := assert.New(t)
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
 
 	var tg statsdtest.TestStatsdClient
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
@@ -256,12 +240,10 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sp := tracer.StartSpan("operation")
 			sp.Finish()
-		}()
+		})
 	}
 	wg.Wait()
 	flush(5)
@@ -286,21 +268,23 @@ func TestTracerMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(assert, 5, 500*time.Millisecond)
-
-	calls := tg.CallsByName()
-	counts := tg.Counts()
-	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.True(calls["datadog.tracer.flush_triggered"] >= 1)
-	assert.Equal(1, calls["datadog.tracer.flush_duration"])
-	assert.Equal(1, calls["datadog.tracer.flush_bytes"])
-	assert.Equal(1, calls["datadog.tracer.flush_traces"])
-	assert.Equal(int64(1), counts["datadog.tracer.flush_traces"])
+	assert.NoError(tg.Wait(assert, 5, 500*time.Millisecond))
+	assert.Eventually(func() bool {
+		calls := tg.CallsByName()
+		counts := tg.Counts()
+		return calls["datadog.tracer.started"] == 1 &&
+			calls["datadog.tracer.flush_triggered"] >= 1 &&
+			calls["datadog.tracer.flush_duration"] == 1 &&
+			calls["datadog.tracer.flush_bytes"] == 1 &&
+			calls["datadog.tracer.flush_traces"] == 1 &&
+			counts["datadog.tracer.flush_traces"] == int64(1)
+	}, 5*time.Second, 10*time.Millisecond)
 	assert.False(tg.Closed())
 
 	tracer.StartSpan("operation").Finish()
 	stop()
-	calls = tg.CallsByName()
+
+	calls := tg.CallsByName()
 	assert.Equal(1, calls["datadog.tracer.stopped"])
 	assert.True(tg.Closed())
 }
@@ -313,7 +297,7 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, withStatsdClient(&tg))
 	assert.Nil(b, err)
 	defer stop()
-	for n := 0; n < b.N; n++ {
+	for n := range b.N {
 		for range n {
 			go tracer.StartSpan("operation").Finish()
 		}

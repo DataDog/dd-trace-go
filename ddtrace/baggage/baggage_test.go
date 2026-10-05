@@ -70,6 +70,40 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
+	t.Run("SetAll merges into existing baggage", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = Set(ctx, "existing", "value")
+		ctx = SetAll(ctx, map[string]string{"a": "1", "b": "2"})
+
+		all := All(ctx)
+		assert.Equal(t, map[string]string{"existing": "value", "a": "1", "b": "2"}, all)
+	})
+
+	t.Run("SetAll overwrites existing keys", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = Set(ctx, "key", "original")
+		ctx = SetAll(ctx, map[string]string{"key": "updated"})
+
+		got, _ := Get(ctx, "key")
+		assert.Equal(t, "updated", got)
+	})
+
+	t.Run("SetAll with empty map is a no-op", func(t *testing.T) {
+		ctx := Set(context.Background(), "key", "value")
+		result := SetAll(ctx, map[string]string{})
+
+		assert.True(t, ctx == result, "SetAll with no values should return the same context") //nolint
+	})
+
+	t.Run("SetAll does not allow external mutation", func(t *testing.T) {
+		m := map[string]string{"key": "original"}
+		ctx := SetAll(context.Background(), m)
+		m["key"] = "mutated"
+
+		got, _ := Get(ctx, "key")
+		assert.Equal(t, "original", got)
+	})
+
 	t.Run("Remove", func(t *testing.T) {
 		ctx := context.Background()
 
@@ -185,6 +219,33 @@ func TestBaggageMapAccessorsMakeCopies(t *testing.T) {
 	})
 }
 
+// TestSetAllAllocationsDoNotScaleWithKeyCount is a regression test for a bug where
+// callers looped Set() once per key to merge a batch of baggage (see #5158): each
+// Set() call clones the entire map, so merging N keys did N clones instead of one.
+// SetAll's allocation count per call should stay flat as the batch size grows; if it
+// starts scaling linearly again (e.g. SetAll gets reimplemented as a Set loop), this
+// test should fail.
+func TestSetAllAllocationsDoNotScaleWithKeyCount(t *testing.T) {
+	base := Set(context.Background(), "existing", "value")
+
+	allocsForBatch := func(n int) float64 {
+		values := make(map[string]string, n)
+		for i := range n {
+			values[fmt.Sprintf("key%d", i)] = "v"
+		}
+		return testing.AllocsPerRun(20, func() {
+			_ = SetAll(base, values)
+		})
+	}
+
+	small := allocsForBatch(2)
+	large := allocsForBatch(200)
+
+	assert.LessOrEqual(t, large, small*2,
+		"SetAll allocations scaled with batch size (%v allocs for 2 keys vs %v allocs for 200 keys); "+
+			"expected a single clone per call regardless of key count", small, large)
+}
+
 // guarantees we also test the Clear→Set path
 func TestConcurrentAccessAndClear(t *testing.T) {
 	base := Set(context.Background(), "init", "val")
@@ -196,10 +257,10 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 	wg.Add(readers + writers)
 	errCh := make(chan string, readers)
 	// Readers – must ALWAYS observe the original baggage
-	for r := 0; r < readers; r++ {
+	for range readers {
 		go func(c context.Context) {
 			defer wg.Done()
-			for i := 0; i < iters; i++ {
+			for range iters {
 				if !assert.Equal(t, want, All(c), "baggage mutated") {
 					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, All(c))
 					return
@@ -209,11 +270,11 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 		}(base)
 	}
 	// Writers – they fork their own context chains, never sharing variables
-	for w := 0; w < writers; w++ {
+	for range writers {
 		go func(c context.Context) {
 			defer wg.Done()
 			local := c
-			for i := 0; i < iters; i++ {
+			for range iters {
 				// alternates Set / Clear / Set to hit the nil‑map path
 				local = Set(local, "k", "v")
 				local = Clear(local)

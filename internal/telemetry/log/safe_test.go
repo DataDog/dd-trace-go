@@ -67,3 +67,23 @@ type customError struct {
 func (e *customError) Error() string {
 	return e.msg
 }
+
+func TestErrorType_UnnamedTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		v    any
+	}{
+		{name: "anonymous struct", v: struct{ Secret string }{Secret: "leak me not"}},
+		{name: "slice", v: []string{"a", "b"}},
+		{name: "map", v: map[string]string{"key": "value"}},
+		{name: "pointer to anonymous struct", v: &struct{ X int }{X: 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errorType(tt.v)
+			require.NotEmpty(t, got, "errorType must not return an empty string for %T", tt.v)
+			require.NotContains(t, got, "leak me not")
+		})
+	}
+}

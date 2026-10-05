@@ -2,19 +2,46 @@ BIN   := $(shell pwd)/bin
 TOOLS := $(shell pwd)/_tools
 BIN_PATH := PATH="$(abspath $(BIN)):$$PATH"
 
+# The help pattern is matched with a string (not a /…/ regex constant) because
+# BSD awk (macOS) treats the "/" in the character class as the regex delimiter
+# and fails with "nonterminated character class". The pattern is POSIX ERE: no
+# lazy "*?" quantifiers, so it also works with mawk (Ubuntu) and gawk.
 .PHONY: help
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[A-Za-z0-9_./-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} $$0 ~ "^[A-Za-z0-9_./-]+:.*## " {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: all
 all: tools-install generate lint test ## Run complete build pipeline (tools, generate, lint, test)
 
 .PHONY: tools-install
-tools-install: ## Install development tools
+tools-install: tools-install/checkmake ## Install development tools
 	@./scripts/install_tools.sh --tools-dir $(TOOLS) --bin-dir $(BIN)
+
+# checkmake is installed as a pre-built binary for simplicity and speed.
+# For platforms without pre-built binaries, we fall back to building from source.
+.PHONY: tools-install/checkmake
+tools-install/checkmake: ## Install checkmake binary for Makefile linting
+	@mkdir -p $(BIN)
+	@if [ ! -f $(BIN)/checkmake ]; then \
+		echo "Installing checkmake..."; \
+		CHECKMAKE_VERSION=0.2.2; \
+		OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+		ARCH=$$(uname -m); \
+		if [ "$$ARCH" = "x86_64" ]; then ARCH="amd64"; fi; \
+		if [ "$$ARCH" = "aarch64" ]; then ARCH="arm64"; fi; \
+		BINARY="checkmake-$$CHECKMAKE_VERSION.$$OS.$$ARCH"; \
+		if curl -sSfL -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
+			chmod +x $(BIN)/checkmake; \
+			echo "checkmake $$CHECKMAKE_VERSION installed from pre-built binary"; \
+		else \
+			echo "Pre-built binary not available for $$OS/$$ARCH, building from source..."; \
+			GOBIN=$(abspath $(BIN)) go install github.com/checkmake/checkmake/cmd/checkmake@latest; \
+			echo "checkmake installed from source"; \
+		fi; \
+	fi
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -44,43 +71,105 @@ lint/go/fix: tools-install ## Fix linting issues automatically
 lint/shell: tools-install ## Run shell script linting checks
 	$(BIN_PATH) ./scripts/lint.sh --shell
 
+.PHONY: lint/misc
+lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefiles)
+	$(BIN_PATH) ./scripts/lint.sh --misc
+
+.PHONY: lint/action
+lint/action: tools-install ## Lint GitHub Actions workflows
+	$(BIN_PATH) ./scripts/lint.sh --action
+
+.PHONY: lint/errlog
+lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
+	# Clear a possibly-stale GOROOT: the runner image's preinstalled GOROOT can point at an
+	# older Go patch than the one setup-go puts on PATH, so the compiler and go tool versions
+	# mismatch. Version-agnostic: checks nothing, pins nothing.
+	env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...
+	# The root module's ./... pass above cannot cross Go workspace module
+	# boundaries, so it silently skips every module in go.work that isn't
+	# the root one (e.g. tools/v2fix, internal/orchestrion/_integration).
+	env -u GOROOT go run ./scripts/lint_errlog_workspaces.go
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
+
+.PHONY: format/go
+format/go: tools-install ## Format Go code
+	$(BIN_PATH) ./scripts/format.sh --go
 
 .PHONY: format/shell
 format/shell: tools-install ## install shfmt
 	$(BIN_PATH) ./scripts/format.sh --shell
 
 .PHONY: test
-test: tools-install ## Run all tests (core, integration, contrib)
+test: tools-install test/unit ## Run all tests (core, integration, contrib)
 	$(BIN_PATH) ./scripts/test.sh --all
 
-.PHONY: test-appsec
+.PHONY: test/unit
+test/unit: tools-install ## Run unit tests
+	go test -v -failfast ./...
+
+.PHONY: test/appsec
 test/appsec: tools-install ## Run tests with AppSec enabled
 	$(BIN_PATH) ./scripts/test.sh --appsec
 
-.PHONY: test-contrib
+.PHONY: test/contrib
 test/contrib: tools-install ## Run contrib package tests
 	$(BIN_PATH) ./scripts/test.sh --contrib
 
-.PHONY: test-integration
+.PHONY: test/integration
 test/integration: tools-install ## Run integration tests
 	$(BIN_PATH) ./scripts/test.sh --integration
+
+.PHONY: test-deadlock
+test-deadlock: tools-install ## Run tests with deadlock detection
+	BUILD_TAGS=deadlock $(BIN_PATH) ./scripts/test.sh --all
+
+.PHONY: test-debug-deadlock
+test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
+	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
 
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
 
+.PHONY: fix/go
+fix/go: ## Apply go fix modernizations to Go code
+	go fix ./...
+
+.PHONY: fix/go/diff
+fix/go/diff: ## Preview go fix modernizations (dry-run)
+	go fix -diff ./...
+
+.PHONY: apidiff
+apidiff: tools-install ## Run semantic API diff for ddtrace/tracer against main
+	$(BIN_PATH) ./scripts/apidiff.sh github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+.PHONY: apidiff/incompatible
+apidiff/incompatible: tools-install ## Show only breaking (incompatible) API changes for ddtrace/tracer
+	$(BIN_PATH) ./scripts/apidiff.sh --incompatible-only --exit-code github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+# The help files are embedded into README files by the docs target. If their
+# generation fails, the error output must never be embedded silently, so these
+# recipes capture stderr but fail the target when the command fails.
 .PHONY: tmp/make-help.txt
 tmp/make-help.txt:
 	@mkdir -p tmp
-	@make help --no-print-directory > tmp/make-help.txt 2>&1 || true
+	@make help --no-print-directory > tmp/make-help.txt 2>&1 || { \
+		echo "'make help' failed; refusing to embed its output into README files:" >&2; \
+		cat tmp/make-help.txt >&2; \
+		exit 1; \
+	}
 
 .PHONY: tmp/test-help.txt
 tmp/test-help.txt:
 	@mkdir -p tmp
-	@./scripts/test.sh --help > tmp/test-help.txt 2>&1 || true
+	@./scripts/test.sh --help > tmp/test-help.txt 2>&1 || { \
+		echo "'scripts/test.sh --help' failed; refusing to embed its output into README files:" >&2; \
+		cat tmp/test-help.txt >&2; \
+		exit 1; \
+	}
 
 .PHONY: docs
 docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update embedded documentation in README files
@@ -92,3 +181,7 @@ ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all
 .PHONY: upgrade/orchestrion
 upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 	$(BIN_PATH) ORCHESTRION_VERSION=$(ORCHESTRION_VERSION) ORCHESTRION_DIRS="$(ORCHESTRION_DIRS)" ./scripts/upgrade_orchestrion.sh
+
+.PHONY: config-audit
+config-audit: ## Report which DD_* configs are migrated to internal/config
+	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table

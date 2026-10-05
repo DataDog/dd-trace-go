@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -27,6 +25,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -83,7 +84,7 @@ func (h *handlers) Send(req *request.Request) {
 
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ServiceName(h.serviceName(req)),
+		h.serviceNameWithSource(req),
 		tracer.ResourceName(resourceName(req)),
 		tracer.Tag(ext.AWSAgent, awsAgent(req)),
 		tracer.Tag(ext.AWSOperation, awsOperation(req)),
@@ -122,15 +123,18 @@ func (h *handlers) Complete(req *request.Request) {
 	span.Finish()
 }
 
-func (h *handlers) serviceName(req *request.Request) string {
+func (h *handlers) serviceNameWithSource(req *request.Request) tracer.StartSpanOption {
 	if h.cfg.serviceName != "" {
-		return h.cfg.serviceName
+		return instrumentation.ServiceNameWithSource(h.cfg.serviceName, h.cfg.serviceSource)
 	}
-	return instr.ServiceName(
-		instrumentation.ComponentDefault,
-		instrumentation.OperationContext{
-			ext.AWSService: awsService(req),
-		},
+	return instrumentation.ServiceNameWithSource(
+		instr.ServiceName(
+			instrumentation.ComponentDefault,
+			instrumentation.OperationContext{
+				ext.AWSService: awsService(req),
+			},
+		),
+		string(instrumentation.PackageAWSSDKGo),
 	)
 }
 

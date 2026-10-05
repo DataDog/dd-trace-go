@@ -8,7 +8,9 @@
 package knownmetrics
 
 var golangMetrics = []Declaration{
-  { Type: "count", Name: "errorstack.source" },
-  { Type: "distribution", Name: "errorstack.duration" },
-  { Type: "gauge", Name: "orchestrion.enabled" },
+	{Type: "count", Name: "config.product_conflict"},
+	{Type: "count", Name: "config.repeat_start_env_diff"},
+	{Type: "count", Name: "errorstack.source"},
+	{Type: "distribution", Name: "errorstack.duration"},
+	{Type: "gauge", Name: "orchestrion.enabled"},
 }

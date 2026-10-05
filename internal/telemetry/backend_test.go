@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -209,22 +210,161 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 		stackTrace := logs.Logs[0].StackTrace
 		assert.NotEmpty(t, stackTrace, "Should have stack trace")
 
-		// With skip=4, the stack should NOT contain backend.add, backend.Add, CaptureWithRedaction, or capture
-		assert.NotContains(t, stackTrace, "backend.add", "Should skip backend.add frame")
-		assert.NotContains(t, stackTrace, "backend.Add", "Should skip backend.Add frame")
-		assert.NotContains(t, stackTrace, "CaptureWithRedaction", "Should skip CaptureWithRedaction frame")
-		assert.NotContains(t, stackTrace, ".capture", "Should skip capture frame")
+		assert.NotContains(t, stackTrace, "loggerBackend).add", "Should skip loggerBackend.add frame")
+		assert.NotContains(t, stackTrace, "loggerBackend).Add", "Should skip loggerBackend.Add frame")
+		assert.NotContains(t, stackTrace, "github.com/puzpuzpuz/xsync", "Should not capture map implementation frames")
+		assert.NotContains(t, stackTrace, "CaptureRaw", "Should skip CaptureRaw frame")
 
 		// Should contain this test function
 		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace", "Should contain calling test function")
 		assert.Contains(t, stackTrace, "backend_test.go", "Should show test file location")
 	})
+
+	t.Run("pre-captured stack from WithCaptureStacktraceNow is not overwritten by add", func(t *testing.T) {
+		// Capture the option in this test function, but only apply it to the
+		// backend from inside a nested helper - simulating what replay does:
+		// add() runs far from (and long after) the original call site. If
+		// add() re-captured here, the resulting stack would show
+		// addFarFromCallSite, not this test function.
+		opt := WithCaptureStacktraceNow()
+
+		addFarFromCallSite := func(b *loggerBackend, record Record, opt LogOption) {
+			b.Add(record, opt)
+		}
+		addFarFromCallSite(backend, NewRecord(LogError, "pre-captured stack test"), opt)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		stackTrace := logs.Logs[0].StackTrace
+		assert.NotEmpty(t, stackTrace)
+		assert.Contains(t, stackTrace, "TestLoggerBackend_StackTrace",
+			"should show this test function, since WithCaptureStacktraceNow captured here")
+		assert.NotContains(t, stackTrace, "addFarFromCallSite",
+			"must not show the helper add() actually ran from - proves add() did not re-capture")
+	})
+}
+
+func TestWithCaptureStacktraceNow_MarksDedupKey(t *testing.T) {
+	// The key phase (key != nil, value == nil) must stamp the key so
+	// stack-now entries dedup separately from plain, stackless ones.
+	key := loggerKey{}
+	WithCaptureStacktraceNow()(&key, nil)
+	assert.True(t, key.captureStackNow)
+}
+
+func TestLoggerBackend_StackNowDoesNotDedupWithStackless(t *testing.T) {
+	// Regression test: a report (WithCaptureStacktraceNow — what ReportError and
+	// ReportPanic send) must not merge into a plain, stackless entry with the
+	// same message, level, and tags. Before the key carried the captureStackNow
+	// flag, the second add hit the first entry's dedup key and its captured
+	// stack and attributes were silently dropped.
+	t.Run("plain log first, report second", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		backend.Add(NewRecord(LogError, "collision message"))
+		report := NewRecord(LogError, "collision message")
+		report.AddAttrs(slog.String("error", "sometype"))
+		backend.Add(report, WithCaptureStacktraceNow())
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "the report must stay a separate entry, not dedup into the plain log")
+
+		var plain, stacked transport.LogMessage
+		for _, msg := range logs.Logs {
+			if msg.StackTrace == "" {
+				plain = msg
+			} else {
+				stacked = msg
+			}
+		}
+		assert.Equal(t, "collision message", plain.Message, "the plain entry must carry no report attributes")
+		assert.Equal(t, uint32(1), plain.Count)
+		assert.NotEmpty(t, stacked.StackTrace, "the report entry must keep its stack trace")
+		assert.Contains(t, stacked.Message, "error=sometype", "the report entry must keep its error attribute")
+		assert.Equal(t, uint32(1), stacked.Count)
+	})
+
+	t.Run("report first, plain log second", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		report := NewRecord(LogError, "collision message")
+		report.AddAttrs(slog.String("error", "sometype"))
+		backend.Add(report, WithCaptureStacktraceNow())
+		backend.Add(NewRecord(LogError, "collision message"))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "entries must stay separate in either order")
+	})
+
+	t.Run("two reports with the same message still dedup together", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		report1 := NewRecord(LogError, "collision message")
+		report1.AddAttrs(slog.String("error", "typeA"))
+		report2 := NewRecord(LogError, "collision message")
+		report2.AddAttrs(slog.String("error", "typeA"))
+		backend.Add(report1, WithCaptureStacktraceNow())
+		backend.Add(report2, WithCaptureStacktraceNow())
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "identical reports must still dedup against each other")
+		assert.Equal(t, uint32(2), logs.Logs[0].Count)
+		assert.NotEmpty(t, logs.Logs[0].StackTrace)
+	})
+
+	t.Run("plain logs with the same message still dedup together", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+
+		backend.Add(NewRecord(LogError, "collision message"))
+		backend.Add(NewRecord(LogError, "collision message"))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "identical stackless entries must still dedup against each other")
+		assert.Equal(t, uint32(2), logs.Logs[0].Count)
+	})
+}
+
+func TestWithCaptureStacktraceNow_CapturesEagerly(t *testing.T) {
+	opt := WithCaptureStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace)
+	assert.True(t, value.stacktraceCaptured, "must be marked as already captured, not deferred")
+	assert.NotEmpty(t, value.rawStack.PCs, "stack must be captured at WithCaptureStacktraceNow's own call site, not later")
+}
+
+func TestWithCaptureStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+
+	opt := WithCaptureStacktraceNow()
+
+	value := &loggerValue{}
+	opt(nil, value)
+
+	assert.True(t, value.captureStacktrace, "still requests a stack trace")
+	assert.False(t, value.stacktraceCaptured, "must not pay the eager-capture cost when telemetry is disabled")
+	assert.Empty(t, value.rawStack.PCs, "falls back to WithStacktrace's deferred (never-actually-reached-when-disabled) behavior")
 }
 
 func TestLoggerBackend_Tags(t *testing.T) {
-	backend := newLoggerBackend(10)
-
 	t.Run("includes tags in log entry", func(t *testing.T) {
+		backend := newLoggerBackend(10)
 		record := NewRecord(LogDebug, "tagged message")
 		backend.Add(record, WithTags([]string{"service:api", "version:1.2.3"}))
 
@@ -235,5 +375,145 @@ func TestLoggerBackend_Tags(t *testing.T) {
 		require.Len(t, logs.Logs, 1)
 
 		assert.Equal(t, "service:api,version:1.2.3", logs.Logs[0].Tags)
+	})
+
+	t.Run("same message with different tags are separate entries", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record1 := NewRecord(LogDebug, "shared message")
+		record2 := NewRecord(LogDebug, "shared message")
+
+		backend.Add(record1, WithTags([]string{"env:prod"}))
+		backend.Add(record2, WithTags([]string{"env:staging"}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "Should have two separate log entries for different tags")
+
+		// Extract tags for comparison
+		tagSet := make(map[string]bool)
+		for _, log := range logs.Logs {
+			tagSet[log.Tags] = true
+			assert.Equal(t, "shared message", log.Message)
+			assert.Equal(t, uint32(1), log.Count)
+		}
+		assert.True(t, tagSet["env:prod"], "Should contain env:prod tag")
+		assert.True(t, tagSet["env:staging"], "Should contain env:staging tag")
+	})
+
+	t.Run("same message and tags increments count", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		tags := []string{"service:api", "version:1.0"}
+
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "Should deduplicate logs with same message and tags")
+
+		assert.Equal(t, "repeated message", logs.Logs[0].Message)
+		assert.Equal(t, "service:api,version:1.0", logs.Logs[0].Tags)
+		assert.Equal(t, uint32(3), logs.Logs[0].Count)
+	})
+
+	t.Run("empty tags slice results in empty tags string", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "no tags message")
+		backend.Add(record, WithTags([]string{}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "", logs.Logs[0].Tags)
+	})
+
+	t.Run("message without tags has empty tags field", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "plain message")
+		backend.Add(record) // No WithTags option
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "", logs.Logs[0].Tags)
+	})
+
+	t.Run("single tag is serialized correctly", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "single tag message")
+		backend.Add(record, WithTags([]string{"env:production"}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "env:production", logs.Logs[0].Tags)
+	})
+
+	t.Run("multiple WithTags options appends tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "multi tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec"}),
+			WithTags([]string{"version:1.0", "env:prod"}),
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// All tags from both WithTags calls should be present
+		assert.Equal(t, "product:appsec,version:1.0,env:prod", logs.Logs[0].Tags)
+	})
+
+	t.Run("multiple WithTags options deduplicates tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "dedup tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec", "env:prod"}),
+			WithTags([]string{"version:1.0", "product:appsec"}), // product:appsec is duplicated
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// Tags should be deduplicated - product:appsec should appear only once
+		assert.Equal(t, "product:appsec,env:prod,version:1.0", logs.Logs[0].Tags)
+	})
+
+	t.Run("WithTags with empty slice after non-empty preserves original tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "preserve tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec"}),
+			WithTags([]string{}),
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// Original tags should be preserved even when empty WithTags is added
+		assert.Equal(t, "product:appsec", logs.Logs[0].Tags)
 	})
 }

@@ -1,0 +1,17 @@
+{
+    "version": "0",
+    "id": "test-event-id",
+    "detail-type": "trace-propagation-test",
+    "source": "trace-propagation.client",
+    "account": "123456789012",
+    "time": "2026-07-08T07:40:30Z",
+    "region": "ap-northeast-2",
+    "resources": [],
+    "detail": {
+      "foo": "bar",
+      "_datadog": {
+        "x-datadog-trace-id": "8055534101778961428",
+        "x-datadog-parent-id": "4394836343881363104"
+      }
+    }
+}

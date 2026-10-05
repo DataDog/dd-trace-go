@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoycore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
@@ -21,6 +20,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
 
 func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {

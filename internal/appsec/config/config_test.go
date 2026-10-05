@@ -9,10 +9,60 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-	"github.com/stretchr/testify/mock"
 )
+
+func TestAgenticOnboarding(t *testing.T) {
+	name := telemetry.EnvToTelemetryName(EnvAgenticOnboarding)
+	for _, tc := range []struct {
+		name           string
+		envVarVal      string
+		set            bool
+		expectedValue  string
+		expectedOrigin telemetry.Origin
+	}{
+		{
+			name:           "set-true",
+			envVarVal:      "true",
+			set:            true,
+			expectedValue:  "true",
+			expectedOrigin: telemetry.OriginEnvVar,
+		},
+		{
+			name:           "set-arbitrary",
+			envVarVal:      "false",
+			set:            true,
+			expectedValue:  "false",
+			expectedOrigin: telemetry.OriginEnvVar,
+		},
+		{
+			name:           "unset",
+			expectedValue:  "",
+			expectedOrigin: telemetry.OriginDefault,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(EnvAgenticOnboarding, tc.envVarVal)
+			}
+
+			expected := []telemetry.Configuration{{Name: name, Value: tc.expectedValue, Origin: tc.expectedOrigin}}
+			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", expected).Return()
+			defer telemetry.MockClient(telemetryClient)()
+
+			registerAgenticOnboardingTelemetry()
+
+			// Always emitted, even when unset (RFC-1113).
+			telemetryClient.AssertCalled(t, "RegisterAppConfigs", expected)
+			telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
+		})
+	}
+}
 
 func TestSCAEnabled(t *testing.T) {
 	for _, tc := range []struct {
@@ -79,4 +129,38 @@ func TestSCAEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsEnabledByEnvironment(t *testing.T) {
+	t.Run("invalid-value-is-considered-set", func(t *testing.T) {
+		t.Setenv(EnvEnabled, "not-a-bool")
+		enabled, set, err := IsEnabledByEnvironment()
+		require.False(t, enabled, "invalid value must be false-y")
+		require.True(t, set, "an explicitly-set (even invalid) value must report set=true")
+		require.Error(t, err, "an invalid value must return a detailed error")
+	})
+
+	t.Run("explicit-true", func(t *testing.T) {
+		t.Setenv(EnvEnabled, "true")
+		enabled, set, err := IsEnabledByEnvironment()
+		require.True(t, enabled)
+		require.True(t, set)
+		require.NoError(t, err)
+	})
+
+	t.Run("explicit-false", func(t *testing.T) {
+		t.Setenv(EnvEnabled, "false")
+		enabled, set, err := IsEnabledByEnvironment()
+		require.False(t, enabled)
+		require.True(t, set)
+		require.NoError(t, err)
+	})
+
+	t.Run("empty-value-is-unset", func(t *testing.T) {
+		// An empty value follows env conventions (treated as unset) so remote activation stays possible.
+		t.Setenv(EnvEnabled, "")
+		enabled, set, _ := IsEnabledByEnvironment()
+		require.False(t, enabled)
+		require.False(t, set)
+	})
 }

@@ -1,0 +1,64 @@
+name: Start code freeze
+
+on:
+  workflow_dispatch:
+    inputs:
+      milestone_title:
+        description: 'Milestone title (must start with "Code Freeze" or "Incident")'
+        required: true
+        type: string
+  milestone:
+    types: [opened, created, edited]
+
+jobs:
+  start_code_freeze:
+    # Trigger on:
+    # - Manual dispatch with a valid milestone title
+    # - Milestone events where title starts with "Code Freeze" or "Incident" and state is open
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        (startsWith(github.event.inputs.milestone_title, 'Code Freeze') ||
+         startsWith(github.event.inputs.milestone_title, 'Incident'))) ||
+      (github.event_name == 'milestone' &&
+        github.event.milestone.state == 'open' &&
+        (startsWith(github.event.milestone.title, 'Code Freeze') ||
+         startsWith(github.event.milestone.title, 'Incident')))
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read # Fetches PRs
+      statuses: write # add a commit status check
+      issues: read # Required to query milestone information
+
+    steps:
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.code-freeze-start
+
+      - name: Log code freeze trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MILESTONE_TITLE: ${{ github.event.inputs.milestone_title }}
+          MILESTONE_TITLE: ${{ github.event.milestone.title }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "🥶 Code freeze triggered manually for milestone: $INPUT_MILESTONE_TITLE"
+          else
+            echo "🥶 Code freeze triggered by milestone: $MILESTONE_TITLE"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Freeze PRs
+        uses: ./.github/actions/pr-status-updater
+        with:
+          github_token: ${{ steps.generate-token.outputs.token }}
+          state: failure
+          workflow_name: code_freeze_start.yml

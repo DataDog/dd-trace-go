@@ -1,3 +1,3 @@
-module example.com/root
+module example.com/root/v2
 
-go 1.24.0
+go 1.26.0

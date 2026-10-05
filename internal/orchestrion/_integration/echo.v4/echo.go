@@ -7,17 +7,17 @@ package echo
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -32,9 +32,11 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Echo.GET("/ping", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"message": "pong"})
 	})
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
+	tc.Echo.Listener = ln
 
-	go func() { assert.ErrorIs(t, tc.Echo.Start(tc.addr), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Echo.Start(""), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -46,11 +48,12 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.addr + "/ping"
+	httpURL := "http://" + tc.addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
@@ -61,7 +64,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -74,7 +77,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  httpUrl,
+						"http.url":  httpURL,
 						"component": "net/http",
 						"span.kind": "server",
 					},
@@ -87,7 +90,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 								"type":     "web",
 							},
 							Meta: map[string]string{
-								"http.url":  httpUrl,
+								"http.url":  httpURL,
 								"component": "labstack/echo.v4",
 								"span.kind": "server",
 							},

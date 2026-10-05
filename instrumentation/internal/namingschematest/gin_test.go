@@ -15,6 +15,7 @@ import (
 
 	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -43,6 +44,10 @@ var ginTest = harness.TestCase{
 		Defaults:        []string{"gin.router"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGin)},
+		ServiceOverride: []string{"opt.gin_middleware"},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

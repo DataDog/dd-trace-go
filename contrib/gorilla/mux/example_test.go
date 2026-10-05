@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

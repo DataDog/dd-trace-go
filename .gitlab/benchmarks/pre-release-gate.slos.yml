@@ -1,0 +1,45 @@
+# Auto-generated SLO Thresholds
+# Generated: 2026-03-30
+#
+# Generation Strategy: tight
+#   Formula: CI_bound / (1 ± T) (T = 15.0%)
+#
+# SLO Checking:
+#   - BREACH: 90% CI boundary crosses threshold
+#   - WARNING: 90% CI boundary crosses warning_threshold (constant)
+#
+# DO NOT EDIT MANUALLY - Regenerate using:
+#   benchmark_analyzer generate slos --help
+experiments:
+  - name: Run SLO breach check
+    steps:
+      - name: SLO breach check
+        run: fail_on_breach
+        warning_range: 10
+        scenarios:
+          # Go oldstable
+          - name: normal_operation_cgo-cpu-bound/go-oldstable-profile-trace-asm
+            thresholds:
+              - agg_http_req_duration_p99 < 1.5 ms
+          - name: high_load_cgo-cpu-bound/go-oldstable-profile-trace-asm
+            thresholds:
+              - throughput > 60 op/s
+          - name: normal_operation_cgo-cpu-bound/go-oldstable-only-trace
+            thresholds:
+              - agg_http_req_duration_p99 < 1.5 ms
+          - name: high_load_cgo-cpu-bound/go-oldstable-only-trace
+            thresholds:
+              - throughput > 60 op/s
+          # Go stable
+          - name: normal_operation_cgo-cpu-bound/go-stable-profile-trace-asm
+            thresholds:
+              - agg_http_req_duration_p99 < 1.5 ms
+          - name: high_load_cgo-cpu-bound/go-stable-profile-trace-asm
+            thresholds:
+              - throughput > 60 op/s
+          - name: normal_operation_cgo-cpu-bound/go-stable-only-trace
+            thresholds:
+              - agg_http_req_duration_p99 < 1.5 ms
+          - name: high_load_cgo-cpu-bound/go-stable-only-trace
+            thresholds:
+              - throughput > 60 op/s

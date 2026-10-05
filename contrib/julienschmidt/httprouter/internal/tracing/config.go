@@ -18,6 +18,7 @@ type Config struct {
 	headerTags    instrumentation.HeaderTags
 	spanOpts      []tracer.StartSpanOption
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 }
 
@@ -29,6 +30,7 @@ func NewConfig(opts ...Option) *Config {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
 	}
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageJulienschmidtHTTPRouter)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	for _, fn := range opts {
 		fn(cfg)
@@ -48,6 +50,7 @@ type Option func(*Config)
 func WithService(name string) Option {
 	return func(cfg *Config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

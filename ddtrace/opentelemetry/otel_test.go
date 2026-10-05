@@ -11,8 +11,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	ddbaggage "github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
-	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -20,6 +18,8 @@ import (
 	otelbaggage "go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	oteltrace "go.opentelemetry.io/otel/trace"
+
+	ddbaggage "github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 )
 
 func TestHttpDistributedTrace(t *testing.T) {
@@ -58,10 +58,6 @@ func TestHttpDistributedTrace(t *testing.T) {
 }
 
 func expectedSpanNames() []string {
-	v := semver.MustParse(otelhttp.Version())
-	if v.Compare(semver.MustParse("0.60.0")) <= 0 {
-		return []string{"server.request", "internal", "client.request"}
-	}
 	return []string{"http.server.request", "internal", "http.client.request"}
 }
 

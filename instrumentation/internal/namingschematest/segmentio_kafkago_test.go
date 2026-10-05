@@ -16,6 +16,7 @@ import (
 
 	kafkatrace "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -110,6 +111,10 @@ var segmentioKafkaGo = harness.TestCase{
 		Defaults:        harness.RepeatString("kafka", 2),
 		DDService:       []string{"kafka", harness.TestDDService},
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageSegmentioKafkaGo), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

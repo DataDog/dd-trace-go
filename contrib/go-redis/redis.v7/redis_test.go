@@ -37,6 +37,51 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestSkipRaw(t *testing.T) {
+	runCmds := func(t *testing.T, opts ...ClientOption) []*mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
+		client.Set("test_key", "test_value", 0)
+		pipeline := client.Pipeline()
+		pipeline.Expire("pipeline_counter", time.Hour)
+		_, err := pipeline.Exec()
+		require.NoError(t, err)
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		return spans
+	}
+
+	t.Run("true", func(t *testing.T) {
+		spans := runCmds(t, WithSkipRawCommand(true))
+		for _, span := range spans {
+			raw, ok := span.Tags()["redis.raw_command"]
+			assert.False(t, ok)
+			assert.Empty(t, raw)
+		}
+	})
+
+	t.Run("default", func(t *testing.T) {
+		spans := runCmds(t)
+		raw, ok := spans[0].Tags()["redis.raw_command"]
+		assert.True(t, ok)
+		assert.Equal(t, "set test_key test_value: ", raw)
+		raw, ok = spans[1].Tags()["redis.raw_command"]
+		assert.True(t, ok)
+		assert.Equal(t, "expire pipeline_counter 3600: false\n", raw)
+	})
+
+	t.Run("env-disabled", func(t *testing.T) {
+		t.Setenv("DD_TRACE_REDIS_RAW_COMMAND", "false")
+		spans := runCmds(t)
+		for _, span := range spans {
+			raw, ok := span.Tags()["redis.raw_command"]
+			assert.False(t, ok)
+			assert.Empty(t, raw)
+		}
+	})
+}
+
 func TestClientEvalSha(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)

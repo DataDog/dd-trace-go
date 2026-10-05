@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
+// Package pgx provides tracing for pgx v5 connections and pools. When AppSec
+// and RASP are enabled, it also monitors SQL for SQL injection, but it cannot
+// block it. See the README of this package for details and limitations.
 package pgx
 
 import (
@@ -41,7 +44,7 @@ func ConnectConfig(ctx context.Context, connConfig *pgx.ConnConfig, opts ...Opti
 	// as pgx takes ownership of the config. QueryTracer traces
 	// may work, but none of the others will, as they're set in
 	// unexported fields in the config in the pgx.connect function.
-	connConfig.Tracer = wrapPgxTracer(connConfig.Tracer, opts...)
+	connConfig.Tracer = wrapPgxTracer(connConfig, opts...)
 	return pgx.ConnectConfig(ctx, connConfig)
 }
 

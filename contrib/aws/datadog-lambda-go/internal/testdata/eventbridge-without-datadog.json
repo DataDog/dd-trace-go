@@ -1,0 +1,5 @@
+{
+    "detail-type": "trace-propagation-test",
+    "source": "trace-propagation.client",
+    "detail": {"foo": "bar"}
+}

@@ -186,14 +186,14 @@ func createTestConfig() *universalFlagsConfiguration {
 				Variations: map[string]*variant{
 					"config1": {
 						Key: "config1",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"timeout": 30,
 							"retries": 3,
 						},
 					},
 					"config2": {
 						Key: "config2",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"timeout": 60,
 							"retries": 5,
 						},
@@ -244,24 +244,63 @@ func createTestConfig() *universalFlagsConfiguration {
 }
 
 func TestNewDatadogProvider(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	if provider == nil {
 		t.Fatal("expected provider to be non-nil")
 	}
 
 	metadata := provider.Metadata()
-	if metadata.Name != "Datadog Remote Config Provider" {
-		t.Errorf("expected provider name to be 'Datadog Remote Config Provider', got %q", metadata.Name)
+	if metadata.Name != "Datadog Provider" {
+		t.Errorf("expected provider name to be 'Datadog Provider', got %q", metadata.Name)
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 0 {
-		t.Errorf("expected no hooks, got %d", len(hooks))
+	// 3 hooks: exposure hook + OTel flag eval metrics hook + EVP flagevaluation hook.
+	// The EVP hook is enabled by default (DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true).
+	if len(hooks) != 3 {
+		t.Errorf("expected 3 hooks (exposure + flag eval metrics + EVP flagevaluation), got %d", len(hooks))
+	}
+}
+
+// TestEvaluateStampsEvalTimeMetadata verifies the provider stamps evaluation-entry
+// time into FlagMetadata on every path so EVP first/last bounds use eval-time.
+func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(createTestConfig())
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		flagKey string
+		flatCtx openfeature.FlattenedContext
+	}{
+		{"matched allocation", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "US"}},
+		{"default (no match)", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "CA"}},
+		{"disabled flag", "disabled-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+		{"flag not found", "nonexistent-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := time.Now().UnixMilli()
+			result := provider.BooleanEvaluation(ctx, tc.flagKey, false, tc.flatCtx)
+			after := time.Now().UnixMilli()
+
+			got, ok := result.FlagMetadata[metadataEvalTimeKey].(int64)
+			if !ok {
+				t.Fatalf("FlagMetadata[%q] missing or wrong type on %q path; metadata=%v",
+					metadataEvalTimeKey, tc.name, result.FlagMetadata)
+			}
+			if got < before || got > after {
+				t.Fatalf("FlagMetadata[%q] = %d, want within [%d,%d] on %q path",
+					metadataEvalTimeKey, got, before, after, tc.name)
+			}
+		})
 	}
 }
 
 func TestBooleanEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -333,7 +372,7 @@ func TestBooleanEvaluation(t *testing.T) {
 }
 
 func TestStringEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -374,7 +413,7 @@ func TestStringEvaluation(t *testing.T) {
 }
 
 func TestIntEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -411,7 +450,7 @@ func TestIntEvaluation(t *testing.T) {
 }
 
 func TestFloatEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -449,7 +488,7 @@ func TestFloatEvaluation(t *testing.T) {
 }
 
 func TestObjectEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -466,7 +505,7 @@ func TestObjectEvaluation(t *testing.T) {
 			t.Fatal("expected non-nil value")
 		}
 
-		objValue, ok := result.Value.(map[string]interface{})
+		objValue, ok := result.Value.(map[string]any)
 		if !ok {
 			t.Fatalf("expected map[string]interface{}, got %T", result.Value)
 		}
@@ -489,7 +528,7 @@ func TestObjectEvaluation(t *testing.T) {
 			"requests":     500,
 		}
 
-		defaultObj := map[string]interface{}{"default": true}
+		defaultObj := map[string]any{"default": true}
 		result := provider.ObjectEvaluation(ctx, "json-flag", defaultObj, flatCtx)
 
 		if result.Reason != openfeature.DefaultReason {
@@ -499,7 +538,7 @@ func TestObjectEvaluation(t *testing.T) {
 }
 
 func TestProviderWithoutConfiguration(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	ctx := context.Background()
 
 	flatCtx := openfeature.FlattenedContext{
@@ -522,7 +561,7 @@ func TestProviderWithoutConfiguration(t *testing.T) {
 }
 
 func TestProviderConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Initially no config
 	if provider.getConfiguration() != nil {
@@ -544,7 +583,7 @@ func TestProviderConfigurationUpdate(t *testing.T) {
 }
 
 func TestConcurrentEvaluations(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -556,7 +595,7 @@ func TestConcurrentEvaluations(t *testing.T) {
 
 	// Run multiple concurrent evaluations
 	done := make(chan bool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			result := provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			if result.Value != true {
@@ -567,39 +606,282 @@ func TestConcurrentEvaluations(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }
 
 func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
+	openfeature.Shutdown()
+	t.Cleanup(openfeature.Shutdown)
+
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Use a very short timeout context (50ms)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Try to set the provider with context and wait - should timeout
 	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
-
-	// Verify that we get a timeout error
 	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+		t.Fatal("expected initialization timeout to report the provider as not ready")
+	}
+	if state := openfeature.NewDefaultClient().State(); state == openfeature.ReadyState {
+		t.Error("provider must not be READY before receiving configuration")
+	}
+}
+
+func TestInitWithContext_DeliveryErrFailsImmediately(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.mu.Lock()
+	provider.deliveryErr = errors.New("no delivery source could be started")
+	provider.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) {
+		t.Fatalf("expected *openfeature.ProviderInitError, got: %v", err)
+	}
+	if initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Errorf("expected ProviderNotReadyCode, got: %v", initErr.ErrorCode)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("a permanent delivery failure must fail immediately, not wait out the timeout; took %v", elapsed)
+	}
+}
+
+func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = provider.ShutdownWithContext(ctx)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	elapsed := time.Since(start)
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderFatalCode {
+		t.Errorf("expected a ProviderInitError with ProviderFatalCode (configuration will never arrive), got: %v", err)
+	}
+	if elapsed >= time.Second {
+		t.Errorf("Init must return promptly once Shutdown runs, not wait out its own timeout; took %v", elapsed)
+	}
+}
+
+func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	// Init gives up on its deadline while delivery is still running. It reports
+	// not ready, but the provider must still pick up a later configuration.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err := provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) || initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Fatalf("expected a ProviderInitError with ProviderNotReadyCode, got: %v", err)
+	}
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
 	}
 
-	// Check that the error is due to context deadline exceeded
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded error, got: %v", err)
+	// The configuration arrives late, after Init already returned.
+	provider.updateConfiguration(createTestConfig())
+
+	if provider.getConfiguration() == nil {
+		t.Error("a configuration arriving after Init's deadline must still be stored")
 	}
 
-	t.Logf("Successfully got timeout error as expected: %v", err)
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the late configuration, got %v", event.EventType)
+	}
+
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("the late configuration must promote the provider to ready")
+	}
+
+	// The periodic writers must be started by that late configuration too,
+	// otherwise they would never flush for the rest of the process.
+	provider.mu.RLock()
+	writersStarted := provider.writersStarted
+	provider.mu.RUnlock()
+	if !writersStarted {
+		t.Error("the late configuration must also start the periodic writers")
+	}
+
+	// Evaluation works, which is the user-visible point of all this.
+	result := provider.BooleanEvaluation(context.Background(), "bool-flag", false, openfeature.FlattenedContext{
+		"targetingKey": "user-123",
+		"country":      "US",
+	})
+	if result.Value != true {
+		t.Errorf("evaluation must succeed once the late configuration is applied, got %v (reason %s)", result.Value, result.Reason)
+	}
+}
+
+// runWithDeadline runs fn in a goroutine and fails the test if fn does not
+// return within timeout, rather than hanging the test process forever. This
+// guards the two regression tests below against a reintroduced deadlock in
+// waitForConfigurationUpdate: a plain call could hang indefinitely instead of
+// failing.
+func runWithDeadline(t *testing.T, timeout time.Duration, fn func() error) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		t.Fatalf("function did not return within %s; likely deadlocked", timeout)
+		return nil // unreachable: t.Fatalf stops this goroutine via runtime.Goexit
+	}
+}
+
+// assertInitCanceledError pins the contract for an explicitly cancelled Init:
+// a not-ready init error, so the SDK never reports success for a provider that
+// never received configuration.
+func assertInitCanceledError(t *testing.T, err error) {
+	t.Helper()
+
+	var initErr *openfeature.ProviderInitError
+	if !errors.As(err, &initErr) {
+		t.Fatalf("expected *openfeature.ProviderInitError, got: %v", err)
+	}
+	if initErr.ErrorCode != openfeature.ProviderNotReadyCode {
+		t.Errorf("expected %s, got: %s", openfeature.ProviderNotReadyCode, initErr.ErrorCode)
+	}
+}
+
+// TestInitWithContext_AlreadyCancelled pins a regression: InitWithContext
+// must return promptly with an init error when ctx is already cancelled
+// before the call, rather than deadlocking. The prior waitForConfigurationUpdate
+// unlocked p.mu unconditionally on return via defer, including on the
+// already-cancelled path where it had never unlocked p.mu at all, so the
+// deferred lock call would try to lock a mutex this same goroutine already
+// held.
+func TestInitWithContext_AlreadyCancelled(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before InitWithContext ever sees it
+
+	err := runWithDeadline(t, 2*time.Second, func() error {
+		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	})
+
+	assertInitCanceledError(t, err)
+}
+
+// TestInitWithContext_CancelledDuringWait pins the same contract as
+// TestInitWithContext_AlreadyCancelled, but for cancellation arriving while
+// InitWithContext is already blocked waiting for configuration, rather than
+// before the call.
+func TestInitWithContext_CancelledDuringWait(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let InitWithContext reach its wait
+	cancel()
+
+	select {
+	case err := <-errCh:
+		assertInitCanceledError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("InitWithContext did not return after cancellation; likely deadlocked")
+	}
+}
+
+// TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady is the
+// cancellation counterpart of TestInitWithContext_LateConfigurationStillBecomesReady.
+// Cancelling Init hands the first ready event back to the provider, so a
+// configuration arriving afterwards must emit ProviderReady itself rather than
+// leaving the SDK stuck in a not-ready state.
+func TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runWithDeadline(t, 2*time.Second, func() error {
+		return provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	})
+	assertInitCanceledError(t, err)
+
+	if provider.getConfiguration() != nil {
+		t.Fatal("no configuration should be stored yet")
+	}
+
+	provider.updateConfiguration(createTestConfig())
+
+	event := drainEvent(t, provider.EventChannel())
+	if event.EventType != openfeature.ProviderReady {
+		t.Errorf("expected ProviderReady for the configuration arriving after cancellation, got %v", event.EventType)
+	}
+
+	provider.mu.RLock()
+	ready := provider.ready
+	provider.mu.RUnlock()
+	if !ready {
+		t.Error("a configuration arriving after cancellation must promote the provider to ready")
+	}
+}
+
+// TestInitWithContext_ConfigurationArrivesDuringWait pins that a real
+// configuration update still wakes a blocked InitWithContext, guarding
+// against a fix that stops missing cancellation but breaks the success path
+// instead (for example, by waiting on a channel nothing ever closes).
+func TestInitWithContext_ConfigurationArrivesDuringWait(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- provider.InitWithContext(ctx, openfeature.EvaluationContext{})
+	}()
+
+	time.Sleep(20 * time.Millisecond) // let InitWithContext reach its wait
+	provider.updateConfiguration(createTestConfig())
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("expected no error, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("InitWithContext did not return after configuration update; likely deadlocked")
+	}
 }
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 	// Create a provider and set up its configuration immediately
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -616,7 +898,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 
 	// Verify the provider was set by doing a flag evaluation
 	client := openfeature.NewClient("test-client")
-	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]interface{}{
+	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]any{
 		"country": "US",
 	})
 	result, err := client.BooleanValue(context.Background(), "bool-flag", false, evalCtx)
@@ -634,7 +916,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 
 func TestShutdownWithContextTimeout(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -667,7 +949,7 @@ func TestShutdownWithContextTimeout(t *testing.T) {
 
 func TestShutdownWithContextSuccess(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 

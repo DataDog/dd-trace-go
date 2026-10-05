@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
@@ -100,7 +101,7 @@ func MakeListener(config Config, extensionManager *extension.ExtensionManager) L
 	// Agent instead of using this "discovery" implementation.
 	if extensionManager.IsExtensionRunning() {
 		var err error
-		if statsdClient, err = statsd.New("127.0.0.1:8125"); err != nil {
+		if statsdClient, err = statsd.New("127.0.0.1:8125", statsd.WithoutTelemetry()); err != nil {
 			statsdClient = nil // force nil if an error occurred during statsd client init
 		}
 	}
@@ -121,7 +122,7 @@ func (l *Listener) canSendMetrics() bool {
 }
 
 // HandlerStarted adds metrics service to the context
-func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context {
+func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
 	if !l.canSendMetrics() {
 		logger.Error(fmt.Errorf("datadog api key isn't set, won't be able to send metrics"))
 	}
@@ -142,7 +143,7 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) cont
 
 	l.submitEnhancedMetrics("invocations", ctx)
 
-	return ctx
+	return ctx, msg
 }
 
 // HandlerFinished implemented as part of the wrapper.HandlerListener interface

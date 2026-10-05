@@ -4,6 +4,25 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package log provides logging utilities for the tracer.
+//
+// # Constant message convention
+//
+// [Error] aggregates messages by their format string (used as the dedup key)
+// and flushes them periodically. For this aggregation to behave predictably,
+// the first argument to [Error] and [Warn] MUST be a compile-time constant
+// string — dynamic detail belongs in the variadic args, not the format string
+// itself. The `constantlogmsg` analyzer (internal/telemetry/log/analyzer)
+// enforces this.
+//
+// This package does not report to telemetry itself. SDK code that wants an
+// error or panic surfaced in Error Tracking should call
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportError] or
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportPanic]
+// explicitly at that call site. A call site that wants both a local log line
+// and a report, without duplicating the message, should use
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportError]
+// or [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportPanic]
+// instead.
 package log
 
 import (
@@ -13,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -48,7 +68,7 @@ const (
 	LevelError
 )
 
-var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
+var prefixMsg = "Datadog Tracer " + version.Tag
 
 // Logger implementations are able to log given messages that the tracer might
 // output. This interface is duplicated here to avoid a cyclic dependency
@@ -93,10 +113,14 @@ func (m *ManagedFile) Name() string {
 }
 
 var (
-	mu             sync.RWMutex // guards below fields
-	levelThreshold              = LevelWarn
+	levelThreshold atomic.Int32 // stores Level as int32; accessed atomically to avoid lock contention in hot paths
+	mu             sync.RWMutex // guards logger instance
 	logger         Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
+
+func init() {
+	levelThreshold.Store(int32(LevelWarn))
+}
 
 // UseLogger sets l as the active logger and returns a function to restore the
 // previous logger. The return value is mostly useful when testing.
@@ -134,35 +158,26 @@ func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
 
 // SetLevel sets the given lvl as log threshold for logging.
 func SetLevel(lvl Level) {
-	mu.Lock()
-	defer mu.Unlock()
-	levelThreshold = lvl
+	levelThreshold.Store(int32(lvl))
 }
 
 func DefaultLevel() Level {
-	mu.RLock()
-	defer mu.RUnlock()
-	return levelThreshold
+	return GetLevel()
 }
 
 // GetLevel returns the currrent log level.
 func GetLevel() Level {
-	mu.Lock()
-	defer mu.Unlock()
-	return levelThreshold
+	return Level(levelThreshold.Load())
 }
 
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
-	mu.RLock()
-	lvl := levelThreshold
-	mu.RUnlock()
-	return lvl == LevelDebug
+	return GetLevel() == LevelDebug
 }
 
 // Debug prints the given message if the level is LevelDebug.
-func Debug(fmt string, a ...interface{}) {
+func Debug(fmt string, a ...any) {
 	if !DebugEnabled() {
 		return
 	}
@@ -170,12 +185,12 @@ func Debug(fmt string, a ...interface{}) {
 }
 
 // Warn prints a warning message.
-func Warn(fmt string, a ...interface{}) {
+func Warn(fmt string, a ...any) {
 	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message.
-func Info(fmt string, a ...interface{}) {
+func Info(fmt string, a ...any) {
 	printMsg(LevelInfo, fmt, a...)
 }
 
@@ -219,7 +234,7 @@ type errorReport struct {
 
 // Error reports an error. Errors get aggregated and logged periodically. The
 // default is once per minute or once every DD_LOGGING_RATE number of seconds.
-func Error(format string, a ...interface{}) {
+func Error(format string, a ...any) {
 	key := format // format should 99.9% of the time be constant
 	if reachedLimit(key) {
 		// avoid too much lock contention on spammy errors
@@ -284,7 +299,7 @@ func flushLocked() {
 	erron = false
 }
 
-func printMsg(lvl Level, format string, a ...interface{}) {
+func printMsg(lvl Level, format string, a ...any) {
 	var b strings.Builder
 	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
 	b.WriteString(prefixMsg)

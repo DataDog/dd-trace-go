@@ -6,13 +6,75 @@
 package utils
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+func TestGetSafeDirectoryConfig(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping safe directory config test")
+	}
+
+	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
+	safeDirectoryOnce = sync.Once{}
+	safeDirectoryValue = ""
+
+	// Get the safe directory config
+	safeDir := getSafeDirectoryConfig()
+
+	// Should return a non-empty path in a git repository
+	assert.NotEmpty(t, safeDir, "Safe directory config should not be empty in a git repository")
+
+	// The path should not end with /.git (it should be the repo root)
+	assert.False(t, strings.HasSuffix(safeDir, "/.git"), "Safe directory should not end with /.git")
+	assert.False(t, strings.HasSuffix(safeDir, "\\.git"), "Safe directory should not end with \\.git")
+
+	// Calling it again should return the same cached value
+	safeDir2 := getSafeDirectoryConfig()
+	assert.Equal(t, safeDir, safeDir2, "Safe directory should be cached")
+}
+
+func TestSafeDirectoryConfigPassedToGitCommands(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping safe directory test")
+	}
+
+	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
+	safeDirectoryOnce = sync.Once{}
+	safeDirectoryValue = ""
+
+	// Get the safe directory config
+	safeDir := getSafeDirectoryConfig()
+	assert.NotEmpty(t, safeDir, "Safe directory config should not be empty")
+
+	// Use git config --list --show-origin to verify safe.directory is being passed
+	// When we pass -c safe.directory=<path>, git should accept it and show it in the config
+	// We run a command that will include the -c flag and verify it works
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--get", "safe.directory")
+	// The command might return empty or error if safe.directory is not set in actual config,
+	// but the important thing is that it doesn't fail due to the -c flag being malformed
+	// The -c flag is added by execGit, so if the command runs without "unknown option" error, it works
+	_ = out
+	_ = err
+
+	// Verify by running git version which should always succeed if safe.directory is properly passed
+	version, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.NoError(t, err, "git --version should succeed with safe.directory config")
+	assert.Contains(t, version, "git version", "Output should contain git version")
+
+	// Run git rev-parse to verify safe.directory works with repo-specific commands
+	_, err = execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
+	assert.NoError(t, err, "git rev-parse should succeed with safe.directory config")
+}
 
 func TestFilterSensitiveInfo(t *testing.T) {
 	tests := []struct {
@@ -48,8 +110,24 @@ func TestFilterSensitiveInfo(t *testing.T) {
 	}
 }
 
+func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.Empty(t, out)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "git CLI is disabled in payload-file mode")
+}
+
 func TestGetLocalGitData(t *testing.T) {
 	data, err := getLocalGitData()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data.SourceRoot)
@@ -71,18 +149,204 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 
 func TestUnshallowGitRepository(t *testing.T) {
 	_, err := UnshallowGitRepository()
-	if err != nil && strings.Contains(err.Error(), "shallow.lock") {
-		// if the error is related to a shallow.lock file, we will skip the test;
-		// the test is flaky in the CI due to multiple git commands running at the same time.
-		return
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
 	}
 
 	assert.NoError(t, err)
 }
 
+func TestUnshallowGitRepositoryTreatsEmptyFetchOutputAsSuccess(t *testing.T) {
+	_, fetchesFile := setupFakeGitForUnshallow(t, false)
+
+	ok, err := UnshallowGitRepository()
+
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 1, countFakeGitFetches(t, fetchesFile))
+}
+
+func TestUnshallowGitRepositoryTreatsEmptyUpstreamFetchOutputAsSuccess(t *testing.T) {
+	_, fetchesFile := setupFakeGitForUnshallow(t, true)
+
+	ok, err := UnshallowGitRepository()
+
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 2, countFakeGitFetches(t, fetchesFile))
+}
+
+func TestPackFiles(t *testing.T) {
+	shas := GetLastLocalGitCommitShas()
+	shas = shas[:min(len(shas), 5)]
+	packfiles := CreatePackFiles(shas, []string{})
+	assert.NotEmpty(t, packfiles)
+}
+
+func TestCreatePackFilesMissingPackFile(t *testing.T) {
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	script := `#!/bin/sh
+if [ "$1" = "-c" ]; then
+	shift 2
+fi
+case "$1" in
+	rev-list)
+		printf 'abc123\n'
+		;;
+	pack-objects)
+		printf 'packhash\n'
+		;;
+	*)
+		exit 0
+		;;
+esac
+`
+	assert.NoError(t, os.WriteFile(gitPath, []byte(script), 0o755))
+	gitBatPath := filepath.Join(dir, "git.bat")
+	batchScript := `@echo off
+if "%1"=="-c" (
+	shift
+	shift
+)
+if "%1"=="rev-list" (
+	echo abc123
+	exit /b 0
+)
+if "%1"=="pack-objects" (
+	echo packhash
+	exit /b 0
+)
+exit /b 0
+`
+	assert.NoError(t, os.WriteFile(gitBatPath, []byte(batchScript), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	assert.Empty(t, CreatePackFiles([]string{"HEAD"}, nil))
+}
+
+func setupFakeGitForUnshallow(t *testing.T, failFirstFetch bool) (string, string) {
+	t.Helper()
+
+	resetGitCommandCachesForTesting(t)
+
+	dir := t.TempDir()
+	commandsFile := filepath.Join(dir, "commands.log")
+	fetchesFile := filepath.Join(dir, "fetches.log")
+	testBinary, err := os.Executable()
+	assert.NoError(t, err)
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=TestFakeGitForUnshallowHelperProcess", "--"}
+	t.Setenv("DD_TEST_FAKE_GIT_HELPER", "1")
+	t.Setenv("DD_TEST_GIT_COMMANDS", commandsFile)
+	t.Setenv("DD_TEST_GIT_FETCHES", fetchesFile)
+	if failFirstFetch {
+		t.Setenv("DD_TEST_GIT_FAIL_FIRST_FETCH", "1")
+	} else {
+		t.Setenv("DD_TEST_GIT_FAIL_FIRST_FETCH", "")
+	}
+
+	return commandsFile, fetchesFile
+}
+
+func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_FAKE_GIT_HELPER") != "1" {
+		return
+	}
+
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	for len(args) >= 2 && args[0] == "-c" {
+		args = args[2:]
+	}
+
+	if commandsFile := os.Getenv("DD_TEST_GIT_COMMANDS"); commandsFile != "" {
+		_ = os.WriteFile(commandsFile, []byte(strings.Join(args, " ")+"\n"), 0o644)
+	}
+	if len(args) == 0 {
+		os.Exit(0)
+	}
+
+	switch args[0] {
+	case "--version":
+		_, _ = os.Stdout.WriteString("git version 2.39.0\n")
+	case "rev-parse":
+		switch {
+		case len(args) > 1 && args[1] == "--is-shallow-repository":
+			_, _ = os.Stdout.WriteString("true\n")
+		case len(args) > 1 && args[1] == "HEAD":
+			_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789\n")
+		case len(args) > 1 && args[1] == "--abbrev-ref":
+			_, _ = os.Stdout.WriteString("origin/main\n")
+		}
+	case "log":
+		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789 first commit\n")
+	case "remote", "config":
+		_, _ = os.Stdout.WriteString("origin\n")
+	case "fetch":
+		fetchesFile := os.Getenv("DD_TEST_GIT_FETCHES")
+		if fetchesFile != "" {
+			f, _ := os.OpenFile(fetchesFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if f != nil {
+				_, _ = f.WriteString("fetch\n")
+				_ = f.Close()
+			}
+		}
+		if os.Getenv("DD_TEST_GIT_FAIL_FIRST_FETCH") == "1" && countFakeGitFetches(t, fetchesFile) == 1 {
+			_, _ = os.Stderr.WriteString("fetch failed\n")
+			os.Exit(1)
+		}
+	case "branch":
+		_, _ = os.Stdout.WriteString("main\n")
+	}
+	os.Exit(0)
+}
+
+func resetGitCommandCachesForTesting(t *testing.T) {
+	t.Helper()
+	originalGitExecutable := gitExecutable
+	originalGitExecutableArgs := append([]string(nil), gitExecutableArgs...)
+	reset := func() {
+		gitFinderOnce = sync.Once{}
+		gitExecutable = originalGitExecutable
+		gitExecutableArgs = append([]string(nil), originalGitExecutableArgs...)
+		isGitFoundValue = false
+		gitVersionOnce = sync.Once{}
+		gitVersionValue = gitVersionData{}
+		safeDirectoryOnce = sync.Once{}
+		safeDirectoryValue = ""
+		isAShallowCloneRepositoryOnce.Store(nil)
+		isAShallowCloneRepositoryValue = false
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+func countFakeGitFetches(t *testing.T, fetchesFile string) int {
+	t.Helper()
+	data, err := os.ReadFile(fetchesFile)
+	if os.IsNotExist(err) {
+		return 0
+	}
+	assert.NoError(t, err)
+	fetches := 0
+	for field := range strings.FieldsSeq(string(data)) {
+		if field == "fetch" {
+			fetches++
+		}
+	}
+	return fetches
+}
+
 func TestFetchCommitData(t *testing.T) {
 	log.SetLevel(log.LevelDebug)
-	for _, sha := range GetLastLocalGitCommitShas() {
+	commits := GetLastLocalGitCommitShas()
+	for _, sha := range commits[:min(len(commits), 3)] {
 		if gitData, err := fetchCommitData(sha); err == nil {
 			assert.NotEmpty(t, gitData.AuthorName, "Author name should not be empty")
 			assert.NotEmpty(t, gitData.AuthorEmail, "Author email should not be empty")
@@ -91,6 +355,8 @@ func TestFetchCommitData(t *testing.T) {
 			assert.NotEmpty(t, gitData.CommitterEmail, "Committer email should not be empty")
 			assert.NotEmpty(t, gitData.CommitterDate, "Committer date should not be empty")
 			assert.NotEmpty(t, gitData.CommitMessage, "Commit message should not be empty")
+		} else if acceptableError(err) {
+			t.Skipf("test skipped due to: %s", err.Error())
 		} else {
 			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
 		}
@@ -200,6 +466,9 @@ func TestComputeBranchMetrics(t *testing.T) {
 
 	// Test with the current branch as both candidate and source (should work)
 	metrics, err := computeBranchMetrics([]string{currentBranch}, currentBranch)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 
 	// When comparing a branch to itself, ahead should be 0
@@ -271,6 +540,9 @@ func TestGetRemoteName(t *testing.T) {
 	}
 
 	remoteName, err := getRemoteName()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 	assert.NotEmpty(t, remoteName, "Remote name should not be empty")
 	// Most repositories have "origin" as the default remote
@@ -283,6 +555,9 @@ func TestGetSourceBranch(t *testing.T) {
 	}
 
 	branch, err := getSourceBranch()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 	assert.NotEmpty(t, branch, "Source branch should not be empty")
 }
@@ -340,6 +615,9 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	}()
 
 	sha, err := GetBaseBranchSha("master")
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.Error(t, err)
 	assert.Equal(t, "", sha)
 	assert.Contains(t, err.Error(), "git executable not found")
@@ -408,6 +686,9 @@ func TestDetectDefaultBranch(t *testing.T) {
 	}
 
 	defaultBranch, err := detectDefaultBranch(remoteName)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	// The function should either succeed or fail gracefully
 	if err != nil {
@@ -463,6 +744,9 @@ func TestDetectDefaultBranchWithNonExistentRemote(t *testing.T) {
 
 	// Test with a non-existent remote
 	defaultBranch, err := detectDefaultBranch("nonexistent")
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	// Should fail to detect
 	assert.Error(t, err)
@@ -524,6 +808,9 @@ func TestGetRemoteBranches(t *testing.T) {
 	}
 
 	branches, err := getRemoteBranches(remoteName)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 
 	// Should get some remote branches (even if empty in some test environments)
@@ -585,4 +872,17 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
 		t.Logf("GetBaseBranchSha without CI tags returned valid SHA: %s", sha)
 	}
+}
+
+func acceptableError(err error) bool {
+	errMessage := strings.ToLower(err.Error())
+	// if the error is related to a shallow.lock file, we will skip the test;
+	// if the error is due to transient GitHub connectivity or transport failures, we will skip the test;
+	// the test is flaky in the CI due to multiple git commands running at the same time.
+	return strings.Contains(errMessage, "shallow.lock") ||
+		strings.Contains(errMessage, "couldn't connect to server") ||
+		strings.Contains(errMessage, "the requested url returned error: 500") ||
+		strings.Contains(errMessage, "rpc failed; http 500") ||
+		strings.Contains(errMessage, "fatal: expected flush after ref listing") ||
+		strings.Contains(errMessage, "fatal: expected 'packfile'")
 }

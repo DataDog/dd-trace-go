@@ -17,6 +17,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	spanOpts      []tracer.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
@@ -39,6 +40,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageChi)
 	cfg.analyticsRate = instr.AnalyticsRate(true)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
@@ -56,6 +58,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

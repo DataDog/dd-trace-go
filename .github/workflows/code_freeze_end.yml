@@ -1,0 +1,87 @@
+name: End code freeze
+
+on:
+  workflow_dispatch:
+  milestone:
+    types: [closed, deleted]
+
+jobs:
+  end_code_freeze:
+    # Trigger on:
+    # - Manual dispatch (unfreezes all PRs)
+    # - Milestone events where title starts with "Code Freeze" or "Incident" and state is closed
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'milestone' &&
+        (startsWith(github.event.milestone.title, 'Code Freeze') ||
+         startsWith(github.event.milestone.title, 'Incident')))
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read # Fetches PRs
+      statuses: write # add a commit status check
+      issues: read # Required to list milestones
+
+    steps:
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.code-freeze-end
+
+      - name: Log code freeze end
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MILESTONE_TITLE: ${{ github.event.milestone.title }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "🌡️ Code freeze ended manually"
+          else
+            echo "🌡️ Code freeze ended by closing milestone: $MILESTONE_TITLE"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check for remaining freeze milestones
+        id: check_remaining
+        env:
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+        run: |
+          REPO="${{ github.repository }}"
+
+          # Check if any other Code Freeze or Incident milestones are still open
+          REMAINING=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$REPO/milestones?state=open" \
+            --jq '.[] | select(.title | startswith("Code Freeze") or startswith("Incident")) | .title')
+
+          if [ -z "$REMAINING" ]; then
+            echo "✅ No remaining freeze milestones - proceeding with unfreeze"
+            echo "should_unfreeze=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ Other freeze milestones are still open:"
+            echo "$REMAINING"
+
+            # For manual dispatch, warn but allow unfreezing all PRs
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "🔓 Manual dispatch - unfreezing all PRs despite active freeze milestones"
+              echo "should_unfreeze=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "🔒 Skipping unfreeze because other freeze milestones remain open"
+              echo "should_unfreeze=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Unfreeze PRs
+        if: steps.check_remaining.outputs.should_unfreeze == 'true'
+        uses: ./.github/actions/pr-status-updater
+        with:
+          github_token: ${{ steps.generate-token.outputs.token }}
+          state: success
+          workflow_name: code_freeze_end.yml

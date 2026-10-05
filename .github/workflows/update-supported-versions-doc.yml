@@ -22,20 +22,22 @@ jobs:
       id-token: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: echo 'Smoke Tests workflow passed'
       - run: go run ./scripts/gen_integrations_doc.go
       - run: git diff
       # note: This will only run when there *are* changes to integration versions
       - name: Get GitHub token
-        uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80 # v1.0.3
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
         id: octo-sts
         with:
           scope: DataDog/dd-trace-go
           policy: self.update-supported-versions-doc.create-pr
       - name: Create Pull Request
         id: pr
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
         with:
           token: ${{ steps.octo-sts.outputs.token }}
           branch: "update-latest-supported-versions"

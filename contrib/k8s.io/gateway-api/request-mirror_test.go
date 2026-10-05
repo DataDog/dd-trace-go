@@ -11,16 +11,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRequestMirror(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	srv := httptest.NewServer(HTTPRequestMirrorHandler(Config{}))
 	defer srv.Close()

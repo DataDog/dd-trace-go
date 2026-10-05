@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -27,6 +28,17 @@ type OptionFn = internal.OptionFn
 // HandlerOptionFn represents options applicable to NewServeMux and WrapHandler.
 type HandlerOptionFn = internal.HandlerOptionFn
 
+// WithServeMux sets the given *http.ServeMux as the underlying ServeMux instead
+// of allocating a new one. This is useful when the traced ServeMux needs to wrap
+// a ServeMux that was already configured elsewhere, or when it needs to be the
+// outermost handler in a chain of wrapped handlers.
+// This option only affects NewServeMux; it has no effect when passed to WrapHandler.
+func WithServeMux(mux *http.ServeMux) HandlerOptionFn {
+	return func(cfg *internal.Config) {
+		cfg.Mux = mux
+	}
+}
+
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) OptionFn {
@@ -39,6 +51,7 @@ func WithIgnoreRequest(f func(*http.Request) bool) OptionFn {
 func WithService(name string) OptionFn {
 	return func(cfg *internal.CommonConfig) {
 		cfg.ServiceName = name
+		cfg.ServiceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
@@ -124,6 +137,7 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 	}
 	sharedCfg := internal.CommonConfig{
 		ServiceName:   instr.ServiceName(instrumentation.ComponentClient, nil),
+		ServiceSource: string(instrumentation.PackageNetHTTP),
 		AnalyticsRate: instr.GlobalAnalyticsRate(),
 		ResourceNamer: defaultResourceNamer,
 		IgnoreRequest: func(_ *http.Request) bool { return false },

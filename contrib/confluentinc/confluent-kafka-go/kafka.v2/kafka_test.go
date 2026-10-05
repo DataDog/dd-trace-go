@@ -106,8 +106,9 @@ func TestConsumerChannel(t *testing.T) {
 
 func TestConsumerFunctional(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		action consumerActionFn
+		name                     string
+		action                   consumerActionFn
+		useProducerEventsChannel bool
 	}{
 		{
 			name: "Poll",
@@ -126,9 +127,16 @@ func TestConsumerFunctional(t *testing.T) {
 				return c.ReadMessage(3000 * time.Millisecond)
 			},
 		},
+		{
+			name: "UseProducerEventsChannel",
+			action: func(c *Consumer) (*kafka.Message, error) {
+				return c.ReadMessage(3000 * time.Millisecond)
+			},
+			useProducerEventsChannel: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()})
+			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()}, tt.useProducerEventsChannel)
 
 			s0 := spans[0] // produce
 			assert.Equal(t, "kafka.produce", s0.OperationName())
@@ -143,6 +151,8 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
 			assert.Equal(t, "gotest", s0.Tag("messaging.destination.name"))
+			assert.Nil(t, s0.Tag(ext.ErrorMsg))
+			assert.Nil(t, s0.Tag(ext.ErrorType))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -160,15 +170,51 @@ func TestConsumerFunctional(t *testing.T) {
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
+			clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+			require.True(t, ok, "produce span should have a cluster ID tag")
+			require.NotEmpty(t, clusterID)
 			mt := mocktracer.Start()
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
 			assert.Equal(t, expected.GetHash(), p.GetHash())
 		})
 	}
+}
+
+func TestConsumerFunctionalWithClusterID(t *testing.T) {
+	action := func(c *Consumer) (*kafka.Message, error) {
+		return c.ReadMessage(3000 * time.Millisecond)
+	}
+	spans, msg := produceThenConsume(t, action,
+		[]Option{WithDataStreams()},
+		[]Option{WithDataStreams()},
+		false,
+	)
+	require.Len(t, spans, 2)
+
+	// Verify cluster ID is set as a span tag on both produce and consume spans.
+	// The cluster ID is auto-fetched from the broker, so we just verify it's
+	// present and consistent across spans.
+	s0 := spans[0] // produce
+	s1 := spans[1] // consume
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	require.True(t, ok, "produce span should have a cluster ID tag")
+	assert.NotEmpty(t, clusterID)
+	assert.Equal(t, clusterID, s1.Tag(ext.MessagingKafkaClusterID))
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+	assert.True(t, ok)
+	mt := mocktracer.Start()
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	mt.Stop()
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
@@ -332,9 +378,13 @@ func TestProduceError(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
+	s0 := spans[0]
+	assert.Equal(t, "kafka.produce", s0.OperationName())
+	assert.Equal(t, "Local: Invalid argument or configuration", s0.Tag(ext.ErrorMsg))
+	assert.Equal(t, "kafka.Error", s0.Tag(ext.ErrorType))
 }
 
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option, useProducerEventsChannel bool) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -347,8 +397,13 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"go.delivery.reports": true,
 	}, producerOpts...)
 	require.NoError(t, err)
+	require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
-	delivery := make(chan kafka.Event, 1)
+	var delivery chan kafka.Event = nil
+	if !useProducerEventsChannel {
+		delivery = make(chan kafka.Event, 1)
+	}
+
 	err = p.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{
 			Topic:     &testTopic,
@@ -359,7 +414,16 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	}, delivery)
 	require.NoError(t, err)
 
-	msg1, _ := (<-delivery).(*kafka.Message)
+	var evt kafka.Event
+	select {
+	case evt = <-p.Events():
+	case evt = <-delivery:
+	}
+	msg1, ok := evt.(*kafka.Message)
+	require.True(t, ok)
+	assert.Equal(t, "key2", string(msg1.Key))
+	assert.Equal(t, "value2", string(msg1.Value))
+
 	p.Close()
 
 	// next attempt to consume the message
@@ -372,6 +436,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
+	require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
@@ -401,9 +466,12 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 			return m
 		}
 		backlogsMap := toMap(backlogs)
-		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+		clusterID := c.tracer.ClusterID()
+		require.NotEmpty(t, clusterID)
+		clusterTag := "kafka_cluster_id:" + clusterID
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce"+clusterTag)
 	}
 	return spans, msg2
 }

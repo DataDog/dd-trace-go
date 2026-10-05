@@ -6,50 +6,86 @@
 package tracer
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 const TraceIDZero string = "00000000000000000000000000000000"
 
+// traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+// at init time so that newSpanContext avoids calling BoolEnv on every span.
+// It is re-set by newConfig on every tracer start so that restarts pick up
+// any changed value. The init here ensures it is correct even when using
+// mocktracer (which does not call newConfig).
+var traceID128BitEnabled atomic.Bool
+
+func init() {
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //configaudit:ignore — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
+}
+
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
-type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+// traceID in big endian, i.e. <upper><lower>
+type traceID struct {
+	value      [16]byte
+	hexEncoded string
+}
 
-var emptyTraceID traceID
-
+// HexEncoded returns the 32-character hex representation of the 128-bit trace
+// ID. It returns the value cached by cacheHex when the traceID was finalized at
+// construction (the extraction paths, and AppSec spans via newSpanContext),
+// and otherwise encodes without writing. That non-caching fallback is required
+// for concurrency: HexEncoded is called from Inject on a SpanContext that may
+// be shared across goroutines, so writing t.hexEncoded here would race.
 func (t *traceID) HexEncoded() string {
-	return hex.EncodeToString(t[:])
+	if t.hexEncoded != "" {
+		return t.hexEncoded
+	}
+	return hex.EncodeToString(t.value[:])
 }
 
 func (t *traceID) Lower() uint64 {
-	return binary.BigEndian.Uint64(t[8:])
+	return binary.BigEndian.Uint64(t.value[8:])
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t[:8])
+	return binary.BigEndian.Uint64(t.value[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
-	binary.BigEndian.PutUint64(t[8:], i)
+	binary.BigEndian.PutUint64(t.value[8:], i)
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t[:8], i)
+	binary.BigEndian.PutUint64(t.value[:8], i)
+	t.hexEncoded = ""
+}
+
+func (t *traceID) set(v [16]byte) {
+	t.value = v
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpperFromHex(s string) error {
@@ -62,20 +98,26 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return *t == emptyTraceID
+	return t.value == [16]byte{}
 }
 
 func (t *traceID) HasUpper() bool {
-	for _, b := range t[:8] {
-		if b != 0 {
+	for ix := range t.value[:8] {
+		if t.value[ix] != 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func (t *traceID) UpperHex() string {
-	return hex.EncodeToString(t[:8])
+func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+
+// cacheHex populates the hexEncoded cache. It must be called at traceID
+// construction finalization, before the enclosing SpanContext is shared with
+// other goroutines. After cacheHex returns, HexEncoded becomes a pure read
+// and is safe under concurrent access.
+func (t *traceID) cacheHex() {
+	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -86,10 +128,15 @@ type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
+	isRemote bool
+	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
+	baggageOnly bool
+	errors      atomic.Int32 // number of spans with errors in this trace
+	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // +checkatomic
 
-	trace  *trace       // reference to the trace that this span belongs too
-	span   *Span        // reference to the span that hosts this context
-	errors atomic.Int32 // number of spans with errors in this trace
+	trace *trace // reference to the trace that this span belongs too
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -100,27 +147,38 @@ type SpanContext struct {
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
 	reparentID string
-	isRemote   bool
 
 	// the below group should propagate cross-process
 
 	traceID traceID
 	spanID  uint64
 
-	mu         sync.RWMutex // guards below fields
-	baggage    map[string]string
-	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	origin     string // e.g. "synthetics"
+	// guards below fields
+	mu locking.RWMutex
+	// +checklocks:mu
+	baggage map[string]string
+	// +checklocks:mu
+	// spanSnapshot stores mirrored data from the span that hosts this context.
+	spanSnapshot spanSnapshot
+	// e.g. "synthetics"
+	// +checklocks:mu
+	origin string
 
-	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
-	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// links to related spans in separate|external|disconnected traces
+	// +checklocks:mu
+	spanLinks []SpanLink
+}
+
+// Private interface for span contexts that can propagate sampling decisions.
+type spanContextWithSamplingDecision interface {
+	SamplingDecision() uint32
+	Priority() *float64
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
 type spanContextV1Adapter interface {
-	SamplingDecision() uint32
+	spanContextWithSamplingDecision
 	Origin() string
-	Priority() *float64
 	PropagatingTags() map[string]string
 	Tags() map[string]string
 }
@@ -129,24 +187,84 @@ type spanContextV1Adapter interface {
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
-	sc.traceID = c.TraceIDBytes()
+	sc.traceID.set(c.TraceIDBytes())
 	sc.spanID = c.SpanID()
-	sc.baggage = make(map[string]string)
+	sc.baggage = make(map[string]string) // +checklocksignore - Initialization time, not shared yet.
 	c.ForeachBaggageItem(func(k, v string) bool {
-		sc.hasBaggage = 1
-		sc.baggage[k] = v
+		sc.hasBaggage = 1 // +checklocksignore - Initialization time, not shared yet.
+		sc.baggage[k] = v // +checklocksignore - Initialization time, not shared yet.
 		return true
 	})
-	ctx, ok := c.(spanContextV1Adapter)
+
+	ctxSpl, ok := c.(spanContextWithSamplingDecision)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
-	sc.origin = ctx.Origin()
-	sc.trace = newTrace()
-	sc.trace.priority = ctx.Priority()
-	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
-	sc.trace.tags = ctx.Tags()
-	sc.trace.propagatingTags = ctx.PropagatingTags()
+
+	// Translate the external sampling decision into DD trace semantics.
+	//
+	// Two separate mechanisms are at play:
+	//
+	//   - samplingDecision (decisionNone/Keep/Drop): controls whether the trace
+	//     payload is sent to the agent (willSend) and whether keep()/drop() can
+	//     modify it. Both keep() and drop() use atomic Compare-And-Swap (CAS)
+	//     from decisionNone only — they atomically check that the current value
+	//     is decisionNone before writing, so whichever goroutine calls first
+	//     wins and subsequent calls are no-ops. This lets error spans "rescue"
+	//     a trace: if keep() runs before drop(), the trace is sent.
+	//
+	//   - sampling priority (P0/P1) + lock: the numeric priority sent to the
+	//     agent. Locking prevents the DD sampler from overriding it via
+	//     resampling.
+	//
+	// For keep decisions (OTel sampled=true): propagate decisionKeep directly
+	// so the trace is guaranteed to be sent.
+	//
+	// For drop decisions (OTel sampled=false): set priority to P0 and lock it
+	// (so the DD sampler won't override the OTel decision), but leave
+	// samplingDecision as decisionNone. This preserves the CAS semantics: if
+	// an error span finishes, keep() can still CAS(decisionNone -> decisionKeep)
+	// and rescue the trace. If no span rescues it, drop() will
+	// CAS(decisionNone -> decisionDrop) and the trace is dropped normally.
+	// This matches native DD tracer behavior where P0 traces are not
+	// hard-dropped client-side.
+	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
+		sc.trace = newTrace()
+		if sDecision == decisionKeep {
+			sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
+		}
+		// For decisionDrop we intentionally leave samplingDecision as
+		// decisionNone (the newTrace default). The priority below still
+		// records the OTel intent (P0), and locking prevents resampling.
+
+		if p := ctxSpl.Priority(); p != nil {
+			sc.setSamplingPriority(int(*p), samplernames.Unknown)
+			sc.trace.setLocked(true)
+		}
+	}
+
+	ctx, ok := c.(spanContextV1Adapter)
+	if !ok {
+		sc.traceID.cacheHex()
+		return &sc
+	}
+
+	sc.origin = ctx.Origin() // +checklocksignore - Initialization time, not shared yet.
+	if sc.trace == nil {
+		sc.trace = newTrace()
+	}
+	sc.trace.tags = ctx.Tags()                    // +checklocksignore - Initialization time, not shared yet.
+	if pt := ctx.PropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, not shared yet.
+		// Clone the map so that the atomic.Value snapshot is immutable and
+		// independent of whatever the adapter holds internally.
+		cp := maps.Clone(pt)
+		sc.trace.propagatingTags.Store(cp)
+		if dm, ok := cp[keyDecisionMaker]; ok {
+			sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+		}
+	}
+	sc.traceID.cacheHex()
 	return &sc
 }
 
@@ -155,25 +273,29 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
-		span:   span,
 	}
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if !parent.baggageOnly {
+		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
-			context.origin = parent.origin
+			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	}
+	// We generate a new upper trace ID when the trace is brand new (no parent)
+	// or when the parent is baggage only, since baggage only parents should
+	// not propagate their trace IDs
+	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -182,6 +304,19 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		// (We only want 32 bits of time, then the rest is zero)
 		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
 		context.traceID.SetUpper(tUp)
+	}
+	// Reuse a matching parent's cache so the trace pays one hex allocation.
+	if parent != nil && context.traceID.value == parent.traceID.value {
+		context.traceID.hexEncoded = parent.traceID.hexEncoded
+	}
+	// AppSec correlates security events with profiles through the "trace id"
+	// pprof label, which needs the hex form. Finalize the cache here, while the
+	// context is still private to this goroutine: StartSpan hands the span to
+	// the sampler (and any custom Sampler may publish it) before it applies the
+	// pprof labels, so a lazy write from that later point would race with
+	// readers such as TraceID and Inject.
+	if context.traceID.hexEncoded == "" && appsec.Enabled() {
+		context.traceID.cacheHex()
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -192,11 +327,82 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// The span snapshot is populated by tracer.StartSpan after all
+	// env/version/service-mapping mutations, so we skip the intermediate
+	// write here. Direct callers of newSpanContext (tests) do not read
+	// the snapshot before populating it.
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
+	// Brand-new traces outside AppSec stay uncached: caching every StartSpan
+	// would allocate for spans that are never propagated, and HexEncoded's
+	// fallback is read-only. See HexEncoded and cacheHex for the full contract.
 	return context
+}
+
+func (c *SpanContext) getSpanSnapshot() spanSnapshot {
+	if c == nil {
+		return spanSnapshot{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSnapshot
+}
+
+func (c *SpanContext) setSpanSnapshot(data spanSnapshot) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot = data
+}
+
+func (c *SpanContext) setSpanSnapshotService(service, source string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.service = service
+	c.spanSnapshot.serviceSource = source
+}
+
+func (c *SpanContext) setSpanSnapshotPPROFCtx(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.pprofCtx = ctx
+}
+
+func (c *SpanContext) setSpanSnapshotMeta(key, value string) {
+	if c == nil {
+		return
+	}
+	switch key {
+	case ext.PeerService, ext.Environment, ext.Version:
+	default:
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setSpanSnapshotMetaLocked(key, value)
+}
+
+// +checklocks:c.mu
+func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
+	assert.RWMutexLocked(&c.mu)
+	switch key {
+	case ext.PeerService:
+		c.spanSnapshot.peerService = value
+	case ext.Environment:
+		c.spanSnapshot.env = value
+	case ext.Version:
+		c.spanSnapshot.version = value
+	}
 }
 
 // SpanID implements ddtrace.SpanContext.
@@ -209,7 +415,7 @@ func (c *SpanContext) SpanID() uint64 {
 
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
-	if c == nil {
+	if c == nil || c.traceID.Empty() {
 		return TraceIDZero
 	}
 	return c.traceID.HexEncoded()
@@ -218,9 +424,9 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return emptyTraceID
+		return [16]byte{}
 	}
-	return c.traceID
+	return c.traceID.value
 }
 
 // TraceIDLower implements ddtrace.SpanContext.
@@ -241,9 +447,21 @@ func (c *SpanContext) TraceIDUpper() uint64 {
 
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
-	cp := make([]SpanLink, len(c.spanLinks))
-	copy(cp, c.spanLinks)
+	cp := make([]SpanLink, len(c.spanLinks)) // +checklocksignore - Read-only after init.
+	copy(cp, c.spanLinks)                    // +checklocksignore - Read-only after init.
 	return cp
+}
+
+// foreachBaggageItemLocked iterates over baggage items.
+// c.mu must be held for reading.
+// +checklocksread:c.mu
+func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
+	assert.RWMutexRLocked(&c.mu)
+	for k, v := range c.baggage {
+		if !handler(k, v) {
+			break
+		}
+	}
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
@@ -256,11 +474,7 @@ func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	for k, v := range c.baggage {
-		if !handler(k, v) {
-			break
-		}
-	}
+	c.foreachBaggageItemLocked(handler)
 }
 
 // sets the sampling priority and decision maker (based on `sampler`).
@@ -292,14 +506,49 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
-func (c *SpanContext) setBaggageItem(key, val string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// setBaggageItemLocked sets a baggage item.
+// c.mu must be held for writing.
+// +checklocks:c.mu
+func (c *SpanContext) setBaggageItemLocked(key, val string) {
+	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
 		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
+}
+
+func (c *SpanContext) setBaggageItem(key, val string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setBaggageItemLocked(key, val)
+}
+
+// setOTBaggageItem stores a baggage item extracted from a legacy OpenTracing
+// "ot-baggage-<key>" HTTP header. <key> is derived from a case-insensitive
+// header name, so it must be lowercased here to match how it was matched.
+// This is deliberately not folded into setBaggageItem itself, which is also
+// used by the public Span.SetBaggageItem API (arbitrary user-chosen keys) and
+// by the case-sensitive W3C "baggage" header extractor (opaque token keys) —
+// neither of those should have their keys silently normalized.
+func (c *SpanContext) setOTBaggageItem(key, val string) {
+	c.setBaggageItem(strings.ToLower(key), val)
+}
+
+// baggageItemLocked retrieves a baggage item.
+// c.mu must be held for reading.
+// +checklocksread:c.mu
+func (c *SpanContext) baggageItemLocked(key string) string {
+	assert.RWMutexRLocked(&c.mu)
+	return c.baggage[key]
+}
+
+// baggageCountLocked returns the number of baggage items.
+// c.mu must be held for reading.
+// +checklocksread:c.mu
+func (c *SpanContext) baggageCountLocked() int {
+	assert.RWMutexRLocked(&c.mu)
+	return len(c.baggage)
 }
 
 func (c *SpanContext) baggageItem(key string) string {
@@ -308,11 +557,14 @@ func (c *SpanContext) baggageItem(key string) string {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.baggage[key]
+	return c.baggageItemLocked(key)
 }
 
 // finish marks this span as finished in the trace.
-func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
+// The span must be locked by the caller.
+func (c *SpanContext) finish(s *Span) {
+	c.trace.finishedOneLocked(s)
+}
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.
 // It excludes potentially sensitive data like baggage contents while preserving useful debugging information.
@@ -325,12 +577,14 @@ func (c *SpanContext) safeDebugString() string {
 	var baggageCount int
 	if hasBaggage {
 		c.mu.RLock()
-		baggageCount = len(c.baggage)
+		baggageCount = c.baggageCountLocked()
 		c.mu.RUnlock()
 	}
 
+	origin := c.origin           // +checklocksignore - Read-only after init.
+	baggageOnly := c.baggageOnly // +checklocksignore - Read-only after init.
 	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
-		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, origin, c.updated, c.isRemote, baggageOnly)
 }
 
 // samplingDecision is the decision to send a trace to the agent or not.
@@ -350,20 +604,166 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex      // guards below fields
-	spans            []*Span           // all the spans that are part of this trace
-	tags             map[string]string // trace level tags
-	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
-	finished         int               // the number of finished spans
-	full             bool              // signifies that the span buffer is full
-	priority         *float64          // sampling priority
-	locked           bool              // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	// guards below fields
+	mu locking.RWMutex
+	// all the spans that are part of this trace
+	// +checklocks:mu
+	spans []*Span
+	// trace level tags
+	// +checklocks:mu
+	tags map[string]string
+	// trace level tags that will be propagated across service boundaries
+	// holds map[string]string; readers are lock-free (atomic.Value); writers hold mu and use copy-on-write
+	propagatingTags atomic.Value
+	// the number of finished spans
+	// +checklocks:mu
+	finished int
+	// signifies that the span buffer is full
+	// +checklocks:mu
+	full bool
+	// sampling priority — accessed atomically to allow lock-free reads
+	// from the span creation hot path (SamplingPriority).
+	// Writes still happen under mu (because they also touch propagatingTags).
+	// +checkatomic
+	priority atomic.Pointer[float64]
+	// specifies if the sampling priority can be altered
+	// +checklocks:mu
+	locked bool
+	// dm is the numeric form of _dd.p.dm for v1 protocol encoding.
+	// It is the absolute value of the parsed integer (e.g., "-4" → 4).
+	// +checklocks:mu
+	dm uint32
+	// samplingDecision indicates whether to send the trace to the agent.
+	samplingDecision samplingDecision // +checkatomic
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
+	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
+
+	// rootFlushed is set when partial flushing sends the local root before the
+	// trace completes. The root must stay out of the pool while unfinished spans
+	// still refer to it through trace.root.
+	// +checklocks:mu
+	rootFlushed bool
+
+	// filterReject is set when the local root finishes and is consumed when a
+	// chunk containing that root is assembled.
+	// +checklocks:mu
+	filterReject bool
+
+	// otel holds the OpenTelemetry consistent probability sampling state, or nil
+	// when the trace carries none. See otelTraceState.
+	// +checklocks:mu
+	otel *otelTraceState
+}
+
+// otelTraceState is the OpenTelemetry consistent probability sampling state
+// (OTEP 235) carried in the `ot=` tracestate list-member: the 56-bit randomness
+// (rv) and rejection threshold (th). A nil field means that value is absent; th
+// can be present without rv, which is how an upstream OTel default-sampling
+// decision arrives. hasUpstreamDecision marks that an inbound `ot=` carried a
+// sampling decision (rv and/or th) that DD must honor: such values are forwarded
+// verbatim and never re-derived locally. It is NOT set for an `ot=` that carries
+// only unknown sub-keys, since those describe no sampling decision.
+type otelTraceState struct {
+	rv, th *uint64
+	// unknown holds inbound `ot=` sub-keys other than rv/th (';'-joined), forwarded
+	// verbatim so DD stays transparent to sub-keys OTel may add later. Only ever set
+	// from an inbound `ot=`.
+	unknown             string
+	hasUpstreamDecision bool
+}
+
+// setOtelUpstream records rv/th (and any unknown sub-keys) parsed from an inbound
+// `ot=` member. rv/th carry an upstream sampling decision that is forwarded
+// unchanged on inject and never re-derived locally; an `ot=` with only unknown
+// sub-keys carries no decision, so DD still derives its own (rv, th) alongside it.
+// Note: keep/drop is driven by the W3C sampled flag (parseTraceparent), which for
+// a compliant sender already equals (rv >= th); we trust that flag and do not
+// validate the inbound pair against it.
+func (t *trace) setOtelUpstream(rv uint64, rvOK bool, th uint64, thOK bool, unknown string) {
+	if !rvOK && !thOK && unknown == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	}
+	if rvOK {
+		t.otel.rv = &rv
+	}
+	if thOK {
+		t.otel.th = &th
+	}
+	t.otel.unknown = unknown
+	// rv/th are a decision to honor; unknown-only sub-keys are not.
+	t.otel.hasUpstreamDecision = rvOK || thOK
+}
+
+// setOtelProbability records the (rv, th) pair for a genuine DD probability
+// decision at the given rate. It is a no-op when an upstream sampling decision
+// was inherited (DD honors it) or when rate is 0 (a rejection with no
+// representable threshold, so nothing is emitted).
+func (t *trace) setOtelProbability(traceIDLower uint64, rate float64) {
+	if rate <= 0 {
+		// A rate-0 decision is a drop with no representable threshold. Clear any
+		// previously derived local (rv, th) so a re-sample (e.g. a trace rule with
+		// sample_rate:0 applied after an earlier agent-rate decision) can't leave a
+		// stale threshold to be injected. Upstream-decided values are preserved.
+		t.clearOtelProbability()
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil {
+		t.otel = &otelTraceState{}
+	} else if t.otel.hasUpstreamDecision {
+		return
+	}
+	rv := deriveOtelRV(traceIDLower)
+	th := deriveOtelTH(rate)
+	// DD decides keep/drop on the full 64-bit hash, but rv/th carry only 56 bits.
+	// On the rare boundary trace IDs where that truncation would flip a
+	// downstream reader's (rv >= th) decision, nudge rv (never th) so it
+	// reproduces DD's exact keep/drop. rv moves by at most one step.
+	if sampledByRate(traceIDLower, rate) {
+		if rv < th {
+			rv = th
+		}
+	} else if th > 0 && rv >= th { // th == 0 (rate ~= 1) has no drop to represent
+		rv = th - 1
+	}
+	t.otel.rv = &rv
+	t.otel.th = &th
+}
+
+// clearOtelProbability erases a locally-derived (rv, th) pair for a
+// non-probability decision (force-keep or a rate-limiter-caused drop). Values
+// from an upstream decision are left untouched so an upstream rv is still forwarded.
+func (t *trace) clearOtelProbability() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.otel == nil || t.otel.hasUpstreamDecision {
+		return
+	}
+	t.otel.rv = nil
+	t.otel.th = nil
+}
+
+// otelTracestate returns the resolved OTel sampling state for injection under a
+// single lock: rv/th for the sampling decision (a nil rv or th must not be
+// emitted) and any inherited non-rv/th sub-keys to re-emit verbatim (empty when
+// none were inherited).
+func (t *trace) otelTracestate() (rv, th *uint64, unknown string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.otel == nil {
+		return nil, nil, ""
+	}
+	return t.otel.rv, t.otel.th, t.otel.unknown
 }
 
 var (
@@ -372,13 +772,38 @@ var (
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
-	// traceMaxSize is the maximum number of spans we keep in memory for a
-	// single trace. This is to avoid memory leaks. If more spans than this
-	// are added to a trace, then the trace is dropped and the spans are
-	// discarded. Adding additional spans after a trace is dropped does
-	// nothing.
-	traceMaxSize = int(1e5)
+	traceMaxSize   = internalconfig.TraceMaxSize // +checklocksignore — package-level config knob, read under t.mu in trace.push; only ever mutated by tests, never concurrently with a running trace.
 )
+
+// samplingPriorityCache holds pre-allocated pointers for the four standard
+// sampling priority values defined in ddtrace/ext/priority.go:
+//
+//	index 0 → -1 (ext.PriorityUserReject)
+//	index 1 →  0 (ext.PriorityAutoReject)
+//	index 2 →  1 (ext.PriorityAutoKeep)
+//	index 3 →  2 (ext.PriorityUserKeep)
+//
+// Caching these avoids a heap allocation on every call to
+// setSamplingPriorityLockedWithForce, which is on the hot path.
+var samplingPriorityCache = func() [4]*float64 {
+	var c [4]*float64
+	for i := range c {
+		v := float64(i - 1) // -1, 0, 1, 2
+		c[i] = &v
+	}
+	return c
+}()
+
+// samplingPriorityPtr returns a *float64 for p without allocating for the
+// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep);
+// for any other value it allocates a new one.
+func samplingPriorityPtr(p int) *float64 {
+	if p >= -1 && p <= 2 {
+		return samplingPriorityCache[p+1]
+	}
+	v := float64(p)
+	return &v
+}
 
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
@@ -386,17 +811,14 @@ func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	if t.priority == nil {
+// samplingPriority returns the sampling priority of the trace, if set.
+// This is safe to call without holding t.mu because priority is an atomic pointer.
+func (t *trace) samplingPriority() (p int, ok bool) {
+	priority := t.priority.Load() // +checklocksignore
+	if priority == nil {
 		return 0, false
 	}
-	return int(*t.priority), true
-}
-
-func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
+	return int(*priority), true
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -429,15 +851,13 @@ func (t *trace) setTag(key, value string) {
 	t.setTagLocked(key, value)
 }
 
+// +checklocks:t.mu
 func (t *trace) setTagLocked(key, value string) {
+	assert.RWMutexLocked(&t.mu)
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-func samplerToDM(sampler samplernames.SamplerName) string {
-	return "-" + strconv.Itoa(int(sampler))
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -445,18 +865,30 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 //
 // The force parameter is used to bypass the locked sampling decision check
 // when setting the sampling priority. This is used to apply a manual keep or drop decision.
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
 	}
 
-	updatedPriority := t.priority == nil || *t.priority != float64(p)
-
-	if t.priority == nil {
-		t.priority = new(float64)
+	// A manual or AppSec force-keep is not a probability decision, so erase the
+	// OTel threshold rather than encode a fabricated rate. An upstream rv is still
+	// forwarded (it describes upstream's randomness); a locally-derived rv has no
+	// meaning without its threshold, so it is dropped too.
+	if t.otel != nil && (sampler == samplernames.Manual || sampler == samplernames.AppSec) {
+		t.otel.th = nil
+		if !t.otel.hasUpstreamDecision {
+			t.otel.rv = nil
+		}
 	}
-	*t.priority = float64(p)
-	curDM, existed := t.propagatingTags[keyDecisionMaker]
+
+	old := t.priority.Load() // +checklocksignore
+	updatedPriority := old == nil || *old != float64(p)
+
+	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
+	curDM := t.propagatingTag(keyDecisionMaker)
+	existed := curDM != ""
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
@@ -465,7 +897,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		// the decision maker will be different. So we compare the decision makers as well.
 		// Note that once global rate sampling is deprecated, we no longer need to compare
 		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
-		dm := samplerToDM(sampler)
+		dm := sampler.DecisionMaker()
 		updatedDM := !existed || dm != curDM
 		if updatedDM {
 			t.setPropagatingTagLocked(keyDecisionMaker, dm)
@@ -473,13 +905,15 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		}
 	}
 	if p <= 0 && existed {
-		delete(t.propagatingTags, keyDecisionMaker)
+		t.unsetPropagatingTagLocked(keyDecisionMaker)
 	}
 
 	return updatedPriority
 }
 
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	assert.RWMutexLocked(&t.mu)
 	return t.setSamplingPriorityLockedWithForce(p, sampler, false)
 }
 
@@ -497,6 +931,7 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksignore — Reads sp.metrics during initialization; span not yet shared.
 func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -523,32 +958,54 @@ func (t *trace) push(sp *Span) {
 	}
 }
 
-// setTraceTags sets all "trace level" tags on the provided span
-// t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+// setTraceTagsLocked sets all "trace level" tags on the provided span
+// t must already be read-locked (t.mu.RLock held by caller).
+// +checklocksread:t.mu
+// +checklocks:s.mu
+func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexRLocked(&t.mu)
+	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
-	for k, v := range t.propagatingTags {
-		s.setMeta(k, v)
+	for k, v := range t.loadPropagatingTags() {
+		s.setMetaLocked(k, v)
 	}
-	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMeta(k, v)
-	}
+	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
+	}
+	if pTags := processtags.GlobalTags().String(); pTags != "" {
+		s.setMetaLocked(keyProcessTags, pTags)
 	}
 }
 
-// finishedOne acknowledges that another span in the trace has finished, and checks
+// updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
+// +checklocks:s.mu
+func updateTracerGitMetadataTags(s *Span) {
+	assert.RWMutexLocked(&s.mu)
+	gitMetadataTags := sharedinternal.GetGitMetadataTags()
+	for ix := range sharedinternal.TracerGitMetadataKeys {
+		pair := sharedinternal.TracerGitMetadataKeys[ix]
+		src, dst := pair[0], pair[1]
+		if v := gitMetadataTags[src]; v != "" {
+			s.setMetaLocked(dst, v)
+		}
+	}
+}
+
+// finishedOneLocked acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
-// The provided span must be locked.
-func (t *trace) finishedOne(s *Span) {
+//
+// Lock ordering: span.mu -> trace.mu. The caller holds s.mu. This function acquires t.mu.
+// Invariant: The caller MUST hold s.mu.
+// +checklocksignore — Caller holds s.mu (cross-struct lock; checklocks can't verify through SpanContext.finish indirection).
+func (t *trace) finishedOneLocked(s *Span) {
+	assert.RWMutexLocked(&s.mu)
+
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
@@ -556,11 +1013,22 @@ func (t *trace) finishedOne(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		if tr, ok := getGlobalTracer().(*tracer); ok {
+			tr.computeOversizedSpanStats(s)
+		}
+		t.mu.Unlock()
 		return
 	}
+	if s.finished {
+		t.mu.Unlock()
+		return
+	}
+	s.finished = true
 	t.finished++
+
 	tr := getGlobalTracer()
 	if tr == nil {
+		t.mu.Unlock()
 		return
 	}
 	tc := tr.TracerConf()
@@ -569,13 +1037,14 @@ func (t *trace) finishedOne(s *Span) {
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
-		s.meta[keyBaseService] = tc.ServiceTag
+		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
-	if s == t.root && t.priority != nil {
+	priority := t.priority.Load()
+	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		s.setMetricLocked(keySamplingPriority, *priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -584,7 +1053,12 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTagsLocked(s)
+	}
+	if realTracer, ok := tr.(*tracer); ok {
+		realTracer.computeSpanStats(t, s)
+	} else {
+		s.statSpan = nil
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -593,67 +1067,151 @@ func (t *trace) finishedOne(s *Span) {
 		mtr.FinishSpan(s)
 	}
 
-	if len(t.spans) == t.finished { // perform a full flush of all spans
-		if tr, ok := tr.(*tracer); ok {
-			t.finishChunk(tr, &chunk{
-				spans:    t.spans,
-				willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-			})
+	// Full flush: all spans finished
+	if len(t.spans) == t.finished {
+		spans := t.spans
+		spansToRelease := spans
+		if t.rootFlushed {
+			spansToRelease = append(append([]*Span(nil), spans...), t.root)
+			t.rootFlushed = false
 		}
+		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+		// t.filterReject is guarded by t.mu, so capture it before unlocking below.
+		// The root has finished by full flush, so its decision is set.
+		filterRejected := t.filterReject
 		t.spans = nil
+		t.finished = 0 // important, because a buffer can be used for several flushes
+		t.mu.Unlock()
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 		return
 	}
 
 	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
-		return // The trace hasn't completed and partial flushing will not occur
+		t.mu.Unlock()
+		// The trace hasn't completed and partial flushing will not occur
+		return
 	}
+
+	// --- Partial flush path ---
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
 	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
+
+	// Partition spans in-place: finished spans go to finishedSpans, unfinished
+	// spans are compacted to the front of t.spans. This avoids a separate
+	// leftoverSpans allocation on every partial flush trigger.
+	originalFirst := t.spans[0]
 	finishedSpans := make([]*Span, 0, t.finished)
-	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
+	leftIdx := 0
 	for _, s2 := range t.spans {
 		if s2.finished {
 			finishedSpans = append(finishedSpans, s2)
 		} else {
-			leftoverSpans = append(leftoverSpans, s2)
+			t.spans[leftIdx] = s2
+			leftIdx++
 		}
 	}
+
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
-	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
-	if s != t.spans[0] {
-		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0])
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(leftIdx))
+
+	// #incident-46344 -- the first span in the chunk (fSpan) may differ from the
+	// span being finished; the chunk-level metrics and tags are set on it below.
+	// See the locking note before that update for the span.mu/fSpan.mu ordering.
+	fSpan := finishedSpans[0]
+	finishingSpanIsFirstInChunk := s == fSpan
+	needsFirstSpanTags := s != originalFirst
+	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+	spansToRelease := finishedSpans
+	if t.root != nil {
+		for i, s2 := range finishedSpans {
+			if s2 == t.root {
+				t.rootFlushed = true
+				spansToRelease = append(append([]*Span(nil), finishedSpans[:i]...), finishedSpans[i+1:]...)
+				break
+			}
+		}
 	}
-	if tr, ok := tr.(*tracer); ok {
-		t.finishChunk(tr, &chunk{
-			spans:    finishedSpans,
-			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		})
+	// t.filterReject stays false until the root finishes, so this passes pre-root
+	// partial-flush chunks through unfiltered and applies the root's decision once
+	// it is known — same as the full-flush path above.
+	filterRejected := t.filterReject
+
+	// Update trace state and release lock BEFORE acquiring fSpan lock
+	// Clear the tail so the GC can collect the flushed spans; without this the
+	// backing array retains pointers past len(t.spans) and keeps them alive.
+	clear(t.spans[leftIdx:])
+	t.spans = t.spans[:leftIdx]
+	t.finished = 0 // important, because a buffer can be used for several flushes
+	t.mu.Unlock()
+
+	// Set sampling priority and trace-level tags on the first span in the chunk.
+	//
+	// When fSpan != s, fSpan is a different span of the same lock class as s.
+	// We must not hold s.mu while locking fSpan.mu: nesting two Span.mu in
+	// inconsistent order across goroutines is a deadlock cycle (and fSpan may
+	// still be inside its own finish() -> tracer.submit, reading its meta/metrics
+	// under fSpan.mu, so the lock is load-bearing, not vestigial). Release s.mu
+	// around the fSpan update, then re-lock it before submitChunkWithTracer: the
+	// re-lock is required because Span.clear() acquires s.mu to serialize after
+	// finish()'s deferred unlock, and the channel send inside the submit must
+	// happen while s.mu is still held.
+	//
+	// When fSpan == s, the caller's s.mu is already held and is the right lock.
+	if !finishingSpanIsFirstInChunk {
+		s.mu.Unlock()
+		fSpan.mu.Lock()
 	}
-	t.spans = leftoverSpans
+	if priority != nil {
+		fSpan.setMetricLocked(keySamplingPriority, *priority)
+	}
+	if needsFirstSpanTags {
+		t.mu.RLock()
+		t.setTraceTagsLocked(fSpan)
+		t.mu.RUnlock()
+		// recompute stats after trace tags propagation
+		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+		}
+	}
+	if !finishingSpanIsFirstInChunk {
+		fSpan.mu.Unlock()
+		s.mu.Lock()
+	}
+
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
-func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	tr.submitChunk(ch)
-	t.finished = 0 // important, because a buffer can be used for several flushes
+// submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
+func submitChunkWithTracer(tr Tracer, c *chunk) {
+	switch t := tr.(type) {
+	case *tracer:
+		t.submitChunk(c)
+	case *ciVisibilityNoopTracer:
+		submitChunkWithTracer(t.Tracer, c)
+	}
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
-	spanKind := s.meta[ext.SpanKind]
+	assert.RWMutexLocked(&s.mu)
+	// val() is used: only specific non-empty values ("client", "producer") qualify as
+	// outbound requests, so an unset and an explicitly-empty spanKind are both correctly
+	// treated as non-outbound.
+	spanKind, _ := s.meta.Get(ext.SpanKind)
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
-	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
-		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	if s.meta.Has(ext.PeerService) { // peer.service already set on the span
+		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
-			if ps := deriveAWSPeerService(s.meta); ps != "" {
-				s.setMeta(ext.PeerService, ps)
-				s.setMeta(keyPeerServiceSource, ext.PeerService)
+			if ps := deriveAWSPeerService(&s.meta); ps != "" {
+				s.setMetaLocked(ext.PeerService, ps)
+				s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 			}
@@ -668,13 +1226,15 @@ func setPeerService(s *Span, tc TracerConf) {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
-		s.setMeta(keyPeerServiceSource, source)
+		s.setMetaLocked(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
-	ps := s.meta[ext.PeerService]
-	if to, ok := tc.PeerServiceMappings[ps]; ok {
-		s.setMeta(keyPeerServiceRemappedFrom, ps)
-		s.setMeta(ext.PeerService, to)
+	if len(tc.PeerServiceMappings) > 0 {
+		ps, _ := s.meta.Get(ext.PeerService)
+		if to, ok := tc.PeerServiceMappings[ps]; ok {
+			s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
+			s.setMetaLocked(ext.PeerService, to)
+		}
 	}
 }
 
@@ -701,43 +1261,52 @@ The mapping is as follows:
   - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
     s3.<region>.amazonaws.com          (otherwise)
 */
-func deriveAWSPeerService(sm map[string]string) string {
-	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
-	if service == "" || region == "" {
+func deriveAWSPeerService(sm *traceinternal.SpanMeta) string {
+	service, ok := sm.Get(ext.AWSService)
+	if !ok {
+		return ""
+	}
+	region, ok := sm.Get(ext.AWSRegion)
+	if !ok {
 		return ""
 	}
 
 	s := strings.ToLower(service)
 	switch s {
-
 	case "s3":
-		if bucket := sm[ext.S3BucketName]; bucket != "" {
+		if bucket, ok := sm.Get(ext.S3BucketName); ok {
 			return bucket + ".s3." + region + ".amazonaws.com"
 		}
 		return "s3." + region + ".amazonaws.com"
-
 	case "eventbridge":
 		return "events." + region + ".amazonaws.com"
-
 	case "sqs", "sns", "dynamodb", "kinesis":
 		return s + "." + region + ".amazonaws.com"
 	}
 	return ""
 }
 
+// hasMetaKeyLocked checks if a key exists in the span's meta map.
+// s.mu must be held for reading.
+// +checklocks:s.mu
+func (s *Span) hasMetaKeyLocked(tag string) bool {
+	assert.RWMutexLocked(&s.mu)
+	return s.meta.Has(tag)
+}
+
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerServiceFromSource(s *Span) string {
-	has := func(tag string) bool {
-		_, ok := s.meta[tag]
-		return ok
-	}
+	assert.RWMutexLocked(&s.mu)
 	var sources []string
 	useTargetHost := true
+	dbSys, _ := s.meta.Get(ext.DBSystem)
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
-	case has("aws_service"):
+	case s.hasMetaKeyLocked("aws_service"):
 		sources = []string{
 			"queuename",
 			"topicname",
@@ -745,21 +1314,21 @@ func setPeerServiceFromSource(s *Span) string {
 			"tablename",
 			"bucketname",
 		}
-	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
+	case dbSys == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
 		}
 		useTargetHost = false
-	case has(ext.DBSystem):
+	case s.hasMetaKeyLocked(ext.DBSystem):
 		sources = []string{
 			ext.DBName,
 			ext.DBInstance,
 		}
-	case has(ext.MessagingSystem):
+	case s.hasMetaKeyLocked(ext.MessagingSystem):
 		sources = []string{
 			ext.KafkaBootstrapServers,
 		}
-	case has(ext.RPCSystem):
+	case s.hasMetaKeyLocked(ext.RPCSystem):
 		sources = []string{
 			ext.RPCService,
 		}
@@ -773,8 +1342,8 @@ func setPeerServiceFromSource(s *Span) string {
 		}...)
 	}
 	for _, source := range sources {
-		if val, ok := s.meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
+		if val, ok := s.meta.Get(source); ok {
+			s.setMetaLocked(ext.PeerService, val)
 			return source
 		}
 	}
