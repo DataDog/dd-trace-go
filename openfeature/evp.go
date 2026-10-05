@@ -102,7 +102,7 @@ func newAgentlessEVPClient(settings internalffe.Settings) *evpClient {
 	if c.apiKey != "" {
 		c.directURL = buildDirectEVPURL(settings.Site)
 		if c.directURL == nil {
-			log.Warn("openfeature: direct EVP intake is disabled because DD_SITE is invalid")
+			log.Warn("openfeature: direct EVP intake is disabled because DD_SITE is invalid") //errtrack:ignore invalid user configuration
 			return c
 		}
 		c.directClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
