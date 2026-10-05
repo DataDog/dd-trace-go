@@ -535,17 +535,6 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 	}
 }
 
-// resolveBLRPExportTimeout returns the export timeout for BatchLogRecordProcessor.
-// Default: 30000ms
-func resolveBLRPExportTimeout() time.Duration {
-	if timeoutStr := env.Get(envBLRPExportTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	return defaultBLRPExportTimeout
-}
-
 // resolveBLRPMaxExportBatchSize returns the max export batch size for BatchLogRecordProcessor.
 // Default: 512
 func resolveBLRPMaxExportBatchSize() int {

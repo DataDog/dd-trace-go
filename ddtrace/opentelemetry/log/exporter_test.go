@@ -285,25 +285,6 @@ func TestParseTimeout(t *testing.T) {
 	})
 }
 
-func TestResolveBLRPExportTimeout(t *testing.T) {
-	t.Run("defaults to 30000ms", func(t *testing.T) {
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 30000*time.Millisecond, timeout)
-	})
-
-	t.Run("uses OTEL_BLRP_EXPORT_TIMEOUT", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "15000")
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 15000*time.Millisecond, timeout)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "invalid")
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 30000*time.Millisecond, timeout)
-	})
-}
-
 func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 	t.Run("defaults to 512", func(t *testing.T) {
 		size := resolveBLRPMaxExportBatchSize()

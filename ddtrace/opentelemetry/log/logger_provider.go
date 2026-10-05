@@ -70,7 +70,7 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 			exporter,
 			sdklog.WithMaxQueueSize(cfg.BLRPMaxQueueSize()),
 			sdklog.WithExportInterval(cfg.BLRPScheduleDelay()),
-			sdklog.WithExportTimeout(resolveBLRPExportTimeout()),
+			sdklog.WithExportTimeout(cfg.BLRPExportTimeout()),
 			sdklog.WithExportMaxBatchSize(resolveBLRPMaxExportBatchSize()),
 		)
 
