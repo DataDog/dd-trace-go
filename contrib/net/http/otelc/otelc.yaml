@@ -95,16 +95,13 @@ transport_round_trip_tracer_internal:
 # context.Context or *http.Request the calling function already has, which is
 # the only route that survives crossing a goroutine, since GLS does not.
 #
-# The target is the module being built plus main, whose compile-time import
-# path is the literal "main" and so is not part of $root. "Everything but
-# net/http" ("**" with a not entry) would also reach third-party call sites, but
-# otelc re-prints every package a glob matches, so the target stays narrow. Call
-# sites inside third-party dependencies are not rewritten; their spans still
-# exist, they just parent through GLS.
+# Like orchestrion, the rules rewrite call sites in every package of the build,
+# dependencies included, except net/http itself. ./client only imports net/http,
+# so adding it to any other package cannot create an import cycle.
 client_get:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: net/http
   where:
     function_call: net/http.Get
   do:
@@ -124,8 +121,8 @@ client_get:
 
 client_head:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: net/http
   where:
     function_call: net/http.Head
   do:
@@ -145,8 +142,8 @@ client_head:
 
 client_post:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: net/http
   where:
     function_call: net/http.Post
   do:
@@ -166,8 +163,8 @@ client_post:
 
 client_postform:
   target:
-    - "$root"
-    - main
+    - "**"
+    - not: net/http
   where:
     function_call: net/http.PostForm
   do:
