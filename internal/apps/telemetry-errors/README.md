@@ -84,18 +84,22 @@ around it — the run simply survives long enough for a normal flush tick to fir
 A trigger failing any of these is a real defect in the adoption, not a flake — investigate before
 re-running.
 
-#### These checks are now also automated in CI, for 2 of the 3 sites that still report
+#### These checks are also automated in CI for selected sites
 
-`internal/remoteconfig/errortracking_test.go` covers `updateState`'s JSON-parse-error site using a fake
-`http.RoundTripper` (`internal/telemetry/telemetrytest.NewCapturingClient`) instead of this section's
-payload-files-dump env vars — the package already has many unrelated sibling tests, so avoiding a second
-process-global cache (on top of the telemetry-client swap this test already needs) keeps it simpler to
-reason about. `internal/apps/telemetry-errors/seccomp_e2e_test.go` covers `storeConfig`'s OTel
-process-context site and *does* use this section's payload-files-dump mechanism (it needs zero network
-I/O inside a throwaway container, so there's nothing simpler to fall back on) — that assertion is
-best-effort only, since whether the site fires at all depends on the CI runner's own kernel (see "Known
-gaps" below). `storeConfig`'s memfd site (also exercised by that same test, and asserted hard there) no
-longer reports to Error Tracking at all — see "Current coverage" below.
+`internal/remoteconfig/errortracking_test.go` covers `updateState`'s JSON-parse-error site. The test
+uses `internal/telemetry/telemetrytest.NewCapturingClient` instead of the payload-file mode. This client
+captures the real wire payload without a second process-global cache.
+
+`internal/datastreams/processor_errortracking_test.go` covers the three sketch serialization sites. A
+protobuf serialization failure is not externally triggerable because the processor builds each message.
+The test injects a serialization failure and verifies the messages, error types, counts, and call-site
+stack traces in the wire payload.
+
+`internal/apps/telemetry-errors/seccomp_e2e_test.go` covers `storeConfig`'s OTel process-context site.
+The test uses the payload-file mode because the container requires no network I/O. The assertion is
+best-effort because the CI runner's kernel determines whether the site fires (see "Known gaps" below).
+`storeConfig`'s memfd site also runs in that test, but it no longer reports to Error Tracking. See
+"Current coverage" below.
 
 `parseDecisionMaker` (`ddtrace/tracer/propagating_tags.go`) is not one of these sites: it does not call
 `ReportError`/`LogAndReportError` (see "Current coverage" below for why), so there is nothing for a
@@ -273,6 +277,7 @@ Not practically triggerable from outside the process, given what each depends on
 |---|---|
 | `remoteconfig.go` `newUpdateRequest` erroring | Only fails on an already-corrupted internal repository state, not reachable via a crafted network response |
 | `remoteconfig.go` `http.NewRequest` erroring | Only fails on a malformed agent URL, which tracer startup validates before this point is ever reached |
+| `bucket.exportWithMarshaler` sketch serialization errors (`internal/datastreams/processor.go`) | The processor creates the generated protobuf messages from its own sketches. The package test injects a serialization failure and verifies all three reports through the real telemetry backend. |
 
 ## Known gaps
 
