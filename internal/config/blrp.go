@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	defaultBLRPMaxQueueSize  = 2048
-	defaultBLRPScheduleDelay = time.Second
-	defaultBLRPExportTimeout = 30 * time.Second
+	defaultBLRPMaxQueueSize       = 2048
+	defaultBLRPScheduleDelay      = time.Second
+	defaultBLRPExportTimeout      = 30 * time.Second
+	defaultBLRPMaxExportBatchSize = 512
 )
 
 func (c *Config) loadBLRPConfig(p *provider.Provider) {
@@ -22,6 +23,7 @@ func (c *Config) loadBLRPConfig(p *provider.Provider) {
 	c.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, positive)
 	c.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
 	c.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
+	c.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, positive)
 }
 
 func (c *Config) BLRPMaxQueueSize() int {
@@ -40,4 +42,10 @@ func (c *Config) BLRPExportTimeout() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.blrpExportTimeout
+}
+
+func (c *Config) BLRPMaxExportBatchSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpMaxExportBatchSize
 }
