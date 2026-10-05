@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -183,6 +182,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	opts := []otlploghttp.Option{
 		// Set timeout
 		otlploghttp.WithTimeout(cfg.OTLPLogsTimeout()),
+		otlploghttp.WithHeaders(cfg.OTLPLogsHeaders()),
 		// Set retry configuration
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
@@ -214,11 +214,6 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		}
 	}
 
-	// Set headers if configured
-	if headers := resolveHeaders(); len(headers) > 0 {
-		opts = append(opts, otlploghttp.WithHeaders(headers))
-	}
-
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
 
@@ -231,6 +226,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	opts := []otlploggrpc.Option{
 		// Set timeout
 		otlploggrpc.WithTimeout(cfg.OTLPLogsTimeout()),
+		otlploggrpc.WithHeaders(cfg.OTLPLogsHeaders()),
 		// Set retry config
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
@@ -268,11 +264,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		if insecure {
 			opts = append(opts, otlploggrpc.WithInsecure())
 		}
-	}
-
-	// Set headers if configured
-	if headers := resolveHeaders(); len(headers) > 0 {
-		opts = append(opts, otlploggrpc.WithHeaders(headers))
 	}
 
 	// Add user-provided options last so they can override defaults
@@ -322,44 +313,6 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
 	u := config.Get().OTLPLogsAgentURL()
 	return net.JoinHostPort(u.Hostname(), port), u.Scheme == "http" || u.Scheme == "unix"
-}
-
-// resolveHeaders returns the headers to send with OTLP requests.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_HEADERS > OTEL_EXPORTER_OTLP_HEADERS
-// Format: k=v,k2=v2 (spaces are trimmed, invalid entries are ignored)
-func resolveHeaders() map[string]string {
-	// Check logs-specific headers first
-	if headersStr := env.Get(envOTLPLogsHeaders); headersStr != "" {
-		return parseHeaders(headersStr)
-	}
-	// Fall back to general OTLP headers
-	if headersStr := env.Get(envOTLPHeaders); headersStr != "" {
-		return parseHeaders(headersStr)
-	}
-	return nil
-}
-
-// parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed, invalid entries (no '=') are silently ignored
-func parseHeaders(str string) map[string]string {
-	headers := make(map[string]string)
-	for entry := range strings.SplitSeq(str, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) != 2 {
-			// Invalid entry, skip it
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		if key != "" {
-			headers[key] = val
-		}
-	}
-	return headers
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)

@@ -201,6 +201,7 @@ type Config struct {
 	otlpLogsProtocol       string
 	otlpLogsEndpoint       string
 	otlpLogsAgentHost      string
+	otlpLogsHeaders        map[string]string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -486,8 +487,13 @@ func loadConfig() *Config {
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
 	)
+	genericOTLPHeaders := p.GetString("OTEL_EXPORTER_OTLP_HEADERS", "")
+	metricsHeaders := make(map[string]string)
+	internal.ForEachStringTag(genericOTLPHeaders, internal.OtelTagsDelimeter, func(key, value string) {
+		metricsHeaders[key] = value
+	})
 	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
-		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
+		metricsHeaders,
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
@@ -496,7 +502,7 @@ func loadConfig() *Config {
 	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
 		logsProtocolFallback = "http/json"
 	}
-	cfg.loadOTLPLogsConfig(p, agentHost, logsProtocolFallback, genericOTLPEndpoint)
+	cfg.loadOTLPLogsConfig(p, agentHost, logsProtocolFallback, genericOTLPEndpoint, genericOTLPHeaders)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.

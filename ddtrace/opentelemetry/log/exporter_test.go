@@ -6,12 +6,23 @@
 package log
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/config"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	collectorlog "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
@@ -103,90 +114,6 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	})
 }
 
-func TestResolveHeaders(t *testing.T) {
-	t.Run("returns nil when no headers configured", func(t *testing.T) {
-		headers := resolveHeaders()
-		assert.Nil(t, headers)
-	})
-
-	t.Run("uses OTEL_EXPORTER_OTLP_HEADERS", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=value1,key2=value2")
-		headers := resolveHeaders()
-		assert.Equal(t, map[string]string{
-			"key1": "value1",
-			"key2": "value2",
-		}, headers)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_LOGS_HEADERS wins over generic", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "logs=specific")
-		headers := resolveHeaders()
-		assert.Equal(t, map[string]string{
-			"logs": "specific",
-		}, headers)
-	})
-}
-
-func TestParseHeaders(t *testing.T) {
-	t.Run("parses single header", func(t *testing.T) {
-		headers := parseHeaders("key=value")
-		assert.Equal(t, map[string]string{"key": "value"}, headers)
-	})
-
-	t.Run("parses multiple headers", func(t *testing.T) {
-		headers := parseHeaders("key1=value1,key2=value2,key3=value3")
-		assert.Equal(t, map[string]string{
-			"key1": "value1",
-			"key2": "value2",
-			"key3": "value3",
-		}, headers)
-	})
-
-	t.Run("trims spaces", func(t *testing.T) {
-		headers := parseHeaders("  key = value  ,  key2=value2  ")
-		assert.Equal(t, map[string]string{
-			"key":  "value",
-			"key2": "value2",
-		}, headers)
-	})
-
-	t.Run("ignores invalid entries without equals", func(t *testing.T) {
-		headers := parseHeaders("key1=value1,invalid,key2=value2")
-		assert.Equal(t, map[string]string{
-			"key1": "value1",
-			"key2": "value2",
-		}, headers)
-	})
-
-	t.Run("handles empty string", func(t *testing.T) {
-		headers := parseHeaders("")
-		assert.Empty(t, headers)
-	})
-
-	t.Run("handles value with equals sign", func(t *testing.T) {
-		headers := parseHeaders("key=value=with=equals")
-		assert.Equal(t, map[string]string{
-			"key": "value=with=equals",
-		}, headers)
-	})
-
-	t.Run("ignores entries with empty key", func(t *testing.T) {
-		headers := parseHeaders("=value,key=value2")
-		assert.Equal(t, map[string]string{
-			"key": "value2",
-		}, headers)
-	})
-
-	t.Run("handles special characters in values", func(t *testing.T) {
-		headers := parseHeaders("Authorization=Bearer token123,Content-Type=application/json")
-		assert.Equal(t, map[string]string{
-			"Authorization": "Bearer token123",
-			"Content-Type":  "application/json",
-		}, headers)
-	})
-}
-
 func TestParseTimeout(t *testing.T) {
 	t.Run("parses milliseconds", func(t *testing.T) {
 		timeout, err := parseTimeout("1000")
@@ -209,4 +136,88 @@ func TestParseTimeout(t *testing.T) {
 		_, err := parseTimeout("1000.5")
 		assert.Error(t, err)
 	})
+}
+
+type logsConfigCollector struct {
+	collectorlog.UnimplementedLogsServiceServer
+	headers chan string
+}
+
+func (s *logsConfigCollector) Export(ctx context.Context, _ *collectorlog.ExportLogsServiceRequest) (*collectorlog.ExportLogsServiceResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	values := md.Get("x-config-source")
+	value := ""
+	if len(values) > 0 {
+		value = values[0]
+	}
+	s.headers <- value
+	return &collectorlog.ExportLogsServiceResponse{}, nil
+}
+
+func TestExporterUsesCentralizedConfig(t *testing.T) {
+	for _, protocol := range []string{"http/protobuf", "grpc"} {
+		t.Run(protocol, func(t *testing.T) {
+			for _, tc := range []struct {
+				name         string
+				headers      string
+				userOverride bool
+				expected     string
+			}{
+				{name: "configured headers", headers: "x-config-source=centralized", expected: "centralized"},
+				{name: "empty headers"},
+				{name: "user options", headers: "x-config-source=centralized", userOverride: true, expected: "user"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					t.Cleanup(func() { config.CreateNew() })
+					captured := make(chan string, 1)
+					var endpoint string
+					if protocol == "grpc" {
+						listener, err := net.Listen("tcp", "127.0.0.1:0")
+						require.NoError(t, err)
+						server := grpc.NewServer()
+						collectorlog.RegisterLogsServiceServer(server, &logsConfigCollector{headers: captured})
+						t.Cleanup(server.Stop)
+						go func() { _ = server.Serve(listener) }()
+						endpoint = "http://" + listener.Addr().String()
+					} else {
+						server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							assert.Equal(t, "/v1/logs", r.URL.Path)
+							captured <- r.Header.Get("x-config-source")
+							w.Header().Set("Content-Type", "application/x-protobuf")
+						}))
+						t.Cleanup(server.Close)
+						endpoint = server.URL
+					}
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", protocol)
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", endpoint)
+					t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", tc.headers)
+					config.CreateNew()
+
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "invalid")
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://invalid:1")
+					t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "x-config-source=environment")
+					var httpOpts []otlploghttp.Option
+					var grpcOpts []otlploggrpc.Option
+					if tc.userOverride {
+						headers := map[string]string{"x-config-source": "user"}
+						httpOpts = append(httpOpts, otlploghttp.WithHeaders(headers))
+						grpcOpts = append(grpcOpts, otlploggrpc.WithHeaders(headers))
+					}
+					ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+					defer cancel()
+					exporter, err := newOTLPExporter(ctx, httpOpts, grpcOpts)
+					require.NoError(t, err)
+					t.Cleanup(func() { assert.NoError(t, exporter.Shutdown(context.Background())) })
+					require.NoError(t, exporter.Export(ctx, []sdklog.Record{{}}))
+					select {
+					case value := <-captured:
+						assert.Equal(t, tc.expected, value)
+					case <-ctx.Done():
+						t.Fatal("collector did not receive a log export")
+					}
+				})
+			}
+		})
+	}
 }

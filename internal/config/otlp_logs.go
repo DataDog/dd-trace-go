@@ -7,6 +7,7 @@ package config
 
 import (
 	"cmp"
+	"maps"
 	"net"
 	"net/url"
 	"strings"
@@ -20,12 +21,39 @@ const (
 	defaultOTLPLogsTimeout = 30 * time.Second
 )
 
-func (c *Config) loadOTLPLogsConfig(p *provider.Provider, agentHost, genericProtocol, genericEndpoint string) {
+func (c *Config) loadOTLPLogsConfig(p *provider.Provider, agentHost, genericProtocol, genericEndpoint, genericHeaders string) {
 	c.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericProtocol)))
 	c.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", genericEndpoint)
+	headers := p.GetString("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders)
+	if headers != "" {
+		c.otlpLogsHeaders = parseOTLPLogsHeaders(headers)
+		if len(c.otlpLogsHeaders) == 0 {
+			c.otlpLogsHeaders = parseOTLPLogsHeaders(genericHeaders)
+		}
+	}
 	genericTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
 	c.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", genericTimeout)) * time.Millisecond
 	c.otlpLogsAgentHost = cmp.Or(agentHost, internal.DefaultAgentHostname)
+}
+
+func parseOTLPLogsHeaders(str string) map[string]string {
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(str, ",") {
+		parts := strings.SplitN(strings.TrimSpace(entry), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if key == "" {
+			continue
+		}
+		value, err := url.PathUnescape(parts[1])
+		if err != nil {
+			continue
+		}
+		headers[key] = strings.TrimSpace(value)
+	}
+	return headers
 }
 
 func (c *Config) OTLPLogsProtocol() string {
@@ -40,6 +68,13 @@ func (c *Config) OTLPLogsEndpoint() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpLogsEndpoint
+}
+
+// OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
+func (c *Config) OTLPLogsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpLogsHeaders)
 }
 
 func (c *Config) OTLPLogsTimeout() time.Duration {
