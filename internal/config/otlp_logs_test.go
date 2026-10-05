@@ -76,6 +76,22 @@ func TestResolveExportTimeout(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsEndpoint(t *testing.T) {
+	t.Run("returns false when no env vars set", func(t *testing.T) {
+		assert.Empty(t, loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("returns true when OTEL_EXPORTER_OTLP_ENDPOINT set", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://custom:4318")
+		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("returns true when OTEL_EXPORTER_OTLP_LOGS_ENDPOINT set", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://custom:4318")
+		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+	})
+}
+
 func TestOTLPLogsTimeoutFallback(t *testing.T) {
 	for _, raw := range []string{"", "invalid", "1000.5"} {
 		t.Run(raw, func(t *testing.T) {

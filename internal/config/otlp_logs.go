@@ -16,8 +16,9 @@ const (
 	defaultOTLPLogsTimeout = 30 * time.Second
 )
 
-func (c *Config) loadOTLPLogsConfig(p *provider.Provider, genericProtocol string) {
+func (c *Config) loadOTLPLogsConfig(p *provider.Provider, genericProtocol, genericEndpoint string) {
 	c.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericProtocol)))
+	c.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", genericEndpoint)
 	genericTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
 	c.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", genericTimeout)) * time.Millisecond
 }
@@ -26,6 +27,14 @@ func (c *Config) OTLPLogsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpLogsProtocol
+}
+
+// OTLPLogsEndpoint returns the configured logs endpoint, or an empty string
+// when the exporter should derive its endpoint from the agent configuration.
+func (c *Config) OTLPLogsEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsEndpoint
 }
 
 func (c *Config) OTLPLogsTimeout() time.Duration {

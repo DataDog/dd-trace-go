@@ -199,6 +199,7 @@ type Config struct {
 	blrpMaxExportBatchSize int
 	otlpLogsTimeout        time.Duration
 	otlpLogsProtocol       string
+	otlpLogsEndpoint       string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -478,7 +479,8 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
+	genericOTLPEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericOTLPEndpoint)
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
@@ -493,7 +495,7 @@ func loadConfig() *Config {
 	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
 		logsProtocolFallback = "http/json"
 	}
-	cfg.loadOTLPLogsConfig(p, logsProtocolFallback)
+	cfg.loadOTLPLogsConfig(p, logsProtocolFallback, genericOTLPEndpoint)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.

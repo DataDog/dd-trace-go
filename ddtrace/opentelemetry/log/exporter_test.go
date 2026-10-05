@@ -12,22 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHasOTLPEndpointInEnv(t *testing.T) {
-	t.Run("returns false when no env vars set", func(t *testing.T) {
-		assert.False(t, hasOTLPEndpointInEnv())
-	})
-
-	t.Run("returns true when OTEL_EXPORTER_OTLP_ENDPOINT set", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://custom:4318")
-		assert.True(t, hasOTLPEndpointInEnv())
-	})
-
-	t.Run("returns true when OTEL_EXPORTER_OTLP_LOGS_ENDPOINT set", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://custom:4318")
-		assert.True(t, hasOTLPEndpointInEnv())
-	})
-}
-
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
 	t.Run("defaults to localhost:4318", func(t *testing.T) {
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
