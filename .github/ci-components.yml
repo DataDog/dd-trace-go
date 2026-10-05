@@ -101,6 +101,7 @@ workflow-gates:
   config-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
+  dora-metrics.yml: []
   dynamic-checks.yml: []
   ecosystems-label-issue.yml: []
   ecosystems-label-pr.yml: []
