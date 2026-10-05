@@ -310,98 +310,18 @@ func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 	return u.String()
 }
 
-// resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
-// Returns (endpoint, path, insecure) where:
-// - endpoint is the host:port (e.g., "localhost:4318")
-// - path is the URL path (e.g., "/v1/logs")
-// - insecure indicates whether to use http (true) or https (false)
-//
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4318
-// 2. DD_AGENT_HOST:4318
-// 3. localhost:4318 (default)
-//
-// Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
-// reads those environment variables.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	path = defaultOTLPLogsPath
-	insecure = true // default to http
-
-	// Check DD_TRACE_AGENT_URL
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4318
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPHTTPPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPHTTPPort)
-		insecure = true
-		log.Debug("Using OTLP logs endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
-	}
-
-	// Default to localhost:4318
-	endpoint = "localhost:4318"
-	insecure = true
-	log.Debug("Using default OTLP logs endpoint: %s", endpoint)
-	return
+	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort)
+	return endpoint, defaultOTLPLogsPath, insecure
 }
 
-// resolveOTLPEndpointGRPC determines the OTLP gRPC endpoint from DD agent configuration.
-// Returns (endpoint, insecure) where:
-// - endpoint is the host:port (e.g., "localhost:4317")
-// - insecure indicates whether to use grpc (true) or grpcs (false)
-//
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4317
-// 2. DD_AGENT_HOST:4317
-// 3. localhost:4317 (default)
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	insecure = true // default to grpc (not grpcs)
+	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort)
+}
 
-	// Check DD_TRACE_AGENT_URL
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4317 for gRPC
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPGRPCPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP gRPC logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPGRPCPort)
-		log.Debug("Using OTLP gRPC logs endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
-	}
-
-	// Default to localhost:4317
-	endpoint = net.JoinHostPort("localhost", defaultOTLPGRPCPort)
-	log.Debug("Using default OTLP gRPC logs endpoint: %s", endpoint)
-	return
+func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
+	u := config.Get().OTLPLogsAgentURL()
+	return net.JoinHostPort(u.Hostname(), port), u.Scheme == "http" || u.Scheme == "unix"
 }
 
 // resolveHeaders returns the headers to send with OTLP requests.

@@ -111,3 +111,11 @@ func TestOTLPLogsTimeoutFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestOTLPLogsAgentURLUnixFallback(t *testing.T) {
+	t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+	t.Setenv("DD_AGENT_HOST", "log-agent")
+	cfg := loadConfig()
+	assert.Equal(t, "log-agent", cfg.OTLPLogsAgentURL().Hostname())
+	assert.Equal(t, "http", cfg.OTLPLogsAgentURL().Scheme)
+}

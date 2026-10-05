@@ -200,6 +200,7 @@ type Config struct {
 	otlpLogsTimeout        time.Duration
 	otlpLogsProtocol       string
 	otlpLogsEndpoint       string
+	otlpLogsAgentHost      string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -495,7 +496,7 @@ func loadConfig() *Config {
 	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
 		logsProtocolFallback = "http/json"
 	}
-	cfg.loadOTLPLogsConfig(p, logsProtocolFallback, genericOTLPEndpoint)
+	cfg.loadOTLPLogsConfig(p, agentHost, logsProtocolFallback, genericOTLPEndpoint)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.

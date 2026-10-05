@@ -9,10 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
+	config.SetUseFreshConfig(true)
+	t.Cleanup(func() { config.SetUseFreshConfig(false) })
 	t.Run("defaults to localhost:4318", func(t *testing.T) {
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "localhost:4318", endpoint)
@@ -63,6 +67,8 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 }
 
 func TestResolveOTLPEndpointGRPC(t *testing.T) {
+	config.SetUseFreshConfig(true)
+	t.Cleanup(func() { config.SetUseFreshConfig(false) })
 	t.Run("defaults to localhost:4317", func(t *testing.T) {
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "localhost:4317", endpoint)
