@@ -3,14 +3,12 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# ../orchestrion.yml rewrites the redis.Dial, redis.DialContext and
-# redis.DialURL call sites to call redigotrace.Dial* instead. otelc's wrap_call
-# exposes only the matched call as a whole ({{ . }}), so it cannot re-target a
-# call while keeping its arguments.
+# otelc port of ../orchestrion.yml.
 #
-# This hooks the funnel instead: redis.Dial, redis.DialTimeout, redis.DialURL and
-# redis.DialURLContext all reach redis.DialContext. Two differences from
-# rewriting call sites:
+# Orchestrion rewrites the redis.Dial, redis.DialContext and redis.DialURL call
+# sites. wrap_call cannot tell whether a call spreads its options (opts...), so
+# this hooks redis.DialContext instead, which Dial, DialTimeout, DialURL and
+# DialURLContext all reach. Two differences from rewriting call sites:
 #
 #   1. redis.DialTimeout and redis.DialURLContext are traced too.
 #   2. The contrib calls redis.DialContext itself, so it marks that call and the

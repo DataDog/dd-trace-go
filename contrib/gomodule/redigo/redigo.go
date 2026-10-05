@@ -176,8 +176,8 @@ func DialURLContext(ctx context.Context, rawurl string, options ...interface{}) 
 		host = "localhost"
 	}
 	network := "tcp"
-	// Marked so the otelc hook on redis.DialURLContext knows this dial is
-	// already being wrapped here and leaves it alone. No effect without otelc.
+	// Marked so the otelc hook on redis.DialContext, which DialURLContext
+	// calls, leaves this dial alone; see TraceMark. No effect without otelc.
 	c, err := redis.DialURLContext(TraceMark(ctx), rawurl, dialOpts...)
 	p := &params{config: cfg, network: network, host: host, port: port}
 	p.spanCfg = newSpanConfig(cfg, network, host, port)
