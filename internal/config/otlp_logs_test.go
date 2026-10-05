@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
@@ -186,6 +189,61 @@ func TestResolveExportTimeout(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "invalid")
 		timeout := loadConfig().OTLPLogsTimeout()
 		assert.Equal(t, 30*time.Second, timeout)
+	})
+}
+
+func TestOTLPLogsConfigTelemetry(t *testing.T) {
+	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "log-key=SENTINEL_OTLP_LOGS")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		loadConfig()
+
+		// Verify generic OTLP configurations
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+
+		// Verify logs-specific configurations
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		// The OTLP header variants must not be reported in configuration telemetry, and
+		// no reported configuration value may contain a header sentinel.
+		for _, cfg := range recorder.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_HEADERS", cfg.Name,
+				"%s should not be reported in configuration telemetry", "OTEL_EXPORTER_OTLP_HEADERS")
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_LOGS_HEADERS", cfg.Name,
+				"%s should not be reported in configuration telemetry", "OTEL_EXPORTER_OTLP_LOGS_HEADERS")
+			if s, ok := cfg.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP",
+					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
+			}
+		}
+	})
+
+	t.Run("reports default logs timeout when env vars not set", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT" {
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			}
+		}
 	})
 }
 

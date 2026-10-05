@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,25 +27,6 @@ const (
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
 	defaultOTLPProtocol = "http/json"
-
-	// OTLP environment variables (logs-specific)
-	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
-	envOTLPLogsProtocol = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
-	envOTLPLogsHeaders  = "OTEL_EXPORTER_OTLP_LOGS_HEADERS"
-	envOTLPLogsTimeout  = "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"
-
-	// OTLP environment variables (generic)
-	envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	envOTLPProtocol = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
-	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
-
-	// DD environment variables for agent configuration
-	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
-	envDDAgentHost     = "DD_AGENT_HOST"
-
-	// Default timeout in milliseconds (for telemetry reporting)
-	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -313,15 +293,6 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
 	u := config.Get().OTLPLogsAgentURL()
 	return net.JoinHostPort(u.Hostname(), port), u.Scheme == "http" || u.Scheme == "unix"
-}
-
-// parseTimeout parses timeout string (milliseconds as integer)
-func parseTimeout(str string) (time.Duration, error) {
-	ms, err := strconv.ParseInt(str, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return time.Duration(ms) * time.Millisecond, nil
 }
 
 // httpRetryConfig returns the retry configuration for OTLP HTTP exporter.

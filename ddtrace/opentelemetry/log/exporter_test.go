@@ -114,30 +114,6 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	})
 }
 
-func TestParseTimeout(t *testing.T) {
-	t.Run("parses milliseconds", func(t *testing.T) {
-		timeout, err := parseTimeout("1000")
-		assert.NoError(t, err)
-		assert.Equal(t, time.Second, timeout)
-	})
-
-	t.Run("handles zero", func(t *testing.T) {
-		timeout, err := parseTimeout("0")
-		assert.NoError(t, err)
-		assert.Equal(t, time.Duration(0), timeout)
-	})
-
-	t.Run("returns error for invalid input", func(t *testing.T) {
-		_, err := parseTimeout("invalid")
-		assert.Error(t, err)
-	})
-
-	t.Run("returns error for float", func(t *testing.T) {
-		_, err := parseTimeout("1000.5")
-		assert.Error(t, err)
-	})
-}
-
 type logsConfigCollector struct {
 	collectorlog.UnimplementedLogsServiceServer
 	headers chan string
