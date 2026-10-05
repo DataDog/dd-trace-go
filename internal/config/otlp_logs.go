@@ -6,6 +6,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
@@ -15,9 +16,16 @@ const (
 	defaultOTLPLogsTimeout = 30 * time.Second
 )
 
-func (c *Config) loadOTLPLogsConfig(p *provider.Provider) {
+func (c *Config) loadOTLPLogsConfig(p *provider.Provider, genericProtocol string) {
+	c.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericProtocol)))
 	genericTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
 	c.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", genericTimeout)) * time.Millisecond
+}
+
+func (c *Config) OTLPLogsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsProtocol
 }
 
 func (c *Config) OTLPLogsTimeout() time.Duration {

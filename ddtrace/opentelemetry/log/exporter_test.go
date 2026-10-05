@@ -12,44 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveOTLPProtocol(t *testing.T) {
-	t.Run("defaults to http/json", func(t *testing.T) {
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
-	})
-
-	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL wins over generic", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
-
-	t.Run("trims and lowercases protocol", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "  GRPC  ")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("supports http/json", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
-	})
-
-	t.Run("supports http/protobuf", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
-}
-
 func TestHasOTLPEndpointInEnv(t *testing.T) {
 	t.Run("returns false when no env vars set", func(t *testing.T) {
 		assert.False(t, hasOTLPEndpointInEnv())

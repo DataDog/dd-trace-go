@@ -113,7 +113,7 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // 5. localhost with default port (default)
 func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpts []otlploggrpc.Option) (sdklog.Exporter, error) {
 	// Determine protocol
-	protocol := resolveOTLPProtocol()
+	protocol := config.Get().OTLPLogsProtocol()
 
 	var exporter sdklog.Exporter
 	var err error
@@ -148,21 +148,6 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		Exporter:  exporter,
 		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
 	}, nil
-}
-
-// resolveOTLPProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/json"
-func resolveOTLPProtocol() string {
-	// Check logs-specific protocol first
-	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Default to HTTP with JSON
-	return defaultOTLPProtocol
 }
 
 // newOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.
