@@ -10,8 +10,9 @@ import (
 	"net/http"
 
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 var _ = instrumentation.Load(instrumentation.PackageOpenSearchProjectOpenSearchGoV4)

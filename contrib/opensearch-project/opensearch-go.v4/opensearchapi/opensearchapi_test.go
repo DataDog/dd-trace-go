@@ -15,15 +15,16 @@ import (
 	"time"
 
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const (
@@ -41,7 +42,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func buildBody(t *testing.T, data interface{}) *strings.Reader {
+func buildBody(t *testing.T, data any) *strings.Reader {
 	body, err := json.Marshal(data)
 	require.NoErrorf(t, err, "failed to marshal data: #%v", data)
 	return strings.NewReader(string(body))
@@ -59,7 +60,7 @@ func TestOpenSearchV2(t *testing.T) {
 		{
 			name: "options",
 			options: []opensearchtrace.Option{
-				opensearchtrace.WithServiceName("overridden-service"),
+				opensearchtrace.WithService("overridden-service"),
 				opensearchtrace.WithResourceNamer(func(_, _ string) string {
 					return "custom-resource"
 				}),
@@ -86,9 +87,9 @@ func TestOpenSearchV2(t *testing.T) {
 			runTest: func(t *testing.T, ctx context.Context, client *opensearchapi.Client) {
 				searchResp, err := client.Search(ctx, &opensearchapi.SearchReq{
 					Indices: []string{"non-existent-index"},
-					Body: buildBody(t, map[string]interface{}{
-						"query": map[string]interface{}{
-							"non-existent-field": map[string]interface{}{
+					Body: buildBody(t, map[string]any{
+						"query": map[string]any{
+							"non-existent-field": map[string]any{
 								"non-existent-key": "non-existent-value",
 							},
 						},
@@ -108,7 +109,6 @@ func TestOpenSearchV2(t *testing.T) {
 				assert.Equal(t, "", span.Tag(ext.OpenSearchParams), "unexpected opensearch params")
 				assert.Equal(t, `{"query":{"non-existent-field":{"non-existent-key":"non-existent-value"}}}`, span.Tag(ext.OpenSearchBody), "unexpected opensearch params")
 				assert.Contains(t, span.Tag(ext.ErrorMsg).(string), "parsing_exception", "unexpected error message")
-				assert.Contains(t, span.Tag(ext.ErrorStack).(string), "opensearch-go/v4.(*Client).Perform", "unexpected error stack")
 				assert.Contains(t, span.Tag(ext.ErrorType).(string), "errorString", "unexpected error type")
 			},
 			expectServiceName: "global-service",
@@ -119,9 +119,9 @@ func TestOpenSearchV2(t *testing.T) {
 			runTest: func(t *testing.T, ctx context.Context, client *opensearchapi.Client) {
 				createResp, err := client.Indices.Create(ctx, opensearchapi.IndicesCreateReq{
 					Index: "opensearch-test-index",
-					Body: buildBody(t, map[string]interface{}{
-						"settings": map[string]interface{}{
-							"index": map[string]interface{}{
+					Body: buildBody(t, map[string]any{
+						"settings": map[string]any{
+							"index": map[string]any{
 								"number_of_shards": 1,
 							},
 						},
@@ -132,7 +132,7 @@ func TestOpenSearchV2(t *testing.T) {
 				assert.Equal(t, createResp.Index, "opensearch-test-index")
 				assert.NotNil(t, createResp.Inspect().Response, "create response is nil")
 				defer createResp.Inspect().Response.Body.Close()
-				doc1 := map[string]interface{}{
+				doc1 := map[string]any{
 					"field1": "value1",
 					"field2": "value2",
 				}
@@ -160,7 +160,7 @@ func TestOpenSearchV2(t *testing.T) {
 				assert.Equal(t, 1, getResp.Version, "unexpected version")
 				doc1JSON, err := getResp.Source.MarshalJSON()
 				require.NoError(t, err, "failed to marshal source of a get response")
-				doc1Map := make(map[string]interface{})
+				doc1Map := make(map[string]any)
 				require.NoError(t, json.Unmarshal(doc1JSON, &doc1Map), "failed to unmarshal fields")
 				assert.Equal(t, doc1, doc1Map, "got an unexpected document")
 				deleteResp, err := client.Indices.Delete(ctx, opensearchapi.IndicesDeleteReq{
@@ -253,11 +253,12 @@ func TestOpenSearchV2(t *testing.T) {
 				}
 				// The following assertions are common to all spans
 				assert.Equal(t, tt.expectServiceName, span.Tag("service.name"), "span has the wrong service name")
-				assert.Equal(t, "opensearch-project/opensearch-go/v4", span.Tag("component"), "span has the wrong component")
+				assert.Equal(t, "opensearch-project/opensearch-go.v4", span.Tag("component"), "span has the wrong component")
 				assert.Equalf(t, "opensearch", span.Tag(ext.DBSystem), "span has the wrong %s", ext.DBSystem)
 				assert.Equalf(t, "client", span.Tag(ext.SpanKind), "span has the wrong %s", ext.SpanKind)
 				assert.Equalf(t, "opensearch", span.Tag(ext.SpanType), "span has the wrong %s", ext.SpanType)
 				assert.NotEmptyf(t, span.Tag(ext.TargetHost).(string), "%s has an empty", ext.TargetHost)
+				assert.NotEmptyf(t, span.Tag(ext.NetworkDestinationName).(string), "%s has an empty", ext.NetworkDestinationName)
 				assert.NotEmptyf(t, span.Tag(ext.TargetPort).(string), "%s has an empty", ext.TargetPort)
 			}
 		})

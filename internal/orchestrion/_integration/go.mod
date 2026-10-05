@@ -58,7 +58,6 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/kafka v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/opensearch v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.42.0
@@ -327,6 +326,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/opensearch v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.42.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect

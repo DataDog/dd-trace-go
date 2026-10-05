@@ -9,8 +9,9 @@ import (
 	"log"
 
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // To start tracing OpenSearch, simply create a new client using the library and continue
@@ -29,8 +30,10 @@ func Example() {
 		log.Fatal(err)
 		return
 	}
-	if resp, err := c.Perform(req); err != nil {
-		log.Printf(resp.Status)
-		return
+	resp, err := c.Perform(req)
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer resp.Body.Close()
+	log.Print(resp.Status)
 }

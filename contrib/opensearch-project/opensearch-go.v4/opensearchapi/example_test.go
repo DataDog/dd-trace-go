@@ -26,8 +26,9 @@ func Example() {
 		log.Fatal(err)
 		return
 	}
-	if resp, err := c.Cluster.Health(context.Background(), &opensearchapi.ClusterHealthReq{}); err != nil {
-		log.Printf(resp.Status)
-		return
+	resp, err := c.Cluster.Health(context.Background(), &opensearchapi.ClusterHealthReq{})
+	if err != nil {
+		log.Fatal(err)
 	}
+	log.Print(resp.Status)
 }

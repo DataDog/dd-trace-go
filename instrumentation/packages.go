@@ -64,7 +64,7 @@ const (
 	PackageTwmbFranzGo                     Package = "twmb/franz-go"
 	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
-	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go/v4"
+	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go.v4"
 	PackageMiekgDNS                        Package = "miekg/dns"
 	PackageLabstackEchoV4                  Package = "labstack/echo.v4"
 	PackageLabstackEchoV5                  Package = "labstack/echo.v5"
@@ -752,14 +752,6 @@ var packages = map[Package]PackageInfo{
 	PackageOpenSearchProjectOpenSearchGoV4: {
 		TracedPackage: "github.com/opensearch-project/opensearch-go/v4",
 		EnvVarPrefix:  "OPENSEARCH",
-		naming: map[Component]componentNames{
-			ComponentDefault: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("opensearch.client"),
-				buildOpNameV0:      staticName("opensearch.query"),
-				buildOpNameV1:      staticName("opensearch.query"),
-			},
-		},
 	},
 	PackageMiekgDNS: {
 		TracedPackage: "github.com/miekg/dns",

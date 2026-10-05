@@ -17,11 +17,12 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/opensearch-project/opensearch-go/v4"
+	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/opensearch-project/opensearch-go/v4"
-	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
 )
 
 var (
@@ -42,16 +43,7 @@ func init() {
 
 // TraceClient traces OpenSearch client.
 func TraceClient(c *opensearch.Client, opts ...Option) {
-	tracerConfig := defaultConfig()
-	for _, fn := range opts {
-		fn(tracerConfig)
-	}
-	opensearchtransport := c.Transport
-	t := &transport{
-		origin: opensearchtransport,
-		config: tracerConfig,
-	}
-	c.Transport = t
+	c.Transport = newTransport(c.Transport, newConfig(opts...))
 }
 
 // NewDefaultClient returns a new default opensearch.Client enhanced with tracing.
@@ -70,15 +62,7 @@ func NewClient(cfg opensearch.Config, opts ...Option) (*opensearch.Client, error
 	if err != nil {
 		return nil, err
 	}
-	tracerConfig := defaultConfig()
-	for _, fn := range opts {
-		fn(tracerConfig)
-	}
-	t := &transport{
-		origin: c.Transport,
-		config: tracerConfig,
-	}
-	c.Transport = t
+	c.Transport = newTransport(c.Transport, newConfig(opts...))
 	return c, nil
 }
 
@@ -91,11 +75,12 @@ type roundTripper struct {
 	roundtripper http.RoundTripper
 }
 
-// RoundTrip sets `ext.TargetHost` and `ext.TargetPort` tags on the span.
+// RoundTrip sets the destination host and port tags on the span.
 // opensearch-go client can have multiple addresses, so we can't determine those tags when initializing the client.
 func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Hostname and port are not decided when Peform() is called.
+	// Hostname and port are not decided when Perform() is called.
 	if span, ok := tracer.SpanFromContext(req.Context()); ok {
+		span.SetTag(ext.NetworkDestinationName, req.URL.Hostname())
 		span.SetTag(ext.TargetHost, req.URL.Hostname())
 		span.SetTag(ext.TargetPort, req.URL.Port())
 	}
@@ -105,27 +90,40 @@ func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 type transport struct {
 	origin opensearchtransport.Interface
 	config *config
+	// spanCfg holds the tags that are the same for every request made
+	// through this transport.
+	spanCfg *tracer.StartSpanConfig
+}
+
+func newTransport(origin opensearchtransport.Interface, cfg *config) *transport {
+	return &transport{
+		origin: origin,
+		config: cfg,
+		spanCfg: tracer.NewStartSpanConfig(
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+			tracer.SpanType(ext.SpanTypeOpenSearch),
+			tracer.Tag(ext.Component, string(instrumentation.PackageOpenSearchProjectOpenSearchGoV4)),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.DBSystem, ext.DBSystemOpensearch),
+		),
+	}
 }
 
 // Perform traces the opensearch request.
 func (t *transport) Perform(req *http.Request) (*http.Response, error) {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(t.config.serviceName),
-		tracer.SpanType(ext.SpanTypeOpenSearch),
-		tracer.ResourceName(t.config.resourceNamer(req.URL.Path, req.Method)),
-		tracer.Tag(ext.OpenSearchMethod, req.Method),
-		tracer.Tag(ext.OpenSearchURL, req.URL.Path),
-		tracer.Tag(ext.OpenSearchParams, req.URL.Query().Encode()),
-		tracer.Tag(ext.Component, instrumentation.PackageOpenSearchProjectOpenSearchGoV4),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemOpensearch),
-		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
+		tracer.WithTags(map[string]any{
+			ext.ResourceName:     t.config.resourceNamer(req.URL.Path, req.Method),
+			ext.OpenSearchMethod: req.Method,
+			ext.OpenSearchURL:    req.URL.Path,
+			ext.OpenSearchParams: req.URL.Query().Encode(),
+		}),
+		tracer.WithStartSpanConfig(t.spanCfg),
 	}
-	span, ctx := tracer.StartSpanFromContext(
-		req.Context(),
-		instr.OperationName(instrumentation.ComponentDefault, nil),
-		opts...,
-	)
+	if t.config.customTags != nil {
+		opts = append(opts, tracer.WithTags(t.config.customTags))
+	}
+	span, ctx := tracer.StartSpanFromContext(req.Context(), "opensearch.query", opts...)
 	req = req.WithContext(ctx)
 	contentEncoding := req.Header.Get("Content-Encoding")
 	snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)

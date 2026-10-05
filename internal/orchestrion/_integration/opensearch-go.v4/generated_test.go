@@ -18,3 +18,7 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestClient(t *testing.T) {
+	harness.Run(t, new(TestCaseClient))
+}
