@@ -18,6 +18,7 @@
 //
 // Each integration is published as its own module:
 //   - [contrib/99designs/gqlgen/v2]
+//   - [contrib/ClickHouse/clickhouse-go.v2/v2]
 //   - [contrib/IBM/sarama/v2]
 //   - [contrib/Shopify/sarama/v2]
 //   - [contrib/aerospike/aerospike-client-go.v7/v2]
@@ -87,6 +88,7 @@
 //   - [contrib/valyala/fasthttp/v2]
 //
 // [contrib/99designs/gqlgen/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+// [contrib/ClickHouse/clickhouse-go.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/ClickHouse/clickhouse-go.v2/v2
 // [contrib/IBM/sarama/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 // [contrib/Shopify/sarama/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 // [contrib/aerospike/aerospike-client-go.v7/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2

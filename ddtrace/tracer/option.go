@@ -99,6 +99,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/redis/rueidis":                      {"Rueidis", false},
 	"github.com/rs/zerolog":                         {"Zerolog", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
+	"github.com/ClickHouse/clickhouse-go/v2":        {"ClickHouse", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
 	"github.com/sirupsen/logrus":                    {"Logrus", false},
