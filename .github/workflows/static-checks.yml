@@ -294,7 +294,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
@@ -305,7 +305,7 @@ jobs:
           filter_mode: nofilter
 
       - name: golangci-lint (internal/orchestrion/_integration)
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
@@ -346,7 +346,7 @@ jobs:
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
-        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
+        uses: reviewdog/action-shellcheck@d0b8d5fd7fad6afdb6e1b6ce1778892be4d1f427 # v1.34.1
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
