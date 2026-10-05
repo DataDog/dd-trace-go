@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
-	go.opentelemetry.io/otelc/pkg v0.0.0-20260928150151-b7074543ee0c
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261005130301-0399637fded6
 )
 
 require (
