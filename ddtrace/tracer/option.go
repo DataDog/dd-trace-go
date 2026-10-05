@@ -227,7 +227,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	namingschema.LoadFromEnv()
+	namingschema.LoadFromConfig(c.internalConfig)
 
 	for _, fn := range opts {
 		if fn == nil {
@@ -369,6 +369,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.otelRuntimeMetricsShouldBeEnabled = computeOtelRuntimeMetricsShouldBeEnabled(c)
 
+	// Must run after all startup overrides to DD_TRACE_AGENT_URL and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED are applied.
+	c.internalConfig.ResolveOTelSemanticsConfig()
 	return c, nil
 }
 
