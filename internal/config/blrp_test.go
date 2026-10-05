@@ -80,3 +80,34 @@ func TestResolveBLRPExportTimeout(t *testing.T) {
 		assert.Equal(t, 30000*time.Millisecond, timeout)
 	})
 }
+
+func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
+	t.Run("defaults to 512", func(t *testing.T) {
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("uses OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "1024")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 1024, size)
+	})
+
+	t.Run("falls back to default on invalid value", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "invalid")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+}

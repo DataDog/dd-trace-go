@@ -534,14 +534,3 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 		MaxElapsedTime:  grpcRetryMaxElapsedTime,
 	}
 }
-
-// resolveBLRPMaxExportBatchSize returns the max export batch size for BatchLogRecordProcessor.
-// Default: 512
-func resolveBLRPMaxExportBatchSize() int {
-	if sizeStr := env.Get(envBLRPMaxExportBatchSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxExportBatchSize
-}

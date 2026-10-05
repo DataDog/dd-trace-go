@@ -71,7 +71,7 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 			sdklog.WithMaxQueueSize(cfg.BLRPMaxQueueSize()),
 			sdklog.WithExportInterval(cfg.BLRPScheduleDelay()),
 			sdklog.WithExportTimeout(cfg.BLRPExportTimeout()),
-			sdklog.WithExportMaxBatchSize(resolveBLRPMaxExportBatchSize()),
+			sdklog.WithExportMaxBatchSize(cfg.BLRPMaxExportBatchSize()),
 		)
 
 		// Create LoggerProvider with resource and processor

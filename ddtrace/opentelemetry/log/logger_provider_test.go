@@ -95,7 +95,7 @@ func TestInitGlobalLoggerProvider(t *testing.T) {
 		assert.Equal(t, 1024, config.Get().BLRPMaxQueueSize())
 		assert.Equal(t, 500*time.Millisecond, config.Get().BLRPScheduleDelay())
 		assert.Equal(t, 15000*time.Millisecond, config.Get().BLRPExportTimeout())
-		assert.Equal(t, 256, resolveBLRPMaxExportBatchSize())
+		assert.Equal(t, 256, config.Get().BLRPMaxExportBatchSize())
 
 		// Clean up
 		err = ShutdownGlobalLoggerProvider(context.Background())
