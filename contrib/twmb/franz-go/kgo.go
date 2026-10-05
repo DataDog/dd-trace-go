@@ -254,11 +254,8 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 	if !ok {
 		return
 	}
-	// Handlers receive r.Context, the same context that carries the consume
-	// span. Downstream checkpoints (a later produce through this hook, another
-	// integration, or tracer.SetDataStreamsCheckpoint) read the pathway from
-	// that context. ctx is derived from r.Context, so the consume span stays
-	// on it. Headers stay populated for callers that re-read them.
+	// Handlers receive r.Context, so downstream checkpoints can continue the
+	// pathway from it. ctx derives from r.Context and keeps the consume span.
 	r.Context = ctx
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 	if groupID != "" {

@@ -487,7 +487,6 @@ func TestConsumeDSMPathwayOnRecordContext(t *testing.T) {
 	}
 	h.OnProduceRecordBuffered(produced)
 
-	// A fetched record carries the produced headers and no context of its own.
 	consumed := &kgo.Record{
 		Topic:   topic,
 		Key:     produced.Key,
