@@ -52,7 +52,10 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   go get -u github.com/DataDog/go-libddwaf/v5@${go_libddwaf_ref}; \
   fi
 
-RUN go mod tidy
+# go mod tidy relies a lot on github. This retry is not a silver bullet, but will 
+RUN for i in 1 2 3; do \
+      go mod tidy && break || { [ "$i" -lt 3 ] && sleep 5; }; \
+    done
 
 ARG build_with_vendoring
 ARG go

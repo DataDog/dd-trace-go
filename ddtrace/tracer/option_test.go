@@ -403,6 +403,44 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+func TestOTelSemanticsConfigResolvesStartOptions(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	tests := []struct {
+		name string
+		opt  StartOption
+		want string
+	}{
+		{
+			name: "WithAgentAddr",
+			opt:  WithAgentAddr("agent.example:8126"),
+			want: "http://agent.example:4318/v1/traces",
+		},
+		{
+			name: "WithAgentURL",
+			opt:  WithAgentURL("https://agent.example:8126"),
+			want: "http://agent.example:4318/v1/traces",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := newTestConfig(tt.opt, WithPeerServiceDefaults(true))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.internalConfig.OTLPTraceURL())
+			assert.False(t, cfg.internalConfig.PeerServiceDefaultsEnabled())
+		})
+	}
+}
+
+func TestAgentOptionsPreserveExplicitOTLPTraceURL(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://collector.example:4317/custom")
+
+	cfg, err := newTestConfig(WithAgentAddr("agent.example:8126"))
+	require.NoError(t, err)
+	assert.Equal(t, "https://collector.example:4317/custom", cfg.internalConfig.OTLPTraceURL())
+}
+
 // clearIntegreationsForTests clears the state of all integrations
 func clearIntegrationsForTests() {
 	for name, state := range contribIntegrations {
@@ -1031,6 +1069,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithPeerServiceMapping("old2", "new2")(c)
 			assert.Equal(t, c.internalConfig.PeerServiceDefaultsEnabled(), true)
 			assert.Equal(t, c.internalConfig.PeerServiceMappings(), map[string]string{"old": "new", "old2": "new2"})
+		})
+
+		t.Run("OpenTelemetry semantics overrides option", func(t *testing.T) {
+			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+			c, err := newTestConfig(WithAgentTimeout(2), WithPeerServiceDefaults(true))
+			assert.NoError(t, err)
+			assert.False(t, c.internalConfig.PeerServiceDefaultsEnabled())
+			assert.True(t, c.internalConfig.OTLPExportMode())
 		})
 	})
 
