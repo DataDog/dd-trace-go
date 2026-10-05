@@ -535,17 +535,6 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 	}
 }
 
-// resolveBLRPMaxQueueSize returns the max queue size for BatchLogRecordProcessor.
-// Default: 2048
-func resolveBLRPMaxQueueSize() int {
-	if sizeStr := env.Get(envBLRPMaxQueueSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxQueueSize
-}
-
 // resolveBLRPScheduleDelay returns the schedule delay for BatchLogRecordProcessor.
 // Default: 1000ms
 func resolveBLRPScheduleDelay() time.Duration {

@@ -192,7 +192,8 @@ type Config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
-	logsOTelEnabled bool
+	logsOTelEnabled  bool
+	blrpMaxQueueSize int
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -441,6 +442,7 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.loadBLRPConfig(p)
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
