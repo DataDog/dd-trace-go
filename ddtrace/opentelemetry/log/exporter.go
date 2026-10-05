@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -194,9 +195,10 @@ func newOTLPGRPCExporter(ctx context.Context, opts ...otlploggrpc.Option) (sdklo
 
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Option {
+	cfg := config.Get()
 	opts := []otlploghttp.Option{
 		// Set timeout
-		otlploghttp.WithTimeout(resolveExportTimeout()),
+		otlploghttp.WithTimeout(cfg.OTLPLogsTimeout()),
 		// Set retry configuration
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
@@ -244,9 +246,10 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 
 // buildGRPCExporterOptions constructs the OTLP gRPC exporter options with DD-specific defaults
 func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Option {
+	cfg := config.Get()
 	opts := []otlploggrpc.Option{
 		// Set timeout
-		otlploggrpc.WithTimeout(resolveExportTimeout()),
+		otlploggrpc.WithTimeout(cfg.OTLPLogsTimeout()),
 		// Set retry config
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
@@ -471,25 +474,6 @@ func parseHeaders(str string) map[string]string {
 		}
 	}
 	return headers
-}
-
-// resolveExportTimeout returns the export timeout from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (30s)
-func resolveExportTimeout() time.Duration {
-	// Check logs-specific timeout first
-	if timeoutStr := env.Get(envOTLPLogsTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	// Fall back to general OTLP timeout
-	if timeoutStr := env.Get(envOTLPTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	// Default to 30 seconds
-	return 30 * time.Second
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)

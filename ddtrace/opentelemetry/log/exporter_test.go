@@ -235,32 +235,6 @@ func TestParseHeaders(t *testing.T) {
 	})
 }
 
-func TestResolveExportTimeout(t *testing.T) {
-	t.Run("defaults to 30 seconds", func(t *testing.T) {
-		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
-	})
-
-	t.Run("uses OTEL_EXPORTER_OTLP_TIMEOUT", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
-		timeout := resolveExportTimeout()
-		assert.Equal(t, 5*time.Second, timeout)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT wins over generic", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10000")
-		timeout := resolveExportTimeout()
-		assert.Equal(t, 10*time.Second, timeout)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "invalid")
-		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
-	})
-}
-
 func TestParseTimeout(t *testing.T) {
 	t.Run("parses milliseconds", func(t *testing.T) {
 		timeout, err := parseTimeout("1000")
