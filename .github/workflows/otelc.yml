@@ -32,7 +32,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20261005130301-0399637fded6' }}
 
 jobs:
   go-versions-matrix:
