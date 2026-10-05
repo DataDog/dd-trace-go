@@ -43,6 +43,7 @@ type CommonConfig struct {
 	AnalyticsRate float64
 	IgnoreRequest func(*http.Request) bool
 	ServiceName   string
+	ServiceSource string
 	ResourceNamer func(*http.Request) string
 	SpanOpts      []tracer.StartSpanOption
 	IsStatusError func(int) bool
@@ -52,6 +53,10 @@ type Config struct {
 	CommonConfig
 	FinishOpts []tracer.FinishOption
 	HeaderTags instrumentation.HeaderTags
+	// Mux, if set, is used as the underlying *http.ServeMux instead of
+	// allocating a new one, so the traced ServeMux can wrap a mux that
+	// was already configured elsewhere.
+	Mux *http.ServeMux
 }
 
 func (c *Config) ApplyOpts(opts ...Option) {
@@ -68,6 +73,7 @@ func Default(instr *instrumentation.Instrumentation) *Config {
 		cfg.AnalyticsRate = instr.AnalyticsRate(true)
 	}
 	cfg.ServiceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.ServiceSource = string(instrumentation.PackageNetHTTP)
 	cfg.HeaderTags = instr.HTTPHeadersAsTags()
 	cfg.SpanOpts = []tracer.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.AnalyticsRate) {

@@ -1,0 +1,131 @@
+<!--
+  Datadog App & API Protection: Azure APIM outbound policy (response phase)
+
+  Add this to your API's <outbound> section.
+  Replace <dd-apim-callout-host> with the hostname or IP of the callout service.
+
+  This implements the 4-call pattern: Phase 3 sends response headers, and if the
+  callout requests body analysis (allowed-body-size), Phase 4 sends the body.
+
+  Fail-open: if the callout fails, times out, or returns non-200, the response
+  proceeds to the client unmodified.
+-->
+<outbound>
+  <!-- Phase 3: Response Headers -->
+  <send-request mode="new"
+                response-variable-name="ddPhase3Response"
+                timeout="3"
+                ignore-error="true">
+    <set-url>https://<dd-apim-callout-host>:8080/</set-url>
+    <set-method>POST</set-method>
+    <set-header name="Content-Type" exists-action="override">
+      <value>application/json</value>
+    </set-header>
+    <set-body>@{
+      var headers = new JObject();
+      foreach (var h in context.Response.Headers) {
+        headers[h.Key] = new JArray(h.Value.ToArray());
+      }
+      var addresses = new JObject(
+        new JProperty("status_code", context.Response.StatusCode),
+        new JProperty("headers", headers)
+      );
+      return new JObject(
+        new JProperty("addresses", addresses),
+        new JProperty("request-id", context.Variables.ContainsKey("ddRequestId") ? (string)context.Variables["ddRequestId"] : ""),
+        new JProperty("phase", "<ResponseHeaders>")
+      ).ToString();
+    }</set-body>
+  </send-request>
+
+  <choose>
+    <when condition="@(context.Variables.ContainsKey("ddPhase3Response") && context.Variables["ddPhase3Response"] != null && ((IResponse)context.Variables["ddPhase3Response"]).StatusCode == 200)">
+      <set-variable name="ddPhase3" value="@(((IResponse)context.Variables["ddPhase3Response"]).Body.As<JObject>())" />
+
+      <!-- If blocked, return the block response -->
+      <choose>
+        <when condition="@(((JObject)context.Variables["ddPhase3"])["block"] != null)">
+          <return-response>
+            <set-status code="@(((JObject)context.Variables["ddPhase3"])["block"]["status"].Value<int>())" />
+            <set-header name="Content-Type" exists-action="override">
+              <value>@{
+                var h = ((JObject)context.Variables["ddPhase3"])["block"]["headers"];
+                if (h != null && h["Content-Type"] != null) {
+                  return h["Content-Type"][0].ToString();
+                }
+                return "application/json";
+              }</value>
+            </set-header>
+            <set-body>@{
+              var content = ((JObject)context.Variables["ddPhase3"])["block"]["content"];
+              if (content != null) {
+                return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));
+              }
+              return "";
+            }</set-body>
+          </return-response>
+        </when>
+      </choose>
+
+      <!-- Phase 4: Response Body (conditional — only if callout requests it) -->
+      <choose>
+        <when condition="@(((JObject)context.Variables["ddPhase3"])["allowed-body-size"] != null)">
+          <send-request mode="new"
+                        response-variable-name="ddPhase4Response"
+                        timeout="3"
+                        ignore-error="true">
+            <set-url>https://<dd-apim-callout-host>:8080/</set-url>
+            <set-method>POST</set-method>
+            <set-header name="Content-Type" exists-action="override">
+              <value>application/json</value>
+            </set-header>
+            <set-body>@{
+              var maxSize = ((JObject)context.Variables["ddPhase3"])["allowed-body-size"].Value<int>();
+              var body = context.Response.Body?.As<byte[]>(preserveContent: true);
+              var b64 = "";
+              if (body != null && body.Length > 0) {
+                var slice = body.Length > maxSize ? body.Take(maxSize).ToArray() : body;
+                b64 = Convert.ToBase64String(slice);
+              }
+              var addresses = new JObject(new JProperty("body", b64));
+              return new JObject(
+                new JProperty("addresses", addresses),
+                new JProperty("request-id", context.Variables.ContainsKey("ddRequestId") ? (string)context.Variables["ddRequestId"] : ""),
+                new JProperty("phase", "<ResponseBody>")
+              ).ToString();
+            }</set-body>
+          </send-request>
+
+          <choose>
+            <when condition="@(context.Variables.ContainsKey("ddPhase4Response") && context.Variables["ddPhase4Response"] != null && ((IResponse)context.Variables["ddPhase4Response"]).StatusCode == 200)">
+              <set-variable name="ddPhase4" value="@(((IResponse)context.Variables["ddPhase4Response"]).Body.As<JObject>())" />
+              <choose>
+                <when condition="@(((JObject)context.Variables["ddPhase4"])["block"] != null)">
+                  <return-response>
+                    <set-status code="@(((JObject)context.Variables["ddPhase4"])["block"]["status"].Value<int>())" />
+                    <set-header name="Content-Type" exists-action="override">
+                      <value>@{
+                        var h = ((JObject)context.Variables["ddPhase4"])["block"]["headers"];
+                        if (h != null && h["Content-Type"] != null) {
+                          return h["Content-Type"][0].ToString();
+                        }
+                        return "application/json";
+                      }</value>
+                    </set-header>
+                    <set-body>@{
+                      var content = ((JObject)context.Variables["ddPhase4"])["block"]["content"];
+                      if (content != null) {
+                        return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));
+                      }
+                      return "";
+                    }</set-body>
+                  </return-response>
+                </when>
+              </choose>
+            </when>
+          </choose>
+        </when>
+      </choose>
+    </when>
+  </choose>
+</outbound>

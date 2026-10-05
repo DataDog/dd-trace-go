@@ -6,7 +6,9 @@
 package sqs
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -25,24 +29,24 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
+func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "SendMessage":
-		handleSendMessage(span, in)
+		handleSendMessage(ctx, span, in)
 	case "SendMessageBatch":
-		handleSendMessageBatch(span, in)
+		handleSendMessageBatch(ctx, span, in)
 	}
 	span.SetTag(ext.MessagingSystem, ext.MessagingSystemSQS)
 }
 
-func handleSendMessage(span *tracer.Span, in middleware.InitializeInput) {
+func handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read SendMessage params")
 		return
 	}
 
-	traceContext, err := getTraceContext(span)
+	traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageSize(params))
 	if err != nil {
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -55,20 +59,19 @@ func handleSendMessage(span *tracer.Span, in middleware.InitializeInput) {
 	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handleSendMessageBatch(span *tracer.Span, in middleware.InitializeInput) {
+func handleSendMessageBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read SendMessageBatch params")
 		return
 	}
 
-	traceContext, err := getTraceContext(span)
-	if err != nil {
-		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
-		return
-	}
-
 	for i := range params.Entries {
+		traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
+		if err != nil {
+			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
+			continue
+		}
 		if params.Entries[i].MessageAttributes == nil {
 			params.Entries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
@@ -76,11 +79,22 @@ func handleSendMessageBatch(span *tracer.Span, in middleware.InitializeInput) {
 	}
 }
 
-func getTraceContext(span *tracer.Span) (types.MessageAttributeValue, error) {
+func getTraceContext(ctx context.Context, span *tracer.Span, queue string, payloadSize int64) (types.MessageAttributeValue, error) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		return types.MessageAttributeValue{}, err
+	}
+
+	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		ctx,
+		options.CheckpointParams{PayloadSize: payloadSize},
+		"direction:out",
+		"type:sqs",
+		"topic:"+queue,
+	)
+	if ok {
+		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
@@ -106,4 +120,51 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 	}
 
 	messageAttributes[datadogKey] = traceContext
+}
+
+func queueName(queueURL *string) string {
+	if queueURL == nil || *queueURL == "" {
+		return ""
+	}
+	parts := strings.Split(strings.TrimRight(*queueURL, "/"), "/")
+	return parts[len(parts)-1]
+}
+
+func sendMessageSize(params *sqs.SendMessageInput) int64 {
+	if params == nil {
+		return 0
+	}
+
+	var size int64
+	if params.MessageBody != nil {
+		size += int64(len(*params.MessageBody))
+	}
+	return size + messageAttributesSize(params.MessageAttributes)
+}
+
+func sendMessageBatchEntrySize(entry *types.SendMessageBatchRequestEntry) int64 {
+	if entry == nil {
+		return 0
+	}
+
+	var size int64
+	if entry.MessageBody != nil {
+		size += int64(len(*entry.MessageBody))
+	}
+	return size + messageAttributesSize(entry.MessageAttributes)
+}
+
+func messageAttributesSize(attrs map[string]types.MessageAttributeValue) int64 {
+	var size int64
+	for name, attr := range attrs {
+		size += int64(len(name))
+		if attr.DataType != nil {
+			size += int64(len(*attr.DataType))
+		}
+		if attr.StringValue != nil {
+			size += int64(len(*attr.StringValue))
+		}
+		size += int64(len(attr.BinaryValue))
+	}
+	return size
 }

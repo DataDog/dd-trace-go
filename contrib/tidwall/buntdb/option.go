@@ -15,12 +15,14 @@ import (
 type config struct {
 	ctx           context.Context
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 }
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageTidwallBuntDB)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.ctx = context.Background()
@@ -49,6 +51,7 @@ func WithContext(ctx context.Context) OptionFn {
 func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

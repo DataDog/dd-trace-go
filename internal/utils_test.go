@@ -6,7 +6,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -16,6 +15,31 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsAPIKeyValid(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{name: "empty", key: "", want: false},
+		{name: "too short", key: "1234567890123456789012345678901", want: false},
+		{name: "too long", key: "123456789012345678901234567890123", want: false},
+		{name: "numeric", key: "12345678901234567890123456789012", want: true},
+		{name: "lowercase", key: "abcdefabcdabcdefabcdefabcdefabcd", want: true},
+		{name: "alphanumeric", key: "abcdefabcdabcdef7890abcdef789012", want: true},
+		{name: "uppercase", key: "abcdefabcdabcdef7890Abcdef789012", want: false},
+		{name: "symbol", key: "abcdefabcdabcdef7890@bcdef789012", want: false},
+		{name: "non-ASCII over length", key: "abcdefabcdabcdef7890ábcdef789012", want: false},
+		{name: "non-ASCII exact byte length", key: "abcdefabcdabcdef7890ábcdef78901", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsAPIKeyValid(tt.key))
+		})
+	}
+}
 
 func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
@@ -191,7 +215,7 @@ func TestToFloat64(t *testing.T) {
 		18: {intLowerLimit + 1, float64(intLowerLimit + 1), true},
 		19: {-1024, -1024.0, true},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			f, ok := ToFloat64(tt.value)
 			if ok != tt.ok {
 				t.Fatalf("expected ok: %t", tt.ok)

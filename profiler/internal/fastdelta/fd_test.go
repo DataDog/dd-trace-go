@@ -10,7 +10,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -731,8 +730,8 @@ func TestRepeatedHeapProfile(t *testing.T) {
 			t.Errorf("got: %v", delta)
 			t.Errorf("want: %v", golden)
 			now := time.Now().Format(time.RFC3339)
-			os.WriteFile(fmt.Sprintf("failure-before-%s", now), before, 0660)
-			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
+			os.WriteFile("failure-before-"+now, before, 0660)
+			os.WriteFile("failure-after-"+now, after, 0660)
 		}
 		before = after
 	}

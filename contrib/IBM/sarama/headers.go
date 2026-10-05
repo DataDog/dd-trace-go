@@ -6,6 +6,7 @@
 package sarama
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/IBM/sarama"
@@ -21,6 +22,8 @@ var _ interface {
 	tracer.TextMapWriter
 } = (*ProducerMessageCarrier)(nil)
 
+var _ datastreams.TextMapReaderByKey = (*ProducerMessageCarrier)(nil)
+
 // ForeachKey iterates over every header.
 func (c ProducerMessageCarrier) ForeachKey(handler func(key, val string) error) error {
 	for _, h := range c.msg.Headers {
@@ -30,6 +33,25 @@ func (c ProducerMessageCarrier) ForeachKey(handler func(key, val string) error) 
 		}
 	}
 	return nil
+}
+
+// Get implements datastreams.TextMapReaderByKey, converting only the matched
+// header's value to a string (unlike ForeachKey, which converts them all). When
+// a key appears more than once it returns the last occurrence, matching
+// ForeachKey's last-wins behavior for duplicate headers.
+func (c ProducerMessageCarrier) Get(key string) (string, bool) {
+	var val []byte
+	found := false
+	for _, h := range c.msg.Headers {
+		if string(h.Key) == key {
+			val = h.Value
+			found = true
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return string(val), true
 }
 
 // Set sets a header.
@@ -62,6 +84,8 @@ var _ interface {
 	tracer.TextMapWriter
 } = (*ConsumerMessageCarrier)(nil)
 
+var _ datastreams.TextMapReaderByKey = (*ConsumerMessageCarrier)(nil)
+
 // NewConsumerMessageCarrier creates a new ConsumerMessageCarrier.
 func NewConsumerMessageCarrier(msg *sarama.ConsumerMessage) ConsumerMessageCarrier {
 	return ConsumerMessageCarrier{msg}
@@ -78,6 +102,25 @@ func (c ConsumerMessageCarrier) ForeachKey(handler func(key, val string) error) 
 		}
 	}
 	return nil
+}
+
+// Get implements datastreams.TextMapReaderByKey, converting only the matched
+// header's value to a string (unlike ForeachKey, which converts them all). When
+// a key appears more than once it returns the last occurrence, matching
+// ForeachKey's last-wins behavior for duplicate headers.
+func (c ConsumerMessageCarrier) Get(key string) (string, bool) {
+	var val []byte
+	found := false
+	for _, h := range c.msg.Headers {
+		if h != nil && string(h.Key) == key {
+			val = h.Value
+			found = true
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return string(val), true
 }
 
 // Set sets a header.

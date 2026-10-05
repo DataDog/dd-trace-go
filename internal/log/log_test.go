@@ -12,11 +12,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 )
 
 // testLogger implements a mock Logger.
@@ -69,7 +68,7 @@ func TestLogDirectory(t *testing.T) {
 			assert.False(t, f.closed)
 
 			// ensure this setting plays nicely with other log features
-			oldLvl := levelThreshold
+			oldLvl := Level(levelThreshold.Load())
 			SetLevel(LevelDebug)
 			defer func() {
 				SetLevel(oldLvl)
@@ -93,7 +92,7 @@ func TestLogDirectory(t *testing.T) {
 			}
 			// convert file content to []string{}, split by \n, to easily check its contents
 			lines := bytes.Split(b, []byte{'\n'})
-			var logs []string
+			logs := make([]string, 0, len(lines))
 			for _, line := range lines {
 				logs = append(logs, string(line))
 			}
@@ -133,7 +132,7 @@ func TestLog(t *testing.T) {
 	t.Run("Debug", func(t *testing.T) {
 		t.Run("on", func(t *testing.T) {
 			tp.Reset()
-			defer func(old Level) { levelThreshold = old }(levelThreshold)
+			defer func(old Level) { levelThreshold.Store(int32(old)) }(Level(levelThreshold.Load()))
 			SetLevel(LevelDebug)
 			assert.True(t, DebugEnabled())
 

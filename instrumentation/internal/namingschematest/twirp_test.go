@@ -56,6 +56,10 @@ var twitchTVTwirp = harness.TestCase{
 		DDService:       harness.RepeatString(harness.TestDDService, 3),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 3),
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageTwitchTVTwirp), 3),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 3),
+	},
 }
 
 // Copied from contrib/twitchtv/twirp/twirp_test.go

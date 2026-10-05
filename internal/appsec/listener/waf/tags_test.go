@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -32,7 +32,7 @@ const (
 // Test that internal functions used to set span tags use the correct types
 func TestTagsTypes(t *testing.T) {
 	th := make(trace.TestTagSetter)
-	AddRulesMonitoringTags(&th)
+	AddRulesMonitoringTags(&th, "")
 
 	metrics := &emitter.ContextMetrics{
 		SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
@@ -45,8 +45,8 @@ func TestTagsTypes(t *testing.T) {
 	metrics.SumWAFTimeouts.Store(1)
 	metrics.SumRASPTimeouts[addresses.RASPRuleTypeLFI].Store(2)
 
-	AddWAFMonitoringTags(&th, metrics, "1.2.3", map[libddwaf.TruncationReason][]int{
-		libddwaf.ObjectTooDeep: {1, 2, 3},
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", libddwaf.Truncations{
+		ObjectTooDeep: []int{1, 2, 3},
 	}, map[timer.Key]time.Duration{
 		addresses.WAFScope:  10 * time.Millisecond,
 		addresses.RASPScope: 10 * time.Millisecond,
@@ -70,4 +70,90 @@ func TestTagsTypes(t *testing.T) {
 	slices.Sort(expectedTags)
 
 	require.Equal(t, expectedTags, slices.Sorted(maps.Keys(tags)))
+}
+
+func TestAddRulesMonitoringTagsRCClientID(t *testing.T) {
+	t.Run("with_client_id", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		AddRulesMonitoringTags(&th, "test-client-id")
+		require.Equal(t, "test-client-id", th.Tags()["_dd.rc.client_id"])
+	})
+	t.Run("without_client_id", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		AddRulesMonitoringTags(&th, "")
+		_, ok := th.Tags()["_dd.rc.client_id"]
+		require.False(t, ok)
+	})
+}
+
+func TestAddWAFMonitoringTags_includes_provided_stats(t *testing.T) {
+	th := make(trace.TestTagSetter)
+	handleMetrics := emitter.NewMetricsInstance(nil, "1.2.3")
+	metrics := handleMetrics.NewContextMetrics()
+
+	truncations := libddwaf.Truncations{
+		StringTooLong: []int{42},
+	}
+	timerStats := map[timer.Key]time.Duration{
+		addresses.RASPScope: 2 * time.Millisecond,
+	}
+
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", truncations, timerStats)
+
+	tags := th.Tags()
+	require.Equal(t, float64(2000), tags[raspDurationExtTag])
+	require.Equal(t, 42, tags[truncationTagPrefix+libddwaf.StringTooLong.String()])
+}
+
+func TestWAFErrorCodeSpanTag(t *testing.T) {
+	t.Run("waf_error_emits_code_not_count", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		metrics := &emitter.ContextMetrics{
+			SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+				addresses.WAFScope:  {libddwaf.DurationTimeKey: &atomic.Int64{}},
+				addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
+			},
+		}
+		metrics.WAFErrorCode.Store(-2)
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
+			addresses.WAFScope:  time.Millisecond,
+			addresses.RASPScope: time.Millisecond,
+		})
+		require.Equal(t, int32(-2), th.Tags()[wafErrorTag])
+	})
+
+	t.Run("no_waf_error_no_tag", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		metrics := &emitter.ContextMetrics{
+			SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+				addresses.WAFScope:  {libddwaf.DurationTimeKey: &atomic.Int64{}},
+				addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
+			},
+		}
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
+			addresses.WAFScope:  time.Millisecond,
+			addresses.RASPScope: time.Millisecond,
+		})
+		_, ok := th.Tags()[wafErrorTag]
+		require.False(t, ok)
+	})
+
+	t.Run("rasp_error_closest_to_zero_across_rule_types", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		metrics := &emitter.ContextMetrics{
+			SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+				addresses.WAFScope:  {libddwaf.DurationTimeKey: &atomic.Int64{}},
+				addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
+			},
+		}
+		metrics.RASPErrorCodes[addresses.RASPRuleTypeLFI].Store(-127)
+		metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Store(-2)
+		metrics.RASPErrorCodes[addresses.RASPRuleTypeCMDI].Store(-1)
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
+			addresses.WAFScope:  time.Millisecond,
+			addresses.RASPScope: time.Millisecond,
+		})
+		// closest-to-zero across all rule types: -1
+		require.Equal(t, int32(-1), th.Tags()[raspErrorTag])
+	})
 }

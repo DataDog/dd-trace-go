@@ -58,7 +58,7 @@ func (qh *queryHook) BeforeQuery(ctx context.Context, qe *bun.QueryEvent) contex
 		opts  = []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeSQL),
 			tracer.ResourceName(string(query)),
-			tracer.ServiceName(qh.cfg.serviceName),
+			instrumentation.ServiceNameWithSource(qh.cfg.serviceName, qh.cfg.serviceSource),
 			tracer.Tag(ext.Component, instrumentation.PackageUptraceBun),
 			tracer.Tag(ext.DBSystem, dbSystem),
 		}

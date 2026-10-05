@@ -6,9 +6,12 @@
 package metric
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -45,7 +48,7 @@ func TestResolveOTLPEndpoint_DDTraceAgentURL(t *testing.T) {
 		},
 		{
 			name:             "URL with path",
-			agentURL:         "http://agent.example.com:8126/v0.4/traces",
+			agentURL:         "http://agent.example.com:8126/v1.0/traces",
 			expectedEndpoint: "agent.example.com:4318",
 			expectedInsecure: true,
 		},
@@ -280,5 +283,35 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 
 		got := selector(metric.InstrumentKindCounter)
 		assert.Equal(t, metricdata.CumulativeTemporality, got)
+	})
+}
+
+// TestTemporalitySelectorHonored verifies that a user-configured temporality selector
+// overrides the hardcoded delta default when passed as the last exporter option.
+// This covers the fix that bridges cfg.temporalitySelector → exporter options in
+// NewMeterProviderWithContext: the build functions use last-wins ordering, so appending
+// the selector after the delta default is sufficient.
+func TestTemporalitySelectorHonored(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("cumulative selector overrides delta default for monotonic counter", func(t *testing.T) {
+		// Mirror what the fixed NewMeterProviderWithContext does when
+		// WithCumulativeTemporality() is set: append the selector as the last option.
+		httpOpts := []otlpmetrichttp.Option{
+			otlpmetrichttp.WithTemporalitySelector(cumulativeTemporalitySelector()),
+		}
+		exp, err := newDatadogOTLPExporter(ctx, httpOpts, nil)
+		require.NoError(t, err)
+		defer exp.Shutdown(ctx) //nolint:errcheck
+
+		assert.Equal(t, metricdata.CumulativeTemporality, exp.Temporality(metric.InstrumentKindCounter))
+	})
+
+	t.Run("default (no selector option) gives delta for monotonic counter", func(t *testing.T) {
+		exp, err := newDatadogOTLPExporter(ctx, nil, nil)
+		require.NoError(t, err)
+		defer exp.Shutdown(ctx) //nolint:errcheck
+
+		assert.Equal(t, metricdata.DeltaTemporality, exp.Temporality(metric.InstrumentKindCounter))
 	})
 }

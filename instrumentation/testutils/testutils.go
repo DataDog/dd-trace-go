@@ -6,23 +6,29 @@
 package testutils
 
 import (
-	"sync"
+	"strconv"
 	"testing"
-	"unsafe"
+	_ "unsafe" // enables go:linkname directives below
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+//go:linkname decodeTestingPayload github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.decodeTestingPayload
+func decodeTestingPayload(buf []byte) (map[string]any, error)
 
 func SetGlobalServiceName(t *testing.T, val string) {
 	t.Helper()
@@ -49,6 +55,26 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 		globalconfig.SetDogstatsdAddr(prev)
 	})
 	globalconfig.SetDogstatsdAddr(val)
+}
+
+// SetContainerTagsHash sets the container tags hash for the duration of the test.
+func SetContainerTagsHash(t *testing.T, hash string) {
+	t.Helper()
+	processtags.SetContainerTagsHash(hash)
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+}
+
+// DBMBaseHash computes the expected DBM base hash for the given inputs,
+// matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
+// It mirrors computeBaseHash by returning "" when process tags are unavailable.
+func DBMBaseHash(service, containerTagsHash string) string {
+	pTags := processtags.GlobalTags()
+	if pTags == nil {
+		return ""
+	}
+	env := internalconfig.Get().Env()
+	hash := datastreams.BaseHash(service, env, pTags.Slice(), containerTagsHash)
+	return strconv.FormatInt(int64(hash), 10)
 }
 
 func SetGlobalHeaderTags(t *testing.T, headers ...string) {
@@ -110,27 +136,13 @@ func NewMockStatsdClient() *MockStatsdClient {
 	return &MockStatsdClient{}
 }
 
-// SetPropagatingTag sets a tag on the given span context. It assumes it comes from a span,
-// so it has a trace attached to it.
+//go:linkname setSpanContextPropagatingTag github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.setSpanContextPropagatingTag
+func setSpanContextPropagatingTag(ctx *tracer.SpanContext, k, v string)
+
+// SetPropagatingTag sets a propagating tag on the given span context.
 func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	t.Helper()
-
-	// Forgive us for the following hack, oh great and powerful GODpher.
-	// Assuming the context contains a trace, we extract it by cookie-cutting it.
-	// It's easier than using offsets when the desired data isn't far away from
-	// the struct's beginning.
-	type cookieCutter struct {
-		_     bool // spanContext.updated
-		trace *struct {
-			_               sync.RWMutex      // trace.mu
-			_               []any             // trace.spans
-			_               map[string]string // trace.tags
-			propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
-		}
-	}
-	ptr := uintptr(unsafe.Pointer(ctx))
-	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
-	cc.trace.propagatingTags[k] = v
+	setSpanContextPropagatingTag(ctx, k, v)
 }
 
 // StartTelemetryRecorder starts a new telemetry mock client and returns it.
@@ -159,4 +171,16 @@ func FlushTelemetry() {
 	if client := telemetry.GlobalClient(); client != nil {
 		client.Flush()
 	}
+}
+
+// DecodeV1Traces decodes a msgpack-encoded v1 payload (e.g. bytes read from
+// req.Body of an agent intake request) and returns its top-level fields
+// keyed by their numeric proto field IDs (as strings). Fields absent from
+// the payload (zero value after decode) are omitted from the result.
+func DecodeV1Traces(t *testing.T, buf []byte) map[string]any {
+	t.Helper()
+
+	out, err := decodeTestingPayload(buf)
+	require.NoError(t, err)
+	return out
 }

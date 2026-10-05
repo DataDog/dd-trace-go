@@ -328,3 +328,62 @@ func TestAppsecHTTP30X(t *testing.T) {
 	// But we have not analyzed any of the redirect response bodies
 	assert.NotContains(t, serviceSpan.Tags(), "_dd.appsec.trace.3xx_res_body")
 }
+
+// TestAppsecHTTP30XRedirectChainKeepsFirstHop guards against the #4938 regression surfaced by
+// system-tests Test_API10_redirect_status: when every hop of a redirect chain returns the SAME
+// status (302 here), the same api-010 rule fires on every hop and writes the same redirection
+// attribute from each hop's Location header. The value reported must be the FIRST hop's, not the
+// last. Per-hop ephemeral WAF subcontexts (#4938) had regressed this to last-write-wins.
+func TestAppsecHTTP30XRedirectChainKeepsFirstHop(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
+
+	// Uniform-302 chain: /redirect?totalRedirects=3 -> 2 -> 1 -> 0 -> /final, mirroring the
+	// system-tests internal_server. api10.json's api-010-110 rule maps 302 -> redirect_target.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/redirect"):
+			n, _ := strconv.Atoi(r.URL.Query().Get("totalRedirects"))
+			loc := "/final"
+			if n > 0 {
+				loc = fmt.Sprintf("/redirect?totalRedirects=%d", n-1)
+			}
+			http.Redirect(w, r, loc, http.StatusFound)
+		case r.URL.Path == "/final":
+			w.WriteHeader(http.StatusOK)
+		default:
+			require.Failf(t, "unexpected request", "path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	httpClient := WrapClient(srv.Client())
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	testutils.StartAppSec(t)
+
+	w := httptest.NewRecorder()
+	r, err := http.NewRequest("GET", srv.URL+"/redirect?totalRedirects=3", nil)
+	require.NoError(t, err)
+
+	TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		resp, err := httpClient.Do(r)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+	}), w, r, &ServeConfig{
+		Service:  "service",
+		Resource: "resource",
+	})
+
+	spans := mt.FinishedSpans()
+
+	// 1 handler span + 5 downstream requests (4x 302 + the final 200).
+	require.Len(t, spans, 6)
+	serviceSpan := spans[len(spans)-1]
+
+	assert.Equal(t, "/redirect?totalRedirects=2", serviceSpan.Tags()["appsec.api.redirection.redirect_target"], "redirect_target must reflect the FIRST redirect hop, not the last")
+	assert.Equal(t, float64(5), serviceSpan.Tags()["_dd.appsec.downstream_request"], "unexpected or missing _dd.appsec.downstream_request tag")
+}

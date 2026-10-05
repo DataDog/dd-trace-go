@@ -7,11 +7,15 @@ package httpsec
 
 import (
 	"net/http"
+	"net/netip"
 )
 
 type Config struct {
 	// Framework is the name of the framework or library being used (optional).
 	Framework string
+	// ClientIP is the client identity supplied by an integration rather than
+	// derived from request headers. DD_TRACE_CLIENT_IP_HEADER outranks it.
+	ClientIP netip.Addr
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.
 	OnBlock []func()
 	// ResponseHeaderCopier provides a way to access response headers for reading

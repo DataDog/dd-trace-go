@@ -19,16 +19,16 @@ import (
 
 // TestRegisterTelemetry verifies that registerTelemetry reports all expected configurations.
 func TestRegisterTelemetry(t *testing.T) {
-	t.Run("reports all OTLP configurations", func(t *testing.T) {
+	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
 		t.Setenv(envOTLPTimeout, "5000")
-		t.Setenv(envOTLPHeaders, "api-key=secret")
+		t.Setenv(envOTLPHeaders, "api-key=SENTINEL_OTLP_BASE")
 		t.Setenv(envOTLPProtocol, "http/protobuf")
 		t.Setenv(envOTLPEndpoint, "http://example.com:4318")
 		t.Setenv(envOTLPLogsTimeout, "8000")
-		t.Setenv(envOTLPLogsHeaders, "log-key=value")
+		t.Setenv(envOTLPLogsHeaders, "log-key=SENTINEL_OTLP_LOGS")
 		t.Setenv(envOTLPLogsProtocol, "grpc")
 		t.Setenv(envOTLPLogsEndpoint, "http://logs.example.com:4317")
 
@@ -36,15 +36,26 @@ func TestRegisterTelemetry(t *testing.T) {
 
 		// Verify generic OTLP configurations
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPTimeout, 5000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPHeaders, "api-key=secret")
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPProtocol, "http/protobuf")
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPEndpoint, "http://example.com:4318")
 
 		// Verify logs-specific configurations
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, 8000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsHeaders, "log-key=value")
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsProtocol, "grpc")
 		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsEndpoint, "http://logs.example.com:4317")
+
+		// The OTLP header variants must not be reported in configuration telemetry, and
+		// no reported configuration value may contain a header sentinel.
+		for _, cfg := range recorder.Configuration {
+			assert.NotEqual(t, envOTLPHeaders, cfg.Name,
+				"%s should not be reported in configuration telemetry", envOTLPHeaders)
+			assert.NotEqual(t, envOTLPLogsHeaders, cfg.Name,
+				"%s should not be reported in configuration telemetry", envOTLPLogsHeaders)
+			if s, ok := cfg.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP",
+					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
+			}
+		}
 	})
 
 	t.Run("reports BLRP configurations", func(t *testing.T) {
@@ -123,7 +134,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",
@@ -146,7 +157,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded with correct tags
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
@@ -169,7 +180,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Check that metrics were recorded with correct tags
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:protobuf,protocol:grpc",
 			Kind:      "count",
@@ -210,7 +221,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Verify telemetry was recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",
@@ -240,7 +251,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Verify no metrics were recorded
 		key := telemetrytest.MetricKey{
-			Namespace: telemetry.NamespaceGeneral,
+			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
 			Tags:      "encoding:json,protocol:http",
 			Kind:      "count",

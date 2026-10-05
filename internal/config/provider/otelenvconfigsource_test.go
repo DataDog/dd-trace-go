@@ -96,6 +96,35 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "false", v)
 	})
 
+	t.Run("OTEL_METRICS_EXPORTER=otlp does not flag DD_RUNTIME_METRICS_ENABLED as unsupported", func(t *testing.T) {
+		// otlp is a valid exporter; it must not produce a "not supported" warning/telemetry
+		// for the DD_RUNTIME_METRICS_ENABLED mapping, nor set a value.
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_RUNTIME_METRICS_ENABLED")
+		assert.Equal(t, "", v)
+		assert.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_runtime_metrics_enabled", "config_opentelemetry:otel_metrics_exporter"}).Get())
+	})
+
+	t.Run("maps OTEL_METRICS_EXPORTER=none to DD_METRICS_OTEL_ENABLED=false", func(t *testing.T) {
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_METRICS_OTEL_ENABLED")
+		assert.Equal(t, "false", v)
+	})
+
+	t.Run("OTEL_METRICS_EXPORTER=otlp does not enable DD_METRICS_OTEL_ENABLED (opt-in)", func(t *testing.T) {
+		// OTel runtime metrics are opt-in: only DD_METRICS_OTEL_ENABLED=true enables them.
+		// The exporter being otlp must not flip enablement on its own.
+		t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_METRICS_OTEL_ENABLED")
+		assert.Equal(t, "", v)
+	})
+
 	t.Run("maps OTEL_PROPAGATORS to DD_TRACE_PROPAGATION_STYLE", func(t *testing.T) {
 		t.Setenv("OTEL_PROPAGATORS", "tracecontext,b3")
 		source := &otelEnvConfigSource{}

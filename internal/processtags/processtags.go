@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
@@ -26,6 +27,8 @@ const (
 	tagEntrypointBasedir = "entrypoint.basedir"
 	tagEntrypointWorkdir = "entrypoint.workdir"
 	tagEntrypointType    = "entrypoint.type"
+	tagSvcUser           = "svc.user"
+	tagSvcAuto           = "svc.auto"
 )
 
 const (
@@ -33,8 +36,9 @@ const (
 )
 
 var (
-	enabled bool
-	pTags   *ProcessTags
+	enabled           bool
+	pTags             *ProcessTags
+	containerTagsHash atomic.Value
 )
 
 func init() {
@@ -42,10 +46,12 @@ func init() {
 }
 
 type ProcessTags struct {
-	mu    sync.RWMutex
-	tags  map[string]string
-	str   string
-	slice []string
+	mu sync.RWMutex
+	// +checklocks:mu
+	tags map[string]string
+
+	sliceAtomic atomic.Pointer[[]string]
+	strAtomic   atomic.Pointer[string]
 }
 
 // String returns the string representation of the process tags.
@@ -53,9 +59,10 @@ func (p *ProcessTags) String() string {
 	if p == nil {
 		return ""
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.str
+	if s := p.strAtomic.Load(); s != nil {
+		return *s
+	}
+	return ""
 }
 
 // Slice returns the string slice representation of the process tags.
@@ -63,9 +70,10 @@ func (p *ProcessTags) Slice() []string {
 	if p == nil {
 		return nil
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.slice
+	if s := p.sliceAtomic.Load(); s != nil {
+		return *s
+	}
+	return nil
 }
 
 func (p *ProcessTags) merge(newTags map[string]string) {
@@ -79,7 +87,13 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 		p.tags = make(map[string]string)
 	}
 	maps.Copy(p.tags, newTags)
+	p.rebuild()
+}
 
+// rebuild re-serializes p.tags into p.str and p.slice.
+// Must be called with p.mu held for writing.
+// +checklocks:p.mu
+func (p *ProcessTags) rebuild() {
 	// loop over the sorted map keys so the resulting string and slice versions are created consistently.
 	keys := make([]string, 0, len(p.tags))
 	for k := range p.tags {
@@ -100,8 +114,9 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 		b.WriteString(keyVal)
 		tagsSlice = append(tagsSlice, keyVal)
 	}
-	p.slice = tagsSlice
-	p.str = b.String()
+	str := b.String()
+	p.sliceAtomic.Store(&tagsSlice)
+	p.strAtomic.Store(&str)
 }
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
@@ -113,7 +128,7 @@ func Reload() {
 	pTags = &ProcessTags{}
 	tags := collect()
 	if len(tags) > 0 {
-		Add(tags)
+		add(tags)
 	}
 }
 
@@ -123,18 +138,32 @@ func collect() map[string]string {
 	if err != nil {
 		log.Debug("failed to get binary path: %s", err.Error())
 	} else {
-		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
-		tags[tagEntrypointBasedir] = baseDirName
+		if baseDirName, ok := directoryTagValue(filepath.Dir(execPath)); ok {
+			tags[tagEntrypointBasedir] = baseDirName
+		}
 		tags[tagEntrypointType] = entrypointTypeExecutable
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %s", err.Error())
 	} else {
-		tags[tagEntrypointWorkdir] = filepath.Base(wd)
+		if workDirName, ok := directoryTagValue(wd); ok {
+			tags[tagEntrypointWorkdir] = workDirName
+		}
 	}
 	return tags
+}
+
+func directoryTagValue(dir string) (string, bool) {
+	if dir == "" {
+		return "", false
+	}
+	name := filepath.Base(dir)
+	if name == "" || name == "bin" || name == string(os.PathSeparator) {
+		return "", false
+	}
+	return name, true
 }
 
 // GlobalTags returns the global process tags.
@@ -145,10 +174,43 @@ func GlobalTags() *ProcessTags {
 	return pTags
 }
 
-// Add merges the given tags into the global processTags map.
-func Add(tags map[string]string) {
+// SetContainerTagsHash stores the container tags hash returned by the agent.
+func SetContainerTagsHash(hash string) {
+	containerTagsHash.Store(hash)
+}
+
+// ContainerTagsHash returns the latest container tags hash returned by the agent.
+func ContainerTagsHash() string {
+	hash, _ := containerTagsHash.Load().(string)
+	return hash
+}
+
+func add(tags map[string]string) {
 	if !enabled {
 		return
 	}
 	pTags.merge(tags)
+}
+
+// SetServiceNameTag sets the appropriate process tag for the global service name.
+// svc.user and svc.auto are mutually exclusive: calling this function removes the
+// previously set tag before adding the new one.
+// If isUserDefined is true, sets svc.user:true; otherwise sets svc.auto:<name>.
+func SetServiceNameTag(name string, isUserDefined bool) {
+	if !enabled {
+		return
+	}
+	pTags.mu.Lock()
+	defer pTags.mu.Unlock()
+	if pTags.tags == nil {
+		pTags.tags = make(map[string]string)
+	}
+	delete(pTags.tags, tagSvcAuto)
+	delete(pTags.tags, tagSvcUser)
+	if isUserDefined {
+		pTags.tags[tagSvcUser] = "true"
+	} else {
+		pTags.tags[tagSvcAuto] = name
+	}
+	pTags.rebuild()
 }

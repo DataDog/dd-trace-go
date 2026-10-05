@@ -8,8 +8,6 @@ package llmobs
 import (
 	"context"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
 // Tracer represents the interface for the underlying APM tracer.
@@ -46,7 +44,16 @@ type APMSpan interface {
 	TraceID() string
 	// SetBaggageItem sets a baggage item on the span.
 	SetBaggageItem(key string, value string)
+	// BaggageItem returns the baggage item value for the given key.
+	BaggageItem(key string) string
 }
 
-// SpanLink represents a link between spans, aliased from the transport package.
-type SpanLink = transport.SpanLink
+// SpanLink represents a link between spans.
+type SpanLink struct {
+	TraceID     uint64            `json:"trace_id"`
+	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
+	SpanID      uint64            `json:"span_id"`
+	Attributes  map[string]string `json:"attributes,omitempty"`
+	Tracestate  string            `json:"tracestate,omitempty"`
+	Flags       uint32            `json:"flags,omitempty"`
+}

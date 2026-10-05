@@ -10,8 +10,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
+	"sync"
 	"sync/atomic"
+	_ "unsafe"
 
 	"github.com/tinylib/msgp/msgp"
 
@@ -103,16 +104,77 @@ type payloadV1 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// chunkAttr is a reusable map for per-push chunk attributes,
+	// avoiding a new map allocation on each push.
+	chunkAttr map[string]anyValue
+
+	// staticEncoded tracks whether static fields (2–10) and the array32
+	// placeholder have been written to buf for this payload cycle.
+	staticEncoded bool
+
+	// sizeHint is a hint for how large buf should be to avoid slice growth
+	// overhead in a steady state. Set by the writer from the previous cycle's
+	// actual encoded size(); used on the first push of each cycle if larger
+	// than the per-chunk heuristic. Reset to 0 by clear().
+	sizeHint int
+
+	// processTagsCached holds the cached anyValue for process tags,
+	// avoiding repeated boxing of the string into any.
+	processTagsCached anyValue
+	processTagsStr    string
+
+	// poolState coordinates returning this payload to the pool after all HTTP
+	// activity is done. roundTrip() can return before writeLoop calls body.Close(),
+	// so we use two bits — whoever sets both is responsible for pool return.
+	poolState atomic.Uint32
 }
+
+// Bits for payloadV1.poolState, used by handoff.
+const (
+	pv1StateFlushDone  uint32 = 1 << 0 // set by flush goroutine after all sends complete
+	pv1StateBodyClosed uint32 = 1 << 1 // set by payloadV1.Close() when HTTP is done
+)
+
+// handoff signals that one side (flush or HTTP close) is done with the payload.
+// It sets own bit and returns the payload to the pool if the counterpart bit was
+// already set — i.e., both parties are done. Idempotent: repeated calls with the
+// same bit are no-ops after the first.
+func (p *payloadV1) handoff(ownBit uint32) {
+	counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
+	if old := p.poolState.Or(ownBit); old == counterpart { // both parties done
+		putPayloadV1(p)
+	}
+}
+
+// Constant dummy value to represent a serialization failure. Used to prevent failures while
+// decoding the payload.
+const serializationFailed string = "serialization_failed"
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		attributes: make(map[string]anyValue),
 		chunks:     make([]traceChunk, 0),
-		readOff:    0,
-		writeOff:   0,
+		header:     make([]byte, 0, 8),
+		chunkAttr:  make(map[string]anyValue),
 	}
+}
+
+var payloadV1Pool = sync.Pool{
+	New: func() any {
+		return newPayloadV1()
+	},
+}
+
+func getPayloadV1() *payloadV1 {
+	p := payloadV1Pool.Get().(*payloadV1)
+	p.clear()
+	return p
+}
+
+func putPayloadV1(p *payloadV1) {
+	payloadV1Pool.Put(p)
 }
 
 // push pushes a new item (a traceChunk) into the payload.
@@ -128,7 +190,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
 	origin, priority, sm, traceID := "", 0, uint32(0), [16]byte{}
-	attr := make(map[string]anyValue)
+	clear(p.chunkAttr)
 	for _, span := range t {
 		if span == nil {
 			continue
@@ -140,8 +202,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
-		if _, ok := attr["service"]; !ok {
-			attr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+		if _, ok := p.chunkAttr["service"]; !ok && span.Root() != nil {
+			p.chunkAttr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
 
 		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
@@ -159,16 +221,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		// TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
 		origin = span.Context().origin // +checklocksignore - Read-only after init.
 
-		if dm := span.context.trace.propagatingTag(keyDecisionMaker); dm != "" {
-			if v, err := strconv.ParseInt(dm, 10, 32); err == nil {
-				if v < 0 {
-					v = -v
-				}
-				sm = uint32(v)
-			} else {
-				log.Error("failed to convert decision maker to uint32: %s", err.Error())
-			}
-		}
+		sm = span.context.trace.decisionMaker()
 	}
 	tc := traceChunk{
 		spans:             t,
@@ -176,7 +229,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		origin:            origin,
 		traceID:           traceID[:],
 		samplingMechanism: uint32(sm),
-		attributes:        attr,
+		attributes:        p.chunkAttr,
 	}
 
 	// Append process tags to the payload attributes
@@ -190,31 +243,47 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// First push: encode static fields (2–10) once and write the array32
 	// placeholder for field 11. Subsequent pushes only append new chunk bytes.
-	if p.st == nil {
-		p.st = newStringTable()
-		p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
-		p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
-		p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, p.st)
-		p.buf = encodeField(p.buf, p.bm, 5, p.tracerVersion, p.st)
-		p.buf = encodeField(p.buf, p.bm, 6, p.runtimeID, p.st)
-		p.buf = encodeField(p.buf, p.bm, 7, p.env, p.st)
-		p.buf = encodeField(p.buf, p.bm, 8, p.hostname, p.st)
-		p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, p.st)
+	if !p.staticEncoded {
+		p.staticEncoded = true
+		if p.st == nil {
+			p.st = newStringTable()
+		} else {
+			p.st.reset()
+		}
+		// Pre-size buffer based on estimated span encoding size.
+		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value.
+		// sizeHint, set by the writer from the previous cycle's real encoded size(), is used
+		// instead whenever it's larger, since it's a more accurate predictor at steady state.
+		if desired := max(len(t)*300, p.sizeHint); cap(p.buf) < desired {
+			p.buf = make([]byte, 0, desired)
+		}
+		p.buf = encodeStringField(p.buf, p.bm, 2, p.containerID, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 3, p.languageName, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 4, p.languageVersion, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 5, p.tracerVersion, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 6, p.runtimeID, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 7, p.env, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 8, p.hostname, p.st)
+		p.buf = encodeStringField(p.buf, p.bm, 9, p.appVersion, p.st)
 		p.encodeAttributes(p.bm, 10, p.attributes, p.st)
 		if p.bm.contains(11) {
-			p.buf = msgp.AppendUint32(p.buf, 11)    // field ID for chunks
+			p.buf = append(p.buf, 11)               // field ID for chunks
 			p.buf = append(p.buf, 0xdd, 0, 0, 0, 0) // array32 marker + 4-byte count = 0
 			p.chunksCountOff = len(p.buf) - 4
 		}
 		p.staticBufLen = len(p.buf)
 	}
 
-	// Encode the new chunk immediately while spans are still valid (before any
-	// pool release). This is what makes the incremental model safe with span pooling.
+	// Encode the new chunk immediately, synchronously, while spans are still
+	// valid: tracer.processOutChunk calls traceWriter.add (which reaches this
+	// push) before releaseSpans clears and recycles them. payloadV04.push
+	// honors the same contract via its single msgp.Encode call.
 	if p.bm.contains(11) {
 		p.encodeTraceChunk(tc, p.st)
 	}
 
+	// Clear the spans from the trace chunk to allow the spans to be garbage collected.
+	tc.spans = nil
 	p.chunks = append(p.chunks, tc)
 	p.recordItem()
 
@@ -227,19 +296,30 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	return p.stats(), err
 }
 
-// grows the buffer to fit n more bytes. Follows the internal Go standard
-// for growing slices (https://github.com/golang/go/blob/master/src/runtime/slice.go#L289)
+// grow ensures p.buf has capacity for n more bytes appended after the current
+// content. Implements the payloadWriter interface for compatibility with
+// ciVisibilityPayload, which always uses payloadV04 in practice
+// (newCiVisibilityPayload hardcodes traceProtocolV04). This method has no
+// callers on the v1 trace hot path: pre-growing with spanList.Msgsize() was
+// measured to regress v1 by 4-19% across span sizes because Msgsize is a v0.4
+// upper bound and over-allocates relative to v1's string-table-compacted
+// output. push() relies on msgp.Append* organic growth instead.
+//
+// Preserves len(p.buf) so subsequent append() can use the new headroom.
 func (p *payloadV1) grow(n int) {
-	cap := cap(p.buf)
 	newLen := len(p.buf) + n
+	if newLen <= cap(p.buf) {
+		return
+	}
+	newCap := cap(p.buf)
 	threshold := 256
 	for {
-		cap += (cap + 3*threshold) >> 2
-		if cap >= newLen {
+		newCap += (newCap + 3*threshold) >> 2
+		if newCap >= newLen {
 			break
 		}
 	}
-	newBuffer := make([]byte, cap)
+	newBuffer := make([]byte, len(p.buf), newCap)
 	copy(newBuffer, p.buf)
 	p.buf = newBuffer
 }
@@ -251,18 +331,32 @@ func (p *payloadV1) reset() {
 	}
 }
 
+// maxRetainedBufCap is the maximum buffer capacity retained in the sync.Pool.
+// Buffers larger than this are discarded so that large one-off flushes (e.g.
+// 100k-span traces) do not permanently inflate pool memory, matching the
+// behaviour of payloadV04 which always discards its buffer on clear.
+const maxRetainedBufCap = 1 << 20 // 1 MB
+
 func (p *payloadV1) clear() {
 	p.bm = 0
-	p.buf = p.buf[:0]
+	if cap(p.buf) > maxRetainedBufCap {
+		p.buf = nil
+	} else {
+		p.buf = p.buf[:0]
+	}
 	p.reader = nil
-	p.header = nil
+	// header is pre-allocated; keep backing array, reset length for sentinel check.
+	p.header = p.header[:0]
 	p.readOff = 0
-	p.st = nil
+	p.staticEncoded = false
 	p.staticBufLen = 0
 	p.chunksCountOff = 0
 	p.chunks = p.chunks[:0]
+	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
+	p.poolState.Store(0)
+	p.sizeHint = 0
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -290,9 +384,7 @@ func (p *payloadV1) protocol() float64 {
 }
 
 func (p *payloadV1) updateHeader() {
-	if len(p.header) == 0 {
-		p.header = make([]byte, 8)
-	}
+	p.header = p.header[:cap(p.header)]
 	n := atomic.LoadUint32(&p.fields)
 	switch {
 	case n <= 15:
@@ -318,14 +410,18 @@ func (p *payloadV1) setProcessTags() {
 	if pTags == "" {
 		return
 	}
-	p.attributes[keyProcessTags] = anyValue{
-		valueType: StringValueType,
-		value:     pTags,
+	if p.processTagsStr != pTags {
+		p.processTagsCached = anyValue{
+			valueType: StringValueType,
+			value:     pTags,
+		}
+		p.processTagsStr = pTags
 	}
+	p.attributes[keyProcessTags] = p.processTagsCached
 }
 
 func (p *payloadV1) Close() error {
-	p.clear()
+	p.handoff(pv1StateBodyClosed)
 	return nil
 }
 
@@ -353,11 +449,8 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 }
 
 func (p *payloadV1) update() {
-	if len(p.header) == 0 {
-		p.header = make([]byte, 8)
-	}
 	p.updateHeader()
-	if p.st != nil {
+	if p.staticEncoded {
 		// Incremental encoding: p.buf has already been populated by push().
 		return
 	}
@@ -369,32 +462,50 @@ func (p *payloadV1) update() {
 
 // encode writes existing payload fields into the buffer in msgp format.
 func (p *payloadV1) encode() {
-	st := newStringTable()
-	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, st)
-	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, st)
-	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, st)
-	p.buf = encodeField(p.buf, p.bm, 5, p.tracerVersion, st)
-	p.buf = encodeField(p.buf, p.bm, 6, p.runtimeID, st)
-	p.buf = encodeField(p.buf, p.bm, 7, p.env, st)
-	p.buf = encodeField(p.buf, p.bm, 8, p.hostname, st)
-	p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, st)
+	if p.st == nil {
+		p.st = newStringTable()
+	} else {
+		p.st.reset()
+	}
+	p.buf = encodeStringField(p.buf, p.bm, 2, p.containerID, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 3, p.languageName, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 4, p.languageVersion, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 5, p.tracerVersion, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 6, p.runtimeID, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 7, p.env, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 8, p.hostname, p.st)
+	p.buf = encodeStringField(p.buf, p.bm, 9, p.appVersion, p.st)
 
-	p.encodeAttributes(p.bm, 10, p.attributes, st)
+	p.encodeAttributes(p.bm, 10, p.attributes, p.st)
 
-	p.encodeTraceChunks(p.bm, 11, p.chunks, st)
+	p.encodeTraceChunks(p.bm, 11, p.chunks, p.st)
 }
 
 type fieldValue interface {
 	bool | []byte | int32 | int64 | uint32 | uint64 | string
 }
 
+// encodeStringField is a string-specialized fast-path for encodeField. It avoids the
+// generic switch any(a).(type) dispatch that costs a runtime type-assert per call.
+// The fieldID is appended as a single byte: all v1 string fields use IDs 1-16, which
+// fit in the msgp positive fixint range (0..127) and encode as one byte.
+func encodeStringField(buf []byte, bm bitmap, fieldID uint32, value string, st *stringTable) []byte {
+	if !bm.contains(fieldID) {
+		return buf
+	}
+	buf = append(buf, byte(fieldID))
+	return st.serialize(value, buf)
+}
+
 // encodeField takes a field of any fieldValue and encodes it into the given buffer
-// in msgp format.
+// in msgp format. String callers should prefer encodeStringField, which skips the
+// generic type switch on the hot path.
 func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *stringTable) []byte {
 	if !bm.contains(fieldID) {
 		return buf
 	}
-	buf = msgp.AppendUint32(buf, uint32(fieldID)) // msgp key
+	// v1 field IDs are 1-16; all fit msgp positive fixint and encode as one byte.
+	buf = append(buf, byte(fieldID))
 	switch value := any(a).(type) {
 	case string:
 		// encode msgp value, either by pulling from string table or writing it directly
@@ -416,6 +527,9 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 		for _, v := range value {
 			buf = v.encode(buf, st)
 		}
+	default:
+		warnUnsupportedValue(fieldID)
+		buf = st.serialize(serializationFailed, buf)
 	}
 	return buf
 }
@@ -427,7 +541,8 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 		return false, nil
 	}
 
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))        // msgp key
+	// fieldID values for attributes are 3 (chunk) or 10 (payload), both fixint.
+	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(kv)*3)) // number of item pairs in array
 
 	for k, v := range kv {
@@ -444,22 +559,21 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 // It is called from push() to perform incremental encoding while the spans
 // are still valid (before any span-pool release).
 func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
-	p.buf = msgp.AppendMapHeader(p.buf, 7) // 7 fields per chunk
+	// droppedTrace (field 5) is intentionally omitted: it is set by the agent,
+	// not by tracers. Emitting it causes the agent to reject the payload.
+	p.buf = msgp.AppendMapHeader(p.buf, 6) // 6 fields per chunk
 
 	// priority
 	p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
 
 	// origin
-	p.buf = encodeField(p.buf, fullSetBitmap, 2, chunk.origin, st)
+	p.buf = encodeStringField(p.buf, fullSetBitmap, 2, chunk.origin, st)
 
 	// attributes
 	p.encodeAttributes(fullSetBitmap, 3, chunk.attributes, st)
 
 	// spans
 	p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-	// droppedTrace
-	p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
 
 	// traceID
 	p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
@@ -474,31 +588,11 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 		return false, nil
 	}
 
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))      // msgp key
+	// fieldID is always 11 (chunks) at this site; fits msgp positive fixint.
+	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(tc))) // number of chunks
 	for _, chunk := range tc {
-		p.buf = msgp.AppendMapHeader(p.buf, 7) // number of fields in chunk
-
-		// priority
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
-
-		// origin
-		p.buf = encodeField(p.buf, fullSetBitmap, 2, chunk.origin, st)
-
-		// attributes
-		p.encodeAttributes(fullSetBitmap, 3, chunk.attributes, st)
-
-		// spans
-		p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-		// droppedTrace
-		p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
-
-		// traceID
-		p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
-
-		// samplingMechanism
-		p.buf = encodeField(p.buf, fullSetBitmap, 7, chunk.samplingMechanism, st)
+		p.encodeTraceChunk(chunk, st)
 	}
 
 	return true, nil
@@ -511,71 +605,121 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		return false, nil
 	}
 
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))         // msgp key
+	// fieldID is always 4 (spans) at this site; fits msgp positive fixint.
+	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spans))) // number of spans
 
+	var scratch []byte
 	for _, span := range spans {
 		if span == nil {
+			// encode an empty map for nil spans
+			p.buf = msgp.AppendMapHeader(p.buf, 0)
 			continue
 		}
-		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
+		// component (field 15) span_kind (field 16) are only emitted when they map to known values.
+		// Omit the field and use a 15-field map if it isn't set.
+		component, _ := span.meta.Get(ext.Component)
+		spanKindVal := uint32(0)
+		if sk, ok := span.meta.Get(ext.SpanKind); ok {
+			spanKindVal = getSpanKindValue(sk)
+		}
+		// Increment the number of fields based on the presence of component and span_kind
+		nFields := uint32(14)
+		if component != "" {
+			nFields++
+		}
+		if spanKindVal != 0 {
+			nFields++
+		}
+		p.buf = msgp.AppendMapHeader(p.buf, nFields) // number of fields in span
 
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, span.service, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 2, span.name, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 3, span.resource, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 1, span.service, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, span.name, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 3, span.resource, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 4, span.spanID, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 5, span.parentID, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 6, span.start, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 7, span.duration, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
 
-		// span attributes combine the meta (tags), metrics and meta_struct
+		// span attributes combine the meta (tags), metrics and meta_struct.
 		// To avoid increased allocations, we serialize attributes immediately without
-		// creating an intermediate map.
-		size := len(span.meta) + len(span.metrics) + len(span.metaStruct)
-		p.buf = msgp.AppendUint32(p.buf, uint32(9))           // attributes fieldID
-		p.buf = msgp.AppendArrayHeader(p.buf, uint32(size)*3) // number of attributes
-		for k, v := range span.meta {
+		// creating an intermediate map. We write a placeholder for the array header
+		// and write the actual count after writing all attributes.
+		// Promoted attrs (env, version, language) are encoded separately
+		// as fields 13-16 and must not appear in the attributes array.
+		p.buf = append(p.buf, 9) // attributes fieldID (msgp fixint)
+		off := len(p.buf)
+		count := 0
+		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
+
+		if lang, ok := span.meta.Language(); ok {
+			count++
+			p.buf = st.serialize("language", p.buf)
+			p.buf = append(p.buf, byte(StringValueType))
+			p.buf = st.serialize(lang, p.buf)
+		}
+
+		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
+		for k, v := range span.meta.Map(false) {
+			// Span links are serialized separately in the payload, so
+			// we skip them here to avoid duplication.
+			if k == "_dd.span_links" {
+				continue
+			}
+			// component and span_kind are promoted to dedicated fields (15, 16);
+			// skip them here to avoid encoding them twice.
+			if k == ext.Component || k == ext.SpanKind {
+				continue
+			}
+			count++
 			p.buf = st.serialize(k, p.buf)
-			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+			p.buf = append(p.buf, byte(StringValueType))
 			p.buf = st.serialize(v, p.buf)
 		}
 		for k, v := range span.metrics {
+			count++
 			p.buf = st.serialize(k, p.buf)
-			p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+			p.buf = append(p.buf, byte(FloatValueType))
 			p.buf = msgp.AppendFloat64(p.buf, v)
 		}
 		for k, v := range span.metaStruct {
-			msg, err := msgp.AppendIntf(nil, v)
+			var err error
+			scratch, err = msgp.AppendIntf(scratch[:0], v)
 			if err != nil {
-				log.Error("failed to serialize meta_struct value for key %s: %v", k, err.Error())
-				continue
+				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
+				scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
 			}
+			count++
 			p.buf = st.serialize(k, p.buf)
-			p.buf = msgp.AppendUint32(p.buf, uint32(BytesValueType))
-			p.buf = msgp.AppendBytes(p.buf, msg)
+			p.buf = append(p.buf, byte(BytesValueType))
+			p.buf = msgp.AppendBytes(p.buf, scratch)
 		}
+		elementCount := uint32(count) * 3
+		p.buf[off+1] = byte(elementCount >> 24)
+		p.buf[off+2] = byte(elementCount >> 16)
+		p.buf[off+3] = byte(elementCount >> 8)
+		p.buf[off+4] = byte(elementCount)
 
-		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 10, span.spanType, st)
 		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
 		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
 
-		env := span.meta[ext.Environment]
-		p.buf = encodeField(p.buf, fullSetBitmap, 13, env, st)
-
-		version := span.meta[ext.Version]
-		p.buf = encodeField(p.buf, fullSetBitmap, 14, version, st)
-
-		component := span.meta[ext.Component]
-		p.buf = encodeField(p.buf, fullSetBitmap, 15, component, st)
-
-		spanKind := span.meta[ext.SpanKind]
-		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(spanKind), st)
+		env, _ := span.meta.Env()
+		version, _ := span.meta.Version()
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 13, env, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 14, version, st)
+		if component != "" {
+			p.buf = encodeStringField(p.buf, fullSetBitmap, 15, component, st)
+		}
+		if spanKindVal != 0 {
+			p.buf = encodeField(p.buf, fullSetBitmap, 16, spanKindVal, st)
+		}
 	}
 	return true, nil
 }
 
-// translate a span kind string to its uint32 value
+// translate a span kind string to its uint32 value.
 func getSpanKindValue(sk string) uint32 {
 	switch sk {
 	case ext.SpanKindInternal:
@@ -589,7 +733,7 @@ func getSpanKindValue(sk string) uint32 {
 	case ext.SpanKindConsumer:
 		return 5
 	default:
-		return 1 // default to internal
+		return 0 // default to "unset"
 	}
 }
 
@@ -616,28 +760,29 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
 	}
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))             // msgp key
+	// fieldID is 11 (span_links) here; fits msgp positive fixint.
+	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanLinks))) // number of span links
 
 	for _, link := range spanLinks {
 		p.buf = msgp.AppendMapHeader(p.buf, 5) // number of fields in span link
 
-		// Encode traceID field directly to avoid heap allocation
-		p.buf = msgp.AppendUint32(p.buf, uint32(1)) // field ID
-		p.buf = msgp.AppendBytesHeader(p.buf, 16)   // 16-byte traceID
+		// Encode traceID field directly to avoid heap allocation.
+		p.buf = append(p.buf, 1)                  // field ID (fixint)
+		p.buf = msgp.AppendBytesHeader(p.buf, 16) // 16-byte traceID
 		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceIDHigh)
 		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceID)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
 
-		p.buf = msgp.AppendUint32(p.buf, uint32(3))                           // attributes fieldID
+		p.buf = append(p.buf, 3)                                              // attributes fieldID (fixint)
 		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(link.Attributes))*3) // number of attributes
 		for k, v := range link.Attributes {
 			p.buf = st.serialize(k, p.buf)
-			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+			p.buf = append(p.buf, byte(StringValueType))
 			p.buf = st.serialize(v, p.buf)
 		}
 
-		p.buf = encodeField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 5, link.Flags, st)
 	}
 	return true, nil
@@ -648,45 +793,44 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
 	}
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))              // msgp key
+	// fieldID is 12 (span_events) here; fits msgp positive fixint.
+	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanEvents))) // number of span events
 
 	for _, event := range spanEvents {
 		p.buf = msgp.AppendMapHeader(p.buf, 3) // number of fields in span event
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, event.TimeUnixNano, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 2, event.Name, st)
+		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, event.Name, st)
 
-		p.buf = msgp.AppendUint32(p.buf, uint32(3))                            // attributes fieldID
+		p.buf = append(p.buf, 3)                                               // attributes fieldID (fixint)
 		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(event.Attributes))*3) // number of attributes
 		for k, v := range event.Attributes {
+			p.buf = st.serialize(k, p.buf)
 			switch v.Type {
 			case spanEventAttributeTypeString:
-				p.buf = st.serialize(k, p.buf)
-				p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+				p.buf = append(p.buf, byte(StringValueType))
 				p.buf = st.serialize(v.StringValue, p.buf)
 			case spanEventAttributeTypeInt:
-				p.buf = st.serialize(k, p.buf)
-				p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
+				p.buf = append(p.buf, byte(IntValueType))
 				p.buf = msgp.AppendInt64(p.buf, v.IntValue)
 			case spanEventAttributeTypeDouble:
-				p.buf = st.serialize(k, p.buf)
-				p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+				p.buf = append(p.buf, byte(FloatValueType))
 				p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
 			case spanEventAttributeTypeBool:
-				p.buf = st.serialize(k, p.buf)
-				p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
+				p.buf = append(p.buf, byte(BoolValueType))
 				p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 			case spanEventAttributeTypeArray:
-				p.buf = st.serialize(k, p.buf)
-				p.buf = msgp.AppendUint32(p.buf, uint32(ArrayValueType))
+				p.buf = append(p.buf, byte(ArrayValueType))
 				// Array format is (type, value) per element; decoder expects len/2 anyValues.
 				p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(v.ArrayValue.Values))*2)
 				for _, v := range v.ArrayValue.Values {
 					p.encodeSpanEventArrayValues(v, st)
 				}
 			default:
-				log.Warn("dropped unsupported span event attribute type %d", v.Type)
+				warnUnsupportedValue(uint32(v.Type))
+				p.buf = append(p.buf, byte(StringValueType))
+				p.buf = st.serialize(serializationFailed, p.buf)
 			}
 		}
 	}
@@ -696,21 +840,34 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 func (p *payloadV1) encodeSpanEventArrayValues(v *spanEventArrayAttributeValue, st *stringTable) (bool, error) {
 	switch v.Type {
 	case spanEventArrayAttributeValueTypeString:
-		p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+		p.buf = append(p.buf, byte(StringValueType))
 		p.buf = st.serialize(v.StringValue, p.buf)
 	case spanEventArrayAttributeValueTypeInt:
-		p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
+		p.buf = append(p.buf, byte(IntValueType))
 		p.buf = msgp.AppendInt64(p.buf, v.IntValue)
 	case spanEventArrayAttributeValueTypeDouble:
-		p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+		p.buf = append(p.buf, byte(FloatValueType))
 		p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
 	case spanEventArrayAttributeValueTypeBool:
-		p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
+		p.buf = append(p.buf, byte(BoolValueType))
 		p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 	default:
-		log.Warn("dropped unsupported span event array attribute type %d", v.Type)
+		warnUnsupportedValue(uint32(v.Type))
+		p.buf = append(p.buf, byte(StringValueType))
+		p.buf = st.serialize(serializationFailed, p.buf)
 	}
 	return true, nil
+}
+
+// Testing helping function to flatten payload traces into a list of spans
+func (p *payloadV1) traces() spanLists {
+	out := make(spanLists, 0, len(p.chunks))
+	for _, c := range p.chunks {
+		if len(c.spans) > 0 {
+			out = append(out, c.spans)
+		}
+	}
+	return out
 }
 
 // Getters for payloadV1 fields
@@ -781,7 +938,6 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 	}
 	p.buf = o
 	atomic.StoreUint32(&p.fields, numFields)
-	p.header = make([]byte, 8)
 	p.updateHeader()
 
 	st := newStringTable()
@@ -846,7 +1002,87 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 		}
 		fieldCount++
 	}
+
+	for _, c := range p.chunks {
+		for _, s := range c.spans {
+			if s == nil {
+				continue
+			}
+			if len(c.traceID) < 16 {
+				continue
+			}
+			s.mu.Lock()
+			s.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
+			s.mu.Unlock()
+			if p.languageName != "" {
+				s.SetTag("language", p.languageName)
+			}
+		}
+		if pt, ok := p.attributes[keyProcessTags]; ok && pt.valueType == StringValueType && len(c.spans) >= 0 && c.spans[0] != nil {
+			c.spans[0].SetTag(keyProcessTags, pt.value.(string))
+		}
+	}
 	return o, err
+}
+
+// A testing helper to decode payloads into a map[string]any
+// Empty strings and slices are omitted from the result.
+//
+//go:linkname decodeTestingPayload
+func decodeTestingPayload(buf []byte) (map[string]any, error) {
+	p := newPayloadV1()
+	p.buf = buf
+	if _, err := p.decodeBuffer(); err != nil {
+		return nil, err
+	}
+
+	out := map[string]any{}
+	if p.containerID != "" {
+		out["2"] = p.containerID
+	}
+	if p.languageName != "" {
+		out["3"] = p.languageName
+	}
+	if p.languageVersion != "" {
+		out["4"] = p.languageVersion
+	}
+	if p.tracerVersion != "" {
+		out["5"] = p.tracerVersion
+	}
+	if p.runtimeID != "" {
+		out["6"] = p.runtimeID
+	}
+	if p.env != "" {
+		out["7"] = p.env
+	}
+	if p.hostname != "" {
+		out["8"] = p.hostname
+	}
+	if p.appVersion != "" {
+		out["9"] = p.appVersion
+	}
+	if len(p.attributes) > 0 {
+		out["10"] = p.attributes
+	}
+	chunks := make([]any, len(p.chunks))
+	for i, c := range p.chunks {
+		spans := make([]any, len(c.spans))
+		for j, s := range c.spans {
+			s.mu.RLock()
+			sk, _ := s.meta.Get(ext.SpanKind)
+			m := map[string]any{"1": s.service}
+			if v := getSpanKindValue(sk); v != 0 {
+				m["16"] = v
+			}
+			spans[j] = m
+			s.mu.RUnlock()
+		}
+		chunks[i] = map[string]any{"4": spans}
+	}
+	if len(chunks) > 0 {
+		out["11"] = chunks
+	}
+	return out, nil
 }
 
 // AnyValue is a representation of the `any` value. It can take the following types:
@@ -874,24 +1110,34 @@ const (
 )
 
 func (a anyValue) encode(buf []byte, st *stringTable) []byte {
-	buf = msgp.AppendInt32(buf, int32(a.valueType))
+	// Value-type constants are 1..7; encode as msgp positive fixint (one byte).
 	switch a.valueType {
 	case StringValueType:
+		buf = append(buf, byte(a.valueType))
 		s := a.value.(string)
 		buf = st.serialize(s, buf)
 	case BoolValueType:
+		buf = append(buf, byte(a.valueType))
 		buf = msgp.AppendBool(buf, a.value.(bool))
 	case FloatValueType:
+		buf = append(buf, byte(a.valueType))
 		buf = msgp.AppendFloat64(buf, a.value.(float64))
 	case IntValueType:
+		buf = append(buf, byte(a.valueType))
 		buf = msgp.AppendInt64(buf, a.value.(int64))
 	case BytesValueType:
+		buf = append(buf, byte(a.valueType))
 		buf = msgp.AppendBytes(buf, a.value.([]byte))
 	case ArrayValueType:
+		buf = append(buf, byte(a.valueType))
 		buf = msgp.AppendArrayHeader(buf, uint32(len(a.value.(arrayValue))))
 		for _, v := range a.value.(arrayValue) {
 			buf = v.encode(buf, st)
 		}
+	default:
+		warnUnsupportedValue(uint32(a.valueType))
+		buf = append(buf, byte(StringValueType))
+		buf = st.serialize(serializationFailed, buf)
 	}
 	return buf
 }
@@ -936,6 +1182,11 @@ func (b bitmap) contains(bit uint32) bool {
 type index int32
 
 func (i index) encode(buf []byte) []byte {
+	// Indices typically fit in msgp positive fixint range (0..127); bypass the
+	// msgp.AppendUint32 function-call overhead on the stringTable hit path.
+	if uint32(i) < 128 {
+		return append(buf, byte(i))
+	}
 	return msgp.AppendUint32(buf, uint32(i))
 }
 
@@ -952,7 +1203,6 @@ func (i *index) decode(buf []byte) ([]byte, error) {
 type stringValue string
 
 func (s stringValue) encode(buf []byte) []byte {
-	// TODO(hannahkm): add the fixstr representation
 	return msgp.AppendString(buf, string(s))
 }
 
@@ -968,27 +1218,43 @@ func (s *stringValue) decode(buf []byte) ([]byte, error) {
 var errUnableDecodeString = errors.New("unable to read string value")
 
 type stringTable struct {
-	strings   []stringValue         // list of strings
-	indices   map[stringValue]index // map strings to their indices
-	nextIndex index                 // last index of the stringTable
+	strings   []stringValue    // list of strings
+	indices   map[string]index // map strings to their indices
+	nextIndex index            // last index of the stringTable
 }
 
 func newStringTable() *stringTable {
-	return &stringTable{
-		strings:   []stringValue{""},
-		indices:   map[stringValue]index{"": 0},
+	st := &stringTable{
+		strings:   make([]stringValue, 1, 64),
+		indices:   make(map[string]index, 64),
 		nextIndex: 1,
 	}
+	st.strings[0] = ""
+	st.indices[""] = 0
+	return st
+}
+
+func (st *stringTable) reset() {
+	clear(st.indices)
+	st.indices[""] = 0
+	st.strings = st.strings[:1]
+	st.strings[0] = ""
+	st.nextIndex = 1
 }
 
 // Adds a string to the string table if it does not already exist.
 func (st *stringTable) serialize(value string, buf []byte) []byte {
-	sv := stringValue(value)
-	if idx, ok := st.indices[sv]; ok {
+	if value == "" {
+		// msgp positive fixint 0 encodes as a single 0x00 byte; bypass the
+		// msgp.AppendUint32 function-call overhead on this hot path.
+		return append(buf, 0)
+	}
+	if idx, ok := st.indices[value]; ok {
 		return idx.encode(buf)
 	}
+	sv := stringValue(value)
 	buf = sv.encode(buf)
-	st.indices[sv] = st.nextIndex
+	st.indices[value] = st.nextIndex
 	st.strings = append(st.strings, sv)
 	st.nextIndex++
 	return buf
@@ -1264,7 +1530,9 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			if err != nil {
 				return o, err
 			}
-			span.SetTag(ext.SpanKind, getSpanKindString(sk))
+			if sk != 0 {
+				span.SetTag(ext.SpanKind, getSpanKindString(sk))
+			}
 		default:
 			return o, fmt.Errorf("unexpected field ID %d", idx)
 		}
@@ -1327,6 +1595,12 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 3:
 			var attr map[string]anyValue
 			attr, o, err = decodeAttributes(o, st)
+			if err != nil {
+				break
+			}
+			if len(attr) > 0 && link.Attributes == nil {
+				link.Attributes = make(map[string]string, len(attr))
+			}
 			for k, v := range attr {
 				if v.valueType != StringValueType {
 					return o, fmt.Errorf("unexpected value type: %d", v.valueType)
@@ -1541,4 +1815,9 @@ func decodeAttributes(b []byte, strings *stringTable) (map[string]anyValue, []by
 		kv[key] = av
 	}
 	return kv, o, nil
+}
+
+//go:noinline
+func warnUnsupportedValue(t uint32) {
+	log.Warn("failed to serialize unsupported type: %d", t)
 }

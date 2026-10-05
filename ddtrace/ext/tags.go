@@ -154,4 +154,18 @@ const (
 
 	// CloudResourceID is the cloud provider resource identifier.
 	CloudResourceID = "cloud.resource_id"
+
+	// KeyServiceSource is the span meta key for tracking the origin of a
+	// service name override (_dd.svc_src).
+	KeyServiceSource = "_dd.svc_src"
+
+	// ServiceSourceMapping is the service source value used when the
+	// service name is renamed by DD_SERVICE_MAPPING.
+	ServiceSourceMapping = "opt.mapping"
+
+	// DSMTransactionID is the span tag key for a Data Streams transaction identifier.
+	DSMTransactionID = "dsm.transaction.id"
+
+	// DSMTransactionCheckpoint is the span tag key for a Data Streams transaction checkpoint name.
+	DSMTransactionCheckpoint = "dsm.transaction.checkpoint"
 )

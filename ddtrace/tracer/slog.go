@@ -45,20 +45,20 @@ func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	parts := make([]string, 0, len(goas)+r.NumAttrs())
-	formatGroup := ""
+	var formatGroup strings.Builder
 
 	for _, goa := range goas {
 		if goa.group != "" {
-			formatGroup += goa.group + "."
+			formatGroup.WriteString(goa.group + ".")
 		} else {
 			for _, a := range goa.attrs {
-				parts = append(parts, formatGroup+a.String())
+				parts = append(parts, formatGroup.String()+a.String())
 			}
 		}
 	}
 
 	r.Attrs(func(a slog.Attr) bool {
-		parts = append(parts, formatGroup+a.String())
+		parts = append(parts, formatGroup.String()+a.String())
 		return true
 	})
 

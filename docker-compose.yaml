@@ -1,6 +1,10 @@
 services:
+  aerospike:
+    image: aerospike:ce-8.1.2.5_1@sha256:de6efea0692dfc91f1f5b993b333a5c82040d5a7c282a643492f8bbc626a7aa4
+    ports:
+      - "3000:3000"
   cassandra:
-    image: cassandra:5
+    image: cassandra:5@sha256:8819d1b7877ee6621751a761cc163332e9c3eaf671c8ef672f7c77a7c5bff05f
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -9,7 +13,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:8
+    image: mysql:26@sha256:ade067ae2fb15eeb6143e81185afe22573e3b3addc58aaf90c41999fa6883991
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -18,7 +22,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:16
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -26,28 +30,28 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2019-latest
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:2b5b581621126574f3d1f75e78d3eebe8d05aedb59ad0cfdf9aa42cb0634d726
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
     ports:
       - "1433:1433"
   consul:
-    image: consul:1.15
+    image: consul:1.15@sha256:10084bbbed746968b0b9f8edab2f8552e44f117e35b88153a5e0a3ad1e15aa1a
     ports:
       - "8500:8500"
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:8
+    image: valkey/valkey:9@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     ports:
       - "6380:6380"
   elasticsearch2:
-    image: elasticsearch:2
+    image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
@@ -57,7 +61,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch5:
-    image: elasticsearch:5
+    image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
@@ -67,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:6.8.23
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -79,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:7.17.28
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -91,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:8.18.1
+    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -104,7 +108,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest
+    image: registry.datadoghq.com/agent:latest@sha256:c5bf5ec9be0c51d3d2d47bdadbb82680b5c83ceb9cae8457fe44aa736a1784ad
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -112,7 +116,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.23.1
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.66.0@sha256:80126beab0e39b171ab86601a99fa599317c5f6ee4cff9e26758ec8e567852ef
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -124,19 +128,19 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:3
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8
+    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine
+    image: memcached:1.6-alpine@sha256:9e4de012dc607573052061c0bcb38abc775e1dd59b24e7ac38d1892842094aaf
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:7.5.0
+    image: confluentinc/confluent-local:8.3.2@sha256:2d623f09f1cc46a38b3ace3ee055016617b8f749db1596440bd9ecbe57601d3f
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
@@ -158,6 +162,6 @@ services:
       - "9092:9092"
       - "9093:9093"
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
     ports:
       - "4566:4566"

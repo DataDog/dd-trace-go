@@ -108,13 +108,29 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET\nGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test pipeline resource name is newline-separated",
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				resp := client.DoMulti(ctx,
+					client.B().Get().Key("k1").Build(),
+					client.B().Set().Key("k2").Value("v2").Build(),
+					client.B().Del().Key("k3").Build(),
+				)
+				require.Len(t, resp, 3)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+				assert.Equal(t, "GET\nSET\nDEL", spans[0].Tag(ext.ResourceName))
 			},
 			wantServiceName: "global-service",
 		},
@@ -197,7 +213,7 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET SET GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET\nGET\nSET\nGET\nSET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET k1 v1 GET k1 SET k2 v2 GET k2 SET k3 v3", span.Tag(ext.ValkeyRawCommand))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
 				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
@@ -301,7 +317,7 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET\nGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
@@ -356,50 +372,27 @@ func TestNewClient(t *testing.T) {
 			wantServiceName: "global-service",
 		},
 		{
-			name: "Test SET command with canceled context and custom error check",
+			name: "Test WithCreateClientFunc uses custom factory",
 			opts: []Option{
-				WithErrorCheck(func(err error) bool {
-					return err != nil && !valkey.IsValkeyNil(err) && !errors.Is(err, context.Canceled)
+				WithRawCommand(true),
+				WithCreateClientFunc(func(clientOption valkey.ClientOption) (valkey.Client, error) {
+					return valkey.NewClient(clientOption)
 				}),
 			},
 			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				ctx, cancel := context.WithCancel(ctx)
-				cancel()
-				require.Error(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
 			},
 			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
-				assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
 				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
 				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
 				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
 				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
-				assert.Nil(t, span.Tag(ext.Error))
-			},
-			wantServiceName: "global-service",
-		},
-		{
-			name: "Test valkey nil not attached to span",
-			opts: []Option{
-				WithRawCommand(true),
-			},
-			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				require.Error(t, client.Do(ctx, client.B().Get().Key("404").Build()).Error())
-			},
-			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 1)
-
-				span := spans[0]
-				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "GET 404", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -444,4 +437,33 @@ func TestNewClient(t *testing.T) {
 		})
 	}
 
+}
+
+// BenchmarkStartSpan measures client.startSpan, which merges static,
+// build-once tags via WithStartSpanConfig and per-call tags via a single
+// WithTags map instead of one tracer.Tag closure per tag. Compare its
+// ns/op and allocs/op across commits (e.g. with benchstat) to evaluate
+// changes to the tagging strategy.
+func BenchmarkStartSpan(b *testing.B) {
+	err := tracer.Start(tracer.WithTestDefaults(nil))
+	require.NoError(b, err)
+	defer tracer.Stop()
+
+	cfg := defaultConfig()
+	cfg.rawCommand = true
+	c := &client{
+		cfg:     cfg,
+		host:    "127.0.0.1",
+		port:    "6380",
+		dbIndex: "0",
+		user:    "default",
+	}
+	c.spanCfg = newSpanConfig(cfg, c.host, c.port, c.dbIndex, c.user)
+	cmd := command{statement: "SET", raw: "SET test_key test_value"}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		span, _ := c.startSpan(context.Background(), cmd)
+		span.Finish()
+	}
 }

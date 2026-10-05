@@ -72,3 +72,7 @@ func (l *llmobsSpanAdapter) TraceID() string {
 func (l *llmobsSpanAdapter) SetBaggageItem(key string, value string) {
 	l.span.SetBaggageItem(key, value)
 }
+
+func (l *llmobsSpanAdapter) BaggageItem(key string) string {
+	return l.span.BaggageItem(key)
+}

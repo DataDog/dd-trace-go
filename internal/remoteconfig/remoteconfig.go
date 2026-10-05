@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -135,6 +136,8 @@ const (
 	// APMTracingMulticonfig is the capability to handle cascading configs for the
 	// APMTracing product.
 	APMTracingMulticonfig
+	// FFEFlagEvaluation represents the capability for feature flag evaluation via OpenFeature
+	FFEFlagEvaluation
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
@@ -153,7 +156,11 @@ type Client struct {
 	clientID   string
 	endpoint   string
 	repository *rc.Repository
-	stop       chan struct{}
+	stop       chan struct{} // closed once (by Stop/Reset) to stop the poll goroutine
+	done       chan struct{} // closed by the poll goroutine on exit
+	stopOnce   sync.Once
+	// pollNow requests an out-of-cycle poll. Buffered(1): coalesced, non-blocking.
+	pollNow chan struct{}
 
 	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
 	callbacks       []Callback
@@ -207,9 +214,11 @@ func newClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
+		endpoint:     config.AgentURL + "/v0.7/config",
 		repository:   repo,
 		stop:         make(chan struct{}),
+		done:         make(chan struct{}),
+		pollNow:      make(chan struct{}, 1),
 		lastError:    nil,
 		callbacks:    []Callback{},
 		capabilities: map[Capability]struct{}{},
@@ -238,36 +247,43 @@ func Start(config ClientConfig) error {
 	}
 	started = true
 
+	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
 	var (
-		pollInterval = client.PollInterval
-		stop         = client.stop
+		c            = client
+		pollInterval = c.PollInterval
+		stop         = c.stop
+		pollNow      = c.pollNow
 	)
 	go func() {
+		defer close(c.done)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-stop:
-				close(stop)
 				return
+			case <-pollNow: // Subscribe requested a poll
 			case <-ticker.C:
-				if client == nil {
-					return
-				}
-				client.Lock()
-				client.updateState()
-				client.Unlock()
 			}
+			// stop may be ready alongside pollNow/ticker (select is random); don't poll after stop.
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			c.Lock()
+			c.updateState()
+			c.Unlock()
 		}
 	}()
 	return nil
 }
 
-// Stop stops the client's update poll loop.
-// Noop if the client has already been stopped.
-// The remote config client is supposed to have the same lifecycle as the tracer.
-// It can't be restarted after a call to Stop() unless explicitly calling Reset().
+// Stop ends the poll loop, waits for the goroutine to exit (up to the HTTP
+// timeout, since a poll may be in flight), then clears the singleton so a later
+// Start() is fresh. On wait timeout it clears anyway (a restart could briefly
+// overlap the in-flight poll). Noop if not running.
 func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
@@ -281,11 +297,17 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	client.stop <- struct{}{}
+	client.stopOnce.Do(func() { close(client.stop) })
+	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
+	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
+	wait := time.Second
+	if client.HTTP != nil && client.HTTP.Timeout > 0 {
+		wait = client.HTTP.Timeout + time.Second
+	}
 	select {
-	case <-client.stop:
+	case <-client.done:
 		log.Debug("remoteconfig: client stopped successfully")
-	case <-time.After(time.Second):
+	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
 	client = nil
@@ -298,20 +320,35 @@ func Reset() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
+	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
+	if client != nil {
+		client.stopOnce.Do(func() { close(client.stop) })
+	}
 	client = nil
 	started = false
+}
+
+// ClientID returns the client ID of the RC singleton, or an empty string if the
+// client has not been started yet.
+func ClientID() string {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+	if client == nil {
+		return ""
+	}
+	return client.clientID
 }
 
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: unexpected error while creating a new update request payload", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: unexpected error while creating a new http request", err)
 		return
 	}
 	if internal.ContainerID() != "" {
@@ -339,7 +376,17 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
+		// Not reported to Error Tracking: the response headers already arrived
+		// with a 200 OK, so this failure means the body transfer itself broke
+		// mid-stream (connection reset, truncated chunked encoding, a proxy or
+		// client timeout) - a transport/network condition indistinguishable in
+		// kind from the c.HTTP.Do(req) failure a few lines above (already
+		// local-log-only), not a defect in how dd-trace-go built the request.
+		// Contrast with the json.Unmarshal failure just below: that response body
+		// DID fully arrive, so a parse failure there is evidence of an actual
+		// protocol mismatch between this client and the agent - our defect, or at
+		// least actionable, unlike a mid-transfer network failure.
+		log.Debug("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
@@ -349,7 +396,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
+		telemetrylog.LogAndReportError("remoteconfig: http request error: could not parse the json response body", err)
 		return
 	}
 
@@ -362,6 +409,14 @@ func (c *Client) updateState() {
 	}
 
 	c.lastError = c.applyUpdate(&update)
+}
+
+// requestPoll asks the loop to poll now. Non-blocking, no locks (safe under the client's locks).
+func (c *Client) requestPoll() {
+	select {
+	case c.pollNow <- struct{}{}:
+	default:
+	}
 }
 
 type SubscriptionToken int
@@ -380,32 +435,39 @@ type SubscriptionToken int
 // Subscribe should be preferred over RegisterProduct and RegisterCallback if
 // your callback only handles a single product.
 func Subscribe(product string, callback ProductCallback, capabilities ...Capability) (SubscriptionToken, error) {
-	if client == nil {
+	// Capture the singleton once so a concurrent Stop/Reset (which nils the
+	// global) can't cause a nil deref mid-function.
+	c := client
+	if c == nil {
 		return 0, ErrClientNotStarted
 	}
-	client.productsMu.RLock()
-	defer client.productsMu.RUnlock()
-	if _, found := client.products[product]; found {
+	c.productsMu.RLock()
+	defer c.productsMu.RUnlock()
+	if _, found := c.products[product]; found {
 		return 0, fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
-	client.subscriptionsMu.Lock()
-	defer client.subscriptionsMu.Unlock()
-	client.subscriptionsMu.idAllocator++
-	id := client.subscriptionsMu.idAllocator
+	c.subscriptionsMu.Lock()
+	defer c.subscriptionsMu.Unlock()
+	c.subscriptionsMu.idAllocator++
+	id := c.subscriptionsMu.idAllocator
 	sub := subscription{
 		id:           id,
 		product:      product,
 		capabilities: capabilities,
 		callback:     callback,
 	}
-	client.subscriptionsMu.subs = append(client.subscriptionsMu.subs, sub)
+	c.subscriptionsMu.subs = append(c.subscriptionsMu.subs, sub)
 
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
 	for _, cap := range capabilities {
-		client.capabilities[cap] = struct{}{}
+		c.capabilities[cap] = struct{}{}
 	}
+	// Poll now: Subscribe registers product+callback+capabilities atomically, so
+	// the poll can't arrive before the callback. (RegisterProduct/RegisterCapability
+	// don't — they're used before a callback exists; see those.)
+	c.requestPoll()
 	return SubscriptionToken(id), nil
 }
 
@@ -472,6 +534,8 @@ func RegisterProduct(p string) error {
 	}
 
 	client.products[p] = struct{}{}
+	// No eager poll: used before a callback exists (see Subscribe), so an early
+	// poll's config would be dedup'd before the callback sees it. Picked up next tick.
 	return nil
 }
 
@@ -519,6 +583,7 @@ func RegisterCapability(cpb Capability) error {
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
 	client.capabilities[cpb] = struct{}{}
+	// No eager poll (see Subscribe); picked up next tick.
 	return nil
 }
 

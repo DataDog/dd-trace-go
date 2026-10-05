@@ -7,7 +7,6 @@ package k8sclientgo
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,7 +57,7 @@ func (b *base) expectedTraces() trace.Traces {
 			"http.useragent":   rest.DefaultKubernetesUserAgent(),
 			"http.status_code": "200",
 			"http.host":        b.serverURL.Host,
-			"http.url":         fmt.Sprintf("%s/api/v1/namespaces", b.server.URL),
+			"http.url":         b.server.URL + "/api/v1/namespaces",
 			"http.method":      "GET",
 		},
 	}
@@ -74,7 +73,7 @@ func (b *base) expectedTraces() trace.Traces {
 			"network.destination.name": "127.0.0.1",
 			"http.status_code":         "200",
 			"http.method":              "GET",
-			"http.url":                 fmt.Sprintf("%s/api/v1/namespaces", b.server.URL),
+			"http.url":                 b.server.URL + "/api/v1/namespaces",
 		},
 		Children: trace.Traces{httpServerSpan},
 	}

@@ -7,12 +7,15 @@ package httptrace
 
 import (
 	"net/http"
+	"net/netip"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -22,6 +25,9 @@ type ServeConfig struct {
 	// Service specifies the service name to use. If left blank, the global service name
 	// will be inherited.
 	Service string
+	// ServiceSource specifies the origin of the service name (e.g. "opt.wrap_handler", "opt.with_service")
+	// and is used to populate the _dd.svc_src tag for service name precedence decisions.
+	ServiceSource string
 	// Resource optionally specifies the resource name for this request.
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
@@ -32,6 +38,10 @@ type ServeConfig struct {
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
+	// ClientIP is the client identity supplied by an integration. When invalid,
+	// the default resolver determines it. DD_TRACE_CLIENT_IP_HEADER outranks this
+	// value.
+	ClientIP netip.Addr
 	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
@@ -53,14 +63,28 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
 	if cfg.Service != "" {
-		opts = append(opts, tracer.ServiceName(cfg.Service))
+		opts = append(opts, tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: cfg.Service, Source: cfg.ServiceSource}))
 	}
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
 	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
 	opts = append(opts, endpointOpt)
-	span, ctx, finishSpans := StartRequestSpan(r, opts...)
+
+	appsecEnabled := appsec.Enabled()
+	clientIP := cfg.ClientIP
+	if clientip.CustomHeaderConfigured() {
+		clientIP = netip.Addr{}
+	}
+	if !clientIP.IsValid() && (traceClientIPEnabled() || appsecEnabled) {
+		_, clientIP = clientip.Resolve(r.Header, true, r.RemoteAddr)
+	}
+	var ipTags map[string]string
+	if traceClientIPEnabled() {
+		ipTags = clientip.TagsFor(r.RemoteAddr, clientIP)
+	}
+
+	span, ctx, finishSpans := startRequestSpan(r, ipTags, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
@@ -68,11 +92,12 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	}
 	afterHandle := closeSpan
 	handled := false
-	if appsec.Enabled() {
+	if appsecEnabled {
 		appsecConfig := &httpsec.Config{
 			Framework:   cfg.Framework,
 			Route:       renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
 			RouteParams: cfg.RouteParams,
+			ClientIP:    clientIP,
 		}
 
 		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)

@@ -69,6 +69,10 @@ var gcpPubsub = harness.TestCase{
 		DDService:       []string{"", ""},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{"", ""},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "pubsub.publish", spans[0].OperationName())

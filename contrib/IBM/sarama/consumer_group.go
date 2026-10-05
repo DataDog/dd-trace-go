@@ -11,7 +11,8 @@ import (
 
 type consumerGroupHandler struct {
 	sarama.ConsumerGroupHandler
-	cfg *config
+	cfg        *config
+	closeAsync []func()
 }
 
 func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
@@ -36,10 +37,14 @@ func WrapConsumerGroupHandler(handler sarama.ConsumerGroupHandler, opts ...Optio
 	}
 	instr.Logger().Debug("contrib/IBM/sarama: Wrapping Consumer Group Handler: %#v", cfg)
 
-	return &consumerGroupHandler{
+	wrapped := &consumerGroupHandler{
 		ConsumerGroupHandler: handler,
 		cfg:                  cfg,
 	}
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+	}
+	return wrapped
 }
 
 type consumerGroupClaim struct {

@@ -32,7 +32,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		opt.apply(cfg)
 	}
 	instr.Logger().Debug("contrib/emicklei/go-restful/v3: Creating tracing filter: %#v", cfg)
-	spanOpts := []tracer.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
+	spanOpts := []tracer.StartSpanOption{instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(
 			spanOpts,

@@ -14,19 +14,22 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +45,7 @@ func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
 	for i := range n {
 		istr := fmt.Sprintf("%0.10d", i)
-		s.meta[istr] = istr
+		s.meta.Set(istr, istr)
 		s.metrics[istr] = float64(i)
 	}
 	return s
@@ -156,6 +159,10 @@ func TestLogWriter(t *testing.T) {
 	})
 
 	t.Run("fullspan", func(t *testing.T) {
+		// Disable process tags so the expected meta map stays deterministic.
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		cfg, err := newTestConfig()
@@ -186,10 +193,10 @@ func TestLogWriter(t *testing.T) {
 			name:     "basicName",
 			service:  "basicService",
 			resource: "basicResource",
-			meta: map[string]string{
-				"env":     "prod",
-				"version": "1.26.0",
-			},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				ext.Environment: "prod",
+				ext.Version:     "1.26.0",
+			}),
 			metaStruct: map[string]any{
 				"_dd.stack": map[string]string{
 					"0": "github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter",
@@ -247,7 +254,7 @@ func TestLogWriter(t *testing.T) {
 		assert := assert.New(t)
 		s := newSpan("name\n", "srv\t", `"res"`, 2, 1, 3)
 		s.start = 12
-		s.meta["query\n"] = "Select * from \n Where\nvalue"
+		s.meta.Set("query\n", "Select * from \n Where\nvalue")
 		s.metrics["version\n"] = 3
 
 		var w logTraceWriter
@@ -258,6 +265,42 @@ func TestLogWriter(t *testing.T) {
 		assert.NotContains(str, "\n")
 		assert.Contains(str, "\\n")
 	})
+}
+
+// TestLogWriterProcessTags verifies that _dd.tags.process does not appear in
+// log-writer output when the feature is disabled. End-to-end coverage for the
+// enabled path (via setTraceTagsLocked → span.meta → serialization) lives in
+// TestOTLPExportModeProcessTags.
+func TestLogWriterProcessTags(t *testing.T) {
+	type jsonSpan struct {
+		Meta map[string]string `json:"meta"`
+	}
+	type jsonPayload struct {
+		Traces [][]jsonSpan `json:"traces"`
+	}
+
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+
+	var buf bytes.Buffer
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	statsd, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer statsd.Close()
+	h := newLogTraceWriter(cfg, statsd)
+	h.w = &buf
+
+	h.add([]*Span{makeSpan(0), makeSpan(0)})
+	h.flush()
+
+	var v jsonPayload
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &v))
+	require.Len(t, v.Traces, 1)
+	for i, s := range v.Traces[0] {
+		assert.NotContains(t, s.Meta, keyProcessTags, "span %d must not carry process tags when disabled", i)
+	}
 }
 
 func TestLogWriterOverflow(t *testing.T) {
@@ -295,7 +338,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
-		var trace []*Span
+		trace := make([]*Span, 0, 500)
 		for range 500 {
 			trace = append(trace, s)
 		}
@@ -355,9 +398,10 @@ type failingTransport struct {
 }
 
 func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	t.sendAttempts++
 
-	traces, err := decode(p)
+	traces, _, err := decode(p)
 	if err != nil {
 		return nil, err
 	}
@@ -415,10 +459,12 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
+			u := mockAgentEndpoint(t, "/v1.0/traces")
 			c, err := newTestConfig(func(c *config) {
-				c.transport = p
-				c.sendRetries = test.configRetries
+				c.ddTransport = p
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
+				c.internalConfig.SetAgentURL(u, internalconfig.OriginCode)
 			})
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient
@@ -458,12 +504,29 @@ func minInts(a, b int) int {
 	return b
 }
 
+func mockAgentEndpoint(t testing.TB, path string) *url.URL {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"endpoints": ["` + path + `", "/v0.6/stats"], "config": {"statsd_port": 8125}, "client_drop_p0s": true}`))
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	return u
+}
+
 func TestTraceProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
-		cfg, err := newTestConfig()
+
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
@@ -472,16 +535,10 @@ func TestTraceProtocol(t *testing.T) {
 	t.Run("v1.0, with endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		assert.NoError(err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -490,30 +547,32 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("v0.4", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default, no endpoint", func(t *testing.T) {
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default, with endpoint", func(t *testing.T) {
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -522,23 +581,22 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid, with endpoint", func(t *testing.T) {
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -657,7 +715,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Track traces added for verification
-		var tracesAdded int32
+		var tracesAdded atomic.Int32
 
 		// Spawn goroutines that add traces
 		for range numAddGoroutines {
@@ -667,7 +725,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 				for range numTracesPerGoroutine {
 					spans := []*Span{makeSpan(1)}
 					writer.add(spans)
-					atomic.AddInt32(&tracesAdded, 1)
+					tracesAdded.Add(1)
 				}
 			})
 		}
@@ -694,7 +752,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		writer.wg.Wait()
 
 		// Verify that the number of traces added matches our expectation
-		actualTracesAdded := atomic.LoadInt32(&tracesAdded)
+		actualTracesAdded := tracesAdded.Load()
 		assert.Equal(int32(expectedTotalTraces), actualTracesAdded,
 			"Expected %d traces to be added, but got %d", expectedTotalTraces, actualTracesAdded)
 
@@ -759,6 +817,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 type simpleTransport struct{}
 
 func (t *simpleTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	// Just read and discard the payload to simulate a successful send
 	_, _ = io.Copy(io.Discard, p)
 	return io.NopCloser(strings.NewReader("{}")), nil
@@ -768,8 +827,139 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 	return nil
 }
 
-func (t *simpleTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+func (t *simpleTransport) endpoint(float64) string {
+	return "http://localhost:9/v1.0/traces"
+}
+
+// rejectV1Transport rejects every v1 payload it sees with
+// errV1TracesNotSupported (simulating a backend that doesn't support v1,
+// e.g. a load-balanced fleet where /info and the trace send land on
+// different backends) and succeeds on everything else, decoding and
+// recording every trace that is actually delivered. sendCalls counts how
+// many times send was invoked, to confirm a rejected v1 payload isn't
+// retried against the same doomed endpoint.
+type rejectV1Transport struct {
+	mu        sync.Mutex
+	sendCalls int
+	delivered spanLists
+}
+
+func (t *rejectV1Transport) send(p payload) (io.ReadCloser, error) {
+	t.mu.Lock()
+	t.sendCalls++
+	t.mu.Unlock()
+	if p.protocol() == traceProtocolV1 {
+		return nil, errV1TracesNotSupported
+	}
+	defer p.Close()
+	traces, _, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	t.delivered = append(t.delivered, traces...)
+	t.mu.Unlock()
+	return io.NopCloser(strings.NewReader("{}")), nil
+}
+
+func (t *rejectV1Transport) sendStats(*pb.ClientStatsPayload, int) error {
+	return nil
+}
+
+func (t *rejectV1Transport) endpoint(float64) string {
+	return "http://localhost:9/v1.0/traces"
+}
+
+// TestAgentWriterDowngradesWhenAgentRejectsV1 is the writer-level
+// verification for downgradeAfterRejectedSend: when an agent rejects a live
+// v1 send outright, the writer must downgrade config's protocol state
+// immediately and permanently (see trace_protocol_state.go), count the
+// rejected payload as dropped rather than retrying it against an endpoint
+// that will keep rejecting it, and let the very next payload recover on
+// v0.4.
+func TestAgentWriterDowngradesWhenAgentRejectsV1(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	ft := &rejectV1Transport{}
+	cfg, err := newTestConfig(
+		withNoopInfoHTTPClient(),
+		withStatsdClient(&tg),
+		func(c *config) {
+			c.ddTransport = ft
+		},
+	)
+	require.NoError(t, err)
+	setTraceProtocolStateForTest(cfg, protoV1)
+	require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol(), "sanity check: writer must start on v1")
+
+	w := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+	w.add([]*Span{makeSpan(1)})
+	w.flush()
+	w.wg.Wait()
+
+	assert.Empty(t, ft.delivered, "the rejected payload must not be redelivered -- see doc.go's documented trace-loss trade-off")
+	assert.Equal(t, 1, ft.sendCalls, "a rejected v1 send must not be retried against the same endpoint")
+	assert.Equal(t, traceProtocolV04, cfg.effectiveTraceProtocol(), "a rejected v1 send must downgrade immediately")
+	assert.False(t, cfg.advanceTraceProtocolState(protoV1), "the downgrade must be permanent: nothing can move the state back to v1")
+
+	counts := tg.Counts()
+	assert.Equal(t, int64(1), counts["datadog.tracer.traces_dropped"], "the rejected trace must be counted as dropped")
+	assert.Zero(t, counts["datadog.tracer.flush_traces"], "no successful delivery should be counted for the rejected payload")
+
+	// The very next payload recovers: it is built for v0.4 and delivered.
+	w.add([]*Span{makeSpan(2)})
+	w.flush()
+	w.wg.Wait()
+	require.Len(t, ft.delivered, 1, "the post-downgrade trace must be delivered")
+	assert.Equal(t, 2, ft.sendCalls)
+}
+
+// TestDowngradeAfterRejectedSendSkipsMetricWhenTelemetryAlreadyReported pins
+// that downgradeAfterRejectedSend's metric/log are gated on
+// ReportEffectiveTraceProtocol's own return value, not on
+// advanceTraceProtocolState's -- those are two separate, independently
+// racing CAS operations (protocolState vs effectiveTraceProtocolBits), so
+// winning the first (the state transition) is no guarantee of winning the
+// second (the telemetry report). Concretely: a concurrent /info poll can
+// observe and report the same v0.4 transition to telemetry before the
+// rejected send's own goroutine gets there, since refreshAgentFeatures always
+// attempts ReportEffectiveTraceProtocol regardless of whether its own
+// advanceTraceProtocolState call actually moved anything.
+//
+// That interleaving can't be staged deterministically by pausing between
+// downgradeAfterRejectedSend's own two statements (there's no exposed
+// yield point, and it's plain sequential code), so this reproduces the
+// essential precondition instead: make telemetry already reflect v0.4 (as if
+// a concurrent poll's report had already landed), then force the protocol
+// state to v1 so downgradeAfterRejectedSend's own advanceTraceProtocolState
+// call is genuinely the one that performs the v1->v0.4 transition. Gating on
+// that call's return (true, since it really did just move the state) would
+// emit unconditionally; gating on ReportEffectiveTraceProtocol's own return
+// (false, since telemetry already holds this value) must not.
+func TestDowngradeAfterRejectedSendSkipsMetricWhenTelemetryAlreadyReported(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), withStatsdClient(&tg))
+	require.NoError(t, err)
+
+	w := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+
+	// withNoopInfoHTTPClient's /info 404s, so startup already resolved to
+	// v0.4 and reported it -- telemetry already holds v0.4 bits.
+	require.False(t, cfg.internalConfig.ReportEffectiveTraceProtocol(traceProtocolV04),
+		"sanity check: telemetry must already reflect v0.4 from startup")
+
+	// Force the precondition: the protocol state is v1, so
+	// downgradeAfterRejectedSend's own advanceTraceProtocolState call below
+	// will be the one that actually performs the v1->v0.4 transition.
+	setTraceProtocolStateForTest(cfg, protoV1)
+	require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol(), "sanity check: simulated precondition")
+
+	tg.Reset()
+	w.downgradeAfterRejectedSend()
+
+	require.Equal(t, traceProtocolV04, cfg.effectiveTraceProtocol(), "sanity check: the call must still have applied the downgrade")
+	counts := tg.Counts()
+	assert.Zero(t, counts["datadog.tracer.trace_protocol_changed"],
+		"must not emit when telemetry already reflects this transition, even though this call's own state transition just won")
 }
 
 // TestAgentWriterFlushSizeMetrics validates that flush_bytes metrics are accurate
@@ -777,19 +967,19 @@ func (t *simpleTransport) endpoint() string {
 func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	testCases := []struct {
 		name        string
-		newPayload  func() payload
+		protocol    float64
 		description string
 		size        int64
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayloadV04() },
+			protocol:    traceProtocolV04,
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1934,
+			size:        1811,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayloadV1() },
+			protocol:    traceProtocolV1,
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -803,18 +993,27 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			assert := assert.New(t)
 			var tg statsdtest.TestStatsdClient
 
-			// Use a simple transport that always succeeds
+			// Use a simple transport that always succeeds, and pin the effective
+			// protocol to tc.protocol regardless of any real local agent: add()
+			// now rotates an idle payload that disagrees with the live config
+			// (see rotateStalePayload), so the writer's payload must agree with
+			// it up front rather than merely being overridden below.
 			cfg, err := newTestConfig(
+				withNoopInfoHTTPClient(),
 				withStatsdClient(&tg),
 				func(c *config) {
-					c.transport = &simpleTransport{}
+					c.ddTransport = &simpleTransport{}
 				},
 			)
 			require.NoError(t, err)
+			if tc.protocol == traceProtocolV1 {
+				setTraceProtocolStateForTest(cfg, protoV1)
+			}
+			require.Equal(t, tc.protocol, cfg.effectiveTraceProtocol(), "sanity check: effective protocol must match the case under test")
 
 			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 			// Override the payload with the specific protocol we want to test
-			writer.payload = tc.newPayload()
+			writer.payload = newPayload(tc.protocol)
 
 			// Add a trace (one call to add = one trace)
 			// Each trace is an array of spans
@@ -838,6 +1037,36 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	}
 }
 
+// TestAgentWriterV1FlushPayloadRecycling is a regression test for the panic:
+//
+//	interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1
+//
+// The panic occurred in the flush goroutine's deferred cleanup when it tried to
+// return the payloadV1 to its pool via p.(*payloadV1), but newPayload() always
+// wraps the inner payload in a *safePayload. The fix unwraps: p.(*safePayload).p.(*payloadV1).
+func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(
+		withStatsdClient(&tg),
+		func(c *config) {
+			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
+			c.ddTransport = &simpleTransport{}
+		},
+	)
+	require.NoError(t, err)
+
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+
+	// newPayload() always returns *safePayload — asserting p.(*payloadV1) directly panics.
+	require.IsType(t, &safePayload{}, writer.payload,
+		"payload must be *safePayload to cover the regression path")
+
+	writer.add([]*Span{makeSpan(1)})
+	// Must not panic: "interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1"
+	writer.flush()
+	writer.wg.Wait()
+}
+
 // TestPayloadSizeConsistency validates that size reporting is consistent
 // across multiple resets for both protocols.
 func TestPayloadSizeConsistency(t *testing.T) {
@@ -851,7 +1080,7 @@ func TestPayloadSizeConsistency(t *testing.T) {
 			name:        "v0.4",
 			newPayload:  func() payload { return newPayloadV04() },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1332,
+			size:        1209,
 		},
 		{
 			name:        "v1",

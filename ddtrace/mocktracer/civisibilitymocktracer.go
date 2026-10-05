@@ -17,31 +17,88 @@ import (
 )
 
 type civisibilitymocktracer struct {
-	mock   *mocktracer   // mock tracer
-	real   tracer.Tracer // real tracer (for the testotimization/civisibility spans)
+	// mock records user-created spans so tests that use mocktracer keep their existing assertions.
+	mock *mocktracer
+
+	// realMu protects real while CI Visibility startup, span creation, flush, and shutdown can overlap.
+	realMu sync.RWMutex
+	real   tracer.Tracer // real receives CI Visibility spans that must not be captured by mock.
+
+	// realSpansMu protects realSpans, which tracks spans that must bypass mock FinishSpan handling.
+	realSpansMu sync.Mutex
+	realSpans   map[*tracer.Span]struct{}
+
+	// isnoop disables user-facing mock behavior after Stop while allowing CI Visibility cleanup to continue.
 	isnoop atomic.Bool
 }
 
 var (
 	_ tracer.Tracer = (*civisibilitymocktracer)(nil)
 	_ Tracer        = (*civisibilitymocktracer)(nil)
-
-	realSpans      = make(map[*tracer.Span]bool)
-	realSpansMutex sync.Mutex
 )
 
-// Creates a new CIVisibilityMockTracer that uses the mock tracer for all spans except the CIVisibility spans.
+// newCIVisibilityMockTracer creates a mock tracer that delegates CI Visibility spans to the real tracer.
 func newCIVisibilityMockTracer() *civisibilitymocktracer {
 	currentTracer := getGlobalTracer()
-	// let's check if the current tracer is already a civisibilitymocktracer
-	// if so, we need to get the real tracer from it
+	// Repeated mocktracer starts should unwrap the previous CI Visibility mock tracer
+	// and keep its real tracer delegate instead of stacking wrappers.
 	if currentCIVisibilityMockTracer, ok := currentTracer.(*civisibilitymocktracer); ok && currentCIVisibilityMockTracer != nil {
-		currentTracer = currentCIVisibilityMockTracer.real
+		currentTracer = currentCIVisibilityMockTracer.realTracer()
 	}
 	return &civisibilitymocktracer{
-		mock: newMockTracer(),
-		real: currentTracer,
+		mock:      newMockTracer(),
+		real:      currentTracer,
+		realSpans: make(map[*tracer.Span]struct{}),
 	}
+}
+
+// realTracer returns the currently installed CI Visibility tracer delegate.
+func (t *civisibilitymocktracer) realTracer() tracer.Tracer {
+	t.realMu.RLock()
+	defer t.realMu.RUnlock()
+	return t.real
+}
+
+// SetCIVisibilityTracer installs the tracer used for CI Visibility spans while
+// keeping this mock tracer as the process global tracer.
+func (t *civisibilitymocktracer) SetCIVisibilityTracer(real tracer.Tracer) bool {
+	if real == nil {
+		return false
+	}
+
+	t.realMu.Lock()
+	if t.isnoop.Load() {
+		old := t.real
+		t.real = &tracer.NoopTracer{}
+		t.realMu.Unlock()
+		if old != nil && old != real {
+			stopRealTracerDelegate(old)
+		}
+		return false
+	}
+	old := t.real
+	t.real = real
+	t.realMu.Unlock()
+
+	if old != nil && old != real {
+		stopRealTracerDelegate(old)
+	}
+	return true
+}
+
+// stopRealTracerDelegate stops a tracer owned by civisibilitymocktracer without
+// letting mocktracer cleanup overwrite the process global tracer.
+func stopRealTracerDelegate(real tracer.Tracer) {
+	if real == nil {
+		return
+	}
+	if mt, ok := real.(*mocktracer); ok {
+		if mt.dsmProcessor != nil {
+			mt.dsmProcessor.Stop()
+		}
+		return
+	}
+	real.Stop()
 }
 
 // SentDSMBacklogs returns the Data Streams Monitoring backlogs that have been sent by the mock tracer.
@@ -55,38 +112,53 @@ func (t *civisibilitymocktracer) SentDSMBacklogs() []datastreams.Backlog {
 	return t.mock.dsmTransport.backlogs
 }
 
-// Stop deactivates the CIVisibility mock tracer by setting it to noop mode and stopping
-// the Data Streams Monitoring processor. This should be called when testing has finished.
+// Stop deactivates the CI Visibility mock tracer by setting it to noop mode and stopping
+// the Data Streams Monitoring processor. If this wrapper has already been removed from
+// the global tracer slot, it also stops the real delegate because CI Visibility shutdown
+// can no longer reach it through the global tracer.
 func (t *civisibilitymocktracer) Stop() {
+	var realToStop tracer.Tracer
+	removedFromGlobalTracer := getGlobalTracer() != t
+
+	t.realMu.Lock()
 	t.isnoop.Store(true)
-	t.mock.dsmProcessor.Stop()
-	if civisibility.GetState() == civisibility.StateExiting {
-		t.real.Stop()
+	if removedFromGlobalTracer || civisibility.GetState() == civisibility.StateExiting {
+		realToStop = t.real
 		t.real = &tracer.NoopTracer{}
 	}
+	t.realMu.Unlock()
+
+	t.mock.dsmProcessor.Stop()
+	stopRealTracerDelegate(realToStop)
 }
 
 // StartSpan creates a new span with the given operation name and options. If the span type
 // indicates it's a CI Visibility span (like a test session, module, suite, or individual test),
 // it uses the real tracer to create the span. For all other spans, it uses the mock tracer.
-// If the tracer is in noop mode, it returns nil.
+// If the mock tracer is in noop mode, non-CI Visibility spans return nil while
+// CI Visibility spans may still use the real tracer until CI Visibility exits.
 func (t *civisibilitymocktracer) StartSpan(operationName string, opts ...tracer.StartSpanOption) *tracer.Span {
-	if t.real != nil {
-		var cfg tracer.StartSpanConfig
-		for _, fn := range opts {
-			fn(&cfg)
-		}
+	var cfg tracer.StartSpanConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
 
-		if spanType, ok := cfg.Tags[ext.SpanType]; ok &&
-			(spanType == constants.SpanTypeTestSession || spanType == constants.SpanTypeTestModule ||
-				spanType == constants.SpanTypeTestSuite || spanType == constants.SpanTypeTest) {
-			// If the span is a civisibility span, use the real tracer to create it.
-			realSpan := t.real.StartSpan(operationName, opts...)
-			realSpansMutex.Lock()
-			defer realSpansMutex.Unlock()
-			realSpans[realSpan] = true
+	if isCIVisibilitySpan(cfg) {
+		t.realMu.RLock()
+		real := t.real
+		if real != nil {
+			// If the span is a CI Visibility span, use the real tracer to create it.
+			realSpan := real.StartSpan(operationName, opts...)
+			t.realMu.RUnlock()
+
+			if realSpan != nil {
+				t.realSpansMu.Lock()
+				t.realSpans[realSpan] = struct{}{}
+				t.realSpansMu.Unlock()
+			}
 			return realSpan
 		}
+		t.realMu.RUnlock()
 	}
 
 	if t.isnoop.Load() {
@@ -97,20 +169,59 @@ func (t *civisibilitymocktracer) StartSpan(operationName string, opts ...tracer.
 	return t.mock.StartSpan(operationName, opts...)
 }
 
-// FinishSpan marks the given span as finished in the mock tracer. This is called by spans
-// when they finish, adding them to the list of finished spans for later inspection.
+// isCIVisibilitySpan reports whether cfg describes a CI Visibility span that
+// must bypass user-facing mocktracer storage.
+func isCIVisibilitySpan(cfg tracer.StartSpanConfig) bool {
+	spanType, ok := cfg.Tags[ext.SpanType]
+	return ok && (spanType == constants.SpanTypeTestSession ||
+		spanType == constants.SpanTypeTestModule ||
+		spanType == constants.SpanTypeTestSuite ||
+		spanType == constants.SpanTypeTest)
+}
+
+// FinishSpan marks mock-created spans as finished while keeping CI Visibility
+// spans out of the user-facing mock span list.
 func (t *civisibilitymocktracer) FinishSpan(s *tracer.Span) {
-	realSpansMutex.Lock()
-	defer realSpansMutex.Unlock()
+	if s == nil {
+		return
+	}
+
+	t.realSpansMu.Lock()
 	// Check if the span is a real span (i.e., created by the real tracer).
-	if _, isRealSpan := realSpans[s]; isRealSpan {
-		delete(realSpans, s)
+	_, isRealSpan := t.realSpans[s]
+	t.realSpansMu.Unlock()
+	if isRealSpan {
 		return
 	}
 	if t.isnoop.Load() {
 		return
 	}
 	t.mock.FinishSpan(s)
+}
+
+// TracerForFinishedChunk returns the current real tracer when a finished chunk
+// contains CI Visibility spans created by this wrapper.
+func (t *civisibilitymocktracer) TracerForFinishedChunk(spans []*tracer.Span) (tracer.Tracer, bool) {
+	hasRealSpan := false
+	t.realSpansMu.Lock()
+	for _, s := range spans {
+		if _, ok := t.realSpans[s]; ok {
+			delete(t.realSpans, s)
+			hasRealSpan = true
+		}
+	}
+	t.realSpansMu.Unlock()
+	if !hasRealSpan {
+		return nil, false
+	}
+
+	t.realMu.RLock()
+	real := t.real
+	t.realMu.RUnlock()
+	if real == nil {
+		return nil, false
+	}
+	return real, true
 }
 
 // GetDataStreamsProcessor returns the Data Streams Monitoring processor used by the mock tracer.
@@ -163,6 +274,11 @@ func (t *civisibilitymocktracer) Inject(context *tracer.SpanContext, carrier any
 }
 
 func (t *civisibilitymocktracer) TracerConf() tracer.TracerConf {
+	t.realMu.RLock()
+	defer t.realMu.RUnlock()
+	if t.real == nil {
+		return tracer.TracerConf{}
+	}
 	return t.real.TracerConf()
 }
 
@@ -170,5 +286,9 @@ func (t *civisibilitymocktracer) TracerConf() tracer.TracerConf {
 // This ensures that all buffered spans are processed and ready for inspection.
 func (t *civisibilitymocktracer) Flush() {
 	t.mock.Flush()
-	t.real.Flush()
+	t.realMu.RLock()
+	defer t.realMu.RUnlock()
+	if t.real != nil {
+		t.real.Flush()
+	}
 }

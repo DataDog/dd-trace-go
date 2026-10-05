@@ -11,6 +11,7 @@ import (
 	"time"
 
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -19,6 +20,7 @@ import (
 
 func init() {
 	registerSCAAppConfigTelemetry()
+	registerAgenticOnboardingTelemetry()
 }
 
 // Register the global app telemetry configuration related to the Software Composition Analysis (SCA) product.
@@ -32,12 +34,21 @@ func registerSCAAppConfigTelemetry() {
 	}
 }
 
+// registerAgenticOnboardingTelemetry reports [EnvAgenticOnboarding] verbatim in configuration
+// telemetry (RFC-1113), always emitted: unset reports an empty value with origin=default.
+func registerAgenticOnboardingTelemetry() {
+	stableconfig.String(EnvAgenticOnboarding, "")
+}
+
 // The following environment variables dictate the enablement of different the ASM products.
 const (
 	// EnvEnabled controls ASM Threats Protection's enablement.
 	EnvEnabled = "DD_APPSEC_ENABLED"
 	// EnvSCAEnabled controls ASM Software Composition Analysis (SCA)'s enablement.
 	EnvSCAEnabled = "DD_APPSEC_SCA_ENABLED"
+	// EnvAgenticOnboarding is set by Datadog's agentic onboarding solution when it configures App &
+	// API Protection. It carries no behavior; its value is reported in configuration telemetry only.
+	EnvAgenticOnboarding = "DD_APPSEC_AGENTIC_ONBOARDING"
 )
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
@@ -148,6 +159,8 @@ type Config struct {
 	TraceRateLimit int64
 	// APISec configuration
 	APISec APISecConfig
+	// StackTrace is the AppSec stack trace configuration.
+	StackTrace StackTraceConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
 	RC *remoteconfig.ClientConfig
 	// RASP determines whether RASP features are enabled or not.
@@ -191,7 +204,12 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
 	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
-	if origin != telemetry.OriginDefault {
+	// A non-default origin means a valid value was provided. A non-nil error together with a non-empty
+	// raw value means a value was provided but was not a valid boolean (stableconfig.Bool then reports
+	// OriginDefault): in both cases the variable was explicitly set and must be treated as an explicit
+	// (false-y) value rather than unset, so an invalid local value is not silently overridden by remote
+	// config. An empty value is treated as unset, matching the env conventions used elsewhere.
+	if origin != telemetry.OriginDefault || (err != nil && env.Get(EnvEnabled) != "") {
 		set = true
 	}
 	return enabled, set, err
@@ -213,6 +231,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		WAFTimeout:          WAFTimeoutFromEnv(),
 		TraceRateLimit:      RateLimitFromEnv(),
 		APISec:              NewAPISecConfig(c.APISecOptions...),
+		StackTrace:          NewStackTraceConfig(),
 		RASP:                RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,

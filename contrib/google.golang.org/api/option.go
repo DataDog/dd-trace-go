@@ -8,10 +8,13 @@ package api
 import (
 	"context"
 	"math"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
 	serviceName              string
+	serviceSource            string
 	ctx                      context.Context
 	analyticsRate            float64
 	scopes                   []string
@@ -62,6 +65,7 @@ func WithScopes(scopes ...string) OptionFn {
 func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

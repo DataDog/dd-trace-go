@@ -1,5 +1,21 @@
-name: Nightly govulncheck
+name: Govulncheck
 on:
+  pull_request:
+    # No "**/*.go" here, deliberately. Vulnerabilities enter through
+    # dependencies, which these globs cover. A Go edit can still change
+    # *reachability* of an already-known vulnerable symbol, and that case is
+    # covered twice over without paying 17 job-minutes on every pull request:
+    # the `push` trigger below has no paths filter, so every merge-queue branch
+    # is scanned in full before it can land on main, and the nightly cron
+    # rescans the whole tree.
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/govulncheck.yml"
+      - ".github/workflows/apps/govulncheck-contribs-v2.sh"
+      - ".github/workflows/apps/govulncheck-contribs-sarif.sh"
   workflow_call: # allows to reuse this workflow
     inputs:
       ref:
@@ -15,32 +31,151 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   schedule:
     - cron: '00 00 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: govulncheck-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   contents: read
+  security-events: write # required for SARIF upload to GitHub Code Scanning
 
 jobs:
+  # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
+  # Replaces Dependabot Security Alerts with reachability-aware findings.
+  # Uses the official golang/govulncheck-action — see PR #4599 for
+  # the enterprise allowlist request context.
+  # NOTE: Only core packages are scanned here. Contrib modules are scanned
+  # separately in govulncheck-contribs-analysis (SARIF, non-blocking,
+  # sandboxed) and in govulncheck-tests (blocking, sandboxed).
+  govulncheck-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Run govulncheck
+        # golang/govulncheck-action is the official Go Security Team action.
+        # It handles Go setup internally and always uses the latest govulncheck.
+        # -format sarif exits 0 even when vulnerabilities are found, so the
+        # upload step always runs. The blocking check is in govulncheck-tests.
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # master @ 2026-02-26
+        with:
+          output-format: sarif
+          output-file: govulncheck.sarif
+          go-version-input: stable
+          # Disable the action's implicit checkout — we already checked out the
+          # correct ref above with persist-credentials: false. Without this, the
+          # action re-runs actions/checkout with default credentials and the
+          # event ref, which can diverge from inputs.ref on workflow_call.
+          repo-checkout: false
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+      - name: Run govulncheck (OpenVEX)
+        if: always()
+        run: |-
+          source ./.github/workflows/apps/go-retry.sh
+          retry_on_corruption_to_file govulncheck-raw.vex govulncheck -format openvex \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... || true
+      - name: Patch OpenVEX author and product
+        if: always() && hashFiles('govulncheck-raw.vex') != ''
+        run: |-
+          MODULE_PATH=$(go list -m -f '{{ .Path }}' github.com/DataDog/dd-trace-go/v2)
+          COMMIT=$(git rev-parse HEAD)
+          VERSION=$(GOPROXY=direct GONOSUMDB="${MODULE_PATH}" go list -m -json "${MODULE_PATH}@${COMMIT}" | jq -r .Version)
+          PRODUCT="pkg:golang/${MODULE_PATH}@${VERSION}"
+          jq --arg author "security@datadoghq.com" \
+            --arg product "${PRODUCT}" \
+            '.author = $author | (.statements[]?.products[]?["@id"]) = $product' \
+            govulncheck-raw.vex > govulncheck.vex
+      - name: Upload OpenVEX artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: govulncheck-openvex
+          path: govulncheck.vex
+          if-no-files-found: warn
+
+  # Non-blocking: scans all contrib modules for vulnerabilities and uploads
+  # the merged SARIF to GitHub Code Scanning for Security tab visibility.
+  # Contrib vulns are also caught by govulncheck-tests (blocking, sandboxed).
+  govulncheck-contribs-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+      - name: Run govulncheck on contrib modules (SARIF, sandboxed)
+        # geomys/sandboxed-step uses gVisor to confine execution, preventing
+        # supply chain attacks from exfiltrating tokens or making network calls.
+        # Installs govulncheck and runs govulncheck-contribs-sarif.sh, which
+        # scans each contrib module and merges results into one SARIF file.
+        # -format sarif exits 0 even when vulnerabilities are found.
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
+        with:
+          persist-workspace-changes: 'true'
+          run: |-
+            mkdir -p "${GITHUB_WORKSPACE}/bin"
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption env GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+            ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
+      - name: Restore workspace after sandbox
+        id: restore
+        if: always()
+        run: |-
+          git reset --hard HEAD
+          git clean -fdx -e govulncheck-contribs.sarif
+      - name: Upload contrib SARIF to GitHub Code Scanning
+        if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: govulncheck-contribs.sarif
+          category: govulncheck-contribs
+
+  # Blocking: fails the build if any reachable vulnerability is found.
+  # Scans both core packages and all contrib modules (each with its own go.mod).
+  # govulncheck execution is sandboxed via geomys/sandboxed-step (gVisor).
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
-        uses: ./.github/actions/setup-go
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
-      - name: Run govulncheck
-        run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
-      - name: Run govulncheck-contribs
-        run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./.github/workflows/apps/govulncheck-contribs-v2.sh
+          cache-dependency-path: '**/go.sum'
+      - name: Run govulncheck (sandboxed)
+        # geomys/sandboxed-step uses gVisor to confine execution, preventing
+        # supply chain attacks from exfiltrating tokens or making network calls.
+        uses: geomys/sandboxed-step@a6bfc174e532cea4f378e3427bcde8b714c2e810 # v1.2.2
+        with:
+          run: |
+            mkdir -p "${GITHUB_WORKSPACE}/bin"
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption env GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+            retry_on_corruption govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
+            ./.github/workflows/apps/govulncheck-contribs-v2.sh

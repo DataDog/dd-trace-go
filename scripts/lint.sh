@@ -60,7 +60,13 @@ lint_shell_files() {
 lint_misc_files() {
   message "Running miscellaneous linters..."
   run "go run ./scripts/check_copyright.go"
-  run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile scripts/apiextractor/Makefile profiler/internal/fastdelta/Makefile"
+  run "go run ./scripts/check_codeowners.go"
+  # Keeps .github/ci-components.yml in step with the tree. Like CODEOWNERS, it
+  # has no catch-all entry, so a new top-level directory is a lint failure until
+  # someone classifies it.
+  run "go test ./scripts/ciselect/"
+  run "go test ./scripts/citiming/ ./scripts/actiontest/"
+  run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile profiler/internal/fastdelta/Makefile"
 }
 
 lint_action_files() {

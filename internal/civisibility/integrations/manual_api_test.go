@@ -7,17 +7,119 @@ package integrations
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
+	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func TestSessionFinishedTelemetryIncludesFaultyEFDAbortReason(t *testing.T) {
+	for _, exitCode := range []int{0, 1} {
+		t.Run(fmt.Sprintf("exit=%d", exitCode), func(t *testing.T) {
+			mockTracer.Reset()
+			defer mockTracer.Reset()
+			recorder := new(telemetrytest.RecordClient)
+			defer coretelemetry.MockClient(recorder)()
+
+			session := CreateTestSession(WithTestSessionFramework("golang.org/pkg/testing", runtime.Version()))
+			session.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "faulty")
+			session.Close(exitCode)
+			require.Len(t, mockTracer.FinishedSpans(), 1)
+
+			found := false
+			for key, metric := range recorder.Metrics {
+				if key.Namespace != coretelemetry.NamespaceCIVisibility || key.Name != "event_finished" {
+					continue
+				}
+				if strings.Contains(key.Tags, "event_type:session") && strings.Contains(key.Tags, "early_flake_detection_abort_reason:faulty") {
+					require.Equal(t, 1.0, metric.Get())
+					found = true
+				}
+			}
+			require.True(t, found, "session-finished telemetry did not contain the faulty EFD abort reason: %#v", recorder.Metrics)
+		})
+	}
+}
 
 // Mocking the ddTslvEvent interface
 type MockDdTslvEvent struct {
 	mock.Mock
+}
+
+func TestTryPushCiVisibilityPreCloseActionRejectsShutdown(t *testing.T) {
+	oldState := civisibility.GetState()
+	closeActionsMutex.Lock()
+	oldPreCloseActions := preCloseActions
+	preCloseActions = nil
+	closeActionsMutex.Unlock()
+	t.Cleanup(func() {
+		civisibility.SetState(oldState)
+		closeActionsMutex.Lock()
+		preCloseActions = oldPreCloseActions
+		closeActionsMutex.Unlock()
+	})
+
+	civisibility.SetState(civisibility.StateInitialized)
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {}))
+	closeActionsMutex.Lock()
+	require.Len(t, preCloseActions, 1)
+	closeActionsMutex.Unlock()
+
+	civisibility.SetState(civisibility.StateExiting)
+	require.False(t, TryPushCiVisibilityPreCloseAction(func() {}))
+	closeActionsMutex.Lock()
+	require.Len(t, preCloseActions, 1)
+	closeActionsMutex.Unlock()
+}
+
+func TestCIVisibilityPreCloseActionsRunUnlockedBeforeCloseActions(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	var order []string
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {
+		order = append(order, "pre-close")
+		registered := make(chan struct{})
+		go func() {
+			PushCiVisibilityCloseAction(func() {
+				order = append(order, "late close")
+			})
+			close(registered)
+		}()
+		select {
+		case <-registered:
+		case <-time.After(time.Second):
+			t.Fatal("pre-close action ran while closeActionsMutex was held")
+		}
+	}))
+	PushCiVisibilityCloseAction(func() {
+		order = append(order, "close")
+	})
+
+	civisibility.SetState(civisibility.StateInitialized)
+	ExitCiVisibility()
+
+	require.Equal(t, []string{"pre-close", "late close", "close"}, order)
 }
 
 func (m *MockDdTslvEvent) Context() context.Context {
@@ -178,6 +280,320 @@ func (m *MockDdTestSuite) Name() string {
 
 func (m *MockDdTestSuite) Close(options ...TestSuiteCloseOption) {
 	m.Called(options)
+}
+
+func TestProcessRetryChildManualAPIsAreNoop(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+	enableProcessRetryChildTransportForTesting(t)
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "child-sentinel")
+	t.Setenv("DD_TRACE_SAMPLE_RATE", "sample-sentinel")
+
+	var clientCalls atomic.Int32
+	var uploadCalls atomic.Int32
+	var searchCalls atomic.Int32
+	var tracerInitializationCalls atomic.Int32
+	newCIVisibilityClientWithServiceNameFunc = func(string) civisibilitynet.Client {
+		clientCalls.Add(1)
+		return nil
+	}
+	uploadRepositoryChangesFunc = func() (int64, error) {
+		uploadCalls.Add(1)
+		return 0, nil
+	}
+	getSearchCommitsFunc = func() (*searchCommitsResponse, error) {
+		searchCalls.Add(1)
+		return newSearchCommitsResponse(nil, nil, false), nil
+	}
+
+	internalCiVisibilityInitialization(func([]tracer.StartOption) {
+		tracerInitializationCalls.Add(1)
+	})
+	EnsureCiVisibilityInitialization()
+
+	session := CreateTestSession(WithTestSessionCommand("cmd"), WithTestSessionWorkingDirectory("wd"))
+	require.NotNil(t, session)
+	require.Zero(t, session.SessionID())
+	require.Equal(t, "cmd", session.Command())
+	require.Equal(t, "wd", session.WorkingDirectory())
+	require.Equal(t, context.Background(), session.Context())
+
+	module := session.GetOrCreateModule("module")
+	require.NotNil(t, module)
+	require.Zero(t, module.ModuleID())
+	require.Equal(t, "module", module.Name())
+	require.Equal(t, session, module.Session())
+	require.Equal(t, context.Background(), module.Context())
+
+	suite := module.GetOrCreateSuite("suite")
+	require.NotNil(t, suite)
+	require.Zero(t, suite.SuiteID())
+	require.Equal(t, "suite", suite.Name())
+	require.Equal(t, module, suite.Module())
+	require.Equal(t, context.Background(), suite.Context())
+
+	test := suite.CreateTest("test")
+	require.NotNil(t, test)
+	require.Zero(t, test.TestID())
+	require.Equal(t, "test", test.Name())
+	require.Equal(t, suite, test.Suite())
+	require.Equal(t, context.Background(), test.Context())
+
+	session.SetTag("tag", "value")
+	session.SetError(WithErrorInfo("type", "message", "stack"))
+	module.SetTag("tag", "value")
+	module.SetError(WithErrorInfo("type", "message", "stack"))
+	suite.SetTag("tag", "value")
+	suite.SetError(WithErrorInfo("type", "message", "stack"))
+	test.SetTag("tag", "value")
+	test.SetError(WithErrorInfo("type", "message", "stack"))
+	test.SetBenchmarkData("duration", map[string]any{"run": 1})
+	test.SetTestFunc(nil)
+	test.Log("message", "tag:value")
+	test.Close(ResultStatusPass)
+	suite.Close()
+	module.Close()
+	session.Close(0)
+	ExitCiVisibility()
+
+	require.NotNil(t, GetSettings())
+	require.NotNil(t, GetKnownTests())
+	require.NotNil(t, GetTestManagementTestsData())
+	require.NotNil(t, GetFlakyRetriesSettings())
+	require.Nil(t, GetSkippableTests())
+	require.Nil(t, GetSkippableTestsResponse())
+	require.Nil(t, GetImpactedTestsAnalyzer())
+	mockTracer := InitializeCIVisibilityMock()
+	require.NotNil(t, mockTracer)
+	require.Nil(t, mockTracer.StartSpan("child"))
+
+	require.Zero(t, clientCalls.Load())
+	require.Zero(t, uploadCalls.Load())
+	require.Zero(t, searchCalls.Load())
+	require.Zero(t, tracerInitializationCalls.Load())
+	require.Equal(t, civisibility.StateUninitialized, civisibility.GetState())
+	require.Nil(t, ciVisibilityClient)
+	require.Nil(t, mTracer)
+	require.Empty(t, closeActions)
+	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
+	ciVisibilityEnabled, ok := internalenv.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
+	require.True(t, ok)
+	require.Equal(t, "child-sentinel", ciVisibilityEnabled)
+	sampleRate, ok := internalenv.Lookup("DD_TRACE_SAMPLE_RATE")
+	require.True(t, ok)
+	require.Equal(t, "sample-sentinel", sampleRate)
+}
+
+func TestProcessRetryChildTransportKeyAllowlist(t *testing.T) {
+	for _, key := range []string{
+		constants.CIVisibilityInternalRetryProcessChild,
+		constants.CIVisibilityInternalRetryProcessResultPath,
+		constants.CIVisibilityInternalRetryProcessTestName,
+		constants.CIVisibilityInternalRetryProcessAttempt,
+		constants.CIVisibilityInternalRetryProcessReason,
+	} {
+		require.True(t, IsProcessRetryChildTransportKey(key))
+		require.True(t, IsProcessRetryChildTransportKey(strings.ToLower(key)))
+	}
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_"))
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_UNKNOWN"))
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_RETRY_PROCESS_CHILD"))
+}
+
+func BenchmarkProcessRetryChildTransportKeyUnrelated(b *testing.B) {
+	b.ReportAllocs()
+	for range b.N {
+		IsProcessRetryChildTransportKey("DD_TRACE_SAMPLE_RATE")
+	}
+}
+
+func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
+	if processRetryChildTransport.active {
+		t.Skip("startup transport snapshot is active")
+	}
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+
+	require.False(t, IsProcessRetryChild())
+	_, ok := LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
+	require.False(t, ok)
+}
+
+func TestSnapshotProcessRetryChildTransport(t *testing.T) {
+	valid := map[string]string{
+		constants.CIVisibilityInternalRetryProcessChild:      "true",
+		constants.CIVisibilityInternalRetryProcessResultPath: "/tmp/result.json",
+		constants.CIVisibilityInternalRetryProcessTestName:   "TestProcessRetry",
+		constants.CIVisibilityInternalRetryProcessAttempt:    "1",
+		constants.CIVisibilityInternalRetryProcessReason:     constants.AutoTestRetriesRetryReason,
+	}
+	clone := func() map[string]string {
+		values := make(map[string]string, len(valid))
+		maps.Copy(values, valid)
+		return values
+	}
+	without := func(key string) map[string]string {
+		values := clone()
+		delete(values, key)
+		return values
+	}
+	withAttempt := func(attempt string) map[string]string {
+		values := clone()
+		values[constants.CIVisibilityInternalRetryProcessAttempt] = attempt
+		return values
+	}
+	tests := []struct {
+		name       string
+		values     map[string]string
+		active     bool
+		warning    bool
+		unsetError bool
+	}{
+		{name: "absent marker", values: map[string]string{}},
+		{name: "false marker", values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "false"}},
+		{name: "invalid marker", values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "invalid"}, warning: true},
+		{name: "missing result path", values: without(constants.CIVisibilityInternalRetryProcessResultPath), warning: true},
+		{name: "missing test name", values: without(constants.CIVisibilityInternalRetryProcessTestName), warning: true},
+		{name: "missing attempt", values: without(constants.CIVisibilityInternalRetryProcessAttempt), warning: true},
+		{name: "invalid attempt", values: withAttempt("invalid"), warning: true},
+		{name: "zero attempt", values: withAttempt("0"), warning: true},
+		{name: "missing reason", values: without(constants.CIVisibilityInternalRetryProcessReason), warning: true},
+		{name: "valid", values: valid, active: true},
+		{name: "valid with unset error", values: valid, active: true, unsetError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := make(map[string]string, len(tt.values))
+			maps.Copy(values, tt.values)
+			var unsetKeys []string
+			unsetErr := errors.New("unset failed")
+			state, warning := snapshotProcessRetryChildTransport(
+				func(key string) (string, bool) {
+					value, ok := values[key]
+					return value, ok
+				},
+				func(key string) error {
+					unsetKeys = append(unsetKeys, key)
+					delete(values, key)
+					if tt.unsetError && key == constants.CIVisibilityInternalRetryProcessChild {
+						return unsetErr
+					}
+					return nil
+				},
+			)
+
+			require.Equal(t, tt.active, state.active)
+			require.Equal(t, tt.warning, warning != nil)
+			if tt.unsetError {
+				require.ErrorIs(t, state.err, unsetErr)
+			} else {
+				require.NoError(t, state.err)
+			}
+			if _, markerPresent := tt.values[constants.CIVisibilityInternalRetryProcessChild]; markerPresent {
+				require.ElementsMatch(t, processRetryChildTransportKeys[:], unsetKeys)
+			} else {
+				require.Empty(t, unsetKeys)
+			}
+		})
+	}
+}
+
+func TestProcessRetryChildUsesImmutableStartupClassification(t *testing.T) {
+	previous := processRetryChildTransport
+	t.Cleanup(func() { processRetryChildTransport = previous })
+
+	processRetryChildTransport = &processRetryChildTransportState{
+		active: true,
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "not-reparsed"},
+	}
+	require.True(t, IsProcessRetryChild())
+
+	processRetryChildTransport = &processRetryChildTransportState{
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "true"},
+	}
+	require.False(t, IsProcessRetryChild())
+}
+
+func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	ciVisibilitySkippables = map[string]map[string][]civisibilitynet.SkippableResponseDataAttributes{"parent": {}}
+	ciVisibilitySkippablesResponse = &civisibilitynet.SkippableTestsResponse{}
+	ciVisibilityImpactedTestsAnalyzer = &impactedtests.ImpactedTestAnalyzer{}
+	enableProcessRetryChildTransportForTesting(t)
+
+	require.NotSame(t, &ciVisibilitySettings, GetSettings())
+	require.NotSame(t, &ciVisibilityKnownTests, GetKnownTests())
+	require.NotSame(t, &ciVisibilityTestManagementTests, GetTestManagementTestsData())
+	require.NotSame(t, &ciVisibilityFlakyRetriesSettings, GetFlakyRetriesSettings())
+	require.Nil(t, GetSkippableTests())
+	require.Nil(t, GetSkippableTestsResponse())
+	require.Nil(t, GetImpactedTestsAnalyzer())
+}
+
+func enableProcessRetryChildTransportForTesting(t *testing.T) {
+	t.Helper()
+	previous := processRetryChildTransport
+	processRetryChildTransport = &processRetryChildTransportState{
+		active: true,
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "true"},
+	}
+	t.Cleanup(func() {
+		processRetryChildTransport = previous
+	})
+}
+
+func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
+	if IsProcessRetryChild() {
+		require.Empty(t, closeActions)
+		require.Equal(t, civisibility.StateUninitialized, civisibility.GetState())
+		require.Zero(t, CreateTestSession().SessionID())
+		require.Empty(t, closeActions)
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryChildStartupHasNoCloseActions$", "-test.count=1")
+	cmd.Env = append(environmentWithoutProcessRetryTransport(),
+		constants.CIVisibilityInternalRetryProcessChild+"=true",
+		constants.CIVisibilityInternalRetryProcessResultPath+"="+filepath.Join(t.TempDir(), "result.json"),
+		constants.CIVisibilityInternalRetryProcessTestName+"=TestProcessRetryChildStartupHasNoCloseActions",
+		constants.CIVisibilityInternalRetryProcessAttempt+"=1",
+		constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
+
+func TestProcessRetryIncompleteChildTransportRunsNormally(t *testing.T) {
+	const fixtureEnv = "DD_TEST_PROCESS_RETRY_INCOMPLETE_TRANSPORT"
+	if os.Getenv(fixtureEnv) == "true" {
+		require.False(t, IsProcessRetryChild())
+		session := CreateTestSession()
+		require.NotZero(t, session.SessionID())
+		session.Close(0)
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryIncompleteChildTransportRunsNormally$", "-test.count=1")
+	cmd.Env = append(environmentWithoutProcessRetryTransport(),
+		fixtureEnv+"=true",
+		constants.CIVisibilityInternalRetryProcessChild+"=true",
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "ignoring invalid process retry child transport")
+}
+
+func environmentWithoutProcessRetryTransport() []string {
+	environment := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !IsProcessRetryChildTransportKey(name) {
+			environment = append(environment, entry)
+		}
+	}
+	return environment
 }
 
 func (m *MockDdTestSuite) CreateTest(name string, options ...TestStartOption) Test {

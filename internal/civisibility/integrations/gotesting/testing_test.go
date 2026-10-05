@@ -119,6 +119,10 @@ func TestParallelSubTests(gt *testing.T) {
 var testRetryWithPanicRunNumber atomic.Int32
 
 func TestRetryWithPanic(t *testing.T) {
+	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
+		t.Skip("no CI Visibility retry wrapper active; skipping panic injection")
+	}
+
 	t.Cleanup(func() {
 		if testRetryWithPanicRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
@@ -135,6 +139,10 @@ func TestRetryWithPanic(t *testing.T) {
 var testRetryWithFailRunNumber atomic.Int32
 
 func TestRetryWithFail(t *testing.T) {
+	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
+		t.Skip("no CI Visibility retry wrapper active; skipping failure injection")
+	}
+
 	t.Cleanup(func() {
 		if testRetryWithFailRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")

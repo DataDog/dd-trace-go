@@ -1,0 +1,211 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+package tracer
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// injectTracestate injects ctx with the W3C propagator and returns the
+// resulting tracestate header.
+func injectTracestate(t *testing.T, ctx *SpanContext) string {
+	t.Helper()
+	carrier := TextMapCarrier(map[string]string{})
+	p := &propagatorW3c{}
+	assert.NoError(t, p.Inject(ctx, carrier))
+	return carrier[tracestateHeader]
+}
+
+// A genuine probability decision emits ot=rv:...;th:... as the second member,
+// right after dd=.
+func TestInjectEmitsOtelOnProbabilityDecision(t *testing.T) {
+	const tid = uint64(0xfff972474538efff)
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(tid), spanID: 1}
+	ctx.trace = newTrace()
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+	ctx.trace.setOtelProbability(tid, 0.1)
+
+	ts := injectTracestate(t, ctx)
+	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	// dd= stays first, ot= second.
+	assert.True(t, len(ts) > 3 && ts[:3] == "dd=")
+	assert.Regexp(t, `^dd=[^,]*,ot=rv:ef284ace7a91e1;th:e6666666666668$`, ts)
+}
+
+// On boundary trace IDs where 56-bit truncation would flip the (rv >= th)
+// decision, rv is nudged to match DD's exact 64-bit keep/drop (RFC "64-bit to
+// 56-bit precision"). th is never changed.
+func TestOtelPrecisionBoundaryClamp(t *testing.T) {
+	// DD keeps but the naive rv falls just below th: rv is bumped up to th.
+	keep := &SpanContext{traceID: traceIDFrom64Bits(0x03A93EE8B1999F00), spanID: 1}
+	keep.trace = newTrace()
+	keep.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.RuleRate)
+	keep.trace.setOtelProbability(0x03A93EE8B1999F00, 0.1)
+	assert.Regexp(t, `,ot=rv:e6666666666668;th:e6666666666668$`, injectTracestate(t, keep))
+
+	// DD drops but the naive rv reads as kept: rv is bumped down to th-1.
+	drop := &SpanContext{traceID: traceIDFrom64Bits(5401449561355763072), spanID: 1}
+	drop.trace = newTrace()
+	drop.trace.setOtelProbability(5401449561355763072, 0.05)
+	rv, th, _ := drop.trace.otelTracestate()
+	assert.NotNil(t, rv)
+	assert.NotNil(t, th)
+	assert.Equal(t, uint64(0xf333333333332f), *rv)
+	assert.Equal(t, uint64(0xf3333333333330), *th)
+}
+
+// End-to-end: a root span decided by the global sample rate emits ot= when
+// injected. At rate 1.0 every trace is kept and th is 0.
+func TestInjectEmitsOtelEndToEnd(t *testing.T) {
+	t.Setenv("DD_TRACE_SAMPLE_RATE", "1.0")
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	span := tr.StartSpan("op")
+	carrier := TextMapCarrier(map[string]string{})
+	assert.NoError(t, tr.Inject(span.Context(), carrier))
+	span.Finish()
+
+	ts := carrier[tracestateHeader]
+	assert.Regexp(t, `,ot=rv:[0-9a-f]{14};th:0$`, ts)
+}
+
+// A force-keep is not a probability decision: no th is emitted, and with no
+// inherited rv there is no ot= member at all.
+func TestInjectNoOtelOnForceKeep(t *testing.T) {
+	const tid = uint64(0xfff972474538efff)
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(tid), spanID: 1}
+	ctx.trace = newTrace()
+	// Probability decision first, then a manual keep overrides it.
+	ctx.trace.setOtelProbability(tid, 0.1)
+	ctx.trace.forceSetSamplingPriority(ext.PriorityUserKeep, samplernames.Manual)
+
+	ts := injectTracestate(t, ctx)
+	assert.NotContains(t, ts, "ot=")
+}
+
+// An inbound ot= is parsed on extract and forwarded verbatim on inject, hoisted
+// to the second member; other vendors and dd= are preserved.
+func TestOtelInheritedForwardedUnchanged(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;t.dm:-4,ot=rv:ef284ace7a91e1;th:e6666666666668,othervendor=abc",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	rv, th, _ := sctx.trace.otelTracestate()
+	assert.NotNil(t, rv)
+	assert.NotNil(t, th)
+	assert.Equal(t, uint64(0xef284ace7a91e1), *rv)
+	assert.Equal(t, uint64(0xe6666666666668), *th)
+	assert.True(t, sctx.trace.otel.hasUpstreamDecision)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668")
+	assert.Contains(t, ts, "othervendor=abc")
+	// ot= appears exactly once (no duplicate from passthrough).
+	assert.Equal(t, 1, strings.Count(ts, "ot=rv:"))
+}
+
+// An inbound th-only ot= (a valid OTel default-sampling decision) is forwarded
+// unchanged; DD must not fabricate a matching rv.
+func TestOtelThOnlyForwarded(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-01",
+		tracestateHeader:  "ot=th:e6666666666668",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "ot=th:e6666666666668")
+	assert.NotContains(t, ts, "rv:")
+}
+
+// A force-keep erases th but forwards an inherited rv.
+func TestOtelForceKeepErasesThKeepsInheritedRv(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-00",
+		tracestateHeader:  "ot=rv:1234567890abcd;th:e6666666666668",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	// Simulate a force-keep (e.g. AppSec / manual) on the inherited trace.
+	sctx.trace.forceSetSamplingPriority(ext.PriorityUserKeep, samplernames.AppSec)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "ot=rv:1234567890abcd")
+	assert.NotContains(t, ts, "th:")
+}
+
+// An inbound ot= carrying only unknown sub-keys (no rv/th) is not a sampling
+// decision: DD still derives its own (rv, th) locally and forwards them alongside
+// the unknown sub-key, rather than treating the trace as already decided.
+func TestOtelUnknownOnlyStillDerivesLocalDecision(t *testing.T) {
+	const tid = uint64(0xfff972474538efff)
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(tid), spanID: 1}
+	ctx.trace = newTrace()
+	// Simulate parsing an inbound `ot=vd:foo` (unknown-only, no rv/th).
+	ctx.trace.setOtelUpstream(0, false, 0, false, "vd:foo")
+	assert.False(t, ctx.trace.otel.hasUpstreamDecision, "unknown-only ot= must not count as an upstream decision")
+
+	// DD makes its own probability decision; it must derive rv/th, not be suppressed.
+	ctx.trace.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+	ctx.trace.setOtelProbability(tid, 0.1)
+
+	ts := injectTracestate(t, ctx)
+	assert.Contains(t, ts, "ot=rv:ef284ace7a91e1;th:e6666666666668;vd:foo")
+}
+
+// A malformed ot= is treated as absent: no inherited values, trace not rejected,
+// dd= and other vendors preserved.
+func TestOtelMalformedTreatedAsAbsent(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-01",
+		tracestateHeader:  "dd=s:1;t.dm:-4,ot=rv:nothex;th:zzz,othervendor=abc",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	rv, th, _ := sctx.trace.otelTracestate()
+	assert.Nil(t, rv)
+	assert.Nil(t, th)
+	assert.Nil(t, sctx.trace.otel)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "othervendor=abc")
+	assert.NotContains(t, ts, "ot=")
+}

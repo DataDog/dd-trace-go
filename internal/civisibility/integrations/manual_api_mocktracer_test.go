@@ -6,18 +6,26 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var mockTracer mocktracer.Tracer
@@ -79,6 +87,91 @@ func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
+}
+
+func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	bazel.ResetForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		bazel.ResetForTesting()
+	})
+
+	now := time.Now()
+	session := createDDTestSession(now)
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	require.NotEmpty(t, finishedSpans)
+	spanTags := finishedSpans[0].Tags()
+
+	for key := range spanTags {
+		assert.False(strings.HasPrefix(key, "ci."), "unexpected ci tag key %q", key)
+		assert.False(strings.HasPrefix(key, "git."), "unexpected git tag key %q", key)
+		assert.False(strings.HasPrefix(key, "os."), "unexpected os tag key %q", key)
+		assert.False(strings.HasPrefix(key, "runtime."), "unexpected runtime tag key %q", key)
+		assert.NotEqual(constants.CIEnvVars, key, "unexpected env vars tag")
+	}
+
+	assert.Contains(spanTags, constants.TestCommand)
+	assert.Contains(spanTags, constants.Origin)
+}
+
+func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	workspaceDir := t.TempDir()
+	subDir := filepath.Join(workspaceDir, "pkg")
+	assert.NoError(os.MkdirAll(subDir, 0o755))
+	t.Chdir(subDir)
+
+	envDataPath := filepath.Join(t.TempDir(), "env.json")
+	envData := map[string]string{
+		constants.CIWorkspacePath:  workspaceDir,
+		constants.GitRepositoryURL: "https://github.com/acme/repo.git",
+	}
+	rawEnvData, err := json.Marshal(envData)
+	assert.NoError(err)
+	assert.NoError(os.WriteFile(envDataPath, rawEnvData, 0o644))
+
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, envDataPath)
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_WORKSPACE", workspaceDir)
+	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_SHA", "commit-sha")
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	bazel.ResetForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		bazel.ResetForTesting()
+	})
+
+	now := time.Now()
+	session := CreateTestSession(
+		WithTestSessionCommand("my-command"),
+		WithTestSessionFramework("my-testing-framework", "framework-version"),
+		WithTestSessionStartTime(now),
+	)
+	assert.Equal("pkg", session.WorkingDirectory())
+	assert.Equal("https://github.com/acme/repo.git", utils.GetCITags()[constants.GitRepositoryURL])
+	assert.Equal(workspaceDir, utils.GetCITags()[constants.CIWorkspacePath])
+
+	session.Close(0)
 }
 
 func TestTestSession(t *testing.T) {
@@ -250,6 +343,174 @@ func TestTest(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
+func TestITRTestsSkippingEnabledPropagation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		setTag    bool
+		want      string
+		wantFound bool
+	}{
+		{
+			name:      "enabled",
+			setTag:    true,
+			want:      "true",
+			wantFound: true,
+		},
+		{
+			name:      "disabled_tests_skipping",
+			setTag:    true,
+			want:      "false",
+			wantFound: true,
+		},
+		{
+			name:      "disabled_itr",
+			setTag:    false,
+			wantFound: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTracer.Reset()
+			assert := assert.New(t)
+			t.Cleanup(func() {
+				utils.ResetCITags()
+				utils.ResetCIMetrics()
+			})
+
+			now := time.Now()
+			session := createDDTestSession(now)
+			if tc.setTag {
+				session.SetTag(constants.ITRTestsSkippingEnabled, tc.want)
+				utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: tc.want})
+			}
+			module := session.GetOrCreateModule("my-module", WithTestModuleFramework("my-module-framework", "framework-version"), WithTestModuleStartTime(now))
+			suite := module.GetOrCreateSuite("my-suite", WithTestSuiteStartTime(now))
+			test := suite.CreateTest("my-test", WithTestStartTime(now))
+			test.Close(ResultStatusPass)
+			suite.Close()
+			module.Close()
+			session.Close(0)
+
+			finishedSpans := mockTracer.FinishedSpans()
+			assert.Len(finishedSpans, 4)
+			for _, spanType := range []string{
+				constants.SpanTypeTestSession,
+				constants.SpanTypeTestModule,
+				constants.SpanTypeTestSuite,
+				constants.SpanTypeTest,
+			} {
+				spans := manualAPISpansWithType(finishedSpans, spanType)
+				if assert.Len(spans, 1) {
+					if tc.wantFound {
+						assert.Equal(tc.want, spans[0].Tag(constants.ITRTestsSkippingEnabled))
+					} else {
+						assert.NotContains(spans[0].Tags(), constants.ITRTestsSkippingEnabled)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestCIVisibilityMetaValueTruncation(t *testing.T) {
+	assert := assert.New(t)
+
+	exactASCII := strings.Repeat("a", ciVisibilityMetaValueMaxChars)
+	overASCII := exactASCII + "b"
+	exactUnicode := strings.Repeat("é", ciVisibilityMetaValueMaxChars)
+	underLimitUnicode := strings.Repeat("é", ciVisibilityMetaValueMaxChars-1)
+	overUnicode := exactUnicode + "é"
+	asciiThenUnicode := exactASCII + "é"
+	unicodeThenASCII := exactUnicode + "a"
+
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(exactASCII))
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(overASCII))
+
+	assert.Greater(len(underLimitUnicode), ciVisibilityMetaValueMaxChars)
+	assert.Equal(ciVisibilityMetaValueMaxChars-1, utf8.RuneCountInString(underLimitUnicode))
+	assert.Equal(underLimitUnicode, truncateCIVisibilityMetaValue(underLimitUnicode))
+
+	assert.Greater(len(exactUnicode), ciVisibilityMetaValueMaxChars)
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(exactUnicode))
+	assert.Equal(exactUnicode, truncateCIVisibilityMetaValue(exactUnicode))
+
+	truncatedUnicode := truncateCIVisibilityMetaValue(overUnicode)
+	assert.True(utf8.ValidString(truncatedUnicode))
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(truncatedUnicode))
+	assert.Equal(exactUnicode, truncatedUnicode)
+
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(asciiThenUnicode))
+	assert.Equal(exactUnicode, truncateCIVisibilityMetaValue(unicodeThenASCII))
+	assert.Equal(42, truncateCIVisibilityTagValue(42))
+}
+
+func TestManualAPIMetaStringValuesAreTruncated(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	longValue := strings.Repeat("a", ciVisibilityMetaValueMaxChars+1)
+	unicodeValue := strings.Repeat("é", ciVisibilityMetaValueMaxChars+1)
+	truncatedValue := strings.Repeat("a", ciVisibilityMetaValueMaxChars)
+	truncatedUnicodeValue := strings.Repeat("é", ciVisibilityMetaValueMaxChars)
+	now := time.Now()
+
+	session := CreateTestSession(
+		WithTestSessionCommand(longValue),
+		WithTestSessionWorkingDirectory(unicodeValue),
+		WithTestSessionFramework(longValue, unicodeValue),
+		WithTestSessionStartTime(now),
+	)
+	session.SetTag("session.custom", unicodeValue)
+	module := session.GetOrCreateModule(unicodeValue, WithTestModuleFramework(longValue, unicodeValue), WithTestModuleStartTime(now))
+	module.SetTag("module.custom", longValue)
+	suite := module.GetOrCreateSuite(unicodeValue, WithTestSuiteStartTime(now))
+	suite.SetTag("suite.custom", unicodeValue)
+	test := suite.CreateTest(unicodeValue, WithTestStartTime(now))
+	test.SetTag("test.custom", longValue)
+	test.SetError(WithErrorInfo(unicodeValue, longValue, unicodeValue))
+	test.Close(ResultStatusSkip, WithTestSkipReason(unicodeValue))
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.Len(finishedSpans, 4)
+
+	sessionSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if assert.Len(sessionSpans, 1) {
+		assert.Equal(truncatedValue, sessionSpans[0].Tag(constants.TestCommand))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag(constants.TestCommandWorkingDirectory))
+		assert.Equal(truncatedValue, sessionSpans[0].Tag(constants.TestFramework))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag(constants.TestFrameworkVersion))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag("session.custom"))
+	}
+
+	moduleSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestModule)
+	if assert.Len(moduleSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, moduleSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedValue, moduleSpans[0].Tag(constants.TestFramework))
+		assert.Equal(truncatedUnicodeValue, moduleSpans[0].Tag(constants.TestFrameworkVersion))
+		assert.Equal(truncatedValue, moduleSpans[0].Tag("module.custom"))
+	}
+
+	suiteSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	if assert.Len(suiteSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag(constants.TestSuite))
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag("suite.custom"))
+	}
+
+	testSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTest)
+	if assert.Len(testSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestSuite))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestName))
+		assert.Equal(truncatedValue, testSpans[0].Tag("test.custom"))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(ext.ErrorType))
+		assert.Equal(truncatedValue, testSpans[0].Tag(ext.ErrorMsg))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(ext.ErrorStack))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestSkipReason))
+		assert.Equal(constants.TestStatusSkip, testSpans[0].Tag(constants.TestStatus))
+	}
+}
+
 func TestWithInnerFunc(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
@@ -281,6 +542,63 @@ func TestWithInnerFunc(t *testing.T) {
 
 	//no-op call
 	test.Close(ResultStatusSkip)
+}
+
+func TestSetTestFuncLogsFunctionDeclarationSourceRange(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	pc, _, _, _ := runtime.Caller(0)
+	test.SetTestFunc(runtime.FuncForPC(pc))
+
+	logs := recordLogger.Logs()
+	assert.True(containsSourceResolutionLogLine(logs, "resolving test source location"))
+	assert.True(containsSourceResolutionLogLine(logs, "matched AST function declaration"))
+	assert.True(containsSourceResolutionLogLine(logs, "resolved test source range"))
+}
+
+func TestSetTestFuncLogsFunctionLiteralSourceRange(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	func() {
+		pc, _, _, _ := runtime.Caller(0)
+		test.SetTestFunc(runtime.FuncForPC(pc))
+	}()
+
+	logs := recordLogger.Logs()
+	assert.True(containsSourceResolutionLogLine(logs, "resolving test source location"))
+	assert.True(containsSourceResolutionLogLine(logs, "inspecting AST function literal candidate"))
+	assert.True(containsSourceResolutionLogLine(logs, "matched AST function literal"))
+	assert.True(containsSourceResolutionLogLine(logs, "resolved test source range"))
 }
 
 func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
@@ -319,4 +637,24 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktrac
 	}
 
 	commonAssertions(assert, testSpan)
+}
+
+// containsSourceResolutionLogLine reports whether any recorded log line contains the expected source-resolution fragment.
+func containsSourceResolutionLogLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func manualAPISpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
+	var result []*mocktracer.Span
+	for _, span := range spans {
+		if span.Tag(ext.SpanType) == spanType {
+			result = append(result, span)
+		}
+	}
+	return result
 }

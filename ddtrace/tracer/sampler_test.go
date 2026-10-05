@@ -12,15 +12,19 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -58,10 +62,8 @@ func TestParseServiceEnvKey(t *testing.T) {
 func TestPrioritySampler(t *testing.T) {
 	// create a new span with given service/env
 	mkSpan := func(svc, env string) *Span {
-		s := &Span{service: svc, meta: map[string]string{}}
-		if env != "" {
-			s.meta["env"] = env
-		}
+		s := &Span{service: svc}
+		s.SetTag(ext.Environment, env)
 		return s
 	}
 
@@ -69,12 +71,17 @@ func TestPrioritySampler(t *testing.T) {
 		assert := assert.New(t)
 		s := mkSpan("my-service", "my-env")
 		assert.Equal("my-service", s.service)
-		assert.Equal("my-env", s.meta[ext.Environment])
+		v, _ := s.meta.Get(ext.Environment)
+		assert.Equal("my-env", v)
 
 		s = mkSpan("my-service2", "")
 		assert.Equal("my-service2", s.service)
-		_, ok := s.meta[ext.Environment]
-		assert.False(ok)
+		v, ok := s.meta.Get(ext.Environment)
+		assert.Equal("", v)
+		// SetTag always sets the presence bit, even for empty string, so ok=true.
+		// getRate uses only the string value, so "" and absent both fall through
+		// to the default rate — the behaviour is unchanged from the old code.
+		assert.True(ok)
 	})
 
 	t.Run("ops", func(t *testing.T) {
@@ -201,6 +208,179 @@ func TestPrioritySampler(t *testing.T) {
 		assert.EqualValues(ext.PriorityAutoReject, priority)
 		assert.EqualValues(0.5, rate)
 	})
+
+	t.Run("ksr-not-set-without-agent-rates", func(t *testing.T) {
+		// When no agent rates have been received, the priority sampler uses
+		// its initial default rate (1.0). This is a client-side fallback and
+		// should NOT propagate as _dd.p.ksr to stay consistent with other
+		// Datadog tracers.
+		assert := assert.New(t)
+		ps := newPrioritySampler()
+		spn := newBasicSpan("http.request")
+		spn.service = "my-service"
+		spn.traceID = 1
+
+		ps.apply(spn)
+		_, ok := getMeta(spn, keyKnuthSamplingRate)
+		assert.False(ok, "_dd.p.ksr must not be set when no agent rates have been received")
+
+		// Sampling priority and rate metric should still be set normally
+		priority, _ := getMetric(spn, keySamplingPriority)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+		rate, _ := getMetric(spn, keySamplingPriorityRate)
+		assert.EqualValues(1.0, rate)
+	})
+
+	t.Run("ksr-set-after-agent-rates-received", func(t *testing.T) {
+		// After agent rates are received via readRatesJSON, apply should
+		// set _dd.p.ksr — even when the span falls through to the default
+		// rate provided by the agent.
+		assert := assert.New(t)
+		ps := newPrioritySampler()
+		assert.NoError(ps.readRatesJSON(
+			io.NopCloser(strings.NewReader(
+				`{
+					"rate_by_service":{
+						"service:,env:":0.8,
+						"service:obfuscate.http,env:":0.5
+					}
+				}`,
+			)),
+		))
+
+		// Span matching a per-service rate
+		spn1 := newBasicSpan("http.request")
+		spn1.service = "obfuscate.http"
+		spn1.traceID = 1
+
+		ps.apply(spn1)
+		ksr, ok := getMeta(spn1, keyKnuthSamplingRate)
+		assert.True(ok, "_dd.p.ksr must be set when agent rates have been received (per-service)")
+		assert.Equal("0.5", ksr)
+
+		// Span falling through to agent-provided default rate
+		spn2 := newBasicSpan("http.request")
+		spn2.service = "unknown-service"
+		spn2.traceID = 1
+
+		ps.apply(spn2)
+		ksr, ok = getMeta(spn2, keyKnuthSamplingRate)
+		assert.True(ok, "_dd.p.ksr must be set when agent rates have been received (default)")
+		assert.Equal("0.8", ksr)
+	})
+}
+
+func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
+	t.Run("no parent keeps at rate 1.0", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		for _, id := range []uint64{0, 1, math.MaxUint64 / 2, math.MaxUint64} {
+			span := newBasicSpan("web.request")
+			span.traceID = id
+			tracer.sample(span)
+			priority, ok := span.context.SamplingPriority()
+			assert.True(ok, "traceID=%d should have sampling priority set", id)
+			assert.EqualValues(ext.PriorityAutoKeep, priority, "traceID=%d should be kept", id)
+			rate, ok := getMetric(span, keySamplingPriorityRate)
+			assert.True(ok, "traceID=%d should have rate tag", id)
+			assert.EqualValues(1.0, rate, "traceID=%d should have rate 1.0", id)
+			rv, th, unknown := span.context.trace.otelTracestate()
+			if assert.NotNil(rv, "traceID=%d should have ot.rv", id) {
+				assert.EqualValues(deriveOtelRV(id), *rv, "traceID=%d should derive ot.rv from the trace ID", id)
+			}
+			if assert.NotNil(th, "traceID=%d should have ot.th", id) {
+				assert.Zero(*th, "traceID=%d should have the rate-1.0 threshold", id)
+			}
+			assert.Empty(unknown, "traceID=%d should not have unknown ot fields", id)
+		}
+	})
+
+	t.Run("inherits parent keep", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+	})
+
+	t.Run("inherits parent drop", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.context.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoReject, priority)
+	})
+
+	t.Run("DD_TRACE_SAMPLE_RATE takes precedence", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityUserReject, priority,
+			"DD_TRACE_SAMPLE_RATE=0 should reject even in OTLP mode")
+	})
+
+	t.Run("DD_TRACE_SAMPLING_RULES takes precedence", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLING_RULES",
+			`[{"service":"drop-me","sample_rate":0}]`)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.service = "drop-me"
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityUserReject, priority,
+			"DD_TRACE_SAMPLING_RULES should reject matching spans even in OTLP mode")
+	})
+
+	t.Run("DD_TRACE_SAMPLING_RULES non-matching falls through to always_on", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLING_RULES",
+			`[{"service":"other-service","sample_rate":0}]`)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.service = "my-service"
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority,
+			"non-matching rules should fall through to OTLP always_on sampler")
+	})
+
+	t.Run("satisfies defaultSampler interface", func(t *testing.T) {
+		assert := assert.New(t)
+		var ds defaultSampler = newOtelParentBasedAlwaysOnSampler()
+		span := newBasicSpan("test.op")
+		ds.apply(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+	})
 }
 
 func BenchmarkPrioritySamplerGetRate(b *testing.B) {
@@ -212,7 +392,8 @@ func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	}
 	oldGetRate := func(ops *oldPrioritySampler, spn *Span) float64 {
 		// Allocation doesn't escape to the heap.
-		key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+		v, _ := spn.meta.Get(ext.Environment)
+		key := "service:" + spn.service + ",env:" + v
 		if rate, ok := ops.rates[key]; ok {
 			return rate
 		}
@@ -229,10 +410,10 @@ func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	ps.rates[serviceEnvKey{service: "web", env: "prod"}] = 0.5
 
 	spnHit := newSpan("op", "web", "resource", 1, 1, 0)
-	spnHit.meta[ext.Environment] = "prod"
+	spnHit.SetTag(ext.Environment, "prod")
 
 	spnMiss := newSpan("op", "other", "resource", 1, 1, 0)
-	spnMiss.meta[ext.Environment] = "staging"
+	spnMiss.SetTag(ext.Environment, "staging")
 
 	b.ResetTimer()
 	b.Run("old/hit", func(b *testing.B) {
@@ -358,8 +539,8 @@ func TestRuleEnvVars(t *testing.T) {
 			t.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
 			c, err := newTestConfig()
 			assert.NoError(err)
-			res := newRateLimiter(c.internalConfig.TraceRateLimitPerSecond())
-			assert.Equal(tt.out, res.limiter)
+			res := samplingrules.NewRateLimiter(c.internalConfig.TraceRateLimitPerSecond())
+			assert.InDelta(float64(tt.out.Limit()), res.Limit(), 0.001)
 		}
 	})
 
@@ -414,13 +595,7 @@ func TestRuleEnvVars(t *testing.T) {
 		}
 		for i, test := range tests {
 			t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
-				t.Setenv("DD_TRACE_SAMPLING_RULES", test.value)
-				rules, _, err := samplingRulesFromEnv()
-				if test.errStr == "" {
-					assert.NoError(err)
-				} else {
-					assert.Equal(test.errStr, err.Error())
-				}
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(test.value), samplingrules.SamplingRuleTrace)
 				assert.Len(rules, test.ruleN, "failed at %d", i)
 			})
 		}
@@ -469,14 +644,8 @@ func TestRuleEnvVars(t *testing.T) {
 				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
-				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.value)
-				_, rules, err := samplingRulesFromEnv()
-				if tt.errStr == "" {
-					assert.NoError(err)
-				} else {
-					assert.Equal(tt.errStr, err.Error())
-				}
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.value), samplingrules.SamplingRuleSpan)
 				assert.Len(rules, tt.ruleN)
 			})
 		}
@@ -545,10 +714,8 @@ func TestRuleEnvVars(t *testing.T) {
 				rate:          0.5,
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
-				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				_, rules, err := samplingRulesFromEnv()
-				assert.NoError(err)
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.rules), samplingrules.SamplingRuleSpan)
 				if tt.srvRegex == "" {
 					assert.Nil(rules[0].Service)
 				} else {
@@ -651,9 +818,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				t.Setenv("DD_TRACE_SAMPLING_RULES", tt.rules)
-				rules, _, err := samplingRulesFromEnv()
-				assert.Nil(t, err)
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.rules), samplingrules.SamplingRuleTrace)
 
 				assert := assert.New(t)
 				c, err := newTestConfig()
@@ -756,9 +921,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				_, rules, err := samplingRulesFromEnv()
-				assert.Nil(t, err)
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.rules), samplingrules.SamplingRuleSpan)
 				assert := assert.New(t)
 				c, err := newTestConfig()
 				assert.NoError(err)
@@ -882,11 +1045,11 @@ func TestRulesSampler(t *testing.T) {
 				spanName: "abcde",
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newTestConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
-				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
+				rs := newRulesSampler(nil, c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag":        20.1,
@@ -950,8 +1113,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				_, rules, _ := samplingRulesFromEnv()
+				rules, _ := samplingrules.UnmarshalSamplingRules([]byte(tt.rules), samplingrules.SamplingRuleSpan)
 
 				assert := assert.New(t)
 				c, err := newTestConfig()
@@ -1065,7 +1227,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				c, err := newTestConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
-				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
+				rs := newRulesSampler(nil, c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag": 20.1,
@@ -1268,8 +1430,8 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 				return fmt.Errorf("tag %s: %s != %s", k, v.String(), expected.Tags[k].String())
 			}
 		}
-		if actual.ruleType != expected.ruleType {
-			return fmt.Errorf("ruleType: %v != %v", actual.ruleType, expected.ruleType)
+		if actual.RuleType() != expected.RuleType() {
+			return fmt.Errorf("ruleType: %v != %v", actual.RuleType(), expected.RuleType())
 		}
 		return nil
 	}
@@ -1281,30 +1443,23 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 			{
 				rule: `{"service": "web.service", "sample_rate": 1.0}`,
 				expected: SamplingRule{
-					Service:  globMatch("web.service"),
-					Name:     globMatch(""),
-					Resource: globMatch(""),
+					Service:  samplingrules.GlobMatch("web.service"),
+					Name:     samplingrules.GlobMatch(""),
+					Resource: samplingrules.GlobMatch(""),
 					Tags:     map[string]*regexp.Regexp{},
 					Rate:     1,
 				},
 			},
 			{
-				rule: `{"service": "web.service","type":1, "sample_rate": 1.0}`,
-				expected: SamplingRule{
-					Service:  globMatch("web.service"),
-					Name:     globMatch(""),
-					Resource: globMatch(""),
-					Tags:     map[string]*regexp.Regexp{},
-					Rate:     1,
-					ruleType: SamplingRuleTrace,
-				},
+				rule:     `{"service": "web.service","type":1, "sample_rate": 1.0}`,
+				expected: TraceSamplingRules(Rule{ServiceGlob: "web.service", Rate: 1.0})[0],
 			},
 			{
 				rule: `{"name": "web.request", "sample_rate": 1.0}`,
 				expected: SamplingRule{
-					Name:     globMatch("web.request"),
-					Service:  globMatch(""),
-					Resource: globMatch(""),
+					Name:     samplingrules.GlobMatch("web.request"),
+					Service:  samplingrules.GlobMatch(""),
+					Resource: samplingrules.GlobMatch(""),
 					Tags:     map[string]*regexp.Regexp{},
 					Rate:     1,
 				},
@@ -1312,9 +1467,9 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 			{
 				rule: `{"resource": "web.resource", "sample_rate": 1.0}`,
 				expected: SamplingRule{
-					Service:  globMatch(""),
-					Name:     globMatch(""),
-					Resource: globMatch("web.resource"),
+					Service:  samplingrules.GlobMatch(""),
+					Name:     samplingrules.GlobMatch(""),
+					Resource: samplingrules.GlobMatch("web.resource"),
 					Tags:     map[string]*regexp.Regexp{},
 					Rate:     1,
 				},
@@ -1323,25 +1478,25 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 				rule: `{"tags": {"host": "hn-30"}, "sample_rate": 1.0}`,
 
 				expected: SamplingRule{
-					Service:  globMatch(""),
-					Name:     globMatch(""),
-					Resource: globMatch(""),
-					Tags:     map[string]*regexp.Regexp{"host": globMatch("hn-30")},
+					Service:  samplingrules.GlobMatch(""),
+					Name:     samplingrules.GlobMatch(""),
+					Resource: samplingrules.GlobMatch(""),
+					Tags:     map[string]*regexp.Regexp{"host": samplingrules.GlobMatch("hn-30")},
 					Rate:     1,
 				},
 			},
 			{
 				rule: `{"service": "web.service", "name": "web.request", "sample_rate": 1.0}`,
 				expected: SamplingRule{
-					Service:  globMatch("web.service"),
-					Name:     globMatch("web.request"),
-					Resource: globMatch(""),
+					Service:  samplingrules.GlobMatch("web.service"),
+					Name:     samplingrules.GlobMatch("web.request"),
+					Resource: samplingrules.GlobMatch(""),
 					Tags:     nil,
 					Rate:     1,
 				},
 			},
 		} {
-			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
+			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				var r SamplingRule
 				err := r.UnmarshalJSON([]byte(tt.rule))
 				assert.Nil(t, err)
@@ -1525,9 +1680,9 @@ func TestRulesSamplerInternals(t *testing.T) {
 		assert.NoError(err)
 		rs := newRulesSampler(nil, nil, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 		// set samplingLimiter to specific state
-		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.traces.limiter.allowed = 1
-		rs.traces.limiter.seen = 1
+		rs.traces.limiter.PrevTime = now.Add(-1 * time.Second)
+		rs.traces.limiter.Allowed = 1
+		rs.traces.limiter.Seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
@@ -1544,10 +1699,10 @@ func TestRulesSamplerInternals(t *testing.T) {
 		assert.NoError(err)
 		rs := newRulesSampler(nil, nil, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 		// force sampling limiter to 1.0 spans/sec
-		rs.traces.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
-		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.traces.limiter.allowed = 2
-		rs.traces.limiter.seen = 2
+		rs.traces.limiter.Limiter = rate.NewLimiter(rate.Limit(1.0), 1)
+		rs.traces.limiter.PrevTime = now.Add(-1 * time.Second)
+		rs.traces.limiter.Allowed = 2
+		rs.traces.limiter.Seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
@@ -1568,64 +1723,6 @@ func TestRulesSamplerInternals(t *testing.T) {
 	})
 }
 
-func TestSamplingLimiter(t *testing.T) {
-	t.Run("resets-every-second", func(t *testing.T) {
-		assert := assert.New(t)
-		sl := newRateLimiter(defaultRateLimit)
-		sl.prevSeen = 100
-		sl.prevAllowed = 99
-		sl.allowed = 42
-		sl.seen = 100
-		// exact point it should reset
-		now := time.Now().Add(1 * time.Second)
-
-		sampled, _ := sl.allowOne(now)
-		assert.True(sampled)
-		assert.Equal(42.0, sl.prevAllowed)
-		assert.Equal(100.0, sl.prevSeen)
-		assert.Equal(now, sl.prevTime)
-		assert.Equal(1.0, sl.seen)
-		assert.Equal(1.0, sl.allowed)
-	})
-
-	t.Run("averages-rates", func(t *testing.T) {
-		assert := assert.New(t)
-		sl := newRateLimiter(defaultRateLimit)
-		sl.prevSeen = 100
-		sl.prevAllowed = 42
-		sl.allowed = 41
-		sl.seen = 99
-		// this event occurs within the current period
-		now := sl.prevTime
-
-		sampled, rate := sl.allowOne(now)
-		assert.True(sampled)
-		assert.Equal(0.42, rate)
-		assert.Equal(now, sl.prevTime)
-		assert.Equal(100.0, sl.seen)
-		assert.Equal(42.0, sl.allowed)
-	})
-
-	t.Run("discards-rate", func(t *testing.T) {
-		assert := assert.New(t)
-		sl := newRateLimiter(defaultRateLimit)
-		sl.prevSeen = 100
-		sl.prevAllowed = 42
-		sl.allowed = 42
-		sl.seen = 100
-		// exact point it should discard previous rate
-		now := time.Now().Add(2 * time.Second)
-
-		sampled, _ := sl.allowOne(now)
-		assert.True(sampled)
-		assert.Equal(0.0, sl.prevSeen)
-		assert.Equal(0.0, sl.prevAllowed)
-		assert.Equal(now, sl.prevTime)
-		assert.Equal(1.0, sl.seen)
-		assert.Equal(1.0, sl.allowed)
-	})
-}
-
 func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
 
@@ -1634,7 +1731,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 		defer func() {
 			setGlobalTracer(&NoopTracer{})
 		}()
-		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
+		ps := testPrioritySampler(t)
+		ps.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{
                                         "rate_by_service":{
                                                 "service:obfuscate.http,env:":0.5,
@@ -1776,8 +1874,8 @@ func TestGlobMatch(t *testing.T) {
 		{"*/*", `a/123`, true},
 		{`*\/*`, `a\/123`, true},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			rg := globMatch(tt.pattern)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			rg := samplingrules.GlobMatch(tt.pattern)
 			if tt.shouldMatch {
 				assert.Regexp(t, rg, tt.input)
 			} else {
@@ -1841,12 +1939,12 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 		{"*/*", `a/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
 		{`*\/*`, `a\/123`, regexp.MustCompile("(?i)^.*/.*$"), `{"service":"*/*","sample_rate":1}`},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			// the goal of this test is
 			// 1. to verify that the glob pattern is correctly converted to a regex
 			// 2. to verify that the rule is correctly marshalled
 
-			rules, _ := unmarshalSamplingRules(fmt.Appendf(nil, `[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern),
+			rules, _ := samplingrules.UnmarshalSamplingRules(fmt.Appendf(nil, `[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern),
 				SamplingRuleTrace)
 			rule := rules[0]
 
@@ -1861,15 +1959,13 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 }
 
 func BenchmarkGlobMatchSpan(b *testing.B) {
-	var spans []*Span
+	spans := make([]*Span, 0, 1000)
 	for range 1000 {
 		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
 	}
 
 	b.Run("no-regex", func(b *testing.B) {
-		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv.name.ops.date", "name": "name.ops.date?", "sample_rate": 0.234}]`)
-		_, rules, err := samplingRulesFromEnv()
-		assert.Nil(b, err)
+		rules, _ := samplingrules.UnmarshalSamplingRules([]byte(`[{"service": "srv.name.ops.date", "name": "name.ops.date?", "sample_rate": 0.234}]`), samplingrules.SamplingRuleSpan)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
 		for b.Loop() {
@@ -1880,9 +1976,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 	})
 
 	b.Run("glob-match-?", func(b *testing.B) {
-		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv?name?ops?date", "name": "name*ops*date*", "sample_rate": 0.234}]`)
-		_, rules, err := samplingRulesFromEnv()
-		assert.Nil(b, err)
+		rules, _ := samplingrules.UnmarshalSamplingRules([]byte(`[{"service": "srv?name?ops?date", "name": "name*ops*date*", "sample_rate": 0.234}]`), samplingrules.SamplingRuleSpan)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
 		for b.Loop() {
@@ -1893,10 +1987,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 	})
 
 	b.Run("glob-match-*", func(b *testing.B) {
-		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv*name*ops*date", "name": "name?ops?date?", "sample_rate": 0.234}]`)
-
-		_, rules, err := samplingRulesFromEnv()
-		assert.Nil(b, err)
+		rules, _ := samplingrules.UnmarshalSamplingRules([]byte(`[{"service": "srv*name*ops*date", "name": "name?ops?date?", "sample_rate": 0.234}]`), samplingrules.SamplingRuleSpan)
 		rs := newSingleSpanRulesSampler(rules)
 
 		b.ResetTimer()
@@ -1954,8 +2045,9 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should be set even when rate is 0
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("0", root.meta[keyKnuthSamplingRate])
+		assert.True(root.meta.Has(keyKnuthSamplingRate))
+		v, _ := root.meta.Get(keyKnuthSamplingRate)
+		assert.Equal("0", v)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
@@ -2007,15 +2099,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should be set even when rate is 0
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("0", root.meta[keyKnuthSamplingRate])
+		assert.True(root.meta.Has(keyKnuthSamplingRate))
+		v, _ := root.meta.Get(keyKnuthSamplingRate)
+		assert.Equal("0", v)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
 		// child span should not have Knuth sampling rate tag
-		assert.NotContains(child.meta, keyKnuthSamplingRate)
+		assert.False(child.meta.Has(keyKnuthSamplingRate))
 
 		// context propagation locks the span, so no re-sampling should occur
 		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
@@ -2060,6 +2153,10 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 		{"six_decimals", 0.123456, "0.123456"},
 		{"seven_decimals_rounded", 0.1234567, "0.123457"},
 		{"trailing_zeros", 0.100000, "0.1"},
+		{"rate_1_strips_trailing_zeros", 1.0, "1"},
+		{"six_decimal_precision_boundary", 0.000001, "0.000001"},
+		{"below_precision_rounds_to_zero", 0.0000001, "0"},
+		{"rounds_up_to_one_millionth", 0.00000051, "0.000001"},
 	}
 
 	for _, tc := range testCases {
@@ -2091,4 +2188,264 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 			assert.False(ok)
 		})
 	}
+}
+
+func BenchmarkFormatKnuthSamplingRate(b *testing.B) {
+	rates := []float64{1.0, 0.5, 0.000001, 0.0000001, 0.00000051, 0.7654321}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		formatKnuthSamplingRate(rates[i%len(rates)])
+	}
+}
+
+func TestCappedRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		oldRate     float64
+		newRate     float64
+		canIncrease bool
+		wantRate    float64
+		wantApplied bool
+	}{
+		{
+			name:        "decrease applied immediately",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+		{
+			name:        "equal rate unchanged",
+			oldRate:     0.5,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase from zero applied immediately",
+			oldRate:     0,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase capped at 2x",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: true,
+		},
+		{
+			name:        "increase within 2x not capped",
+			oldRate:     0.3,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase exactly 2x",
+			oldRate:     0.25,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase blocked during cooldown",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: false,
+			wantRate:    0.1,
+			wantApplied: false,
+		},
+		{
+			name:        "decrease during cooldown still applied",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: false,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, applied := cappedRate(tt.oldRate, tt.newRate, tt.canIncrease)
+			assert.Equal(t, tt.wantRate, rate)
+			assert.Equal(t, tt.wantApplied, applied)
+		})
+	}
+}
+
+func TestPrioritySamplerRampCooldownNoReset(t *testing.T) {
+	// When a rate increase arrives during cooldown, lastCapped must NOT be
+	// updated. Otherwise each blocked increase would push out the cooldown
+	// window and delay subsequent ramp-up steps indefinitely.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
+		}
+
+		// Set initial low rate.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for cooldown, apply increase: 0.01 → 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Before rampUpInterval elapses, send another increase.
+		// Rate should be held at 0.02 (cooldown) and lastCapped should
+		// NOT be reset.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for the remaining half of rampUpInterval from the original
+		// cap. Since lastCapped was NOT reset by the blocked increase,
+		// this should allow the next ramp-up step.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+	})
+}
+
+func TestPrioritySamplerRampUp(t *testing.T) {
+	// When rates increase, each readRatesJSON call caps the increase at 2x
+	// provided at least rampUpInterval has elapsed.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
+		}
+
+		// Set initial low rate (decrease from default 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Simulate agent restart: rate jumps to 1.0.
+		// First update: capped at 0.01 * 2 = 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Second update: capped at 0.02 * 2 = 0.04.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+
+		// Third: 0.08, Fourth: 0.16, Fifth: 0.32, Sixth: 0.64, Seventh: 1.0 (capped at target).
+		for _, expected := range []float64{0.08, 0.16, 0.32, 0.64, 1.0} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDown(t *testing.T) {
+	// Rate decreases are applied immediately (no ramp).
+	ps := newPrioritySampler()
+	assert := assert.New(t)
+
+	mkSpan := func(svc, env string) *Span {
+		a := new(tinternal.SpanAttributes)
+		a.Set(tinternal.AttrEnv, env)
+		return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
+	}
+
+	// Set initial rate (decrease from default 1.0).
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.8}}`,
+	))))
+
+	// Decrease: applied immediately.
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+	))))
+	assert.Equal(0.1, ps.getRate(mkSpan("web", "prod")))
+}
+
+func TestPrioritySamplerRampConverges(t *testing.T) {
+	// After enough update cycles, the rate reaches the target.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
+		}
+
+		// Start at 0.1, target 0.5.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+		))))
+		// 0.1 -> 0.2 -> 0.4 -> 0.5 (capped at target)
+		for _, expected := range []float64{0.2, 0.4, 0.5} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":0.5}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDefaultRate(t *testing.T) {
+	// The default rate also gets capped on increase.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
+		}
+
+		// Set default rate to 0.1 (decrease from initial 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":0.1}}`,
+		))))
+		assert.Equal(0.1, ps.getRate(mkSpan("unknown-service", "")))
+
+		// Increase default to 1.0: capped at 0.1 * 2 = 0.2.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":1.0}}`,
+		))))
+		assert.Equal(0.2, ps.getRate(mkSpan("unknown-service", "")))
+	})
 }

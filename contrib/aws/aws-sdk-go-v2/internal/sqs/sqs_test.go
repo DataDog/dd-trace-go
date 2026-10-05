@@ -19,9 +19,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+const pathwayContextKey = "dd-pathway-ctx-base64"
 
 func TestEnrichOperation(t *testing.T) {
 	tests := []struct {
@@ -29,7 +33,7 @@ func TestEnrichOperation(t *testing.T) {
 		operation string
 		input     middleware.InitializeInput
 		setup     func(context.Context) *tracer.Span
-		check     func(*testing.T, middleware.InitializeInput, *tracer.Span)
+		check     func(*testing.T, middleware.InitializeInput, *tracer.Span, context.Context)
 	}{
 		{
 			name:      "SendMessage",
@@ -44,7 +48,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span, spanCtx context.Context) {
 				params, ok := in.Parameters.(*sqs.SendMessageInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -55,6 +59,18 @@ func TestEnrichOperation(t *testing.T) {
 				assert.NotNil(t, params.MessageAttributes[datadogKey].StringValue)
 				assert.NotEmpty(t, *params.MessageAttributes[datadogKey].StringValue)
 				require.Equal(t, span.AsMap()["messaging.system"], "amazonsqs")
+
+				expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+					spanCtx,
+					options.CheckpointParams{PayloadSize: sendMessageSize(params)},
+					"direction:out",
+					"type:sqs",
+					"topic:"+queueName(params.QueueUrl),
+				)
+				require.True(t, ok)
+				expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+				require.True(t, ok)
+				assertInjectedPathway(t, *params.MessageAttributes[datadogKey].StringValue, expectedPathway, span)
 			},
 		},
 		{
@@ -83,7 +99,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span, spanCtx context.Context) {
 				params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -97,6 +113,18 @@ func TestEnrichOperation(t *testing.T) {
 					assert.Equal(t, "String", *entry.MessageAttributes[datadogKey].DataType)
 					assert.NotNil(t, entry.MessageAttributes[datadogKey].StringValue)
 					assert.NotEmpty(t, *entry.MessageAttributes[datadogKey].StringValue)
+
+					expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+						spanCtx,
+						options.CheckpointParams{PayloadSize: sendMessageBatchEntrySize(&entry)},
+						"direction:out",
+						"type:sqs",
+						"topic:"+queueName(params.QueueUrl),
+					)
+					require.True(t, ok)
+					expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+					require.True(t, ok)
+					assertInjectedPathway(t, *entry.MessageAttributes[datadogKey].StringValue, expectedPathway, span)
 				}
 				require.Equal(t, span.AsMap()["messaging.system"], "amazonsqs")
 			},
@@ -108,13 +136,13 @@ func TestEnrichOperation(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			ctx := context.Background()
-			span := tt.setup(ctx)
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			EnrichOperation(span, tt.input, tt.operation)
+			EnrichOperation(spanCtx, span, tt.input, tt.operation)
 
 			if tt.check != nil {
-				tt.check(t, tt.input, span)
+				tt.check(t, tt.input, span, spanCtx)
 			}
 		})
 	}
@@ -148,7 +176,8 @@ func TestInjectTraceContext(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			span := tracer.StartSpan("test-span")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
 			messageAttributes := make(map[string]types.MessageAttributeValue)
 			for i := 0; i < tt.existingAttributes; i++ {
@@ -158,7 +187,7 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			traceContext, err := getTraceContext(span)
+			traceContext, err := getTraceContext(spanCtx, span, "test-queue", 42)
 			assert.NoError(t, err)
 			injectTraceContext(traceContext, messageAttributes)
 
@@ -177,9 +206,28 @@ func TestInjectTraceContext(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
 				assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
+				assert.Contains(t, carrier, pathwayContextKey)
 			} else {
 				assert.NotContains(t, messageAttributes, datadogKey)
 			}
 		})
 	}
+}
+
+func assertInjectedPathway(t *testing.T, raw string, expected datastreams.Pathway, span *tracer.Span) {
+	t.Helper()
+
+	carrier := tracer.TextMapCarrier{}
+	err := json.Unmarshal([]byte(raw), &carrier)
+	require.NoError(t, err)
+
+	extractedSpanContext, err := tracer.Extract(carrier)
+	require.NoError(t, err)
+	assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
+	assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
+	assert.Contains(t, carrier, pathwayContextKey)
+
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+	require.True(t, ok)
+	assert.Equal(t, expected.GetHash(), pathway.GetHash())
 }

@@ -6,9 +6,11 @@
 package net
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -32,8 +34,12 @@ type (
 )
 
 func (c *client) GetCommits(localCommits []string) ([]string, error) {
+	if bazel.IsManifestModeEnabled() {
+		return []string{}, nil
+	}
+
 	if c.repositoryURL == "" {
-		return nil, fmt.Errorf("civisibility.GetCommits: repository URL is required")
+		return nil, errors.New("civisibility.GetCommits: repository URL is required")
 	}
 
 	body := searchCommits{
@@ -51,6 +57,7 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 	}
 
 	request := c.getPostRequestConfig(searchCommitsURLPath, body)
+	request.ExpectJSONResponse = true
 	if request.Compressed {
 		telemetry.GitRequestsSearchCommits(telemetry.CompressedRequestCompressedType)
 	} else {

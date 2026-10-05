@@ -16,6 +16,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
+// serviceSourceWrapHandler is the service source value used when the service
+// name is explicitly set via the service parameter of WrapHandler.
+const serviceSourceWrapHandler = "opt.wrap_handler"
+
 type WrappedHandler struct {
 	http.HandlerFunc
 }
@@ -31,8 +35,10 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 	instr.Logger().Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	// if the service provided from parameters is empty,
 	// use the one from the config (which should default to DD_SERVICE / "http.router")
+	serviceSource := serviceSourceWrapHandler
 	if service == "" {
 		service = cfg.ServiceName
+		serviceSource = cfg.ServiceSource
 	}
 
 	return WrappedHandler{
@@ -49,8 +55,9 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
 			TraceAndServe(h, w, req, &httptrace.ServeConfig{
-				Framework:     "net/http",
 				Service:       service,
+				ServiceSource: serviceSource,
+				Framework:     "net/http",
 				Resource:      resc,
 				FinishOpts:    cfg.FinishOpts,
 				SpanOpts:      so,

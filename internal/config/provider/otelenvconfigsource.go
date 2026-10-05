@@ -65,6 +65,10 @@ var otelConfigs = map[string]*otelDDEnv{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
 	},
+	"DD_METRICS_OTEL_ENABLED": {
+		ot:       "OTEL_METRICS_EXPORTER",
+		remapper: mapOtelMetrics,
+	},
 	"DD_TRACE_DEBUG": {
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
@@ -112,13 +116,24 @@ func mapService(ot string) (string, error) {
 	return ot, nil
 }
 
-// mapMetrics maps OTEL_METRICS_EXPORTER to DD_RUNTIME_METRICS_ENABLED
+// mapMetrics maps OTEL_METRICS_EXPORTER to DD_RUNTIME_METRICS_ENABLED.
 func mapMetrics(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if ot == "none" {
 		return "false", nil
 	}
+	if ot == "otlp" || strings.Contains(ot, "otlp") {
+		return "", nil
+	}
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+}
+
+// mapOtelMetrics maps OTEL_METRICS_EXPORTER to DD_METRICS_OTEL_ENABLED.
+func mapOtelMetrics(ot string) (string, error) {
+	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
+		return "false", nil
+	}
+	return "", nil
 }
 
 // mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
@@ -131,10 +146,14 @@ func mapLogLevel(ot string) (string, error) {
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
 func mapEnabled(ot string) (string, error) {
-	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
+	switch strings.TrimSpace(strings.ToLower(ot)) {
+	case "none":
 		return "false", nil
+	case "otlp":
+		return "true", nil // Handled separately by otlpExportMode
+	default:
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"

@@ -1,0 +1,7 @@
+{
+    "version": "0",
+    "id": "test-event-id",
+    "detail-type": "trace-propagation-test",
+    "source": "trace-propagation.client",
+    "detail": "{\"foo\":\"bar\",\"_datadog\":{\"x-datadog-trace-id\":\"1\"}}"
+}

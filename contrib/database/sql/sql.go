@@ -169,6 +169,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,
+		spanCfg:    newSpanConfig(t.cfg, t.driverName),
 	}
 	if dsn != "" {
 		tp.meta, _ = sqlinternal.ParseDSN(t.driverName, dsn)

@@ -7,12 +7,44 @@ package llmobs_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
+
+func TestAgentNameWireSafe(t *testing.T) {
+	t.Run("empty-name-is-safe", func(t *testing.T) {
+		assert.True(t, llmobs.AgentNameWireSafe(""))
+	})
+	t.Run("typical-name-is-safe", func(t *testing.T) {
+		assert.True(t, llmobs.AgentNameWireSafe("my_agent"))
+	})
+	t.Run("equals-sign-is-safe", func(t *testing.T) {
+		assert.True(t, llmobs.AgentNameWireSafe("agent=v2"))
+	})
+	t.Run("comma-is-unsafe", func(t *testing.T) {
+		assert.False(t, llmobs.AgentNameWireSafe("agent,bad"))
+	})
+	t.Run("semicolon-is-unsafe", func(t *testing.T) {
+		assert.False(t, llmobs.AgentNameWireSafe("agent;v2"))
+	})
+	t.Run("tilde-is-unsafe", func(t *testing.T) {
+		assert.False(t, llmobs.AgentNameWireSafe("agent~v2"))
+	})
+	t.Run("control-char-is-unsafe", func(t *testing.T) {
+		assert.False(t, llmobs.AgentNameWireSafe("agent\x00name"))
+	})
+	t.Run("non-ascii-is-unsafe", func(t *testing.T) {
+		assert.False(t, llmobs.AgentNameWireSafe("agënt"))
+	})
+	t.Run("long-name-is-safe", func(t *testing.T) {
+		// Length is not a gate in AgentNameWireSafe; budget is checked at the call site.
+		assert.True(t, llmobs.AgentNameWireSafe(strings.Repeat("a", 512)))
+	})
+}
 
 func TestContext(t *testing.T) {
 	t.Run("active-llm-span-context", func(t *testing.T) {
@@ -23,7 +55,7 @@ func TestContext(t *testing.T) {
 			assert.Nil(t, span)
 		})
 		t.Run("with-active-span", func(t *testing.T) {
-			_, ll := testTracer(t)
+			_, _, ll := testTracer(t)
 
 			// Create a span and get its context
 			originalSpan, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{})
@@ -36,7 +68,7 @@ func TestContext(t *testing.T) {
 			assert.Equal(t, originalSpan, retrievedSpan)
 		})
 		t.Run("start-span-creates-context", func(t *testing.T) {
-			_, ll := testTracer(t)
+			_, _, ll := testTracer(t)
 
 			// StartSpan should automatically add the span to the returned context
 			span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "agent-span", llmobs.StartSpanConfig{})
@@ -76,7 +108,7 @@ func TestContext(t *testing.T) {
 
 	})
 	t.Run("both-active-and-propagated-span-context", func(t *testing.T) {
-		_, ll := testTracer(t)
+		_, _, ll := testTracer(t)
 
 		// Create propagated span first
 		propagatedSpan := &llmobs.PropagatedLLMSpan{

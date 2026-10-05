@@ -1,0 +1,19 @@
+{
+  "method": "POST",
+  "url": "https://<dd-apim-callout-host>:8080/",
+  "headers": [
+    { "name": "Content-Type", "value": "application/json" }
+  ],
+  "body": "{ \"addresses\": { \"status_code\": {#response.status}, \"headers\": {#context.attributes['dd-serialized-response-headers']}, \"body\": \"{#context.attributes['dd-response-body-b64']}\" }, \"request-id\": \"{#context.attributes['dd-request-id']}\", \"gateway\": \"boomi\", \"phase\": \"<ResponseHeaders>\" }",
+  "fireAndForget": false,
+  "cacheEnabled": false,
+  "cacheKey": "not-applicable",
+  "variables": [
+    { "name": "dd-resp-block", "value": "{#jsonPath(#calloutResponse.content, '$.block')}" },
+    { "name": "dd-resp-block-status", "value": "{#jsonPath(#calloutResponse.content, '$.block.status')}" },
+    { "name": "dd-resp-block-headers", "value": "{#jsonPath(#calloutResponse.content, '$.block.headers')}" },
+    { "name": "dd-resp-block-content", "value": "{#jsonPath(#calloutResponse.content, '$.block.content')}" }
+  ],
+  "exitOnError": false,
+  "scope": "RESPONSE"
+}

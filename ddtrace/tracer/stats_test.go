@@ -8,20 +8,21 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -36,20 +37,20 @@ func TestAlignTs(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
-func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
+func newTestConfigWithTransportAndEnv(t *testing.T, transport ddTransport, env string) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 	return cfg
 }
 
-func newTestConfigWithTransport(t *testing.T, transport transport) *config {
+func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 	})
 	assert.NoError(err)
 	return cfg
@@ -89,6 +90,28 @@ func TestConcentrator(t *testing.T) {
 		c.Stop()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
+	t.Run("batch", func(t *testing.T) {
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), bucketSize, &statsd.NoOpClientDirect{})
+		// Use two spans sharing a bucket: this subtest verifies batch delivery
+		// (a single send carrying multiple spans), not bucket alignment.
+		start := time.Now().UnixNano() + 3*bucketSize
+		b1 := Span{name: "http.request", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		b2 := Span{name: "sql.query", start: start, duration: 1, metrics: map[string]float64{keyMeasured: 1}}
+		ss1, ok := c.newTracerStatSpan(&b1, nil)
+		require.True(t, ok)
+		ss2, ok := c.newTracerStatSpan(&b2, nil)
+		require.True(t, ok)
+
+		c.Start()
+		c.trySendSpans([]*tracerStatSpan{ss1, ss2})
+		c.Stop()
+
+		payloads := transport.Stats()
+		require.Len(t, payloads, 1)
+		require.Len(t, payloads[0].Stats, 1)
+		assert.Len(t, payloads[0].Stats[0].Stats, 2)
+	})
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -98,7 +121,7 @@ func TestConcentrator(t *testing.T) {
 				ss1, ok := c.newTracerStatSpan(&s1, nil)
 				assert.True(t, ok)
 				c.Start()
-				c.In <- ss1
+				c.In <- []*tracerStatSpan{ss1}
 				time.Sleep(2 * time.Millisecond) // instant: fake clock advances 2ms past flush interval
 				synctest.Wait()                  // wait for concentrator goroutine to flush
 				c.Stop()
@@ -120,8 +143,8 @@ func TestConcentrator(t *testing.T) {
 			ss2, ok := c.newTracerStatSpan(&s2, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
-			c.In <- ss2
+			c.In <- []*tracerStatSpan{ss1}
+			c.In <- []*tracerStatSpan{ss2}
 			c.Stop()
 			actualStats := transport.Stats()
 			assert.Len(t, actualStats, 1)
@@ -132,8 +155,8 @@ func TestConcentrator(t *testing.T) {
 				names[stat.Name] = struct{}{}
 			}
 			assert.Len(t, names, 2)
-			assert.NotNil(t, names["http.request"])
-			assert.NotNil(t, names["potato"])
+			assert.Contains(t, names, "http.request")
+			assert.Contains(t, names, "sql.query")
 			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
 		})
 
@@ -147,7 +170,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 			actualStats := transport.Stats()
 			assert.Equal(t, "DEADBEEF", actualStats[0].GitCommitSha)
@@ -161,7 +184,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
 		})
@@ -175,7 +198,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 
 			gotStats := transport.Stats()
@@ -192,7 +215,7 @@ func TestConcentrator(t *testing.T) {
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
 			c.Start()
-			c.In <- ss1
+			c.In <- []*tracerStatSpan{ss1}
 			c.Stop()
 
 			gotStats := transport.Stats()
@@ -200,6 +223,309 @@ func TestConcentrator(t *testing.T) {
 			assert.Empty(t, gotStats[0].ProcessTags)
 		})
 	})
+}
+
+// recordingConcentrator wraps a concentrator and records the batches delivered
+// via trySendSpans, so tests can assert how a chunk's spans are grouped.
+type recordingConcentrator struct {
+	statsConcentrator
+	batches [][]*tracerStatSpan
+}
+
+func (r *recordingConcentrator) trySendSpans(spans []*tracerStatSpan) {
+	r.batches = append(r.batches, spans)
+}
+
+// TestStatsChunkDeliveredAsSingleBatch verifies that a finished trace's spans
+// reach the concentrator as a single batch per chunk (not one send per span),
+// and that every eligible span in the chunk is included. trySendSpans is only
+// called from the finishing goroutine, so recording without a lock is safe.
+func TestStatsChunkDeliveredAsSingleBatch(t *testing.T) {
+	tr, _, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	require.NoError(t, err)
+	rec := &recordingConcentrator{statsConcentrator: tr.stats}
+	tr.stats = rec
+
+	root := tr.StartSpan("root", Tag(keyMeasured, 1))
+	child1 := tr.StartSpan("child1", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child2 := tr.StartSpan("child2", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child1.Finish()
+	child2.Finish()
+	root.Finish() // full flush: root, child1 and child2 form a single chunk
+	stop()
+
+	require.Len(t, rec.batches, 1, "a full-flush chunk must be delivered as exactly one batch")
+	assert.Len(t, rec.batches[0], 3, "the batch must contain every eligible span in the chunk")
+}
+
+// TestStatsMultipleSpansPerChunkAggregated verifies end-to-end that every
+// eligible span in a single chunk is aggregated by the real concentrator.
+func TestStatsMultipleSpansPerChunkAggregated(t *testing.T) {
+	tr, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	require.NoError(t, err)
+
+	root := tr.StartSpan("root", Tag(keyMeasured, 1))
+	child1 := tr.StartSpan("child1", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child2 := tr.StartSpan("child2", ChildOf(root.Context()), Tag(keyMeasured, 1), Tag(ext.SpanKind, ext.SpanKindClient))
+	child1.Finish()
+	child2.Finish()
+	root.Finish()
+	stop()
+
+	stats := transport.Stats()
+	assert.True(t, statsContainName(stats, "root"))
+	assert.True(t, statsContainName(stats, "child1"))
+	assert.True(t, statsContainName(stats, "child2"))
+}
+
+func TestNewConcentratorAdditionalMetricTagsCardinalityLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		gate         string
+		tags         string
+		limit        string
+		sendCount    int
+		wantCollapse bool
+	}{
+		// Feature gate off: limits not applied regardless of config.
+		{name: "gate off with keys", tags: "customer_id", limit: "7", sendCount: 8, wantCollapse: false},
+		// Gate on but no keys: no additional-tag grouping dimension, no collapse.
+		{name: "gate on without keys", gate: "true", limit: "7", sendCount: 8, wantCollapse: false},
+		// Gate on with keys, default limit (100): 101 distinct values triggers collapse.
+		{name: "gate on with keys default limit", gate: "true", tags: "customer_id", sendCount: 101, wantCollapse: true},
+		// Gate on with keys, custom limit (7): 8 distinct values triggers collapse.
+		{name: "gate on with keys custom limit", gate: "true", tags: "customer_id", limit: "7", sendCount: 8, wantCollapse: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.gate != "" {
+				t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", tc.gate)
+			}
+			if tc.tags != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", tc.tags)
+			}
+			if tc.limit != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", tc.limit)
+			}
+
+			transport := newDummyTransport()
+			testStats := &statsdtest.TestStatsdClient{}
+			c := newConcentrator(newTestConfigWithTransport(t, transport), defaultStatsBucketSize, testStats)
+
+			now := time.Now().UnixNano()
+			for i := range tc.sendCount {
+				s := Span{
+					name:     "test.op",
+					service:  "svc",
+					resource: "res",
+					start:    now + int64(i),
+					duration: int64(time.Millisecond),
+					metrics:  map[string]float64{keyMeasured: 1},
+					meta:     tinternal.NewSpanMetaFromMap(map[string]string{"customer_id": fmt.Sprintf("val%d", i)}),
+				}
+				if ss, ok := c.newTracerStatSpan(&s, nil); ok {
+					c.add(ss)
+				}
+			}
+			c.flushAndSend(time.Now(), withCurrentBucket)
+
+			calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+			collapseCount := testStats.CountCallsByTag(calls, "collapsed:additional_metric_tags")
+			if tc.wantCollapse {
+				assert.Positive(t, collapseCount, "expected additional_metric_tags collapse")
+			} else {
+				assert.Zero(t, collapseCount, "expected no additional_metric_tags collapse")
+			}
+		})
+	}
+}
+
+func TestFlushAndSendCollapsedSpansMetric(t *testing.T) {
+	t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+	t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "customer_id,oversized")
+	t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	spans := []Span{
+		{
+			name:     "checkout.process",
+			service:  "checkout",
+			resource: "POST /checkout",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				"customer_id": "a",
+				"oversized":   strings.Repeat("x", 201),
+			}),
+		},
+		{
+			name:     "checkout.process",
+			service:  "checkout",
+			resource: "POST /checkout",
+			start:    now + 1,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				"customer_id": "b",
+			}),
+		},
+	}
+
+	for i := range spans {
+		ss, ok := c.newTracerStatSpan(&spans[i], nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.Len(t, calls, 2)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "oversized:additional_metric_tags"))
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:additional_metric_tags"))
+
+	testStats.Reset()
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	assert.Empty(t, testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricResourceLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, resource := range []string{"GET /a", "GET /b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: resource,
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:resource"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricHTTPEndpointLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, endpoint := range []string{"GET /endpoint-a", "GET /endpoint-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: "GET /endpoint",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{ext.HTTPEndpoint: endpoint}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:http_endpoint"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricPeerTagsLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
+	af := cfg.agent.load()
+	af.peerTags = []string{"peer.service"}
+	cfg.agent.store(af)
+	c := newConcentrator(cfg, defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, peerSvc := range []string{"svc-a", "svc-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "db.query",
+			service:  "web",
+			resource: "SELECT 1",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{"peer.service": peerSvc, "span.kind": "client"}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:peer_tags"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricOriginLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, origin := range []string{"synthetics-user", "origin-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: "GET /test",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{keyOrigin: origin}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:origin"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricWholeKeyLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, resource := range []string{"GET /a", "GET /b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: resource,
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:whole_key"))
 }
 
 func TestShouldObfuscate(t *testing.T) {
@@ -218,13 +544,18 @@ func TestShouldObfuscate(t *testing.T) {
 	} {
 		t.Run(params.name, func(t *testing.T) {
 			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
+			cfg.agent.store(agentFeatures{obfuscationVersion: params.agentVersion})
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
-			assert.Equal(t, params.expectedShouldObfuscate, c.shouldObfuscate())
+			assert.Equal(t, params.expectedShouldObfuscate, c.sender.shouldObfuscate())
 		})
 	}
+}
+
+func TestOTLPStatsSenderPeerTags(t *testing.T) {
+	s := &otlpStatsSender{}
+	assert.Equal(t, []string{"db.hostname"}, s.peerTags([]string{"db.hostname"}))
 }
 
 func TestObfuscation(t *testing.T) {
@@ -239,7 +570,9 @@ func TestObfuscation(t *testing.T) {
 	}
 	tsp := newDummyTransport()
 	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-	cfg.agent.obfuscationVersion = 2
+	af := cfg.agent.load()
+	af.obfuscationVersion = 2
+	cfg.agent.store(af)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 	tracerObfuscationVersion = 2
@@ -248,7 +581,7 @@ func TestObfuscation(t *testing.T) {
 	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
 	assert.True(t, ok)
 	c.Start()
-	c.In <- ss1
+	c.In <- []*tracerStatSpan{ss1}
 	c.Stop()
 	actualStats := tsp.Stats()
 	assert.Len(t, actualStats, 1)
@@ -287,26 +620,107 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 
 	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
 		cfg, err := newTestConfig(func(c *config) {
-			c.transport = newDummyTransport()
+			c.ddTransport = newDummyTransport()
 		})
 		assert.NoError(err)
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("agent-prod", c.aggregationKey.Env)
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
 		cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "tracer-staging")
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
 		cfg := newTestConfigWithTransport(t, newDummyTransport())
-		cfg.agent = agentFeatures{}
+		cfg.agent.store(agentFeatures{})
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
+	})
+}
+
+func TestPerSpanVersionInStats(t *testing.T) {
+	bucketSize := int64(500_000)
+	makeSpan := func(version string) *Span {
+		s := &Span{
+			name:     "http.request",
+			start:    time.Now().UnixNano() + 3*bucketSize,
+			duration: 1,
+			metrics:  map[string]float64{keyMeasured: 1},
+		}
+		if version != "" {
+			s.meta.Set(ext.Version, version)
+		}
+		return s
+	}
+
+	t.Run("per-span version propagates to stats payload", func(t *testing.T) {
+		spanVersion := "synthtracer-20250501120000"
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+
+		s := makeSpan(spanVersion)
+		ss, ok := c.newTracerStatSpan(s, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- []*tracerStatSpan{ss}
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 1)
+		assert.Equal(t, spanVersion, got[0].Version,
+			"per-span version tag must be used when no global version is configured")
+	})
+
+	t.Run("falls back to global config version when span has no version tag", func(t *testing.T) {
+		transport := newDummyTransport()
+		cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
+			c.ddTransport = transport
+			c.internalConfig.SetVersion("global-v1.2.3", internalconfig.OriginCode)
+		})
+		require.NoError(t, err)
+		c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+
+		s := makeSpan("")
+		ss, ok := c.newTracerStatSpan(s, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- []*tracerStatSpan{ss}
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 1)
+		assert.Equal(t, "global-v1.2.3", got[0].Version)
+	})
+
+	t.Run("two spans with different versions produce separate payloads", func(t *testing.T) {
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+
+		s1 := makeSpan("v-timestamp-1")
+		s2 := makeSpan("v-timestamp-2")
+		ss1, ok := c.newTracerStatSpan(s1, nil)
+		require.True(t, ok)
+		ss2, ok := c.newTracerStatSpan(s2, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- []*tracerStatSpan{ss1}
+		c.In <- []*tracerStatSpan{ss2}
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 2)
+		versions := map[string]struct{}{got[0].Version: {}, got[1].Version: {}}
+		assert.Contains(t, versions, "v-timestamp-1")
+		assert.Contains(t, versions, "v-timestamp-2")
 	})
 }
 
@@ -320,17 +734,17 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 		start:    time.Now().UnixNano(),
 		duration: int64(time.Millisecond),
 		metrics:  map[string]float64{keyMeasured: 1},
-		meta: map[string]string{
+		meta: tinternal.NewSpanMetaFromMap(map[string]string{
 			ext.HTTPMethod:   uniqueMethod,
 			ext.HTTPEndpoint: uniqueEndpoint,
-		},
+		}),
 	}
 	transport := newDummyTransport()
 	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
 	ss, ok := c.newTracerStatSpan(&s, nil)
 	require.True(t, ok)
 	c.Start()
-	c.In <- ss
+	c.In <- []*tracerStatSpan{ss}
 	c.Stop()
 
 	actualStats := transport.Stats()
@@ -342,6 +756,60 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+func TestStatsIncludeServiceSource(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:          "http.request",
+		service:       "custom-service",
+		serviceSource: "m",
+		start:         time.Now().UnixNano(),
+		duration:      int64(time.Millisecond),
+		metrics:       map[string]float64{keyMeasured: 1},
+		meta: tinternal.NewSpanMetaFromMap(map[string]string{
+			ext.KeyServiceSource: "m",
+		}),
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- []*tracerStatSpan{ss}
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, "m", group.GetServiceSource())
+}
+
+func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		service:  "my-service",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- []*tracerStatSpan{ss}
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Empty(t, group.GetServiceSource())
 }
 
 // failingStatsTransport is a transport whose sendStats fails a configurable
@@ -397,8 +865,8 @@ func TestStatsFlushRetries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := &failingStatsTransport{failCount: test.failCount}
 			cfg, err := newTestConfig(func(c *config) {
-				c.transport = p
-				c.sendRetries = test.configRetries
+				c.ddTransport = p
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetEnv("someEnv", internalconfig.OriginCode)
 			})
@@ -408,11 +876,45 @@ func TestStatsFlushRetries(t *testing.T) {
 			ss, ok := c.newTracerStatSpan(&s, nil)
 			require.True(t, ok)
 			c.Start()
-			c.In <- ss
+			c.In <- []*tracerStatSpan{ss}
 			c.Stop()
 
 			assert.Equal(t, test.expAttempts, p.sendAttempts)
 			assert.Equal(t, test.statsSent, p.statsSent)
 		})
 	}
+}
+
+func TestNoopConcentrator(t *testing.T) {
+	var c statsConcentrator = &noopConcentrator{}
+
+	t.Run("Start", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.Start() })
+	})
+
+	t.Run("Stop", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.Stop() })
+	})
+
+	t.Run("flushAndSend", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.flushAndSend(time.Now(), false) })
+	})
+
+	t.Run("newTracerStatSpan", func(t *testing.T) {
+		s := &Span{
+			name:     "test.op",
+			service:  "test-service",
+			resource: "/test",
+			spanType: "web",
+			start:    time.Now().UnixNano(),
+			duration: 1,
+		}
+		ss, ok := c.newTracerStatSpan(s, obfuscate.NewObfuscator(obfuscate.Config{}))
+		assert.Nil(t, ss)
+		assert.False(t, ok)
+	})
+
+	t.Run("trySendSpan", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.trySendSpan(&tracerStatSpan{}) })
+	})
 }

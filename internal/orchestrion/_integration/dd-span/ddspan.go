@@ -27,7 +27,26 @@ func (*TestCase) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 
 	_, _ = spanFromHTTPRequest(req)
+
+	// Verify that a nil pointer whose type implements context.Context does not
+	// panic when passed to a //dd:span-annotated function.  Before the nil
+	// guard was added the cast to context.Context produced a typed-nil
+	// interface, causing tracer.StartSpanFromContext to call Value on a nil
+	// pointer and panic.
+	spanWithNilNamedCtx(nil)
+	spanWithNilOtherCtx(nil)
 }
+
+// customCtx is a minimal context.Context implementation that embeds the
+// interface.  A nil *customCtx panics on any method call, which is the crash
+// path the nil-guard in the //dd:span template must prevent.
+type customCtx struct{ context.Context }
+
+//dd:span nil.ctx:named
+func spanWithNilNamedCtx(ctx *customCtx) {}
+
+//dd:span nil.ctx:other
+func spanWithNilOtherCtx(myCtx *customCtx) {}
 
 //dd:span foo:bar
 func spanFromHTTPRequest(*http.Request) (string, error) {

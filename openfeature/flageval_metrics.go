@@ -34,22 +34,22 @@ var (
 	attrAllocationKey = attribute.Key("feature_flag.result.allocation_key")
 )
 
-// flagEvalHook implements the OpenFeature Hook interface to track flag evaluation metrics.
+// flagEvalMetricsHook implements the OpenFeature Hook interface to track flag evaluation metrics.
 // It uses the Finally hook stage so that metrics are recorded after all evaluation logic
 // completes, including type conversion errors and "not ready" state evaluations.
-type flagEvalHook struct {
+type flagEvalMetricsHook struct {
 	of.UnimplementedHook
 	metrics *flagEvalMetrics
 }
 
-// newFlagEvalHook creates a new flag evaluation metrics hook.
-func newFlagEvalHook(m *flagEvalMetrics) *flagEvalHook {
-	return &flagEvalHook{metrics: m}
+// newFlagEvalMetricsHook creates a new flag evaluation metrics hook.
+func newFlagEvalMetricsHook(m *flagEvalMetrics) *flagEvalMetricsHook {
+	return &flagEvalMetricsHook{metrics: m}
 }
 
 // Finally is called after every flag evaluation (success or error).
 // It records a metric for the evaluation result.
-func (h *flagEvalHook) Finally(
+func (h *flagEvalMetricsHook) Finally(
 	ctx context.Context,
 	hookContext of.HookContext,
 	details of.InterfaceEvaluationDetails,
@@ -67,6 +67,18 @@ type flagEvalMetrics struct {
 	counter       otelmetric.Int64Counter
 }
 
+type flagEvalMeterProviderError struct {
+	err error
+}
+
+func (e *flagEvalMeterProviderError) Error() string {
+	return "failed to create meter provider: " + e.err.Error()
+}
+
+func (e *flagEvalMeterProviderError) Unwrap() error {
+	return e.err
+}
+
 // newFlagEvalMetrics creates a new metrics tracker.
 // It creates an internal MeterProvider using dd-trace-go's OTel metrics support.
 // If DD_METRICS_OTEL_ENABLED is not true, the provider is a noop and
@@ -76,7 +88,7 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 		ddmetric.WithExportInterval(10 * time.Second),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create meter provider: %w", err)
+		return nil, &flagEvalMeterProviderError{err: err}
 	}
 
 	meter := mp.Meter(meterName)
@@ -101,14 +113,23 @@ func (m *flagEvalMetrics) record(
 	flagKey string,
 	details of.InterfaceEvaluationDetails,
 ) {
+	// Use "unknown" as fallback for missing reason (matches OpenFeature SDK telemetry convention)
+	reason := string(details.Reason)
+	if reason == "" {
+		reason = "unknown"
+	} else {
+		reason = strings.ToLower(reason)
+	}
+
 	attrs := []attribute.KeyValue{
 		attrFlagKey.String(flagKey),
 		attrVariant.String(details.Variant),
-		attrReason.String(strings.ToLower(string(details.Reason))),
+		attrReason.String(reason),
 	}
 
+	// Use raw lowercase error code directly (no conversion function needed)
 	if details.ErrorCode != "" {
-		attrs = append(attrs, attrErrorType.String(errorCodeToTag(details.ErrorCode)))
+		attrs = append(attrs, attrErrorType.String(strings.ToLower(string(details.ErrorCode))))
 	}
 
 	if ak, ok := details.FlagMetadata[metadataAllocationKey].(string); ok && ak != "" {
@@ -116,20 +137,6 @@ func (m *flagEvalMetrics) record(
 	}
 
 	m.counter.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
-}
-
-// errorCodeToTag maps OpenFeature ErrorCode values to low-cardinality metric tag values.
-func errorCodeToTag(code of.ErrorCode) string {
-	switch code {
-	case of.FlagNotFoundCode:
-		return "flag_not_found"
-	case of.TypeMismatchCode:
-		return "type_mismatch"
-	case of.ParseErrorCode:
-		return "parse_error"
-	default:
-		return "general"
-	}
 }
 
 // shutdown gracefully shuts down the meter provider.

@@ -54,6 +54,10 @@ var gomemcache = harness.TestCase{
 		DDService:       []string{"memcached"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageBradfitzGoMemcache)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "memcached.query", spans[0].OperationName())

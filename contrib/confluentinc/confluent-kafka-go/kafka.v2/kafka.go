@@ -7,6 +7,7 @@
 package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2"
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -52,11 +53,39 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	return WrapProducer(p, opts...), nil
 }
 
+// startClusterIDFetch launches a goroutine to fetch the cluster ID from the
+// given admin client. It returns a stop function that cancels the fetch and
+// waits for the goroutine to exit.
+func startClusterIDFetch(tr *kafkatrace.Tracer, admin *kafka.AdminClient) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer admin.Close()
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		clusterID, err := admin.ClusterID(ctx)
+		if err != nil {
+			if ctx.Err() == context.Canceled {
+				return
+			}
+			instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+			return
+		}
+		tr.SetClusterID(clusterID)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
 // A Consumer wraps a kafka.Consumer.
 type Consumer struct {
 	*kafka.Consumer
-	tracer *kafkatrace.Tracer
-	events chan kafka.Event
+	tracer     *kafkatrace.Tracer
+	events     chan kafka.Event
+	closeAsync []func() // async jobs to cancel and wait for on Close
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
@@ -67,12 +96,27 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	}
 	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
 	wrapped.events = kafkatrace.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
+	if !wrapped.tracer.DSMEnabled() {
+		return wrapped
+	}
+	// Create an admin client to fetch the cluster ID for data streams monitoring
+	// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
+	admin, err := kafka.NewAdminClientFromConsumer(c)
+	if err != nil {
+		instr.Logger().Warn("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
 	return wrapped
 }
 
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
+	// Close any async jobs that might still be running
+	for _, stopAsync := range c.closeAsync {
+		stopAsync()
+	}
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -159,6 +203,7 @@ type Producer struct {
 	tracer         *kafkatrace.Tracer
 	produceChannel chan *kafka.Message
 	events         chan kafka.Event
+	closeAsync     []func() // async jobs to cancel and wait for on Close
 }
 
 // WrapProducer wraps a kafka.Producer so requests are traced.
@@ -170,9 +215,18 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 	}
 	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.tracer)
 	wrapped.produceChannel = kafkatrace.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
-	if wrapped.tracer.DSMEnabled() {
-		wrapped.events = kafkatrace.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)
+	if !wrapped.tracer.DSMEnabled() {
+		return wrapped
 	}
+	wrapped.events = kafkatrace.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)
+	// Create an admin client to fetch the cluster ID for data streams monitoring
+	// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
+	admin, err := kafka.NewAdminClientFromProducer(p)
+	if err != nil {
+		instr.Logger().Warn("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
 	return wrapped
 }
 
@@ -185,6 +239,10 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	// Close any async jobs that might still be running
+	for _, stop := range p.closeAsync {
+		stop()
+	}
 	close(p.produceChannel)
 	p.Producer.Close()
 }

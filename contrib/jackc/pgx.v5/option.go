@@ -11,6 +11,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	traceQuery    bool
 	traceBatch    bool
 	traceCopyFrom bool
@@ -18,6 +19,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
+	poolName      string
 	errCheck      func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
@@ -25,6 +27,7 @@ type config struct {
 func defaultConfig() *config {
 	return &config{
 		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageJackcPGXV5),
 		traceQuery:    true,
 		traceBatch:    true,
 		traceCopyFrom: true,
@@ -55,6 +58,7 @@ type Option func(*config)
 func WithService(name string) Option {
 	return func(c *config) {
 		c.serviceName = name
+		c.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
@@ -106,6 +110,14 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithPoolName sets the pool name tag on all spans and pool stats metrics.
+// This allows distinguishing between multiple pgx connection pools in the same service.
+func WithPoolName(name string) Option {
+	return func(c *config) {
+		c.poolName = name
 	}
 }
 

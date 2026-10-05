@@ -16,8 +16,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
@@ -73,8 +75,12 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		WithDownwardMethod(args.Method).
 		WithDownwardRequestHeaders(headersToLower(args.Headers))
 
-	// Increment the span metric for downward requests
-	op.HandlerOp.ContextOperation.GetMetricsInstance().SumDownstreamRequestsCalls.Add(1)
+	// Increment the span metric for downward requests. Metrics is nil when the WAF context could not
+	// be created (no WAF handle, or NewContext failed) yet the listener still runs on an outbound
+	// request, so guard the dereference the same way runWAF does.
+	if metrics := op.HandlerOp.ContextOperation.GetMetricsInstance(); metrics != nil {
+		metrics.SumDownstreamRequestsCalls.Add(1)
+	}
 
 	// Increment the internal sampling counter for downward requests
 	requestCount := feature.downstreamRequestAnalysis.Add(1)
@@ -93,13 +99,16 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
-			telemetrylog.Warn("Unsupported request body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:" + wafemitter.ExceptionTypeInstrumentation}),
+				telemetry.WithStacktrace(),
+			).Warn("Unsupported request body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		op.SetRequestBody(encodable)
 		builder = builder.WithDownwardRequestBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.Run(op, builder.Build())
 }
 
 func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationRes) {
@@ -153,10 +162,13 @@ func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, 
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
-			telemetrylog.Warn("Unsupported response body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:" + wafemitter.ExceptionTypeInstrumentation}),
+				telemetry.WithStacktrace(),
+			).Warn("Unsupported response body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		builder = builder.WithDownwardResponseBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.Run(op, builder.Build())
 }

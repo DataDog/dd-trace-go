@@ -13,28 +13,37 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
-const (
-	ffeProductName = "FFE_FLAGS"
-	ffeCapability  = 46
-)
+var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProvider(config)
+	provider := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 
-	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
-		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
+	// Subscribe via the internal package, which serializes with tracer subscription
+	// and starts RC only if needed (slow path).
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w", err)
 	}
 
-	// Subscribe to Remote Config updates for the OpenFeature product
-	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
-		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
+	if !tracerOwnsSubscription {
+		log.Debug("openfeature: successfully subscribed to Remote Config updates")
+		return provider, nil
 	}
-
-	log.Debug("openfeature: successfully subscribed to Remote Config updates")
+	if !attachProvider(provider) {
+		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
+		return nil, errors.New("failed to attach to tracer's RC subscription")
+	}
+	log.Debug("openfeature: attached to tracer's RC subscription")
 	return provider, nil
 }
 
@@ -68,7 +77,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -78,7 +87,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -97,7 +106,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 // validateConfiguration performs basic validation on a serverConfiguration.
 func validateConfiguration(config *universalFlagsConfiguration) error {
 	if config == nil {
-		return fmt.Errorf("configuration is nil")
+		return errors.New("configuration is nil")
 	}
 
 	if config.Format != "SERVER" {
@@ -150,10 +159,23 @@ func validateFlag(flagKey string, flag *flag) error {
 			}
 
 			for _, shard := range split.Shards {
-				if shard.TotalShards < 0 {
-					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
+				if shard.TotalShards <= 0 || uint64(shard.TotalShards) > uint64(^uint32(0)) {
+					return fmt.Errorf("flag %q allocation %d split %d has shard with invalid TotalShards %d",
 						flagKey, i, j, shard.TotalShards)
 				}
+				for _, shardRange := range shard.Ranges {
+					if shardRange == nil {
+						return fmt.Errorf("flag %q allocation %d split %d has nil shard range", flagKey, i, j)
+					}
+					if shardRange.Start < 0 || shardRange.End < 0 {
+						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
+							flagKey, i, j)
+					}
+				}
+			}
+
+			if split.Shards == nil {
+				return fmt.Errorf("flag %q allocation %d split %d is missing shards", flagKey, i, j)
 			}
 
 			if _, exists := flag.Variations[split.VariationKey]; !exists {
@@ -172,17 +194,58 @@ func validateFlag(flagKey string, flag *flag) error {
 					return fmt.Errorf("flag %q allocation %d rule has nil condition", flagKey, i)
 				}
 
-				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE,
+					operatorMatches, operatorNotMatches,
+					operatorOneOf, operatorNotOneOf, operatorIsNull:
+				default:
+					return fmt.Errorf("flag %q allocation %d rule has unknown operator %q",
+						flagKey, i, condition.Operator)
+				}
+
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if _, ok := internal.ToFloat64(condition.Value); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorMatches, operatorNotMatches:
 					regex, ok := condition.Value.(string)
 					if !ok {
 						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
 							flagKey, i, condition.Operator)
 					}
-
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
 					}
+				case operatorOneOf, operatorNotOneOf:
+					if _, ok := condition.Value.([]any); !ok {
+						if _, ok := condition.Value.([]string); !ok {
+							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
+								flagKey, i, condition.Operator)
+						}
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+					comparand, ok := condition.Value.(string)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q that requires string value",
+							errInvalidSemverComparand, flagKey, i, condition.Operator)
+					}
+					parsedComparand, ok := parseSemver(comparand)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							errInvalidSemverComparand, flagKey, i, condition.Operator, comparand)
+					}
+					condition.semverComparand = &parsedComparand
 				}
 			}
 		}
@@ -194,12 +257,12 @@ func validateFlag(flagKey string, flag *flag) error {
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// Note: This function is currently not fully implemented as Remote Config
-// doesn't provide an Unsubscribe method yet. The provider will continue
-// to receive updates until the Remote Config client is stopped.
+// Note: In the slow path, this package discards the subscription token from
+// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
+// capability which stops updates. In the fast path (tracer subscribed),
+// the subscription is owned by the tracer.
 func stopRemoteConfig() error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	// For now, we can unregister the capability to stop receiving updates
-	_ = remoteconfig.UnregisterCapability(ffeCapability)
+	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
 	return nil
 }

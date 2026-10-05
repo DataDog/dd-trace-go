@@ -7,10 +7,13 @@ package llmobs
 
 import (
 	"errors"
+	"maps"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -26,7 +29,89 @@ const (
 	telemetryMetricAnnotations       = "annotations"
 	telemetryMetricEvalsSubmitted    = "evals_submitted"
 	telemetryMetricUserFlushes       = "user_flush"
+	telemetryMetricCostTagsAnnotated = "cost_tags.annotated"
+	telemetryMetricCostTagsSubmitted = "cost_tags.submitted"
 )
+
+// maxTelemetryMLApps caps distinct ml_app values, because telemetry never evicts a metric
+// handle and a span can inherit ml_app from the distributed trace context. 64 covers every
+// legitimate multi-app deployment we know of while keeping the copy-on-write fill cost, at
+// most 64 map copies over the life of the process, negligible.
+const maxTelemetryMLApps = 64
+
+// telemetryMLAppBlocked marks an ml_app value that the limiter rejected.
+const telemetryMLAppBlocked = "tracer_blocked_value"
+
+// telemetryMLApps is shared by all four telemetry call sites in this file, so their ml_app
+// values draw from one process-wide budget.
+var telemetryMLApps mlAppLimiter
+
+// mlAppLimiter admits the first maxTelemetryMLApps distinct ml_app values. The admitted set
+// is copy-on-write, so a blocked value costs a lock-free lookup and no allocation. The
+// active configured value (set via setConfigured) always reports correctly, independent of
+// that budget, so it survives even after a restart finds the limiter already full.
+type mlAppLimiter struct {
+	admitted   atomic.Pointer[map[string]struct{}]
+	configured atomic.Pointer[string]
+}
+
+// setConfigured reserves mlApp so tagValue always reports it, bypassing the admitted budget.
+func (l *mlAppLimiter) setConfigured(mlApp string) {
+	l.configured.Store(&mlApp)
+}
+
+// tagValue returns telemetryMLAppBlocked for a rejected mlApp, and "" for an empty one so
+// each caller keeps its own placeholder.
+func (l *mlAppLimiter) tagValue(mlApp string) string {
+	if mlApp == "" {
+		return ""
+	}
+	if configured := l.configured.Load(); configured != nil && *configured == mlApp {
+		return mlApp
+	}
+	if admitted := l.admitted.Load(); admitted != nil {
+		if _, ok := (*admitted)[mlApp]; ok {
+			return mlApp
+		}
+		if len(*admitted) >= maxTelemetryMLApps {
+			return telemetryMLAppBlocked
+		}
+	}
+	return l.admit(mlApp)
+}
+
+func (l *mlAppLimiter) admit(mlApp string) string {
+	for {
+		current := l.admitted.Load()
+		var admitted map[string]struct{}
+		if current != nil {
+			if _, ok := (*current)[mlApp]; ok {
+				return mlApp
+			}
+			if len(*current) >= maxTelemetryMLApps {
+				return telemetryMLAppBlocked
+			}
+			admitted = *current
+		}
+
+		next := make(map[string]struct{}, len(admitted)+1)
+		maps.Copy(next, admitted)
+		next[mlApp] = struct{}{}
+
+		if !l.admitted.CompareAndSwap(current, &next) {
+			continue
+		}
+		if len(next) == maxTelemetryMLApps {
+			log.Debug("llmobs: reached %d distinct ml_app values in telemetry, further values report as %q",
+				maxTelemetryMLApps, telemetryMLAppBlocked)
+		}
+		return mlApp
+	}
+}
+
+func mlAppTelemetryTag(mlApp string) string {
+	return "ml_app:" + valOrNA(telemetryMLApps.tagValue(mlApp))
+}
 
 var telemetryErrorTypes = map[error]string{
 	errInvalidMetricLabel: "invalid_metric_label",
@@ -45,18 +130,19 @@ func trackLLMObsStart(startTime time.Time, err error, cfg config.Config) {
 	if telemetry.Disabled() {
 		return
 	}
+	telemetryMLApps.setConfigured(cfg.MLApp)
 	telemetry.ProductStarted(telemetry.NamespaceMLObs)
 	telemetry.RegisterAppConfigs(
 		telemetry.Configuration{Name: "site", Value: cfg.TracerConfig.Site},
 		telemetry.Configuration{Name: "ml_app", Value: cfg.MLApp},
-		telemetry.Configuration{Name: "agentless", Value: cfg.ResolvedAgentlessEnabled},
+		telemetry.Configuration{Name: "agentless", Value: cfg.AgentlessEnabled},
 	)
 
 	tags := errTelemetryTags(err)
 	tags = append(tags, []string{
-		"agentless:" + boolTag(cfg.ResolvedAgentlessEnabled),
+		"agentless:" + boolTag(cfg.AgentlessEnabled),
 		"site:" + cfg.TracerConfig.Site,
-		"ml_app:" + valOrNA(cfg.MLApp),
+		mlAppTelemetryTag(cfg.MLApp),
 	}...)
 
 	initTimeMs := float64(time.Since(startTime).Milliseconds())
@@ -90,7 +176,7 @@ func trackSpanFinished(span *Span) {
 		"is_root_span:" + boolTag(isRootSpan),
 		"span_kind:" + valOrNA(spanKind),
 		"integration:" + valOrNA(integration),
-		"ml_app:" + valOrNA(mlApp),
+		mlAppTelemetryTag(mlApp),
 		"error:" + boolTag(hasError),
 	}
 	if modelProvider != "" {
@@ -143,6 +229,26 @@ func trackSpanAnnotations(span *Span, err error) {
 	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricAnnotations, tags).Submit(1)
 }
 
+func trackCostTagsAnnotated(span *Span, source string) {
+	if telemetry.Disabled() {
+		return
+	}
+
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricCostTagsAnnotated, costTagsTelemetryTags(span, source)).Submit(1)
+}
+
+func trackCostTagsSubmitted(span *Span, count int, source, state, reason string) {
+	if telemetry.Disabled() || count == 0 {
+		return
+	}
+
+	tags := append(costTagsTelemetryTags(span, source),
+		"state:"+state,
+		"reason:"+reason,
+	)
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricCostTagsSubmitted, tags).Submit(float64(count))
+}
+
 func trackSubmitEvaluationMetric(metric *transport.LLMObsMetric, err error) {
 	if telemetry.Disabled() {
 		return
@@ -150,7 +256,7 @@ func trackSubmitEvaluationMetric(metric *transport.LLMObsMetric, err error) {
 	metricType := "other"
 	hasTag := false
 	if metric != nil {
-		metricType = metric.MetricType
+		metricType = string(metric.MetricType)
 		hasTag = metric.JoinOn.Tag != nil
 	}
 
@@ -169,6 +275,29 @@ func trackUserFlush() {
 	userFlushHandle.Submit(1)
 }
 
+func costTagsTelemetryTags(span *Span, source string) []string {
+	spanKind := "N/A"
+	mlApp := "N/A"
+	modelProvider := "N/A"
+	if span != nil {
+		if span.spanKind != "" {
+			spanKind = string(span.spanKind)
+		}
+		if span.mlApp != "" {
+			mlApp = telemetryMLApps.tagValue(span.mlApp)
+		}
+		if span.llmCtx.modelProvider != "" {
+			modelProvider = span.llmCtx.modelProvider
+		}
+	}
+	return []string{
+		"span_kind:" + spanKind,
+		"source:" + source,
+		"ml_app:" + mlApp,
+		"model_provider:" + modelProvider,
+	}
+}
+
 func spanEventTags(event *transport.LLMObsSpanEvent) []string {
 	spanKind := "N/A"
 	if meta, ok := event.Meta["span.kind"]; ok {
@@ -180,14 +309,14 @@ func spanEventTags(event *transport.LLMObsSpanEvent) []string {
 	integration := findTagValue(event.Tags, "integration:")
 	mlApp := findTagValue(event.Tags, "ml_app:")
 	autoInstrumented := integration != ""
-	hasError := event.Status == "error"
+	hasError := event.Status == transport.SpanStatusError
 
 	return []string{
 		"span_kind:" + spanKind,
 		"autoinstrumented:" + boolTag(autoInstrumented),
 		"error:" + boolTag(hasError),
 		"integration:" + valOrNA(integration),
-		"ml_app:" + valOrNA(mlApp),
+		mlAppTelemetryTag(mlApp),
 	}
 }
 

@@ -262,6 +262,7 @@ func TestRecordAllErrorTypes(t *testing.T) {
 		{of.TypeMismatchCode, "type_mismatch"},
 		{of.ParseErrorCode, "parse_error"},
 		{of.GeneralCode, "general"},
+		{of.ProviderNotReadyCode, "provider_not_ready"},
 	}
 
 	for _, tc := range errorCases {
@@ -286,6 +287,25 @@ func TestRecordAllErrorTypes(t *testing.T) {
 	}
 }
 
+func TestRecordUnknownReasonFallback(t *testing.T) {
+	m, reader := setupTestMetrics(t)
+	ctx := context.Background()
+
+	// Record with empty reason - should fall back to "unknown"
+	m.record(ctx, "test-flag", makeDetails("variant-a", "", ""))
+
+	rm := collectMetrics(t, reader)
+	dps := findCounter(t, rm)
+
+	if len(dps) != 1 {
+		t.Fatalf("expected 1 data point, got %d", len(dps))
+	}
+
+	if got := getAttr(dps[0], attrReason); got != "unknown" {
+		t.Errorf("reason: got %q, want %q", got, "unknown")
+	}
+}
+
 // TestIntegrationEvaluate tests that the flag evaluation hook correctly records
 // metrics when evaluations flow through the full OpenFeature client lifecycle.
 func TestIntegrationEvaluate(t *testing.T) {
@@ -294,7 +314,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -344,7 +364,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -391,7 +411,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
-		provider.flagEvalHook.metrics = m
+		provider.flagEvalMetricsHook.metrics = m
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

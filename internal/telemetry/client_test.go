@@ -19,14 +19,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -100,6 +101,51 @@ func TestNewClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDefaultConfigAgentlessURL(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		site     string
+		config   ClientConfig
+		expected string
+	}{
+		{
+			name:     "default-site",
+			expected: "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry",
+		},
+		{
+			name:     "eu-site",
+			site:     "datadoghq.eu",
+			expected: "https://instrumentation-telemetry-intake.datadoghq.eu/api/v2/apmtelemetry",
+		},
+		{
+			name:     "explicit-url-takes-precedence",
+			site:     "datadoghq.eu",
+			config:   ClientConfig{AgentlessURL: "https://custom.example.com/api/v2/apmtelemetry"},
+			expected: "https://custom.example.com/api/v2/apmtelemetry",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.site != "" {
+				t.Setenv("DD_SITE", test.site)
+			}
+			config := defaultConfig(test.config)
+			assert.Equal(t, test.expected, config.AgentlessURL)
+		})
+	}
+}
+
+func TestNewClient_FileSinkModeWithoutEndpoints(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	defer c.Close()
 }
 
 func TestAutoFlush(t *testing.T) {
@@ -177,7 +223,73 @@ func TestClientFlush(t *testing.T) {
 				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[0].RequestType)
 				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
 
-				assert.Len(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Configuration, 0)
+				extHB := batch[1].Payload.(transport.AppExtendedHeartbeat)
+				require.Len(t, extHB.Configuration, 1)
+				assert.Equal(t, "key", extHB.Configuration[0].Name)
+				assert.Equal(t, "value", extHB.Configuration[0].Value)
+			},
+		},
+		{
+			name: "extended-heartbeat-config-multiple",
+			clientConfig: ClientConfig{
+				ExtendedHeartbeatInterval: time.Nanosecond,
+			},
+			when: func(c *client) {
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "value1", Origin: OriginDefault},
+					Configuration{Name: "key2", Value: "value2", Origin: OriginEnvVar},
+				)
+
+				time.Sleep(time.Microsecond)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.MessageBatch{}, payload)
+				batch := payload.(transport.MessageBatch)
+				require.Len(t, batch, 2)
+				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
+
+				extHB := batch[1].Payload.(transport.AppExtendedHeartbeat)
+				require.Len(t, extHB.Configuration, 2)
+				configMap := make(map[string]transport.ConfKeyValue)
+				for _, c := range extHB.Configuration {
+					configMap[c.Name] = c
+				}
+				assert.Equal(t, "value1", configMap["key1"].Value)
+				assert.Equal(t, "value2", configMap["key2"].Value)
+			},
+		},
+		{
+			name: "extended-heartbeat-config-dedup",
+			clientConfig: ClientConfig{
+				ExtendedHeartbeatInterval: time.Nanosecond,
+			},
+			when: func(c *client) {
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "original", Origin: OriginDefault},
+				)
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "updated", Origin: OriginDefault},
+				)
+
+				time.Sleep(time.Microsecond)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.MessageBatch{}, payload)
+				batch := payload.(transport.MessageBatch)
+
+				var extHB transport.AppExtendedHeartbeat
+				for _, msg := range batch {
+					if msg.RequestType == transport.RequestTypeAppExtendedHeartBeat {
+						extHB = msg.Payload.(transport.AppExtendedHeartbeat)
+					}
+				}
+
+				require.Len(t, extHB.Configuration, 1)
+				assert.Equal(t, "key1", extHB.Configuration[0].Name)
+				assert.Equal(t, "updated", extHB.Configuration[0].Value)
 			},
 		},
 		{
@@ -1084,6 +1196,7 @@ func TestClientFlush(t *testing.T) {
 
 func TestMetricsDisabled(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
+	t.Setenv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", "false")
 
 	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
 	require.NoError(t, err)
@@ -1342,11 +1455,15 @@ func TestSendingFailures(t *testing.T) {
 		},
 	}
 
+	config := defaultConfig(cfg)
+	config.DependencyLoader = nil // prevent AppDependenciesLoaded from joining the flush and creating a MessageBatch
+	config.internalMetricsEnabled = false
+
 	c, err := newClient(internal.TracerConfig{
 		Service: "test-service",
 		Env:     "test-env",
 		Version: "1.0.0",
-	}, defaultConfig(cfg))
+	}, config)
 
 	require.NoError(t, err)
 	defer c.Close()
@@ -1363,6 +1480,47 @@ func TestSendingFailures(t *testing.T) {
 	assert.Len(t, logs.Logs, 1)
 	assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
 	assert.Equal(t, "test", logs.Logs[0].Message)
+}
+
+func TestComputeFlushMetrics_FileSinkSkipsMetrics(t *testing.T) {
+	c, err := newClient(internal.TracerConfig{
+		Service: "test-service",
+		Env:     "test-env",
+		Version: "1.0.0",
+	}, defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	}))
+	require.NoError(t, err)
+	defer c.Close()
+
+	c.computeFlushMetrics([]internal.EndpointRequestResult{{
+		PayloadByteSize:  123,
+		CallDuration:     time.Second,
+		RequestAttempted: false,
+	}}, nil)
+
+	assert.Nil(t, c.metrics.Payload())
+	assert.Nil(t, c.distributions.Payload())
+}
+
+func TestComputeFlushMetrics_UnattemptedRequestSkipsMetrics(t *testing.T) {
+	c, err := newClient(internal.TracerConfig{
+		Service: "test-service",
+		Env:     "test-env",
+		Version: "1.0.0",
+	}, defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	}))
+	require.NoError(t, err)
+	defer c.Close()
+
+	c.computeFlushMetrics([]internal.EndpointRequestResult{{
+		Error:            errors.New("encode failed"),
+		RequestAttempted: false,
+	}}, errors.New("encode failed"))
+
+	assert.Nil(t, c.metrics.Payload())
+	assert.Nil(t, c.distributions.Payload())
 }
 
 func BenchmarkLogs(b *testing.B) {

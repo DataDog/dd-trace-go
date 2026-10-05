@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -22,6 +23,9 @@ type configurationImplementation struct {
 	Type           string   `json:"type"`
 	Default        *string  `json:"default"`
 	Aliases        []string `json:"aliases,omitempty"`
+	// Sensitive marks a configuration whose value must not be reported in
+	// configuration telemetry.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // SupportedConfiguration represents the content of the supported_configurations.json file.
@@ -85,6 +89,24 @@ func addSupportedConfigurationToFile(name string) {
 	if err := writeSupportedConfigurations(filePath, cfg); err != nil {
 		log.Error("config: failed to write supported configurations: %s", err.Error())
 	}
+}
+
+// IsSensitive reports whether the given configuration name must not have its value
+// reported in configuration telemetry. A name is sensitive if it is listed in the
+// generated SensitiveConfigurations set, or if it is an alias of such a key.
+func IsSensitive(name string) bool {
+	if _, ok := SensitiveConfigurations[name]; ok {
+		return true
+	}
+	for key, aliases := range KeyAliases {
+		if _, ok := SensitiveConfigurations[key]; !ok {
+			continue
+		}
+		if slices.Contains(aliases, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func readSupportedConfigurations(filePath string) (*supportedConfiguration, error) {

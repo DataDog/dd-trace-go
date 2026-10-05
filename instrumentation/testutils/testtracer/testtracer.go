@@ -1,33 +1,42 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2025 Datadog, Inc.
+// Copyright 2026 Datadog, Inc.
 
-// Package testtracer provides a wrapper over the ddtrace/tracer package with a mocked transport that allows to inspect
-// traces while keeping the rest of the tracer logic the same.
+// Package testtracer provides a compatibility wrapper over the inspectable
+// tracer with the API of the testtracer package that existed before the
+// inspectable tracer. Use it to keep existing test suites compiling while you
+// migrate them. Write new test suites against ddtrace/x/tracertest and
+// ddtrace/x/llmobstest directly.
+//
+// The wrapper starts the global tracer through tracertest.Bootstrap, backed by
+// an in-process mock agent and an in-process LLMObs collector. No request
+// leaves the test process. Like the old package, WaitFor flushes before it
+// accepts a condition. The flush runs in the background with at most one
+// flush in flight, so a slow transport can neither outlast the timeout and
+// stall the wait nor pile up flush goroutines. The retry loop covers spans
+// that background goroutines create.
 package testtracer
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
-
-	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// AgentInfo defines the response from the agent /info endpoint.
+// AgentInfo defines the response from the agent /info endpoint. The
+// inspectable tracer fixes the /info response, so this type exists only so
+// existing test code compiles.
 type AgentInfo struct {
 	Endpoints          []string    `json:"endpoints"`
 	ClientDropP0s      bool        `json:"client_drop_p0s"`
@@ -44,6 +53,8 @@ type AgentConfig struct {
 }
 
 // Span defines a span with the same format as it is sent to the agent.
+// MetaStruct and SpanLinks stay nil because the mock agent does not decode
+// them.
 type Span struct {
 	Name       string             `json:"name"`
 	Service    string             `json:"service"`
@@ -72,197 +83,207 @@ type SpanLink struct {
 }
 
 // LLMObsSpan is an alias for the LLMObs span event type.
-type LLMObsSpan = llmobstransport.LLMObsSpanEvent
+type LLMObsSpan = llmobstest.LLMObsSpan
 
 // LLMObsMetric is an alias for the LLMObs metric type.
-type LLMObsMetric = llmobstransport.LLMObsMetric
+type LLMObsMetric = llmobstest.LLMObsMetric
 
-// MockResponseFunc is a function to return mock responses.
+// MockResponseFunc is a function to return mock responses. The inspectable
+// tracer owns its in-process transports, so this type exists only so existing
+// test code compiles.
 type MockResponseFunc func(*http.Request) *http.Response
 
-// Payloads contains all captured payloads organized by type.
+// Payloads contains all captured payloads organized by type. The span order
+// within each field is arbitrary.
 type Payloads struct {
-	mu         sync.RWMutex
 	Spans      []Span
 	LLMSpans   []LLMObsSpan
 	LLMMetrics []LLMObsMetric
 }
 
-// WaitCondition is a function that checks if the wait condition is met.
-// It receives the current payloads and returns true if waiting should stop.
+// WaitCondition is a function that checks if the wait condition is met. It
+// receives the current payloads and returns true if waiting should stop.
 type WaitCondition func(*Payloads) bool
 
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
-	startError   error
-	payloads     *Payloads
-	roundTripper *mockTransport
+	startError error
+	tracer     tracer.Tracer
+	agent      agenttest.Agent
+	collector  *llmobstest.Collector
+	flushWg    sync.WaitGroup
 }
 
-// Start calls [tracer.Start] with a mocked transport and provides a new [TestTracer] that allows to inspect
-// the spans produced by this application.
+// Start starts the global tracer through tracertest.Bootstrap with an
+// in-process agent and LLMObs collector, and returns a TestTracer that
+// inspects the spans the application sends. The tracer stops automatically
+// when the test ends.
 func Start(t testing.TB, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	payloadChan := make(chan any)
-	payloads := &Payloads{}
-
-	rt := &mockTransport{
-		T:            t,
-		payloadChan:  payloadChan,
-		agentInfo:    cfg.AgentInfoResponse,
-		mockResponse: cfg.MockResponse,
-		requestDelay: cfg.RequestDelay,
+	coll := llmobstest.New(t)
+	if cfg.RequestDelay > 0 {
+		coll.SetSpanResponseDelay(cfg.RequestDelay)
 	}
-	httpClient := &http.Client{
-		Transport: rt,
-	}
-	tt := &TestTracer{
-		payloads:     payloads,
-		roundTripper: rt,
-	}
-
-	// Start payload collector goroutine
-	go tt.collectPayloads(payloadChan)
-	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
 		tracer.WithEnv("TestTracer"),
 		tracer.WithService("TestTracer"),
 		tracer.WithServiceVersion("1.0.0"),
-		tracer.WithHTTPClient(httpClient),
-		tracer.WithLogger(&testLogger{T: t}),
+		coll.TracerOption(),
 	}, cfg.TracerStartOpts...)
 
-	err := tracer.Start(startOpts...)
+	// Install the test logger before Bootstrap so startup logs forward to the
+	// test output. The undo restores the previous process-wide logger; without
+	// it, later tests would log on this test's completed testing.TB and panic,
+	// and parallel tests would replace one another's logger.
+	undo := log.UseLogger(&testLogger{T: t})
+	t.Cleanup(undo)
+
+	tr, agent, err := tracertest.Bootstrap(t, startOpts...)
 	if cfg.RequireNoError {
 		require.NoError(t, err)
 	}
-	tt.startError = err
+	tt := &TestTracer{
+		startError: err,
+		tracer:     tr,
+		agent:      agent,
+		collector:  coll,
+	}
+	// Registered after the Bootstrap cleanups, so LIFO runs it before the
+	// tracer stops: the worker is then still alive to serve the pending flush.
+	t.Cleanup(tt.flushWg.Wait)
 	return tt
 }
 
 type config struct {
-	TracerStartOpts   []tracer.StartOption
-	AgentInfoResponse AgentInfo
-	RequestDelay      time.Duration
-	MockResponse      MockResponseFunc
-	RequireNoError    bool
+	TracerStartOpts []tracer.StartOption
+	RequestDelay    time.Duration
+	RequireNoError  bool
 }
 
 func defaultConfig() *config {
 	return &config{
-		TracerStartOpts:   nil,
-		AgentInfoResponse: AgentInfo{},
-		RequestDelay:      0,
-		MockResponse:      nil,
-		RequireNoError:    true,
+		TracerStartOpts: nil,
+		RequestDelay:    0,
+		RequireNoError:  true,
 	}
 }
 
 // Option configures the TestTracer.
 type Option func(*config)
 
-// WithTracerStartOpts allows to set [tracer.StartOption] on the tracer.
+// WithTracerStartOpts sets [tracer.StartOption] values on the tracer.
 func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 	return func(cfg *config) {
 		cfg.TracerStartOpts = append(cfg.TracerStartOpts, opts...)
 	}
 }
 
-// WithAgentInfoResponse sets a custom /info agent response. It can be used to enable/disable certain features
-// from the tracer that depend on whether the agent supports them or not.
-func WithAgentInfoResponse(response AgentInfo) Option {
-	return func(cfg *config) {
-		cfg.AgentInfoResponse = response
-	}
+// WithAgentInfoResponse has no effect. The inspectable tracer fixes the agent
+// /info response, and the LLMObs collector bypasses the agent capability gate
+// that the old mock served through this option. The option exists so existing
+// test code compiles.
+func WithAgentInfoResponse(AgentInfo) Option {
+	return func(*config) {}
 }
 
-// WithRequestDelay introduces a fake delay in all requests.
+// WithRequestDelay introduces a fake delay before the LLMObs collector answers
+// a span batch. Unlike the delay in the old package, it does not apply to APM
+// trace flushes.
 func WithRequestDelay(delay time.Duration) Option {
 	return func(cfg *config) {
 		cfg.RequestDelay = delay
 	}
 }
 
-// WithMockResponses allows setting a custom request handler for mocking HTTP responses.
-// If the provided function returns nil, it fallbacks to the default behavior of returning empty 200 responses.
-func WithMockResponses(mr MockResponseFunc) Option {
-	return func(cfg *config) {
-		cfg.MockResponse = mr
-	}
+// WithMockResponses has no effect. The inspectable tracer owns its in-process
+// transports, so the wrapper cannot intercept requests. Tests that depend on
+// mock responses must migrate to ddtrace/x/tracertest or ddtrace/x/llmobstest.
+// The option exists so existing test code compiles.
+func WithMockResponses(MockResponseFunc) Option {
+	return func(*config) {}
 }
 
-// WithRequireNoTracerStartError allows to customize the behavior for the Start function. By default, it calls require.NoError
-// on the error returned by tracer.Start, but that can be changed by using this option with false as argument.
+// WithRequireNoTracerStartError controls whether Start fails the test when the
+// tracer returns a start error. The default is true.
 func WithRequireNoTracerStartError(requireNoErr bool) Option {
 	return func(cfg *config) {
 		cfg.RequireNoError = requireNoErr
 	}
 }
 
-// collectPayloads runs in a goroutine and collects payloads from the channel
-func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
-	for payload := range payloadChan {
-		tt.payloads.mu.Lock()
-		switch p := payload.(type) {
-		case Span:
-			tt.payloads.Spans = append(tt.payloads.Spans, p)
-		case LLMObsSpan:
-			tt.payloads.LLMSpans = append(tt.payloads.LLMSpans, p)
-		case LLMObsMetric:
-			tt.payloads.LLMMetrics = append(tt.payloads.LLMMetrics, p)
-		}
-		tt.payloads.mu.Unlock()
-	}
-}
-
-// StartError returns the error from tracer.Start.
+// StartError returns the error from the tracer start.
 func (tt *TestTracer) StartError() error {
 	return tt.startError
 }
 
-// Stop stops the tracer. It should be called after the test finishes.
-func (tt *TestTracer) Stop() {
-	tt.roundTripper.Stop()
-	tracer.Stop()
-}
+// Stop has no effect. tracertest.Bootstrap registers the cleanup that stops
+// the tracer, the LLMObs subsystem, and the global tracer state when the test
+// ends. The method exists so existing test code compiles.
+func (tt *TestTracer) Stop() {}
 
 // WaitFor waits for a condition to be met within the specified timeout.
-// The condition function receives the current payloads and should return true when the wait should stop.
-// It fails the test if the condition is not met within the timeout.
+// The condition function receives the current payloads and should return true
+// when the wait should stop. It fails the test if the condition is not met
+// within the timeout. Like the old package, WaitFor flushes before it accepts
+// a condition, so spans the test created before the call are in the returned
+// payloads. The flush runs in the background and at most one flush is in
+// flight, so a slow transport neither blocks the timeout from firing nor
+// piles up flush goroutines. The cleanup that Start registered waits for an
+// in-flight flush before the tracer stops.
 func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
-	// Force a flush so we don't need to wait for the default flush interval
-	tracer.Flush()
-
-	timeoutChan := time.After(timeout)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
 
+	// inFlight is closed by the current flush goroutine; nil means no flush
+	// is running, so the next iteration starts one. flushed reports that a
+	// flush finished since WaitFor began; a start error leaves no tracer to
+	// flush, so flushed starts true then.
+	var inFlight chan struct{}
+	flushed := tt.tracer == nil
 	for {
-		select {
-		case <-ticker.C:
-			tt.payloads.mu.RLock()
-			if cond(tt.payloads) {
-				tt.payloads.mu.RUnlock()
-				return tt.payloads
-			}
-			tt.payloads.mu.RUnlock()
-		case <-timeoutChan:
-			tt.payloads.mu.RLock()
+		p := tt.snapshot()
+		// Accept only after a flush finished: the old API flushed
+		// synchronously before its first check, and accepting an earlier
+		// snapshot could drop spans the test created before the call.
+		// A wall-clock deadline is safe here where a timer channel is not:
+		// cond or the flush can run past the timeout, and a drained timer
+		// would then read as not fired and admit a late condition as success.
+		if flushed && cond(p) && time.Now().Before(deadline) {
+			return p
+		}
+		if !time.Now().Before(deadline) {
 			assert.FailNowf(t, "timeout waiting for condition",
 				"Current payloads: %d spans, %d LLM spans, %d LLM metrics",
-				len(tt.payloads.Spans), len(tt.payloads.LLMSpans), len(tt.payloads.LLMMetrics))
-			tt.payloads.mu.RUnlock()
+				len(p.Spans), len(p.LLMSpans), len(p.LLMMetrics))
+		}
+		if tt.tracer != nil && inFlight == nil {
+			inFlight = make(chan struct{})
+			done := inFlight
+			// The cleanup that Start registered waits for this goroutine before
+			// the tracer stops, so the worker is still alive to serve it.
+			tt.flushWg.Go(func() {
+				defer close(done)
+				tt.tracer.Flush()
+			})
+		}
+		select {
+		case <-ticker.C:
+		case <-inFlight:
+			inFlight = nil
+			flushed = true
 		}
 	}
 }
 
 // WaitForSpans waits for the specified number of spans to be captured.
 // It returns the captured spans or fails the test if the timeout is reached.
+// The span order is arbitrary.
 func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	if count == 0 {
 		return nil
@@ -273,8 +294,9 @@ func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	return p.Spans
 }
 
-// WaitForLLMObsSpans waits for the specified number of LLMObs spans to be captured.
-// It returns the captured LLMObs spans or fails the test if the timeout is reached.
+// WaitForLLMObsSpans waits for the specified number of LLMObs spans to be
+// captured. It returns the captured LLMObs spans or fails the test if the
+// timeout is reached.
 func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 	if count == 0 {
 		return nil
@@ -285,8 +307,9 @@ func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 	return p.LLMSpans
 }
 
-// WaitForLLMObsMetrics waits for the specified number of LLMObs metrics to be captured.
-// It returns the captured LLMObs metrics or fails the test if the timeout is reached.
+// WaitForLLMObsMetrics waits for the specified number of LLMObs metrics to be
+// captured. It returns the captured LLMObs metrics or fails the test if the
+// timeout is reached.
 func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetric {
 	if count == 0 {
 		return nil
@@ -297,173 +320,48 @@ func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetr
 	return p.LLMMetrics
 }
 
-// SentPayloads returns a thread-safe copy of all captured payloads.
+// SentPayloads returns a copy of all captured payloads. It does not flush;
+// call WaitFor or tracer.Flush first when the test created spans after the
+// last flush.
 func (tt *TestTracer) SentPayloads() Payloads {
-	tt.payloads.mu.RLock()
-	defer tt.payloads.mu.RUnlock()
+	return *tt.snapshot()
+}
 
-	return Payloads{
-		Spans:      append([]Span(nil), tt.payloads.Spans...),
-		LLMSpans:   append([]LLMObsSpan(nil), tt.payloads.LLMSpans...),
-		LLMMetrics: append([]LLMObsMetric(nil), tt.payloads.LLMMetrics...),
+// snapshot captures every payload collected so far. It does not flush. When
+// the tracer start failed, the agent or the collector can be nil, so snapshot
+// returns the payloads that exist. A custom agent that does not implement
+// agenttest.SpanLister contributes no APM spans; the agent that Bootstrap
+// creates always implements it.
+func (tt *TestTracer) snapshot() *Payloads {
+	p := &Payloads{}
+	if tt.collector != nil {
+		p.LLMSpans = tt.collector.Spans()
+		p.LLMMetrics = tt.collector.Metrics()
 	}
-}
-
-type mockTransport struct {
-	T            testing.TB
-	payloadChan  chan<- any
-	mu           sync.RWMutex
-	finished     bool
-	agentInfo    AgentInfo
-	requestDelay time.Duration
-	mockResponse MockResponseFunc
-}
-
-func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	time.Sleep(rt.requestDelay)
-	return rt.handleRequest(r), nil
-}
-
-func (rt *mockTransport) Stop() {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	if rt.finished {
-		return
-	}
-	rt.finished = true
-	close(rt.payloadChan)
-}
-
-var noLogPaths = []string{
-	"/v0.7/config",
-	"/telemetry/proxy/api/v2/apmtelemetry",
-	"/api/unstable/llm-obs/v1/",
-}
-
-func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
-	rt.mu.RLock()
-	defer rt.mu.RUnlock()
-	if rt.finished {
-		return rt.emptyResponse(r)
-	}
-
-	var resp *http.Response
-
-	if rt.mockResponse != nil {
-		resp = rt.mockResponse(r)
-		if resp != nil {
-			return resp
+	if lister, ok := tt.agent.(agenttest.SpanLister); ok {
+		for _, s := range lister.Spans() {
+			p.Spans = append(p.Spans, toSpan(s))
 		}
 	}
-	resp = rt.emptyResponse(r)
-
-	switch r.URL.Path {
-	case "/v0.4/traces":
-		rt.handleTraces(r)
-	case "/info":
-		resp = rt.handleInfo(r)
-	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
-		rt.handleLLMObsSpanEvents(r)
-	case "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric", "/api/intake/llm-obs/v2/eval-metric":
-		rt.handleLLMObsEvalMetrics(r)
-	default:
-		logWarn := true
-		for _, p := range noLogPaths {
-			if r.URL.Path == p || strings.Contains(r.URL.Path, p) {
-				logWarn = false
-				break
-			}
-		}
-		if logWarn {
-			rt.T.Logf("testtracer: received request to a non-implemented path: %s", r.URL.Path)
-		}
-	}
-	return resp
+	return p
 }
 
-func (rt *mockTransport) emptyResponse(r *http.Request) *http.Response {
-	resp := &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(`{}`)),
-		Request:    r,
-	}
-	resp.Header.Set("Content-Type", "application/json")
-	return resp
-}
-
-func (rt *mockTransport) handleInfo(r *http.Request) *http.Response {
-	data, err := json.Marshal(rt.agentInfo)
-	require.NoError(rt.T, err)
-
-	resp := &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(data)),
-		Request:    r,
-	}
-	resp.Header.Set("Content-Type", "application/json")
-	return resp
-}
-
-func (rt *mockTransport) handleTraces(r *http.Request) {
-	req := r.Clone(context.Background())
-	defer req.Body.Close()
-
-	buf, err := io.ReadAll(req.Body)
-	require.NoError(rt.T, err)
-
-	var payload bytes.Buffer
-	_, err = msgp.UnmarshalAsJSON(&payload, buf)
-	require.NoError(rt.T, err)
-
-	var traces [][]Span
-	err = json.Unmarshal(payload.Bytes(), &traces)
-	require.NoError(rt.T, err)
-
-	if len(traces) == 0 {
-		return
-	}
-	for _, spans := range traces {
-		for _, span := range spans {
-			rt.payloadChan <- span
-		}
-	}
-}
-
-func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) {
-	req := r.Clone(context.Background())
-	defer req.Body.Close()
-
-	buf, err := io.ReadAll(req.Body)
-	require.NoError(rt.T, err)
-
-	var payload []llmobstransport.PushSpanEventsRequest
-	err = json.Unmarshal(buf, &payload)
-	require.NoError(rt.T, err)
-
-	for _, p := range payload {
-		for _, span := range p.Spans {
-			rt.payloadChan <- *span
-		}
-	}
-}
-
-func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) {
-	req := r.Clone(context.Background())
-	defer req.Body.Close()
-
-	buf, err := io.ReadAll(req.Body)
-	require.NoError(rt.T, err)
-
-	var payload llmobstransport.PushMetricsRequest
-	err = json.Unmarshal(buf, &payload)
-	require.NoError(rt.T, err)
-
-	for _, metric := range payload.Data.Attributes.Metrics {
-		rt.payloadChan <- *metric
+// toSpan converts a mock-agent span to the wire-format Span this package
+// exposes.
+func toSpan(s *agenttest.Span) Span {
+	return Span{
+		Name:     s.Operation,
+		Service:  s.Service,
+		Resource: s.Resource,
+		Type:     s.Type,
+		Start:    s.Start,
+		Duration: s.Duration,
+		Meta:     s.Meta,
+		Metrics:  s.Metrics,
+		SpanID:   s.SpanID,
+		TraceID:  s.TraceID,
+		ParentID: s.ParentID,
+		Error:    s.Error,
 	}
 }
 

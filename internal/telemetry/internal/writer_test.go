@@ -6,10 +6,14 @@
 package internal
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
@@ -182,6 +187,7 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	require.Error(t, err)
 	assert.Len(t, results, 1)
 	assert.ErrorContains(t, err, `400 Bad Request`)
+	assert.True(t, results[0].RequestAttempted)
 	assert.Equal(t, http.StatusBadRequest, results[0].StatusCode)
 	assert.True(t, marshalJSONCalled.Load())
 	assert.True(t, payloadReceived.Load())
@@ -253,6 +259,151 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 
 	assert.EqualValues(t, 2, marshalJSONCalled.Load())
 	assert.True(t, payloadReceived2.Load())
+}
+
+func TestWriter_Flush_FileSinkWritesTelemetryPayload(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	outputsDir := t.TempDir()
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, outputsDir)
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var httpCalls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpCalls.Add(1)
+		io.ReadAll(r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	writer, err := NewWriter(WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+		Endpoints: []*http.Request{req},
+	})
+	require.NoError(t, err)
+
+	results, err := writer.Flush(&transport.AppStarted{})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.False(t, results[0].RequestAttempted)
+	assert.Zero(t, results[0].StatusCode)
+	assert.NotZero(t, results[0].PayloadByteSize)
+	assert.Zero(t, httpCalls.Load())
+
+	payloadDir := filepath.Join(outputsDir, "payloads", "telemetry")
+	files, err := os.ReadDir(payloadDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+
+	payloadPath := filepath.Join(payloadDir, files[0].Name())
+	payloadBytes, err := os.ReadFile(payloadPath)
+	require.NoError(t, err)
+	assert.Equal(t, results[0].PayloadByteSize, len(payloadBytes))
+
+	var body transport.Body
+	require.NoError(t, json.Unmarshal(payloadBytes, &body))
+	assert.Equal(t, transport.RequestTypeAppStarted, body.RequestType)
+	assert.Equal(t, int64(1), body.SeqID)
+	assert.Equal(t, "v2", body.APIVersion)
+	require.IsType(t, &transport.AppStarted{}, body.Payload)
+}
+
+func TestWriter_Flush_FileSinkMissingOutputsDir(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, "")
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	writer, err := NewWriter(WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+		Endpoints: []*http.Request{req},
+	})
+	require.NoError(t, err)
+
+	results, err := writer.Flush(&transport.AppClosing{})
+	require.Error(t, err)
+	require.Len(t, results, 1)
+	assert.False(t, results[0].RequestAttempted)
+	assert.ErrorContains(t, err, bazel.UndeclaredOutputsDirEnv)
+}
+
+func TestWriter_Flush_FileSinkOrdering(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	outputsDir := t.TempDir()
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, outputsDir)
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	writer, err := NewWriter(WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+		Endpoints: []*http.Request{req},
+	})
+	require.NoError(t, err)
+
+	_, err = writer.Flush(&transport.AppStarted{})
+	require.NoError(t, err)
+	_, err = writer.Flush(&transport.AppClosing{})
+	require.NoError(t, err)
+
+	payloadDir := filepath.Join(outputsDir, "payloads", "telemetry")
+	files, err := os.ReadDir(payloadDir)
+	require.NoError(t, err)
+	require.Len(t, files, 2)
+
+	names := []string{files[0].Name(), files[1].Name()}
+	sortedNames := append([]string(nil), names...)
+	sort.Strings(sortedNames)
+	assert.Equal(t, sortedNames, names)
+
+	firstBytes, err := os.ReadFile(filepath.Join(payloadDir, names[0]))
+	require.NoError(t, err)
+	secondBytes, err := os.ReadFile(filepath.Join(payloadDir, names[1]))
+	require.NoError(t, err)
+
+	var firstBody, secondBody transport.Body
+	require.NoError(t, json.Unmarshal(firstBytes, &firstBody))
+	require.NoError(t, json.Unmarshal(secondBytes, &secondBody))
+
+	assert.Equal(t, int64(1), firstBody.SeqID)
+	assert.Equal(t, int64(2), secondBody.SeqID)
+	assert.Equal(t, transport.RequestTypeAppStarted, firstBody.RequestType)
+	assert.Equal(t, transport.RequestTypeAppClosing, secondBody.RequestType)
 }
 
 func TestWriterParallel(t *testing.T) {

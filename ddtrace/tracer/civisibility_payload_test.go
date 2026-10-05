@@ -143,7 +143,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newCiVisibilityPayload()
 		s := newBasicSpan("X")
-		s.meta["key"] = strings.Repeat("X", 10*1024)
+		s.meta.Set("key", strings.Repeat("X", 10*1024))
 		e := getCiVisibilityEvent(s)
 		events := make(ciVisibilityEvents, count)
 		for i := range count {

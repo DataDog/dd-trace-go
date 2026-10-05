@@ -8,6 +8,7 @@ Please see our [Support Policy](README.md#go-support-policy)
 
 Please note that we rely on golang.org/x/vuln/vulncheck to indicate whether any of our dependencies have a vulnerability that could impact any of the users of our APIs.
 We have chosen this tool since it works differently from other vulnerability scanners.
+Scanners which rely only on `dd-trace-go`'s `go.mod` may report vulnerabilities that are not reachable in this library's code. Additionally, Go modules only specify the minimum required version of a dependency; a program's main `go.mod` file can specify newer versions that what this library's `go.mod` requires.
 From the [blog post](https://go.dev/blog/vuln): "Govulncheck analyzes your codebase and only surfaces vulnerabilities that actually affect you, based on which functions in your code are transitively calling vulnerable functions."
 
 It's possible that other vulnerability scanners could report that our codebase has vulnerabilities.

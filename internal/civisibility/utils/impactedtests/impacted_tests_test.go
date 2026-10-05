@@ -7,12 +7,14 @@ package impactedtests
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
+	ddlog "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // dummyTestSpan is a dummy implementation of the TestSpan interface for testing purposes.
@@ -92,25 +94,6 @@ func TestSplitLines(t *testing.T) {
 	}
 }
 
-// TestGetTestImpactInfo tests the getTestImpactInfo method of tagsMap.
-func TestGetTestImpactInfo(t *testing.T) {
-	// Create a tagsMap with the necessary tags.
-	testFile := "testfile.go"
-	startLine := 5
-	endLine := 10
-
-	files := getTestImpactInfo(testFile, startLine, endLine)
-	if len(files) != 1 {
-		t.Fatalf("Expected 1 file from getTestImpactInfo, got %d", len(files))
-	}
-	if files[0].file != testFile {
-		t.Errorf("Expected file %q, got %q", testFile, files[0].file)
-	}
-	if files[0].bitmap == nil {
-		t.Errorf("Expected non-nil bitmap for file %q", testFile)
-	}
-}
-
 // TestProcessImpactedTest tests the ProcessImpactedTest method of ImpactedTestAnalyzer.
 func TestProcessImpactedTest(t *testing.T) {
 	// Create a dummy TestSpan with the necessary test source tags.
@@ -172,4 +155,430 @@ func TestNewImpactedTestAnalyzerWithNoBaseBranch(t *testing.T) {
 	// Test that IsImpacted works correctly with empty modified files
 	isImpacted := analyzer.IsImpacted("test", "testfile.go", 1, 10)
 	assert.False(t, isImpacted, "Should not be impacted when no modified files are present")
+}
+
+func TestIsImpactedDecisionCases(t *testing.T) {
+	tests := []struct {
+		name          string
+		modifiedFiles []fileWithBitmap
+		sourceFile    string
+		startLine     int
+		endLine       int
+		want          bool
+	}{
+		{
+			name: "matching file plus intersecting range returns true",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "/workspace/pkg/source_test.go",
+			startLine:  15,
+			endLine:    18,
+			want:       true,
+		},
+		{
+			name: "matching file plus non-intersecting range returns false",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "/workspace/pkg/source_test.go",
+			startLine:  30,
+			endLine:    40,
+			want:       false,
+		},
+		{
+			name: "no matching file returns false",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "/workspace/pkg/other_test.go",
+			startLine:  15,
+			endLine:    18,
+			want:       false,
+		},
+		{
+			name:          "empty modified files returns false",
+			modifiedFiles: []fileWithBitmap{},
+			sourceFile:    "/workspace/pkg/source_test.go",
+			startLine:     15,
+			endLine:       18,
+			want:          false,
+		},
+		{
+			name: "empty source file returns false",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "",
+			startLine:  15,
+			endLine:    18,
+			want:       false,
+		},
+		{
+			name: "zero start line returns true when file matches",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "/workspace/pkg/source_test.go",
+			startLine:  0,
+			endLine:    18,
+			want:       true,
+		},
+		{
+			name: "zero end line returns true when file matches",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+			sourceFile: "/workspace/pkg/source_test.go",
+			startLine:  15,
+			endLine:    0,
+			want:       true,
+		},
+		{
+			name: "nil modified bitmap returns true when file matches",
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go"},
+			},
+			sourceFile: "/workspace/pkg/source_test.go",
+			startLine:  15,
+			endLine:    18,
+			want:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := &ImpactedTestAnalyzer{modifiedFiles: tt.modifiedFiles}
+			got := analyzer.IsImpacted("test", tt.sourceFile, tt.startLine, tt.endLine)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsImpactedInvalidNonZeroRangePanicsBeforeFileMatch(t *testing.T) {
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+		},
+	}
+
+	assert.PanicsWithValue(t, "Invalid range", func() {
+		_ = analyzer.IsImpacted("test", "/workspace/pkg/does_not_match_test.go", 20, 10)
+	})
+}
+
+func TestIsImpactedFirstMatchWins(t *testing.T) {
+	t.Run("first suffix match intersects and second does not", func(t *testing.T) {
+		analyzer := &ImpactedTestAnalyzer{
+			modifiedFiles: []fileWithBitmap{
+				{file: "foo_test.go", bitmap: filebitmap.FromActiveRange(10, 11).GetBuffer()},
+				{file: "pkg/foo_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+			},
+		}
+
+		assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/foo_test.go", 10, 11))
+	})
+
+	t.Run("first suffix match does not intersect and second would intersect", func(t *testing.T) {
+		analyzer := &ImpactedTestAnalyzer{
+			modifiedFiles: []fileWithBitmap{
+				{file: "foo_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+				{file: "pkg/foo_test.go", bitmap: filebitmap.FromActiveRange(10, 11).GetBuffer()},
+			},
+		}
+
+		assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/foo_test.go", 10, 11))
+	})
+}
+
+func TestIsImpactedDecisionCacheKeys(t *testing.T) {
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			{file: "pkg/other_test.go", bitmap: filebitmap.FromActiveRange(30, 40).GetBuffer()},
+		},
+	}
+
+	assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+	assert.True(t, analyzer.IsImpacted("renamed test", "/workspace/pkg/source_test.go", 12, 14))
+	assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/other_test.go", 32, 34))
+	assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 1, 2))
+	assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 20, 20))
+
+	_, sameKeyCached := analyzer.decisionCache.Load(impactCacheKey{sourceFile: "/workspace/pkg/source_test.go", startLine: 12, endLine: 14})
+	_, differentFileCached := analyzer.decisionCache.Load(impactCacheKey{sourceFile: "/workspace/pkg/other_test.go", startLine: 32, endLine: 34})
+	_, differentStartCached := analyzer.decisionCache.Load(impactCacheKey{sourceFile: "/workspace/pkg/source_test.go", startLine: 1, endLine: 2})
+	_, differentEndCached := analyzer.decisionCache.Load(impactCacheKey{sourceFile: "/workspace/pkg/source_test.go", startLine: 20, endLine: 20})
+
+	assert.True(t, sameKeyCached)
+	assert.True(t, differentFileCached)
+	assert.True(t, differentStartCached)
+	assert.True(t, differentEndCached)
+}
+
+func TestIsImpactedDecisionCacheStability(t *testing.T) {
+	t.Run("positive cached result survives modified files mutation", func(t *testing.T) {
+		analyzer := &ImpactedTestAnalyzer{
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			},
+		}
+
+		assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+		analyzer.modifiedFiles = []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+		}
+		assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+	})
+
+	t.Run("negative cached result survives modified files mutation", func(t *testing.T) {
+		analyzer := &ImpactedTestAnalyzer{
+			modifiedFiles: []fileWithBitmap{
+				{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+			},
+		}
+
+		assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+		analyzer.modifiedFiles = []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+		}
+		assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+	})
+}
+
+func TestIsImpactedPreparedFilesFreezeAfterFirstUse(t *testing.T) {
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+		},
+	}
+
+	assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+	analyzer.modifiedFiles = []fileWithBitmap{
+		{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+	}
+	assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 15, 16))
+
+	freshAnalyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+		},
+	}
+	assert.True(t, freshAnalyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 15, 16))
+}
+
+func TestIsImpactedEmptySourceDoesNotPrepareModifiedFiles(t *testing.T) {
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(1, 2).GetBuffer()},
+		},
+	}
+
+	assert.False(t, analyzer.IsImpacted("test", "", 12, 14))
+	analyzer.modifiedFiles = []fileWithBitmap{
+		{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+	}
+
+	assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 15, 16))
+}
+
+func TestIsImpactedDebugLogsReplayOnCacheHit(t *testing.T) {
+	oldLevel := ddlog.GetLevel()
+	ddlog.SetLevel(ddlog.LevelDebug)
+	defer ddlog.SetLevel(oldLevel)
+
+	recordLogger := new(ddlog.RecordLogger)
+	defer ddlog.UseLogger(recordLogger)()
+
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			{file: "pkg/no_line_info_test.go"},
+		},
+	}
+
+	assert.True(t, analyzer.IsImpacted("first test", "/workspace/pkg/source_test.go", 12, 14))
+	assert.True(t, analyzer.IsImpacted("second test", "/workspace/pkg/source_test.go", 12, 14))
+	assert.True(t, analyzer.IsImpacted("no line first", "/workspace/pkg/no_line_info_test.go", 0, 0))
+	assert.True(t, analyzer.IsImpacted("no line second", "/workspace/pkg/no_line_info_test.go", 0, 0))
+
+	logs := recordLogger.Logs()
+	assert.Equal(t, 4, countLogsContaining(logs, "DiffFile found"))
+	assert.Equal(t, 2, countLogsContaining(logs, "Intersecting lines"))
+	assert.Equal(t, 2, countLogsContaining(logs, "No line info found"))
+	assert.True(t, hasLogContaining(logs, "Marking test first test as modified"))
+	assert.True(t, hasLogContaining(logs, "Marking test second test as modified"))
+}
+
+func TestBitmapIntersectsLineRange(t *testing.T) {
+	tests := []struct {
+		name      string
+		bitmap    []byte
+		startLine int
+		endLine   int
+		want      bool
+	}{
+		{
+			name:      "first bit in a byte",
+			bitmap:    []byte{0b10000000},
+			startLine: 1,
+			endLine:   1,
+			want:      true,
+		},
+		{
+			name:      "middle bit in a byte",
+			bitmap:    []byte{0b00010000},
+			startLine: 4,
+			endLine:   4,
+			want:      true,
+		},
+		{
+			name:      "last bit in a byte",
+			bitmap:    []byte{0b00000001},
+			startLine: 8,
+			endLine:   8,
+			want:      true,
+		},
+		{
+			name:      "range crossing byte boundaries",
+			bitmap:    []byte{0b00000001, 0b10000000},
+			startLine: 8,
+			endLine:   9,
+			want:      true,
+		},
+		{
+			name:      "range before active bits",
+			bitmap:    []byte{0b00000001},
+			startLine: 1,
+			endLine:   7,
+			want:      false,
+		},
+		{
+			name:      "range after bitmap length",
+			bitmap:    []byte{0b11111111},
+			startLine: 9,
+			endLine:   12,
+			want:      false,
+		},
+		{
+			name:      "range partly beyond bitmap length",
+			bitmap:    []byte{0b00000001},
+			startLine: 8,
+			endLine:   12,
+			want:      true,
+		},
+		{
+			name:      "empty non-nil bitmap",
+			bitmap:    []byte{},
+			startLine: 1,
+			endLine:   8,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := bitmapIntersectsLineRange(tt.bitmap, tt.startLine, tt.endLine)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBitmapIntersectsLineRangeMatchesFileBitmapIntersection(t *testing.T) {
+	modifiedBitmaps := []struct {
+		name   string
+		bitmap []byte
+	}{
+		{name: "empty bitmap", bitmap: []byte{}},
+		{name: "single active bit", bitmap: filebitmap.FromActiveRange(4, 4).GetBuffer()},
+		{name: "multiple active bits in one byte", bitmap: filebitmap.FromActiveRange(2, 6).GetBuffer()},
+		{name: "range crosses byte boundary", bitmap: filebitmap.FromActiveRange(7, 10).GetBuffer()},
+		{name: "sparse manual bitmap", bitmap: []byte{0b10000001, 0b00010000, 0b00000001}},
+	}
+	testRanges := []lineRange{
+		{start: 1, end: 1},
+		{start: 1, end: 8},
+		{start: 4, end: 4},
+		{start: 5, end: 9},
+		{start: 8, end: 12},
+		{start: 11, end: 20},
+		{start: 21, end: 24},
+		{start: 25, end: 40},
+	}
+
+	for _, modifiedBitmap := range modifiedBitmaps {
+		t.Run(modifiedBitmap.name, func(t *testing.T) {
+			for _, testRange := range testRanges {
+				testBitmap := filebitmap.FromActiveRange(testRange.start, testRange.end)
+				modifiedFileBitmap := filebitmap.NewFileBitmapFromBytes(modifiedBitmap.bitmap)
+				want := testBitmap.IntersectsWith(modifiedFileBitmap)
+
+				got := bitmapIntersectsLineRange(modifiedBitmap.bitmap, testRange.start, testRange.end)
+				assert.Equal(t, want, got, "range %d-%d", testRange.start, testRange.end)
+			}
+		})
+	}
+}
+
+func TestBitmapIntersectsLineRangeInvalidRangesPanic(t *testing.T) {
+	tests := []struct {
+		name      string
+		startLine int
+		endLine   int
+	}{
+		{name: "negative start", startLine: -1, endLine: 5},
+		{name: "start after end", startLine: 10, endLine: 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.PanicsWithValue(t, "Invalid range", func() {
+				_ = bitmapIntersectsLineRange([]byte{0xff}, tt.startLine, tt.endLine)
+			})
+		})
+	}
+}
+
+func TestBitmapIntersectsLineRangeAllocs(t *testing.T) {
+	bitmap := filebitmap.FromActiveRange(100, 200).GetBuffer()
+	allocs := testing.AllocsPerRun(1000, func() {
+		_ = bitmapIntersectsLineRange(bitmap, 150, 160)
+	})
+	assert.Zero(t, allocs)
+}
+
+func TestIsImpactedConcurrentAccess(t *testing.T) {
+	analyzer := &ImpactedTestAnalyzer{
+		modifiedFiles: []fileWithBitmap{
+			{file: "pkg/source_test.go", bitmap: filebitmap.FromActiveRange(10, 20).GetBuffer()},
+			{file: "pkg/other_test.go", bitmap: filebitmap.FromActiveRange(30, 40).GetBuffer()},
+			{file: "pkg/no_line_info_test.go"},
+		},
+	}
+
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Go(func() {
+			assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
+			assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 1, 2))
+			assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/other_test.go", 35, 36))
+			assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/no_line_info_test.go", 0, 0))
+			assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/missing_test.go", 1, 2))
+		})
+	}
+	wg.Wait()
+}
+
+func countLogsContaining(logs []string, fragment string) int {
+	count := 0
+	for _, log := range logs {
+		if strings.Contains(log, fragment) {
+			count++
+		}
+	}
+	return count
+}
+
+func hasLogContaining(logs []string, fragment string) bool {
+	return countLogsContaining(logs, fragment) > 0
 }

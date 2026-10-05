@@ -11,11 +11,13 @@ import (
 	_ "github.com/campoy/embedmd"
 	_ "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 	_ "github.com/rhysd/actionlint/cmd/actionlint"
+	_ "golang.org/x/exp/cmd/apidiff"
 	_ "golang.org/x/perf/cmd/benchstat"
 	_ "golang.org/x/tools/cmd/goimports"
 	_ "golang.org/x/vuln/cmd/govulncheck"
 	_ "google.golang.org/grpc/cmd/protoc-gen-go-grpc"
 	_ "google.golang.org/protobuf/cmd/protoc-gen-go"
 	_ "gotest.tools/gotestsum"
+	_ "gvisor.dev/gvisor/tools/checklocks/cmd/checklocks"
 	_ "mvdan.cc/sh/v3/cmd/shfmt"
 )

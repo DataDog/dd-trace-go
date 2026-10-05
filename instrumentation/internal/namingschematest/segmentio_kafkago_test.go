@@ -112,6 +112,10 @@ var segmentioKafkaGo = harness.TestCase{
 		DDService:       []string{"kafka", harness.TestDDService},
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageSegmentioKafkaGo), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "kafka.produce", spans[0].OperationName())

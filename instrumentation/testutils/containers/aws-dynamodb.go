@@ -11,7 +11,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
@@ -24,7 +23,7 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 	exposedPort := "8000/tcp"
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "amazon/dynamodb-local:latest", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+			Image:        Image("dynamodb"),
 			ExposedPorts: []string{exposedPort},
 			WaitingFor:   wait.ForHTTP("").WithStatusCodeMatcher(func(int) bool { return true }),
 			WorkingDir:   "/home/dynamodblocal",
@@ -46,7 +45,7 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	mappedPort, err := container.MappedPort(ctx, nat.Port(exposedPort))
+	mappedPort, err := container.MappedPort(ctx, exposedPort)
 	require.NoError(t, err)
 
 	host, err := container.Host(ctx)

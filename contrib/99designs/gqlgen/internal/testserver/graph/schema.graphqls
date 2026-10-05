@@ -4,4 +4,9 @@
 
 type Query {
     withError: ID
+    topLevel(id: String!): TopLevel!
+}
+
+type TopLevel {
+    nested(id: String!): String!
 }

@@ -111,6 +111,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Framework:     "github.com/gorilla/mux",
 		Service:       r.config.serviceName,
+		ServiceSource: r.config.serviceSource,
 		Resource:      resource,
 		FinishOpts:    r.config.finishOpts,
 		SpanOpts:      spanopts,

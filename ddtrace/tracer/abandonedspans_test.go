@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
@@ -357,7 +357,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 			stop()
 			assert.NotContains(tp.Logs(), msg)
-			assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))
+			assert.Contains(tp.Logs(), warnPrefix+"Too many abandoned spans. Truncating message.")
 		})
 	})
 }

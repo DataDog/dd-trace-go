@@ -1,0 +1,11 @@
+issuer: https://token.actions.githubusercontent.com
+
+subject_pattern: "repo:DataDog/dd-trace-go:.*"
+
+claim_pattern:
+  repository: DataDog/dd-trace-go
+  job_workflow_ref: DataDog/dd-trace-go/\.github/workflows/static-checks\.yml@.*
+
+permissions:
+  pull_requests: write
+  checks: write

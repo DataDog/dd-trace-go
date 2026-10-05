@@ -8,7 +8,6 @@ package utils
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,26 +43,41 @@ type (
 )
 
 var (
-	// codeowners holds the parsed CODEOWNERS file data.
-	codeowners      *CodeOwners
+	// codeowners holds the parsed CODEOWNERS file data after discovery succeeds.
+	codeowners *CodeOwners
+
+	// codeownersLookupDone distinguishes "not looked up yet" from "looked up and no CODEOWNERS file exists".
+	codeownersLookupDone bool
+
+	// codeownersMutex protects CODEOWNERS discovery state.
 	codeownersMutex sync.Mutex
 )
 
-// GetCodeOwners retrieves and caches the CODEOWNERS data.
+// GetCodeOwners retrieves and caches CODEOWNERS discovery for this process.
 // It looks for the CODEOWNERS file in various standard locations within the CI workspace.
+// Successful parsed data is cached, and true missing-file discovery results are cached as nil.
 // This function is thread-safe due to the use of a mutex.
 //
 // Returns:
 //
 //	A pointer to a CodeOwners struct containing the parsed CODEOWNERS data, or nil if not found.
 func GetCodeOwners() *CodeOwners {
+	codeOwners, _ := GetCodeOwnersWithStatus()
+	return codeOwners
+}
+
+// GetCodeOwnersWithStatus retrieves CODEOWNERS and reports whether discovery
+// reached a cacheable result. A false completion status means a non-missing
+// read or parse error occurred and a later call should retry discovery.
+func GetCodeOwnersWithStatus() (*CodeOwners, bool) {
 	codeownersMutex.Lock()
 	defer codeownersMutex.Unlock()
 
-	if codeowners != nil {
-		return codeowners
+	if codeownersLookupDone {
+		return codeowners, true
 	}
 
+	hasNonMissingError := false
 	tags := GetCITags()
 	if v, ok := tags[constants.CIWorkspacePath]; ok {
 		paths := []string{
@@ -75,7 +89,10 @@ func GetCodeOwners() *CodeOwners {
 		for _, path := range paths {
 			if cow, err := parseCodeOwners(path); err == nil {
 				codeowners = cow
-				return codeowners
+				codeownersLookupDone = true
+				return codeowners, true
+			} else if !os.IsNotExist(err) {
+				hasNonMissingError = true
 			}
 		}
 	}
@@ -84,11 +101,26 @@ func GetCodeOwners() *CodeOwners {
 	for _, path := range []string{"CODEOWNERS", filepath.Join(filepath.Dir(os.Args[0]), "CODEOWNERS")} {
 		if cow, err := parseCodeOwners(path); err == nil {
 			codeowners = cow
-			return codeowners
+			codeownersLookupDone = true
+			return codeowners, true
+		} else if !os.IsNotExist(err) {
+			hasNonMissingError = true
 		}
 	}
 
-	return nil
+	if !hasNonMissingError {
+		codeownersLookupDone = true
+	}
+	return nil, codeownersLookupDone
+}
+
+// ResetCodeOwnersForTesting clears the process-local CODEOWNERS discovery cache.
+func ResetCodeOwnersForTesting() {
+	codeownersMutex.Lock()
+	defer codeownersMutex.Unlock()
+
+	codeowners = nil
+	codeownersLookupDone = false
 }
 
 // parseCodeOwners reads and parses the CODEOWNERS file located at the given filePath.
@@ -111,7 +143,7 @@ func parseCodeOwners(filePath string) (*CodeOwners, error) {
 // It returns an error if the file cannot be read or parsed properly.
 func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	if filePath == "" {
-		return nil, fmt.Errorf("filePath cannot be empty")
+		return nil, errors.New("filePath cannot be empty")
 	}
 
 	file, err := os.Open(filePath)
@@ -231,6 +263,9 @@ func (co *CodeOwners) GetSection(section string) *Section {
 // Match finds the first entry in the CodeOwners that matches the given value.
 // It returns a pointer to the matched entry, or nil if no match is found.
 func (co *CodeOwners) Match(value string) (*Entry, bool) {
+	if co == nil {
+		return nil, false
+	}
 	var matchedEntries []Entry
 
 	for _, section := range co.Sections {

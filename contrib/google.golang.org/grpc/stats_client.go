@@ -37,8 +37,10 @@ func (h *clientStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		rti.FullMethodName,
 		h.cfg.spanName,
 		h.cfg.serviceName.String(),
+		h.cfg.serviceSource,
 		spanOpts...,
 	)
+	ctx = context.WithValue(ctx, fullMethodNameKey{}, rti.FullMethodName)
 	ctx = injectSpanIntoContext(ctx)
 	return ctx
 }
@@ -59,7 +61,8 @@ func (h *clientStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 			span.SetTag(ext.TargetPort, port)
 		}
 	case *stats.End:
-		finishWithError(span, rs.Error, h.cfg)
+		fullMethod, _ := ctx.Value(fullMethodNameKey{}).(string)
+		finishWithError(span, rs.Error, fullMethod, h.cfg)
 	}
 }
 

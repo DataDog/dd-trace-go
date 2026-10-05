@@ -41,4 +41,5 @@ type Message interface {
 type KafkaConfig struct {
 	BootstrapServers string
 	ConsumerGroupID  string
+	ClusterID        string
 }

@@ -189,8 +189,9 @@ for function_name in "${LAMBDA_HANDLERS[@]}"; do
         echo "Overwriting log snapshot for $function_snapshot_path"
         echo "$logs" >$function_snapshot_path
     else
-        # Compare new logs to snapshots
-        diff_output=$(echo "$logs" | diff - $function_snapshot_path)
+        # Compare new logs to snapshots (sort both sides to avoid flaky failures
+        # from non-deterministic log ordering in Lambda/CloudWatch)
+        diff_output=$(diff <(echo "$logs" | sort) <(sort $function_snapshot_path))
         if [ $? -eq 1 ]; then
             echo "Failed: Mismatch found between new $function_name logs (first) and snapshot (second):"
             echo "$diff_output"

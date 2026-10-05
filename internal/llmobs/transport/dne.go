@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -66,9 +67,13 @@ type ExperimentView struct {
 }
 
 type DatasetRecordCreate struct {
-	Input          any `json:"input,omitempty"`
-	ExpectedOutput any `json:"expected_output,omitempty"`
-	Metadata       any `json:"metadata,omitempty"`
+	// ID is supplied by the client and persisted by the backend as the record's
+	// id. Sending it means the caller already knows the id of everything it
+	// inserted and does not have to recover it from the response.
+	ID             string `json:"id,omitempty"`
+	Input          any    `json:"input,omitempty"`
+	ExpectedOutput any    `json:"expected_output,omitempty"`
+	Metadata       any    `json:"metadata,omitempty"`
 }
 
 type DatasetRecordUpdate struct {
@@ -76,12 +81,6 @@ type DatasetRecordUpdate struct {
 	Input          any    `json:"input,omitempty"`
 	ExpectedOutput *any   `json:"expected_output,omitempty"`
 	Metadata       any    `json:"metadata,omitempty"`
-}
-
-type ErrorMessage struct {
-	Message string `json:"message,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Stack   string `json:"stack,omitempty"`
 }
 
 // ---------- Requests ----------
@@ -124,6 +123,12 @@ type RequestAttributesExperimentCreate struct {
 	Config         map[string]any `json:"config,omitempty"`
 	DatasetVersion int            `json:"dataset_version,omitempty"`
 	EnsureUnique   bool           `json:"ensure_unique,omitempty"`
+	RunCount       int            `json:"run_count,omitempty"`
+}
+
+type RequestAttributesExperimentUpdate struct {
+	Status string `json:"status,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 type RequestAttributesExperimentPushEvents struct {
@@ -133,18 +138,28 @@ type RequestAttributesExperimentPushEvents struct {
 }
 
 type ExperimentEvalMetricEvent struct {
-	MetricSource     string        `json:"metric_source,omitempty"`
-	SpanID           string        `json:"span_id,omitempty"`
-	TraceID          string        `json:"trace_id,omitempty"`
-	TimestampMS      int64         `json:"timestamp_ms,omitempty"`
-	MetricType       string        `json:"metric_type,omitempty"`
-	Label            string        `json:"label,omitempty"`
-	CategoricalValue *string       `json:"categorical_value,omitempty"`
-	ScoreValue       *float64      `json:"score_value,omitempty"`
-	BooleanValue     *bool         `json:"boolean_value,omitempty"`
-	Error            *ErrorMessage `json:"error,omitempty"`
-	Tags             []string      `json:"tags,omitempty"`
-	ExperimentID     string        `json:"experiment_id,omitempty"`
+	MetricSource     string         `json:"metric_source,omitempty"`
+	SpanID           string         `json:"span_id,omitempty"`
+	TraceID          string         `json:"trace_id,omitempty"`
+	TimestampMS      int64          `json:"timestamp_ms,omitempty"`
+	MetricType       EvalMetricType `json:"metric_type,omitempty"`
+	Label            string         `json:"label,omitempty"`
+	CategoricalValue *string        `json:"categorical_value,omitempty"`
+	ScoreValue       *float64       `json:"score_value,omitempty"`
+	BooleanValue     *bool          `json:"boolean_value,omitempty"`
+	Error            *ErrorMessage  `json:"error,omitempty"`
+	Tags             []string       `json:"tags,omitempty"`
+	ExperimentID     string         `json:"experiment_id,omitempty"`
+
+	// Reasoning is a free-form explanation for the evaluation result
+	// (e.g. an LLM judge's reasoning paragraph).
+	Reasoning string `json:"reasoning,omitempty"`
+	// Assessment is an optional categorical assessment of the result.
+	// Conventional values are "pass" and "fail".
+	Assessment string `json:"assessment,omitempty"`
+	// EvalMetricMetadata is arbitrary structured metadata about this
+	// specific evaluation. Distinct from span metadata.
+	EvalMetricMetadata map[string]any `json:"eval_metric_metadata,omitempty"`
 }
 
 type (
@@ -156,6 +171,7 @@ type (
 	CreateProjectRequest = Request[RequestAttributesProjectCreate]
 
 	CreateExperimentRequest     = Request[RequestAttributesExperimentCreate]
+	UpdateExperimentRequest     = Request[RequestAttributesExperimentUpdate]
 	PushExperimentEventsRequest = Request[RequestAttributesExperimentPushEvents]
 )
 
@@ -201,7 +217,7 @@ func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string
 	datasetPath := fmt.Sprintf("%s/%s/datasets?%s", endpointPrefixDNE, url.PathEscape(projectID), q.Encode())
 	method := http.MethodGet
 
-	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +257,7 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description, projec
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +285,7 @@ func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) err
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -285,7 +301,7 @@ func (c *Transport) BatchUpdateDataset(
 	insert []DatasetRecordCreate,
 	update []DatasetRecordUpdate,
 	delete []string,
-) (int, []string, error) {
+) (int, error) {
 	path := fmt.Sprintf("%s/datasets/%s/batch_update", endpointPrefixDNE, url.PathEscape(datasetID))
 	method := http.MethodPost
 	body := BatchUpdateDatasetRequest{
@@ -295,57 +311,59 @@ func (c *Transport) BatchUpdateDataset(
 				InsertRecords: insert,
 				UpdateRecords: update,
 				DeleteRecords: delete,
-				Deduplicate:   AnyPtr(false),
+				Deduplicate:   new(false),
 			},
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
-		return -1, nil, err
+		return -1, err
 	}
 	if result.statusCode != http.StatusOK {
-		return -1, nil, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+		return -1, fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
 	var resp BatchUpdateDatasetResponse
 	if err := json.Unmarshal(result.body, &resp); err != nil {
-		return -1, nil, fmt.Errorf("failed to decode json response: %w", err)
+		return -1, fmt.Errorf("failed to decode json response: %w", err)
 	}
 
-	// FIXME: we don't get version numbers in responses to deletion requests
-	// TODO(rarguelloF): the backend could return a better response here...
-	var (
-		newDatasetVersion = -1
-		newRecordIDs      []string
-	)
-	if len(resp.Data) > 0 {
-		if resp.Data[0].Attributes.Version > 0 {
-			newDatasetVersion = resp.Data[0].Attributes.Version
-		}
+	// The response carries one entry per affected record, deletions included:
+	// those come back with deleted_at and ttl set. Nothing here correlates
+	// entries with what was sent, because inserts already carry a client-supplied
+	// id, so the only thing worth reading is the new version. Every entry in a
+	// batch shares it, so the first will do.
+	//
+	// A deletes-only batch returns no version, in which case the caller falls
+	// back to incrementing.
+	newDatasetVersion := -1
+	if len(resp.Data) > 0 && resp.Data[0].Attributes.Version > 0 {
+		newDatasetVersion = resp.Data[0].Attributes.Version
 	}
-	if len(resp.Data) == len(insert)+len(update) {
-		// new records are at the end of the slice
-		for _, rec := range resp.Data[len(update):] {
-			newRecordIDs = append(newRecordIDs, rec.ID)
-		}
-	} else {
-		log.Warn("llmobs/internal/transport: BatchUpdateDataset: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
-	}
-	return newDatasetVersion, newRecordIDs, nil
+	return newDatasetVersion, nil
 }
 
 // GetDatasetRecordsPage fetches a single page of records for the given dataset.
+// projectID is the LLM Observability project UUID that owns the dataset.
+// version, when non-nil, requests a specific historical snapshot; nil fetches the latest version.
 // Returns the records, the cursor for the next page (empty string if no more pages), and any error.
-func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor string) ([]DatasetRecordView, string, error) {
-	method := http.MethodGet
-	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(datasetID))
+func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datasetID, cursor string, version *int) ([]DatasetRecordView, string, error) {
+	recordsPath := fmt.Sprintf("%s/%s/datasets/%s/records", endpointPrefixDNEStable,
+		url.PathEscape(projectID), url.PathEscape(datasetID))
 
+	q := url.Values{}
+	if version != nil {
+		q.Set("filter[version]", strconv.Itoa(*version))
+	}
 	if cursor != "" {
-		recordsPath = fmt.Sprintf("%s?page[cursor]=%s", recordsPath, url.QueryEscape(cursor))
+		q.Set("page[cursor]", cursor)
+	}
+	if len(q) > 0 {
+		recordsPath = recordsPath + "?" + q.Encode()
 	}
 
-	result, err := c.jsonRequest(ctx, method, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, datasetRecordsLimits)
 	if err != nil {
 		return nil, "", err
 	}
@@ -353,6 +371,9 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
+	// The v2 records endpoint speaks JSON:API like the rest of these endpoints:
+	// each item carries id at the top level and the record fields under
+	// "attributes".
 	var recordsResp GetDatasetRecordsResponse
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
@@ -369,15 +390,23 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor
 }
 
 // GetDatasetWithRecords fetches the given Dataset and all its records from DataDog.
+// version, when non-nil, requests a specific historical snapshot; nil fetches the latest version.
 // This eagerly fetches all pages of records.
-func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string) (*DatasetView, []DatasetRecordView, error) {
+func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string, version *int) (*DatasetView, []DatasetRecordView, error) {
 	// 1) Fetch dataset by name
 	ds, err := c.GetDatasetByName(ctx, name, projectID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 2) Fetch all records with pagination support
+	// 2) Fetch all records with pagination support.
+	// The v2 records endpoint has no per-record version field, so stamp the effective
+	// version (requested snapshot or the dataset's current version) onto every record.
+	effectiveVersion := ds.CurrentVersion
+	if version != nil {
+		effectiveVersion = *version
+	}
+
 	var allRecords []DatasetRecordView
 	nextCursor := ""
 	pageNum := 0
@@ -385,11 +414,14 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID s
 	for {
 		log.Debug("llmobs/transport: fetching dataset records page %d", pageNum)
 
-		records, cursor, err := c.GetDatasetRecordsPage(ctx, ds.ID, nextCursor)
+		records, cursor, err := c.GetDatasetRecordsPage(ctx, projectID, ds.ID, nextCursor, version)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get dataset records failed on page %d: %w", pageNum, err)
 		}
 
+		for i := range records {
+			records[i].Version = effectiveVersion
+		}
 		allRecords = append(allRecords, records...)
 
 		nextCursor = cursor
@@ -416,7 +448,7 @@ func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*Proje
 			},
 		},
 	}
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -441,6 +473,7 @@ func (c *Transport) CreateExperiment(
 	expConfig map[string]any,
 	tags []string,
 	description string,
+	runs int,
 ) (*ExperimentView, error) {
 	path := endpointPrefixDNE + "/experiments"
 	method := http.MethodPost
@@ -461,11 +494,14 @@ func (c *Transport) CreateExperiment(
 				Config:         expConfig,
 				DatasetVersion: datasetVersion,
 				EnsureUnique:   true,
+				RunCount:       runs,
 			},
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	// The response echoes back the config supplied above, so it can be as large
+	// as the request was.
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, payloadLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +517,29 @@ func (c *Transport) CreateExperiment(
 	exp.ID = resp.Data.ID
 
 	return &exp, nil
+}
+
+func (c *Transport) UpdateExperimentStatus(ctx context.Context, id, status, errSummary string) error {
+	path := fmt.Sprintf("%s/experiments/%s", endpointPrefixDNE, url.PathEscape(id))
+
+	body := UpdateExperimentRequest{
+		Data: RequestData[RequestAttributesExperimentUpdate]{
+			Type: resourceTypeExperiments,
+			Attributes: RequestAttributesExperimentUpdate{
+				Status: status,
+				Error:  errSummary,
+			},
+		},
+	}
+
+	result, err := c.jsonRequest(ctx, http.MethodPatch, path, subdomainDNE, body, defaultLimits)
+	if err != nil {
+		return err
+	}
+	if result.statusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
+	}
+	return nil
 }
 
 func (c *Transport) PushExperimentEvents(
@@ -503,7 +562,7 @@ func (c *Transport) PushExperimentEvents(
 		},
 	}
 
-	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultLimits)
 	if err != nil {
 		return err
 	}
@@ -568,9 +627,9 @@ func (c *Transport) BulkUploadDataset(ctx context.Context, datasetID string, rec
 	body.WriteString("--" + boundary + "--" + crlf)
 
 	path := fmt.Sprintf("%s/datasets/%s/records/upload", endpointPrefixDNE, url.PathEscape(datasetID))
-	contentType := fmt.Sprintf("multipart/form-data; boundary=%s", boundary)
+	contentType := "multipart/form-data; boundary=" + boundary
 
-	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadTimeout)
+	result, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadLimits)
 	if err != nil {
 		return err
 	}

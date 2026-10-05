@@ -1,9 +1,3 @@
 module github.com/DataDog/dd-trace-go/v2/scripts/autoreleasetagger
 
-go 1.25.0
-
-require github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
-
-require golang.org/x/mod v0.32.0 // indirect
-
-replace github.com/DataDog/dd-trace-go/v2 => ../..
+go 1.26.0

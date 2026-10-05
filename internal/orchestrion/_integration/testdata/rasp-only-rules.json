@@ -152,6 +152,55 @@
                 "stack_trace",
                 "block"
             ]
+        },
+        {
+            "id": "rasp-932-110",
+            "name": "OS command injection exploit",
+            "tags": {
+                "type": "command_injection",
+                "category": "vulnerability_trigger",
+                "cwe": "77",
+                "capec": "1000/152/248/88",
+                "confidence": "1",
+                "module": "rasp"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "resource": [
+                            {
+                                "address": "server.sys.exec.cmd"
+                            }
+                        ],
+                        "params": [
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            },
+                            {
+                                "address": "graphql.server.all_resolvers"
+                            },
+                            {
+                                "address": "graphql.server.resolver"
+                            }
+                        ]
+                    },
+                    "operator": "cmdi_detector"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "stack_trace",
+                "block"
+            ]
         }
     ],
     "rules_data": []

@@ -15,6 +15,7 @@ package configtelemetry
 import (
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -34,36 +35,31 @@ func nextSeqID() uint64 {
 	return seqID.Add(1)
 }
 
-// Report reports a configuration value from a non-default configuration source.
-func Report(name string, value any, origin telemetry.Origin) {
-	telemetry.RegisterAppConfigs(telemetry.Configuration{
-		Name:   name,
-		Value:  value,
-		Origin: origin,
-		ID:     telemetry.EmptyID,
-		SeqID:  nextSeqID(),
-	})
-}
-
-// ReportWithID reports a non-default configuration value, including the config source's ID.
-// Use this for sources that carry a config_id (e.g. declarative config).
-func ReportWithID(name string, value any, origin telemetry.Origin, id string) {
+func report(name string, value any, origin telemetry.Origin, id string, seqID uint64) {
+	if env.IsSensitive(name) {
+		return
+	}
 	telemetry.RegisterAppConfigs(telemetry.Configuration{
 		Name:   name,
 		Value:  value,
 		Origin: origin,
 		ID:     id,
-		SeqID:  nextSeqID(),
+		SeqID:  seqID,
 	})
+}
+
+// Report reports a configuration value from a non-default configuration source.
+func Report(name string, value any, origin telemetry.Origin) {
+	report(name, value, origin, telemetry.EmptyID, nextSeqID())
+}
+
+// ReportWithID reports a non-default configuration value, including the config source's ID.
+// Use this for sources that carry a config_id (e.g. declarative config).
+func ReportWithID(name string, value any, origin telemetry.Origin, id string) {
+	report(name, value, origin, id, nextSeqID())
 }
 
 // ReportDefault reports the value for a configuration key from the 'default' configuration source.
 func ReportDefault(name string, value any) {
-	telemetry.RegisterAppConfigs(telemetry.Configuration{
-		Name:   name,
-		Value:  value,
-		Origin: telemetry.OriginDefault,
-		ID:     telemetry.EmptyID,
-		SeqID:  defaultSeqID,
-	})
+	report(name, value, telemetry.OriginDefault, telemetry.EmptyID, defaultSeqID)
 }

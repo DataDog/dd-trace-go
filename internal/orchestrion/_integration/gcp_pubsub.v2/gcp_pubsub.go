@@ -26,6 +26,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -126,9 +127,9 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"service":  "gcp_pubsub.v2.test",
 			},
 			Meta: map[string]string{
-				"span.kind":    "producer",
-				"component":    "cloud.google.com/go/pubsub.v2",
-				"ordering_key": "ordering-key",
+				"span.kind":           "producer",
+				"component":           "cloud.google.com/go/pubsub.v2",
+				ext.PubsubOrderingKey: "ordering-key",
 			},
 			Children: trace.Traces{
 				{
@@ -139,12 +140,12 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"service":  "gcp_pubsub.v2.test",
 					},
 					Meta: map[string]string{
-						"span.kind":        "consumer",
-						"component":        "cloud.google.com/go/pubsub.v2",
-						"messaging.system": "googlepubsub",
-						"ordering_key":     "ordering-key",
-						"publish_time":     tc.publishTime.String(),
-						"message_id":       tc.messageID,
+						"span.kind":           "consumer",
+						"component":           "cloud.google.com/go/pubsub.v2",
+						"messaging.system":    "googlepubsub",
+						ext.PubsubOrderingKey: "ordering-key",
+						ext.PubsubPublishTime: tc.publishTime.String(),
+						ext.PubsubMessageID:   tc.messageID,
 					},
 				},
 			},

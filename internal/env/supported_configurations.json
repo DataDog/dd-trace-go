@@ -15,6 +15,55 @@
         "default": "localhost"
       }
     ],
+    "DD_APIM_CALLOUT_HEALTHCHECK_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8081"
+      }
+    ],
+    "DD_APIM_CALLOUT_HOST": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "0.0.0.0"
+      }
+    ],
+    "DD_APIM_CALLOUT_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8080"
+      }
+    ],
+    "DD_APIM_CALLOUT_REQUEST_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "30s"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_CERT_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_KEY_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_API_KEY": [
       {
         "implementation": "B",
@@ -22,7 +71,8 @@
         "default": null,
         "aliases": [
           "DD-API-KEY"
-        ]
+        ],
+        "sensitive": true
       }
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
@@ -86,6 +136,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_APPSEC_AGENTIC_ONBOARDING": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
       }
     ],
     "DD_APPSEC_BODY_PARSING_SIZE_LIMIT": [
@@ -186,7 +243,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
@@ -210,6 +268,27 @@
         "default": null
       }
     ],
+    "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
+      {
+        "implementation": "C",
+        "type": "boolean",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "-1"
+      }
+    ],
     "DD_CIVISIBILITY_ENABLED": [
       {
         "implementation": "A",
@@ -225,6 +304,13 @@
       }
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -245,11 +331,67 @@
         "default": "false"
       }
     ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_ATTEMPT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_REASON": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_CIVISIBILITY_LOGS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_EXECUTION_MODE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "in_process"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
@@ -271,6 +413,27 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_CODE_COVERAGE_FLAGS": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_CRASHTRACKING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CUSTOM_PARENT_ID": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_CUSTOM_TRACE_ID": [
@@ -308,6 +471,13 @@
         "default": "8125"
       }
     ],
+    "DD_DOGSTATSD_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "http://localhost:8125"
+      }
+    ],
     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [
       {
         "implementation": "A",
@@ -329,6 +499,20 @@
         "default": "false"
       }
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS": [
+      {
+        "implementation": "B",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       {
         "implementation": "B",
@@ -341,6 +525,49 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "agentless"
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null,
+        "sensitive": true
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "30"
+      }
+    ],
+    "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "5"
+      }
+    ],
+    "DD_FEATURE_FLAGS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_GIT_BRANCH": [
@@ -434,6 +661,13 @@
         "default": null
       }
     ],
+    "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_HAPROXY_SPOA_HEALTHCHECK_PORT": [
       {
         "implementation": "A",
@@ -497,6 +731,13 @@
         "default": null
       }
     ],
+    "DD_LAMBDA_STRIP_INJECTED_CONTEXT": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_LLMOBS_AGENTLESS_ENABLED": [
       {
         "implementation": "C",
@@ -523,6 +764,40 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_CACHE_DIR": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_CACHE_TTL": [
+      {
+        "implementation": "B",
+        "type": "decimal",
+        "default": "60",
+        "aliases": [
+          "DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS"
+        ]
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_LLMOBS_PROMPTS_TIMEOUT": [
+      {
+        "implementation": "B",
+        "type": "decimal",
+        "default": "5.0",
+        "aliases": [
+          "DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS"
+        ]
       }
     ],
     "DD_LOGGING_RATE": [
@@ -735,6 +1010,13 @@
         "default": "0.0.0.0"
       }
     ],
+    "DD_SERVICE_EXTENSION_INTEGRATION": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE": [
       {
         "implementation": "A",
@@ -768,6 +1050,13 @@
         "implementation": "A",
         "type": "string",
         "default": "localhost.key"
+      }
+    ],
+    "DD_SERVICE_EXTENSION_UDS_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_SERVICE_MAPPING": [
@@ -817,6 +1106,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "86400"
       }
     ],
     "DD_TELEMETRY_HEARTBEAT_INTERVAL": [
@@ -875,11 +1171,32 @@
         "default": null
       }
     ],
+    "DD_TEST_OPTIMIZATION_MANIFEST_FILE": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES": [
+      {
+        "implementation": "C",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TEST_SESSION_NAME": [
       {
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
@@ -903,11 +1220,32 @@
         "default": "10m"
       }
     ],
+    "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_AGENT_PORT": [
       {
         "implementation": "A",
         "type": "int",
         "default": "8126"
+      }
+    ],
+    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "1.0"
+      }
+    ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10"
       }
     ],
     "DD_TRACE_AGENT_URL": [
@@ -952,13 +1290,6 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
       {
         "implementation": "A",
@@ -971,6 +1302,13 @@
         "implementation": "A",
         "type": "string",
         "default": ""
+      }
+    ],
+    "DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
@@ -1027,6 +1365,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED": [
@@ -1197,6 +1542,27 @@
         "default": "500-599"
       }
     ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [
       {
         "implementation": "A",
@@ -1209,6 +1575,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_TRACE_INTERNAL_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
@@ -1288,6 +1661,13 @@
         "default": "(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\\\s|%20)*(?:=|%3D)[^&]+|(?:\\\"|%22)(?:\\\\s|%20)*(?::|%3A)(?:\\\\s|%20)*(?:\\\"|%22)(?:%2[^2]|%[^2]|[^\\\"%])+(?:\\\"|%22))|bearer(?:\\\\s|%20)+[a-z0-9\\\\._\\\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\\\w=-]|%3D)+\\\\.ey[I-L](?:[\\\\w=-]|%3D)+(?:\\\\.(?:[\\\\w.+\\\\/=-]|%3D|%2F|%2B)+)?|[\\\\-]{5}BEGIN(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY[\\\\-]{5}[^\\\\-]+[\\\\-]{5}END(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY|ssh-rsa(?:\\\\s|%20)*(?:[a-z0-9\\\\/\\\\.+]|%2F|%5C|%2B){100,}"
       }
     ],
+    "DD_TRACE_OTEL_SEMANTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_PARTIAL_FLUSH_ENABLED": [
       {
         "implementation": "A",
@@ -1314,6 +1694,13 @@
         "implementation": "A",
         "type": "map",
         "default": ""
+      }
+    ],
+    "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "continue"
       }
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
@@ -1442,6 +1829,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_SEND_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
@@ -1477,11 +1871,60 @@
         "default": "true"
       }
     ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "100"
+      }
+    ],
+    "DD_TRACE_STATS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "2048"
+      }
+    ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
         "implementation": "B",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "20"
+      }
+    ],
+    "DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1024"
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
@@ -1491,11 +1934,11 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
+    "DD_TRACE_UNIVERSAL_VERSION_ENABLED": [
       {
-        "implementation": "B",
-        "type": "string",
-        "default": "1.0"
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [
@@ -1524,6 +1967,13 @@
         "implementation": "A",
         "type": "int",
         "default": "512"
+      }
+    ],
+    "DD_TRACE_ZAP_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_ZEROLOG_ANALYTICS_ENABLED": [
@@ -1586,7 +2036,8 @@
       {
         "implementation": "A",
         "type": "map",
-        "default": ""
+        "default": "",
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
@@ -1600,7 +2051,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
@@ -1628,7 +2080,8 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -1664,6 +2117,21 @@
         "implementation": "A",
         "type": "int",
         "default": "10000"
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS": [
+      {
+        "implementation": "B",
+        "type": "map",
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_LOGS_EXPORTER": [
@@ -1741,6 +2209,13 @@
         "implementation": "A",
         "type": "decimal",
         "default": "1.0"
+      }
+    ],
+    "OTEL_TRACES_SPAN_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": null
       }
     ]
   }

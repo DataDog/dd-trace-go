@@ -24,7 +24,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 
 	payloadSizes := []struct {
 		name     string
@@ -43,7 +43,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			spans := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("transport-test")
-				span.meta["data"] = strings.Repeat("x", size.spanSize*1024)
+				span.meta.Set("data", strings.Repeat("x", size.spanSize*1024))
 				spans[i] = span
 			}
 			_, _ = payload.push(spans)
@@ -69,7 +69,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {

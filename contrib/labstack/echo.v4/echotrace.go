@@ -50,7 +50,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	}
 	instr.Logger().Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 	spanOpts := make([]tracer.StartSpanOption, 0, 3+len(cfg.tags))
-	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
+	spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	for k, v := range cfg.tags {
 		spanOpts = append(spanOpts, tracer.Tag(k, v))
 	}

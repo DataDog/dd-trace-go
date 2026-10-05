@@ -8,8 +8,6 @@ package tracer
 import (
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func init() {
@@ -35,12 +33,19 @@ func BenchmarkHighPrecisionTime(b *testing.B) {
 }
 
 func TestHighPrecisionTimerIsMoreAccurate(t *testing.T) {
-	startLow := lowPrecisionNow()
-	startHigh := highPrecisionNow()
-	stopHigh := highPrecisionNow()
-	for stopHigh == startHigh {
-		stopHigh = highPrecisionNow()
+	// A busy Windows CI goroutine can be preempted between the two timer samples,
+	// making both advance together. Retry until we get an uninterrupted measurement.
+	const maxAttempts = 20
+	for range maxAttempts {
+		startLow := lowPrecisionNow()
+		startHigh := highPrecisionNow()
+		stopHigh := startHigh
+		for stopHigh == startHigh {
+			stopHigh = highPrecisionNow()
+		}
+		if stopLow := lowPrecisionNow(); stopLow == startLow {
+			return // highPrecisionNow advanced within a single lowPrecisionNow tick
+		}
 	}
-	stopLow := lowPrecisionNow()
-	assert.Equal(t, int64(0), stopLow-startLow)
+	t.Errorf("highPrecisionNow never advanced within a single lowPrecisionNow tick after %d attempts", maxAttempts)
 }

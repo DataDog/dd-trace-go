@@ -1,0 +1,844 @@
+name: dd-trace-go-agent
+version: "0.1"
+
+cases:
+# ==== General Tests ====
+
+  - id: dd-trace-go-general-codeowners-dual-consumer
+    files:
+      - AGENTS.md
+    input: |
+      I want to add a CODEOWNERS entry using a double-star glob like `**/testdata/**` so it matches
+      testdata directories at any nesting depth, and I want it to also correctly attribute CI
+      Visibility test ownership, not just GitHub review assignment. Is that pattern safe to use, and
+      if not, what's the risk and which patterns are actually safe?
+    expected_criteria:
+      - States CODEOWNERS is read by two consumers with different matching semantics -- GitHub (gitignore
+        semantics) and CI Visibility (a simpler matcher in internal/civisibility/utils) -- so a pattern
+        the two interpret differently can assign the right reviewers while silently mis-attributing test
+        ownership
+      - States entries must be restricted to the subset both interpret identically -- an anchored
+        directory pattern ending in / (e.g. /path/to/dir/), an anchored exact file path (e.g.
+        /path/to/file.go), or a single leading */suffix pattern with no additional / -- so a
+        double-star/unanchored glob like `**/testdata/**` is not one of the safe patterns
+      - Mentions that later entries take precedence over earlier ones, and that there is no catch-all
+        `*` entry, so every new top-level directory or root-level file needs its own explicit entry or
+        `make lint/misc` fails
+    bad_signals:
+      - Says the double-star glob is safe/recommended without qualification
+      - Does not mention the two different consumers (GitHub vs CI Visibility) or their differing
+        matching semantics
+      - Says CODEOWNERS has a catch-all entry covering unlisted paths
+
+  - id: dd-trace-go-general-code-coverage-flags-cap
+    files:
+      - AGENTS.md
+    input: |
+      I'm setting DD_CODE_COVERAGE_FLAGS to a comma-separated list of 40 flags to tag an uploaded code
+      coverage report. After trimming whitespace and dropping empty entries I have 35 entries. What 
+      happens to the upload, and does the tool also dedupe or reorder the flags I did provide?
+    expected_criteria:
+      - States there's a maximum of 32 normalized flags accepted; exceeding it causes the report to be
+        uploaded without any flags, plus a logged warning -- not a hard failure of the upload itself
+      - States that for accepted (under-the-limit) values, order and duplicate flags are preserved --
+        the tool does not dedupe or reorder flags
+      - Mentions that whitespace around each flag is trimmed and empty entries are discarded before the
+        32-flag count is evaluated
+    bad_signals:
+      - Says the upload fails/errors outright when more than 32 flags are supplied
+      - Says flags are deduplicated or reordered
+      - Omits the specific 32-flag threshold or gives an incorrect number
+
+# ==== Contrib Tests ====
+  - id: dd-trace-go-contrib-structure
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm adding a new contrib integration for a library hosted at github.com/user/somelib.
+      What directory structure should I create, and what is the correct import URL that users
+      will use to import the integration?
+    expected_criteria:
+      - Creates the integration in a subdirectory at contrib/user/somelib/ (not a flat file at contrib/user/somelib.go)
+      - States the integration is its own Go submodule with its own go.mod file
+      - The correct import URL given ends with /contrib/user/somelib/v2 under the github.com/DataDog/dd-trace-go namespace
+      - The Go package name is unversioned (somelib, not somelib.v2 or somerlibv2)
+      - Mentions that the new module must be added to go.work with a use directive
+      - Requires the three files -- a central somelib.go, somelib_test.go, and example_test.go
+    bad_signals:
+      - States the integration is a single file inside the existing root module (no submodule / no go.mod)
+      - Gives an import URL that does not end in /v2 (e.g. github.com/DataDog/dd-trace-go/contrib/user/somelib)
+      - Uses a versioned package name such as package somelib.v2 or package somerlibv2
+      - Does not mention adding the module to go.work
+
+  - id: dd-trace-go-contrib-tags
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm writing a new contrib integration for an HTTP client library. What span tags are
+      required on the spans I create, and what values should they have?
+    expected_criteria:
+      - Mentions the span.kind tag and states it should be set to client for an HTTP client
+      - States that span.kind should be omitted (not set to internal) when the span kind is internal
+      - Mentions the component tag and states it should be set to the full integration package naming convention
+    bad_signals:
+      - Says span.kind should always be set including for internal spans (i.e. set to internal)
+      - Does not mention the component tag at all
+      - Gives incorrect span.kind values such as outbound or request
+
+  - id: dd-trace-go-contrib-telemetry-registration
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I've created a new contrib integration for a library at github.com/user/somelib. What do I
+      need to do to register instrumentation telemetry for it, and what other files besides the
+      integration code itself need to be updated?
+    expected_criteria:
+      - Mentions adding an init() function that calls instrumentation.Load with a matching package
+        constant (e.g. instrumentation.Load(instrumentation.PackageSomelib))
+      - States that instrumentation/packages.go must be updated with a new constant and matching
+        package info in the packages map
+      - States that contribIntegrations in ddtrace/tracer/option.go must include the new package
+      - Mentions that a corresponding PR should be opened in the Datadog/documentation repo to add
+        the integration to the compatible integrations list
+    bad_signals:
+      - Says telemetry registration is automatic and requires no extra code or file updates
+      - Omits updating instrumentation/packages.go or contribIntegrations in option.go
+      - Does not mention the documentation repo PR at all
+
+  - id: dd-trace-go-contrib-versioned-package
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm building a contrib integration for github.com/some/queue, which has released major
+      version v3, and my integration only works against the v3.x line. What should the import path
+      and the Go package name be?
+    expected_criteria:
+      - States the import path includes a package-specific .v3 suffix in addition to the dd-trace-go
+        module's own /v2 suffix (e.g. github.com/DataDog/dd-trace-go/contrib/some/queue.v3/v2)
+      - States the Go package name itself stays unversioned (package queue, not queue.v3 or queuev3)
+    bad_signals:
+      - Omits either the package-specific .v3 suffix or the dd-trace-go module's /v2 suffix
+      - Versions the Go package name itself (e.g. package queuev3 or package queue_v3)
+
+  - id: dd-trace-go-contrib-deprecation-policy
+    files:
+      - contrib/AGENTS.md
+    input: |
+      One of our contrib integrations wraps a library that was just archived by its maintainer on
+      GitHub, with no CVE currently reported against its latest available version. Can we deprecate
+      this integration now?
+    expected_criteria:
+      - States that deprecation requires both conditions to be true -- the integrated package being
+        deprecated/archived AND a CVE reported against its latest available version
+      - Concludes that this integration does not yet qualify for deprecation since no CVE has been
+        reported
+    bad_signals:
+      - Says the integration can be deprecated based on the archived status alone
+      - Does not mention that both conditions (archived/deprecated AND a reported CVE) are required
+
+  - id: dd-trace-go-contrib-test-files
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I finished writing the new contrib package's core logic. What test file(s) do I need to add
+      for it to be automatically run by CI on new pull requests, and are there any other files
+      expected alongside it?
+    expected_criteria:
+      - States that a `<name>_test.go` file is required so tests run automatically in CI
+      - Mentions that an example_test.go file is also expected, serving as public godoc
+        documentation with an example of how to initialize and use the integration
+    bad_signals:
+      - Says tests are optional for a new contrib integration
+      - Does not mention example_test.go as an expected file
+
+  - id: dd-trace-go-contrib-with-service-naming
+    files:
+      - contrib/AGENTS.md
+    input: |
+      I'm adding a functional option to my new contrib integration that lets callers override the
+      span's service name. Should I name it WithServiceName or WithService, and is there a broader
+      naming convention this follows?
+    expected_criteria:
+      - States the option should be named WithService, not WithServiceName
+      - Frames this as a general naming guideline that applies to all contrib integrations, not a
+        one-off choice for this particular integration
+    bad_signals:
+      - Recommends naming the option WithServiceName
+      - Treats the naming choice as arbitrary/up to the integration author with no stated convention
+
+  - id: dd-trace-go-contrib-version-pinning
+    files:
+      - contrib/AGENTS.md
+    input: |
+      My contrib integration currently pins its instrumented library to v2.3.0 to avoid a known CVE.
+      If a future major version of dd-trace-go changes, is v2.3.0 guaranteed to keep working with it,
+      and generally what version should a contrib integration target for the library it wraps?
+    expected_criteria:
+      - States the target is the minimum working version of the integrated package that has no known
+        reported vulnerabilities/CVEs, not the latest version
+      - States there's no guarantee that a previously pinned version will keep working with future
+        dd-trace-go versions, since integrated packages have their own differing versioning policies
+        around breaking changes
+    bad_signals:
+      - Says integrations should always track the latest version of the integrated package
+      - Claims a pinned version is guaranteed to remain compatible with future dd-trace-go releases
+
+# ==== Tracer Tests ====
+  - id: dd-trace-go-tracer-api-break
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I need to rename an exported function in the ddtrace/tracer package. CI is now failing
+      on the API diff check. What do I need to do to get the PR merged?
+    expected_criteria:
+      - Mentions adding the breaking-api-acknowledged label to the PR to acknowledge the intentional change
+      - Mentions that make apidiff/incompatible can be used to check breaking changes locally before pushing
+    bad_signals:
+      - Says to revert the change without mentioning the label option for intentional breaks
+      - Does not mention the CI label mechanism at all, giving only a vague answer about breaking changes
+      - Suggests force-merging or skipping the CI check
+
+  - id: dd-trace-go-control-general-go
+    only_warn: true
+    files:
+      - AGENTS.md
+    input: |
+      How do I write an HTTP middleware in Go that adds a custom request ID header to every
+      incoming request?
+    expected_criteria:
+      - Implements the middleware as a function that takes and returns http.Handler (or http.HandlerFunc)
+      - Correctly extracts or generates a request ID and sets it via r.Header.Set or w.Header().Set
+      - Calls the next handler via next.ServeHTTP to pass the request along the chain
+    bad_signals:
+      - Gives an implementation that only works with dd-trace-go-specific types and is not usable standalone
+      - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
+      - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
+
+  - id: dd-trace-go-tracer-doc-update-trigger
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I'm adding a new tracer option, WithAdaptiveSampling, which lets users enable an adaptive
+      rate-sampling algorithm that adjusts itself based on traffic volume. Which files do I need
+      to read before making this change, and where should I document the new behavior once it's done?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md must be read first for handling API changes, and
+        ddtrace/tracer/doc.go must be read for the tracer's existing abilities
+      - Identifies this as a significant feature (it changes tracer sampling behavior) and states
+        that doc.go must be updated to document it
+    bad_signals:
+      - Says no documentation update is required for this change
+      - Points only to the top-level project README.md or CONTRIBUTING.md instead of the tracer
+        package's own doc.go
+      - Does not mention reading README.md/doc.go before making the change
+
+  - id: dd-trace-go-tracer-readme-ci-stability
+    only_warn: true
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I added a new make target, `make tracer-flake-detect`, that developers run in CI to catch
+      flaky tests in the tracer package, helping keep the tracer stable in CI. Do I need to
+      document this anywhere?
+    expected_criteria:
+      - States that ddtrace/tracer/README.md should be updated with the new command, since it is
+        a script that enables tracer stability in CI
+    bad_signals:
+      - Says no documentation update is required
+      - Suggests documenting the command only in the top-level project README.md instead of the
+        tracer package's own README.md
+      - Suggests updating doc.go instead of README.md for a CI script/command
+
+  - id: dd-trace-go-tracer-sampling-env-config
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      Without changing any code, how can I configure the Go tracer at runtime to apply a 100%
+      sampling rate to spans named "web.request" from service "test-service", and how does this
+      interact with sampling rules already set via tracer.WithSamplingRules in code?
+    expected_criteria:
+      - Mentions the DD_TRACE_SAMPLING_RULES environment variable, set to a JSON array of objects
+      - States that setting this environment variable overrides sampling rules set programmatically
+        via tracer.WithSamplingRules
+    bad_signals:
+      - Says there is no way to configure sampling rules without changing code
+      - Gives an incorrect environment variable name
+      - Fails to mention that the environment variable takes precedence over WithSamplingRules
+
+  - id: dd-trace-go-tracer-span-limit
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      What happens in the Go tracer if a single trace accumulates an extremely large number of
+      spans, such as over 100,000?
+    expected_criteria:
+      - States that each trace has a hard limit of 100,000 spans
+      - States that once the limit is exceeded, the trace is dropped and a diagnostic log message
+        is emitted
+    bad_signals:
+      - Says there is no limit on the number of spans per trace
+      - Gives an incorrect limit value
+      - Says the trace is silently dropped with no diagnostic log message
+
+  - id: dd-trace-go-tracer-stats-cardinality-limits
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      I have a high-cardinality service using client-side stats computation (WithStatsComputation)
+      in the Go tracer. What cardinality limits exist to protect memory usage, and what happens to
+      spans that exceed one of these limits?
+    expected_criteria:
+      - Mentions at least two of the specific cardinality limit controls (e.g. the whole-key limit
+        DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit, default 2048, and/or the
+        per-resource limit DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit,
+        default 1024)
+      - States that spans exceeding a limit are still counted, but their grouping dimension is
+        replaced with a sentinel/placeholder value rather than the span being dropped
+      - Mentions the datadog.tracer.stats.collapsed_spans statsd metric used to observe when
+        collapsing occurs
+    bad_signals:
+      - Says spans exceeding a cardinality limit are dropped entirely
+      - Does not mention any specific cardinality limit env var or option
+      - Gives incorrect default values for the limits
+
+  - id: dd-trace-go-tracer-protocol-downgrade-permanence
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      Our trace-agent briefly stopped advertising the /v1.0/traces endpoint, so our tracer downgraded
+      from protocol 1.0 to 0.4. A few minutes later the agent's capability check reports 1.0 support
+      again. Does the tracer go back to sending traces over 1.0 on its own, and does an in-flight
+      payload that was already built for 1.0 at the moment of the downgrade behave any differently
+      from newly built payloads?
+    expected_criteria:
+      - States the downgrade from 1.0 to 0.4 is permanent for the life of the process -- once the
+        tracer has conclusive evidence 1.0 is unavailable it never re-upgrades on its own, even if
+        later checks report 1.0 support again; only restarting the process allows re-upgrading
+      - Explains the reasoning -- capability checks and trace sends are independent requests that can
+        land on different backends in a load-balanced fleet, so healthy checks don't prove anything
+        about where the next send goes
+      - States a payload already built while 1.0 was in effect keeps going to /v1.0/traces (since it
+        was already committed to that wire format) and may be rejected there, rather than being
+        re-encoded and redelivered on 0.4
+    bad_signals:
+      - Says the tracer automatically re-upgrades back to protocol 1.0 once the agent reports support
+        again, without a restart
+      - Says an already-built 1.0 payload is transparently re-encoded and resent over 0.4 after the
+        downgrade
+      - Does not mention that the downgrade is permanent for the process lifetime
+
+  - id: dd-trace-go-tracer-otel-probability-sampling-propagation
+    files:
+      - ddtrace/tracer/AGENTS.md
+    input: |
+      When the Go tracer makes a probability-based sampling decision (say, from a sampling rule), does
+      it expose that decision in a way an OpenTelemetry-native downstream service could verify and use
+      to extrapolate span counts, or is that information Datadog-internal only? Does this require any
+      configuration, and does it apply to a manual keep decision?
+    expected_criteria:
+      - States the tracer expresses probability-based sampling decisions (agent rate, global rate, or a
+        sampling rule) as an OpenTelemetry consistent-probability-sampling pair (ot.th/ot.rv, per OTEP
+        235) on the ot= list-member of the W3C tracestate header, letting OTel-native downstream
+        services make/verify the same keep-or-drop decision and extrapolate span counts
+      - States this is automatic and requires no configuration, and that existing Datadog propagation
+        is left unchanged; an inbound ot= value is honored and forwarded unchanged
+      - States non-probability decisions -- such as a manual keep, an AppSec decision, or a
+        rate-limiter drop -- omit the threshold, so a manual keep decision would NOT get an ot.th/ot.rv
+        pair
+    bad_signals:
+      - Says this requires explicit configuration/opt-in
+      - Says a manual keep decision is also expressed with a probability threshold on tracestate
+      - Does not mention the W3C tracestate ot= list-member or OTEP 235
+
+# ==== Profiling Tests ====
+
+  - id: dd-trace-go-profiler-cpu-duration-clamp
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I configured profiler.CPUDuration(5*time.Minute) but left the profiling period at its
+      1-minute default. How long will the CPU profile actually sample for each cycle, and will I
+      get a warning or error if the values conflict like this?
+    expected_criteria:
+      - States that cpuDuration is clamped down to equal the period when it exceeds the period, so
+        the CPU profile will only sample for 1 minute, not 5
+      - States that this clamping happens silently, with no error or warning logged
+    bad_signals:
+      - Says the CPU profile will run for the full 5 minutes configured, spanning multiple periods
+      - Says Start will return an error because cpuDuration exceeds period
+
+  - id: dd-trace-go-profiler-stop-flush-on-exit
+    files:
+      - profiler/AGENTS.md
+    input: |
+      If profiler.Stop() is called while a profile batch is mid-collection or queued for upload,
+      is that in-progress data flushed and uploaded before Stop returns, or is it discarded? Does
+      this depend on any configuration?
+    expected_criteria:
+      - States that by default (flushOnExit disabled/false), in-flight/queued profile data is
+        discarded rather than uploaded when Stop is called
+      - Mentions that this behavior is controlled by the DD_PROFILING_FLUSH_ON_EXIT environment
+        variable / flushOnExit setting, which defaults to false
+      - States that enabling flush-on-exit causes the current batch to be completed and the queue
+        drained/uploaded before Stop returns
+    bad_signals:
+      - Says Stop always waits for and uploads any in-progress or queued profile data regardless of
+        configuration
+      - Does not mention the flush-on-exit setting/env var at all
+
+  - id: dd-trace-go-profiler-heap-partial-delta
+    files:
+      - profiler/AGENTS.md
+    input: |
+      The heap profile exposes four sample values: alloc_objects, alloc_space, inuse_objects, and
+      inuse_space. When delta profiling is enabled, are all four converted into per-interval delta
+      values, or only some of them?
+    expected_criteria:
+      - States that only alloc_objects and alloc_space are delta-encoded, since they are cumulative
+        counters over the process lifetime
+      - States that inuse_objects and inuse_space are left as absolute/snapshot values representing
+        current heap state, since delta-encoding them would not make sense
+    bad_signals:
+      - Says all four heap sample values are delta-encoded the same way
+      - Says none of the heap values are delta-encoded
+
+  - id: dd-trace-go-profiler-withprofiletypes-forces-metrics
+    files:
+      - profiler/AGENTS.md
+    input: |
+      I want to disable every profile type except CPU, including the metrics profile, by calling
+      profiler.WithProfileTypes(profiler.CPUProfile). Will this leave only the CPU profile enabled?
+    expected_criteria:
+      - States that WithProfileTypes always force-adds MetricsProfile in addition to whatever types
+        are explicitly passed, so metrics profiling cannot be disabled through this option
+      - Concludes that after this call both CPUProfile and MetricsProfile are enabled, not just CPU
+    bad_signals:
+      - Says WithProfileTypes(profiler.CPUProfile) results in only the CPU profile being enabled
+      - Says metrics profiling can be fully disabled by omitting it from WithProfileTypes
+
+  - id: dd-trace-go-profiler-aws-lambda-disabled
+    files:
+      - profiler/AGENTS.md
+    input: |
+      We're deploying our Go service as an AWS Lambda function and still want to call profiler.Start
+      with our usual options at init time. Will the profiler run there, or is there special handling
+      for the Lambda environment?
+    expected_criteria:
+      - States that when the AWS_LAMBDA_FUNCTION_NAME environment variable is set, Start returns an
+        error and profiling is not supported/started in AWS Lambda runtimes at all
+      - States this check happens unconditionally, regardless of what other options are passed to
+        Start
+    bad_signals:
+      - Says the profiler runs normally in Lambda with no special-casing
+      - Says Lambda support just requires a different upload URL/agentless configuration rather than
+        being entirely disabled
+
+  - id: dd-trace-go-profiler-delta-computation-location
+    files:
+      - profiler/AGENTS.md
+    input: |
+      For heap and other profile types where delta values are computed, what does "computing a delta"
+      actually mean here, and where in the profiler codebase is that computation implemented?
+    expected_criteria:
+      - States a delta is the difference between two profiles, showing the change in a resource (e.g.
+        memory allocations, blocking time) over the last collection interval/minute, rather than a
+        cumulative or absolute value
+      - States delta computation is implemented in the internal/fastdelta package
+    bad_signals:
+      - Says delta computation is done inline in profile.go with no dedicated package
+      - Misdescribes a delta as a cumulative running total rather than a difference between two
+        profiles
+      - Names an incorrect package/location for the delta computation logic
+
+  - id: dd-trace-go-profiler-start-telemetry-report
+    files:
+      - profiler/AGENTS.md
+    input: |
+      Besides sending collected profiles to the Datadog backend, does the Go profiler ever report
+      information about its own configuration (e.g. which profile types or options were set) back to
+      Datadog, and if so, when and where is that implemented?
+    expected_criteria:
+      - States yes -- the profiler sends an instrumentation telemetry message containing its
+        configuration when profiling is started
+      - Identifies telemetry.go as the file implementing this behavior, distinct from upload.go (which
+        uploads the collected profile data itself)
+    bad_signals:
+      - Says the profiler never reports its own configuration to Datadog
+      - Conflates this telemetry message with the regular profile upload path (upload.go) instead of
+        identifying it as a separate mechanism
+
+# ==== Appsec Tests ====
+
+  - id: dd-trace-go-appsec-purpose
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What is the internal/appsec package responsible for at a high level, and which external module
+      does most of the actual decision-making about WAF events and actions?
+    expected_criteria:
+      - States the package secures the application by monitoring operations executed by the application
+        and applying actions when a security threat is detected
+      - Names github.com/DataDog/go-libddwaf as the module containing the WAF (Web Application Firewall)
+        engine that does most of the decision making about events and actions
+    bad_signals:
+      - Says internal/appsec itself makes the WAF decisions rather than delegating to go-libddwaf
+      - Does not mention go-libddwaf at all
+
+  - id: dd-trace-go-appsec-dyngo-role
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I'm writing a contrib integration that needs to hook into AppSec instrumentation. What package
+      underlies every AppSec-supporting API entrypoint in dd-trace-go/contrib, and what kind of system is it?
+    expected_criteria:
+      - Names internal/appsec/dyngo (the Instrumentation Gateway) as the package behind every
+        appsec-supporting contrib entrypoint
+      - Describes dyngo as a context-scoped event listener system that dynamically listens to events in
+        customer code and can react to configuration changes / hot-swap event listeners at runtime
+    bad_signals:
+      - Says contrib integrations call the WAF or go-libddwaf directly without going through dyngo
+      - Describes dyngo as a static/compile-time mechanism rather than a runtime event listener system
+
+  - id: dd-trace-go-appsec-operation-requirements
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What are the requirements for defining a new AppSec operation type using the Start*/Finish pattern?
+    expected_criteria:
+      - States each operation must have a Start* function/method and a Finish method that call into dyngo
+      - States the operation's argument and result types must not require any external package, at most
+        the standard library
+    bad_signals:
+      - Omits either the Start*/Finish pairing or the standard-library-only constraint on args/results
+      - Says operation argument/result types can freely import other internal or third-party packages
+
+  - id: dd-trace-go-appsec-features-list
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      What AppSec features currently exist, and specifically, what does the "WAF Context" feature do?
+    expected_criteria:
+      - Lists features matching the documented set, e.g. HTTP/GRPC/GraphQL WAF Protection, SQL/OS/CMDi/HTTP
+        RASP, User Security, WAF Context, and Tracing
+      - States WAF Context is responsible for setting up the request-scoped context system of the WAF
+    bad_signals:
+      - Invents features that are not part of the documented feature list
+      - Misdescribes WAF Context, e.g. conflating it with HTTP WAF Protection specifically
+
+  - id: dd-trace-go-appsec-circular-dependency-risk
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I want my new AppSec operation's argument struct to import a helper type from internal/appsec/config
+      so I don't have to redefine it. Is this safe to do, and why or why not?
+    expected_criteria:
+      - States this is risky and likely to cause a circular dependency
+      - Explains the mechanism -- the operation definition is used by the package it instruments, and the
+        package that instruments it will probably import the operation definition, so pulling in another
+        internal package from the operation's args/result types can create a cycle
+      - Recommends keeping the operation's argument/result types limited to the standard library instead
+    bad_signals:
+      - Says importing internal/appsec/config from the operation definition is fine with no caveats
+      - Does not explain why the circular dependency risk exists
+
+  - id: dd-trace-go-appsec-feature-rebuild-atomicity
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      When a configuration source (e.g. remote config) pushes a change affecting AppSec, how does AppSec
+      apply that change without leaving the system in an inconsistent state mid-update?
+    expected_criteria:
+      - States features are rebuilt via their builder (a pure function of the configuration) on every
+        configuration change
+      - States the rebuilt feature listeners are registered to the Instrumentation Gateway and the root
+        level operation is hot-swapped for the new one, making the whole update atomic
+    bad_signals:
+      - Says AppSec mutates existing feature or listener state in place rather than rebuilding and
+        hot-swapping
+      - Does not mention the hot-swap/atomicity guarantee at all
+
+  - id: dd-trace-go-appsec-doc-update-trigger
+    only_warn: true
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      I just added a new RASP feature to internal/appsec (a new protection type alongside the existing
+      SQL/OS/CMDi/HTTP RASP features). Do I need to update any documentation for this, and if so, which
+      file and why?
+    expected_criteria:
+      - States internal/appsec/README.md must be updated whenever changes to AppSec (ASM/AppSec) are
+        introduced
+      - Recognizes that adding a new feature qualifies as such a change
+    bad_signals:
+      - Says no documentation update is needed for this change
+      - Points to a different file instead of internal/appsec/README.md, e.g. the top-level project
+        README.md or CONTRIBUTING.md
+
+  - id: dd-trace-go-appsec-missing-top-level-operation
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      Suppose some user code path never starts one of the top-level dyngo operations (like the
+      service-entry-span operation or the WAF context operation) before reaching code that would
+      otherwise emit AppSec sub-operations like a SQL or HTTP round-trip operation. What happens to
+      those sub-operations from an AppSec-protection standpoint, and is this treated as a normal/
+      expected configuration?
+    expected_criteria:
+      - States that without a Top Level Operation, nothing gets monitored -- sub-operations effectively
+        have no effect on AppSec protection since there's no root to attach listeners/events to
+      - States this situation should produce an error log to thoroughly explain the issue to the user,
+        i.e. it's treated as a problem to surface, not a silently accepted configuration
+    bad_signals:
+      - Says sub-operations are still monitored/protected normally even without a top-level operation
+      - Says this situation passes silently with no log output
+
+  - id: dd-trace-go-appsec-graphql-operation-nesting
+    files:
+      - internal/appsec/AGENTS.md
+    input: |
+      For HTTP and GRPC, the top-level handler operation's user code callback is reached directly.
+      Does GraphQL follow that same direct-to-user-code shape, or are there intermediate operations in
+      between, and if so what are they and in what order?
+    expected_criteria:
+      - States GraphQL does NOT go directly from the top-level request operation to user code like
+        HTTP/GRPC do
+      - States the nesting order is graphqlsec.RequestOperation, then graphqlsec.ExecutionOperation,
+        then graphqlsec.ResolveOperation, before reaching user code
+    bad_signals:
+      - Says GraphQL reaches user code directly from the top-level operation with no intermediate
+        operations
+      - Gives an incorrect order for ExecutionOperation/ResolveOperation (e.g. reversing them)
+
+# ==== Internal Tests ====
+
+  - id: dd-trace-go-internal-config-source-precedence
+    files:
+      - internal/AGENTS.md
+    input: |
+      If a configuration value is set via both a Datadog environment variable and an OpenTelemetry
+      (OTEL_*) environment variable, which one wins? And where do local declarative config files and
+      managed declarative config files fall in that ordering relative to setting the value
+      programmatically in code?
+    expected_criteria:
+      - States the descending priority order is -- programmatic APIs first, then managed declarative
+        configs, then Datadog (DD_) environment variables, then OTel (OTEL_) environment variables,
+        then local declarative configs
+      - Concludes a Datadog DD_ environment variable takes precedence over an OTEL_ environment
+        variable for the same setting
+      - Mentions that defaults are used as a fallback only when no source has configured the field
+    bad_signals:
+      - Says OTEL_ environment variables take precedence over DD_ environment variables
+      - Gives an incorrect/reordered precedence list (e.g. placing local declarative config above
+        environment variables)
+
+  - id: dd-trace-go-internal-telemetry-dependencies-category
+    files:
+      - internal/AGENTS.md
+    input: |
+      The internal telemetry package supports several categories of reporting -- metrics, logs,
+      product lifecycle, app config, integration status, and dependencies. What specifically does the
+      dependencies category send to the backend, and why would that be useful to Datadog?
+    expected_criteria:
+      - States the dependencies category sends all of the dependencies of the application to the
+        backend
+      - States this is for SCA (software composition analysis) purposes, e.g. tracking/analyzing what
+        third-party packages an instrumented application uses
+    bad_signals:
+      - Confuses the dependencies category with the integration category (loading/errors of
+        dd-trace-go's own integrations)
+      - Does not mention SCA or any security/composition-analysis motivation for sending dependency
+        information
+
+# ==== LLMObs Tests ====
+# TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== CIVisibility Tests ====
+
+  - id: dd-trace-go-civisibility-close-action-order
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Does PushCiVisibilityCloseAction append new close actions to the end of the closeActions 
+      slice or prepend them to the front, and what execution order does that produce when CI 
+      Visibility shuts down?
+    expected_criteria:
+      - States it prepends the new action to the front of the slice
+      - States this produces LIFO (last registered, first executed) order during shutdown
+    bad_signals:
+      - Says new actions are appended to the end of the slice
+      - Says close actions execute in FIFO/registration order
+
+  - id: dd-trace-go-civisibility-git-command-serialization
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Can two git commands issued by CI Visibility run concurrently, and what specifically enforces the answer?
+    expected_criteria:
+      - States git command execution is serialized, not concurrent
+      - Names the package-level gitCommandMutex, locked immediately before invoking exec.Command and
+        unlocked via defer, as the mechanism enforcing this
+    bad_signals:
+      - Says git commands can run concurrently with no synchronization
+      - Attributes the serialization to a different mechanism (e.g. a channel or semaphore) instead of
+        gitCommandMutex
+
+  - id: dd-trace-go-civisibility-doc-update-trigger
+    only_warn: true
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      I just added a new CI Visibility feature (e.g. a new backend-negotiated toggle alongside the
+      existing flaky retries/EFD/ITR/impacted tests features). Do I need to update any documentation for
+      this, and if so, which file and why?
+    expected_criteria:
+      - States internal/civisibility/CIVISIBILITY_OVERVIEW.md must be updated when new CI Vis
+        functionality is introduced
+      - Recognizes that adding a new feature qualifies as such a change
+    bad_signals:
+      - Says no documentation update is needed for this change
+      - Points to a different file instead of internal/civisibility/CIVISIBILITY_OVERVIEW.md, e.g. the
+        top-level project README.md or CONTRIBUTING.md
+
+  - id: dd-trace-go-civisibility-feature-override-logging
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      Backend settings negotiation enables early flake detection for our test run, but we also have a
+      local environment-variable kill switch set that disables it. Does CI Visibility silently honor
+      the local override with no trace of what happened, or is there something logged so we can tell
+      why the feature ended up disabled?
+    expected_criteria:
+      - States the local env-var kill switch takes effect and disables the feature even though backend
+        settings enabled it
+      - States this is not silent -- it's logged when a local override disables a capability that
+        backend settings had enabled, specifically to aid troubleshooting
+    bad_signals:
+      - Says the override happens with no logging at all
+      - Says backend settings always win over a local environment-variable kill switch
+
+  - id: dd-trace-go-civisibility-coverage-filename-only-entries
+    files:
+      - internal/civisibility/AGENTS.md
+    input: |
+      For a per-test Go code coverage upload, is a files[] entry required to always include
+      line-coverage bitmap data, or can an entry validly contain just a filename with no bitmap? If
+      the latter is possible, when would that happen?
+    expected_criteria:
+      - States a files[] entry can validly be filename-only, with no bitmap field, when there is no
+        line-coverage data available for that file
+      - States the bitmap field (raw Go FileBitmap bytes) is included specifically when line coverage
+        is available, e.g. for test files or referenced resources that do have line-level data
+    bad_signals:
+      - Says every coverage file entry must include bitmap data or the upload is invalid
+      - Says filename-only entries are dropped/rejected rather than treated as valid
+
+# ==== Datastreams Tests ====
+# TODO: Datastreams does not currently have any AGENTS.md files. Add some in order to start testing.
+
+# ==== Orchestrion Tests ====
+
+  - id: dd-trace-go-orchestrion-yml-structure
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm writing a new orchestrion.yml file for a contrib integration. What are the required
+      top-level sections in this file, and what does the "aspects" section actually define?
+    expected_criteria:
+      - States the file has a meta section (with at least a name and description) and an aspects
+        section as its top-level keys
+      - States each entry in aspects has an id, a join-point (where in the AST orchestrion should
+        match code), and advice (what code/instrumentation gets injected at that match)
+    bad_signals:
+      - Omits the join-point/advice structure entirely or describes aspects as unstructured free text
+      - Says the meta section is optional or unused
+
+  - id: dd-trace-go-orchestrion-build-time-enabled-check
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      How can Go code check at runtime whether the current binary was actually compiled with
+      Orchestrion (auto-instrumented), as opposed to a plain go build?
+    expected_criteria:
+      - Mentions the orchestrion.Enabled() function, backed by a package-level boolean variable
+        that Orchestrion overwrites at build time via a //orchestrion:enabled directive comment
+      - States this defaults to false when the binary was not built using Orchestrion
+    bad_signals:
+      - Says this can only be inferred indirectly, e.g. via environment variables
+      - Says Enabled() always returns true merely because the orchestrion package is imported
+      - Says there is no supported way to detect this at runtime
+
+  - id: dd-trace-go-orchestrion-template-function-fields
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Inside an orchestrion.yml advice template, I want to reference the name of the matched
+      function's first argument and the name of its second return value. What expressions should I use?
+    expected_criteria:
+      - Gives `{{ .Function.Argument 0 }}` for the first argument, using 0-based indexing
+      - Gives `{{ .Function.Result 1 }}` for the second return value, using 0-based indexing
+    bad_signals:
+      - Uses 1-based indexing for Argument/Result (e.g. `.Function.Argument 1` for the first argument)
+      - Invents template syntax not documented for this purpose
+      - Says Function.Argument/Result return an index/position rather than the identifier name
+
+  - id: dd-trace-go-orchestrion-integration-test-harness
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      I'm adding a new orchestrion integration test under internal/orchestrion/_integration. What
+      interface must my test case struct implement, what is each method responsible for, and what
+      do I need to run afterward so the suite picks it up?
+    expected_criteria:
+      - States the struct must implement harness.TestCase, with Setup, Run, and ExpectedTraces methods
+      - States Setup prepares dependencies (e.g. starting services) before the tracer is started,
+        while Run performs the instrumented actions after the tracer has started
+      - States ExpectedTraces returns the traces expected to be produced, matched against what the
+        mock agent actually receives
+      - Mentions running `go generate ./...` afterward to register the new test case
+    bad_signals:
+      - Says Setup runs after the tracer has already started
+      - Omits ExpectedTraces from the required interface methods
+      - Fails to mention running go generate to wire the new test into the generated test suite
+
+  - id: dd-trace-go-orchestrion-argument-of-type-lookup
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      Inside an orchestrion.yml advice template, I don't know the positional index of the *http.Request
+      argument on the matched function -- I only know its type. Is there a template expression that
+      finds an argument by type instead of by position, and what does it produce if no argument of
+      that type exists? How does that failure mode compare to looking up an out-of-range positional
+      argument with .Function.Argument?
+    expected_criteria:
+      - States `{{ .Function.ArgumentOfType type }}` can be used to find the name of the first
+        argument matching a given type, as an alternative to positional lookup
+      - States that if no argument of that type exists, it returns a blank string -- not an error
+      - Contrasts this with `.Function.Argument n` (or `.Function.Result n`), which returns an error
+        when the index is out of range/there aren't enough arguments -- i.e. the two failure modes
+        differ (blank string vs error)
+    bad_signals:
+      - Says there's no way to look up a function argument by type, only by position
+      - Says ArgumentOfType also errors out when no match is found (same as the positional
+        out-of-range case)
+
+  - id: dd-trace-go-orchestrion-directive-args-access
+    files:
+      - orchestrion/AGENTS.md
+    input: |
+      A join point in my orchestrion.yml aspect matches based on a directive comment that carries its
+      own key/value arguments. Inside the advice template, what expression gives me access to those
+      directive arguments, and how do I read an individual key and its value from it?
+    expected_criteria:
+      - States `{{ .DirectiveArgs }}` is used to access the key/value list of directive arguments
+        inside the advice template
+      - States individual entries are read via `.Key` and `.Value` on that list
+    bad_signals:
+      - Says directive arguments cannot be accessed from within an advice template
+      - Invents different/incorrect field names in place of .Key/.Value or .DirectiveArgs
+
+
+# ==== OTelc Tests ====
+# TODO: OTelc does not currently have any AGENTS.md files. Add some in order to start testing.
+# Will be added after otelc migration is merged.

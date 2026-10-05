@@ -7,7 +7,7 @@
 meta:
   name: github.com/DataDog/dd-trace-go/v2/contrib/os
   description: |-
-    Protection from Local File Inclusion (LFI) Attacks
+    Protection from Local File Inclusion (LFI) and Command Injection (CMDi) Attacks
 
     All known functions that open files are susceptible to Local File Inclusion (LFI) attacks. This aspect protects
     against LFI attacks by wrapping the `os.OpenFile` function with a security operation that will block the operation if
@@ -15,6 +15,13 @@ meta:
 
     Instrumenting only the `os.OpenFile` function is sufficient to protect against LFI attacks, as all other functions in
     the `os` package that open files ultimately call `os.OpenFile` (as of Go 1.23).
+
+    Likewise, all known functions that execute commands are susceptible to Command Injection (CMDi) attacks. This aspect
+    protects against CMDi attacks by wrapping the `os.StartProcess` function with a security operation that will block the
+    operation if it is deemed unsafe.
+
+    Instrumenting only the `os.StartProcess` function is sufficient to protect against CMDi attacks, as all other
+    functions in the `os` and `os/exec` packages that spawn processes ultimately call `os.StartProcess` (as of Go 1.23).
 
 aspects:
   - id: OpenFile
@@ -50,6 +57,45 @@ aspects:
 
                 defer dyngo.FinishOperation(__dd_op, ossec.OpenOperationRes[*File]{
                     File: &{{ .Function.Result 0 }},
+                    Err: &{{ .Function.Result 1 }},
+                })
+
+                if __dd_block {
+                    return
+                }
+            }
+  - id: StartProcess
+    join-point:
+      all-of:
+        - import-path: os
+        - function-body:
+            function:
+              - name: StartProcess
+    advice:
+      - prepend-statements:
+          imports:
+            ossec: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec
+            dyngo: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+            events: github.com/DataDog/dd-trace-go/v2/appsec/events
+          template: |-
+            __dd_parent_op, _ := dyngo.FromContext(nil)
+            if __dd_parent_op != nil {
+                __dd_op := &ossec.RunCommandOperation{
+                    Operation: dyngo.NewOperation(__dd_parent_op),
+                }
+
+                var __dd_block bool
+                dyngo.OnData(__dd_op, func(_ *events.BlockingSecurityEvent) {
+                    __dd_block = true
+                })
+
+                dyngo.StartOperation(__dd_op, ossec.RunCommandOperationArgs{
+                    Name: {{ .Function.Argument 0 }},
+                    Commands: {{ .Function.Argument 1 }},
+                })
+
+                defer dyngo.FinishOperation(__dd_op, ossec.RunCommandOperationRes[*Process]{
+                    Process: &{{ .Function.Result 0 }},
                     Err: &{{ .Function.Result 1 }},
                 })
 

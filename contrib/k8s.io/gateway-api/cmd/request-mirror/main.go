@@ -84,14 +84,14 @@ func main() {
 
 		logger.Info("Starting request mirror health check server on address: %q", config.HealthCheckAddr)
 		if err := http.ListenAndServe(config.HealthCheckAddr, healthcheckMux); err != nil {
-			logger.Error("Failed to start health check server", "error", err)
+			logger.Error("Failed to start health check server: %s", err.Error())
 			os.Exit(1)
 		}
 	}()
 
 	logger.Info("Main request mirror server starting on address: %q", config.ListenAddr)
 	if err := http.ListenAndServe(config.ListenAddr, mux); err != nil {
-		logger.Error("Failed to start server", "error", err)
+		logger.Error("Failed to start server: %s", err.Error())
 		os.Exit(1)
 	}
 }

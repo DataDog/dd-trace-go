@@ -15,6 +15,7 @@ import (
 type config struct {
 	ctx           context.Context
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 }
@@ -22,6 +23,7 @@ type config struct {
 func newConfig(opts ...Option) *config {
 	cfg := &config{
 		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageSyndtrGoLevelDB),
 		spanName:      instr.OperationName(instrumentation.ComponentDefault, nil),
 		ctx:           context.Background(),
 		analyticsRate: instr.AnalyticsRate(false),
@@ -55,6 +57,7 @@ func WithContext(ctx context.Context) OptionFn {
 func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

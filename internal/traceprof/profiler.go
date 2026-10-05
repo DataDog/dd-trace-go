@@ -10,15 +10,15 @@ import (
 )
 
 var profiler struct {
-	enabled uint32
+	enabled atomic.Uint32
 }
 
 func SetProfilerEnabled(val bool) bool {
-	return atomic.SwapUint32(&profiler.enabled, boolToUint32(val)) != 0
+	return profiler.enabled.Swap(boolToUint32(val)) != 0
 }
 
 func profilerEnabled() int {
-	return int(atomic.LoadUint32(&profiler.enabled))
+	return int(profiler.enabled.Load())
 }
 
 func boolToUint32(b bool) uint32 {

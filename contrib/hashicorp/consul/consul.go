@@ -72,7 +72,7 @@ func (c *Client) KV() *KV {
 func (k *KV) startSpan(resourceName string, key string) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
-		tracer.ServiceName(k.config.serviceName),
+		instrumentation.ServiceNameWithSource(k.config.serviceName, k.config.serviceSource),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
 		tracer.Tag(ext.Component, instrumentation.PackageHashicorpConsulAPI),

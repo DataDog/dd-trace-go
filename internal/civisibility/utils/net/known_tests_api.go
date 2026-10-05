@@ -6,10 +6,15 @@
 package net
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -29,8 +34,7 @@ type (
 	}
 
 	knownTestsRequest struct {
-		Data     knownTestsRequestHeader    `json:"data"`
-		PageInfo *knownTestsRequestPageInfo `json:"page_info,omitempty"`
+		Data knownTestsRequestHeader `json:"data"`
 	}
 
 	knownTestsRequestHeader struct {
@@ -40,10 +44,11 @@ type (
 	}
 
 	KnownTestsRequestData struct {
-		Service        string             `json:"service"`
-		Env            string             `json:"env"`
-		RepositoryURL  string             `json:"repository_url"`
-		Configurations testConfigurations `json:"configurations"`
+		Service        string                     `json:"service"`
+		Env            string                     `json:"env"`
+		RepositoryURL  string                     `json:"repository_url"`
+		Configurations testConfigurations         `json:"configurations"`
+		PageInfo       *knownTestsRequestPageInfo `json:"page_info,omitempty"`
 	}
 
 	knownTestsResponse struct {
@@ -52,20 +57,31 @@ type (
 			Type       string                 `json:"type"`
 			Attributes KnownTestsResponseData `json:"attributes"`
 		} `json:"data"`
-		PageInfo *knownTestsResponsePageInfo `json:"page_info,omitempty"`
 	}
 
 	KnownTestsResponseData struct {
-		Tests KnownTestsResponseDataModules `json:"tests"`
+		Tests    KnownTestsResponseDataModules `json:"tests"`
+		PageInfo *knownTestsResponsePageInfo   `json:"page_info,omitempty"`
 	}
 
 	KnownTestsResponseDataModules map[string]KnownTestsResponseDataSuites
 	KnownTestsResponseDataSuites  map[string][]string
 )
 
+// GetKnownTests loads known tests from the Bazel manifest cache when available,
+// otherwise it paginates the live API until all modules are merged.
 func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
+	if bazel.IsManifestModeEnabled() {
+		if cachedResponse, ok := loadKnownTestsFromManifestCache(); ok {
+			return cachedResponse, nil
+		}
+		// Compatible with Bazel offline mode: missing or invalid cache means empty known tests response.
+		log.Debug("civisibility.known_tests: returning empty known tests because manifest cache is unavailable or invalid")
+		return &KnownTestsResponseData{Tests: KnownTestsResponseDataModules{}}, nil
+	}
+
 	if c.repositoryURL == "" || c.commitSha == "" {
-		return nil, fmt.Errorf("civisibility.GetKnownTests: repository URL and commit SHA are required")
+		return nil, errors.New("civisibility.GetKnownTests: repository URL and commit SHA are required")
 	}
 
 	body := knownTestsRequest{
@@ -77,69 +93,96 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				Env:            c.environment,
 				RepositoryURL:  c.repositoryURL,
 				Configurations: c.testConfigurations,
+				PageInfo:       &knownTestsRequestPageInfo{},
 			},
 		},
-		PageInfo: &knownTestsRequestPageInfo{},
 	}
 
-	accumulated := KnownTestsResponseData{
-		Tests: make(KnownTestsResponseDataModules),
-	}
-
-	for {
-		request := c.getPostRequestConfig(knownTestsURLPath, body)
-		if request.Compressed {
-			telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
-		} else {
-			telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
-		}
-
-		startTime := time.Now()
-		response, err := c.handler.SendRequest(*request)
-		telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
-
-		if err != nil {
-			telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
-			return nil, fmt.Errorf("sending known tests request: %s", err)
-		}
-
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
-		}
-		if response.Compressed {
-			telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
-		} else {
-			telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
-		}
-
-		var responseObject knownTestsResponse
-		err = response.Unmarshal(&responseObject)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshalling known tests response: %s", err)
-		}
-
-		// Merge page data into accumulator
-		if responseObject.Data.Attributes.Tests != nil {
-			for module, suites := range responseObject.Data.Attributes.Tests {
-				if accumulated.Tests[module] == nil {
-					accumulated.Tests[module] = make(KnownTestsResponseDataSuites)
-				}
-				for suite, tests := range suites {
-					accumulated.Tests[module][suite] = append(accumulated.Tests[module][suite], tests...)
-				}
+	cacheRequest := body
+	cacheRequest.Data.ID = ""
+	cacheRequest.Data.Attributes.PageInfo = nil
+	return readThroughShortLivedCache(
+		c,
+		readCacheEndpointKnownTests,
+		cacheRequest,
+		func() (readCacheLiveResult[*KnownTestsResponseData], error) {
+			accumulated := KnownTestsResponseData{
+				Tests: make(KnownTestsResponseDataModules),
 			}
-		}
+			cacheable := true
 
-		// Check if there are more pages
-		if responseObject.PageInfo == nil || !responseObject.PageInfo.HasNext {
-			break
-		}
-		body.PageInfo.PageState = responseObject.PageInfo.Cursor
+			for {
+				request := c.getPostRequestConfig(knownTestsURLPath, body)
+				request.ExpectJSONResponse = true
+				if request.Compressed {
+					telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
+				} else {
+					telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
+				}
+
+				startTime := time.Now()
+				response, err := c.handler.SendRequest(*request)
+				telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+
+				if err != nil {
+					telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
+					return readCacheLiveResult[*KnownTestsResponseData]{}, fmt.Errorf("sending known tests request: %s", err)
+				}
+
+				if response.StatusCode < 200 || response.StatusCode >= 300 {
+					cacheable = false
+					telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+				}
+				if response.Compressed {
+					telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+				} else {
+					telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
+				}
+
+				var responseObject knownTestsResponse
+				err = response.Unmarshal(&responseObject)
+				if err != nil {
+					return readCacheLiveResult[*KnownTestsResponseData]{}, fmt.Errorf("unmarshalling known tests response: %s", err)
+				}
+
+				// Merge page data into accumulator
+				if responseObject.Data.Attributes.Tests != nil {
+					for module, suites := range responseObject.Data.Attributes.Tests {
+						if accumulated.Tests[module] == nil {
+							accumulated.Tests[module] = make(KnownTestsResponseDataSuites)
+						}
+						for suite, tests := range suites {
+							accumulated.Tests[module][suite] = append(accumulated.Tests[module][suite], tests...)
+						}
+					}
+				}
+
+				// Check if there are more pages
+				if responseObject.Data.Attributes.PageInfo == nil || !responseObject.Data.Attributes.PageInfo.HasNext {
+					break
+				}
+				body.Data.Attributes.PageInfo.PageState = responseObject.Data.Attributes.PageInfo.Cursor
+			}
+
+			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(&accumulated)))
+			return readCacheLiveResult[*KnownTestsResponseData]{
+				Value:     &accumulated,
+				Cacheable: cacheable,
+			}, nil
+		},
+		func(knownTests *KnownTestsResponseData) {
+			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(knownTests)))
+		},
+	)
+}
+
+// knownTestsResponseTestCount counts decoded known tests for content-derived telemetry.
+func knownTestsResponseTestCount(response *KnownTestsResponseData) int {
+	if response == nil {
+		return 0
 	}
-
-	// Report total test count telemetry
 	testCount := 0
-	for _, suites := range accumulated.Tests {
+	for _, suites := range response.Tests {
 		if suites == nil {
 			continue
 		}
@@ -147,6 +190,48 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 			testCount += len(tests)
 		}
 	}
-	telemetry.KnownTestsResponseTests(float64(testCount))
-	return &accumulated, nil
+	return testCount
+}
+
+// loadKnownTestsFromManifestCache reads and validates the Bazel manifest cache file for known tests.
+// It returns the cached response only when the cache path resolves, the file can be read, and the JSON is valid.
+func loadKnownTestsFromManifestCache() (*KnownTestsResponseData, bool) {
+	cacheFile, ok := bazel.CacheHTTPFile("known_tests.json")
+	if !ok {
+		log.Debug("civisibility.known_tests: manifest mode enabled but known tests cache path could not be resolved")
+		return nil, false
+	}
+
+	cacheFileForLog := bazel.TestOptimizationPathForLog(cacheFile)
+	log.Debug("civisibility.known_tests: reading %s", cacheFileForLog)
+
+	raw, err := os.ReadFile(cacheFile)
+	if err != nil {
+		log.Debug("civisibility.known_tests: cannot read known tests file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	log.Debug("civisibility.known_tests: read %s (%d bytes)", cacheFileForLog, len(raw))
+
+	var cachedResponse knownTestsResponse
+	if err := json.Unmarshal(raw, &cachedResponse); err != nil {
+		log.Debug("civisibility.known_tests: invalid known tests file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	moduleCount := 0
+	suiteCount := 0
+	testCount := 0
+	for _, suites := range cachedResponse.Data.Attributes.Tests {
+		moduleCount++
+		if suites == nil {
+			continue
+		}
+		for _, tests := range suites {
+			suiteCount++
+			testCount += len(tests)
+		}
+	}
+	log.Debug("civisibility.known_tests: loaded known tests from %s [modules:%d suites:%d tests:%d]", cacheFileForLog, moduleCount, suiteCount, testCount)
+	return &cachedResponse.Data.Attributes, true
 }

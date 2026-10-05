@@ -6,14 +6,15 @@
 package appsec
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
@@ -48,14 +49,15 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 	if wafOk, err := libddwaf.Usable(); !wafOk {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
-	builder, err := libddwaf.NewBuilder("", "")
+	builder, err := libddwaf.NewBuilder()
 	require.NoError(t, err)
 	defer builder.Close()
 
 	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(t, err)
 
-	handle := builder.Build()
+	handle, err := builder.Build()
+	require.NoError(t, err)
 	require.NotNil(t, handle)
 	defer handle.Close()
 
@@ -115,19 +117,20 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
+			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 			require.NoError(t, err)
 			defer wafCtx.Close()
-			runData := libddwaf.RunAddressData{
-				Persistent: map[string]any{
+			runData := addresses.RunAddressData{
+				Data: map[string]any{
 					"waf.context.processor":      map[string]any{"extract-schema": true},
 					"server.request.path_params": tc.pathParams,
 					"server.request.query": map[string][]string{
 						"query": {"$http_server_vars"},
 					},
 				},
+				TimerKey: addresses.WAFScope,
 			}
-			res, err := wafCtx.Run(runData)
+			res, err := wafCtx.Run(context.Background(), runData)
 			require.NoError(t, err)
 			require.NotNil(t, res)
 			require.True(t, res.HasDerivatives())
@@ -192,18 +195,18 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
+			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 
-			runData := libddwaf.RunAddressData{
-				Ephemeral: map[string]any{
+			runData := addresses.RunAddressData{
+				Data: map[string]any{
 					"waf.context.processor": map[string]any{"extract-schema": true},
 				},
 			}
-			maps.Copy(runData.Ephemeral, tc.addresses)
+			maps.Copy(runData.Data, tc.addresses)
 
-			wafRes, err := wafCtx.Run(runData)
+			wafRes, err := wafCtx.Run(context.Background(), runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			for k, v := range wafRes.Derivatives {

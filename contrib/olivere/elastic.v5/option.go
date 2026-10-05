@@ -14,6 +14,7 @@ import (
 
 type clientConfig struct {
 	serviceName   string
+	serviceSource string
 	spanName      string
 	transport     http.RoundTripper
 	analyticsRate float64
@@ -34,6 +35,7 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageOlivereElasticV5)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.transport = http.DefaultTransport.(*http.Transport)
 	cfg.resourceNamer = quantize
@@ -44,6 +46,7 @@ func defaults(cfg *clientConfig) {
 func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

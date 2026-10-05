@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
@@ -25,7 +24,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	exposedPort := "9093/tcp"
 
 	waitStrategies := []wait.Strategy{
-		wait.ForListeningPort(nat.Port(exposedPort)),
+		wait.ForListeningPort(exposedPort),
 	}
 	for _, topic := range topics {
 		waitStrategies = append(waitStrategies, wait.ForExec(createTopicCmd(topic)))
@@ -35,7 +34,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	}
 
 	container, err := kafka.Run(ctx,
-		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		Image("kafka"),
 		kafka.WithClusterID("test-cluster"),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(wait.ForAll(waitStrategies...)),
@@ -51,7 +50,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	mappedPort, err := container.MappedPort(ctx, nat.Port(exposedPort))
+	mappedPort, err := container.MappedPort(ctx, exposedPort)
 	require.NoError(t, err)
 
 	host, err := container.Host(ctx)

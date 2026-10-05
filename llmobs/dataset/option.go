@@ -59,11 +59,13 @@ func WithCSVExpectedOutputColumns(cols []string) CreateOption {
 
 type pullConfig struct {
 	projectName string
+	version     *int
 }
 
 func defaultPullConfig() *pullConfig {
 	return &pullConfig{
 		projectName: "",
+		version:     nil,
 	}
 }
 
@@ -74,5 +76,15 @@ type PullOption func(cfg *pullConfig)
 func WithPullProjectName(projectName string) PullOption {
 	return func(cfg *pullConfig) {
 		cfg.projectName = projectName
+	}
+}
+
+// WithPullVersion requests a specific historical snapshot of the dataset.
+// By default Pull fetches the latest version. Pass a version number returned
+// by a previous Pull (via Dataset.Version) to retrieve an earlier snapshot.
+// This is useful for accumulating multiple dataset versions in a single eval run.
+func WithPullVersion(version int) PullOption {
+	return func(cfg *pullConfig) {
+		cfg.version = &version
 	}
 }

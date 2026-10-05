@@ -140,6 +140,8 @@ func unmarshalPayload(bytes json.RawMessage, requestType RequestType) (Payload, 
 		payload = new(GenerateMetrics)
 	case RequestTypeLogs:
 		payload = new(Logs)
+	case RequestTypeAppEndpoints:
+		payload = new(AppEndpoints)
 	}
 
 	if err := json.Unmarshal(bytes, payload); err != nil {

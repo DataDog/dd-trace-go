@@ -33,7 +33,7 @@ var spansStarted, spansFinished, tracesDropped uint32
 var droppedP0Traces, droppedP0Spans uint32
 
 // partialTrace the number of partially dropped traces.
-var partialTraces uint32
+var partialTraces atomic.Uint32
 
 // Copies of the stats to be sent to the agent.
 var agentDroppedP0Traces, agentDroppedP0Spans uint32
@@ -53,7 +53,7 @@ func Signal(e Event, count uint32) {
 		atomic.AddUint32(&droppedP0Spans, count)
 		atomic.AddUint32(&agentDroppedP0Spans, count)
 	case PartialTraces:
-		atomic.AddUint32(&partialTraces, count)
+		partialTraces.Add(count)
 	}
 }
 
@@ -70,7 +70,7 @@ func Count(e Event) uint32 {
 	case DroppedP0Spans:
 		return atomic.SwapUint32(&droppedP0Spans, 0)
 	case PartialTraces:
-		return atomic.SwapUint32(&partialTraces, 0)
+		return partialTraces.Swap(0)
 	case AgentDroppedP0Traces:
 		return atomic.SwapUint32(&agentDroppedP0Traces, 0)
 	case AgentDroppedP0Spans:
@@ -85,7 +85,7 @@ func Reset() {
 	atomic.StoreUint32(&tracesDropped, 0)
 	atomic.StoreUint32(&droppedP0Traces, 0)
 	atomic.StoreUint32(&droppedP0Spans, 0)
-	atomic.StoreUint32(&partialTraces, 0)
+	partialTraces.Store(0)
 	atomic.StoreUint32(&agentDroppedP0Traces, 0)
 	atomic.StoreUint32(&agentDroppedP0Spans, 0)
 }

@@ -112,7 +112,7 @@ func (p *logsPayload) Close() error {
 	return nil
 }
 
-// Read implements io.Reader. It reads from the msgpack-encoded stream.
+// Read implements io.Reader. It reads from the JSON-encoded stream.
 func (p *logsPayload) Read(b []byte) (n int, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

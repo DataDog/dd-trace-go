@@ -8,7 +8,7 @@
 package provider
 
 import (
-	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -54,9 +54,15 @@ func New() *Provider {
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
 // and returns the highest-priority successfully-parsed value, or def if none parse.
 func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T {
+	v, _ := getWithOrigin(p, key, def, parse)
+	return v
+}
+
+// getWithOrigin is like get but also returns the origin of the winning source.
+func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
 	var final *T
-	for i := len(p.sources) - 1; i >= 0; i-- {
-		source := p.sources[i]
+	var winningOrigin telemetry.Origin
+	for _, source := range slices.Backward(p.sources) {
 		v := source.get(key)
 		if v != "" {
 			var id string
@@ -66,24 +72,50 @@ func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T 
 			configtelemetry.ReportWithID(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
 				final = &parsed
+				winningOrigin = source.origin()
 			}
 		}
 	}
 	configtelemetry.ReportDefault(key, def)
 	if final != nil {
-		return *final
+		return *final, winningOrigin
 	}
-	return def
+	return def, telemetry.OriginDefault
 }
 
 func (p *Provider) GetString(key string, def string) string {
+	v, _ := p.GetStringWithOrigin(key, def)
+	return v
+}
+
+// GetStringWithOrigin is like GetString but also returns the origin of the winning
+// configuration source. Use this when the caller needs to know where the value
+// came from (e.g. to pass to DynamicConfig).
+func (p *Provider) GetStringWithOrigin(key string, def string) (string, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (string, bool) {
+		return v, true
+	})
+}
+
+func (p *Provider) GetStringWithValidator(key string, def string, validate func(string) bool) string {
 	return get(p, key, def, func(v string) (string, bool) {
+		if validate != nil && !validate(v) {
+			return "", false
+		}
 		return v, true
 	})
 }
 
 func (p *Provider) GetBool(key string, def bool) bool {
-	return get(p, key, def, func(v string) (bool, bool) {
+	v, _ := p.GetBoolWithOrigin(key, def)
+	return v
+}
+
+// GetBoolWithOrigin is like GetBool but also returns the origin of the winning
+// configuration source. Use this when the caller needs to know where the value
+// came from (e.g. to pass to DynamicConfig).
+func (p *Provider) GetBoolWithOrigin(key string, def bool) (bool, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (bool, bool) {
 		boolVal, err := strconv.ParseBool(v)
 		if err == nil {
 			return boolVal, true
@@ -112,9 +144,9 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 	})
 }
 
-func (p *Provider) GetMap(key string, def map[string]string) map[string]string {
+func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
-		m := parseMapString(v)
+		m := parseMapString(v, delimiter)
 		return m, len(m) > 0
 	})
 }
@@ -134,7 +166,15 @@ func (p *Provider) GetFloat(key string, def float64) float64 {
 }
 
 func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(float64) bool) float64 {
-	return get(p, key, def, func(v string) (float64, bool) {
+	v, _ := p.GetFloatWithValidatorOrigin(key, def, validate)
+	return v
+}
+
+// GetFloatWithValidatorOrigin is like GetFloatWithValidator but also returns the
+// origin of the winning configuration source. Use this when the caller needs to
+// know where the value came from (e.g. to pass to DynamicConfig).
+func (p *Provider) GetFloatWithValidatorOrigin(key string, def float64, validate func(float64) bool) (float64, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (float64, bool) {
 		floatVal, err := strconv.ParseFloat(v, 64)
 		if err == nil {
 			if validate != nil && !validate(floatVal) {
@@ -146,11 +186,17 @@ func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(
 	})
 }
 
-func (p *Provider) GetURL(key string, def *url.URL) *url.URL {
-	return get(p, key, def, func(v string) (*url.URL, bool) {
-		u, err := url.Parse(v)
-		return u, err == nil
-	})
+// IsSet returns true if any configuration source provides a non-empty value for the key.
+//
+// TODO: populate an isSet field on the Provider at the time of iterating over
+// sources instead of re-querying them here.
+func (p *Provider) IsSet(key string) bool {
+	for _, source := range p.sources {
+		if source.get(key) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeKey normalizes the key to a valid environment variable name.
@@ -161,10 +207,11 @@ func normalizeKey(key string) string {
 	return "DD_" + strings.ToUpper(key)
 }
 
-// parseMapString parses a string containing key:value pairs separated by comma or space.
-func parseMapString(str string) map[string]string {
+// parseMapString parses a string containing key-value pairs separated by comma or space.
+// It prioritizes the Datadog delimiter (:) over the OTel delimiter (=)
+func parseMapString(str string, delimiter string) map[string]string {
 	result := make(map[string]string)
-	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
+	internal.ForEachStringTag(str, delimiter, func(key, val string) {
 		result[key] = val
 	})
 	return result

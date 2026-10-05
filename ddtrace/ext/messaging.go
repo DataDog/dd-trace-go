@@ -10,6 +10,10 @@ const (
 	MessagingSystem = "messaging.system"
 	// MessagingDestinationName identifies message destination name
 	MessagingDestinationName = "messaging.destination.name"
+	// MessagingOperationName identifies the messaging operation performed (e.g. send, receive).
+	MessagingOperationName = "messaging.operation.name"
+	// MessagingMessageID identifies the message ID assigned by the messaging system.
+	MessagingMessageID = "messaging.message.id"
 )
 
 // Available values for messaging.system.
@@ -25,4 +29,6 @@ const (
 	MessagingKafkaPartition = "messaging.kafka.partition"
 	// KafkaBootstrapServers holds a comma separated list of bootstrap servers as defined in producer or consumer config.
 	KafkaBootstrapServers = "messaging.kafka.bootstrap.servers"
+	// MessagingKafkaClusterID holds the Kafka cluster ID as reported by the broker.
+	MessagingKafkaClusterID = "messaging.kafka.cluster_id"
 )

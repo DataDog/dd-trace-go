@@ -221,6 +221,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Tag(ext.KeyServiceSource))
 
 		for _, s := range spans {
 			if s.Tag(ext.Component) == "jackc/pgx.v5" {

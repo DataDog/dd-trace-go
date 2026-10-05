@@ -607,6 +607,188 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 	}
 }
 
+func TestWithErrorCheck(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/Ping" {
+						return false
+					}
+					return true
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
+					}
+					return true
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				var ops []Option
+				if tt.errCheck != nil {
+					ops = append(ops, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, ops...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				client := rig.client
+				_, err = client.Ping(context.Background(), &fixturepb.FixtureRequest{Name: tt.message})
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 2)
+
+				var serverSpan, clientSpan *mocktracer.Span
+
+				for _, s := range spans {
+					// order of traces in buffer is not guaranteed
+					switch s.OperationName() {
+					case "grpc.server":
+						serverSpan = s
+					case "grpc.client":
+						clientSpan = s
+					}
+				}
+
+				if tt.withError {
+					assert.NotNil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.NotNil(t, serverSpan.Tag(ext.ErrorMsg))
+				} else {
+					assert.Nil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.Nil(t, serverSpan.Tag(ext.ErrorMsg))
+				}
+
+				rig.Close()
+				mt.Reset()
+			})
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/StreamPing" {
+						return false
+					}
+					return true
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
+					}
+					return true
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				var opts []Option
+				if tt.errCheck != nil {
+					opts = append(opts, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, opts...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				ctx, done := context.WithCancel(context.Background())
+				client := rig.client
+				stream, err := client.StreamPing(ctx)
+				assert.NoError(t, err)
+
+				err = stream.Send(&fixturepb.FixtureRequest{Name: tt.message})
+				assert.NoError(t, err)
+
+				_, err = stream.Recv()
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				assert.NoError(t, stream.CloseSend())
+				done() // close stream from client side
+				rig.Close()
+
+				waitForSpans(mt, 5)
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 5)
+
+				var hasErrorTag bool
+				for _, s := range spans {
+					if s.Tag(ext.ErrorMsg) != nil {
+						hasErrorTag = true
+						break
+					}
+				}
+				assert.Equal(t, tt.withError, hasErrorTag)
+
+				mt.Reset()
+			})
+		}
+	})
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		rig, err := newRig(true, opts...)
@@ -801,6 +983,67 @@ func TestIgnoredMetadata(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
+}
+
+// WithMetadataTags must never write credential-bearing or binary metadata keys
+// into span tags, regardless of user-supplied WithIgnoredMetadata options.
+func TestMetadataCredentialLeakPrevention(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(false, WithMetadataTags())
+	require.NoError(t, err)
+	defer rig.Close()
+
+	sensitiveKeys := []string{
+		"authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+	}
+
+	md := metadata.MD{
+		"authorization":           []string{"Bearer secret-token"},
+		"proxy-authorization":     []string{"Basic secret"},
+		"cookie":                  []string{"session=secret"},
+		"set-cookie":              []string{"id=secret; HttpOnly"},
+		"x-api-key":               []string{"secret-api-key"},
+		"x-auth-token":            []string{"secret-auth-token"},
+		"grpc-status-details-bin": []string{"binary-data"},
+		"safe-key":                []string{"visible"},
+	}
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	waitForSpans(mt, 1)
+
+	var serverSpan *mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == "grpc.server" {
+			serverSpan = s
+			break
+		}
+	}
+	require.NotNil(t, serverSpan, "grpc.server span not found")
+
+	for _, key := range sensitiveKeys {
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key), "credential key %q must not appear as span tag", key)
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key+".0"), "credential key %q must not appear as span tag", key)
+	}
+
+	// Binary metadata must also be suppressed.
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin"), "binary metadata must not appear as span tag")
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin.0"), "binary metadata must not appear as span tag")
+
+	// Non-sensitive keys must still be tagged.
+	safeTag := serverSpan.Tag(tagMetadataPrefix + "safe-key")
+	if safeTag == nil {
+		safeTag = serverSpan.Tag(tagMetadataPrefix + "safe-key.0")
+	}
+	assert.NotNil(t, safeTag, "non-sensitive metadata key must still be tagged")
 }
 
 func TestSpanOpts(t *testing.T) {
@@ -1040,7 +1283,7 @@ func TestIssue2050(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: &roundTripper{
 			assertSpanFromRequest: func(r *http.Request) {
-				if r.URL.Path != "/v0.4/traces" {
+				if r.URL.Path != "/v0.4/traces" && r.URL.Path != "/v1.0/traces" {
 					return
 				}
 				req := r.Clone(context.Background())
@@ -1049,26 +1292,46 @@ func TestIssue2050(t *testing.T) {
 				buf, err := io.ReadAll(req.Body)
 				require.NoError(t, err)
 
-				var payload bytes.Buffer
-				_, err = msgp.UnmarshalAsJSON(&payload, buf)
-				require.NoError(t, err)
+				if r.URL.Path == "/v1.0/traces" {
+					var trace map[string]interface{}
+					trace = testutils.DecodeV1Traces(t, buf)
+					chunks, ok := trace["11"].([]interface{})
+					if !ok || len(chunks) == 0 {
+						return
+					}
+					require.Len(t, chunks, 2)
+					getFirstSpan := func(c interface{}) map[string]interface{} {
+						return c.(map[string]interface{})["4"].([]interface{})[0].(map[string]interface{})
+					}
+					s0 := getFirstSpan(chunks[0])
+					s1 := getFirstSpan(chunks[1])
+					assert.Equal(t, "some-dd-service", s0["1"])
+					assert.Equal(t, "grpc.client", s1["1"])
+					assert.EqualValues(t, 2, s0["16"]) // server
+					assert.EqualValues(t, 3, s1["16"]) // client
+				} else {
+					// allow fallback to v0.4
+					var payload bytes.Buffer
+					_, err = msgp.UnmarshalAsJSON(&payload, buf)
+					require.NoError(t, err)
 
-				var trace [][]map[string]interface{}
-				err = json.Unmarshal(payload.Bytes(), &trace)
-				require.NoError(t, err)
+					var trace [][]map[string]interface{}
+					err = json.Unmarshal(payload.Bytes(), &trace)
+					require.NoError(t, err)
 
-				if len(trace) == 0 {
-					return
+					if len(trace) == 0 {
+						return
+					}
+					require.Len(t, trace, 2)
+					s0 := trace[0][0]
+					s1 := trace[1][0]
+
+					assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "some-dd-service", s0["service"])
+
+					assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "grpc.client", s1["service"])
 				}
-				require.Len(t, trace, 2)
-				s0 := trace[0][0]
-				s1 := trace[1][0]
-
-				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "some-dd-service", s0["service"])
-
-				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "grpc.client", s1["service"])
 				close(spansFound)
 			},
 		},
@@ -1097,4 +1360,96 @@ func TestIssue2050(t *testing.T) {
 	case <-spansFound:
 		return
 	}
+}
+
+// hasControlByte reports whether s contains a raw CR, LF, or NUL byte -- the
+// bytes an attacker needs to smuggle extra header lines into a carrier that
+// writes header values without validation.
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\r', '\n', 0x00:
+			return true
+		}
+	}
+	return false
+}
+
+// otBaggageEntries returns the subset of md whose keys carry the legacy
+// OpenTracing baggage prefix. gRPC metadata keys are already lowercased by
+// MDCarrier.Set, matching the (also lowercase) DefaultBaggageHeaderPrefix.
+func otBaggageEntries(md metadata.MD) metadata.MD {
+	out := metadata.MD{}
+	for k, vals := range md {
+		if strings.HasPrefix(k, tracer.DefaultBaggageHeaderPrefix) {
+			out[k] = vals
+		}
+	}
+	return out
+}
+
+// TestBaggageControlCharsNotInjectedOverGRPC reproduces the outbound impact
+// of a poisoned baggage value over gRPC: "v\r\nX-Evil:1" is exactly what an
+// upstream "baggage: k=v%0D%0AX-Evil:1" header decodes to. gRPC metadata
+// values may legally contain arbitrary bytes, so the secure behavior here is
+// that the tracer itself never re-emits a raw control byte under the legacy
+// ot-baggage-* prefix, regardless of what the transport would otherwise allow.
+func TestBaggageControlCharsNotInjectedOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	span.SetBaggageItem("k", "v\r\nX-Evil:1")
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err, "the RPC must not fail because of a poisoned ot-baggage-* metadata value")
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	baggage := otBaggageEntries(md)
+	for k, vals := range baggage {
+		for _, v := range vals {
+			assert.False(t, hasControlByte(v), "%s must not carry a raw control byte, got %q", k, v)
+		}
+	}
+	assert.NotEmpty(t, baggage, "expected an ot-baggage-* metadata entry on the outbound request")
+}
+
+// TestOTBaggageEnforcesLimitsOverGRPC covers the ot-baggage-* prefix path
+// over the gRPC client interceptor: unlike the W3C "baggage" header, this
+// path currently has no item-count or byte-size cap, so an attacker-sized
+// baggage set is fully delivered as outbound gRPC metadata.
+func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	for i := range 100 {
+		span.SetBaggageItem(fmt.Sprintf("k%d", i), "x")
+	}
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err)
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	count, totalBytes := 0, 0
+	for k, vals := range otBaggageEntries(md) {
+		for _, v := range vals {
+			count++
+			totalBytes += len(k) + len(v)
+		}
+	}
+	assert.LessOrEqual(t, count, 64)
+	assert.LessOrEqual(t, totalBytes, 8192)
 }

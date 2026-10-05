@@ -18,7 +18,7 @@ func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 		return
 	}
 	for _, tp := range offsets {
-		tracer.TrackKafkaCommitOffset(tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
+		tracer.TrackKafkaCommitOffsetWithCluster(tr.ClusterID(), tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 	}
 }
 
@@ -28,7 +28,7 @@ func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Co
 	}
 	for _, tp := range offsets {
 		if _, high, err := consumer.GetWatermarkOffsets(tp.GetTopic(), tp.GetPartition()); err == nil {
-			tracer.TrackKafkaHighWatermarkOffset("", tp.GetTopic(), tp.GetPartition(), high)
+			tracer.TrackKafkaHighWatermarkOffset(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), high)
 		}
 	}
 }
@@ -39,16 +39,27 @@ func (tr *Tracer) TrackProduceOffsets(msg Message) {
 		return
 	}
 	tp := msg.GetTopicPartition()
-	tracer.TrackKafkaProduceOffset(tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
+	tracer.TrackKafkaProduceOffsetWithCluster(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 }
 
 func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 	if !tr.dsmEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:in", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
-	if tr.groupID != "" {
-		edges = append(edges, "group:"+tr.groupID)
+	topic := msg.GetTopicPartition().GetTopic()
+	groupID := tr.groupID
+	clusterID := tr.ClusterID()
+	key := edgeFingerprint("in", topic, groupID, clusterID)
+	edges := tr.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:in", "topic:" + topic, "type:kafka"}
+		if groupID != "" {
+			edges = append(edges, "group:"+groupID)
+		}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = tr.dsmTagCache.getOrStore(key, edges)
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
@@ -66,7 +77,17 @@ func (tr *Tracer) SetProduceCheckpoint(msg Message) {
 	if !tr.dsmEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:out", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
+	topic := msg.GetTopicPartition().GetTopic()
+	clusterID := tr.ClusterID()
+	key := edgeFingerprint("out", topic, "", clusterID)
+	edges := tr.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:out", "topic:" + topic, "type:kafka"}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = tr.dsmTagCache.getOrStore(key, edges)
+	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),

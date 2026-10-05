@@ -201,7 +201,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 func (tg *TestStatsdClient) CallNames() []string {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	var n []string
+	n := make([]string, 0, len(tg.gaugeCalls)+len(tg.incrCalls)+len(tg.countCalls)+len(tg.timingCalls))
 	for _, c := range tg.gaugeCalls {
 		n = append(n, c.name)
 	}
