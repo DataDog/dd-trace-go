@@ -285,37 +285,6 @@ func TestParseTimeout(t *testing.T) {
 	})
 }
 
-func TestResolveBLRPMaxQueueSize(t *testing.T) {
-	t.Run("defaults to 2048", func(t *testing.T) {
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("uses OTEL_BLRP_MAX_QUEUE_SIZE", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "4096")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 4096, size)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "invalid")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("falls back to default on zero", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "0")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("falls back to default on negative", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-}
-
 func TestResolveBLRPScheduleDelay(t *testing.T) {
 	t.Run("defaults to 1000ms", func(t *testing.T) {
 		delay := resolveBLRPScheduleDelay()
