@@ -1,0 +1,68 @@
+name: Publish DORA metrics
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish-dora-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tagged commit
+        id: tag
+        env:
+          GIT_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/${{ github.repository }}/commits/${GIT_TAG}" --jq .sha)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GIT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
+      - name: Publish deployment event
+        if: steps.dd-sts.outcome == 'success'
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          GIT_TAG: ${{ steps.tag.outputs.tag }}
+          GIT_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          VERSION="${GIT_TAG#v}"
+          STARTED=$(($(date +%s) * 1000))
+          FINISHED=$((STARTED + 1000)) # finished_at must differ from started_at or the API returns 400
+
+          curl --fail --silent --show-error -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -H "DD-API-KEY: ${DD_API_KEY}" \
+            -d @- << EOF
+          {
+            "data": {
+              "attributes": {
+                "service": "dd-trace-go",
+                "started_at": $STARTED,
+                "finished_at": $FINISHED,
+                "git": {
+                  "commit_sha": "$GIT_SHA",
+                  "repository_url": "https://github.com/DataDog/dd-trace-go"
+                },
+                "env": "prod",
+                "team": "apm-go",
+                "version": "$VERSION",
+                "custom_tags": [ "department:engineering", "app_type:sdk" ]
+              }
+            }
+          }
+          EOF
