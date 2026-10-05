@@ -7,6 +7,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -39,5 +40,24 @@ func TestResolveBLRPMaxQueueSize(t *testing.T) {
 		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
 		size := loadConfig().BLRPMaxQueueSize()
 		assert.Equal(t, 2048, size)
+	})
+}
+
+func TestResolveBLRPScheduleDelay(t *testing.T) {
+	t.Run("defaults to 1000ms", func(t *testing.T) {
+		delay := loadConfig().BLRPScheduleDelay()
+		assert.Equal(t, 1000*time.Millisecond, delay)
+	})
+
+	t.Run("uses OTEL_BLRP_SCHEDULE_DELAY", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "500")
+		delay := loadConfig().BLRPScheduleDelay()
+		assert.Equal(t, 500*time.Millisecond, delay)
+	})
+
+	t.Run("falls back to default on invalid value", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "invalid")
+		delay := loadConfig().BLRPScheduleDelay()
+		assert.Equal(t, 1000*time.Millisecond, delay)
 	})
 }

@@ -535,17 +535,6 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 	}
 }
 
-// resolveBLRPScheduleDelay returns the schedule delay for BatchLogRecordProcessor.
-// Default: 1000ms
-func resolveBLRPScheduleDelay() time.Duration {
-	if delayStr := env.Get(envBLRPScheduleDelay); delayStr != "" {
-		if delay, err := parseTimeout(delayStr); err == nil {
-			return delay
-		}
-	}
-	return defaultBLRPScheduleDelay
-}
-
 // resolveBLRPExportTimeout returns the export timeout for BatchLogRecordProcessor.
 // Default: 30000ms
 func resolveBLRPExportTimeout() time.Duration {

@@ -93,7 +93,7 @@ func TestInitGlobalLoggerProvider(t *testing.T) {
 
 		// Verify env vars were read
 		assert.Equal(t, 1024, config.Get().BLRPMaxQueueSize())
-		assert.Equal(t, 500*time.Millisecond, resolveBLRPScheduleDelay())
+		assert.Equal(t, 500*time.Millisecond, config.Get().BLRPScheduleDelay())
 		assert.Equal(t, 15000*time.Millisecond, resolveBLRPExportTimeout())
 		assert.Equal(t, 256, resolveBLRPMaxExportBatchSize())
 
