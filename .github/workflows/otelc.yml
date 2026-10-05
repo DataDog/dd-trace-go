@@ -148,6 +148,12 @@ jobs:
           set -o pipefail
           rc=0
           for pkg in ${PACKAGE_NAMES}; do
+            # Some suites only build on Linux in CI (//go:build linux || !githubci),
+            # and otelc fails on a package with no Go files left to build.
+            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
+              echo "Skipping ${pkg}: no Go files for this platform"
+              continue
+            fi
             raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
             otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
             status=$?
