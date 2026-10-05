@@ -285,25 +285,6 @@ func TestParseTimeout(t *testing.T) {
 	})
 }
 
-func TestResolveBLRPScheduleDelay(t *testing.T) {
-	t.Run("defaults to 1000ms", func(t *testing.T) {
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 1000*time.Millisecond, delay)
-	})
-
-	t.Run("uses OTEL_BLRP_SCHEDULE_DELAY", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "500")
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 500*time.Millisecond, delay)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "invalid")
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 1000*time.Millisecond, delay)
-	})
-}
-
 func TestResolveBLRPExportTimeout(t *testing.T) {
 	t.Run("defaults to 30000ms", func(t *testing.T) {
 		timeout := resolveBLRPExportTimeout()

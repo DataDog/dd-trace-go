@@ -192,8 +192,9 @@ type Config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
-	logsOTelEnabled  bool
-	blrpMaxQueueSize int
+	logsOTelEnabled   bool
+	blrpMaxQueueSize  int
+	blrpScheduleDelay time.Duration
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.

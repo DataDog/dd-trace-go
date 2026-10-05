@@ -69,7 +69,7 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 		processor := sdklog.NewBatchProcessor(
 			exporter,
 			sdklog.WithMaxQueueSize(cfg.BLRPMaxQueueSize()),
-			sdklog.WithExportInterval(resolveBLRPScheduleDelay()),
+			sdklog.WithExportInterval(cfg.BLRPScheduleDelay()),
 			sdklog.WithExportTimeout(resolveBLRPExportTimeout()),
 			sdklog.WithExportMaxBatchSize(resolveBLRPMaxExportBatchSize()),
 		)
