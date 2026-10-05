@@ -9,6 +9,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -503,6 +504,29 @@ func TestGroupName(t *testing.T) {
 			assert.Equal(t, tc.wantShare, h.isShareGroup)
 		})
 	}
+}
+
+// preShareGroupOptValues mimics franz-go before v1.21.4, whose OptValue has no
+// ShareGroup case.
+type preShareGroupOptValues struct{ *kgo.Client }
+
+func (c preShareGroupOptValues) OptValue(opt any) any {
+	if reflect.ValueOf(opt).Pointer() == reflect.ValueOf(kgo.ShareGroup).Pointer() {
+		return nil
+	}
+	return c.Client.OptValue(opt)
+}
+
+func TestGroupNameWithoutShareGroupOptValue(t *testing.T) {
+	share := newOfflineClient(t, newTracingHook(), kgo.ConsumeTopics("topic"), kgo.ShareGroup("my-share-group"))
+	group, isShare := groupName(preShareGroupOptValues{share})
+	assert.Empty(t, group)
+	assert.False(t, isShare)
+
+	consumer := newOfflineClient(t, newTracingHook(), kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("my-consumer-group"))
+	group, isShare = groupName(preShareGroupOptValues{consumer})
+	assert.Equal(t, "my-consumer-group", group)
+	assert.False(t, isShare)
 }
 
 func TestConsumeDSMCheckpointGroup(t *testing.T) {

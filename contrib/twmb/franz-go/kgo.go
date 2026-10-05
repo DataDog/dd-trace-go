@@ -7,6 +7,7 @@ package kgo
 
 import (
 	"context"
+	"regexp"
 	"sync"
 
 	kgo "github.com/twmb/franz-go/pkg/kgo"
@@ -67,8 +68,10 @@ func newTracingHook(opts ...Option) *tracingHook {
 	}
 }
 
-// WithTracing creates return a kgo.Hook enabling
-// tracing on the client
+// WithTracing returns a kgo.Opt that enables tracing on the client.
+//
+// The returned Opt holds per-client state. Pass it to a single
+// kgo.NewClient call, and call WithTracing again for each client.
 func WithTracing(opts ...Option) kgo.Opt {
 	return kgo.WithHooks(newTracingHook(opts...))
 }
@@ -88,9 +91,19 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 // OnNewClient is a kgo hook called when the client is initialized
 // before any client goroutines are started. It resolves the group name
 // used for DSM.
+//
+// The hook holds per-client state. Attach the Opt returned by WithTracing
+// to one client only. A hook attached to two clients reports the group of
+// the client created last for both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
 	h.groupID, h.isShareGroup = groupName(c)
 }
+
+type optValuer interface {
+	OptValue(opt any) any
+}
+
+var warnShareGroupUnsupported sync.Once
 
 // groupName returns the consumer group or share group name the client was
 // configured with, and whether it is a share group. It returns "" for direct
@@ -98,14 +111,21 @@ func (h *tracingHook) OnNewClient(c *kgo.Client) {
 //
 // Client.GroupMetadata is deliberately not used: it returns the
 // broker-assigned member ID, not the group name.
-func groupName(c *kgo.Client) (name string, isShareGroup bool) {
+func groupName(c optValuer) (name string, isShareGroup bool) {
 	if g, _ := c.OptValue(kgo.ConsumerGroup).(string); g != "" {
 		return g, false
 	}
-	if g, _ := c.OptValue(kgo.ShareGroup).(string); g != "" {
-		return g, true
+	// franz-go before v1.21.4 has no ShareGroup case in OptValue and returns nil.
+	g, ok := c.OptValue(kgo.ShareGroup).(string)
+	if !ok {
+		if topics, _ := c.OptValue(kgo.ConsumeTopics).(map[string]*regexp.Regexp); len(topics) > 0 {
+			warnShareGroupUnsupported.Do(func() {
+				instr.Logger().Warn("contrib/twmb/franz-go: this franz-go version does not report ShareGroup through OptValue; share group DSM tagging is disabled")
+			})
+		}
+		return "", false
 	}
-	return "", false
+	return g, g != ""
 }
 
 // OnPollStart is a kgo hook called at the start of every PollFetches or
