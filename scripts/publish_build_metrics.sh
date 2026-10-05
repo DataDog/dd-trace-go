@@ -11,9 +11,18 @@ set -euo pipefail
 # custom measures and tags on the current CI job span using datadog-ci.
 #
 # Environment variables:
-#   METRICS_FILE        Path to metrics JSON file (required)
-#   DATADOG_API_KEY     Datadog API key (required)
-#   DATADOG_SITE        Datadog site (default: datadoghq.com)
+#   METRICS_FILE         Path to metrics JSON file (required)
+#   DATADOG_API_KEY      Datadog API key (required)
+#   DATADOG_SITE         Datadog site (default: datadoghq.com)
+# Cache utilization flags (optional; prefixes GO_MOD_, GSA_, DATADOG_CI_):
+#   <prefix>CACHE_OUTCOME  outcome of this job's actions/cache step ('skipped'
+#                          or empty means the step did not run)
+#   <prefix>CACHE_HIT      its cache-hit output: 'true' exact match, 'false'
+#                          restore-key match, empty on a miss
+#
+# Each cache whose step ran is published as a ci.cache.<name>.hit measure
+# (1 = exact hit, no network; 0 = miss or partial restore) so utilization
+# can be tracked in CI Visibility.
 #
 # Usage: scripts/publish_build_metrics.sh
 
@@ -92,6 +101,27 @@ for i in "${!DEP_KEYS[@]}"; do
   # Publish dependency size bytes by rank (0 = single largest dependency in this build)
   MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
 done
+
+# Cache utilization: 1 = exact actions/cache hit (no network), 0 = miss or
+# partial restore (network needed). actions/cache emits 'true' only on an
+# exact match, 'false' on a restore-key match, and an empty string on a miss,
+# so the workflow passes the cache step's outcome alongside to tell a miss
+# apart from a cache step that did not run (gsa in orchestrion mode): only a
+# cache whose step ran publishes a measure.
+publish_cache_measure() {
+  # $1: measure suffix, $2: step outcome, $3: cache-hit output
+  local hit
+  [[ -z "$2" || "$2" == "skipped" ]] && return 0
+  if [[ "$3" == "true" ]]; then hit=1; else hit=0; fi
+  MEASURE_ARGS+=(--measures "ci.cache.${1}.hit:${hit}")
+  CACHE_REPORTS+=("${1}=${hit}")
+}
+
+CACHE_REPORTS=()
+publish_cache_measure go_modules "${GO_MOD_CACHE_OUTCOME:-}" "${GO_MOD_CACHE_HIT:-}"
+publish_cache_measure gsa "${GSA_CACHE_OUTCOME:-}" "${GSA_CACHE_HIT:-}"
+publish_cache_measure datadog_ci "${DATADOG_CI_CACHE_OUTCOME:-}" "${DATADOG_CI_CACHE_HIT:-}"
+message "  Cache utilization: ${CACHE_REPORTS[*]:-none reported}"
 
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
   "${MEASURE_ARGS[@]}" ||

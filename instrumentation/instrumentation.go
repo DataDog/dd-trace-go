@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -71,11 +72,6 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-// ReloadConfig reloads config read from environment variables. This is useful for tests.
-func ReloadConfig() {
-	namingschema.ReloadConfig()
-}
-
 // Version returns the version of the dd-trace-go package.
 func Version() string {
 	return version.Tag
@@ -92,6 +88,9 @@ type Instrumentation struct {
 }
 
 // ServiceName returns the default service name to be set for the given instrumentation component.
+// When the package has no naming entry, which is the recommended setup for new integrations, this
+// returns the global DD_SERVICE. The per-component naming logic backs the legacy
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA feature.
 func (i *Instrumentation) ServiceName(component Component, opCtx OperationContext) string {
 	cfg := namingschema.GetConfig()
 
@@ -128,7 +127,10 @@ func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
 	}
 }
 
-// OperationName returns the operation name to be set for the given instrumentation component.
+// OperationName returns the operation name to be set for the given instrumentation component. It
+// backs the legacy DD_TRACE_SPAN_ATTRIBUTE_SCHEMA naming-schema feature; new integrations should not
+// call it and should hardcode operation names as string literals instead. See
+// https://github.com/DataDog/dd-trace-go/blob/main/contrib/INTEGRATIONS.md.
 func (i *Instrumentation) OperationName(component Component, opCtx OperationContext) string {
 	op, ok := i.info.naming[component]
 	if !ok {
@@ -212,6 +214,13 @@ func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 
 func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 	return globalconfig.AnalyticsRate()
+}
+
+// OTelSemanticsEnabled `true` changes observability data to be emitted
+// according to OpenTelemetry semantic conventions. Datadog conventions
+// are used when `false`.
+func (i *Instrumentation) OTelSemanticsEnabled() bool {
+	return internalconfig.Get().OTelSemanticsEnabled()
 }
 
 func (i *Instrumentation) AppSecEnabled() bool {
