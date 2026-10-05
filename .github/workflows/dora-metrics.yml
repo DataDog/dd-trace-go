@@ -1,8 +1,10 @@
 name: Publish DORA metrics
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
   workflow_dispatch: {}
 
 permissions:
@@ -13,17 +15,6 @@ jobs:
   publish-dora-metrics:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve tagged commit
-        id: tag
-        env:
-          GIT_TAG: ${{ github.event.release.tag_name || github.ref_name }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          sha=$(gh api "repos/${{ github.repository }}/commits/${GIT_TAG}" --jq .sha)
-          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "tag=${GIT_TAG}" >> "$GITHUB_OUTPUT"
-
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
@@ -35,8 +26,8 @@ jobs:
         if: steps.dd-sts.outcome == 'success'
         env:
           DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
-          GIT_TAG: ${{ steps.tag.outputs.tag }}
-          GIT_SHA: ${{ steps.tag.outputs.sha }}
+          GIT_TAG: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           VERSION="${GIT_TAG#v}"
