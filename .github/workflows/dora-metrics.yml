@@ -37,7 +37,7 @@ jobs:
           STARTED=$(($(date +%s) * 1000)) # started_at represents this pipeline's run-clock time (aka when the release tag was created)
           FINISHED=$((STARTED + 1000)) # finished_at must differ from started_at or the API returns 400
 
-          curl --fail --silent --show-error -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
+          curl --fail --silent --show-error --retry 3 --retry-delay 5 -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             -H "DD-API-KEY: ${DD_API_KEY}" \
