@@ -6,6 +6,8 @@
 package httptrace
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,10 +33,21 @@ func TestConfig(t *testing.T) {
 				envQueryStringDisabled: "invalid",
 				EnvQueryStringRegexp:   "+",
 			},
+			// Fail closed: an invalid regexp drops the query string.
 			cfg: config{
-				queryString:       true,
-				queryStringRegexp: defaultQueryStringRegexp,
+				queryString:     true,
+				dropQueryString: true,
 			},
+		},
+		{
+			name: "explicit-default-regexp",
+			env:  map[string]string{EnvQueryStringRegexp: defaultQueryStringPattern},
+			cfg:  defaultCfg,
+		},
+		{
+			name: "explicit-default-regexp-non-capturing",
+			env:  map[string]string{EnvQueryStringRegexp: defaultQueryStringPatternNonCapturing},
+			cfg:  defaultCfg,
 		},
 		{
 			name: "disable-query",
@@ -50,6 +63,14 @@ func TestConfig(t *testing.T) {
 				queryString: true,
 			},
 		},
+		{
+			name: "custom-regexp",
+			env:  map[string]string{EnvQueryStringRegexp: "secret=[^&]+"},
+			cfg: config{
+				queryString:       true,
+				queryStringRegexp: regexp.MustCompile("secret=[^&]+"),
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for k, v := range tc.env {
@@ -58,7 +79,18 @@ func TestConfig(t *testing.T) {
 			c := newConfig()
 			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
 			require.Equal(t, tc.cfg.useDefaultObfuscator, c.useDefaultObfuscator)
+			require.Equal(t, tc.cfg.dropQueryString, c.dropQueryString)
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 		})
 	}
+}
+
+func TestDefaultQueryStringPattern(t *testing.T) {
+	// The non-capturing form must differ from the capturing form only by
+	// the JWT delimiter group, and must have no capture group.
+	require.NotEqual(t, defaultQueryStringPattern, defaultQueryStringPatternNonCapturing)
+	require.Equal(t, 1, defaultQueryStringRegexp.NumSubexp())
+	nonCapturing := regexp.MustCompile(defaultQueryStringPatternNonCapturing)
+	require.Equal(t, 0, nonCapturing.NumSubexp())
+	require.Equal(t, strings.Replace(defaultQueryStringPatternNonCapturing, "(?:^|", "(^|", 1), defaultQueryStringPattern)
 }

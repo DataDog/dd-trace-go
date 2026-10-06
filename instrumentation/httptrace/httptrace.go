@@ -251,6 +251,11 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 	if rawQuery == "" || (config.checkCollection && !cfg.queryString) {
 		return ""
 	}
+	if cfg.dropQueryString {
+		// Fail closed: the configured regexp is not valid, thus the query string
+		// cannot be obfuscated.
+		return ""
+	}
 	if allowlist := cfg.getQueryStringAllowlist(config.isClient); allowlist != nil {
 		// When an allowlist is configured, only keep the specified parameter keys.
 		// This avoids running the expensive obfuscation regex entirely.
