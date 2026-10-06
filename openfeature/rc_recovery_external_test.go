@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-package tracer_test
+package openfeature_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/isolated"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -88,7 +89,8 @@ func TestFFEProviderBecomesReadyAfterAgentRecovery(t *testing.T) {
 	t.Cleanup(internalffe.ResetForTest)
 	t.Cleanup(remoteconfig.Reset)
 	t.Cleanup(tracer.Stop)
-	t.Cleanup(of.Shutdown)
+	api := isolated.NewAPI()
+	t.Cleanup(func() { require.NoError(t, api.Shutdown(context.Background())) })
 
 	payload := []byte(`{"format":"SERVER","flags":{"recovered":{"key":"recovered","enabled":true,"variationType":"BOOLEAN","variations":{"on":{"key":"on","value":true}},"allocations":[{"key":"all","doLog":false,"splits":[{"variationKey":"on","shards":[]}]}]}}}`)
 	const path = "datadog/2/FFE_FLAGS/recovery/config"
@@ -131,8 +133,8 @@ func TestFFEProviderBecomesReadyAfterAgentRecovery(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, of.SetNamedProviderWithContext(ctx, t.Name(), provider))
-	client := of.NewClient(t.Name())
+	require.NoError(t, api.SetProvider(ctx, provider, of.WithDomain(t.Name())))
+	client := api.NewClient(of.WithDomain(t.Name()))
 	require.Equal(t, of.NotReadyState, client.State())
 	recovered.Store(true)
 
