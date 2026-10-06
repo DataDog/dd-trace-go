@@ -72,7 +72,10 @@ type contextKey struct{}
 // ContextKey returns the key used to store an Operation in a context. It lets
 // integrations copy the operation into contexts with their own value storage.
 // An integration with mutable context storage must restore the previous value
-// after the handlers that use that context have stopped.
+// after the handlers that use that context have stopped. When an integration
+// misses the restore, a later lookup finds the finished operation, so
+// monitoring that the application triggers runs against the finished
+// operation instead of the live one.
 func ContextKey() any {
 	return contextKey{}
 }

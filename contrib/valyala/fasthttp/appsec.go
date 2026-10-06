@@ -30,7 +30,7 @@ type appsecHandler struct {
 // timeout can finish the operation while its worker still uses the context.
 func beforeHandle(fctx *fasthttp.RequestCtx, span trace.TagSetter) (*appsecHandler, bool) {
 	req := convertRequest(fctx)
-	w := &responseWriter{response: &fctx.Response}
+	w := &responseWriter{ctx: fctx, response: &fctx.Response}
 	_, req, finish, handled := httpsec.BeforeHandle(w, req, span, &httpsec.Config{
 		Framework: appsecFramework,
 		// net/http parses cookies and queries differently from fasthttp. It
@@ -86,8 +86,11 @@ func convertRequest(fctx *fasthttp.RequestCtx) *http.Request {
 }
 
 // collectArgs copies fasthttp's decoded key/value pairs. It returns nil if
-// there are no pairs. AppSec then parses the request with net/http, which can
-// only find more values, not fewer.
+// there are no pairs. httpsec then parses the converted request with net/http.
+// fasthttp accepts more cookie and query syntax than net/http, so in the inputs
+// that we tested, net/http then finds no values either. This fallback is
+// defensive: if net/http finds a value that fasthttp drops, the WAF still sees
+// it.
 func collectArgs(all iter.Seq2[[]byte, []byte]) map[string][]string {
 	var values map[string][]string
 	for k, v := range all {
@@ -111,9 +114,14 @@ func responseHeaders(response *fasthttp.Response) http.Header {
 // responseWriter adapts a fasthttp response to the net/http interface AppSec
 // needs in order to write a blocking response.
 type responseWriter struct {
+	ctx         *fasthttp.RequestCtx
 	response    *fasthttp.Response
 	header      http.Header
 	wroteHeader bool
+	// wroteBody tells that a block response body was written. httpsec can
+	// apply a second block (for example, from a response rule that matches
+	// the first block response). That block must not append a second body.
+	wroteBody bool
 }
 
 func (w *responseWriter) Header() http.Header {
@@ -138,6 +146,11 @@ func (w *responseWriter) WriteHeader(status int) {
 
 func (w *responseWriter) Write(b []byte) (int, error) {
 	w.WriteHeader(http.StatusOK)
+	if w.wroteBody {
+		// A block response was already written. Do not append a second body.
+		return len(b), nil
+	}
+	w.wroteBody = true
 	w.response.AppendBody(b)
 	return len(b), nil
 }
@@ -150,12 +163,30 @@ func (w *responseWriter) Status() int {
 }
 
 // Committed implements the interface httpsec uses to check whether it can still
-// replace the response. fasthttp sends the response only after the handler
-// returns, and a timed-out request uses a separate response that is not sent
-// yet. AppSec can therefore always replace it. Without this method, httpsec uses
-// Status, which is never zero for a fasthttp response.
-func (*responseWriter) Committed() bool {
-	return false
+// replace the response. Without this method, httpsec uses Status, which is
+// never zero for a fasthttp response.
+//
+// fasthttp sends the live response only after the handler returns. But if the
+// application calls ctx.TimeoutError*, fasthttp sends the timeout response and
+// discards the live response. A block written into the live response then does
+// not reach the client, so the response is committed.
+//
+// The timeout wrappers of this package write a block into their separate
+// timeout response, not into the live response. They send that response with
+// TimeoutErrorWithResponse after AppSec finishes, also if the application
+// called TimeoutError* before. That response is never committed. Do not read
+// the context for it: the worker can still call TimeoutError* at that time.
+// For the live response, the worker is paused or has returned when AppSec
+// finishes.
+func (w *responseWriter) Committed() bool {
+	if w.response != &w.ctx.Response {
+		return false
+	}
+	// Any timeout response counts, also one set before this scope started:
+	// fasthttp sends it instead of the live response. fasthttp does not
+	// release a timed-out context for reuse, so the response is from this
+	// request.
+	return w.ctx.LastTimeoutErrorResponse() != nil
 }
 
 // discardHandlerResponse drops whatever the handler already wrote so that a

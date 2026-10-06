@@ -32,7 +32,7 @@ import (
 // The worker limit defaults to 1,024 and is separate from
 // Server.Concurrency. A timed-out worker keeps its slot until h returns. Use
 // WithTimeoutConcurrency to set a limit for your server. Excess requests
-// receive 429. A non-positive timeout disables this wrapper.
+// receive 429 Too Many Requests, not msg. A non-positive timeout disables this wrapper.
 //
 // Do not enable span pooling with [tracer.WithSpanPool] when using these wrappers.
 // A timed-out worker can otherwise use a span recycled for another request.
@@ -93,7 +93,7 @@ func timeoutWithCodeHandler(h fasthttp.RequestHandler, timeout time.Duration, ms
 		select {
 		case workers <- struct{}{}:
 		default:
-			ctx.Error(msg, fasthttp.StatusTooManyRequests)
+			ctx.Error(fasthttp.StatusMessage(fasthttp.StatusTooManyRequests), fasthttp.StatusTooManyRequests)
 			return
 		}
 		started := false
@@ -369,9 +369,11 @@ func (l *timeoutLayer) run(h fasthttp.RequestHandler, workers chan struct{}) {
 					l.rootWorker = scope
 				}
 				scope.setResource()
-				if scope.handled && l.blockedResponse == nil {
+				if scope.wroteBlock() && l.blockedResponse == nil {
 					// The worker is paused here. Preserve an early block before
-					// application code can change the live response again.
+					// application code can change the live response again. A
+					// block that failed (because the application selected a
+					// timeout response before) wrote no response to keep.
 					l.blockedResponse = new(fasthttp.Response)
 					l.ctx.Response.CopyTo(l.blockedResponse)
 				}

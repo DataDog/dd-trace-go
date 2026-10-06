@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -179,40 +180,49 @@ func TestAppSecBlocking(t *testing.T) {
 	})
 }
 
-func startAppSecRegressionRules(t *testing.T) {
+// startAppSecRules starts AppSec with the given WAF ruleset.
+func startAppSecRules(t *testing.T, rules string) {
 	t.Helper()
-	rules := `{
-		"version": "2.2",
-		"metadata": {"rules_version": "1.0.0"},
-		"rules": [{
-			"id": "fasthttp-body-response",
-			"name": "Block body or response input",
-			"tags": {"type": "test", "category": "attack_attempt"},
-			"conditions": [{
-				"operator": "exact_match",
-				"parameters": {
-					"inputs": [
-						{"address": "server.request.body"},
-						{"address": "server.response.body"},
-						{"address": "server.response.headers.no_cookies", "key_path": ["x-block"]},
-						{"address": "server.response.status"}
-					],
-					"list": ["attack", "500"]
-				}
-			}],
-			"on_match": ["block-teapot"]
-		}],
-		"actions": [{
-			"id": "block-teapot",
-			"type": "block_request",
-			"parameters": {"status_code": 418, "type": "json"}
-		}]
-	}`
 	path := filepath.Join(t.TempDir(), "rules.json")
 	require.NoError(t, os.WriteFile(path, []byte(rules), 0o600))
 	t.Setenv("DD_APPSEC_RULES", path)
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
 	testutils.StartAppSec(t)
+}
+
+// appSecRegressionRules blocks with status 418 when a request or response
+// body, the X-Block response header, or the response status matches.
+const appSecRegressionRules = `{
+	"version": "2.2",
+	"metadata": {"rules_version": "1.0.0"},
+	"rules": [{
+		"id": "fasthttp-body-response",
+		"name": "Block body or response input",
+		"tags": {"type": "test", "category": "attack_attempt"},
+		"conditions": [{
+			"operator": "exact_match",
+			"parameters": {
+				"inputs": [
+					{"address": "server.request.body"},
+					{"address": "server.response.body"},
+					{"address": "server.response.headers.no_cookies", "key_path": ["x-block"]},
+					{"address": "server.response.status"}
+				],
+				"list": ["attack", "500"]
+			}
+		}],
+		"on_match": ["block-teapot"]
+	}],
+	"actions": [{
+		"id": "block-teapot",
+		"type": "block_request",
+		"parameters": {"status_code": 418, "type": "json"}
+	}]
+}`
+
+func startAppSecRegressionRules(t *testing.T) {
+	t.Helper()
+	startAppSecRules(t, appSecRegressionRules)
 }
 
 func TestAppSecBodyMonitoring(t *testing.T) {
@@ -438,11 +448,7 @@ func TestAppSecRequestTargets(t *testing.T) {
 			"on_match": ["block"]
 		}]
 	}`
-	path := filepath.Join(t.TempDir(), "rules.json")
-	require.NoError(t, os.WriteFile(path, []byte(rules), 0o600))
-	t.Setenv("DD_APPSEC_RULES", path)
-	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
-	testutils.StartAppSec(t)
+	startAppSecRules(t, rules)
 
 	manyCookies := strings.Repeat("c=1; ", 3000) + "attack=$globals"
 	for _, tc := range []struct {
@@ -495,4 +501,283 @@ func TestAppSecRequestTargets(t *testing.T) {
 			require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.rule)
 		})
 	}
+}
+
+// TestAppSecArgsFallback covers the case where fasthttp finds no cookie or
+// query pairs. collectArgs then returns nil, and httpsec parses the converted
+// request with net/http. The WAF must see the values that net/http finds.
+//
+// No request that we found makes fasthttp drop a pair that net/http keeps, so
+// this test gives the converted request to httpsec without the fasthttp pairs.
+func TestAppSecArgsFallback(t *testing.T) {
+	startAppSecRules(t, `{
+		"version": "2.2",
+		"metadata": {"rules_version": "1.0.0"},
+		"rules": [{
+			"id": "fasthttp-query-cookie",
+			"name": "Block query or cookie input",
+			"tags": {"type": "test", "category": "attack_attempt"},
+			"conditions": [{
+				"operator": "phrase_match",
+				"parameters": {
+					"inputs": [{"address": "server.request.query"}, {"address": "server.request.cookies"}],
+					"list": ["$globals"]
+				}
+			}],
+			"on_match": ["block"]
+		}]
+	}`)
+	noPairs := func(func([]byte, []byte) bool) {}
+
+	for _, tc := range []struct {
+		name   string
+		target string
+		cookie string
+	}{
+		{"query", "http://example.test/?x=$globals", ""},
+		{"cookie", "http://example.test/", "attack=$globals"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			var req fasthttp.Request
+			req.SetRequestURI(tc.target)
+			if tc.cookie != "" {
+				req.Header.Set("Cookie", tc.cookie)
+			}
+			var fctx fasthttp.RequestCtx
+			fctx.Init(&req, &net.TCPAddr{}, nil)
+
+			span := mt.StartSpan("http.request")
+			w := &responseWriter{ctx: &fctx, response: &fctx.Response}
+			_, _, finish, handled := httpsec.BeforeHandle(w, convertRequest(&fctx), span, &httpsec.Config{
+				Framework:            appsecFramework,
+				Cookies:              collectArgs(noPairs),
+				QueryParams:          collectArgs(noPairs),
+				ResponseHeaderCopier: func(http.ResponseWriter) http.Header { return responseHeaders(w.response) },
+			})
+			finish()
+			span.Finish()
+
+			require.True(t, handled, "the WAF must see the value that net/http finds")
+			require.Equal(t, http.StatusForbidden, fctx.Response.StatusCode())
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			require.Contains(t, spans[0].Tag("_dd.appsec.json"), "$globals")
+		})
+	}
+}
+
+// TestAppSecSpanOutlivesConnectionBuffer serves two requests on one
+// connection. fasthttp reuses its request storage for the second request.
+// The span of the first request must keep the values of the first request:
+// convertRequest copies them.
+func TestAppSecSpanOutlivesConnectionBuffer(t *testing.T) {
+	// The rule only monitors, so that the connection stays open.
+	startAppSecRules(t, `{
+		"version": "2.2",
+		"metadata": {"rules_version": "1.0.0"},
+		"rules": [{
+			"id": "fasthttp-user-agent",
+			"name": "Monitor user agent",
+			"tags": {"type": "test", "category": "attack_attempt"},
+			"conditions": [{
+				"operator": "phrase_match",
+				"parameters": {
+					"inputs": [{"address": "server.request.headers.no_cookies", "key_path": ["user-agent"]}],
+					"list": ["dd-attack-ua"]
+				}
+			}]
+		}]
+	}`)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	conns := fasthttputil.NewPipeConns()
+	t.Cleanup(func() { _ = conns.Close() })
+	deadline := time.Now().Add(10 * time.Second)
+	require.NoError(t, conns.Conn1().SetDeadline(deadline))
+	require.NoError(t, conns.Conn2().SetDeadline(deadline))
+	served := make(chan error, 1)
+	srv := &fasthttp.Server{Handler: WrapHandler(func(fctx *fasthttp.RequestCtx) {
+		fctx.SetBodyString("ok")
+	})}
+	go func() { served <- srv.ServeConn(conns.Conn1()) }()
+
+	client := conns.Conn2()
+	reader := bufio.NewReader(client)
+	// Both requests have the same layout, so that the second request writes
+	// its values at the same place as the first.
+	for _, raw := range []string{
+		"GET /attack-path HTTP/1.1\r\nHost: example.test\r\nUser-Agent: dd-attack-ua\r\n\r\n",
+		"GET /zzzzzz-zzzz HTTP/1.1\r\nHost: example.test\r\nUser-Agent: zz-zzzzzz-zz\r\nConnection: close\r\n\r\n",
+	} {
+		_, err := io.WriteString(client, raw)
+		require.NoError(t, err)
+		var res fasthttp.Response
+		require.NoError(t, res.Read(reader))
+		require.Equal(t, http.StatusOK, res.StatusCode())
+	}
+	require.NoError(t, client.Close())
+	require.NoError(t, <-served)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	first := spans[0]
+	require.Equal(t, "dd-attack-ua", first.Tag("http.request.headers.user-agent"))
+	require.Contains(t, first.Tag("_dd.appsec.json"), "dd-attack-ua")
+	require.Equal(t, "zz-zzzzzz-zz", spans[1].Tag("http.request.headers.user-agent"))
+	require.Nil(t, spans[1].Tag("_dd.appsec.json"))
+}
+
+// appSecDoubleBlockRules blocks a request with the X-Attack: attack header.
+// A second rule blocks a response with status 403, which is the status of the
+// first block. The rules have different types: with one type, the WAF did not
+// report the second match.
+const appSecDoubleBlockRules = `{
+	"version": "2.2",
+	"metadata": {"rules_version": "1.0.0"},
+	"rules": [{
+		"id": "fasthttp-request-header",
+		"name": "Block request header",
+		"tags": {"type": "test-request", "category": "attack_attempt"},
+		"conditions": [{
+			"operator": "exact_match",
+			"parameters": {
+				"inputs": [{"address": "server.request.headers.no_cookies", "key_path": ["x-attack"]}],
+				"list": ["attack"]
+			}
+		}],
+		"on_match": ["block"]
+	}, {
+		"id": "fasthttp-block-status",
+		"name": "Block the block status",
+		"tags": {"type": "test-response", "category": "attack_attempt"},
+		"conditions": [{
+			"operator": "exact_match",
+			"parameters": {"inputs": [{"address": "server.response.status"}], "list": ["403"]}
+		}],
+		"on_match": ["block"]
+	}]
+}`
+
+// TestAppSecSecondBlockKeepsOneBody blocks a request early. Then a response
+// rule matches the status of the block response and blocks again. The client
+// must get one block response body, not two.
+func TestAppSecSecondBlockKeepsOneBody(t *testing.T) {
+	startAppSecRules(t, appSecDoubleBlockRules)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	req.Header.Set("X-Attack", "attack")
+	var fctx fasthttp.RequestCtx
+	fctx.Init(&req, &net.TCPAddr{}, nil)
+
+	handlerCalled := false
+	WrapHandler(func(*fasthttp.RequestCtx) { handlerCalled = true })(&fctx)
+
+	require.False(t, handlerCalled)
+	require.Equal(t, http.StatusForbidden, fctx.Response.StatusCode())
+	body := string(fctx.Response.Body())
+	require.Equal(t, 1, strings.Count(body, `"errors"`), "the response must hold one block payload: %s", body)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	appsecJSON, _ := spans[0].Tag("_dd.appsec.json").(string)
+	require.Contains(t, appsecJSON, "fasthttp-request-header")
+	require.Contains(t, appsecJSON, "fasthttp-block-status", "the second block must run")
+}
+
+// TestAppSecBlockAfterApplicationTimeout makes the handler call
+// ctx.TimeoutErrorWithCode. fasthttp then sends the timeout response and
+// discards the live response. A block from a response rule cannot reach the
+// client, so AppSec must not report it as delivered.
+func TestAppSecBlockAfterApplicationTimeout(t *testing.T) {
+	startAppSecRegressionRules(t)
+	recorder := testutils.StartTelemetryRecorder(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	var fctx fasthttp.RequestCtx
+	fctx.Init(&req, &net.TCPAddr{}, nil)
+
+	WrapHandler(func(fctx *fasthttp.RequestCtx) {
+		fctx.Response.Header.Set("X-Block", "attack")
+		fctx.TimeoutErrorWithCode("application timeout", http.StatusGatewayTimeout)
+	})(&fctx)
+
+	timeoutResponse := fctx.LastTimeoutErrorResponse()
+	require.NotNil(t, timeoutResponse)
+	require.Equal(t, http.StatusGatewayTimeout, timeoutResponse.StatusCode())
+	require.Equal(t, "application timeout", string(timeoutResponse.Body()))
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Tag("_dd.appsec.json"), "fasthttp-body-response")
+	require.Nil(t, spans[0].Tag("appsec.blocked"), "a block that does not reach the client is not delivered")
+	requireBlockFailed(t, recordedMetrics(recorder.Metrics))
+}
+
+// recordedMetrics returns the name and the tags of each metric that has a
+// value. The telemetry recorder type is internal to dd-trace-go/v2, so this
+// function accepts its metrics map through type inference.
+func recordedMetrics[K interface{ comparable }, H interface{ Get() float64 }](metrics map[K]H) []any {
+	var keys []any
+	for key, handle := range metrics {
+		if handle.Get() > 0 {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// requireBlockFailed checks that the waf.requests metric reports one request
+// with a block that failed.
+func requireBlockFailed(t *testing.T, keys []any) {
+	t.Helper()
+	var outcomes []string
+	for _, key := range keys {
+		v := reflect.ValueOf(key)
+		if v.FieldByName("Name").String() != "waf.requests" {
+			continue
+		}
+		for _, tag := range strings.Split(v.FieldByName("Tags").String(), ",") {
+			if strings.HasPrefix(tag, "request_blocked:") || strings.HasPrefix(tag, "block_failure:") {
+				outcomes = append(outcomes, tag)
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{"request_blocked:false", "block_failure:true"}, outcomes,
+		"the block must be reported as failed")
+}
+
+// TestAppSecBlockAfterEarlierTimeout calls ctx.TimeoutErrorWithCode before
+// WrapHandler starts. fasthttp then sends that timeout response, so an early
+// block cannot reach the client and must not be reported as delivered.
+func TestAppSecBlockAfterEarlierTimeout(t *testing.T) {
+	startAppSecRules(t, appSecDoubleBlockRules)
+	recorder := testutils.StartTelemetryRecorder(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	req.Header.Set("X-Attack", "attack")
+	var fctx fasthttp.RequestCtx
+	fctx.Init(&req, &net.TCPAddr{}, nil)
+
+	handlerCalled := false
+	wrapped := WrapHandler(func(*fasthttp.RequestCtx) { handlerCalled = true })
+	func(fctx *fasthttp.RequestCtx) {
+		fctx.TimeoutErrorWithCode("application timeout", http.StatusGatewayTimeout)
+		wrapped(fctx)
+	}(&fctx)
+
+	// The block still stops the handler.
+	require.False(t, handlerCalled)
+	require.Equal(t, http.StatusGatewayTimeout, fctx.LastTimeoutErrorResponse().StatusCode())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Tag("_dd.appsec.json"), "fasthttp-request-header")
+	require.Nil(t, spans[0].Tag("appsec.blocked"))
+	requireBlockFailed(t, recordedMetrics(recorder.Metrics))
 }

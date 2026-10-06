@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -487,24 +489,26 @@ func TestTimeoutHandlerWorkerLimit(t *testing.T) {
 		<-stop.Done()
 	}, 20*time.Millisecond, "timeout", http.StatusRequestTimeout, WithTimeoutConcurrency(1))
 	client, url, _ := serveTimeoutTest(t, WrapHandler(handler))
-	request := func(path string, want int) {
+	request := func(path string, wantStatus int, wantBody string) {
 		t.Helper()
 		res, err := client.Get(url + path)
 		require.NoError(t, err)
 		defer res.Body.Close()
-		_, err = io.Copy(io.Discard, res.Body)
+		body, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
-		require.Equal(t, want, res.StatusCode)
+		require.Equal(t, wantStatus, res.StatusCode)
+		require.Equal(t, wantBody, string(body))
 	}
-	request("/slow", http.StatusRequestTimeout)
-	request("/fast", http.StatusTooManyRequests)
+	request("/slow", http.StatusRequestTimeout, "timeout")
+	// The body must agree with the status, not tell that the request timed out.
+	request("/fast", http.StatusTooManyRequests, "Too Many Requests")
 	cancel()
 	select {
 	case <-<-workerExited:
 	case <-time.After(5 * time.Second):
 		t.Fatal("worker slot was not released")
 	}
-	request("/fast", http.StatusOK)
+	request("/fast", http.StatusOK, "completed")
 }
 
 func timeoutReviewContext() *fasthttp.RequestCtx {
@@ -848,6 +852,7 @@ func TestTimeoutHandlerDefaultWorkerLimit(t *testing.T) {
 	ctx := timeoutReviewContext()
 	handler(ctx)
 	require.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
+	require.Equal(t, "Too Many Requests", string(ctx.Response.Body()))
 	once.Do(func() { close(release) })
 	for range defaultTimeoutConcurrency {
 		waitTimeoutWorker(t, <-exited)
@@ -973,12 +978,36 @@ func TestTimeoutHandlerPooledTimer(t *testing.T) {
 	}
 }
 
-// BenchmarkTimeoutHandler measures a traced request that completes before its
-// deadline. The native fasthttp wrapper does not synchronize with tracing or
-// AppSec. Its result shows the added cost; it is not an equivalent option.
+// BenchmarkTimeoutHandler measures a request that completes before its
+// deadline, with tracing only and with AppSec. The native fasthttp wrapper does
+// not synchronize with tracing or AppSec. Its result shows the added cost; it
+// is not an equivalent option.
+//
+// The AppSec variant uses the ruleset of the regression tests. The request does
+// not match a rule, so the result shows the cost of the request adapter (the
+// copies of the headers, cookies, query, and URL) and of the WAF runs.
 func BenchmarkTimeoutHandler(b *testing.B) {
+	b.Run("tracing", func(b *testing.B) {
+		// tracer.Start starts AppSec from the environment. Keep this variant
+		// a tracing-only baseline.
+		b.Setenv("DD_APPSEC_ENABLED", "false")
+		benchmarkTimeoutHandler(b, false)
+	})
+	b.Run("appsec", func(b *testing.B) {
+		rules := filepath.Join(b.TempDir(), "rules.json")
+		require.NoError(b, os.WriteFile(rules, []byte(appSecRegressionRules), 0o600))
+		b.Setenv("DD_APPSEC_ENABLED", "1")
+		b.Setenv("DD_APPSEC_RULES", rules)
+		b.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+		testutils.StartAppSecBench(b)
+		benchmarkTimeoutHandler(b, true)
+	})
+}
+
+func benchmarkTimeoutHandler(b *testing.B, appSec bool) {
 	require.NoError(b, tracer.Start(tracer.WithLogger(testutils.DiscardLogger())))
 	defer tracer.Stop()
+	require.Equal(b, appSec, instr.AppSecEnabled(), "AppSec enablement")
 
 	app := func(ctx *fasthttp.RequestCtx) { ctx.SetBodyString("ok") }
 	for _, bc := range []struct {
@@ -994,6 +1023,7 @@ func BenchmarkTimeoutHandler(b *testing.B) {
 			var req fasthttp.Request
 			req.SetRequestURI("http://example.test/path?query=value")
 			req.Header.Set("User-Agent", "benchmark")
+			req.Header.Set("Cookie", "session=value")
 			var ctx fasthttp.RequestCtx
 			ctx.Init(&req, &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}, nil)
 			b.ReportAllocs()
@@ -1003,4 +1033,101 @@ func BenchmarkTimeoutHandler(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestTimeoutHandlerBlockAfterApplicationTimeout makes the worker call
+// ctx.TimeoutErrorWithCode and continue past the wrapper deadline. The wrapper
+// then sends its own timeout response, which replaces the application timeout
+// response. A response rule that blocks the wrapper status must replace that
+// response: the block goes into the separate response of the wrapper, which
+// is not committed.
+func TestTimeoutHandlerBlockAfterApplicationTimeout(t *testing.T) {
+	startAppSecRegressionRules(t)
+	for _, inside := range []bool{false, true} {
+		name := "wrap-outside"
+		if inside {
+			name = "wrap-inside"
+		}
+		t.Run(name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			release := make(chan struct{})
+			var once sync.Once
+			t.Cleanup(func() { once.Do(func() { close(release) }) })
+			exited := make(chan (<-chan struct{}), 1)
+			app := fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+				exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
+				ctx.TimeoutErrorWithCode("application timeout", http.StatusGatewayTimeout)
+				// The nested wrapper sends its deadline to the owner. This orders
+				// the write above before the timeout response of the owner. The
+				// outer deadline is long, so the nested deadline expires first.
+				// Its status 500 matches a response rule that blocks with 418.
+				nestedTimeoutHandler(release)(ctx)
+			})
+			var handler fasthttp.RequestHandler
+			if inside {
+				handler = TimeoutHandler(WrapHandler(app), time.Hour, "outer")
+			} else {
+				handler = WrapHandler(TimeoutHandler(app, time.Hour, "outer"))
+			}
+			ctx := timeoutReviewContext()
+			handler(ctx)
+
+			timeoutResponse := ctx.LastTimeoutErrorResponse()
+			require.NotNil(t, timeoutResponse)
+			require.Equal(t, http.StatusTeapot, timeoutResponse.StatusCode())
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			require.Equal(t, "true", spans[0].Tag("appsec.blocked"))
+			once.Do(func() { close(release) })
+			waitTimeoutWorker(t, <-exited)
+		})
+	}
+}
+
+// nestedTimeoutHandler returns a nested timeout wrapper that holds the worker
+// until release is closed. Its deadline expires after 20 ms with status 500.
+func nestedTimeoutHandler(release <-chan struct{}) fasthttp.RequestHandler {
+	return TimeoutWithCodeHandler(func(*fasthttp.RequestCtx) { <-release },
+		20*time.Millisecond, "timeout", http.StatusInternalServerError)
+}
+
+// TestTimeoutHandlerFailedEarlyBlock makes the worker call
+// ctx.TimeoutErrorWithCode before an inner WrapHandler blocks early. That block
+// fails, because fasthttp sends the application timeout response. The handler
+// must still stop, and at the deadline the wrapper must send its own timeout
+// response, not the empty live response with status 200.
+func TestTimeoutHandlerFailedEarlyBlock(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	testutils.StartAppSec(t)
+	recorder := testutils.StartTelemetryRecorder(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	ctx := timeoutReviewContext()
+	ctx.Request.Header.Set("X-Forwarded-For", "1.2.3.4")
+	release := make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	exited := make(chan (<-chan struct{}), 1)
+	called := false
+	TimeoutHandler(func(ctx *fasthttp.RequestCtx) {
+		exited <- ctx.UserValue(timeoutContextKey{}).(*timeoutLayer).workerExited
+		ctx.TimeoutErrorWithCode("application timeout", http.StatusGatewayTimeout)
+		WrapHandler(func(*fasthttp.RequestCtx) { called = true })(ctx)
+		nestedTimeoutHandler(release)(ctx)
+	}, time.Hour, "outer")(ctx)
+
+	response := ctx.LastTimeoutErrorResponse()
+	require.NotNil(t, response)
+	require.Equal(t, http.StatusInternalServerError, response.StatusCode())
+	require.Equal(t, "timeout", string(response.Body()))
+	once.Do(func() { close(release) })
+	waitTimeoutWorker(t, <-exited)
+	require.False(t, called)
+	spans := timeoutServerSpans(mt)
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Tag("_dd.appsec.json"), "blk-001-001")
+	require.Nil(t, spans[0].Tag("appsec.blocked"))
+	requireBlockFailed(t, recordedMetrics(recorder.Metrics))
 }

@@ -78,6 +78,13 @@ func startHandlerScope(ctx *fasthttp.RequestCtx, cfg *config) *handlerScope {
 	return scope
 }
 
+// wroteBlock tells that AppSec wrote an early block response into the live
+// response. handled alone does not tell this: httpsec also stops the handler
+// when the block fails because the response is committed.
+func (s *handlerScope) wroteBlock() bool {
+	return s.handled && s.appsec != nil && s.appsec.writer.wroteHeader
+}
+
 func (s *handlerScope) setResource() {
 	s.resource = s.cfg.resourceNamer(s.ctx)
 	s.resourceSet = true

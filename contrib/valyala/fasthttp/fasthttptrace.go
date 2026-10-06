@@ -28,6 +28,8 @@ func StartSpanFromContext(fctx *fasthttp.RequestCtx, operationName string, opts 
 
 // Span.Finish restores profiling labels through the start context. Keep that
 // lookup independent of request storage that a timeout worker can still change.
+// No code stores a pprof label map in the user values today. The snapshot
+// preserves one when a future change stores it.
 func snapshotSpanContext(fctx *fasthttp.RequestCtx) context.Context {
 	var values []spanContextValue
 	fctx.VisitUserValuesAll(func(key, value any) {
