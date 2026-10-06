@@ -467,3 +467,36 @@ func TestWrapClientMultiClientProxy(t *testing.T) {
 		t.Fatalf("expected spans tagged with each member's port, got %v", ports)
 	}
 }
+
+// selectiveRouter hooks only its embedded client; the other member is a
+// private client it never hooks.
+type selectiveRouter struct {
+	redis.UniversalClient
+	private redis.UniversalClient
+}
+
+func (r *selectiveRouter) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+}
+
+// Repeated wraps of a proxy that does not hook one of its members must not
+// keep probing for it: the no-op probe is added once, not once per wrap.
+func TestWrapClientProxyProbeOnce(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	private := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { private.Close() })
+
+	router := &selectiveRouter{UniversalClient: client, private: private}
+	WrapClient(router)
+	afterFirst := reflect.ValueOf(client).Elem().FieldByName("hooksMixin").FieldByName("slice").Len()
+	WrapClient(router)
+	WrapClient(router)
+	afterRest := reflect.ValueOf(client).Elem().FieldByName("hooksMixin").FieldByName("slice").Len()
+	if afterRest != afterFirst {
+		t.Fatalf("expected the hook chain to stop growing after the first wrap, got %d then %d", afterFirst, afterRest)
+	}
+	if n := reflect.ValueOf(private).Elem().FieldByName("hooksMixin").FieldByName("slice").Len(); n != 0 {
+		t.Fatalf("expected the private member to stay unhooked, got %d hooks", n)
+	}
+}

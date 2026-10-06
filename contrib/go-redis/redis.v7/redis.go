@@ -169,30 +169,41 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 // wrapProxyMembers instruments a proxy holding several concrete clients — a
 // read/write router, or a client that also keeps a private one around.
 // Which members its AddHook instruments cannot be inferred from fields, so
-// it is observed instead: a no-op probe hook is added once, and the members
-// whose chains gain it are the proxy's own choice. Each of those members is
-// then instrumented with that member's endpoint tags, deduplicated against
-// the hook it already carries, so a pre-wrapped member is not hooked twice
-// and each member is tagged with its own host, port, and database. The
-// probe stays in the chains it landed on as a no-op. The caller must hold
-// wrapMu.
+// it is observed instead: a no-op probe hook is added, and the members whose
+// chains gain it are the proxy's own choice. Each of those members is then
+// instrumented with that member's endpoint tags, deduplicated against the
+// hook it already carries, so a pre-wrapped member is not hooked twice and
+// every member is tagged with its own host, port, and database. Members the
+// proxy does not hook are recorded, so repeated wraps — of this proxy or of
+// another one over the same members — do not probe again for them; the probe
+// lands once, not once per wrap. It stays in the chains it landed on as a
+// no-op. The caller must hold wrapMu.
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig) {
-	// Probe only when some member still needs a hook.
-	needsHook := false
+	// A probe is needed while any member may still be targeted by an
+	// unobserved AddHook: one whose chain reads as fresh, or one whose chain
+	// cannot be read and that no earlier wrap has recorded.
+	var probe bool
+	var hooked *configKey
 	for _, member := range members {
-		if prev, seen := datadogConfig(member); !seen || prev == nil {
-			needsHook = true
-			break
+		prev, seen := datadogConfig(member)
+		if seen && prev != nil {
+			if hooked == nil {
+				k := *prev
+				hooked = &k
+			}
+			continue
+		}
+		// The member carries no hook: a probe is needed unless an earlier
+		// wrap already recorded it as deliberately not hooked.
+		if !registeredWeak(member) {
+			probe = true
 		}
 	}
-	if !needsHook {
-		// Every member already carries the hook: keep the first
-		// configuration.
-		for _, member := range members {
-			if prev, _ := datadogConfig(member); prev != nil && !sameConfig(*prev, cfg.key()) {
-				instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
-				return
-			}
+	if !probe {
+		// Nothing left to learn: every member is instrumented or recorded as
+		// deliberately not hooked. Keep the first configuration.
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
 		}
 		return
 	}
@@ -212,6 +223,19 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		if h := hookSlice(member); h.Len() > before[i] {
 			wrapMember(member, cfg)
 			instrumented = true
+		}
+	}
+	// Record the members this AddHook does not hook, so a repeated wrap
+	// does not probe for them again.
+	for i, member := range members {
+		if readable[i] && hookSlice(member).Len() > before[i] {
+			continue // a target: instrumented above
+		}
+		if prev, seen := datadogConfig(member); seen && prev != nil {
+			continue // already hooked
+		}
+		if !registeredWeak(member) {
+			registerWeak(member, cfg)
 		}
 	}
 	if !instrumented {
@@ -245,6 +269,17 @@ func wrapThrough(client redis.UniversalClient, cfg *clientConfig) {
 	if !registerWeak(client, cfg) {
 		addHook(client, cfg)
 	}
+}
+
+// registeredWeak reports whether the client is already recorded in the weak
+// registry. The caller must hold wrapMu.
+func registeredWeak(client redis.UniversalClient) bool {
+	key, ok := weakHandle(client)
+	if !ok {
+		return false
+	}
+	_, ok = wrapped[key]
+	return ok
 }
 
 // registerWeak records cfg for the client under its weak identity and
