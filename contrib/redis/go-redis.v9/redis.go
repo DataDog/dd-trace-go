@@ -170,36 +170,18 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 // chains gain it are the proxy's own choice. Each of those members is then
 // instrumented with that member's endpoint tags, deduplicated against the
 // hook it already carries, so a pre-wrapped member is not hooked twice and
-// every member is tagged with its own host, port, and database. Members the
-// proxy does not hook are recorded, so repeated wraps — of this proxy or of
-// another one over the same members — do not probe again for them; the probe
-// lands once, not once per wrap. It stays in the chains it landed on as a
-// no-op. The caller must hold wrapMu.
+// every member is tagged with its own host, port, and database. The
+// observation is recorded against the proxy itself — not against the
+// members, whose hook state is each proxy's own decision — so a repeated
+// wrap of the same proxy probes once and never again, while a different
+// proxy over the same members is still observed separately. The probe stays
+// in the chains it landed on as a no-op. The caller must hold wrapMu.
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig) {
-	// A probe is needed while any member may still be targeted by an
-	// unobserved AddHook: one whose chain reads as fresh, or one whose chain
-	// cannot be read and that no earlier wrap has recorded.
-	var probe bool
-	var hooked *configKey
-	for _, member := range members {
-		prev, seen := datadogConfig(member)
-		if seen && prev != nil {
-			if hooked == nil {
-				k := *prev
-				hooked = &k
-			}
-			continue
-		}
-		// The member carries no hook: a probe is needed unless an earlier
-		// wrap already recorded it as deliberately not hooked.
-		if !registeredWeak(member) {
-			probe = true
-		}
-	}
-	if !probe {
-		// Nothing left to learn: every member is instrumented or recorded as
-		// deliberately not hooked. Keep the first configuration.
-		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+	if prev, ok := weakLookup(proxy); ok {
+		// An earlier wrap already observed this proxy. Hooks cannot be
+		// removed, so its targets are instrumented; keep the first
+		// configuration.
+		if !sameConfig(prev, cfg.key()) {
 			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
 		}
 		return
@@ -222,24 +204,14 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			instrumented = true
 		}
 	}
-	// Record the members this AddHook does not hook, so a repeated wrap
-	// does not probe for them again.
-	for i, member := range members {
-		if readable[i] && hookSlice(member).Len() > before[i] {
-			continue // a target: instrumented above
-		}
-		if prev, seen := datadogConfig(member); seen && prev != nil {
-			continue // already hooked
-		}
-		if !registeredWeak(member) {
-			registerWeak(member, cfg)
-		}
-	}
 	if !instrumented {
 		// AddHook reached no concrete client we can see: instrument through
 		// the proxy itself, deduplicated by its identity.
-		wrapThrough(proxy, cfg)
+		addHook(proxy, cfg)
 	}
+	// Record the observation against the proxy, so a repeated wrap of this
+	// proxy does not probe again.
+	registerWeak(proxy, cfg)
 }
 
 // probeHook is the no-op hook used to observe which concrete clients a
@@ -266,15 +238,17 @@ func wrapThrough(client redis.UniversalClient, cfg *clientConfig) {
 	}
 }
 
-// registeredWeak reports whether the client is already recorded in the weak
-// registry. The caller must hold wrapMu.
-func registeredWeak(client redis.UniversalClient) bool {
+// weakLookup returns the configuration recorded for the client, if any. The
+// caller must hold wrapMu.
+func weakLookup(client redis.UniversalClient) (configKey, bool) {
 	key, ok := weakHandle(client)
 	if !ok {
-		return false
+		return configKey{}, false
 	}
-	_, ok = wrapped[key]
-	return ok
+	if e, ok := wrapped[key]; ok {
+		return e.cfg, true
+	}
+	return configKey{}, false
 }
 
 // registerWeak records cfg for the client under its weak identity and

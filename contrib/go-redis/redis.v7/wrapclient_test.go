@@ -474,3 +474,53 @@ func TestWrapClientProxyProbeOnce(t *testing.T) {
 		t.Fatalf("expected the private member to stay unhooked, got %d hooks", n)
 	}
 }
+
+// writeOnlyRouter routes commands through its embedded client but hooks
+// only its write member: a proxy whose AddHook targets differ from another
+// proxy's over the same members.
+type writeOnlyRouter struct {
+	redis.UniversalClient
+	write redis.UniversalClient
+}
+
+func (r *writeOnlyRouter) AddHook(hook redis.Hook) {
+	r.write.AddHook(hook)
+}
+
+// The unhooked-member observation is recorded per proxy: a second proxy over
+// the same members, whose AddHook targets a member the first proxy skipped,
+// is still observed and that member is still instrumented.
+func TestWrapClientDistinctProxiesDistinctTargets(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:2"})
+	t.Cleanup(func() { b.Close() })
+
+	// The read-only proxy hooks only a; the write-only proxy hooks only b.
+	WrapClient(&selectiveRouter{UniversalClient: a, private: b})
+	WrapClient(&writeOnlyRouter{UniversalClient: a, write: b})
+
+	_ = a.Get("foo").Err()
+	_ = b.Get("foo").Err()
+
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 2 {
+		t.Fatalf("expected 1 command span per member, got %d", len(spans))
+	}
+	if open := mt.OpenSpans(); len(open) != 0 {
+		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+	ports := map[any]bool{}
+	for _, s := range spans {
+		ports[s.Tag(ext.TargetPort)] = true
+	}
+	if !ports["1"] || !ports["2"] {
+		t.Fatalf("expected spans tagged with each member's port, got %v", ports)
+	}
+}
