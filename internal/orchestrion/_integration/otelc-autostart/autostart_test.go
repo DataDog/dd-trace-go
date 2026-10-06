@@ -6,7 +6,6 @@
 package main
 
 import (
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,10 +22,7 @@ import (
 // The plain build is the control: without it, a passing otelc case would only
 // show that a span reached an agent, not that otelc started the tracer.
 func TestOtelcStartsTracer(t *testing.T) {
-	if _, err := exec.LookPath("otelc"); err != nil {
-		t.Skip("otelc is not on PATH; install it from " +
-			"github.com/open-telemetry/opentelemetry-go-compile-instrumentation")
-	}
+	maintest.RequireOtelc(t)
 
 	for _, tc := range []struct {
 		name       string

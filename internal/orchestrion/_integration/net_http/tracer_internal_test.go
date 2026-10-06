@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // TestTracerInternalTransportIsNotTraced pins down the one aspect no other test
@@ -68,6 +70,9 @@ func TestTracerInternalTransportIsNotTraced(t *testing.T) {
 // orchestrion. Its transport is not one the tracer-internal aspect marks, so
 // using it would trace every flush.
 func TestCustomTracerClientIsIgnored(t *testing.T) {
+	require.True(t, built.WithOrchestrion || otelc.Enabled(),
+		"this test must be run with either orchestrion or otelc enabled")
+
 	var calls atomic.Int32
 	custom := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)
@@ -79,6 +84,7 @@ func TestCustomTracerClientIsIgnored(t *testing.T) {
 		tracer.WithHTTPClient(custom),
 		tracer.WithLogStartup(false),
 	))
+	t.Cleanup(tracer.Stop)
 	tracer.StartSpan("probe").Finish()
 	tracer.Flush()
 	tracer.Stop()
