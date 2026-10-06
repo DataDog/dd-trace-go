@@ -149,9 +149,10 @@ jobs:
           rc=0
           for pkg in ${PACKAGE_NAMES}; do
             # Some suites only build on Linux in CI (//go:build linux || !githubci),
-            # and otelc fails on a package with no Go files left to build.
+            # and otelc fails on a package with no Go files left to build. Stdout
+            # is parsed as test2json, so the notice goes to stderr.
             if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
-              echo "Skipping ${pkg}: no Go files for this platform"
+              echo "Skipping ${pkg}: no Go files for this platform" >&2
               continue
             fi
             raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"

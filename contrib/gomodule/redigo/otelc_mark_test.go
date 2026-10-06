@@ -85,7 +85,14 @@ func TestDoubleWrapEmitsTwoSpans(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, once.Close()) }()
 
-	twice := wrapConn(once, &params{config: new(dialConfig), network: "tcp", host: "127.0.0.1", port: "6379"})
+	_, cfg := parseOptions()
+	twice := wrapConn(once, &params{
+		config:  cfg,
+		network: "tcp",
+		host:    "127.0.0.1",
+		port:    "6379",
+		spanCfg: newSpanConfig(cfg, "tcp", "127.0.0.1", "6379"),
+	})
 	_, err = twice.Do("SET", "double", "wrapped")
 	require.NoError(t, err)
 
