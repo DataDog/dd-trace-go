@@ -149,17 +149,17 @@ func TestWrapClientConcurrent(t *testing.T) {
 	for range n {
 		wg.Go(func() {
 			WrapClient(client)
-			// Trace a command right away: the wrapper must be installed by
-			// the time WrapClient returns, whichever concurrent call won.
-			_ = client.Get("foo").Err()
 		})
 	}
 	wg.Wait()
+	_ = client.Get("foo").Err()
 
-	// Every command ran through a single wrapper: exactly one span per
-	// command.
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != n {
-		t.Fatalf("expected exactly %d command spans after %d concurrent wraps, got %d", n, n, len(spans))
+	// Concurrent wraps installed a single hook or wrapper, so the command is
+	// traced exactly once. Commands run only after every wrap returned:
+	// go-redis does not synchronize WrapProcess or AddHook with command
+	// processing.
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span after %d concurrent wraps, got %d", n, len(spans))
 	}
 }
 
@@ -218,4 +218,42 @@ func TestWrapClientRegistryDropsDeadClients(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("registry entry outlived its client")
+}
+
+// Third-party process wrappers installed between two Datadog wraps must keep
+// running for commands through the second wrap's handle and its WithContext
+// clones.
+func TestWrapClientKeepsLaterProcessWrappers(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	WrapClient(client)
+	var ran bool
+	client.WrapProcess(func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			ran = true
+			return oldProcess(cmd)
+		}
+	})
+
+	tc := WrapClient(client)
+	clone := tc.WithContext(context.Background())
+	_ = clone.Get("foo").Err()
+
+	if !ran {
+		t.Fatal("the later process wrapper did not run for the traced clone")
+	}
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+	if got := spans[0].Tag(ext.ServiceName); got != cfg.serviceName {
+		t.Fatalf("expected the first configuration's service name %q, got %v", cfg.serviceName, got)
+	}
 }

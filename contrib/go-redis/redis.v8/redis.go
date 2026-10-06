@@ -35,82 +35,28 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoRedisV8)
 }
 
-// traceMarkerKey is a private context key under which the datadog hook
-// that started a command's span records itself, along with the command it
-// started it for. A WithContext or WithTimeout clone of an already-wrapped
-// client inherits the hook, and go-redis clones share the hook slice with
-// the original, so wrapping the clone adds a second datadog hook to it.
-// The outermost datadog hook owns the span: every hook that finds its own
-// command's marker in the context skips it, so each command is traced
-// exactly once no matter how many datadog hooks the client carries. The
-// command in the marker keeps the check scoped to one command chain: a
-// context handed to another wrapped client — for example by a user hook
-// that issues a nested command with the context it received — does not
-// suppress that client's span.
-type traceMarkerKey struct{}
-
-// traceMarker identifies the datadog hook that owns the span for one
-// command. For pipelines, cmd is the first command of the slice.
-type traceMarker struct {
-	hook *datadogHook
-	cmd  redis.Cmder
-}
-
-// wrapEntry is the registry record for one instrumented client. It stores
-// only the scalar fields that identify the client's configuration — never
-// the full clientConfig, whose error-check callback is a user closure that
-// may capture the client and would pin it through the registry — and holds
-// no reference to the client itself, so a weakly keyed entry never keeps a
-// retired client alive.
+// wrapEntry records the configuration of a client whose hook chain could not
+// be inspected, keyed weakly by the client. It holds no reference to the
+// client and no user callback, so it cannot pin the client.
 type wrapEntry struct {
-	cfg  configKey
-	done chan struct{} // closed once the winning call has installed its hook
+	cfg configKey
 }
 
 var (
-	// wrapMu guards wrapped.
+	// wrapMu serializes WrapClient: hook inspection and installation must
+	// happen as one step, or two concurrent first wraps would both see no
+	// hook and install two.
 	wrapMu sync.Mutex
-	// wrapped records every client WrapClient has instrumented, keyed
-	// weakly by the client. Weak keys do not pin clients: once a wrapped
-	// client becomes unreachable, a runtime cleanup drops its entry, so the
-	// registry holds at most one entry per live client. Without the registry,
-	// every WrapClient call would add another hook to the client and every
-	// Redis command would emit one duplicate span per extra hook.
-	wrapped = map[any]*wrapEntry{} // weak.Pointer[T] (client) -> *wrapEntry
+	// wrapped deduplicates WrapClient calls for clients whose hook chain
+	// cannot be read. Entries are keyed and cleaned up weakly, so the
+	// registry never keeps a client alive.
+	wrapped = map[weak.Pointer[byte]]*wrapEntry{}
 )
-
-// registerWrapped instruments the client identified by key at most once:
-// cfg is the configuration to use when this call wins the registration race
-// and installHook installs the tracing hook. Concurrent first calls elect a
-// single installer and the others wait for it, so tracing is active by the
-// time every call returns.
-func registerWrapped[T any](key weak.Pointer[T], cfg *clientConfig, installHook func()) {
-	wrapMu.Lock()
-	if e, ok := wrapped[key]; ok {
-		wrapMu.Unlock()
-		if !sameConfig(e.cfg, cfg.key()) {
-			instr.Logger().Warn("contrib/go-redis/redis.v8: WrapClient called more than once on the same client; keeping the first configuration")
-		}
-		// Wait for the winning call to install its hook before returning.
-		<-e.done
-		return
-	}
-	e := &wrapEntry{cfg: cfg.key(), done: make(chan struct{})}
-	wrapped[key] = e
-	wrapMu.Unlock()
-	runtime.AddCleanup(key.Value(), func(k any) {
-		wrapMu.Lock()
-		delete(wrapped, k)
-		wrapMu.Unlock()
-	}, any(key))
-	defer close(e.done)
-	installHook()
-}
 
 // configKey is the part of a client configuration that determines the spans
 // a client produces. It excludes the error-check function: it is not
-// comparable, and storing it in the registry would retain a user closure
-// that may capture the client.
+// comparable, and keeping it out of the registry avoids retaining a user
+// closure that may capture the client.
 type configKey struct {
 	serviceName   string
 	serviceSource string
@@ -162,7 +108,7 @@ type params struct {
 
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
-func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
+func NewClient(opt *redis.Options, opts ...ClientOption) *redis.Client {
 	client := redis.NewClient(opt)
 	WrapClient(client, opts...)
 	return client
@@ -178,50 +124,110 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	installHook := func() {
-		hookParams := &params{
-			config: cfg,
-		}
-		hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
-		client.AddHook(&datadogHook{params: hookParams})
-	}
-	// The registry is keyed by the client itself, not by its Options()
-	// pointer: go-redis stores the caller's options pointer, so two
-	// independent clients built from one shared *redis.Options would collide
-	// and the second client would silently go uninstrumented. Missing spans
-	// are worse than duplicate spans.
-	if !registerConcrete(client, cfg, installHook) {
-		// A decorator or proxy implementation. Prefer the concrete go-redis
-		// client it embeds, so repeated wraps — direct or through other
-		// decorators — share the underlying client's entry. Otherwise key an
-		// opaque pointer client by itself: the identity is weak too, so the
-		// registry does not pin it. Only non-pointer clients are instrumented
-		// directly on every call, which preserves the pre-existing behavior.
-		if u := underlyingClient(client); u != nil && registerConcrete(u, cfg, installHook) {
+
+	wrapMu.Lock()
+	defer wrapMu.Unlock()
+
+	if prev, seen := datadogConfig(client); seen {
+		if prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				instr.Logger().Warn("contrib/go-redis/redis.v8: WrapClient called more than once on the same client; keeping the first configuration")
+			}
 			return
 		}
-		if k, ok := weakHandle(client); ok {
-			registerWrapped(k, cfg, installHook)
+	} else if key, ok := weakHandle(client); ok {
+		// The hook chain cannot be read — a proxy nested deeper than
+		// underlyingClient searches, for example, or an upstream layout
+		// change. Deduplicate by the client's own weak identity instead, so
+		// repeated wraps still install a single hook.
+		if e, ok := wrapped[key]; ok {
+			if !sameConfig(e.cfg, cfg.key()) {
+				instr.Logger().Warn("contrib/go-redis/redis.v8: WrapClient called more than once on the same client; keeping the first configuration")
+			}
 			return
 		}
-		installHook()
+		wrapped[key] = &wrapEntry{cfg: cfg.key()}
+		runtime.AddCleanup(key.Value(), func(k weak.Pointer[byte]) {
+			wrapMu.Lock()
+			delete(wrapped, k)
+			wrapMu.Unlock()
+		}, key)
 	}
+
+	hookParams := &params{
+		config: cfg,
+	}
+	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
+	client.AddHook(&datadogHook{params: hookParams})
 }
 
-// registerConcrete instruments a concrete go-redis client, keyed weakly by
-// the client itself, and reports whether client is one.
-func registerConcrete(client redis.UniversalClient, cfg *clientConfig, installHook func()) bool {
-	switch c := client.(type) {
-	case *redis.Client:
-		registerWrapped(weak.Make(c), cfg, installHook)
-	case *redis.ClusterClient:
-		registerWrapped(weak.Make(c), cfg, installHook)
-	case *redis.Ring:
-		registerWrapped(weak.Make(c), cfg, installHook)
-	default:
-		return false
+// datadogConfig returns the configuration of the datadog hook the client
+// already carries, and whether the hook chain could be read at all. A
+// WithContext or WithTimeout clone of a wrapped client inherits the hook
+// slice, so this detects clones; a decorator or proxy is resolved to the
+// concrete client it delegates to. Reading the chain makes a second hook —
+// and with it a duplicate span per command — impossible.
+func datadogConfig(client redis.UniversalClient) (key *configKey, seen bool) {
+	target := client
+	if u := underlyingClient(client); u != nil {
+		target = u
 	}
-	return true
+	hooks := hookSlice(target)
+	if !hooks.IsValid() {
+		return nil, false
+	}
+	for i := 0; i < hooks.Len(); i++ {
+		if ddh, ok := hooks.Index(i).Interface().(*datadogHook); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+	}
+	return nil, true
+}
+
+var redisHookSliceType = reflect.TypeFor[[]redis.Hook]()
+
+// hookSlice returns the client's hook slice, read through the unexported
+// fields it lives in, or an invalid Value when the client has no readable
+// hook slice.
+func hookSlice(client redis.UniversalClient) reflect.Value {
+	v := reflect.ValueOf(client)
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return reflect.Value{}
+	}
+	s := v.Elem()
+	// The hooks live in an unexported embedded struct: view the whole client
+	// through its address so its fields can be read.
+	s = reflect.NewAt(s.Type(), unsafe.Pointer(s.UnsafeAddr())).Elem()
+	return findHookSlice(s, 3)
+}
+
+// findHookSlice returns the first []redis.Hook field in s or in the structs
+// embedded within it.
+func findHookSlice(s reflect.Value, depth int) reflect.Value {
+	if s.Kind() != reflect.Struct || depth == 0 {
+		return reflect.Value{}
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if f.Kind() == reflect.Slice && f.Type() == redisHookSliceType {
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			return f
+		}
+		if f.Kind() == reflect.Struct {
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			if h := findHookSlice(f, depth-1); h.IsValid() {
+				return h
+			}
+		}
+	}
+	return reflect.Value{}
 }
 
 // weakHandle returns a weak identity for any pointer client, by referencing
@@ -244,6 +250,10 @@ func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
 	var walk func(c redis.UniversalClient, depth int) redis.UniversalClient
 	walk = func(c redis.UniversalClient, depth int) redis.UniversalClient {
 		if depth == 0 || c == nil {
+			return nil
+		}
+		if v := reflect.ValueOf(c); v.Kind() == reflect.Pointer && v.IsNil() {
+			// A typed-nil concrete client is not a delegate; keep looking.
 			return nil
 		}
 		switch concrete := c.(type) {
@@ -336,10 +346,6 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); ok && m.cmd == cmd {
-		// Another datadog hook on this client already started this command's span; see traceMarkerKey.
-		return ctx, nil
-	}
 	raw := strings.TrimSpace(cmd.String())
 	first := strings.SplitN(raw, " ", 2)[0]
 	length := strings.Count(raw, " ") + 1
@@ -355,15 +361,10 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(p.spanCfg),
 	)
-	return context.WithValue(ctx, traceMarkerKey{}, traceMarker{hook: ddh, cmd: cmd}), nil
+	return ctx, nil
 }
 
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
-	// go-redis hands the final context to every hook's AfterProcess, so only
-	// the hook that started this command's span finishes it; see traceMarkerKey.
-	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); !ok || m.hook != ddh || m.cmd != cmd {
-		return nil
-	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption
@@ -376,14 +377,6 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 }
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-	var firstCmd redis.Cmder
-	if len(cmds) > 0 {
-		firstCmd = cmds[0]
-	}
-	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); ok && m.cmd == firstCmd {
-		// Another datadog hook on this client already started this pipeline's span; see traceMarkerKey.
-		return ctx, nil
-	}
 	raw := strings.TrimSpace(commandsToString(cmds))
 	first := strings.SplitN(raw, " ", 2)[0]
 	length := strings.Count(raw, " ") + 1
@@ -400,19 +393,10 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(p.spanCfg),
 	)
-	return context.WithValue(ctx, traceMarkerKey{}, traceMarker{hook: ddh, cmd: firstCmd}), nil
+	return ctx, nil
 }
 
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
-	var firstCmd redis.Cmder
-	if len(cmds) > 0 {
-		firstCmd = cmds[0]
-	}
-	// go-redis hands the final context to every hook's AfterProcessPipeline,
-	// so only the hook that started this pipeline's span finishes it; see traceMarkerKey.
-	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); !ok || m.hook != ddh || m.cmd != firstCmd {
-		return nil
-	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption

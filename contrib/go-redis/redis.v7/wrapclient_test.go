@@ -8,11 +8,9 @@ package redis
 import (
 	"context"
 	"reflect"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
-	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -118,17 +116,16 @@ func TestWrapClientConcurrent(t *testing.T) {
 	for range n {
 		wg.Go(func() {
 			WrapClient(client)
-			// Trace a command right away: the hook must be installed by the
-			// time WrapClient returns, whichever concurrent call won.
-			_ = client.Get("foo").Err()
 		})
 	}
 	wg.Wait()
+	_ = client.Get("foo").Err()
 
-	// Every command ran through an installed hook, and the hook is single:
-	// exactly one span per command.
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != n {
-		t.Fatalf("expected exactly %d command spans after %d concurrent wraps, got %d", n, n, len(spans))
+	// Concurrent wraps installed a single hook, so the command is traced
+	// exactly once. Commands run only after every wrap returned: go-redis
+	// does not synchronize AddHook with command processing.
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span after %d concurrent wraps, got %d", n, len(spans))
 	}
 	if open := mt.OpenSpans(); len(open) != 0 {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
@@ -194,71 +191,33 @@ func TestWrapClientCloneSingleSpan(t *testing.T) {
 	})
 }
 
-// The registry keys clients weakly, so a retired client must be collected and
-// its entry dropped: the registry holds at most one entry per live client.
-func TestWrapClientRegistryDropsDeadClients(t *testing.T) {
+// Inspectable clients are deduplicated by reading their hook chain, so the
+// registry — which exists only for clients whose chain cannot be read —
+// stays empty no matter how many clients are wrapped, and nothing at all
+// retains them: not even an error-check closure capturing the client.
+func TestWrapClientRegistryStaysEmpty(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
-	key := weak.Make(client)
+	t.Cleanup(func() { client.Close() })
+	captured := client
+	WrapClient(client, WithErrorCheck(func(error) bool {
+		_ = captured
+		return true
+	}))
+
+	wrapMu.Lock()
+	before := len(wrapped)
+	wrapMu.Unlock()
+
 	WrapClient(client)
-	client = nil
+	other := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { other.Close() })
+	WrapClient(other)
 
-	// Runtime cleanups run shortly after the object becomes unreachable, but
-	// not necessarily after the very first GC.
-	for range 1000 {
-		runtime.GC()
-		wrapMu.Lock()
-		_, alive := wrapped[key]
-		wrapMu.Unlock()
-		if !alive {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("registry entry outlived its client")
-}
-
-// nestedClientHook is a user hook that issues a command on another wrapped
-// client with the context it receives from the first client's hook chain.
-type nestedClientHook struct{ other *redis.Client }
-
-func (h *nestedClientHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	_ = h.other.WithContext(ctx).Get("foo").Err()
-	return ctx, nil
-}
-
-func (h *nestedClientHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error { return nil }
-func (h *nestedClientHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-	return ctx, nil
-}
-func (h *nestedClientHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
-	return nil
-}
-
-// The outer command's marker must stay scoped to it: a command issued on
-// another wrapped client with the marker in its context is still traced.
-func TestWrapClientNestedOtherClient(t *testing.T) {
-	cfg := new(clientConfig)
-	defaults(cfg)
-
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
-	t.Cleanup(func() { a.Close() })
-	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
-	t.Cleanup(func() { b.Close() })
-
-	WrapClient(a)
-	WrapClient(b)
-	a.AddHook(&nestedClientHook{other: b})
-
-	_ = a.Get("foo").Err()
-
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
-		t.Fatalf("expected 1 command span per client, got %d", len(spans))
-	}
-	if open := mt.OpenSpans(); len(open) != 0 {
-		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	wrapMu.Lock()
+	after := len(wrapped)
+	wrapMu.Unlock()
+	if after != before {
+		t.Fatalf("expected no registry entries for inspectable clients, got %d new", after-before)
 	}
 }
 
@@ -289,13 +248,6 @@ func TestWrapClientDecorator(t *testing.T) {
 		WrapClient(&redisDecorator{client})
 		WrapClient(&redisDecorator{client})
 
-		wrapMu.Lock()
-		_, registered := wrapped[weak.Make(client)]
-		wrapMu.Unlock()
-		if !registered {
-			t.Fatal("expected the decorator to be registered against the embedded client")
-		}
-
 		_ = client.Get("foo").Err()
 
 		if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
@@ -317,32 +269,6 @@ func TestWrapClientDecorator(t *testing.T) {
 			t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 		}
 	})
-}
-
-// The registry stores only scalar configuration fields: an error-check
-// closure capturing the client must not keep the client — and its registry
-// entry — alive.
-func TestWrapClientRegistryDropsClientsCapturedByErrorCheck(t *testing.T) {
-	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
-	key := weak.Make(client)
-	captured := client
-	WrapClient(client, WithErrorCheck(func(error) bool {
-		_ = captured
-		return true
-	}))
-	client = nil
-
-	for range 1000 {
-		runtime.GC()
-		wrapMu.Lock()
-		_, alive := wrapped[key]
-		wrapMu.Unlock()
-		if !alive {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("registry entry outlived its client")
 }
 
 // redisProxy hides its underlying client in an unexported embedded field.
@@ -382,5 +308,81 @@ func TestWrapClientUnexportedProxy(t *testing.T) {
 	}
 	if open := mt.OpenSpans(); len(open) != 0 {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+}
+
+// nestedClientHook is a user hook that issues a command on another wrapped
+// client with the context it receives from the first client's hook chain.
+type nestedClientHook struct{ other *redis.Client }
+
+func (h *nestedClientHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	_ = h.other.WithContext(ctx).Get("foo").Err()
+	return ctx, nil
+}
+
+func (h *nestedClientHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error { return nil }
+func (h *nestedClientHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (h *nestedClientHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
+}
+
+// A command issued on another wrapped client with the first client's context
+// in its hook chain is still traced.
+func TestWrapClientNestedOtherClient(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	WrapClient(a)
+	WrapClient(b)
+	a.AddHook(&nestedClientHook{other: b})
+
+	_ = a.Get("foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected 1 command span per client, got %d", len(spans))
+	}
+	if open := mt.OpenSpans(); len(open) != 0 {
+		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+}
+
+// A proxy nested deeper than underlyingClient searches cannot be seen
+// through; it is deduplicated by its own weak identity instead, so repeated
+// wraps still install a single hook.
+func TestWrapClientDeepProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	p3 := &redisDecorator{client}
+	p2 := &redisDecorator{p3}
+	p1 := &redisDecorator{p2}
+	WrapClient(p1)
+	WrapClient(p1)
+
+	hooks := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks")
+	if n := hooks.Len(); n != 1 {
+		t.Fatalf("expected exactly 1 hook after 2 deep-proxy wraps, got %d", n)
+	}
+
+	_ = client.Get("foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
