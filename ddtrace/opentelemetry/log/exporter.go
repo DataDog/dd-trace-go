@@ -177,18 +177,18 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		} else {
 			// Fallback to DD agent config if URL cannot be parsed
 			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint)
-			endpoint, path, insecure := resolveOTLPEndpointHTTP()
+			endpoint, insecure := resolveLogsAgentEndpoint(defaultOTLPHTTPPort)
 			opts = append(opts, otlploghttp.WithEndpoint(endpoint))
-			opts = append(opts, otlploghttp.WithURLPath(path))
+			opts = append(opts, otlploghttp.WithURLPath(defaultOTLPLogsPath))
 			if insecure {
 				opts = append(opts, otlploghttp.WithInsecure())
 			}
 		}
 	} else {
 		// Use DD agent configuration as default
-		endpoint, path, insecure := resolveOTLPEndpointHTTP()
+		endpoint, insecure := resolveLogsAgentEndpoint(defaultOTLPHTTPPort)
 		opts = append(opts, otlploghttp.WithEndpoint(endpoint))
-		opts = append(opts, otlploghttp.WithURLPath(path))
+		opts = append(opts, otlploghttp.WithURLPath(defaultOTLPLogsPath))
 		if insecure {
 			opts = append(opts, otlploghttp.WithInsecure())
 		}
@@ -218,7 +218,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		if err != nil {
 			// Fallback to DD agent config if URL cannot be parsed
 			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error())
-			endpoint, insecure := resolveOTLPEndpointGRPC()
+			endpoint, insecure := resolveLogsAgentEndpoint(defaultOTLPGRPCPort)
 			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
 			if insecure {
 				opts = append(opts, otlploggrpc.WithInsecure())
@@ -239,7 +239,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		}
 	} else {
 		// Use DD agent configuration as default
-		endpoint, insecure := resolveOTLPEndpointGRPC()
+		endpoint, insecure := resolveLogsAgentEndpoint(defaultOTLPGRPCPort)
 		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
 		if insecure {
 			opts = append(opts, otlploggrpc.WithInsecure())
@@ -279,15 +279,6 @@ func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 	}
 
 	return u.String()
-}
-
-func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort)
-	return endpoint, defaultOTLPLogsPath, insecure
-}
-
-func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort)
 }
 
 func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {

@@ -26,45 +26,27 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-func TestResolveOTLPEndpointHTTP(t *testing.T) {
+func TestResolveLogsAgentEndpoint(t *testing.T) {
 	cfg := config.CreateNew()
 	t.Cleanup(func() { config.CreateNew() })
 	for _, tc := range []struct {
 		name     string
 		scheme   string
 		host     string
+		port     string
 		endpoint string
 		insecure bool
 	}{
-		{name: "http", scheme: "http", host: "trace-agent:8126", endpoint: "trace-agent:4318", insecure: true},
-		{name: "https", scheme: "https", host: "trace-agent:8126", endpoint: "trace-agent:4318"},
-		{name: "IPv6", scheme: "http", host: "[::1]:8126", endpoint: "[::1]:4318", insecure: true},
+		{name: "http", scheme: "http", host: "trace-agent:8126", port: defaultOTLPHTTPPort, endpoint: "trace-agent:4318", insecure: true},
+		{name: "http with https", scheme: "https", host: "trace-agent:8126", port: defaultOTLPHTTPPort, endpoint: "trace-agent:4318"},
+		{name: "http with IPv6", scheme: "http", host: "[::1]:8126", port: defaultOTLPHTTPPort, endpoint: "[::1]:4318", insecure: true},
+		{name: "grpc", scheme: "http", host: "trace-agent:8126", port: defaultOTLPGRPCPort, endpoint: "trace-agent:4317", insecure: true},
+		{name: "grpc with https", scheme: "https", host: "trace-agent:8126", port: defaultOTLPGRPCPort, endpoint: "trace-agent:4317"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg.SetAgentURL(&url.URL{Scheme: tc.scheme, Host: tc.host}, config.OriginCode)
-			endpoint, path, insecure := resolveOTLPEndpointHTTP()
+			endpoint, insecure := resolveLogsAgentEndpoint(tc.port)
 			assert.Equal(t, tc.endpoint, endpoint)
-			assert.Equal(t, "/v1/logs", path)
-			assert.Equal(t, tc.insecure, insecure)
-		})
-	}
-}
-
-func TestResolveOTLPEndpointGRPC(t *testing.T) {
-	cfg := config.CreateNew()
-	t.Cleanup(func() { config.CreateNew() })
-	for _, tc := range []struct {
-		name     string
-		scheme   string
-		insecure bool
-	}{
-		{name: "http", scheme: "http", insecure: true},
-		{name: "https", scheme: "https"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg.SetAgentURL(&url.URL{Scheme: tc.scheme, Host: "trace-agent:8126"}, config.OriginCode)
-			endpoint, insecure := resolveOTLPEndpointGRPC()
-			assert.Equal(t, "trace-agent:4317", endpoint)
 			assert.Equal(t, tc.insecure, insecure)
 		})
 	}
