@@ -11,8 +11,10 @@ import (
 	"context"
 	"math"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -25,6 +27,35 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageRedisGoRedisV9)
+}
+
+// wrapped holds the configuration of every client WrapClient has
+// instrumented, keyed by the client itself. Entries are never removed: they
+// are bounded by the number of distinct wrapped clients. Without it, every
+// WrapClient call would add another hook to the client and every Redis
+// command would emit one duplicate span per extra hook.
+var wrapped sync.Map // client -> *clientConfig
+
+// clientIdentity returns an identity for client, usable as a map key.
+// In practice every redis.UniversalClient is a pointer.
+func clientIdentity(client redis.UniversalClient) (any, bool) {
+	if reflect.TypeOf(client).Comparable() {
+		return client, true
+	}
+	return nil, false
+}
+
+// sameConfig reports whether two configurations produce the same spans. The
+// error-check function is not comparable and is ignored: with differing
+// functions the first configuration is kept without a warning.
+func sameConfig(a, b *clientConfig) bool {
+	analytics := a.analyticsRate == b.analyticsRate ||
+		(math.IsNaN(a.analyticsRate) && math.IsNaN(b.analyticsRate))
+	return analytics &&
+		a.serviceName == b.serviceName &&
+		a.serviceSource == b.serviceSource &&
+		a.spanName == b.spanName &&
+		a.skipRaw == b.skipRaw
 }
 
 type datadogHook struct {
@@ -53,12 +84,22 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 }
 
 // WrapClient adds a hook to the given client that traces with the default tracer under
-// the service name "redis".
+// the service name "redis". Calling it more than once on the same client is safe: the
+// client is instrumented once and the configuration of the first call is kept.
 func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
+	}
+
+	if id, ok := clientIdentity(client); ok {
+		if prev, loaded := wrapped.LoadOrStore(id, cfg); loaded {
+			if !sameConfig(prev.(*clientConfig), cfg) {
+				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			}
+			return
+		}
 	}
 
 	hookParams := &params{

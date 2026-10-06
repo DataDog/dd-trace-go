@@ -15,6 +15,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,6 +30,31 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoRedis)
+}
+
+// wrapState records what WrapClient installed on a client so repeated calls
+// on the same client do not stack process wrappers, which would emit one
+// duplicate span per Redis command for every extra call.
+type wrapState struct {
+	// process is the client's process function before our wrapper was
+	// installed. WithContext wraps clones of the client around it, so clones
+	// trace each command exactly once.
+	process func(cmd redis.Cmder) error
+	cfg     *clientConfig
+}
+
+// wrapped maps each wrapped client to its wrapState. Entries are never
+// removed: they are bounded by the number of distinct wrapped clients.
+var wrapped sync.Map // *redis.Client -> *wrapState
+
+// sameConfig reports whether two configurations produce the same spans.
+func sameConfig(a, b *clientConfig) bool {
+	analytics := a.analyticsRate == b.analyticsRate ||
+		(math.IsNaN(a.analyticsRate) && math.IsNaN(b.analyticsRate))
+	return analytics &&
+		a.serviceName == b.serviceName &&
+		a.serviceSource == b.serviceSource &&
+		a.spanName == b.spanName
 }
 
 // Client is used to trace requests to a redis server.
@@ -109,6 +135,8 @@ func NewClient(opt *redis.Options, opts ...ClientOption) *Client {
 }
 
 // WrapClient wraps a given redis.Client with a tracer under the given service name.
+// Calling it more than once on the same client is safe: the client is
+// instrumented once and the configuration of the first call is kept.
 func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -130,7 +158,21 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	}
 	params.spanCfg = newSpanConfig(host, port, opt.DB, cfg)
 	tc := &Client{Client: c, params: params}
-	tc.Client.WrapProcess(createWrapperFromClient(tc))
+	tc.Client.WrapProcess(func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		if state, loaded := wrapped.LoadOrStore(c, &wrapState{process: oldProcess, cfg: cfg}); loaded {
+			// The client is already instrumented. Keep the current chain
+			// untouched: it may also hold wrappers added by others. Reuse the
+			// stored original process so WithContext clones of tc do not
+			// stack another span.
+			st := state.(*wrapState)
+			tc.process = st.process
+			if !sameConfig(st.cfg, cfg) {
+				instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
+			}
+			return oldProcess
+		}
+		return createWrapperFromClient(tc)(oldProcess)
+	})
 	return tc
 }
 
