@@ -26,7 +26,6 @@ jobs:
           DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           GIT_TAG: ${{ github.ref_name }}
           GIT_SHA: ${{ github.sha }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           VERSION="${GIT_TAG#v}"
@@ -35,8 +34,7 @@ jobs:
           # the run clock.
           # Create a canonically formattted UUID based on the git tag and commit SHA.
           DEPLOYMENT_ID=$(printf '%s' "dd-trace-go/${GIT_TAG}" | sha256sum | awk '{print $1}' | cut -c1-32 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
-          COMMITTED_AT=$(gh api "repos/${{ github.repository }}/commits/${GIT_SHA}" --jq .commit.committer.date)
-          STARTED=$(( $(date -d "$COMMITTED_AT" +%s) * 1000 ))
+          STARTED=$(($(date +%s) * 1000)) # started_at represents this pipeline's run-clock time (aka when the release tag was created)
           FINISHED=$((STARTED + 1000)) # finished_at must differ from started_at or the API returns 400
 
           curl --fail --silent --show-error -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
