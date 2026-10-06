@@ -58,62 +58,18 @@ func TestRegisterTelemetry(t *testing.T) {
 		}
 	})
 
-	t.Run("reports BLRP configurations", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		t.Setenv(envBLRPMaxQueueSize, "4096")
-		t.Setenv(envBLRPScheduleDelay, "2000")
-		t.Setenv(envBLRPExportTimeout, "60000")
-		t.Setenv(envBLRPMaxExportBatchSize, "1024")
-
-		registerTelemetry()
-
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPMaxQueueSize, 4096)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPScheduleDelay, 2000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPExportTimeout, 60000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPMaxExportBatchSize, 1024)
-	})
-
-	t.Run("reports default values when env vars not set", func(t *testing.T) {
+	t.Run("reports default logs timeout when env vars not set", func(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
 		registerTelemetry()
 
-		// Check that defaults are reported with OriginDefault
-		var foundLogsTimeout, foundMaxQueueSize, foundScheduleDelay, foundExportTimeout, foundMaxBatchSize bool
-
+		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, defaultOTLPTimeoutMs)
 		for _, cfg := range recorder.Configuration {
-			switch cfg.Name {
-			case envOTLPLogsTimeout:
-				foundLogsTimeout = true
-				assert.Equal(t, defaultOTLPTimeoutMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPMaxQueueSize:
-				foundMaxQueueSize = true
-				assert.Equal(t, defaultBLRPMaxQueueSize, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPScheduleDelay:
-				foundScheduleDelay = true
-				assert.Equal(t, defaultBLRPScheduleDelayMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPExportTimeout:
-				foundExportTimeout = true
-				assert.Equal(t, defaultBLRPExportTimeoutMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPMaxExportBatchSize:
-				foundMaxBatchSize = true
-				assert.Equal(t, defaultBLRPMaxExportBatchSize, cfg.Value)
+			if cfg.Name == envOTLPLogsTimeout {
 				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
 			}
 		}
-
-		assert.True(t, foundLogsTimeout, "expected OTEL_EXPORTER_OTLP_LOGS_TIMEOUT config")
-		assert.True(t, foundMaxQueueSize, "expected OTEL_BLRP_MAX_QUEUE_SIZE config")
-		assert.True(t, foundScheduleDelay, "expected OTEL_BLRP_SCHEDULE_DELAY config")
-		assert.True(t, foundExportTimeout, "expected OTEL_BLRP_EXPORT_TIMEOUT config")
-		assert.True(t, foundMaxBatchSize, "expected OTEL_BLRP_MAX_EXPORT_BATCH_SIZE config")
 	})
 }
 

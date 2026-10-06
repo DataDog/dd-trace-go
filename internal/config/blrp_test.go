@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveBLRPMaxQueueSize(t *testing.T) {
@@ -109,5 +112,63 @@ func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
 		size := loadConfig().BLRPMaxExportBatchSize()
 		assert.Equal(t, 512, size)
+	})
+}
+
+func TestBLRPConfigTelemetry(t *testing.T) {
+	t.Run("reports BLRP configurations", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "4096")
+		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "2000")
+		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "60000")
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "1024")
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_BLRP_MAX_QUEUE_SIZE", "4096")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_BLRP_SCHEDULE_DELAY", "2000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_BLRP_EXPORT_TIMEOUT", "60000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "1024")
+	})
+
+	t.Run("reports default values when env vars not set", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		loadConfig()
+
+		// Check that defaults are reported with OriginDefault
+		var foundMaxQueueSize, foundScheduleDelay, foundExportTimeout, foundMaxBatchSize bool
+
+		for _, cfg := range recorder.Configuration {
+			if cfg.Origin != telemetry.OriginDefault {
+				continue
+			}
+			switch cfg.Name {
+			case "OTEL_BLRP_MAX_QUEUE_SIZE":
+				foundMaxQueueSize = true
+				assert.Equal(t, defaultBLRPMaxQueueSize, cfg.Value)
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			case "OTEL_BLRP_SCHEDULE_DELAY":
+				foundScheduleDelay = true
+				assert.Equal(t, defaultBLRPScheduleDelay.Milliseconds(), cfg.Value)
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			case "OTEL_BLRP_EXPORT_TIMEOUT":
+				foundExportTimeout = true
+				assert.Equal(t, defaultBLRPExportTimeout.Milliseconds(), cfg.Value)
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			case "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE":
+				foundMaxBatchSize = true
+				assert.Equal(t, defaultBLRPMaxExportBatchSize, cfg.Value)
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			}
+		}
+
+		assert.True(t, foundMaxQueueSize, "expected OTEL_BLRP_MAX_QUEUE_SIZE config")
+		assert.True(t, foundScheduleDelay, "expected OTEL_BLRP_SCHEDULE_DELAY config")
+		assert.True(t, foundExportTimeout, "expected OTEL_BLRP_EXPORT_TIMEOUT config")
+		assert.True(t, foundMaxBatchSize, "expected OTEL_BLRP_MAX_EXPORT_BATCH_SIZE config")
 	})
 }

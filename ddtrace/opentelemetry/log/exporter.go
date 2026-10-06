@@ -46,22 +46,8 @@ const (
 	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
 	envDDAgentHost     = "DD_AGENT_HOST"
 
-	// BatchLogRecordProcessor environment variables
-	envBLRPMaxQueueSize       = "OTEL_BLRP_MAX_QUEUE_SIZE"
-	envBLRPScheduleDelay      = "OTEL_BLRP_SCHEDULE_DELAY"
-	envBLRPExportTimeout      = "OTEL_BLRP_EXPORT_TIMEOUT"
-	envBLRPMaxExportBatchSize = "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE"
-
-	// Default values for BatchLogRecordProcessor
-	defaultBLRPMaxQueueSize       = 2048
-	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
-	defaultBLRPExportTimeout      = 30000 * time.Millisecond
-	defaultBLRPMaxExportBatchSize = 512
-
-	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
-	defaultBLRPScheduleDelayMs = 1000
-	defaultBLRPExportTimeoutMs = 30000
-	defaultOTLPTimeoutMs       = 10000 // 10 seconds
+	// Default timeout in milliseconds (for telemetry reporting)
+	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
