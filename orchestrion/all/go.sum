@@ -573,8 +573,8 @@ github.com/onsi/ginkgo/v2 v2.27.2/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zw
 github.com/onsi/gomega v1.7.0/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
 github.com/onsi/gomega v1.38.3 h1:eTX+W6dobAYfFeGC2PV6RwXRu/MyT+cQguijutvkpSM=
 github.com/onsi/gomega v1.38.3/go.mod h1:ZCU1pkQcXDO5Sl9/VVEGlDyp+zm0m1cmeG5TOzLgdh4=
-github.com/opensearch-project/opensearch-go/v4 v4.7.0 h1:rJKuipSA/CpPyxjisyKwPnszF3oXZ99pjXUJ322CmMc=
-github.com/opensearch-project/opensearch-go/v4 v4.7.0/go.mod h1:XivukvUoBePGUxYCL0GJx0mWC7//b4GDn+G/GpdrpRU=
+github.com/opensearch-project/opensearch-go/v4 v4.7.3 h1:JzETy7bYnnSDj4gueUh8t4EYBhs9rhKsgeVsoul77rA=
+github.com/opensearch-project/opensearch-go/v4 v4.7.3/go.mod h1:+iikkyLrVC8ZvyfKv2sua1Ze1LbpWL7eZe4IkHqNGtg=
 github.com/opentracing/opentracing-go v1.2.0/go.mod h1:GxEUsuufX4nBwe+T+Wl9TAgYrxe9dPLANfrWvHYVTgc=
 github.com/otiai10/copy v1.14.1 h1:5/7E6qsUMBaH5AnQ0sSLzzTg1oTECmcCmT6lvF45Na8=
 github.com/otiai10/copy v1.14.1/go.mod h1:oQwrEDDOci3IM8dJF0d8+jnbfPDllW6vUjNc3DoZm9I=
