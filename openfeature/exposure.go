@@ -271,7 +271,7 @@ func (w *exposureWriter) flush() {
 		Context:   w.context,
 		Exposures: events,
 	}); err != nil {
-		log.Error("openfeature: failed to send exposure events: %v", err.Error())
+		log.Error("openfeature: failed to send exposure events: %v", err.Error()) //errtrack:ignore remote request failure
 	} else {
 		log.Debug("openfeature: successfully sent %d exposure events", len(events))
 	}

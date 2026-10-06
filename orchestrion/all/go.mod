@@ -41,6 +41,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.12.0-dev.3
@@ -84,7 +85,7 @@ require (
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.7.2 // indirect
-	github.com/aws/aws-sdk-go v1.55.5 // indirect
+	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
@@ -137,7 +138,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/gin-gonic/gin v1.10.1 // indirect
-	github.com/go-chi/chi v1.5.4 // indirect
+	github.com/go-chi/chi v1.5.5 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -217,6 +218,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/opensearch-project/opensearch-go/v4 v4.4.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260816044145-ed329add6b1b // indirect
@@ -299,7 +301,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.273.1 // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
@@ -351,6 +353,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../contrib/log/slog
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../contrib/opensearch-project/opensearch-go.v4
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog

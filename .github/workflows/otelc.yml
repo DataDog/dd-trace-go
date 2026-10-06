@@ -42,15 +42,15 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-matrix
+          cache-provider: github-cache
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -78,18 +78,23 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-integration
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "instrumentation":"otelc",
+             "workspace":"off"}
 
+      # Deliberately not tools-cache: `make tools-install` also installs
+      # checkmake, which the tools cache does not cover.
       - name: Install development tools
         run: make tools-install
 
@@ -194,16 +199,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-external-app
+          variant: |-
+            {"instrumentation":"otelc",
+             "workspace":"off"}
 
       - name: Install otelc binary
         shell: bash

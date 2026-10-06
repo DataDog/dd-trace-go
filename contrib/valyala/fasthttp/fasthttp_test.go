@@ -269,6 +269,26 @@ func TestStatusError(t *testing.T) {
 	assert.NotContains(span.Tag(ext.ErrorMsg), errMsg, "response body must not be leaked into the error tag")
 }
 
+// A handler panic leaves fasthttp's default status 200 in the response. The
+// span must report the panic as an error, and must not report that status.
+func TestHandlerPanic(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	var fctx fasthttp.RequestCtx
+	fctx.Init(&req, &net.TCPAddr{}, nil)
+
+	handler := WrapHandler(func(*fasthttp.RequestCtx) { panic("handler panic") })
+	require.PanicsWithValue(t, "handler panic", func() { handler(&fctx) })
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Nil(t, spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
+	assert.Nil(t, fctx.UserValue(handlerScopeKey{}))
+}
+
 // Test that users can customize which HTTP status codes are considered an error
 func TestWithStatusCheck(t *testing.T) {
 	customErrChecker := func(statusCode int) bool {

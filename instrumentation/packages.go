@@ -52,36 +52,37 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP           Package = "valyala/fasthttp"
-	PackageUrfaveNegroni             Package = "urfave/negroni"
-	PackageTwitchTVTwirp             Package = "twitchtv/twirp"
-	PackageTidwallBuntDB             Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB           Package = "syndtr/goleveldb"
-	PackageSirupsenLogrus            Package = "sirupsen/logrus"
-	PackageRsZerolog                 Package = "rs/zerolog"
-	PackageShopifySarama             Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
-	PackageTwmbFranzGo               Package = "twmb/franz-go"
-	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
-	PackageMiekgDNS                  Package = "miekg/dns"
-	PackageLabstackEchoV4            Package = "labstack/echo.v4"
-	PackageLabstackEchoV5            Package = "labstack/echo.v5"
-	PackageK8SClientGo               Package = "k8s.io/client-go"
-	PackageK8SGatewayAPI             Package = "k8s.io/gateway-api"
-	PackageJulienschmidtHTTPRouter   Package = "julienschmidt/httprouter"
-	PackageMark3LabsMCPGo            Package = "mark3labs/mcp-go"
-	PackageJmoironSQLx               Package = "jmoiron/sqlx"
-	PackageJackcPGXV5                Package = "jackc/pgx.v5"
-	PackageHashicorpConsulAPI        Package = "hashicorp/consul"
-	PackageHashicorpVaultAPI         Package = "hashicorp/vault"
-	PackageGraphQLGoGraphQL          Package = "graphql-go/graphql"
-	PackageGraphGophersGraphQLGo     Package = "graph-gophers/graphql-go"
-	PackageGormIOGormV1              Package = "gorm.io/gorm.v1"
-	PackageGorillaMux                Package = "gorilla/mux"
-	PackageUptraceBun                Package = "uptrace/bun"
-	PackageLogSlog                   Package = "log/slog"
-	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
+	PackageValyalaFastHTTP                 Package = "valyala/fasthttp"
+	PackageUrfaveNegroni                   Package = "urfave/negroni"
+	PackageTwitchTVTwirp                   Package = "twitchtv/twirp"
+	PackageTidwallBuntDB                   Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB                 Package = "syndtr/goleveldb"
+	PackageSirupsenLogrus                  Package = "sirupsen/logrus"
+	PackageRsZerolog                       Package = "rs/zerolog"
+	PackageShopifySarama                   Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo                Package = "segmentio/kafka-go"
+	PackageTwmbFranzGo                     Package = "twmb/franz-go"
+	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
+	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go.v4"
+	PackageMiekgDNS                        Package = "miekg/dns"
+	PackageLabstackEchoV4                  Package = "labstack/echo.v4"
+	PackageLabstackEchoV5                  Package = "labstack/echo.v5"
+	PackageK8SClientGo                     Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI                   Package = "k8s.io/gateway-api"
+	PackageJulienschmidtHTTPRouter         Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo                  Package = "mark3labs/mcp-go"
+	PackageJmoironSQLx                     Package = "jmoiron/sqlx"
+	PackageJackcPGXV5                      Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI              Package = "hashicorp/consul"
+	PackageHashicorpVaultAPI               Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL                Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo           Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1                    Package = "gorm.io/gorm.v1"
+	PackageGorillaMux                      Package = "gorilla/mux"
+	PackageUptraceBun                      Package = "uptrace/bun"
+	PackageLogSlog                         Package = "log/slog"
+	PackageModelContextProtocolGoSDK       Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageAzureAPIMCallout               Package = "azure/apim-callout"
@@ -111,6 +112,9 @@ const (
 	ComponentConsumer
 )
 
+// componentNames holds the legacy per-component service and operation name builders for the
+// naming-schema feature (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations should not use these; see
+// the naming field on PackageInfo.
 type componentNames struct {
 	useDDServiceV0     bool
 	buildServiceNameV0 func(opCtx OperationContext) string
@@ -125,6 +129,9 @@ type PackageInfo struct {
 	IsStdLib      bool
 	EnvVarPrefix  string
 
+	// naming is the legacy naming-schema table (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations
+	// should leave it unset: ServiceName then returns the global DD_SERVICE, and operation names
+	// should be hardcoded string literals. See contrib/INTEGRATIONS.md.
 	naming map[Component]componentNames
 }
 
@@ -741,6 +748,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("elasticsearch.query"),
 			},
 		},
+	},
+	PackageOpenSearchProjectOpenSearchGoV4: {
+		TracedPackage: "github.com/opensearch-project/opensearch-go/v4",
+		EnvVarPrefix:  "OPENSEARCH",
 	},
 	PackageMiekgDNS: {
 		TracedPackage: "github.com/miekg/dns",
