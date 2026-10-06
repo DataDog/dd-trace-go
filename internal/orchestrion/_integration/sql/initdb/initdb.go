@@ -14,10 +14,3 @@ import (
 )
 
 var DB, OpenErr = sql.Open("sqlite3", "file::memory:")
-
-// A Ping leaves a connection opened before the tracer in the pool.
-func init() {
-	if OpenErr == nil {
-		OpenErr = DB.Ping()
-	}
-}

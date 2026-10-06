@@ -11,7 +11,6 @@ import (
 	"database/sql/driver"
 	"io"
 	"sync/atomic"
-	"time"
 )
 
 // earlyDSN carries the DSN of a database/sql.Open call made before init to
@@ -21,6 +20,11 @@ type earlyDSN string
 // earlyConnector is the connector of a database opened before init, for
 // example from a package-level variable. It uses the original connector until
 // init traces it, since the *sql.DB that holds it cannot be replaced.
+//
+// Known limitation: connections opened before init, for example by a Ping in a
+// package init, stay untraced until database/sql retires them. Closing them
+// would lose per-connection state the app may rely on, such as an in-memory
+// SQLite schema, temporary tables or session settings.
 type earlyConnector struct {
 	driver.Connector
 
@@ -55,37 +59,17 @@ func (c *earlyConnector) Close() error {
 	return nil
 }
 
-// trace switches c to a traced connector, and reports whether it did. mu must
-// be held.
-func (c *earlyConnector) trace() bool {
+// trace switches c to a traced connector. mu must be held.
+func (c *earlyConnector) trace() {
 	if c.closed {
-		return false
+		return
 	}
 	traced, wrapped := wrapConnector(c.Connector, c.dsn)
 	if !wrapped {
 		// The contrib's own OpenDB, called before init, passed a connector it
 		// already traces and collects DB stats for.
-		return false
+		return
 	}
 	c.traced.Store(&traced)
 	startDBStats(traced, c.db)
-	return true
-}
-
-// closeEarlyDBIdle closes the idle connections of db. The original connector opened
-// them before init, for example for a Ping, and database/sql would reuse them
-// for later queries without tracing them.
-func closeEarlyDBIdle(db *sql.DB) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	for n := db.Stats().Idle; n > 0; n-- {
-		conn, err := db.Conn(ctx)
-		if err != nil {
-			return
-		}
-		// database/sql closes a connection instead of putting it back in the
-		// pool when Raw returns driver.ErrBadConn.
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		_ = conn.Close()
-	}
 }

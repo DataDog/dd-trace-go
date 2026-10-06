@@ -15,8 +15,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/sql/initdb"
 )
 
-// TestCaseOpenInit checks that a database opened and pinged while Go
-// initializes packages, before the tracer, is traced.
+// TestCaseOpenInit checks that a database opened while Go initializes
+// packages, before the tracer, is traced.
 type TestCaseOpenInit struct{}
 
 func (*TestCaseOpenInit) Setup(_ context.Context, t *testing.T) {
