@@ -45,6 +45,10 @@ func TestIssue400(t *testing.T) {
 	harness.Run(t, new(TestCaseIssue400))
 }
 
+func TestSSRF(t *testing.T) {
+	harness.Run(t, new(TestCaseSSRF))
+}
+
 func TestServeMuxHandler(t *testing.T) {
 	harness.Run(t, new(TestCaseServeMuxHandler))
 }
