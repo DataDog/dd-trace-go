@@ -196,10 +196,27 @@ type subscription struct {
 var (
 	// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
 	// Using a single RC client instance in the tracer is a requirement for remote configuration.
-	client    *Client
+	client *Client
+	// clientMu protects publication only. Readers release it before taking
+	// product locks or invoking callbacks, which may run while Stop waits.
+	clientMu sync.RWMutex
+	// clientMux serializes the whole Start/Stop lifecycle, including waiting
+	// for the previous poller to exit before another client can start.
 	clientMux sync.Mutex
 	started   bool
 )
+
+func loadClient() *Client {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return client
+}
+
+func storeClient(c *Client) {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+	client = c
+}
 
 // newClient creates a new remoteconfig Client
 func newClient(config ClientConfig) (*Client, error) {
@@ -240,16 +257,15 @@ func Start(config ClientConfig) error {
 		// Return early if already started.
 		return nil
 	}
-	var err error
-	client, err = newClient(config)
+	c, err := newClient(config)
 	if err != nil {
 		return err
 	}
+	storeClient(c)
 	started = true
 
 	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
 	var (
-		c            = client
 		pollInterval = c.PollInterval
 		stop         = c.stop
 		pollNow      = c.pollNow
@@ -288,7 +304,8 @@ func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		// In case Stop() is called before Start()
 		return
 	}
@@ -297,20 +314,20 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	client.stopOnce.Do(func() { close(client.stop) })
+	c.stopOnce.Do(func() { close(c.stop) })
 	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
 	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
 	wait := time.Second
-	if client.HTTP != nil && client.HTTP.Timeout > 0 {
-		wait = client.HTTP.Timeout + time.Second
+	if c.HTTP != nil && c.HTTP.Timeout > 0 {
+		wait = c.HTTP.Timeout + time.Second
 	}
 	select {
-	case <-client.done:
+	case <-c.done:
 		log.Debug("remoteconfig: client stopped successfully")
 	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
-	client = nil
+	storeClient(nil)
 	started = false
 }
 
@@ -321,22 +338,21 @@ func Reset() {
 	defer clientMux.Unlock()
 
 	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
-	if client != nil {
-		client.stopOnce.Do(func() { close(client.stop) })
+	if c := loadClient(); c != nil {
+		c.stopOnce.Do(func() { close(c.stop) })
 	}
-	client = nil
+	storeClient(nil)
 	started = false
 }
 
 // ClientID returns the client ID of the RC singleton, or an empty string if the
 // client has not been started yet.
 func ClientID() string {
-	clientMux.Lock()
-	defer clientMux.Unlock()
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ""
 	}
-	return client.clientID
+	return c.clientID
 }
 
 func (c *Client) updateState() {
@@ -435,9 +451,7 @@ type SubscriptionToken int
 // Subscribe should be preferred over RegisterProduct and RegisterCallback if
 // your callback only handles a single product.
 func Subscribe(product string, callback ProductCallback, capabilities ...Capability) (SubscriptionToken, error) {
-	// Capture the singleton once so a concurrent Stop/Reset (which nils the
-	// global) can't cause a nil deref mid-function.
-	c := client
+	c := loadClient()
 	if c == nil {
 		return 0, ErrClientNotStarted
 	}
@@ -475,14 +489,15 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 // capabilities associated with that subscription will no longer be reported to
 // RC.
 func Unsubscribe(token SubscriptionToken) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client.subscriptionsMu.Lock()
-	defer client.subscriptionsMu.Unlock()
-	for i, sub := range client.subscriptionsMu.subs {
+	c.subscriptionsMu.Lock()
+	defer c.subscriptionsMu.Unlock()
+	for i, sub := range c.subscriptionsMu.subs {
 		if sub.id == int(token) {
-			client.subscriptionsMu.subs = append(client.subscriptionsMu.subs[:i], client.subscriptionsMu.subs[i+1:]...)
+			c.subscriptionsMu.subs = append(c.subscriptionsMu.subs[:i], c.subscriptionsMu.subs[i+1:]...)
 			return nil
 		}
 	}
@@ -493,26 +508,28 @@ func Unsubscribe(token SubscriptionToken) error {
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
 func RegisterCallback(f Callback) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client._callbacksMu.Lock()
-	defer client._callbacksMu.Unlock()
-	client.callbacks = append(client.callbacks, f)
+	c._callbacksMu.Lock()
+	defer c._callbacksMu.Unlock()
+	c.callbacks = append(c.callbacks, f)
 	return nil
 }
 
 // UnregisterCallback removes a previously registered callback from the active callbacks list
 // This remove operation preserves ordering
 func UnregisterCallback(f Callback) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client._callbacksMu.Lock()
-	defer client._callbacksMu.Unlock()
+	c._callbacksMu.Lock()
+	defer c._callbacksMu.Unlock()
 
 	toRemove := reflect.ValueOf(f).Pointer()
-	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
+	c.callbacks = slices.DeleteFunc(c.callbacks, func(cb Callback) bool {
 		return reflect.ValueOf(cb).Pointer() == toRemove
 	})
 	return nil
@@ -520,20 +537,21 @@ func UnregisterCallback(f Callback) error {
 
 // RegisterProduct adds a product to the list of products listened by the client
 func RegisterProduct(p string) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client.productsMu.Lock()
-	defer client.productsMu.Unlock()
-	client.subscriptionsMu.RLock()
-	defer client.subscriptionsMu.RUnlock()
-	for _, s := range client.subscriptionsMu.subs {
+	c.productsMu.Lock()
+	defer c.productsMu.Unlock()
+	c.subscriptionsMu.RLock()
+	defer c.subscriptionsMu.RUnlock()
+	for _, s := range c.subscriptionsMu.subs {
 		if s.product == p {
 			return fmt.Errorf("product %s already registered via Subscribe", p)
 		}
 	}
 
-	client.products[p] = struct{}{}
+	c.products[p] = struct{}{}
 	// No eager poll: used before a callback exists (see Subscribe), so an early
 	// poll's config would be dedup'd before the callback sees it. Picked up next tick.
 	return nil
@@ -541,31 +559,33 @@ func RegisterProduct(p string) error {
 
 // UnregisterProduct removes a product from the list of products listened by the client
 func UnregisterProduct(p string) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client.productsMu.Lock()
-	defer client.productsMu.Unlock()
-	delete(client.products, p)
+	c.productsMu.Lock()
+	defer c.productsMu.Unlock()
+	delete(c.products, p)
 	return nil
 }
 
 // HasProduct returns whether a given product was registered
 func HasProduct(p string) (bool, error) {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return false, ErrClientNotStarted
 	}
-	client.productsMu.RLock()
-	defer client.productsMu.RUnlock()
+	c.productsMu.RLock()
+	defer c.productsMu.RUnlock()
 
-	_, found := client.products[p]
+	_, found := c.products[p]
 	if found {
 		return true, nil
 	}
 
-	client.subscriptionsMu.RLock()
-	defer client.subscriptionsMu.RUnlock()
-	for _, s := range client.subscriptionsMu.subs {
+	c.subscriptionsMu.RLock()
+	defer c.subscriptionsMu.RUnlock()
+	for _, s := range c.subscriptionsMu.subs {
 		if s.product == p {
 			return true, nil
 		}
@@ -577,12 +597,13 @@ func HasProduct(p string) (bool, error) {
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
 func RegisterCapability(cpb Capability) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
-	client.capabilities[cpb] = struct{}{}
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
+	c.capabilities[cpb] = struct{}{}
 	// No eager poll (see Subscribe); picked up next tick.
 	return nil
 }
@@ -590,23 +611,25 @@ func RegisterCapability(cpb Capability) error {
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
 func UnregisterCapability(cpb Capability) error {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return ErrClientNotStarted
 	}
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
-	delete(client.capabilities, cpb)
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
+	delete(c.capabilities, cpb)
 	return nil
 }
 
 // HasCapability returns whether a given capability was registered
 func HasCapability(cpb Capability) (bool, error) {
-	if client == nil {
+	c := loadClient()
+	if c == nil {
 		return false, ErrClientNotStarted
 	}
-	client.capabilitiesMu.RLock()
-	defer client.capabilitiesMu.RUnlock()
-	_, found := client.capabilities[cpb]
+	c.capabilitiesMu.RLock()
+	defer c.capabilitiesMu.RUnlock()
+	_, found := c.capabilities[cpb]
 	return found, nil
 }
 

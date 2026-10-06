@@ -50,6 +50,18 @@ func ClaimRCSubscription() {
 	rcState.tracerOwned = true
 }
 
+// ReleaseRCSubscription releases the tracer's ownership, including a callback
+// attached while Agent discovery was pending. The tracer must stop discovery
+// and the shared RC client before releasing this state.
+func ReleaseRCSubscription() {
+	rcState.Lock()
+	defer rcState.Unlock()
+	rcState.tracerOwned = false
+	rcState.subscribed = false
+	rcState.callback = nil
+	rcState.buffered = nil
+}
+
 // SubscribeRC subscribes to the FFE_FLAGS RC product using a forwarding
 // callback. It is called by the tracer during startRemoteConfig() so that
 // FFE_FLAGS is included in the first RC poll.

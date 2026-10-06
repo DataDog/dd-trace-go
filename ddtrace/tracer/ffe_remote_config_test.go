@@ -10,11 +10,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
@@ -25,6 +27,51 @@ type ffeRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f ffeRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func TestFFEProviderDuringAgentRecovery(t *testing.T) {
+	t.Setenv("DD_APPSEC_ENABLED", "false")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	remoteconfig.Reset()
+	internalffe.ResetForTest()
+	t.Cleanup(remoteconfig.Reset)
+	t.Cleanup(internalffe.ResetForTest)
+
+	var recovered atomic.Bool
+	httpClient := &http.Client{Transport: ffeRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/info" && !recovered.Load() {
+			return nil, errors.New("temporary failure")
+		}
+		body := `{}`
+		if r.URL.Path == "/info" {
+			body = `{"endpoints":["/v0.7/config"]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	trc, err := newTracer(WithAgentURL("http://agent.test:8126"), WithHTTPClient(httpClient), withNoopStats())
+	require.NoError(t, err)
+	t.Cleanup(trc.Stop)
+	trc.startAppSec()
+	recovered.Store(true)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		trc.refreshAgentFeatures()
+	})
+	wg.Go(func() {
+		<-start
+		ownsSubscription, err := internalffe.SubscribeProvider(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+		assert.NoError(t, err)
+		assert.True(t, ownsSubscription)
+	})
+	close(start)
+	wg.Wait()
+	hasProduct, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	require.True(t, hasProduct)
 }
 
 func TestFFERemoteConfigStartsAfterAgentInfoRecovers(t *testing.T) {
@@ -142,10 +189,18 @@ func TestFFEProviderUsesExistingSharedRCWhileAgentInfoUnavailable(t *testing.T) 
 	t.Cleanup(remoteconfig.Reset)
 	t.Cleanup(internalffe.ResetForTest)
 
+	var infoRecovered atomic.Bool
 	rcRequests := make(chan string, 1)
 	httpClient := &http.Client{Transport: ffeRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/info" {
-			return nil, errors.New("connection reset by peer")
+			if !infoRecovered.Load() {
+				return nil, errors.New("connection reset by peer")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"endpoints":["/v0.7/config"]}`)),
+			}, nil
 		}
 		if r.URL.Path == "/v0.7/config" {
 			select {
@@ -174,12 +229,28 @@ func TestFFEProviderUsesExistingSharedRCWhileAgentInfoUnavailable(t *testing.T) 
 	// AppSec remote activation can start the correctly configured shared RC
 	// client independently of Agent capability discovery.
 	require.NoError(t, remoteconfig.Start(trc.remoteConfigClientConfig()))
+	clientID := remoteconfig.ClientID()
+	require.NotEmpty(t, clientID)
+	_, err = remoteconfig.Subscribe(rc.ProductASMFeatures, func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+	require.NoError(t, err)
 
 	providerCallback := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
 	tracerOwnsSubscription, err := internalffe.SubscribeProvider(providerCallback)
 	require.NoError(t, err)
 	require.True(t, tracerOwnsSubscription)
 	require.True(t, internalffe.AttachCallback(providerCallback))
+	require.Equal(t, clientID, remoteconfig.ClientID(), "provider construction must reuse the shared client")
+
+	infoRecovered.Store(true)
+	for range 3 {
+		trc.refreshAgentFeatures()
+		require.Equal(t, clientID, remoteconfig.ClientID(), "discovery refreshes must preserve the RC identity")
+	}
+	for _, product := range []string{rc.ProductASMFeatures, rc.ProductAPMTracing} {
+		hasProduct, err := remoteconfig.HasProduct(product)
+		require.NoError(t, err)
+		require.True(t, hasProduct, "shared client should retain product %s", product)
+	}
 
 	found, err := remoteconfig.HasProduct(internalffe.FFEProductName)
 	require.NoError(t, err)

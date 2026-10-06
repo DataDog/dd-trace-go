@@ -197,3 +197,19 @@ func TestSubscribeProviderUsesStartedClientForPendingTracerClaim(t *testing.T) {
 	forwardingCallback(remoteconfig.ProductUpdate{"path/config": []byte(`{"format":"SERVER"}`)})
 	require.True(t, callbackCalled)
 }
+
+func TestReleaseRCSubscriptionClearsPendingState(t *testing.T) {
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	ClaimRCSubscription()
+	forwardingCallback(remoteconfig.ProductUpdate{"path/old": []byte(`old`)})
+	ReleaseRCSubscription()
+
+	require.Nil(t, GetBufferedForTest(), "the next tracer must not replay the previous tracer's configuration")
+	require.False(t, AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }))
+	ClaimRCSubscription()
+	require.True(t, AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }))
+	ReleaseRCSubscription()
+	ClaimRCSubscription()
+	require.True(t, AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }), "a pending callback must not survive release")
+}

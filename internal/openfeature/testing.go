@@ -9,12 +9,7 @@ import "github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 
 // ResetForTest resets the global rcState for test isolation.
 func ResetForTest() {
-	rcState.Lock()
-	defer rcState.Unlock()
-	rcState.tracerOwned = false
-	rcState.subscribed = false
-	rcState.callback = nil
-	rcState.buffered = nil
+	ReleaseRCSubscription()
 }
 
 // SetSubscribedForTest sets the subscribed flag without actually calling Subscribe.

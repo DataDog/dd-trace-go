@@ -737,3 +737,88 @@ func TestPollOnEachSubscribe(t *testing.T) {
 		t.Fatal("no poll within 2s after the second Subscribe")
 	}
 }
+
+func TestStopAllowsInFlightCallbackToReadClient(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	t.Cleanup(Stop)
+
+	response, err := json.Marshal(genUpdateResponse([]byte("test"), "datadog/2/APM_TRACING/foo/config"))
+	require.NoError(t, err)
+	cfg := DefaultClientConfig()
+	cfg.AgentURL = "http://agent.test"
+	cfg.PollInterval = time.Hour
+	cfg.HTTP = &http.Client{Timeout: time.Second, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Body != nil {
+			_ = r.Body.Close()
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(response)))}, nil
+	})}
+	require.NoError(t, Start(cfg))
+	c := loadClient()
+	callbackStarted := make(chan struct{})
+	readClient := make(chan struct{})
+	releaseCallback := sync.OnceFunc(func() { close(readClient) })
+	t.Cleanup(releaseCallback)
+	_, err = Subscribe(state.ProductAPMTracing, func(ProductUpdate) map[string]state.ApplyStatus {
+		close(callbackStarted)
+		<-readClient
+		hasProduct, err := HasProduct(state.ProductAPMTracing)
+		assert.NoError(t, err)
+		assert.True(t, hasProduct)
+		return nil
+	})
+	require.NoError(t, err)
+	select {
+	case <-callbackStarted:
+	case <-time.After(time.Second):
+		t.Fatal("RC did not deliver the configuration")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		Stop()
+		close(stopped)
+	}()
+	<-c.stop
+	releaseCallback()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked a callback's singleton lookup instead of letting it finish")
+	}
+}
+
+func TestConcurrentClientLifecycleAndSubscriptions(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	t.Cleanup(Stop)
+	cfg := recordingClientConfig(t, make(chan struct{}, 1))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		for range 50 {
+			assert.NoError(t, Start(cfg))
+			Stop()
+		}
+	})
+	wg.Go(func() {
+		<-start
+		callback := func(map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
+		for range 50 {
+			_, _ = HasProduct("TEST_PRODUCT")
+			token, _ := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
+			_ = Unsubscribe(token)
+			_ = RegisterCallback(callback)
+			_ = UnregisterCallback(callback)
+			_ = RegisterProduct("TEST_PRODUCT")
+			_ = UnregisterProduct("TEST_PRODUCT")
+			_ = RegisterCapability(FFEFlagEvaluation)
+			_, _ = HasCapability(FFEFlagEvaluation)
+			_ = UnregisterCapability(FFEFlagEvaluation)
+			_ = ClientID()
+		}
+	})
+	close(start)
+	wg.Wait()
+}
