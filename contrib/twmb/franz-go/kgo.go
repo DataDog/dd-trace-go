@@ -9,6 +9,7 @@ import (
 	"context"
 	"regexp"
 	"sync"
+	"sync/atomic"
 
 	kgo "github.com/twmb/franz-go/pkg/kgo"
 
@@ -39,9 +40,10 @@ func init() {
 
 type tracingHook struct {
 	cfg config
-	// groupID is the configured consumer or share group name, set in OnNewClient.
-	groupID       string
-	isShareGroup  bool
+	// group is set in OnNewClient and read by the record hooks, which may run
+	// concurrently on another client when the hook is attached to several.
+	group         atomic.Pointer[groupInfo]
+	clientBound   atomic.Bool
 	activeSpans   []*tracer.Span
 	activeSpansMu sync.Mutex
 	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
@@ -93,10 +95,23 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 // used for DSM.
 //
 // The hook holds per-client state. Attach the Opt returned by WithTracing
-// to one client only. A hook attached to two clients reports the group of
-// the client created last for both clients.
+// to one client only. A hook attached to two clients logs a warning and
+// reports the group of the client created last for both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
-	h.groupID, h.isShareGroup = groupName(c)
+	if !h.clientBound.CompareAndSwap(false, true) {
+		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise Data Streams Monitoring reports the consumer group of the most recently created client for all of them")
+	}
+	var g *groupInfo
+	if name, isShareGroup := groupName(c); name != "" {
+		g = &groupInfo{name: name, isShareGroup: isShareGroup}
+	}
+	h.group.Store(g)
+}
+
+// groupInfo is the consumer or share group a client was configured with.
+type groupInfo struct {
+	name         string
+	isShareGroup bool
 }
 
 type optValuer interface {
@@ -118,6 +133,10 @@ func groupName(c optValuer) (name string, isShareGroup bool) {
 	// franz-go before v1.21.4 has no ShareGroup case in OptValue and returns nil.
 	g, ok := c.OptValue(kgo.ShareGroup).(string)
 	if !ok {
+		// Share groups always subscribe with ConsumeTopics, so only warn for
+		// clients that could be one. This excludes producers and
+		// partition-assigned consumers, but cannot exclude direct consumers
+		// that use ConsumeTopics.
 		if topics, _ := c.OptValue(kgo.ConsumeTopics).(map[string]*regexp.Regexp); len(topics) > 0 {
 			warnShareGroupUnsupported.Do(func() {
 				instr.Logger().Warn("contrib/twmb/franz-go: this franz-go version does not report ShareGroup through OptValue; share group DSM tagging is disabled")
@@ -268,8 +287,9 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + r.Topic, "type:kafka"}
-	if h.groupID != "" {
-		edges = append(edges, "group:"+h.groupID)
+	g := h.group.Load()
+	if g != nil {
+		edges = append(edges, "group:"+g.name)
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -286,8 +306,8 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 	// per-record acknowledgement and may deliver a partition's records to
 	// several members, out of order and with redeliveries. Reporting consumed
 	// offsets as commit offsets would produce a misleading consumer lag.
-	if h.groupID != "" && !h.isShareGroup {
-		tracer.TrackKafkaCommitOffset(h.groupID, r.Topic, r.Partition, r.Offset)
+	if g != nil && !g.isShareGroup {
+		tracer.TrackKafkaCommitOffset(g.name, r.Topic, r.Partition, r.Offset)
 	}
 }
 
