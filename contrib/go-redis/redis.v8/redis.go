@@ -33,15 +33,26 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoRedisV8)
 }
 
-// traceMarkerKey is a private context key under which the datadog hook that
-// started a command's span records itself. A WithContext or WithTimeout
-// clone of an already-wrapped client inherits the hook, and go-redis clones
-// share the hook slice with the original, so wrapping the clone adds a
-// second datadog hook to it. The outermost datadog hook owns the span: every
-// hook that finds the marker in the context skips the command, so each
-// command is traced exactly once no matter how many datadog hooks the client
-// carries.
+// traceMarkerKey is a private context key under which the datadog hook
+// that started a command's span records itself, along with the command it
+// started it for. A WithContext or WithTimeout clone of an already-wrapped
+// client inherits the hook, and go-redis clones share the hook slice with
+// the original, so wrapping the clone adds a second datadog hook to it.
+// The outermost datadog hook owns the span: every hook that finds its own
+// command's marker in the context skips it, so each command is traced
+// exactly once no matter how many datadog hooks the client carries. The
+// command in the marker keeps the check scoped to one command chain: a
+// context handed to another wrapped client — for example by a user hook
+// that issues a nested command with the context it received — does not
+// suppress that client's span.
 type traceMarkerKey struct{}
+
+// traceMarker identifies the datadog hook that owns the span for one
+// command. For pipelines, cmd is the first command of the slice.
+type traceMarker struct {
+	hook *datadogHook
+	cmd  redis.Cmder
+}
 
 // wrapEntry is the registry record for one instrumented client. It holds no
 // reference to the client itself, so a weakly keyed entry never keeps a
@@ -227,8 +238,8 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	if _, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); ok {
-		// Another datadog hook already started this command's span; see traceMarkerKey.
+	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); ok && m.cmd == cmd {
+		// Another datadog hook on this client already started this command's span; see traceMarkerKey.
 		return ctx, nil
 	}
 	raw := strings.TrimSpace(cmd.String())
@@ -246,13 +257,13 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(p.spanCfg),
 	)
-	return context.WithValue(ctx, traceMarkerKey{}, ddh), nil
+	return context.WithValue(ctx, traceMarkerKey{}, traceMarker{hook: ddh, cmd: cmd}), nil
 }
 
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
 	// go-redis hands the final context to every hook's AfterProcess, so only
-	// the hook that started the span finishes it; see traceMarkerKey.
-	if owner, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); !ok || owner != ddh {
+	// the hook that started this command's span finishes it; see traceMarkerKey.
+	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); !ok || m.hook != ddh || m.cmd != cmd {
 		return nil
 	}
 	var span *tracer.Span
@@ -267,8 +278,12 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 }
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-	if _, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); ok {
-		// Another datadog hook already started this pipeline's span; see traceMarkerKey.
+	var firstCmd redis.Cmder
+	if len(cmds) > 0 {
+		firstCmd = cmds[0]
+	}
+	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); ok && m.cmd == firstCmd {
+		// Another datadog hook on this client already started this pipeline's span; see traceMarkerKey.
 		return ctx, nil
 	}
 	raw := strings.TrimSpace(commandsToString(cmds))
@@ -287,13 +302,17 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(p.spanCfg),
 	)
-	return context.WithValue(ctx, traceMarkerKey{}, ddh), nil
+	return context.WithValue(ctx, traceMarkerKey{}, traceMarker{hook: ddh, cmd: firstCmd}), nil
 }
 
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	var firstCmd redis.Cmder
+	if len(cmds) > 0 {
+		firstCmd = cmds[0]
+	}
 	// go-redis hands the final context to every hook's AfterProcessPipeline,
-	// so only the hook that started the span finishes it; see traceMarkerKey.
-	if owner, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); !ok || owner != ddh {
+	// so only the hook that started this pipeline's span finishes it; see traceMarkerKey.
+	if m, ok := ctx.Value(traceMarkerKey{}).(traceMarker); !ok || m.hook != ddh || m.cmd != firstCmd {
 		return nil
 	}
 	var span *tracer.Span

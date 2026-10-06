@@ -215,3 +215,48 @@ func TestWrapClientRegistryDropsDeadClients(t *testing.T) {
 	}
 	t.Fatal("registry entry outlived its client")
 }
+
+// nestedClientHook is a user hook that issues a command on another wrapped
+// client with the context it receives from the first client's hook chain.
+type nestedClientHook struct{ other *redis.Client }
+
+func (h *nestedClientHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	_ = h.other.WithContext(ctx).Get("foo").Err()
+	return ctx, nil
+}
+
+func (h *nestedClientHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error { return nil }
+func (h *nestedClientHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (h *nestedClientHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
+}
+
+// The outer command's marker must stay scoped to it: a command issued on
+// another wrapped client with the marker in its context is still traced.
+func TestWrapClientNestedOtherClient(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	WrapClient(a)
+	WrapClient(b)
+	a.AddHook(&nestedClientHook{other: b})
+
+	_ = a.Get("foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected 1 command span per client, got %d", len(spans))
+	}
+	if open := mt.OpenSpans(); len(open) != 0 {
+		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+}
