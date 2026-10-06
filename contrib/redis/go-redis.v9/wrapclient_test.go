@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -326,4 +327,43 @@ func TestWrapClientRegistryDropsClientsCapturedByErrorCheck(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("registry entry outlived its client")
+}
+
+// redisProxy hides its underlying client in an unexported embedded field, so
+// the registry cannot see through it and must key the proxy itself.
+type redisProxy struct {
+	hiddenClient
+}
+
+type hiddenClient = *redis.Client
+
+// A proxy that cannot be seen through must still be registered by its own
+// identity: repeated wraps install a single hook.
+func TestWrapClientOpaqueProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	proxy := &redisProxy{hiddenClient: client}
+	WrapClient(proxy)
+	WrapClient(proxy)
+
+	hooks := reflect.ValueOf(client).Elem().FieldByName("hooksMixin").FieldByName("slice")
+	if n := hooks.Len(); n != 1 {
+		t.Fatalf("expected exactly 1 hook after 2 proxy wraps, got %d", n)
+	}
+
+	_ = client.Get(context.Background(), "foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+	if open := mt.OpenSpans(); len(open) != 0 {
+		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
 }

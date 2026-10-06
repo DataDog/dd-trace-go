@@ -187,15 +187,20 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// and the second client would silently go uninstrumented. Missing spans
 	// are worse than duplicate spans.
 	if !registerConcrete(client, cfg, installHook) {
-		// A decorator or proxy implementation. Key the registry by the
-		// concrete go-redis client it embeds, when there is one: repeated
-		// wraps, direct or through other decorators, then install a single
-		// hook. Implementations we cannot see through are instrumented
-		// directly on every call, which preserves the pre-existing behavior
-		// for them.
-		if u := underlyingClient(client); u == nil || !registerConcrete(u, cfg, installHook) {
-			installHook()
+		// A decorator or proxy implementation. Prefer the concrete go-redis
+		// client it embeds, so repeated wraps — direct or through other
+		// decorators — share the underlying client's entry. Otherwise key an
+		// opaque pointer client by itself: the identity is weak too, so the
+		// registry does not pin it. Only non-pointer clients are instrumented
+		// directly on every call, which preserves the pre-existing behavior.
+		if u := underlyingClient(client); u != nil && registerConcrete(u, cfg, installHook) {
+			return
 		}
+		if k, ok := weakHandle(client); ok {
+			registerWrapped(k, cfg, installHook)
+			return
+		}
+		installHook()
 	}
 }
 
@@ -213,6 +218,17 @@ func registerConcrete(client redis.UniversalClient, cfg *clientConfig, installHo
 		return false
 	}
 	return true
+}
+
+// weakHandle returns a weak identity for any pointer client, by referencing
+// the start of the object it points to. Two handles compare equal exactly for
+// the same object, and the handle never keeps the client alive.
+func weakHandle(client any) (weak.Pointer[byte], bool) {
+	v := reflect.ValueOf(client)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return weak.Pointer[byte]{}, false
+	}
+	return weak.Make((*byte)(v.UnsafePointer())), true
 }
 
 // underlyingClient returns the concrete go-redis client behind a decorator or
