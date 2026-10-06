@@ -35,6 +35,8 @@ var (
 	_ opensearchtransport.Interface    = (*transport)(nil)
 	_ opensearchtransport.Discoverable = (*transport)(nil)
 	_ opensearchtransport.Measurable   = (*transport)(nil)
+	_ opensearch.Streamer              = (*transport)(nil)
+	_ io.Closer                        = (*transport)(nil)
 	_ http.RoundTripper                = (*roundTripper)(nil)
 )
 
@@ -54,11 +56,6 @@ func NewDefaultClient(opts ...Option) (*opensearch.Client, error) {
 
 // NewClient returns a new opensearch.Client enhanced with tracing.
 func NewClient(cfg opensearch.Config, opts ...Option) (*opensearch.Client, error) {
-	if cfg.Transport == nil {
-		cfg.Transport = TraceRoundTripper(http.DefaultTransport)
-	} else {
-		cfg.Transport = TraceRoundTripper(cfg.Transport)
-	}
 	c, err := opensearch.NewClient(cfg)
 	if err != nil {
 		return nil, err
@@ -112,6 +109,19 @@ func newTransport(origin opensearchtransport.Interface, cfg *config) *transport 
 
 // Perform traces the opensearch request.
 func (t *transport) Perform(req *http.Request) (*http.Response, error) {
+	return t.trace(req, t.origin.Perform, false)
+}
+
+// Stream traces a request without reading or closing the response body.
+func (t *transport) Stream(req *http.Request) (*http.Response, error) {
+	streamer, ok := t.origin.(opensearch.Streamer)
+	if !ok {
+		return nil, opensearch.ErrTransportMissingMethodStream
+	}
+	return t.trace(req, streamer.Stream, true)
+}
+
+func (t *transport) trace(req *http.Request, perform func(*http.Request) (*http.Response, error), streaming bool) (*http.Response, error) {
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(map[string]any{
 			ext.ResourceName:     t.config.resourceNamer(req.URL.Path, req.Method),
@@ -132,23 +142,38 @@ func (t *transport) Perform(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.OpenSearchBody, snip)
 	}
 	req.Body = rc
-	resp, err := t.origin.Perform(req)
+	resp, err := perform(req)
+	// The upstream transport selects the destination by updating the request URL.
+	span.SetTag(ext.NetworkDestinationName, req.URL.Hostname())
+	span.SetTag(ext.TargetHost, req.URL.Hostname())
+	span.SetTag(ext.TargetPort, req.URL.Port())
 	if err != nil {
 		span.Finish(tracer.WithError(err))
 		return resp, err
 	}
 	span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		snip, rc, err := peek(resp.Body, contentEncoding, int(resp.ContentLength), bodyCutoff)
-		if err != nil {
-			snip = http.StatusText(resp.StatusCode)
+		snip := http.StatusText(resp.StatusCode)
+		if !streaming {
+			body, rc, err := peek(resp.Body, contentEncoding, int(resp.ContentLength), bodyCutoff)
+			if err == nil {
+				snip = body
+			}
+			resp.Body = rc
 		}
-		resp.Body = rc
 		span.Finish(tracer.WithError(errors.New(snip)))
 		return resp, nil
 	}
 	span.Finish()
 	return resp, nil
+}
+
+// Close releases the underlying transport's resources when supported.
+func (t *transport) Close() error {
+	if closer, ok := t.origin.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 // DiscoverNodes implements the opensearchtransport.Discoverable interface.

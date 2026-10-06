@@ -9,12 +9,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +27,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -261,3 +264,213 @@ func TestPeekReadError(t *testing.T) {
 type errReader struct{ err error }
 
 func (r *errReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestNewClientInsecureSkipVerify(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(strconv.FormatBool(custom), func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, `{}`)
+			}))
+			defer srv.Close()
+			cfg := opensearch.Config{Addresses: []string{srv.URL}, InsecureSkipVerify: true}
+			var original *http.Transport
+			if custom {
+				original = http.DefaultTransport.(*http.Transport).Clone()
+				original.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+				cfg.Transport = original
+			}
+			client, err := NewClient(cfg)
+			require.NoError(t, err)
+			defer client.Close()
+			req, err := http.NewRequest(http.MethodGet, "/", nil)
+			require.NoError(t, err)
+			resp, err := client.Perform(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			if custom {
+				assert.False(t, original.TLSClientConfig.InsecureSkipVerify)
+			}
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			u, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+			assert.Equal(t, u.Hostname(), spans[0].Tag(ext.TargetHost))
+			assert.Equal(t, u.Port(), spans[0].Tag(ext.TargetPort))
+		})
+	}
+}
+
+func TestStream(t *testing.T) {
+	for _, traced := range []bool{false, true} {
+		for _, status := range []int{http.StatusOK, http.StatusNotFound} {
+			t.Run(strconv.FormatBool(traced)+"/"+strconv.Itoa(status), func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				srv := newTestServer(t, status, `{"result":"streamed"}`)
+				cfg := opensearch.Config{Addresses: []string{srv.URL}}
+				var client *opensearch.Client
+				var err error
+				opts := []Option{WithService("stream-service"), WithCustomTag("custom.tag", "value")}
+				if traced {
+					client, err = opensearch.NewClient(cfg)
+					require.NoError(t, err)
+					TraceClient(client, opts...)
+				} else {
+					client, err = NewClient(cfg, opts...)
+					require.NoError(t, err)
+				}
+				defer client.Close()
+				parent := mt.StartSpan("parent")
+				defer parent.Finish()
+				req, err := http.NewRequestWithContext(tracer.ContextWithSpan(context.Background(), parent), http.MethodPost, "/_search?pretty=true", strings.NewReader(`{"query":{}}`))
+				require.NoError(t, err)
+				resp, err := client.Stream(req)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				assert.Equal(t, `{"result":"streamed"}`, string(body))
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				span := spans[0]
+				assert.Equal(t, parent.Context().SpanID(), span.ParentID())
+				assert.Equal(t, "opensearch.query", span.OperationName())
+				assert.Equal(t, "stream-service", span.Tag(ext.ServiceName))
+				assert.Equal(t, "value", span.Tag("custom.tag"))
+				assert.Equal(t, "POST /_search", span.Tag(ext.ResourceName))
+				assert.Equal(t, `{"query":{}}`, span.Tag(ext.OpenSearchBody))
+				assert.Equal(t, "pretty=true", span.Tag(ext.OpenSearchParams))
+				assert.Equal(t, strconv.Itoa(status), span.Tag(ext.HTTPCode))
+				u, err := url.Parse(srv.URL)
+				require.NoError(t, err)
+				assert.Equal(t, u.Hostname(), span.Tag(ext.TargetHost))
+				assert.Equal(t, u.Port(), span.Tag(ext.TargetPort))
+				if status == http.StatusOK {
+					assert.Nil(t, span.Tag(ext.ErrorMsg))
+				} else {
+					assert.Equal(t, http.StatusText(status), span.Tag(ext.ErrorMsg))
+				}
+			})
+		}
+	}
+}
+
+type streamTransport struct {
+	fakeTransport
+	response *http.Response
+	err      error
+	request  *http.Request
+}
+
+func (s *streamTransport) Stream(req *http.Request) (*http.Response, error) {
+	s.request = req
+	return s.response, s.err
+}
+
+type untouchedBody struct{ reads, closes int }
+
+func (b *untouchedBody) Read([]byte) (int, error) {
+	b.reads++
+	return 0, io.EOF
+}
+func (b *untouchedBody) Close() error {
+	b.closes++
+	return nil
+}
+
+func TestStreamDelegation(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusBadRequest} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			body := &untouchedBody{}
+			origin := &streamTransport{response: &http.Response{StatusCode: status, Body: body}}
+			client := &opensearch.Client{Transport: origin}
+			TraceClient(client)
+			req, err := http.NewRequest(http.MethodGet, "http://localhost/_search", nil)
+			require.NoError(t, err)
+			resp, err := client.Stream(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Same(t, origin.response, resp)
+			assert.Same(t, body, resp.Body)
+			assert.Zero(t, body.reads)
+			assert.Zero(t, body.closes)
+		})
+	}
+	t.Run("transport error", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		origin := &streamTransport{err: context.Canceled}
+		client := &opensearch.Client{Transport: origin}
+		TraceClient(client)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+		require.NoError(t, err)
+		resp, err := client.Stream(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		assert.Nil(t, resp)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.ErrorIs(t, origin.request.Context().Err(), context.Canceled)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, context.Canceled.Error(), spans[0].Tag(ext.ErrorMsg))
+	})
+	t.Run("missing method", func(t *testing.T) {
+		client := &opensearch.Client{Transport: fakeTransport{}}
+		TraceClient(client)
+		req, err := http.NewRequest(http.MethodGet, "/", nil)
+		require.NoError(t, err)
+		resp, err := client.Stream(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		assert.ErrorIs(t, err, opensearch.ErrTransportMissingMethodStream)
+	})
+}
+
+type closableTransport struct {
+	fakeTransport
+	closed bool
+	err    error
+}
+
+func (c *closableTransport) Close() error {
+	c.closed = true
+	return c.err
+}
+
+type idleClosingTransport struct {
+	closed bool
+}
+
+func (*idleClosingTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, nil }
+func (c *idleClosingTransport) CloseIdleConnections()                         { c.closed = true }
+
+func TestClose(t *testing.T) {
+	t.Run("custom closer", func(t *testing.T) {
+		closeErr := errors.New("close failed")
+		origin := &closableTransport{err: closeErr}
+		client := &opensearch.Client{Transport: origin}
+		TraceClient(client)
+		assert.ErrorIs(t, client.Close(), closeErr)
+		assert.True(t, origin.closed)
+	})
+	t.Run("without closer", func(t *testing.T) {
+		client := &opensearch.Client{Transport: fakeTransport{}}
+		TraceClient(client)
+		assert.NoError(t, client.Close())
+	})
+	t.Run("new client closes idle connections", func(t *testing.T) {
+		origin := &idleClosingTransport{}
+		client, err := NewClient(opensearch.Config{Transport: origin})
+		require.NoError(t, err)
+		require.NoError(t, client.Close())
+		assert.True(t, origin.closed)
+		require.NoError(t, client.Close())
+	})
+}
