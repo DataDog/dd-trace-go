@@ -13,9 +13,11 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -32,20 +34,22 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoRedis)
 }
 
-// wrapState records what WrapClient installed on a client so repeated calls
-// on the same client do not stack process wrappers, which would emit one
-// duplicate span per Redis command for every extra call.
-type wrapState struct {
-	// process is the client's process function before our wrapper was
-	// installed. WithContext wraps clones of the client around it, so clones
-	// trace each command exactly once.
-	process func(cmd redis.Cmder) error
-	cfg     *clientConfig
-}
-
-// wrapped maps each wrapped client to its wrapState. Entries are never
-// removed: they are bounded by the number of distinct wrapped clients.
-var wrapped sync.Map // *redis.Client -> *wrapState
+var (
+	// wrapMu serializes WrapClient. Upstream WrapProcess mutates the client's
+	// process chain with an unsynchronized assignment, so two concurrent
+	// first wraps could race, leave the client half-instrumented, or even
+	// strip the tracing wrapper; registration and installation must happen
+	// as one critical section.
+	wrapMu sync.Mutex
+	// wrapped records the traced handle created by the first WrapClient
+	// call for each client, keyed weakly by the client. Neither the key nor
+	// the value keeps a client alive: once a wrapped client becomes
+	// unreachable, a runtime cleanup drops its entry, so the registry holds
+	// at most one entry per live client. Without the registry, every
+	// WrapClient call would stack another process wrapper on the client and
+	// every Redis command would emit one duplicate span per extra wrapper.
+	wrapped = map[weak.Pointer[redis.Client]]weak.Pointer[Client]{}
+)
 
 // sameConfig reports whether two configurations produce the same spans.
 func sameConfig(a, b *clientConfig) bool {
@@ -150,6 +154,25 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		host = opt.Addr
 		port = "6379"
 	}
+
+	wrapMu.Lock()
+	defer wrapMu.Unlock()
+	key := weak.Make(c)
+	if w, ok := wrapped[key]; ok {
+		// The client is already instrumented. Keep the current chain
+		// untouched: it may also hold wrappers added by others. Reuse the
+		// first handle's process and configuration, so WithContext clones of
+		// the returned handle trace each command exactly once with the first
+		// configuration instead of the new one.
+		if first := w.Value(); first != nil {
+			if !sameConfig(first.params.config, cfg) {
+				instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
+			}
+			return &Client{Client: c, params: first.params, process: first.process}
+		}
+		// The first call never completed; treat the client as unwrapped.
+	}
+
 	params := &params{
 		host:   host,
 		port:   port,
@@ -158,21 +181,19 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	}
 	params.spanCfg = newSpanConfig(host, port, opt.DB, cfg)
 	tc := &Client{Client: c, params: params}
-	tc.Client.WrapProcess(func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
-		if state, loaded := wrapped.LoadOrStore(c, &wrapState{process: oldProcess, cfg: cfg}); loaded {
-			// The client is already instrumented. Keep the current chain
-			// untouched: it may also hold wrappers added by others. Reuse the
-			// stored original process so WithContext clones of tc do not
-			// stack another span.
-			st := state.(*wrapState)
-			tc.process = st.process
-			if !sameConfig(st.cfg, cfg) {
-				instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
-			}
-			return oldProcess
-		}
-		return createWrapperFromClient(tc)(oldProcess)
-	})
+	// createWrapperFromClient installs the tracing wrapper as the client's
+	// process and records the original process on tc. The wrapper closure
+	// retains tc, so the handle below stays reachable through the client's
+	// own process chain for as long as the client is used.
+	c.WrapProcess(createWrapperFromClient(tc))
+	wrapped[key] = weak.Make(tc)
+	// The cleanup is attached to the client: when it becomes unreachable the
+	// entry goes with it, even though neither side keeps the other alive.
+	runtime.AddCleanup(c, func(k weak.Pointer[redis.Client]) {
+		wrapMu.Lock()
+		delete(wrapped, k)
+		wrapMu.Unlock()
+	}, key)
 	return tc
 }
 

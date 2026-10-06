@@ -11,10 +11,11 @@ import (
 	"context"
 	"math"
 	"net"
-	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,20 +30,67 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageRedisGoRedisV9)
 }
 
-// wrapped holds the configuration of every client WrapClient has
-// instrumented, keyed by the client itself. Entries are never removed: they
-// are bounded by the number of distinct wrapped clients. Without it, every
-// WrapClient call would add another hook to the client and every Redis
-// command would emit one duplicate span per extra hook.
-var wrapped sync.Map // client -> *clientConfig
+// traceMarkerKey is a private context key under which the datadog hook that
+// started a command's span records itself. A WithContext or WithTimeout
+// clone of an already-wrapped client inherits the hook, and go-redis clones
+// share the hook slice with the original, so wrapping the clone adds a
+// second datadog hook to it. The outermost datadog hook owns the span: every
+// hook that finds the marker in the context skips the command, so each
+// command is traced exactly once no matter how many datadog hooks the client
+// carries.
+type traceMarkerKey struct{}
 
-// clientIdentity returns an identity for client, usable as a map key.
-// In practice every redis.UniversalClient is a pointer.
-func clientIdentity(client redis.UniversalClient) (any, bool) {
-	if reflect.TypeOf(client).Comparable() {
-		return client, true
+// dialMarkerKey is the same mechanism for dial spans. It is a separate key
+// because a pool may dial a connection in the middle of a command, with the
+// command's context: the command's marker must not suppress the dial span.
+type dialMarkerKey struct{}
+
+// wrapEntry is the registry record for one instrumented client. It holds no
+// reference to the client itself, so a weakly keyed entry never keeps a
+// retired client alive.
+type wrapEntry struct {
+	cfg  *clientConfig
+	done chan struct{} // closed once the winning call has installed its hook
+}
+
+var (
+	// wrapMu guards wrapped.
+	wrapMu sync.Mutex
+	// wrapped records every client WrapClient has instrumented, keyed
+	// weakly by the client. Weak keys do not pin clients: once a wrapped
+	// client becomes unreachable, a runtime cleanup drops its entry, so the
+	// registry holds at most one entry per live client. Without the registry,
+	// every WrapClient call would add another hook to the client and every
+	// Redis command would emit one duplicate span per extra hook.
+	wrapped = map[any]*wrapEntry{} // weak.Pointer[T] (client) -> *wrapEntry
+)
+
+// registerWrapped instruments the client identified by key at most once:
+// cfg is the configuration to use when this call wins the registration race
+// and installHook installs the tracing hook. Concurrent first calls elect a
+// single installer and the others wait for it, so tracing is active by the
+// time every call returns.
+func registerWrapped[T any](key weak.Pointer[T], cfg *clientConfig, installHook func()) {
+	wrapMu.Lock()
+	if e, ok := wrapped[key]; ok {
+		wrapMu.Unlock()
+		if !sameConfig(e.cfg, cfg) {
+			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+		}
+		// Wait for the winning call to install its hook before returning.
+		<-e.done
+		return
 	}
-	return nil, false
+	e := &wrapEntry{cfg: cfg, done: make(chan struct{})}
+	wrapped[key] = e
+	wrapMu.Unlock()
+	runtime.AddCleanup(key.Value(), func(k any) {
+		wrapMu.Lock()
+		delete(wrapped, k)
+		wrapMu.Unlock()
+	}, any(key))
+	defer close(e.done)
+	installHook()
 }
 
 // sameConfig reports whether two configurations produce the same spans. The
@@ -84,30 +132,40 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 }
 
 // WrapClient adds a hook to the given client that traces with the default tracer under
-// the service name "redis". Calling it more than once on the same client is safe: the
-// client is instrumented once and the configuration of the first call is kept.
+// the service name "redis". Calling it more than once on the same client, or on a
+// WithContext or WithTimeout clone of an already-wrapped client, is safe: each
+// command is traced exactly once and the configuration of the first call is kept.
 func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-
-	if id, ok := clientIdentity(client); ok {
-		if prev, loaded := wrapped.LoadOrStore(id, cfg); loaded {
-			if !sameConfig(prev.(*clientConfig), cfg) {
-				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
-			}
-			return
+	installHook := func() {
+		hookParams := &params{
+			config: cfg,
 		}
+		hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
+		client.AddHook(&datadogHook{params: hookParams})
 	}
-
-	hookParams := &params{
-		config: cfg,
+	// The registry is keyed by the client itself, not by its Options()
+	// pointer: go-redis stores the caller's options pointer, so two
+	// independent clients built from one shared *redis.Options would collide
+	// and the second client would silently go uninstrumented. Missing spans
+	// are worse than duplicate spans.
+	switch c := client.(type) {
+	case *redis.Client:
+		registerWrapped(weak.Make(c), cfg, installHook)
+	case *redis.ClusterClient:
+		registerWrapped(weak.Make(c), cfg, installHook)
+	case *redis.Ring:
+		registerWrapped(weak.Make(c), cfg, installHook)
+	default:
+		// Unknown UniversalClient implementation: it cannot be keyed in the
+		// registry, so instrument it directly on every call. The context
+		// marker still keeps every command single-span across such calls.
+		installHook()
 	}
-	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
-
-	client.AddHook(&datadogHook{params: hookParams})
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay
@@ -172,10 +230,15 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if _, ok := ctx.Value(dialMarkerKey{}).(*datadogHook); ok {
+			// Another datadog hook already started this dial's span; see dialMarkerKey.
+			return hook(ctx, network, addr)
+		}
 		// Every tag DialHook sets is static (constant for the client's
 		// lifetime), so the span can start from spanCfg alone, with no
 		// per-call tag map.
 		span, ctx := tracer.StartSpanFromContext(ctx, "redis.dial", tracer.WithStartSpanConfig(ddh.spanCfg))
+		ctx = context.WithValue(ctx, dialMarkerKey{}, ddh)
 
 		conn, err := hook(ctx, network, addr)
 
@@ -190,6 +253,10 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 
 func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
+		if _, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); ok {
+			// Another datadog hook already started this command's span; see traceMarkerKey.
+			return hook(ctx, cmd)
+		}
 		raw := cmd.String()
 		length := strings.Count(raw, " ")
 		p := ddh.params
@@ -204,6 +271,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 			tracer.WithTags(tags),
 			tracer.WithStartSpanConfig(p.spanCfg),
 		)
+		ctx = context.WithValue(ctx, traceMarkerKey{}, ddh)
 
 		err := hook(ctx, cmd)
 
@@ -218,6 +286,10 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
+		if _, ok := ctx.Value(traceMarkerKey{}).(*datadogHook); ok {
+			// Another datadog hook already started this pipeline's span; see traceMarkerKey.
+			return hook(ctx, cmds)
+		}
 		p := ddh.params
 		tags := map[string]any{
 			ext.ResourceName:        "redis.pipeline",
@@ -230,6 +302,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 			tracer.WithTags(tags),
 			tracer.WithStartSpanConfig(p.spanCfg),
 		)
+		ctx = context.WithValue(ctx, traceMarkerKey{}, ddh)
 
 		err := hook(ctx, cmds)
 

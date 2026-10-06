@@ -7,7 +7,11 @@ package redis
 
 import (
 	"context"
+	"runtime"
+	"sync"
 	"testing"
+	"time"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -125,4 +129,93 @@ func TestWrapClientIdempotent(t *testing.T) {
 			t.Fatalf("expected 1 command span per client, got %d", len(spans))
 		}
 	})
+}
+
+// Concurrent first wraps must serialize: upstream WrapProcess assigns the
+// client's process without synchronization, so two racing first wraps could
+// strip the tracing wrapper from the client.
+func TestWrapClientConcurrent(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	const n = 8
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			WrapClient(client)
+			// Trace a command right away: the wrapper must be installed by
+			// the time WrapClient returns, whichever concurrent call won.
+			_ = client.Get("foo").Err()
+		})
+	}
+	wg.Wait()
+
+	// Every command ran through a single wrapper: exactly one span per
+	// command.
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != n {
+		t.Fatalf("expected exactly %d command spans after %d concurrent wraps, got %d", n, n, len(spans))
+	}
+}
+
+// A second WrapClient call with a different configuration must return a
+// handle that, with its pipelines and WithContext clones, still traces with
+// the first call's configuration.
+func TestWrapClientKeepsFirstConfigOnRewrap(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	WrapClient(client)
+	tc := WrapClient(client, WithService("redis-other"))
+
+	_ = tc.Get("foo").Err()
+	clone := tc.WithContext(context.Background())
+	_ = clone.Get("foo").Err()
+	pipe := tc.Pipeline()
+	pipe.Get("foo")
+	_, _ = pipe.Exec()
+
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 3 {
+		t.Fatalf("expected 1 command span per command, got %d", len(spans))
+	}
+	for _, s := range spans {
+		if got := s.Tag(ext.ServiceName); got != cfg.serviceName {
+			t.Fatalf("expected the first configuration's service name %q, got %v", cfg.serviceName, got)
+		}
+	}
+}
+
+// The registry keys clients weakly, so a retired client must be collected and
+// its entry dropped: the registry holds at most one entry per live client.
+func TestWrapClientRegistryDropsDeadClients(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	key := weak.Make(client)
+	WrapClient(client)
+	client = nil
+
+	// Runtime cleanups run shortly after the object becomes unreachable, but
+	// not necessarily after the very first GC.
+	for range 1000 {
+		runtime.GC()
+		wrapMu.Lock()
+		_, alive := wrapped[key]
+		wrapMu.Unlock()
+		if !alive {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("registry entry outlived its client")
 }
