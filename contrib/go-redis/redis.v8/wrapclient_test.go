@@ -386,3 +386,51 @@ func TestWrapClientDeepProxy(t *testing.T) {
 		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
+
+// redisRouter is a proxy holding two concrete clients: its commands go to
+// the embedded one, its AddHook instruments both.
+type redisRouter struct {
+	redis.UniversalClient
+	write redis.UniversalClient
+}
+
+func (r *redisRouter) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+	r.write.AddHook(hook)
+}
+
+// A proxy with several concrete clients must not be deduplicated against one
+// of them: wrapping it when one member is already wrapped must still
+// instrument the others, and must not wrap the member a second time.
+func TestWrapClientMultiClientProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { read.Close() })
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { write.Close() })
+
+	WrapClient(read)
+	WrapClient(&redisRouter{UniversalClient: read, write: write})
+	WrapClient(&redisRouter{UniversalClient: read, write: write})
+
+	readHooks := reflect.ValueOf(read).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	writeHooks := reflect.ValueOf(write).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	if readHooks != 1 || writeHooks != 1 {
+		t.Fatalf("expected 1 hook per member, got read=%d write=%d", readHooks, writeHooks)
+	}
+
+	_ = read.Get(context.Background(), "foo").Err()
+	_ = write.Get(context.Background(), "foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected 1 command span per member, got %d", len(spans))
+	}
+	if open := mt.OpenSpans(); len(open) != 0 {
+		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+}

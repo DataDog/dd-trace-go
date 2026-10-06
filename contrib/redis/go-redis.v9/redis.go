@@ -105,7 +105,7 @@ type params struct {
 
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
-func NewClient(opt *redis.Options, opts ...ClientOption) *redis.Client {
+func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 	client := redis.NewClient(opt)
 	WrapClient(client, opts...)
 	return client
@@ -125,18 +125,16 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
 
-	if prev, seen := datadogConfig(client); seen {
-		if prev != nil {
-			if !sameConfig(*prev, cfg.key()) {
-				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
-			}
+	targets := concreteClients(client)
+	if len(targets) == 0 {
+		// No concrete client can be found to instrument: deduplicate by the
+		// client's own weak identity and let its AddHook decide what it
+		// instruments. Repeated wraps still install a single hook.
+		key, ok := weakHandle(client)
+		if !ok {
+			addHook(client, cfg)
 			return
 		}
-	} else if key, ok := weakHandle(client); ok {
-		// The hook chain cannot be read — a proxy nested deeper than
-		// underlyingClient searches, for example, or an upstream layout
-		// change. Deduplicate by the client's own weak identity instead, so
-		// repeated wraps still install a single hook.
 		if e, ok := wrapped[key]; ok {
 			if !sameConfig(e.cfg, cfg.key()) {
 				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
@@ -149,8 +147,48 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 			delete(wrapped, k)
 			wrapMu.Unlock()
 		}, key)
+		addHook(client, cfg)
+		return
 	}
+	// Instrument every concrete client the implementation delegates to, one
+	// hook each, deduplicated against the hook the client already carries —
+	// inherited by a clone, installed through a previous wrap of another
+	// decorator, or not at all. A proxy with several clients is not left
+	// untraced because one member happens to be wrapped already, and a
+	// member wrapped through the proxy is not wrapped twice.
+	for _, target := range targets {
+		prev, seen := datadogConfig(target)
+		if seen && prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			}
+			continue
+		}
+		if !seen {
+			// The hook chain cannot be read: deduplicate by the client's own
+			// weak identity instead.
+			key, ok := weakHandle(target)
+			if ok {
+				if e, ok := wrapped[key]; ok {
+					if !sameConfig(e.cfg, cfg.key()) {
+						instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+					}
+					continue
+				}
+				wrapped[key] = &wrapEntry{cfg: cfg.key()}
+				runtime.AddCleanup(key.Value(), func(k weak.Pointer[byte]) {
+					wrapMu.Lock()
+					delete(wrapped, k)
+					wrapMu.Unlock()
+				}, key)
+			}
+		}
+		addHook(target, cfg)
+	}
+}
 
+// addHook installs a datadog hook with the given configuration on client.
+func addHook(client redis.UniversalClient, cfg *clientConfig) {
 	hookParams := &params{
 		config: cfg,
 	}
@@ -161,15 +199,10 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 // datadogConfig returns the configuration of the datadog hook the client
 // already carries, and whether the hook chain could be read at all. A
 // WithContext or WithTimeout clone of a wrapped client inherits the hook
-// slice, so this detects clones; a decorator or proxy is resolved to the
-// concrete client it delegates to. Reading the chain makes a second hook —
+// slice, so this detects clones. Reading the chain makes a second hook —
 // and with it a duplicate span per command — impossible.
 func datadogConfig(client redis.UniversalClient) (key *configKey, seen bool) {
-	target := client
-	if u := underlyingClient(client); u != nil {
-		target = u
-	}
-	hooks := hookSlice(target)
+	hooks := hookSlice(client)
 	if !hooks.IsValid() {
 		return nil, false
 	}
@@ -238,28 +271,37 @@ func weakHandle(client any) (weak.Pointer[byte], bool) {
 	return weak.Make((*byte)(v.UnsafePointer())), true
 }
 
-// underlyingClient returns the concrete go-redis client behind a decorator or
-// proxy, if there is one within a few levels of fields, embedded or not,
-// exported or not. It returns nil when it cannot see through the
-// implementation, for example when the delegated client is not held in a
-// field at all.
-func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
-	var walk func(c redis.UniversalClient, depth int) redis.UniversalClient
-	walk = func(c redis.UniversalClient, depth int) redis.UniversalClient {
+// concreteClients returns the distinct concrete go-redis clients reachable
+// from client within a few levels of fields, embedded or not, exported or
+// not. A client passed directly yields itself; a decorator delegating to one
+// client yields that client; a proxy holding several — a read/write router,
+// say — yields them all. It yields nothing when it cannot see through the
+// implementation, for example when the delegated clients are not held in
+// fields at all.
+func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
+	var found []redis.UniversalClient
+	var walk func(c redis.UniversalClient, depth int)
+	walk = func(c redis.UniversalClient, depth int) {
 		if depth == 0 || c == nil {
-			return nil
+			return
 		}
 		if v := reflect.ValueOf(c); v.Kind() == reflect.Pointer && v.IsNil() {
 			// A typed-nil concrete client is not a delegate; keep looking.
-			return nil
+			return
 		}
-		switch concrete := c.(type) {
+		switch c.(type) {
 		case *redis.Client, *redis.ClusterClient, *redis.Ring:
-			return concrete
+			for _, f := range found {
+				if f == c {
+					return
+				}
+			}
+			found = append(found, c)
+			return
 		}
 		v := reflect.ValueOf(c)
 		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
-			return nil
+			return
 		}
 		s := v.Elem()
 		for i := 0; i < s.NumField(); i++ {
@@ -272,13 +314,11 @@ func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
 			if !ok {
 				continue
 			}
-			if u := walk(field, depth-1); u != nil {
-				return u
-			}
+			walk(field, depth-1)
 		}
-		return nil
 	}
-	return walk(client, 3)
+	walk(client, 3)
+	return found
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay

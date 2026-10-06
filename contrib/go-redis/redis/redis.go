@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"unsafe"
 	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -58,6 +60,20 @@ var (
 	// with the client's context.
 	tracedCmds sync.Map // redis.Cmder -> struct{}
 )
+
+// currentProcess returns the client's current process chain, read through
+// the unexported field it lives in, without reassigning it the way upstream
+// WrapProcess does: commands in flight read the field without locking, so a
+// re-wrap must not write it.
+func currentProcess(c *redis.Client) func(cmd redis.Cmder) error {
+	v := reflect.ValueOf(c).Elem().FieldByName("baseClient").FieldByName("process")
+	if !v.CanInterface() {
+		// Unexported field: read it through its address.
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	process, _ := v.Interface().(func(cmd redis.Cmder) error)
+	return process
+}
 
 // sameConfig reports whether two configurations produce the same spans.
 func sameConfig(a, b *clientConfig) bool {
@@ -183,13 +199,12 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		}
 		params.spanCfg = newSpanConfig(host, port, opt.DB, first)
 		tc := &Client{Client: c, params: params}
-		// Capture the current process chain without changing it; the
-		// chain's own datadog wrapper skips its span for commands driven
-		// by this handle's clones (see tracedCmds).
-		c.WrapProcess(func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
-			tc.process = oldProcess
-			return oldProcess
-		})
+		// Capture the current process chain without touching it: upstream
+		// WrapProcess reassigns the client's process even for a no-op
+		// callback, which would race with commands in flight. The chain's
+		// own datadog wrapper skips its span for commands driven by this
+		// handle's clones (see tracedCmds).
+		tc.process = currentProcess(c)
 		return tc
 	}
 

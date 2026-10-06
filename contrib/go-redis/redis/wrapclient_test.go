@@ -257,3 +257,34 @@ func TestWrapClientKeepsLaterProcessWrappers(t *testing.T) {
 		t.Fatalf("expected the first configuration's service name %q, got %v", cfg.serviceName, got)
 	}
 }
+
+// A re-wrap while the shared client is serving commands must not reassign
+// the client's process chain: concurrent commands read it without locking,
+// and upstream WrapProcess writes it even for a no-op callback.
+func TestWrapClientRewrapDuringCommands(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	WrapClient(client)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = client.Get("foo").Err()
+				}
+			}
+		})
+	}
+	WrapClient(client) // duplicate wrap while commands are in flight
+	WrapClient(client)
+	close(stop)
+	wg.Wait()
+}
