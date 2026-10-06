@@ -550,3 +550,81 @@ func TestWrapClientDistinctProxiesDistinctTargets(t *testing.T) {
 		t.Fatalf("expected spans tagged with each member's port, got %v", ports)
 	}
 }
+
+// reentrantLayer is a proxy whose AddHook re-enters WrapClient, for example
+// to lazily instrument its delegate.
+type reentrantLayer struct {
+	redis.UniversalClient
+}
+
+func (r *reentrantLayer) AddHook(hook redis.Hook) {
+	WrapClient(r.UniversalClient)
+}
+
+// A proxy's AddHook may call WrapClient again — from a proxy that lazily
+// instruments a delegate, say — and must not deadlock on the package lock.
+func TestWrapClientReentrantAddHook(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	// Nest beyond the field-walk depth, so the wrap goes through the
+	// proxy's own AddHook.
+	proxy := &redisDecorator{&redisDecorator{&redisDecorator{&reentrantLayer{client}}}}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(proxy)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient deadlocked on a re-entrant AddHook")
+	}
+}
+
+// hotSwapRouter guards a replaceable delegate with its own mutex.
+type hotSwapRouter struct {
+	redis.UniversalClient // the read path
+	mu                    sync.RWMutex
+	write                 redis.UniversalClient // the replaceable write path
+}
+
+func (r *hotSwapRouter) AddHook(hook redis.Hook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.write.AddHook(hook)
+}
+
+// The field walk must read a proxy's delegate fields under the proxy's own
+// mutex, so a proxy that replaces a delegate while serving traffic does not
+// race with WrapClient.
+func TestWrapClientSynchronizedProxyFields(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &hotSwapRouter{UniversalClient: a, write: b}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				router.mu.Lock()
+				router.write = b
+				router.mu.Unlock()
+				router.mu.Lock()
+				router.write = a
+				router.mu.Unlock()
+			}
+		}
+	})
+	WrapClient(router)
+	WrapClient(router)
+	close(stop)
+	wg.Wait()
+}
