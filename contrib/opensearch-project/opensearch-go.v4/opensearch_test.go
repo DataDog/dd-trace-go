@@ -192,7 +192,7 @@ func TestTraceClient(t *testing.T) {
 
 		_, err := client.Transport.(opensearchtransport.Measurable).Metrics()
 		assert.ErrorIs(t, err, opensearch.ErrTransportMissingMethodMetrics)
-		err = client.Transport.(opensearchtransport.Discoverable).DiscoverNodes()
+		err = client.Transport.(opensearchtransport.Discoverable).DiscoverNodes(context.Background())
 		assert.ErrorIs(t, err, opensearch.ErrTransportMissingMethodDiscoverNodes)
 	})
 }

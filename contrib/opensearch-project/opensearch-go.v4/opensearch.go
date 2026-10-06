@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -151,9 +152,9 @@ func (t *transport) Perform(req *http.Request) (*http.Response, error) {
 }
 
 // DiscoverNodes implements the opensearchtransport.Discoverable interface.
-func (t *transport) DiscoverNodes() error {
+func (t *transport) DiscoverNodes(ctx context.Context) error {
 	if dt, ok := t.origin.(opensearchtransport.Discoverable); ok {
-		return dt.DiscoverNodes()
+		return dt.DiscoverNodes(ctx)
 	}
 	return opensearch.ErrTransportMissingMethodDiscoverNodes
 }
