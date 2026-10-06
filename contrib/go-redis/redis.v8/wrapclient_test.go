@@ -260,3 +260,86 @@ func TestWrapClientNestedOtherClient(t *testing.T) {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
 	}
 }
+
+// redisDecorator is a client built by embedding redis.UniversalClient, the
+// common decorator pattern: AddHook delegates to the embedded client.
+type redisDecorator struct {
+	redis.UniversalClient
+}
+
+// Wrapping a decorator must register against the client it embeds, so
+// repeated wraps through any number of decorators install a single hook.
+func TestWrapClientDecorator(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	newClient := func(t *testing.T) *redis.Client {
+		t.Helper()
+		client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+		t.Cleanup(func() { client.Close() })
+		return client
+	}
+
+	t.Run("two decorators over one client", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := newClient(t)
+		WrapClient(&redisDecorator{client})
+		WrapClient(&redisDecorator{client})
+
+		wrapMu.Lock()
+		_, registered := wrapped[weak.Make(client)]
+		wrapMu.Unlock()
+		if !registered {
+			t.Fatal("expected the decorator to be registered against the embedded client")
+		}
+
+		_ = client.Get(context.Background(), "foo").Err()
+
+		if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+			t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+		}
+	})
+
+	t.Run("decorator and direct wrap", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := newClient(t)
+		WrapClient(client)
+		WrapClient(&redisDecorator{client})
+
+		_ = client.Get(context.Background(), "foo").Err()
+
+		if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+			t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+		}
+	})
+}
+
+// The registry stores only scalar configuration fields: an error-check
+// closure capturing the client must not keep the client — and its registry
+// entry — alive.
+func TestWrapClientRegistryDropsClientsCapturedByErrorCheck(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	key := weak.Make(client)
+	captured := client
+	WrapClient(client, WithErrorCheck(func(error) bool {
+		_ = captured
+		return true
+	}))
+	client = nil
+
+	for range 1000 {
+		runtime.GC()
+		wrapMu.Lock()
+		_, alive := wrapped[key]
+		wrapMu.Unlock()
+		if !alive {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("registry entry outlived its client")
+}

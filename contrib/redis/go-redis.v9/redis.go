@@ -11,6 +11,7 @@ import (
 	"context"
 	"math"
 	"net"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -50,25 +51,14 @@ type traceMarker struct {
 	cmd  redis.Cmder
 }
 
-// dialMarkerKey is the same mechanism for dial spans, scoped by the
-// network address being dialed instead of a command: a pool may dial a
-// connection in the middle of a command, with the command's context, so
-// the command's marker must not suppress the dial span, and a dial on one
-// client must not suppress a dial on another.
-type dialMarkerKey struct{}
-
-// dialMarker identifies the datadog hook that owns the span for one dial.
-type dialMarker struct {
-	hook    *datadogHook
-	network string
-	addr    string
-}
-
-// wrapEntry is the registry record for one instrumented client. It holds no
-// reference to the client itself, so a weakly keyed entry never keeps a
+// wrapEntry is the registry record for one instrumented client. It stores
+// only the scalar fields that identify the client's configuration — never
+// the full clientConfig, whose error-check callback is a user closure that
+// may capture the client and would pin it through the registry — and holds
+// no reference to the client itself, so a weakly keyed entry never keeps a
 // retired client alive.
 type wrapEntry struct {
-	cfg  *clientConfig
+	cfg  configKey
 	done chan struct{} // closed once the winning call has installed its hook
 }
 
@@ -93,14 +83,14 @@ func registerWrapped[T any](key weak.Pointer[T], cfg *clientConfig, installHook 
 	wrapMu.Lock()
 	if e, ok := wrapped[key]; ok {
 		wrapMu.Unlock()
-		if !sameConfig(e.cfg, cfg) {
+		if !sameConfig(e.cfg, cfg.key()) {
 			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
 		}
 		// Wait for the winning call to install its hook before returning.
 		<-e.done
 		return
 	}
-	e := &wrapEntry{cfg: cfg, done: make(chan struct{})}
+	e := &wrapEntry{cfg: cfg.key(), done: make(chan struct{})}
 	wrapped[key] = e
 	wrapMu.Unlock()
 	runtime.AddCleanup(key.Value(), func(k any) {
@@ -112,10 +102,24 @@ func registerWrapped[T any](key weak.Pointer[T], cfg *clientConfig, installHook 
 	installHook()
 }
 
-// sameConfig reports whether two configurations produce the same spans. The
-// error-check function is not comparable and is ignored: with differing
-// functions the first configuration is kept without a warning.
-func sameConfig(a, b *clientConfig) bool {
+// configKey is the part of a client configuration that determines the spans
+// a client produces. It excludes the error-check function: it is not
+// comparable, and storing it in the registry would retain a user closure
+// that may capture the client.
+type configKey struct {
+	serviceName   string
+	serviceSource string
+	spanName      string
+	analyticsRate float64
+	skipRaw       bool
+}
+
+// sameConfig reports whether two configurations produce the same spans.
+// Two NaN analytics rates are equal: NaN != NaN made identical default
+// configurations compare as different and fired spurious warnings. With
+// differing error-check functions the first configuration is kept without
+// a warning.
+func sameConfig(a, b configKey) bool {
 	analytics := a.analyticsRate == b.analyticsRate ||
 		(math.IsNaN(a.analyticsRate) && math.IsNaN(b.analyticsRate))
 	return analytics &&
@@ -123,6 +127,16 @@ func sameConfig(a, b *clientConfig) bool {
 		a.serviceSource == b.serviceSource &&
 		a.spanName == b.spanName &&
 		a.skipRaw == b.skipRaw
+}
+
+func (cfg *clientConfig) key() configKey {
+	return configKey{
+		serviceName:   cfg.serviceName,
+		serviceSource: cfg.serviceSource,
+		spanName:      cfg.spanName,
+		analyticsRate: cfg.analyticsRate,
+		skipRaw:       cfg.skipRaw,
+	}
 }
 
 type datadogHook struct {
@@ -172,6 +186,22 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// independent clients built from one shared *redis.Options would collide
 	// and the second client would silently go uninstrumented. Missing spans
 	// are worse than duplicate spans.
+	if !registerConcrete(client, cfg, installHook) {
+		// A decorator or proxy implementation. Key the registry by the
+		// concrete go-redis client it embeds, when there is one: repeated
+		// wraps, direct or through other decorators, then install a single
+		// hook. Implementations we cannot see through are instrumented
+		// directly on every call, which preserves the pre-existing behavior
+		// for them.
+		if u := underlyingClient(client); u == nil || !registerConcrete(u, cfg, installHook) {
+			installHook()
+		}
+	}
+}
+
+// registerConcrete instruments a concrete go-redis client, keyed weakly by
+// the client itself, and reports whether client is one.
+func registerConcrete(client redis.UniversalClient, cfg *clientConfig, installHook func()) bool {
 	switch c := client.(type) {
 	case *redis.Client:
 		registerWrapped(weak.Make(c), cfg, installHook)
@@ -180,11 +210,45 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	case *redis.Ring:
 		registerWrapped(weak.Make(c), cfg, installHook)
 	default:
-		// Unknown UniversalClient implementation: it cannot be keyed in the
-		// registry, so instrument it directly on every call. The context
-		// marker still keeps every command single-span across such calls.
-		installHook()
+		return false
 	}
+	return true
+}
+
+// underlyingClient returns the concrete go-redis client behind a decorator or
+// proxy built by embedding redis.UniversalClient, if there is one within a
+// few levels of exported fields. It returns nil when it cannot see through
+// the implementation.
+func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
+	var walk func(c redis.UniversalClient, depth int) redis.UniversalClient
+	walk = func(c redis.UniversalClient, depth int) redis.UniversalClient {
+		if depth == 0 || c == nil {
+			return nil
+		}
+		switch concrete := c.(type) {
+		case *redis.Client, *redis.ClusterClient, *redis.Ring:
+			return concrete
+		}
+		v := reflect.ValueOf(c)
+		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+			return nil
+		}
+		s := v.Elem()
+		for i := 0; i < s.NumField(); i++ {
+			if !s.Type().Field(i).IsExported() {
+				continue
+			}
+			field, ok := s.Field(i).Interface().(redis.UniversalClient)
+			if !ok {
+				continue
+			}
+			if u := walk(field, depth-1); u != nil {
+				return u
+			}
+		}
+		return nil
+	}
+	return walk(client, 3)
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay
@@ -249,15 +313,10 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if m, ok := ctx.Value(dialMarkerKey{}).(dialMarker); ok && m.network == network && m.addr == addr {
-			// Another datadog hook on this client already started this dial's span; see dialMarkerKey.
-			return hook(ctx, network, addr)
-		}
 		// Every tag DialHook sets is static (constant for the client's
 		// lifetime), so the span can start from spanCfg alone, with no
 		// per-call tag map.
 		span, ctx := tracer.StartSpanFromContext(ctx, "redis.dial", tracer.WithStartSpanConfig(ddh.spanCfg))
-		ctx = context.WithValue(ctx, dialMarkerKey{}, dialMarker{hook: ddh, network: network, addr: addr})
 
 		conn, err := hook(ctx, network, addr)
 
