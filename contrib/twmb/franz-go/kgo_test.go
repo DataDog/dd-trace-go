@@ -500,10 +500,40 @@ func TestGroupName(t *testing.T) {
 			group, share := groupName(cl)
 			assert.Equal(t, tc.wantGroup, group)
 			assert.Equal(t, tc.wantShare, share)
-			assert.Equal(t, tc.wantGroup, h.groupID, "OnNewClient should resolve the group name")
-			assert.Equal(t, tc.wantShare, h.isShareGroup)
+			g := h.group.Load()
+			if tc.wantGroup == "" {
+				assert.Nil(t, g, "OnNewClient should not resolve a group")
+				return
+			}
+			require.NotNil(t, g, "OnNewClient should resolve the group name")
+			assert.Equal(t, tc.wantGroup, g.name)
+			assert.Equal(t, tc.wantShare, g.isShareGroup)
 		})
 	}
+}
+
+func TestHookAttachedToTwoClients(t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+	h := newTracingHook()
+	newOfflineClient(t, h, kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("first-group"))
+	require.True(t, h.clientBound.Load())
+
+	// Consume on the first client while the second one is created, so the
+	// race detector checks OnNewClient against the record hooks.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			h.OnFetchRecordUnbuffered(&kgo.Record{Topic: "topic", Context: context.Background()}, true)
+		}
+	}()
+	newOfflineClient(t, h, kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("second-group"))
+	<-done
+	h.finishAndClearActiveSpans()
+
+	g := h.group.Load()
+	require.NotNil(t, g)
+	assert.Equal(t, "second-group", g.name)
 }
 
 // preShareGroupOptValues mimics franz-go before v1.21.4, whose OptValue has no
