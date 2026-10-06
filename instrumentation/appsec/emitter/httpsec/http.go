@@ -410,11 +410,11 @@ func BeforeHandle(
 
 	clientIP := clientIdentity(opts, r)
 	cookies := opts.Cookies
-	if cookies == nil {
+	if len(cookies) == 0 {
 		cookies = makeCookies(r.Cookies())
 	}
 	queryParams := opts.QueryParams
-	if queryParams == nil {
+	if len(queryParams) == 0 {
 		queryParams = r.URL.Query()
 	}
 

@@ -130,6 +130,52 @@ type timeoutEvent struct {
 	panicked bool
 }
 
+// # Design of the timeout layer
+//
+// fasthttp.TimeoutHandler runs the handler in a worker goroutine. At the
+// deadline, it sends the timeout response and returns, but the worker
+// continues to use the same RequestCtx. Tracing and AppSec must read the
+// response and remove their context values when the request ends. With the
+// native wrapper, this causes data races, and the span or the WAF can see a
+// response that the client does not get. This file replaces that wrapper. Each
+// part below has a reason:
+//
+//  1. One owner goroutine. The goroutine that calls the wrapper (the owner)
+//     starts and finishes all spans and AppSec operations. The worker runs only
+//     the application handler. Thus no lock is necessary for the scope state:
+//     only the owner changes it. If WrapHandler is outside the timeout
+//     wrapper, the layer adopts its scopes, so that the owner can finish them
+//     with the timeout response at the deadline.
+//  2. The events channel. WrapHandler can be inside the timeout wrapper. Then
+//     it runs on the worker, but it must not start or finish a scope itself.
+//     It sends an event to the owner (exchange) and waits for the reply. While
+//     it waits, the worker is paused, so the owner can read the RequestCtx
+//     safely (for example, to run resource namers).
+//  3. The stopped channel. At the deadline, the owner stops to reply. A worker
+//     that sends an event after this point must not block forever. exchange
+//     returns false, and the worker then cleans up its own values.
+//  4. A separate timeout response. At the deadline, the worker can still write
+//     ctx.Response. The owner does not touch it. It writes l.response, lets
+//     AppSec replace it (blocking), and sends it with
+//     RequestCtx.TimeoutErrorWithResponse.
+//  5. blockedResponse. If AppSec blocks before the handler runs, the owner
+//     keeps a copy of the blocking response. If the request then times out,
+//     the client gets the block, not the timeout message.
+//  6. Context values are restored only after the worker returns. The worker
+//     can read them until then. After a timeout, the worker restores them.
+//  7. Nested timeout wrappers use the outer layer. They only add a deadline;
+//     the earliest active deadline wins. Thus there is always one worker and
+//     one owner for each request.
+//  8. The worker limit (workers channel). A timed-out worker keeps its
+//     goroutine and RequestCtx until the handler returns. Without a limit, a
+//     slow handler can make the number of goroutines increase without bound.
+//  9. abort. If a callback on the owner panics (for example, a resource namer),
+//     the owner must not give the live RequestCtx back to the server while the
+//     worker still uses it. abort sends a detached 500 response and finishes
+//     all scopes.
+//  10. Timer pool and drain. They remove one allocation for each request, and
+//     they prevent an old tick from expiring a new deadline when the program
+//     uses asynchronous timer channels (before Go 1.23 semantics).
 type timeoutLayer struct {
 	ctx    *fasthttp.RequestCtx
 	events chan timeoutEvent
