@@ -41,6 +41,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.12.0-dev.3
@@ -84,7 +85,7 @@ require (
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.7.2 // indirect
-	github.com/aws/aws-sdk-go v1.55.5 // indirect
+	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
@@ -217,6 +218,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/opensearch-project/opensearch-go/v4 v4.4.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260816044145-ed329add6b1b // indirect
@@ -351,6 +353,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../contrib/log/slog
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../contrib/opensearch-project/opensearch-go.v4
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
