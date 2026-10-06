@@ -234,14 +234,30 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 	assert.Equal(t, float64(1), handle.Get())
 }
 
+// replaceTracerTelemetry swaps the active tracer's telemetry client and the
+// global client for a RecordClient so Flush/Close are directly observable.
+func replaceTracerTelemetry(t *testing.T) *telemetrytest.RecordClient {
+	t.Helper()
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok, "expected concrete *tracer after Start")
+	rec := new(telemetrytest.RecordClient)
+	telemetry.SwapClient(rec)
+	tr.telemetry = rec
+	return rec
+}
+
 func TestTracerStopFlushesTelemetry(t *testing.T) {
 	Start()
 	defer globalconfig.SetServiceName("")
 	require.NotNil(t, telemetry.GlobalClient())
 
+	rec := replaceTracerTelemetry(t)
 	Stop()
 
 	assert.Nil(t, telemetry.GlobalClient())
+	assert.True(t, rec.Stopped)
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.True(t, rec.Closed)
 }
 
 func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
@@ -250,6 +266,19 @@ func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
 
 	Start()
 	defer globalconfig.SetServiceName("")
+
+	// StartApp was a no-op because the foreign client already owns the global
+	// slot, so the tracer holds a leftover client that Stop must Close.
+	leftover := new(telemetrytest.RecordClient)
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok, "expected concrete *tracer after Start")
+	if discarded := tr.telemetry; discarded != nil {
+		// Close the real unused client now so its ticker does not leak; Stop
+		// will Close the RecordClient stand-in so we can assert that path.
+		_ = discarded.Close()
+	}
+	tr.telemetry = leftover
+
 	Stop()
 
 	// Profiler or another product already owns the global client. Stop must
@@ -259,6 +288,9 @@ func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
 	// ProductStopped(tracers) must still propagate to the foreign client
 	// (ProductStarted set it true during Start; Stop sets it back to false).
 	assert.False(t, telemetryClient.Products[telemetry.NamespaceTracers])
+	assert.True(t, leftover.Closed)
+	assert.Equal(t, 0, leftover.Flushes)
+	assert.False(t, leftover.Stopped)
 }
 
 func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
@@ -266,6 +298,7 @@ func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
 	defer globalconfig.SetServiceName("")
 	require.NotNil(t, telemetry.GlobalClient())
 
+	rec := replaceTracerTelemetry(t)
 	wasEnabled := traceprof.SetProfilerEnabled(true)
 	defer func() {
 		traceprof.SetProfilerEnabled(wasEnabled)
@@ -277,6 +310,9 @@ func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
 	// Profiler started after the tracer and still shares the client, so Stop
 	// must flush without emitting app-stopped / clearing the global client.
 	assert.NotNil(t, telemetry.GlobalClient())
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.False(t, rec.Closed)
+	assert.False(t, rec.Stopped)
 }
 
 func TestTracerStopStopsTelemetryAfterProfilerStopped(t *testing.T) {
@@ -284,6 +320,7 @@ func TestTracerStopStopsTelemetryAfterProfilerStopped(t *testing.T) {
 	defer globalconfig.SetServiceName("")
 	require.NotNil(t, telemetry.GlobalClient())
 
+	rec := replaceTracerTelemetry(t)
 	wasEnabled := traceprof.SetProfilerEnabled(true)
 	defer traceprof.SetProfilerEnabled(wasEnabled)
 	// The profiler started after the tracer, then stopped before tracer.Stop().
@@ -293,4 +330,7 @@ func TestTracerStopStopsTelemetryAfterProfilerStopped(t *testing.T) {
 
 	// Nobody else needs the client anymore, so Stop must fully stop the app.
 	assert.Nil(t, telemetry.GlobalClient())
+	assert.True(t, rec.Stopped)
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.True(t, rec.Closed)
 }
