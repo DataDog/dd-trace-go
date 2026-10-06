@@ -28,8 +28,8 @@ export __DD_TRACE_SQL_TEST=true
 
 report_error=0
 
-# Opt-in flaky-failure retry; see ci_test_core.sh for the coverprofile and
-# bash 3.2 caveats. Packages move to --packages below because --rerun-fails
+# Opt-in flaky-failure retry; see ci_test_core.sh for the coverprofile,
+# off-switch and bash 3.2 caveats. Packages move to --packages below because --rerun-fails
 # rejects them as go test args after `--`.
 RERUN_ARGS=()
 if [[ -n "${RERUN_FAILS:-}" && "${RERUN_FAILS}" != "0" ]]; then

@@ -15,6 +15,7 @@ variables:
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
   # Known flaky benchmarks
+  # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
   FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
 
 # Paths that can move a number in the BENCHMARKS lists below.
@@ -116,7 +117,7 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkContextWithSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkContextWithSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext|BenchmarkNodeHash|BenchmarkSetCheckpoint"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"

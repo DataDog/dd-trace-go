@@ -144,7 +144,10 @@ func (m *LRU) Hit(key uint64) bool {
 			// Another goroutine has concurrently claimed this slot for this key, and
 			// since very little time has passed since then, so we can DROP this
 			// sample... This is extremely unlikely to happen (and nearly impossible
-			// to reliably cover in unit tests).
+			// to reliably cover in unit tests). Release the speculative count
+			// increment made above, mirroring the different-key branch below, so a
+			// lost slot race does not permanently inflate the table count.
+			table.count.Add(-1)
 			return false
 		}
 

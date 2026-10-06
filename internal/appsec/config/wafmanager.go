@@ -48,6 +48,9 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 		return nil, err
 	}
 	if err := addObfuscatorConfig(builder, obfuscator); err != nil {
+		// The builder owns a native allocation and the GC cleanup below is not attached yet, so it
+		// must be closed explicitly on every early-return path to avoid leaking it.
+		builder.Close()
 		return nil, err
 	}
 
@@ -58,6 +61,7 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 	}
 
 	if err := mgr.RestoreDefaultConfig(); err != nil {
+		builder.Close()
 		return nil, err
 	}
 

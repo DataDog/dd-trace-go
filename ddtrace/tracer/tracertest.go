@@ -198,6 +198,10 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	if tracer.config.internalConfig.LLMObsEnabled() {
 		cfg, resolveErr := buildLLMObsConfig(tracer.config)
 		if err := llmobs.Start(cfg, &llmobsTracerAdapter{}, resolveErr); err != nil {
+			// Stop the tracer workers that newTracer started. Without this stop,
+			// a failed start leaks the flush loop, the stats client, and the
+			// agent poller until the test process exits.
+			tracer.Stop()
 			return nil, fmt.Errorf("failed to start llmobs: %w", err)
 		}
 		tb.Cleanup(llmobs.Stop)
