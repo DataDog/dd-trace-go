@@ -119,6 +119,17 @@ func (t keywordTrie) child(n int32, c byte) int32 {
 
 var sensitiveKeywordTrie = newKeywordTrie(sensitiveKeywords)
 
+// sensitiveKeywordRoot maps each lowercase ASCII letter to its child of the
+// trie root, or -1. It avoids the linear search at the root, which has the
+// most children.
+var sensitiveKeywordRoot = func() [26]int32 {
+	var t [26]int32
+	for i := range t {
+		t[i] = sensitiveKeywordTrie.child(0, byte('a'+i))
+	}
+	return t
+}()
+
 // sensitiveKeywordStart reports, for each lowercase ASCII letter, whether a
 // sensitive keyword starts with it.
 var sensitiveKeywordStart = func() [26]bool {
@@ -290,26 +301,52 @@ func emitObfuscated(b *strings.Builder, s string, last, pos, n, keep int) int {
 // Like the regexp package, the outer loop only tries to start a match at the
 // start of a UTF-8 sequence (an invalid byte is one sequence of length 1).
 func obfuscateQueryStringDefault(s string) string {
+	return obfuscateQueryStringStateMachine(s, true)
+}
+
+// obfuscateQueryStringDefaultLiteral is the same as
+// obfuscateQueryStringDefault, but it also replaces the JWT delimiter. It is
+// equivalent to defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>"),
+// which is the result when [EnvQueryStringRegexp] is set to a copy of the
+// default regexp: the matches of a configured regexp are replaced in full.
+func obfuscateQueryStringDefaultLiteral(s string) string {
+	return obfuscateQueryStringStateMachine(s, false)
+}
+
+// obfuscateQueryStringStateMachine implements obfuscateQueryStringDefault
+// (keepDelimiter is true) and obfuscateQueryStringDefaultLiteral (keepDelimiter
+// is false).
+func obfuscateQueryStringStateMachine(s string, keepDelimiter bool) string {
 	var b strings.Builder
-	last := 0
-	for pos := 0; pos < len(s); {
+	last, pos := 0, 0
+	// The '^' JWT delimiter can only match at the start of s. No other
+	// alternative can start with 'e', thus alt 5 is the first alternative that
+	// can match there.
+	if end, ok := matchJWTBody(s, 0); ok {
+		last = emitObfuscated(&b, s, last, 0, end, 0)
+		pos = last
+	}
+	for pos < len(s) {
 		c := s[pos]
 		width := 1
 		var mask uint8
 		if c < utf8.RuneSelf {
 			mask = matcherStart[c]
+			if mask == 0 {
+				pos++
+				continue
+			}
+			// Fast path for the JWT delimiters: a JWT header starts with
+			// 'e', and no non-ASCII rune folds to 'e', thus the byte after a
+			// 1-byte delimiter must be 'e' or 'E'.
+			if mask == matcherJWT && (pos+1 >= len(s) || s[pos+1]|0x20 != 'e') {
+				pos++
+				continue
+			}
 		} else {
 			// Non-ASCII: any matcher may match via Unicode fold; try all.
 			_, width = utf8.DecodeRuneInString(s[pos:])
 			mask = 0xff
-		}
-		if pos == 0 {
-			// The '^' JWT delimiter can only match at the start of s.
-			mask |= matcherJWT
-		}
-		if mask == 0 {
-			pos += width
-			continue
 		}
 		if mask&matcherSensitive != 0 {
 			if n, ok := matchSensitiveKey(s, pos); ok {
@@ -339,8 +376,14 @@ func obfuscateQueryStringDefault(s string) string {
 				continue
 			}
 		}
-		if mask&matcherJWT != 0 {
+		// Fast pre-check for matchJWT: the byte after the delimiter must be
+		// 'e' or 'E' (see above). matchJWT validates the delimiter.
+		if next := pos + width; mask&matcherJWT != 0 &&
+			((c == '%' && pos+3 < len(s) && s[pos+3]|0x20 == 'e') || (next < len(s) && s[next]|0x20 == 'e')) {
 			if n, keep, ok := matchJWT(s, pos); ok {
+				if !keepDelimiter {
+					keep = 0
+				}
 				last = emitObfuscated(&b, s, last, pos, n, keep)
 				pos = last
 				continue
@@ -353,7 +396,7 @@ func obfuscateQueryStringDefault(s string) string {
 				continue
 			}
 		}
-		if mask&matcherSSHKey != 0 {
+		if mask&matcherSSHKey != 0 && sshKeyMayStartAt(s, pos) {
 			if n, ok := matchSSHKey(s, pos); ok {
 				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
@@ -411,7 +454,15 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 				return 0, false
 			}
 		}
-		if node = sensitiveKeywordTrie.child(node, c); node < 0 {
+		if node == 0 {
+			if c < 'a' || c > 'z' {
+				return 0, false
+			}
+			node = sensitiveKeywordRoot[c-'a']
+		} else {
+			node = sensitiveKeywordTrie.child(node, c)
+		}
+		if node < 0 {
 			return 0, false
 		}
 		pos += width
@@ -497,8 +548,9 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 //	ey[I-L][\w-]+(?:=|%3D)*\.ey[I-L][\w-]+(?:=|%3D)*
 //	(?:\.(?:[\w.+/=-]|%3D|%2F|%2B)+)?
 //
-// The match starts on a delimiter: the start of s, one character that is not
-// in [\w%-], or a percent-escape. The delimiter is capture group 1 of
+// The match starts on a delimiter: the start of s (see
+// obfuscateQueryStringStateMachine), one character that is not in [\w%-], or
+// a percent-escape. The delimiter is capture group 1 of
 // defaultQueryStringRegexp; it is kept in the output. matchJWT returns the
 // length n of the match and the length keep of the delimiter.
 //
@@ -510,14 +562,8 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 // failed attempt cannot be followed by an attempt that starts inside the same
 // run of segment characters, and the total work stays linear.
 func matchJWT(s string, pos int) (n, keep int, ok bool) {
+	// The '^' delimiter is handled by the caller, before the main loop.
 	start := pos
-	if pos == 0 {
-		// '^' has the highest priority. It cannot conflict with the other
-		// delimiters: 'e' is a word character.
-		if end, ok := matchJWTBody(s, 0); ok {
-			return end, 0, true
-		}
-	}
 	var matched bool
 	if pos, matched = consumeJWTDelimiter(s, pos); !matched {
 		return 0, 0, false
@@ -783,6 +829,25 @@ func matchSSHKey(s string, pos int) (int, bool) {
 		}
 	}
 	return pos - start, true
+}
+
+// sshKeyMayStartAt is a fast pre-check for matchSSHKey. It reports false when
+// no SSH key type can start at pos: "ssh-" has 's' at index 1 and "ecdsa-" has
+// 'c' at index 1. When a byte is not ASCII, a folded rune can match (for
+// example U+017F LATIN SMALL LETTER LONG S), thus the check reports true.
+func sshKeyMayStartAt(s string, pos int) bool {
+	if pos+1 >= len(s) {
+		return false
+	}
+	if s[pos] >= utf8.RuneSelf || s[pos+1] >= utf8.RuneSelf {
+		return true
+	}
+	switch s[pos+1] | 0x20 {
+	case 's', 'c':
+		return true
+	default:
+		return false
+	}
 }
 
 // matchSSHKeyType implements ssh-(?:rsa|dss)|ecdsa-[a-z0-9]+-[a-z0-9]+ (alt 7).

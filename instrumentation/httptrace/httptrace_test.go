@@ -644,28 +644,65 @@ func TestObfuscateQueryString(t *testing.T) {
 	})
 }
 
+// unsetEnv unsets the environment variable name for the duration of the test.
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	t.Setenv(name, "") // Restores the original value at the end of the test.
+	require.NoError(t, os.Unsetenv(name))
+}
+
 // TestURLTagQueryStringRegexpEnv checks the value of http.url for each kind of
-// value of DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP.
+// value of DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP, for server and client
+// spans.
 func TestURLTagQueryStringRegexpEnv(t *testing.T) {
 	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0"
+	const query = "jwt=" + jwt + "&q=%22" + jwt + "%22&a=1"
+	ptr := func(s string) *string { return &s }
 	for _, tc := range []struct {
-		name  string
-		value string
-		want  string
+		name      string
+		value     *string // nil: not set
+		allowlist string
+		want      string
 	}{
-		{name: "default", value: defaultQueryStringPattern, want: "http://example.com/x?jwt=<redacted>&a=1"},
-		{name: "default-non-capturing", value: defaultQueryStringPatternNonCapturing, want: "http://example.com/x?jwt=<redacted>&a=1"},
-		{name: "custom", value: "a=[^&]+", want: "http://example.com/x?jwt=" + jwt + "&<redacted>"},
-		{name: "disabled", value: "", want: "http://example.com/x?jwt=" + jwt + "&a=1"},
-		{name: "invalid", value: "(?<=x)a", want: "http://example.com/x"},
+		// Not set: the JWT delimiter is kept.
+		{name: "unset", want: "http://example.com/x?jwt=<redacted>&q=%22<redacted>%22&a=1"},
+		// A configured copy of the default regexp: each match is replaced in
+		// full, thus the JWT delimiter is also replaced.
+		{name: "default", value: ptr(defaultQueryStringPattern), want: "http://example.com/x?jwt<redacted>&q=<redacted>%22&a=1"},
+		{name: "default-non-capturing", value: ptr(defaultQueryStringPatternNonCapturing), want: "http://example.com/x?jwt<redacted>&q=<redacted>%22&a=1"},
+		{name: "custom", value: ptr("a=[^&]+"), want: "http://example.com/x?jwt=" + jwt + "&q=%22" + jwt + "%22&<redacted>"},
+		// The groups of a custom regexp are not copied back.
+		{name: "custom-capture-groups", value: ptr("(a)=([^&]+)"), want: "http://example.com/x?jwt=" + jwt + "&q=%22" + jwt + "%22&<redacted>"},
+		{name: "disabled", value: ptr(""), want: "http://example.com/x?" + query},
+		// Fail closed, also when an allowlist is set.
+		{name: "invalid", value: ptr("(?<=x)a"), want: "http://example.com/x"},
+		{name: "invalid-with-allowlist", value: ptr("(?<=x)a"), allowlist: "a", want: "http://example.com/x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oldCfg := cfg
 			t.Cleanup(func() { cfg = oldCfg })
-			t.Setenv(EnvQueryStringRegexp, tc.value)
+			if tc.value == nil {
+				unsetEnv(t, EnvQueryStringRegexp)
+			} else {
+				t.Setenv(EnvQueryStringRegexp, *tc.value)
+			}
+			unsetEnv(t, envQueryStringDisabled)
+			unsetEnv(t, envClientQueryStringAllowlist)
+			unsetEnv(t, envServerQueryStringAllowlist)
+			if tc.allowlist == "" {
+				unsetEnv(t, envQueryStringAllowlist)
+			} else {
+				t.Setenv(envQueryStringAllowlist, tc.allowlist)
+			}
 			ResetCfg()
-			r := httptest.NewRequest(http.MethodGet, "http://example.com/x?jwt="+jwt+"&a=1", nil)
-			require.Equal(t, tc.want, URLFromRequest(r, true))
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/x?"+query, nil)
+			require.Equal(t, tc.want, URLFromRequest(r, true), "server")
+			require.Equal(t, tc.want, URLFromClientRequest(r, true), "client")
+			wantQuery := ""
+			if _, q, ok := strings.Cut(tc.want, "?"); ok {
+				wantQuery = q
+			}
+			require.Equal(t, wantQuery, ObfuscateQueryString(query), "ObfuscateQueryString")
 		})
 	}
 }
@@ -794,6 +831,35 @@ func TestFilterQueryStringByAllowlist(t *testing.T) {
 // obfuscateWithDefaultRegexp is the oracle for obfuscateQueryStringDefault.
 func obfuscateWithDefaultRegexp(s string) string {
 	return defaultQueryStringRegexp.ReplaceAllString(s, defaultQueryStringReplacement)
+}
+
+// obfuscateWithDefaultRegexpLiteral is the oracle for
+// obfuscateQueryStringDefaultLiteral.
+func obfuscateWithDefaultRegexpLiteral(s string) string {
+	return defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+}
+
+func TestObfuscateQueryStringDefaultLiteral(t *testing.T) {
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0"
+	nonCapturing := regexp.MustCompile(defaultQueryStringPatternNonCapturing)
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: jwt, want: "<redacted>"},
+		{input: "jwt=" + jwt, want: "jwt<redacted>"},
+		{input: "a=1&" + jwt + "&b=2", want: "a=1<redacted>&b=2"},
+		{input: "x=%22" + jwt + "%22", want: "x=<redacted>%22"},
+		{input: "\xff" + jwt, want: "<redacted>"},
+		{input: "password=x&é" + jwt, want: "<redacted>&<redacted>"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			got := obfuscateQueryStringDefaultLiteral(tc.input)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, obfuscateWithDefaultRegexpLiteral(tc.input), got, "diverges from regex oracle")
+			assert.Equal(t, nonCapturing.ReplaceAllLiteralString(tc.input, "<redacted>"), got, "diverges from non-capturing regex oracle")
+		})
+	}
 }
 
 func TestObfuscateQueryStringDefault(t *testing.T) {
@@ -1133,6 +1199,9 @@ func TestDefaultObfuscatorMatchesRegexp(t *testing.T) {
 		if got, want := obfuscateQueryStringDefault(s), obfuscateWithDefaultRegexp(s); got != want {
 			t.Fatalf("obfuscateQueryStringDefault(%q) = %q; want %q", s, got, want)
 		}
+		if got, want := obfuscateQueryStringDefaultLiteral(s), obfuscateWithDefaultRegexpLiteral(s); got != want {
+			t.Fatalf("obfuscateQueryStringDefaultLiteral(%q) = %q; want %q", s, got, want)
+		}
 	}
 }
 
@@ -1175,6 +1244,10 @@ func FuzzDefaultObfuscator(f *testing.F) {
 		got := obfuscateQueryStringDefault(s)
 		if got != want {
 			t.Errorf("obfuscateQueryStringDefault(%q) = %q; want %q", s, got, want)
+		}
+		wantLiteral := obfuscateWithDefaultRegexpLiteral(s)
+		if gotLiteral := obfuscateQueryStringDefaultLiteral(s); gotLiteral != wantLiteral {
+			t.Errorf("obfuscateQueryStringDefaultLiteral(%q) = %q; want %q", s, gotLiteral, wantLiteral)
 		}
 	})
 }
@@ -1322,13 +1395,29 @@ func TestObfuscateAdversarialScaling(t *testing.T) {
 	}
 	const n = 64 << 10
 	small, large := adversarialQueryStrings(n), adversarialQueryStrings(2*n)
-	// measure returns the best time of a few runs, to reduce the noise.
+	// measure returns the best time per call of a few batches, to reduce the
+	// noise. Each batch runs for at least minBatch, thus fast inputs are also
+	// measured precisely.
+	const minBatch = 2 * time.Millisecond
 	measure := func(s string) time.Duration {
-		best := time.Duration(math.MaxInt64)
-		for range 7 {
+		calls := 1
+		for {
 			start := time.Now()
-			obfuscateQueryStringDefault(s)
-			if d := time.Since(start); d < best {
+			for range calls {
+				obfuscateQueryStringDefault(s)
+			}
+			if time.Since(start) >= minBatch {
+				break
+			}
+			calls *= 2
+		}
+		best := time.Duration(math.MaxInt64)
+		for range 5 {
+			start := time.Now()
+			for range calls {
+				obfuscateQueryStringDefault(s)
+			}
+			if d := time.Since(start) / time.Duration(calls); d < best {
 				best = d
 			}
 		}
@@ -1345,11 +1434,7 @@ func TestObfuscateAdversarialScaling(t *testing.T) {
 			var ds, dl time.Duration
 			for range 3 {
 				ds, dl = measure(s), measure(large[name])
-				// Do not compare durations that are too small to be precise.
-				if dl < 200*time.Microsecond {
-					return
-				}
-				if ratio = float64(dl) / float64(max(ds, time.Microsecond)); ratio < 3.0 {
+				if ratio = float64(dl) / float64(max(ds, 1)); ratio < 3.0 {
 					return
 				}
 			}

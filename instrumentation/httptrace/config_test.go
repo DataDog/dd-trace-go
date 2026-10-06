@@ -6,6 +6,8 @@
 package httptrace
 
 import (
+	"encoding/json"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -42,12 +44,20 @@ func TestConfig(t *testing.T) {
 		{
 			name: "explicit-default-regexp",
 			env:  map[string]string{EnvQueryStringRegexp: defaultQueryStringPattern},
-			cfg:  defaultCfg,
+			cfg: config{
+				queryString:          true,
+				useDefaultObfuscator: true,
+				replaceJWTDelimiter:  true,
+			},
 		},
 		{
 			name: "explicit-default-regexp-non-capturing",
 			env:  map[string]string{EnvQueryStringRegexp: defaultQueryStringPatternNonCapturing},
-			cfg:  defaultCfg,
+			cfg: config{
+				queryString:          true,
+				useDefaultObfuscator: true,
+				replaceJWTDelimiter:  true,
+			},
 		},
 		{
 			name: "disable-query",
@@ -73,6 +83,12 @@ func TestConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Do not depend on the environment of the test process.
+			for _, k := range []string{envQueryStringDisabled, EnvQueryStringRegexp} {
+				if _, ok := tc.env[k]; !ok {
+					unsetEnv(t, k)
+				}
+			}
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
@@ -80,6 +96,7 @@ func TestConfig(t *testing.T) {
 			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
 			require.Equal(t, tc.cfg.useDefaultObfuscator, c.useDefaultObfuscator)
 			require.Equal(t, tc.cfg.dropQueryString, c.dropQueryString)
+			require.Equal(t, tc.cfg.replaceJWTDelimiter, c.replaceJWTDelimiter)
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 		})
 	}
@@ -93,4 +110,20 @@ func TestDefaultQueryStringPattern(t *testing.T) {
 	nonCapturing := regexp.MustCompile(defaultQueryStringPatternNonCapturing)
 	require.Equal(t, 0, nonCapturing.NumSubexp())
 	require.Equal(t, strings.Replace(defaultQueryStringPatternNonCapturing, "(?:^|", "(^|", 1), defaultQueryStringPattern)
+}
+
+// TestDefaultQueryStringPatternRegistry checks that the documented default of
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is the regexp that the tracer uses.
+func TestDefaultQueryStringPatternRegistry(t *testing.T) {
+	data, err := os.ReadFile("../../internal/env/supported_configurations.json")
+	require.NoError(t, err)
+	var file struct {
+		SupportedConfigurations map[string][]struct {
+			Default string `json:"default"`
+		} `json:"supportedConfigurations"`
+	}
+	require.NoError(t, json.Unmarshal(data, &file))
+	entries := file.SupportedConfigurations[EnvQueryStringRegexp]
+	require.Len(t, entries, 1)
+	require.Equal(t, defaultQueryStringPattern, entries[0].Default)
 }
