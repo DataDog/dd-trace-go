@@ -61,6 +61,7 @@ use (
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
+	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
