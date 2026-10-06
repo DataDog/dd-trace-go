@@ -190,6 +190,12 @@ type responseWriter struct {
 	fctx        *fasthttp.RequestCtx
 	header      http.Header
 	wroteHeader bool
+	// blockDone tells that httpsec delivered a block response through this
+	// writer. httpsec can apply a second block (for example, from a response
+	// rule that matches the first block response). That block must not change
+	// the first block response, also when the first block has no body (for
+	// example, a redirect of a POST request).
+	blockDone bool
 }
 
 func (w *responseWriter) Header() http.Header {
@@ -200,7 +206,7 @@ func (w *responseWriter) Header() http.Header {
 }
 
 func (w *responseWriter) WriteHeader(status int) {
-	if w.wroteHeader {
+	if w.wroteHeader || w.blockDone {
 		return
 	}
 	// Request-phase blocks are written before OnBlock runs. Clear any response
@@ -216,9 +222,21 @@ func (w *responseWriter) WriteHeader(status int) {
 }
 
 func (w *responseWriter) Write(b []byte) (int, error) {
+	if w.blockDone {
+		// A block response was already delivered. Do not append a second body.
+		return len(b), nil
+	}
 	w.WriteHeader(http.StatusOK)
 	w.fctx.Response.AppendBody(b)
 	return len(b), nil
+}
+
+// AppSecCommitBlockResponse implements the interface httpsec calls after a
+// block handler wrote its response. The response is complete, so later writes
+// are ignored.
+func (w *responseWriter) AppSecCommitBlockResponse() error {
+	w.blockDone = true
+	return nil
 }
 
 // Status implements the interface httpsec uses to report the response status
@@ -226,6 +244,23 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // the fasthttp response rather than from what was written here.
 func (w *responseWriter) Status() int {
 	return w.fctx.Response.StatusCode()
+}
+
+// Committed implements the interface httpsec uses to check whether it can still
+// replace the response. Without this method, httpsec uses Status, which is
+// never zero for a fasthttp response, and then it never writes a block.
+//
+// fasthttp sends the live response only after the handler chain returns, so a
+// block can replace it. But if the application calls TimeoutError* on the
+// fasthttp context, fasthttp sends the timeout response instead of the live
+// response. A block written into the live response then does not reach the
+// client, so the response is committed.
+//
+// After a block response is delivered, the response is committed too. httpsec
+// then reports a later block as failed, because the client gets the first
+// block response (for example, a redirect) and not the later one.
+func (w *responseWriter) Committed() bool {
+	return w.blockDone || w.fctx.LastTimeoutErrorResponse() != nil
 }
 
 // discardHandlerResponse drops whatever the handler already wrote so that a
