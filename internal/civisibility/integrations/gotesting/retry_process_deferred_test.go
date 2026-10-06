@@ -498,9 +498,14 @@ func TestDeferredProcessRetryFamilyPrecedenceAndSlowEFDFallback(t *testing.T) {
 	flaky := integrations.GetFlakyRetriesSettings()
 	oldSettings := *settings
 	oldRetryCount := flaky.RetryCount
+	// This test covers legacy EFD/FTR behavior, so isolate the process-wide dynamic ATR setting.
+	originalDynamicATREnabled := integrations.IsDynamicATREnabled()
+	originalDynamicATRBuckets := integrations.GetDynamicATRCustomBuckets()
+	integrations.SetDynamicATRSettingsForTestingExport(false, nil)
 	defer func() {
 		*settings = oldSettings
 		flaky.RetryCount = oldRetryCount
+		integrations.SetDynamicATRSettingsForTestingExport(originalDynamicATREnabled, originalDynamicATRBuckets)
 	}()
 	flaky.RetryCount = 4
 	slowEFD := &testExecutionMetadata{
@@ -508,7 +513,7 @@ func TestDeferredProcessRetryFamilyPrecedenceAndSlowEFDFallback(t *testing.T) {
 		isANewTest:                   true,
 		isFlakyTestRetriesEnabled:    true,
 	}
-	require.Equal(t, int64(4), computeAdjustedRetryCount(slowEFD, 5*time.Minute))
+	require.Equal(t, int64(4), computeAdjustedRetryCount(slowEFD, 301*time.Second))
 	require.True(t, slowEFD.efdFellBackToFlakyRetries)
 	reason, ok = processRetryReasonForExecution(slowEFD)
 	require.True(t, ok)
