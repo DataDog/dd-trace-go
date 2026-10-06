@@ -257,6 +257,24 @@ func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
 	assert.Equal(t, "datadog", m["telemetry.sdk.name"])
 	assert.Equal(t, "go", m["telemetry.sdk.language"])
 	assert.NotEmpty(t, m["telemetry.sdk.version"])
+	assert.Equal(t, "true", m[keySDKOTLPExport])
+	assert.Equal(t, "datadog", m["datadog.sdk.semantics"])
+}
+
+func TestBuildOTLPMetricsRequestOTelSemantics(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	cfg.SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+	gs := &pb.ClientGroupedStats{
+		Service:      "svc",
+		Name:         "web.request",
+		Resource:     "/users",
+		Hits:         1,
+		TopLevelHits: 1,
+		OkSummary:    encodeSketch(t, 50e6),
+	}
+	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.Len(t, rm, 1)
+	assert.Equal(t, "otel", kvAttrsToMap(rm[0].Resource.Attributes)["datadog.sdk.semantics"])
 }
 
 func TestBuildMetricsResourceServiceIdentity(t *testing.T) {

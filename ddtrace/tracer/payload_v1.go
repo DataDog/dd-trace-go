@@ -232,12 +232,14 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		attributes:        p.chunkAttr,
 	}
 
-	// Append process tags to the payload attributes
-	// if there are attributes available, set them in our bitmap and increment
-	// the number of fields.
+	// First push into this payload: set the payload-level native export marker.
+	// The chunk-level marker on each chunk's first span is set in setTraceTagsLocked.
 	if atomic.LoadUint32(&p.count) == 0 {
 		p.attributes[keySDKOTLPExport] = anyValue{valueType: StringValueType, value: "false"}
 	}
+	// Append process tags to the payload attributes
+	// if there are attributes available, set them in our bitmap and increment
+	// the number of fields.
 	p.setProcessTags()
 	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
