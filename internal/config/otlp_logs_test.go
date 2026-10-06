@@ -299,6 +299,30 @@ func TestOTLPLogsConfigCopies(t *testing.T) {
 	assert.Equal(t, "https", cfg.OTLPLogsAgentURL().Scheme)
 }
 
+func TestOTLPLogsAgentURL(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "")
+	t.Setenv("DD_TRACE_AGENT_URL", "")
+	for _, tc := range []struct {
+		name      string
+		agentHost string
+		agentURL  string
+		expected  string
+	}{
+		{name: "defaults", expected: "http://localhost:8126"},
+		{name: "DD_AGENT_HOST", agentHost: "agent.example.com", expected: "http://agent.example.com:8126"},
+		{name: "DD_TRACE_AGENT_URL", agentURL: "http://trace-agent:8126", expected: "http://trace-agent:8126"},
+		{name: "DD_TRACE_AGENT_URL wins over DD_AGENT_HOST", agentHost: "agent-host", agentURL: "http://trace-agent:8126", expected: "http://trace-agent:8126"},
+		{name: "https", agentURL: "https://secure-agent:8126", expected: "https://secure-agent:8126"},
+		{name: "IPv6", agentURL: "http://[::1]:8126", expected: "http://[::1]:8126"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", tc.agentHost)
+			t.Setenv("DD_TRACE_AGENT_URL", tc.agentURL)
+			assert.Equal(t, tc.expected, loadConfig().OTLPLogsAgentURL().String())
+		})
+	}
+}
+
 func TestOTLPLogsAgentURLUnixFallback(t *testing.T) {
 	t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
 	t.Setenv("DD_AGENT_HOST", "log-agent")
