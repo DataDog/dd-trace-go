@@ -25,6 +25,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // Agent is the test agent the harness suites use, served on a local port so
@@ -79,14 +80,29 @@ func (a *Agent) Exec(t *testing.T, bin string) []byte {
 	return out
 }
 
+// RequireOtelc skips the test when otelc is not on PATH, or fails it when the
+// test binary was itself built with otelc, where a missing binary means a broken
+// install rather than an optional tool.
+func RequireOtelc(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("otelc"); err == nil {
+		return
+	}
+	const msg = "otelc is not on PATH; install it from " +
+		"github.com/open-telemetry/opentelemetry-go-compile-instrumentation"
+	if otelc.Enabled() {
+		t.Fatal(msg)
+	}
+	t.Skip(msg)
+}
+
 // Build builds pkg, a path relative to the module root such as "./chi/mainapp",
 // with otelc when withOtelc is true and with go otherwise, and returns the
-// binary. An otelc build skips the test when otelc is not on PATH.
+// binary. An otelc build calls RequireOtelc first.
 func Build(t *testing.T, pkg string, withOtelc bool) string {
 	t.Helper()
-	if _, err := exec.LookPath("otelc"); withOtelc && err != nil {
-		t.Skip("otelc is not on PATH; install it from " +
-			"github.com/open-telemetry/opentelemetry-go-compile-instrumentation")
+	if withOtelc {
+		RequireOtelc(t)
 	}
 
 	// The test runs in its package directory, inside this module.
