@@ -46,7 +46,7 @@ require (
 	github.com/labstack/echo/v4 v4.15.3
 	github.com/labstack/echo/v5 v5.2.0
 	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/opensearch-project/opensearch-go/v4 v4.4.0
+	github.com/opensearch-project/opensearch-go/v4 v4.7.0
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/redis/rueidis v1.0.74
 	github.com/rs/zerolog v1.35.1

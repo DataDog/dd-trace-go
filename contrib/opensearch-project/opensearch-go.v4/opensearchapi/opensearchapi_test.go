@@ -238,7 +238,7 @@ func TestOpenSearchV2(t *testing.T) {
 			require.True(t, isHealthy, "cluster is not healty even after 10 retries")
 			_, err = client.Client.Metrics()
 			require.NotEqual(t, opensearch.ErrTransportMissingMethodMetrics, err)
-			err = client.Client.DiscoverNodes()
+			err = client.Client.DiscoverNodes(context.Background())
 			require.NotEqual(t, opensearch.ErrTransportMissingMethodDiscoverNodes, err)
 			mt := mocktracer.Start()
 			defer mt.Stop()

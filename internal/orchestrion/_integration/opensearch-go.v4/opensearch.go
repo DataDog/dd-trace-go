@@ -10,6 +10,7 @@ package opensearch
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -60,7 +61,7 @@ func (b *base) Run(ctx context.Context, t *testing.T) {
 		return strings.NewReader(string(body))
 	}
 
-	createResp, err := b.client.Do(ctx, opensearchapi.IndicesCreateReq{
+	createResp, err := b.client.Do(ctx, http.MethodPut, opensearchapi.IndicesCreateReq{
 		Index: "opensearch-test-index",
 		Body: buildBody(t, map[string]any{
 			"settings": map[string]any{
@@ -73,7 +74,7 @@ func (b *base) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err, "failed to create an index")
 	createResp.Body.Close()
 
-	deleteResp, err := b.client.Do(ctx, opensearchapi.IndicesDeleteReq{
+	deleteResp, err := b.client.Do(ctx, http.MethodDelete, opensearchapi.IndicesDeleteReq{
 		Indices: []string{"opensearch-test-index"},
 	}, nil)
 	require.NoError(t, err, "failed to delete an index")
