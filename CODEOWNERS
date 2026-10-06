@@ -82,33 +82,33 @@
 /internal/synctest/             @DataDog/dd-trace-go-guild
 
 # capabilities - config, dynamic config, remote config
-/internal/config/                              @DataDog/apm-sdk-capabilities-go
-/internal/env/                                 @DataDog/apm-sdk-capabilities-go
-/internal/stableconfig/                        @DataDog/apm-sdk-capabilities-go
-/internal/globalconfig/                        @DataDog/apm-sdk-capabilities-go
-/internal/remoteconfig/                        @DataDog/apm-sdk-capabilities-go
-/scripts/configaudit/                          @DataDog/apm-sdk-capabilities-go
-/scripts/configinverter/                       @DataDog/apm-sdk-capabilities-go
-/.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities-go
+/internal/config/                              @DataDog/apm-sdk-capabilities
+/internal/env/                                 @DataDog/apm-sdk-capabilities
+/internal/stableconfig/                        @DataDog/apm-sdk-capabilities
+/internal/globalconfig/                        @DataDog/apm-sdk-capabilities
+/internal/remoteconfig/                        @DataDog/apm-sdk-capabilities
+/scripts/configaudit/                          @DataDog/apm-sdk-capabilities
+/scripts/configinverter/                       @DataDog/apm-sdk-capabilities
+/.github/workflows/config-audit.yml            @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/remote_config.go               @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/otel_dd_mappings.go            @DataDog/apm-sdk-capabilities
 # capabilities - telemetry
-/internal/telemetry/                 @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
+/internal/telemetry/                 @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities
 # capabilities - sampling
-/ddtrace/tracer/tracer.go            @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/sampler.go           @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/rules_sampler.go     @DataDog/apm-sdk-capabilities-go
-/internal/samplernames/              @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/tracer.go            @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/sampler.go           @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/rules_sampler.go     @DataDog/apm-sdk-capabilities
+/internal/samplernames/              @DataDog/apm-sdk-capabilities
 # capabilities - context, propagation, injection/extraction
-/ddtrace/baggage/                    @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/textmap.go           @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/spancontext.go       @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/context.go           @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/propagator.go        @DataDog/apm-sdk-capabilities-go
-/ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities-go
+/ddtrace/baggage/                    @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/textmap.go           @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/spancontext.go       @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/context.go           @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/propagator.go        @DataDog/apm-sdk-capabilities
+/ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities
 # capabilities- OTel integration
-/ddtrace/opentelemetry/              @DataDog/apm-sdk-capabilities-go
+/ddtrace/opentelemetry/              @DataDog/apm-sdk-capabilities
 
 # common configuration tooling
 /internal/env/supported_configurations.gen.go  @DataDog/dd-trace-go-guild
