@@ -762,6 +762,9 @@ func (t *tracer) refreshAgentFeatures() {
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
 	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
 		log.Debug("agent info poll failed: %s", err.Error())
+		if decodeErr, ok := errors.AsType[*agentFeaturesDecodeError](err); ok {
+			telemetrylog.ReportError("Failed to decode agent info response", decodeErr.err)
+		}
 		// Keep last-known-good; a network or decode error is never evidence that
 		// v1 became unavailable.
 		return
