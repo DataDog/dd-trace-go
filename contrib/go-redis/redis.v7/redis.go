@@ -129,46 +129,118 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	defer wrapMu.Unlock()
 
 	targets := concreteClients(client)
-	if len(targets) > 1 {
-		// A proxy with several concrete clients — a read/write router, or a
-		// client that also keeps a private one around. Which of them it
-		// instruments is its AddHook's decision, not something a field walk
-		// can infer, so instrument through the proxy and deduplicate by the
-		// proxy's own weak identity: repeated wraps of the same proxy add a
-		// single hook where the proxy puts it, and a member it skips is not
-		// instrumented behind its back.
+	switch len(targets) {
+	case 0:
+		// No concrete client can be found to instrument: deduplicate by the
+		// client's own weak identity and let its AddHook decide what it
+		// instruments. Repeated wraps still install a single hook.
 		wrapThrough(client, cfg)
-		return
-	}
-	if len(targets) == 1 {
+	case 1:
 		// A decorator delegating to a single concrete client: deduplicate
 		// and instrument that client, against the hook it already carries —
-		// inherited by a clone, installed through a previous wrap of another
-		// decorator, or not at all. A client chain never carries two datadog
-		// hooks, which makes duplicate spans impossible.
-		if prev, seen := datadogConfig(targets[0]); seen {
-			if prev != nil {
-				if !sameConfig(*prev, cfg.key()) {
-					instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
-				}
-				return
+		// inherited by a clone, installed through a previous wrap of
+		// another decorator, or not at all. A client chain never carries two
+		// datadog hooks, which makes duplicate spans impossible.
+		wrapMember(targets[0], cfg)
+	default:
+		wrapProxyMembers(client, targets, cfg)
+	}
+}
+
+// wrapMember instruments a single concrete client, deduplicated against the
+// hook it already carries or, when its chain cannot be read, against its
+// weak identity. The caller must hold wrapMu.
+func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
+	if prev, seen := datadogConfig(member); seen {
+		if prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
 			}
-		} else {
-			// The hook chain cannot be read: deduplicate by the client's own
-			// weak identity instead.
-			registerWeak(targets[0], cfg)
+			return
 		}
-		addHook(targets[0], cfg)
+	} else if registerWeak(member, cfg) {
+		// The hook chain cannot be read: this client is already registered
+		// with its first configuration.
 		return
 	}
-	// No concrete client can be found to instrument: deduplicate by the
-	// client's own weak identity and let its AddHook decide what it
-	// instruments. Repeated wraps still install a single hook.
-	wrapThrough(client, cfg)
+	addHook(member, cfg)
+}
+
+// wrapProxyMembers instruments a proxy holding several concrete clients — a
+// read/write router, or a client that also keeps a private one around.
+// Which members its AddHook instruments cannot be inferred from fields, so
+// it is observed instead: a no-op probe hook is added once, and the members
+// whose chains gain it are the proxy's own choice. Each of those members is
+// then instrumented with that member's endpoint tags, deduplicated against
+// the hook it already carries, so a pre-wrapped member is not hooked twice
+// and each member is tagged with its own host, port, and database. The
+// probe stays in the chains it landed on as a no-op. The caller must hold
+// wrapMu.
+func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig) {
+	// Probe only when some member still needs a hook.
+	needsHook := false
+	for _, member := range members {
+		if prev, seen := datadogConfig(member); !seen || prev == nil {
+			needsHook = true
+			break
+		}
+	}
+	if !needsHook {
+		// Every member already carries the hook: keep the first
+		// configuration.
+		for _, member := range members {
+			if prev, _ := datadogConfig(member); prev != nil && !sameConfig(*prev, cfg.key()) {
+				instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+				return
+			}
+		}
+		return
+	}
+	before := make([]int, len(members))
+	readable := make([]bool, len(members))
+	for i, member := range members {
+		if h := hookSlice(member); h.IsValid() {
+			before[i], readable[i] = h.Len(), true
+		}
+	}
+	proxy.AddHook(probeHook{})
+	var instrumented bool
+	for i, member := range members {
+		if !readable[i] {
+			continue
+		}
+		if h := hookSlice(member); h.Len() > before[i] {
+			wrapMember(member, cfg)
+			instrumented = true
+		}
+	}
+	if !instrumented {
+		// AddHook reached no concrete client we can see: instrument through
+		// the proxy itself, deduplicated by its identity.
+		wrapThrough(proxy, cfg)
+	}
+}
+
+// probeHook is the no-op hook used to observe which concrete clients a
+// proxy's AddHook instruments; see wrapProxyMembers.
+type probeHook struct{}
+
+func (probeHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (probeHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error { return nil }
+
+func (probeHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (probeHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	return nil
 }
 
 // wrapThrough instruments client through its own AddHook, deduplicated by
-// its weak identity.
+// its weak identity. The caller must hold wrapMu.
 func wrapThrough(client redis.UniversalClient, cfg *clientConfig) {
 	if !registerWeak(client, cfg) {
 		addHook(client, cfg)

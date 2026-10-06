@@ -400,10 +400,10 @@ func (r *redisRouter) AddHook(hook redis.Hook) {
 }
 
 // A proxy with several concrete clients decides through its own AddHook what
-// it instruments: wrapping it is deduplicated by the proxy's identity, so
-// repeated wraps of the same proxy add one hook where the proxy puts it —
-// and never instrument a member the proxy does not hook, such as a private
-// client it merely stores.
+// it instruments: WrapClient observes the decision instead of inferring it
+// from fields, then instruments exactly the members the proxy hooked — one
+// hook each, with that member's own endpoint tags, and never a second hook
+// on a member that was already wrapped.
 func TestWrapClientMultiClientProxy(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -413,32 +413,31 @@ func TestWrapClientMultiClientProxy(t *testing.T) {
 
 	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { read.Close() })
-	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:2"})
 	t.Cleanup(func() { write.Close() })
 
 	WrapClient(read)
 	router := &redisRouter{UniversalClient: read, write: write}
 	WrapClient(router)
-	WrapClient(router) // same proxy: no second AddHook
+	WrapClient(router) // same proxy: every member is already hooked
 
-	writeHooks := reflect.ValueOf(write).Elem().FieldByName("hooks").FieldByName("hooks").Len()
-	if writeHooks != 1 {
-		t.Fatalf("expected the write member to carry exactly the proxy's hook, got %d", writeHooks)
-	}
-	// The read member carries the direct hook plus the proxy's own: the
-	// proxy chose to instrument it again, and WrapClient does not
-	// second-guess AddHook's decision.
-	readHooks := reflect.ValueOf(read).Elem().FieldByName("hooks").FieldByName("hooks").Len()
-	if readHooks != 2 {
-		t.Fatalf("expected the read member to carry the direct hook plus the proxy's, got %d", readHooks)
-	}
-
+	_ = read.Get("foo").Err()
 	_ = write.Get("foo").Err()
 
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
-		t.Fatalf("expected exactly 1 command span through the unwrapped member, got %d", len(spans))
+	// One span per member: the pre-wrapped read member is not traced twice.
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 2 {
+		t.Fatalf("expected 1 command span per member, got %d", len(spans))
 	}
 	if open := mt.OpenSpans(); len(open) != 0 {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+	// Each member's span carries that member's endpoint, not the other's.
+	ports := map[any]bool{}
+	for _, s := range spans {
+		ports[s.Tag(ext.TargetPort)] = true
+	}
+	if !ports["1"] || !ports["2"] {
+		t.Fatalf("expected spans tagged with each member's port, got %v", ports)
 	}
 }
