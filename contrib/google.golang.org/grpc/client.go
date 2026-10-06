@@ -76,10 +76,11 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 		defer func() { finishWithError(span, err, cs.method, cs.cfg) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
+	// RecvMsg has returned, so the attempt is committed and the retry window
+	// is closed. Record the commit whether tracing is enabled or not, so that
+	// SendMsg knows when reading the transport context is safe.
+	cs.committed.Store(true)
 	if span != nil {
-		// RecvMsg has returned, so the retry window is closed and reading the
-		// transport context no longer disables retries.
-		cs.committed.Store(true)
 		if p, ok := peer.FromContext(cs.ClientStream.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
