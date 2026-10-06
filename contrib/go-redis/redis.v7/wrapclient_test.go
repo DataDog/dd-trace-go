@@ -345,17 +345,17 @@ func TestWrapClientRegistryDropsClientsCapturedByErrorCheck(t *testing.T) {
 	t.Fatal("registry entry outlived its client")
 }
 
-// redisProxy hides its underlying client in an unexported embedded field, so
-// the registry cannot see through it and must key the proxy itself.
+// redisProxy hides its underlying client in an unexported embedded field.
 type redisProxy struct {
 	hiddenClient
 }
 
 type hiddenClient = *redis.Client
 
-// A proxy that cannot be seen through must still be registered by its own
-// identity: repeated wraps install a single hook.
-func TestWrapClientOpaqueProxy(t *testing.T) {
+// A proxy holding its client in an unexported field is still registered
+// against that client: repeated wraps, and a wrap of the client directly,
+// install a single hook.
+func TestWrapClientUnexportedProxy(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 
@@ -368,10 +368,11 @@ func TestWrapClientOpaqueProxy(t *testing.T) {
 	proxy := &redisProxy{hiddenClient: client}
 	WrapClient(proxy)
 	WrapClient(proxy)
+	WrapClient(client)
 
 	hooks := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks")
 	if n := hooks.Len(); n != 1 {
-		t.Fatalf("expected exactly 1 hook after 2 proxy wraps, got %d", n)
+		t.Fatalf("expected exactly 1 hook after 3 wraps, got %d", n)
 	}
 
 	_ = client.Get("foo").Err()

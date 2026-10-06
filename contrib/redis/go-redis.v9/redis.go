@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unsafe"
 	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -232,9 +233,10 @@ func weakHandle(client any) (weak.Pointer[byte], bool) {
 }
 
 // underlyingClient returns the concrete go-redis client behind a decorator or
-// proxy built by embedding redis.UniversalClient, if there is one within a
-// few levels of exported fields. It returns nil when it cannot see through
-// the implementation.
+// proxy, if there is one within a few levels of fields, embedded or not,
+// exported or not. It returns nil when it cannot see through the
+// implementation, for example when the delegated client is not held in a
+// field at all.
 func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
 	var walk func(c redis.UniversalClient, depth int) redis.UniversalClient
 	walk = func(c redis.UniversalClient, depth int) redis.UniversalClient {
@@ -251,10 +253,12 @@ func underlyingClient(client redis.UniversalClient) redis.UniversalClient {
 		}
 		s := v.Elem()
 		for i := 0; i < s.NumField(); i++ {
-			if !s.Type().Field(i).IsExported() {
-				continue
+			f := s.Field(i)
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
-			field, ok := s.Field(i).Interface().(redis.UniversalClient)
+			field, ok := f.Interface().(redis.UniversalClient)
 			if !ok {
 				continue
 			}

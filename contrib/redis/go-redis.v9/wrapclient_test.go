@@ -329,17 +329,17 @@ func TestWrapClientRegistryDropsClientsCapturedByErrorCheck(t *testing.T) {
 	t.Fatal("registry entry outlived its client")
 }
 
-// redisProxy hides its underlying client in an unexported embedded field, so
-// the registry cannot see through it and must key the proxy itself.
+// redisProxy hides its underlying client in an unexported embedded field.
 type redisProxy struct {
 	hiddenClient
 }
 
 type hiddenClient = *redis.Client
 
-// A proxy that cannot be seen through must still be registered by its own
-// identity: repeated wraps install a single hook.
-func TestWrapClientOpaqueProxy(t *testing.T) {
+// A proxy holding its client in an unexported field is still registered
+// against that client: repeated wraps, and a wrap of the client directly,
+// install a single hook.
+func TestWrapClientUnexportedProxy(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 
@@ -352,10 +352,11 @@ func TestWrapClientOpaqueProxy(t *testing.T) {
 	proxy := &redisProxy{hiddenClient: client}
 	WrapClient(proxy)
 	WrapClient(proxy)
+	WrapClient(client)
 
 	hooks := reflect.ValueOf(client).Elem().FieldByName("hooksMixin").FieldByName("slice")
 	if n := hooks.Len(); n != 1 {
-		t.Fatalf("expected exactly 1 hook after 2 proxy wraps, got %d", n)
+		t.Fatalf("expected exactly 1 hook after 3 wraps, got %d", n)
 	}
 
 	_ = client.Get(context.Background(), "foo").Err()
@@ -365,5 +366,47 @@ func TestWrapClientOpaqueProxy(t *testing.T) {
 	}
 	if open := mt.OpenSpans(); len(open) != 0 {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
+	}
+}
+
+// dialSpans returns the finished dial spans, for the DialHook path.
+func dialSpans(mt mocktracer.Tracer) []*mocktracer.Span {
+	var spans []*mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == "redis.dial" {
+			spans = append(spans, s)
+		}
+	}
+	return spans
+}
+
+// A WithTimeout clone shares the original client's connection pool, whose
+// dialer is bound to the original's hook chain, so wrapping the clone cannot
+// multiply dial spans: each connection attempt is dialed through one chain.
+func TestWrapClientCloneDoesNotMultiplyDialSpans(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	wrapped := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { wrapped.Close() })
+	WrapClient(wrapped)
+	clone := wrapped.WithTimeout(time.Second)
+	WrapClient(clone)
+
+	_ = wrapped.Get(context.Background(), "foo").Err()
+	_ = clone.Get(context.Background(), "foo").Err()
+	withClone := len(dialSpans(mt))
+	mt.Reset()
+
+	single := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { single.Close() })
+	WrapClient(single)
+
+	_ = single.Get(context.Background(), "foo").Err()
+	_ = single.Get(context.Background(), "foo").Err()
+	withoutClone := len(dialSpans(mt))
+
+	if withClone != withoutClone {
+		t.Fatalf("expected %d dial spans with a wrapped clone, got %d", withoutClone, withClone)
 	}
 }
