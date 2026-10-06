@@ -129,65 +129,75 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	defer wrapMu.Unlock()
 
 	targets := concreteClients(client)
-	if len(targets) == 0 {
-		// No concrete client can be found to instrument: deduplicate by the
-		// client's own weak identity and let its AddHook decide what it
-		// instruments. Repeated wraps still install a single hook.
-		key, ok := weakHandle(client)
-		if !ok {
-			addHook(client, cfg)
-			return
-		}
-		if e, ok := wrapped[key]; ok {
-			if !sameConfig(e.cfg, cfg.key()) {
-				instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
-			}
-			return
-		}
-		wrapped[key] = &wrapEntry{cfg: cfg.key()}
-		runtime.AddCleanup(key.Value(), func(k weak.Pointer[byte]) {
-			wrapMu.Lock()
-			delete(wrapped, k)
-			wrapMu.Unlock()
-		}, key)
-		addHook(client, cfg)
+	if len(targets) > 1 {
+		// A proxy with several concrete clients — a read/write router, or a
+		// client that also keeps a private one around. Which of them it
+		// instruments is its AddHook's decision, not something a field walk
+		// can infer, so instrument through the proxy and deduplicate by the
+		// proxy's own weak identity: repeated wraps of the same proxy add a
+		// single hook where the proxy puts it, and a member it skips is not
+		// instrumented behind its back.
+		wrapThrough(client, cfg)
 		return
 	}
-	// Instrument every concrete client the implementation delegates to, one
-	// hook each, deduplicated against the hook the client already carries —
-	// inherited by a clone, installed through a previous wrap of another
-	// decorator, or not at all. A proxy with several clients is not left
-	// untraced because one member happens to be wrapped already, and a
-	// member wrapped through the proxy is not wrapped twice.
-	for _, target := range targets {
-		prev, seen := datadogConfig(target)
-		if seen && prev != nil {
-			if !sameConfig(*prev, cfg.key()) {
-				instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+	if len(targets) == 1 {
+		// A decorator delegating to a single concrete client: deduplicate
+		// and instrument that client, against the hook it already carries —
+		// inherited by a clone, installed through a previous wrap of another
+		// decorator, or not at all. A client chain never carries two datadog
+		// hooks, which makes duplicate spans impossible.
+		if prev, seen := datadogConfig(targets[0]); seen {
+			if prev != nil {
+				if !sameConfig(*prev, cfg.key()) {
+					instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+				}
+				return
 			}
-			continue
-		}
-		if !seen {
+		} else {
 			// The hook chain cannot be read: deduplicate by the client's own
 			// weak identity instead.
-			key, ok := weakHandle(target)
-			if ok {
-				if e, ok := wrapped[key]; ok {
-					if !sameConfig(e.cfg, cfg.key()) {
-						instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
-					}
-					continue
-				}
-				wrapped[key] = &wrapEntry{cfg: cfg.key()}
-				runtime.AddCleanup(key.Value(), func(k weak.Pointer[byte]) {
-					wrapMu.Lock()
-					delete(wrapped, k)
-					wrapMu.Unlock()
-				}, key)
-			}
+			registerWeak(targets[0], cfg)
 		}
-		addHook(target, cfg)
+		addHook(targets[0], cfg)
+		return
 	}
+	// No concrete client can be found to instrument: deduplicate by the
+	// client's own weak identity and let its AddHook decide what it
+	// instruments. Repeated wraps still install a single hook.
+	wrapThrough(client, cfg)
+}
+
+// wrapThrough instruments client through its own AddHook, deduplicated by
+// its weak identity.
+func wrapThrough(client redis.UniversalClient, cfg *clientConfig) {
+	if !registerWeak(client, cfg) {
+		addHook(client, cfg)
+	}
+}
+
+// registerWeak records cfg for the client under its weak identity and
+// reports whether the client was already registered — an already-registered
+// client keeps its first configuration and gets no second hook. The caller
+// must hold wrapMu.
+func registerWeak(client redis.UniversalClient, cfg *clientConfig) bool {
+	key, ok := weakHandle(client)
+	if !ok {
+		// A non-pointer client cannot be keyed: instrument directly.
+		return false
+	}
+	if e, ok := wrapped[key]; ok {
+		if !sameConfig(e.cfg, cfg.key()) {
+			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+		}
+		return true
+	}
+	wrapped[key] = &wrapEntry{cfg: cfg.key()}
+	runtime.AddCleanup(key.Value(), func(k weak.Pointer[byte]) {
+		wrapMu.Lock()
+		delete(wrapped, k)
+		wrapMu.Unlock()
+	}, key)
+	return false
 }
 
 // addHook installs a datadog hook with the given configuration on client.

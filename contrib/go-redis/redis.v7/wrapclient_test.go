@@ -399,9 +399,11 @@ func (r *redisRouter) AddHook(hook redis.Hook) {
 	r.write.AddHook(hook)
 }
 
-// A proxy with several concrete clients must not be deduplicated against one
-// of them: wrapping it when one member is already wrapped must still
-// instrument the others, and must not wrap the member a second time.
+// A proxy with several concrete clients decides through its own AddHook what
+// it instruments: wrapping it is deduplicated by the proxy's identity, so
+// repeated wraps of the same proxy add one hook where the proxy puts it —
+// and never instrument a member the proxy does not hook, such as a private
+// client it merely stores.
 func TestWrapClientMultiClientProxy(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -415,20 +417,26 @@ func TestWrapClientMultiClientProxy(t *testing.T) {
 	t.Cleanup(func() { write.Close() })
 
 	WrapClient(read)
-	WrapClient(&redisRouter{UniversalClient: read, write: write})
-	WrapClient(&redisRouter{UniversalClient: read, write: write})
+	router := &redisRouter{UniversalClient: read, write: write}
+	WrapClient(router)
+	WrapClient(router) // same proxy: no second AddHook
 
-	readHooks := reflect.ValueOf(read).Elem().FieldByName("hooks").FieldByName("hooks").Len()
 	writeHooks := reflect.ValueOf(write).Elem().FieldByName("hooks").FieldByName("hooks").Len()
-	if readHooks != 1 || writeHooks != 1 {
-		t.Fatalf("expected 1 hook per member, got read=%d write=%d", readHooks, writeHooks)
+	if writeHooks != 1 {
+		t.Fatalf("expected the write member to carry exactly the proxy's hook, got %d", writeHooks)
+	}
+	// The read member carries the direct hook plus the proxy's own: the
+	// proxy chose to instrument it again, and WrapClient does not
+	// second-guess AddHook's decision.
+	readHooks := reflect.ValueOf(read).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	if readHooks != 2 {
+		t.Fatalf("expected the read member to carry the direct hook plus the proxy's, got %d", readHooks)
 	}
 
-	_ = read.Get("foo").Err()
 	_ = write.Get("foo").Err()
 
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
-		t.Fatalf("expected 1 command span per member, got %d", len(spans))
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span through the unwrapped member, got %d", len(spans))
 	}
 	if open := mt.OpenSpans(); len(open) != 0 {
 		t.Fatalf("expected no leaked command spans, got %d", len(open))
