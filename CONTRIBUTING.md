@@ -88,6 +88,9 @@ Our CI pipeline includes several automated checks:
 
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
 
+#### Release DORA Metrics
+
+- **DORA Metrics**: Generates and publishes DORA metrics whenever a release tag is created to report the time, SHAs, and other tags for each release. This workflow cannot be manually triggered unless it fails the first time.
 
 ### Which checks run on a pull request
 
