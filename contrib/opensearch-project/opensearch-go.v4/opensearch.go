@@ -60,8 +60,11 @@ func NewClient(cfg opensearch.Config, opts ...Option) (*opensearch.Client, error
 	if err != nil {
 		return nil, err
 	}
-	c.Transport = newTransport(c.Transport, newConfig(opts...))
-	return c, nil
+	// Startup discovery may already be reading c.Transport in another goroutine.
+	// Wrap a copy so upstream's client remains unchanged while sharing its transport.
+	traced := *c
+	traced.Transport = newTransport(c.Transport, newConfig(opts...))
+	return &traced, nil
 }
 
 // TraceRoundTripper traces an http.RoundTripper.
@@ -137,21 +140,25 @@ func (t *transport) trace(req *http.Request, perform func(*http.Request) (*http.
 	span, ctx := tracer.StartSpanFromContext(req.Context(), "opensearch.query", opts...)
 	req = req.WithContext(ctx)
 	contentEncoding := req.Header.Get("Content-Encoding")
-	snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
-	if err == nil {
-		span.SetTag(ext.OpenSearchBody, snip)
+	if !streaming {
+		snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
+		if err == nil {
+			span.SetTag(ext.OpenSearchBody, snip)
+		}
+		req.Body = rc
 	}
-	req.Body = rc
 	resp, err := perform(req)
 	// The upstream transport selects the destination by updating the request URL.
 	span.SetTag(ext.NetworkDestinationName, req.URL.Hostname())
 	span.SetTag(ext.TargetHost, req.URL.Hostname())
 	span.SetTag(ext.TargetPort, req.URL.Port())
+	if resp != nil {
+		span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode))
+	}
 	if err != nil {
 		span.Finish(tracer.WithError(err))
 		return resp, err
 	}
-	span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		snip := http.StatusText(resp.StatusCode)
 		if !streaming {

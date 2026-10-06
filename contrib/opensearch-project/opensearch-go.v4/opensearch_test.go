@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
@@ -341,7 +342,7 @@ func TestStream(t *testing.T) {
 				assert.Equal(t, "stream-service", span.Tag(ext.ServiceName))
 				assert.Equal(t, "value", span.Tag("custom.tag"))
 				assert.Equal(t, "POST /_search", span.Tag(ext.ResourceName))
-				assert.Equal(t, `{"query":{}}`, span.Tag(ext.OpenSearchBody))
+				assert.Nil(t, span.Tag(ext.OpenSearchBody))
 				assert.Equal(t, "pretty=true", span.Tag(ext.OpenSearchParams))
 				assert.Equal(t, strconv.Itoa(status), span.Tag(ext.HTTPCode))
 				u, err := url.Parse(srv.URL)
@@ -473,4 +474,102 @@ func TestClose(t *testing.T) {
 		assert.True(t, origin.closed)
 		require.NoError(t, client.Close())
 	})
+}
+
+func TestStreamLiveRequestBody(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	origin := &streamTransport{response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}}
+	client := &opensearch.Client{Transport: origin}
+	TraceClient(client)
+	req, err := http.NewRequest(http.MethodPost, "/_search", reader)
+	require.NoError(t, err)
+	result := make(chan error, 1)
+	go func() {
+		resp, err := client.Stream(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+		assert.Same(t, reader, origin.request.Body)
+	case <-time.After(5 * time.Second):
+		reader.Close()
+		<-result
+		t.Fatal("Stream blocked before invoking the underlying streamer")
+	}
+}
+
+func TestStreamResponseWithError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	body := &untouchedBody{}
+	origin := &streamTransport{
+		response: &http.Response{StatusCode: http.StatusServiceUnavailable, Body: body},
+		err:      context.Canceled,
+	}
+	client := &opensearch.Client{Transport: origin}
+	TraceClient(client)
+	req, err := http.NewRequest(http.MethodGet, "/_search", nil)
+	require.NoError(t, err)
+	resp, err := client.Stream(req)
+	require.Same(t, origin.response, resp)
+	defer resp.Body.Close()
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, body.reads)
+	assert.Zero(t, body.closes)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "503", spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, context.Canceled.Error(), spans[0].Tag(ext.ErrorMsg))
+}
+
+type discoveryTransport struct{}
+
+func (discoveryTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, context.Canceled
+}
+
+type discoveryLogger struct{ done chan error }
+
+func (l *discoveryLogger) LogRoundTrip(req *http.Request, _ *http.Response, err error, _ time.Time, _ time.Duration) error {
+	if req == nil {
+		l.done <- err
+	}
+	return nil
+}
+func (*discoveryLogger) RequestBodyEnabled() bool  { return false }
+func (*discoveryLogger) ResponseBodyEnabled() bool { return false }
+
+func TestNewClientStartupDiscovery(t *testing.T) {
+	for _, router := range []bool{false, true} {
+		t.Run(strconv.FormatBool(router), func(t *testing.T) {
+			t.Setenv("OPENSEARCH_GO_ROUTER", strconv.FormatBool(router))
+			for range 100 {
+				logger := &discoveryLogger{done: make(chan error, 1)}
+				cfg := opensearch.Config{Transport: discoveryTransport{}, DisableRetry: true, Logger: logger}
+				if !router {
+					enabled := true
+					cfg.DiscoverNodesOnStart = &enabled
+				}
+				client, err := NewClient(cfg)
+				require.NoError(t, err)
+				require.IsType(t, &transport{}, client.Transport)
+				select {
+				case err := <-logger.done:
+					assert.ErrorIs(t, err, context.Canceled)
+				case <-time.After(5 * time.Second):
+					client.Close()
+					t.Fatal("startup discovery did not finish")
+				}
+				require.NoError(t, client.Close())
+			}
+		})
+	}
 }
