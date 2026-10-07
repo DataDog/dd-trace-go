@@ -24,9 +24,9 @@ func (s otelAppSecSpanTagSetter) SetTag(key string, value any) {
 	s.TagSetter.SetTag(key, value)
 }
 
-// AppSecSpanTagSetter returns setter unchanged when OpenTelemetry semantics are
-// disabled. When enabled, it maps AppSec's http.client_ip and network.client.ip
-// span tags to client.address and network.peer.address; all other tags pass through.
+// AppSecSpanTagSetter applies OpenTelemetry HTTP semantic names to tags that
+// AppSec writes to spans. This affects trace metadata only; values sent to the
+// WAF, including http.client_ip, are unchanged.
 func AppSecSpanTagSetter(setter appsectrace.TagSetter, otelSemanticsEnabled bool) appsectrace.TagSetter {
 	if otelSemanticsEnabled {
 		return otelAppSecSpanTagSetter{TagSetter: setter}
