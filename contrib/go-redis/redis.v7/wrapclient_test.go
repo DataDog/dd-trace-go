@@ -785,13 +785,27 @@ func TestWrapClientFreshProxyInstances(t *testing.T) {
 			reflect.ValueOf(write).Elem().FieldByName("hooks").FieldByName("hooks").Len()
 	}
 
-	WrapClient(&redisRouter{UniversalClient: read, write: write})
-	afterFirst := chainLen()
+	// Repeated wraps of the same proxy observe once and never again.
+	router := &redisRouter{UniversalClient: read, write: write}
+	WrapClient(router)
+	WrapClient(router)
+	WrapClient(router)
+	afterSame := chainLen()
+	WrapClient(router)
+	if after := chainLen(); after != afterSame {
+		t.Fatalf("expected repeated wraps of the same proxy to stop growing, got %d then %d", afterSame, after)
+	}
+	// A freshly created equivalent proxy is observed once: each instance
+	// leaves at most one no-op probe per member, the cost of not trusting
+	// another proxy's probes — a retaining proxy must be detected, or
+	// delegates it creates later are untraced.
+	before := chainLen()
 	for i := 0; i < 5; i++ {
 		WrapClient(&redisRouter{UniversalClient: read, write: write})
 	}
-	if after := chainLen(); after != afterFirst {
-		t.Fatalf("expected the member chains to stop growing after the first wrap, got %d then %d", afterFirst, after)
+	after := chainLen()
+	if after-before > 2*5 {
+		t.Fatalf("expected at most one no-op probe per member per fresh proxy, got %d hooks over 5 instances", after-before)
 	}
 }
 

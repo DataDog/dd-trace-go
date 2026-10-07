@@ -79,9 +79,10 @@ func (cfg *clientConfig) key() configKey {
 // holds no reference to the client and no user callback, so it cannot pin
 // the client.
 type wrapEntry struct {
-	cfg  configKey
-	done chan struct{} // non-nil while the recorded install is in flight
-	goid uint64        // the goroutine that started the install, for reentry
+	cfg      configKey
+	done     chan struct{} // non-nil while the recorded install is in flight
+	goid     uint64        // the goroutine that started the install, for reentry
+	observed bool          // an observation completed for this client
 }
 
 var (
@@ -211,40 +212,35 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig) {
 	entry, proceed := begin(proxy, cfg.key())
 	if !proceed {
+		// This proxy was observed by an earlier wrap: hooks cannot be
+		// removed, so its outcome stands.
 		return
 	}
-	// Nothing can be learned and nothing can be added once every member
-	// already carries the hook and a probe from an earlier wrap: the proxy
-	// has been observed fanning out, its members are instrumented, and a
-	// retaining proxy would have kept the probe and been given the real
-	// hook then. Wraps of freshly created but equivalent proxies cost
-	// nothing, and the entry is not kept, so a later wrap that sees a new,
-	// unwrapped member still probes. A first wrap of an all-hooked proxy
-	// still probes, so a retaining one is detected and given the real hook
-	// for the delegates it creates later.
+	// Nothing can be learned and nothing can be added once this proxy has
+	// been observed and every member already carries the hook: repeated
+	// wraps of the same proxy cost nothing. A first wrap still probes —
+	// the members carry no proof about this proxy, and a retaining one
+	// must be detected and given the real hook, or delegates it creates
+	// later are untraced. The entry is kept, so wraps of freshly created
+	// but equivalent proxies each observe once and never again; the probes
+	// they leave on already hooked members are no-ops.
 	var hooked *configKey
 	allHooked := len(members) > 0
-	allProbed := allHooked
 	for _, member := range members {
 		prev, seen := datadogConfig(member)
 		if !seen || prev == nil {
 			allHooked = false
-			allProbed = false
 			break
 		}
 		if hooked == nil {
 			k := *prev
 			hooked = &k
 		}
-		if !memberCarriesProbe(member) {
-			allProbed = false
-		}
 	}
-	if allHooked && allProbed {
+	if allHooked && entry != nil && entry.observed {
 		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
 			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
 		}
-		finish(proxy, entry, false)
 		return
 	}
 	if allHooked {
@@ -303,7 +299,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		unlocked(func() { addHook(proxy, cfg) })
 	}
 	completed = true
-	finish(proxy, entry, true)
+	finishObserved(proxy, entry, true, true)
 }
 
 // begin records an install in flight for client, so that a concurrent wrap
@@ -413,11 +409,18 @@ func registerWeak(client redis.UniversalClient, cfg *clientConfig) bool {
 // chain is deduplicated by the hook itself, so the registry stays empty for
 // it. The caller must hold wrapMu.
 func finish(client redis.UniversalClient, entry *wrapEntry, keep bool) {
+	finishObserved(client, entry, keep, false)
+}
+
+// finishObserved completes the install recorded by entry, marking the client
+// observed so a later wrap of the same object knows its outcome stands.
+func finishObserved(client redis.UniversalClient, entry *wrapEntry, keep, observed bool) {
 	if entry == nil {
 		return
 	}
 	close(entry.done)
 	entry.done = nil
+	entry.observed = entry.observed || observed
 	if !keep {
 		if k, ok := weakHandle(client); ok {
 			delete(wrapped, k)
@@ -435,21 +438,6 @@ func unlocked(f func()) {
 	f()
 }
 
-// memberCarriesProbe reports whether the client's hook chain already holds
-// one of the no-op probes an earlier wrap used to observe a proxy.
-func memberCarriesProbe(client redis.UniversalClient) bool {
-	hooks := hookSlice(client)
-	if !hooks.IsValid() {
-		return false
-	}
-	for i := 0; i < hooks.Len(); i++ {
-		if h, ok := hooks.Index(i).Interface().(redis.Hook); ok && hookEqual(h, probeHook{}) {
-			return true
-		}
-	}
-	return false
-}
-
 // retainsHook reports whether the proxy kept the given hook in its own
 // fields: a proxy that retains hooks, to apply them to delegates it creates
 // later, keeps a copy of everything its AddHook is handed.
@@ -465,8 +453,14 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) bool {
 		return false
 	}
 	if v.CanAddr() {
-		unlock, _ := lockStruct(v)
+		unlock, ok := lockStruct(v)
 		defer unlock()
+		if !ok {
+			// The proxy's mutex stayed held; reading its retained-hook
+			// fields without it would race with the update in progress.
+			// Report unknown rather than guess.
+			return false
+		}
 	}
 	return containsHook(v, hook, 3)
 }
@@ -549,16 +543,27 @@ func (probeHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) e
 	return nil
 }
 
-// addHookWithoutEndpoints installs a datadog hook carrying no endpoint tags
-// on client: for a hook a proxy retains, the delegate it eventually
-// instruments is not known at wrap time, and the proxy's own endpoints may
-// not match it.
+// addHookWithoutEndpoints installs a datadog hook carrying every mandatory
+// tag but no endpoint tags on client: for a hook a proxy retains, the
+// delegate it eventually instruments is not known at wrap time, and the
+// proxy's own endpoints may not match it.
 func addHookWithoutEndpoints(client redis.UniversalClient, cfg *clientConfig) {
 	hookParams := &params{
 		config: cfg,
 	}
-	hookParams.spanCfg = newSpanConfig(cfg, nil)
+	hookParams.spanCfg = newSpanConfig(cfg, commonTagOptions())
 	client.AddHook(&datadogHook{params: hookParams})
+}
+
+// commonTagOptions returns the tags every span of this integration must
+// carry, independent of any endpoint.
+func commonTagOptions() []tracer.StartSpanOption {
+	return []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeRedis),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+	}
 }
 
 // addHook installs a datadog hook with the given configuration on client.
