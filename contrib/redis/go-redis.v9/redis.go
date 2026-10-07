@@ -77,6 +77,7 @@ func (cfg *clientConfig) key() configKey {
 // the client.
 type wrapEntry struct {
 	cfg      configKey
+	full     *clientConfig // the full configuration of the first proxy wrap
 	done     chan struct{} // non-nil while the recorded install is in flight
 	goid     uint64        // the goroutine that started the install, for reentry
 	observed bool          // an observation completed for this client
@@ -224,7 +225,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// A proxy may have replaced its delegates since its last observation.
 	// A durable entry stands only while every current member still carries
 	// the hook; when a new member does not, the proxy must be observed
-	// again. Drop the stale entry so begin recreates it.
+	// again — keeping the first wrap's configuration, which the documented
+	// first-configuration-wins behavior requires.
+	var first *clientConfig
 	if k, ok := weakHandle(proxy); ok && len(members) > 0 {
 		if e, ok := wrapped[k]; ok && e.done == nil {
 			allHookedNow := true
@@ -235,6 +238,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 				}
 			}
 			if !allHookedNow {
+				first = e.full
 				delete(wrapped, k)
 			}
 		}
@@ -245,6 +249,18 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// This proxy was observed by an earlier wrap: hooks cannot be
 		// removed, so its outcome stands.
 		return
+	}
+	if entry != nil {
+		entry.full = cfg
+	}
+	if first != nil {
+		// The re-observation installs the first wrap's configuration.
+		if !sameConfig(first.key(), cfg.key()) {
+			warn()
+		}
+		entry.cfg = first.key()
+		entry.full = first
+		cfg = first
 	}
 	// Nothing can be learned and nothing can be added once this proxy has
 	// been observed and every member already carries the hook: repeated

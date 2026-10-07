@@ -1313,3 +1313,33 @@ func TestWrapClientProxyDelegateSwapped(t *testing.T) {
 		t.Fatalf("expected the swapped-in member to be traced, got %d spans", len(spans))
 	}
 }
+
+// A re-observed proxy after a delegate swap must keep the first wrap's
+// configuration: the swapped-in member is instrumented with the first
+// service name, not the re-wrap's.
+func TestWrapClientProxyDelegateSwappedKeepsFirstConfig(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+
+	router := &redisRouter{UniversalClient: a, write: a}
+	WrapClient(router, WithService("first"))
+	router.write = fresh
+	WrapClient(router, WithService("second"))
+
+	_ = fresh.Get("foo").Err()
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 1 {
+		t.Fatalf("expected the swapped-in member to be traced once, got %d spans", len(spans))
+	}
+	if got := spans[0].Tag(ext.ServiceName); got != "first" {
+		t.Fatalf("expected the first configuration's service name %q, got %v", "first", got)
+	}
+}
