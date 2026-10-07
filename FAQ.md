@@ -7,6 +7,14 @@ You can use the tags below to reduce the size of your binaries (note that some t
 - `grpcnotrace` ([only for gRPC users](https://github.com/grpc/grpc-go/pull/6954)): disables gRPC's built-in `golang.org/x/net/trace` debug tracing endpoints (avoids the `reflect.MethodByName` dependency).
 - `nomsgpack` ([only for Gin users](https://github.com/gin-gonic/gin/blob/master/docs/doc.md#build-without-msgpack-rendering-feature)): disables msgpack binding/rendering support in Gin; msgpack-based request/response handling will not be available (dd-trace-go's msgpack usage is unaffected).
 
+## Which timeout handlers should an instrumented fasthttp server use?
+
+Use `TimeoutHandler` or `TimeoutWithCodeHandler` from
+`github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2`, not the native
+fasthttp timeout functions. See the
+[integration README](contrib/valyala/fasthttp/README.md#timeout-handlers) for
+details.
+
 ## Why do client integration spans not use the global service name?
 Integrations that are considered *clients* (http clients, grpc clients, sql clients) do **not** use the globally-configured service name by default. This is by design and is a product-level decision that spans across all the languages' tracers. This is likely to segregate the time spent actually doing the work of the service from the time waiting for another service (i.e. waiting on a web server to return a response). If you want client spans to use the global service name, enable either `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`, or start the tracer with `tracer.WithGlobalServiceName(true)`.
 

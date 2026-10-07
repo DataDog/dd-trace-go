@@ -49,6 +49,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1472,6 +1473,119 @@ func TestOTLPExportMode(t *testing.T) {
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
+}
+
+func TestOTLPSpanMetricsUseOTLPSenderWithAgentTraceWriter(t *testing.T) {
+	tr, err := newUnstartedTracer(func(c *config) {
+		c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	assert.IsType(t, &agentTraceWriter{}, tr.traceWriter)
+	conc, ok := tr.stats.(*concentrator)
+	require.True(t, ok)
+	assert.IsType(t, &otlpStatsSender{}, conc.sender)
+}
+
+func TestOTLPStatsSelectionUsesEffectiveTraceWriterWithOTelSemantics(t *testing.T) {
+	tests := []struct {
+		name          string
+		spanMetrics   bool
+		configure     func(*config)
+		wantTraceType traceWriter
+	}{
+		{
+			name:          "log writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "log writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+				c.internalConfig.SetOTLPSpanMetricsEnabled(tt.spanMetrics, internalconfig.OriginCode)
+				tt.configure(c)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+
+			assert.IsType(t, tt.wantTraceType, tr.traceWriter)
+			conc, ok := tr.stats.(*concentrator)
+			require.True(t, ok, "non-OTLP writers must use the native stats concentrator")
+			assert.IsType(t, &ddStatsSender{}, conc.sender)
+		})
+	}
+}
+
+func TestOTLPStatsSelectionPreservesLegacyConfigurationBehavior(t *testing.T) {
+	tests := []struct {
+		name          string
+		spanMetrics   bool
+		configure     func(*config)
+		wantTraceType traceWriter
+	}{
+		{
+			name:          "log writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "log writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode) },
+			wantTraceType: &logTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer without span metrics",
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+		{
+			name:          "CI Visibility writer with span metrics",
+			spanMetrics:   true,
+			configure:     func(c *config) { c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode) },
+			wantTraceType: &ciVisibilityTraceWriter{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+				c.internalConfig.SetOTLPSpanMetricsEnabled(tt.spanMetrics, internalconfig.OriginCode)
+				tt.configure(c)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+
+			assert.IsType(t, tt.wantTraceType, tr.traceWriter)
+			if tt.spanMetrics {
+				conc, ok := tr.stats.(*concentrator)
+				require.True(t, ok)
+				assert.IsType(t, &otlpStatsSender{}, conc.sender)
+			} else {
+				assert.IsType(t, &noopConcentrator{}, tr.stats)
+			}
+		})
+	}
 }
 
 func TestOTLPExportModeStatsSkipped(t *testing.T) {
@@ -3818,10 +3932,46 @@ func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
 	require.NoError(t, err)
 	Stop()
 
+	// log.Error output is buffered until flushed; without this the assertion
+	// below could never observe the message.
+	log.Flush()
+
 	// Check that runtime metrics emitters lifetimes did not overlap.
 	for _, logMsg := range tp.Logs() {
 		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
 	}
+}
+
+// TestTracerStartRuntimeMetricsAlreadyStartedElsewhere covers a process where
+// another component already runs a runtime metrics emitter. Only one emitter
+// may run per process, so the tracer cannot start its own and logs a warning
+// instead of an error.
+func TestTracerStartRuntimeMetricsAlreadyStartedElsewhere(t *testing.T) {
+	other, err := runtimemetrics.NewEmitter(&statsd.NoOpClientDirect{}, nil)
+	require.NoError(t, err)
+	t.Cleanup(other.Stop)
+
+	tp := new(log.RecordLogger)
+	require.NoError(t, Start(WithLogger(tp)))
+	defer Stop()
+
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok)
+	assert.Nil(t, tr.runtimeMetrics)
+
+	log.Flush()
+	var found bool
+	for _, logMsg := range tp.Logs() {
+		if !strings.Contains(logMsg, "Failed to enable runtime metrics v2") {
+			continue
+		}
+		found = true
+		assert.Contains(t, logMsg, "WARN")
+		assert.NotContains(t, logMsg, "ERROR")
+		assert.Contains(t, logMsg, "another runtime metrics emitter is already running in this process")
+		assert.Contains(t, logMsg, "err=runtimemetrics has already been started")
+	}
+	assert.True(t, found, "expected the runtime metrics v2 warning")
 }
 
 // TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.

@@ -118,13 +118,25 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d
 
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: unit-contrib
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":${{ toJson(matrix.chunk) }},
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
+             "coverage":"contrib"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -163,7 +175,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           # Walking GOMODCACHE/GOCACHE adds wall clock, so only do it where no pull
           # request is waiting on the result.
@@ -325,12 +337,25 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d datadog-agent
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: unit-core
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["core"],
+             "tags":${{ toJSON(inputs.build_tags || 'standard') }},
+             "coverage":"core"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -348,12 +373,10 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"
 
-          # Sample memory alongside the tests. When this job is killed by a runner
-          # shutdown (exit 143) the step log is all the evidence that survives, and
-          # it carried nothing about resource headroom -- which is why a long run of
-          # identical failures stayed un-diagnosable. The peak notice also makes the
-          # two build_tags variants of this job comparable within a single workflow
-          # run, since they are otherwise identical.
+          # Sample host memory alongside the tests. A runner shutdown can prevent
+          # the EXIT notice from running, so print the running peak on each sample
+          # as well. These host-wide readings show headroom, not the test process's
+          # RSS; compare the build_tags variants on their separate runners.
           mem_total_mib() { awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo; }
           mem_used_mib() {
             awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{print int((t-a)/1024)}' /proc/meminfo
@@ -362,14 +385,16 @@ jobs:
           peak_file="$(mktemp)"
           printf '0\n' >"$peak_file"
           (
+            peak_used=0
             while :; do
               used="$(mem_used_mib)"
-              if [ "$used" -gt "$(cat "$peak_file")" ]; then
-                printf '%s\n' "$used" >"$peak_file"
+              if (( used > peak_used )); then
+                peak_used="$used"
+                printf '%s\n' "$peak_used" >"$peak_file"
               fi
-              printf 'mem-sample used=%sMiB load=%s\n' \
-                "$used" "$(cut -d ' ' -f 1-3 /proc/loadavg)"
-              sleep 15
+              printf 'mem-sample used=%sMiB peak_used=%sMiB total=%sMiB load=%s\n' \
+                "$used" "$peak_used" "$(mem_total_mib)" "$(cut -d ' ' -f 1-3 /proc/loadavg)"
+              sleep 5
             done
           ) &
           sampler_pid=$!
@@ -409,6 +434,17 @@ jobs:
           files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE adds wall clock; skip it when a
+          # pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
+
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
@@ -441,12 +477,24 @@ jobs:
           clean: false
           submodules: recursive
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: unit-telemetry
+          variant: |-
+            {"runner":"APM Larger Runners",
+             "modules":["internal/apps/telemetry-errors"],
+             "coverage":"none"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Test telemetry-errors seccomp E2E
         working-directory: internal/apps

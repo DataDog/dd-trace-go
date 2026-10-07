@@ -6,7 +6,6 @@
 package config
 
 import (
-	"fmt"
 	"maps"
 	"math"
 	"net"
@@ -372,22 +371,18 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
-// else derives a default from agentURL host + port 4318 + /v1/traces.
-// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
-func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
-	if otlpTracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
-			return otlpTracesEndpoint
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
+// precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
+// genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
+// since it is used when tracesEndpoint is unset or invalid.
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
+	if tracesEndpoint != "" {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
+			return tracesEndpoint
 		}
 	}
-	host := internal.DefaultAgentHostname
-	if rawAgentURL != nil {
-		if h := rawAgentURL.Hostname(); h != "" {
-			host = h
-		}
-	}
-	return fmt.Sprintf("http://%s%s", net.JoinHostPort(host, otlpDefaultPort), otlpTracesPath)
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	return u.JoinPath(otlpTracesPath).String()
 }
 
 // buildOTLPHeaders builds the OTLP headers map from the provided map.
@@ -485,12 +480,11 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 		}
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
-	return u.String()
+	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
-func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
+func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
 		return nil
 	}
@@ -502,11 +496,14 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
 // envVar is used in the warning message to identify which env var had the bad value.
-func validateOTLPProtocol(v, envVar string) bool {
+// The warning is only logged when warn is true.
+func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	if warn {
+		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	}
 	return false
 }
 
