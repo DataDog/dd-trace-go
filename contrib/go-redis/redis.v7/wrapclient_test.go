@@ -1191,3 +1191,37 @@ func TestWrapClientDualMutexProxy(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// A proxy that fans every hook out to its current member and retains them
+// for delegates it creates later, with an already-wrapped member, is the one
+// shape with no clean outcome: the real hook must reach its AddHook or future
+// delegates are untraced, and that same call fans it out to the already
+// instrumented member. Missing spans are the worse evil, so the future
+// delegates are traced; the duplication on the current member is the cost.
+func TestWrapClientFanOutRetainPrewrappedMember(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	WrapClient(current) // the member is already instrumented
+
+	proxy := &fanOutRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get("foo").Err()
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) < 1 {
+		t.Fatal("expected the later delegate to be traced")
+	}
+	if n := datadogHooks(later); n != 1 {
+		t.Fatalf("expected the later delegate to carry 1 datadog hook, got %d", n)
+	}
+}

@@ -555,7 +555,7 @@ func addHookWithoutEndpoints(client redis.UniversalClient, cfg *clientConfig) {
 func commonTagOptions() []tracer.StartSpanOption {
 	return []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.Component, instrumentation.PackageRedisGoRedisV9),
+		tracer.Tag(ext.Component, string(instrumentation.PackageRedisGoRedisV9)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
@@ -889,7 +889,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 	}
 	additionalTags = append(additionalTags,
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.Component, instrumentation.PackageRedisGoRedisV9),
+		tracer.Tag(ext.Component, string(instrumentation.PackageRedisGoRedisV9)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)
