@@ -153,10 +153,13 @@ func isInstalling(client any, members []redis.UniversalClient) bool {
 // their member sets — the same concrete clients — rather than by value.
 func sameMark(pa any, ma []redis.UniversalClient, pb any, mb []redis.UniversalClient) bool {
 	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
-	if ta == nil || tb == nil {
+	if ta == nil || tb == nil || ta != tb {
 		return false
 	}
-	if ta == tb && ta.Comparable() {
+	if ta.Comparable() {
+		// Different comparable proxies are different, even over the same
+		// members: only a proxy that cannot be compared at all falls back
+		// to matching through its member set.
 		return pa == pb
 	}
 	if len(ma) != len(mb) {
@@ -272,7 +275,19 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 // weak identity. The caller must hold wrapMu; a concrete client's AddHook is
 // go-redis code, not user code, so it runs under the lock.
 func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
-	if prev, seen := datadogConfig(member); seen {
+	// A busy client mutex can leave the hook chain transiently unreadable;
+	// retry briefly before falling back to the client's own identity, which
+	// a clone sharing the hook would evade.
+	var prev *configKey
+	var seen bool
+	for range 3 {
+		prev, seen = datadogConfig(member)
+		if seen {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if seen {
 		if prev != nil {
 			if !sameConfig(*prev, cfg.key()) {
 				warn()
@@ -430,13 +445,24 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		retained = true
 	}
 	if retained {
+		// Which members this proxy's own AddHook hooks decides the entry:
+		// a retain-only proxy leaves every member unhooked — a member
+		// wrapped earlier by something else does not make it fan-out.
+		unhooked := make([]bool, len(members))
+		for i, member := range members {
+			prev, seen := datadogConfig(member)
+			unhooked[i] = !seen || prev == nil
+		}
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
 		if entry != nil {
 			// A retain-only proxy never hooks its current members; record
 			// that, so a later wrap does not mistake their missing hooks
 			// for a replaced delegate and re-hand the proxy another hook.
 			hookedAny := false
-			for _, member := range members {
+			for i, member := range members {
+				if !unhooked[i] {
+					continue
+				}
 				if prev, seen := datadogConfig(member); seen && prev != nil {
 					hookedAny = true
 					break

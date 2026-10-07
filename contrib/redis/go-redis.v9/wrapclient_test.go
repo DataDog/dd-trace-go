@@ -1496,3 +1496,81 @@ func TestWrapClientRetainOnlyDurableEntry(t *testing.T) {
 		t.Fatalf("expected the retained-hook list to stop growing after the first wrap, got %d then %d", first, after)
 	}
 }
+
+// mixedRetainProxy retains hooks and never hooks its current members; one of
+// its members is pre-wrapped directly.
+type mixedRetainProxy struct {
+	redis.UniversalClient               // pre-wrapped member
+	fresh                 *redis.Client // never wrapped
+	retains               []redis.Hook
+}
+
+func (r *mixedRetainProxy) AddHook(hook redis.Hook) {
+	r.retains = append(r.retains, hook)
+}
+
+// A retain-only proxy with a pre-wrapped member must still be recorded as
+// retain-only: the member's hook came from elsewhere, not from this proxy's
+// AddHook, and a later wrap must not re-hand the proxy another hook.
+func TestWrapClientMixedRetainOnly(t *testing.T) {
+	wrapped0 := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { wrapped0.Close() })
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+
+	WrapClient(wrapped0) // one member carries a hook from a direct wrap
+	proxy := &mixedRetainProxy{UniversalClient: wrapped0, fresh: fresh}
+	WrapClient(proxy)
+	// The proxy retains only: fresh stays unhooked, and the entry must be
+	// durable — a repeated wrap adds nothing.
+	WrapClient(proxy)
+
+	if n := datadogHooks(wrapped0); n != 1 {
+		t.Fatalf("expected the pre-wrapped member to keep 1 hook, got %d", n)
+	}
+	if n := datadogHooks(fresh); n != 0 {
+		t.Fatalf("expected the retain-only proxy's member to stay unhooked, got %d", n)
+	}
+	// The proxy received exactly one real hook: its retained list holds the
+	// probe from the observation plus that one hook, and repeated wraps add
+	// nothing — every extra retained hook would duplicate spans on a future
+	// delegate.
+	if n := len(proxy.retains); n != 2 {
+		t.Fatalf("expected the retained list to hold the probe and one real hook, got %d", n)
+	}
+}
+
+// twoTypeProxy is a second proxy type over the same members as redisRouter,
+// used to check that comparable proxies of different types are never
+// mistaken for each other by the reentry guard.
+type twoTypeProxy struct {
+	redis.UniversalClient
+	write *redis.Client
+}
+
+func (r *twoTypeProxy) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+	r.write.AddHook(hook)
+}
+
+// Comparable proxies of different types over the same members must not be
+// matched by the reentry guard: only a proxy with a non-comparable type
+// falls back to matching through its member set.
+func TestWrapClientReentryGuardDistinguishesTypes(t *testing.T) {
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { read.Close() })
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { write.Close() })
+
+	// Wrap the router; its AddHook is not re-entrant, but a same-type check
+	// would confuse a later wrap of a different proxy type over the same
+	// members if the guard matched them.
+	router := &redisRouter{UniversalClient: read, write: write}
+	WrapClient(router)
+	other := &twoTypeProxy{UniversalClient: read, write: write}
+	WrapClient(other)
+
+	if n := datadogHooks(read); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook on the shared member, got %d", n)
+	}
+}
