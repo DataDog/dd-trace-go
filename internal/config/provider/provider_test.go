@@ -102,6 +102,29 @@ func (s *seqIDCapture) get(name, value string, origin telemetry.Origin) uint64 {
 	return s.seqIDs[s.key(name, value, origin)]
 }
 
+func TestGetStringWithValidatorSourcePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		managed  string
+		env      string
+		expected string
+	}{
+		{"invalid managed value falls back to environment", "invalid", "valid-env", "valid-env"},
+		{"valid managed value wins", "valid-managed", "valid-env", "valid-managed"},
+		{"invalid sources fall back to default", "invalid", "invalid", "default"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newTestProvider(
+				newTestConfigSource(map[string]string{"DD_SERVICE": tc.managed}, telemetry.OriginManagedStableConfig),
+				newTestConfigSource(map[string]string{"DD_SERVICE": tc.env}, telemetry.OriginEnvVar),
+			)
+			assert.Equal(t, tc.expected, p.GetStringWithValidator("DD_SERVICE", "default", func(v string) bool {
+				return v != "invalid"
+			}))
+		})
+	}
+}
+
 func TestGetMethods(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		p := newTestProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))

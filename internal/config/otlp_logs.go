@@ -24,12 +24,11 @@ const (
 func (c *Config) loadOTLPLogsConfig(p *provider.Provider, agentHost, genericProtocol, genericEndpoint, genericHeaders string) {
 	c.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericProtocol)))
 	c.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", genericEndpoint)
-	headers := p.GetString("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders)
+	headers := p.GetStringWithValidator("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders, func(v string) bool {
+		return len(parseOTLPLogsHeaders(v)) > 0
+	})
 	if headers != "" {
 		c.otlpLogsHeaders = parseOTLPLogsHeaders(headers)
-		if len(c.otlpLogsHeaders) == 0 {
-			c.otlpLogsHeaders = parseOTLPLogsHeaders(genericHeaders)
-		}
 	}
 	genericTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
 	c.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", genericTimeout)) * time.Millisecond

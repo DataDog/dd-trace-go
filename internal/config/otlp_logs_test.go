@@ -79,6 +79,12 @@ func TestResolveHeaders(t *testing.T) {
 	})
 
 	for _, raw := range []string{"invalid", "invalid,also-invalid", "=value", "   ", "key=%XX"} {
+		t.Run("returns nil for unusable logs headers without generic headers for "+raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", raw)
+			assert.Nil(t, loadConfig().OTLPLogsHeaders())
+		})
+
 		t.Run("falls back to generic headers for "+raw, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key=some%20value")
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", raw)
