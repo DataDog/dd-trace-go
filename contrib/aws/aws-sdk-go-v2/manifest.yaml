@@ -1,0 +1,23 @@
+_v: 1
+name: github.com/aws/aws-sdk-go-v2
+display_name: AWS SDK for Go v2
+description: Instruments AWS SDK for Go v2 requests, message publishing, and workflow starts, with trace propagation, S3 and
+  DynamoDB span links, and optional Data Streams Monitoring.
+packages:
+- name: github.com/aws/aws-sdk-go-v2
+category:
+- cloud_provider.client
+- db.client
+- messaging.producer
+- object_store.client
+- workflow.durable_execution
+systems:
+- aws
+- aws.dynamodb
+- aws.eventbridge
+- aws.kinesis
+- aws.s3
+- aws.sns
+- aws.sqs
+- aws.step_functions
+creation_date: '2021-06-29'

@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/99designs/gqlgen
+display_name: gqlgen
+description: Instruments gqlgen GraphQL server request reading, parsing, validation, execution, and field resolution, with
+  error span events and optional security monitoring.
+packages:
+- name: github.com/99designs/gqlgen
+category:
+- graphql.server
+systems: []
+creation_date: '2022-08-05'

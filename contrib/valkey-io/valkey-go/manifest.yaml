@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/valkey-io/valkey-go
+display_name: valkey-go
+description: Instruments valkey-go commands, including batches, client-side caching, streaming responses, and Pub/Sub receive
+  operations across standard, dedicated, and cluster-node clients.
+packages:
+- name: github.com/valkey-io/valkey-go
+category:
+- db.client
+systems:
+- valkey
+creation_date: '2025-01-29'
