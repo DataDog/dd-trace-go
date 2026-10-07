@@ -341,9 +341,8 @@ func TestWrapClientUnexportedProxy(t *testing.T) {
 	WrapClient(proxy)
 	WrapClient(client)
 
-	hooks := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks")
-	if n := hooks.Len(); n != 1 {
-		t.Fatalf("expected exactly 1 hook after 3 wraps, got %d", n)
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after 3 wraps, got %d", n)
 	}
 
 	_ = client.Get(context.Background(), "foo").Err()
@@ -375,9 +374,8 @@ func TestWrapClientDeepProxy(t *testing.T) {
 	WrapClient(p1)
 	WrapClient(p1)
 
-	hooks := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks")
-	if n := hooks.Len(); n != 1 {
-		t.Fatalf("expected exactly 1 hook after 2 deep-proxy wraps, got %d", n)
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after 2 deep-proxy wraps, got %d", n)
 	}
 
 	_ = client.Get(context.Background(), "foo").Err()
@@ -463,10 +461,10 @@ func TestWrapClientProxyProbeOnce(t *testing.T) {
 
 	router := &selectiveRouter{UniversalClient: client, private: private}
 	WrapClient(router)
-	afterFirst := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	afterFirst := datadogHooks(client)
 	WrapClient(router)
 	WrapClient(router)
-	afterRest := reflect.ValueOf(client).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	afterRest := datadogHooks(client)
 	if afterRest != afterFirst {
 		t.Fatalf("expected the hook chain to stop growing after the first wrap, got %d then %d", afterFirst, afterRest)
 	}
@@ -635,4 +633,99 @@ func TestWrapClientReentrantSameProxy(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("WrapClient deadlocked waiting for its own in-flight install")
 	}
+}
+
+// datadogHooks counts the datadog hooks on a client, ignoring the no-op
+// probe hooks that proxy observation leaves behind.
+func datadogHooks(client *redis.Client) int {
+	hooks := hookSlice(client)
+	n := 0
+	for i := 0; i < hooks.Len(); i++ {
+		if _, ok := hooks.Index(i).Interface().(*datadogHook); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// retainingProxy keeps the hooks it is given instead of applying them, and
+// hands them to delegates it creates later.
+type retainingProxy struct {
+	redis.UniversalClient
+	retained []redis.Hook
+}
+
+func (r *retainingProxy) AddHook(hook redis.Hook) {
+	r.retained = append(r.retained, hook)
+}
+
+func (r *retainingProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range r.retained {
+		delegate.AddHook(hook)
+	}
+}
+
+// A proxy that retains hooks for delegates it creates later must receive the
+// real hook through its AddHook, not only the observation probe.
+func TestWrapClientRetainingProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &retainingProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get(context.Background(), "foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced, got %d spans", len(spans))
+	}
+	if n := datadogHooks(later); n != 1 {
+		t.Fatalf("expected the later delegate to carry 1 datadog hook, got %d", n)
+	}
+}
+
+// A proxy may hold its own mutex while calling WrapClient; the field walk
+// must not take that mutex while WrapClient holds the package lock.
+func TestWrapClientProxyLockOrder(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &hotSwapRouter{UniversalClient: a, write: b}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				router.mu.Lock()
+				WrapClient(b)
+				router.mu.Unlock()
+			}
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(router)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient deadlocked against a proxy holding its own mutex")
+	}
+	close(stop)
+	wg.Wait()
 }

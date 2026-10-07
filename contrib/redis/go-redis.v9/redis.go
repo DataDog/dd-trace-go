@@ -127,38 +127,33 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		fn.apply(cfg)
 	}
 
+	// Resolve the concrete clients before taking the package lock: the
+	// field walk takes each proxy's own mutex when it has one, and that
+	// mutex must not be nested inside wrapMu — a proxy may hold its mutex
+	// while calling WrapClient (to replace and instrument a delegate, say),
+	// and wrapMu-then-proxy-mutex would then deadlock against
+	// proxy-mutex-then-wrapMu.
+	targets := concreteClients(client)
+
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
 
-	targets := concreteClients(client)
-	switch len(targets) {
-	case 0:
-		// No concrete client can be found to instrument: deduplicate by the
-		// client's own weak identity and let its AddHook decide what it
-		// instruments. Repeated wraps still install a single hook.
-		wrapThrough(client, cfg)
-	case 1:
-		// A decorator delegating to a single concrete client: deduplicate
-		// and instrument that client, against the hook it already carries —
-		// inherited by a clone, installed through a previous wrap of
-		// another decorator, or not at all. A client chain never carries two
-		// datadog hooks, which makes duplicate spans impossible.
-		wrapMember(targets[0], cfg)
-	default:
-		wrapProxyMembers(client, targets, cfg)
-	}
-}
-
-// wrapThrough instruments client through its own AddHook, deduplicated by
-// its weak identity. The caller must hold wrapMu; AddHook runs with the
-// lock released.
-func wrapThrough(client redis.UniversalClient, cfg *clientConfig) {
-	entry, proceed := begin(client, cfg.key())
-	if !proceed {
+	if len(targets) == 1 && targets[0] == client {
+		// The client itself is a concrete go-redis client — or a clone of
+		// one: deduplicate and instrument it directly, against the hook it
+		// already carries — inherited by a clone, installed through a
+		// previous wrap of another decorator, or not at all. A client chain
+		// never carries two datadog hooks, which makes duplicate spans
+		// impossible.
+		wrapMember(client, cfg)
 		return
 	}
-	unlocked(func() { addHook(client, cfg) })
-	finish(client, entry, true)
+	// Any other implementation is a proxy, with one member or several or
+	// none that can be found: what its AddHook instruments is its own
+	// decision — it may fan out to its current members, retain hooks for
+	// delegates it creates later, or apply them lazily — so it is observed
+	// before instrumented.
+	wrapProxyMembers(client, targets, cfg)
 }
 
 // wrapMember instruments a single concrete client, deduplicated against the
@@ -184,9 +179,11 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 	addHook(member, cfg)
 }
 
-// wrapProxyMembers instruments a proxy holding several concrete clients — a
-// read/write router, or a client that also keeps a private one around.
-// Which members its AddHook instruments cannot be inferred from fields, so
+// wrapProxyMembers instruments a proxy — one delegating to a single concrete
+// client, a read/write router holding several, or a client that also keeps a
+// private one around. Which members its AddHook instruments, and whether it
+// retains hooks for delegates it creates later instead of applying them now,
+// cannot be inferred from fields, so
 // it is observed instead: a no-op probe hook is added, and the members whose
 // chains gain it are the proxy's own choice. Each of those members is then
 // instrumented with that member's endpoint tags, deduplicated against the
