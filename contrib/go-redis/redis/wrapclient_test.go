@@ -288,3 +288,35 @@ func TestWrapClientRewrapDuringCommands(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// unhashableCmd wraps a command with a map field, so its value cannot be a
+// map key.
+type unhashableCmd struct {
+	*redis.StringCmd
+	extra map[string]string
+}
+
+func (c unhashableCmd) String() string { return c.StringCmd.String() }
+
+// A command value that cannot be compared must not panic the deduplication
+// map: it traces once per wrapper instead.
+func TestWrapClientUnhashableCmd(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	WrapClient(client)
+
+	cmd := unhashableCmd{StringCmd: redis.NewStringCmd("get", "foo"), extra: map[string]string{"a": "b"}}
+	if err := client.Process(cmd); err == nil {
+		t.Fatal("expected the unreachable address to error")
+	}
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}

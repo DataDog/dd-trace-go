@@ -335,13 +335,17 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			tc.process = oldProcess
 		}
 		return func(cmd redis.Cmder) error {
-			if _, traced := tracedCmds.Load(cmd); traced {
-				// A datadog wrapper further out is driving this command and
-				// already started its span for it; see tracedCmds.
-				return tc.process(cmd)
+			// A command value that cannot be compared cannot key the map;
+			// such wrappers are exotic, and they trace once per wrapper.
+			if reflect.TypeOf(cmd).Comparable() {
+				if _, traced := tracedCmds.Load(cmd); traced {
+					// A datadog wrapper further out is driving this command and
+					// already started its span for it; see tracedCmds.
+					return tc.process(cmd)
+				}
+				tracedCmds.Store(cmd, struct{}{})
+				defer tracedCmds.Delete(cmd)
 			}
-			tracedCmds.Store(cmd, struct{}{})
-			defer tracedCmds.Delete(cmd)
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")

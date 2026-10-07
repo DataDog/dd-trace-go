@@ -77,11 +77,12 @@ func (cfg *clientConfig) key() configKey {
 // the client.
 type wrapEntry struct {
 	cfg        configKey
-	full       *clientConfig // the full configuration of the first proxy wrap
-	done       chan struct{} // non-nil while the recorded install is in flight
-	goid       uint64        // the goroutine that started the install, for reentry
-	observed   bool          // an observation completed for this client
-	retainOnly bool          // the proxy retains hooks; its members stay unhooked by design
+	full       *clientConfig              // a callback-free copy of the first proxy wrap's configuration
+	cfgWeak    weak.Pointer[clientConfig] // the first configuration itself, kept alive by the hooks it installed
+	done       chan struct{}              // non-nil while the recorded install is in flight
+	goid       uint64                     // the goroutine that started the install, for reentry
+	observed   bool                       // an observation completed for this client
+	retainOnly bool                       // the proxy retains hooks; its members stay unhooked by design
 }
 
 // installing records, per goroutine, the proxies whose AddHook a WrapClient
@@ -353,6 +354,13 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			}
 			if !allHookedNow {
 				first = e.full
+				if live := e.cfgWeak.Value(); live != nil {
+					// The hooks the first wrap installed keep the first
+					// configuration — user callback included — alive; use
+					// it while they do. The sanitized copy waits behind it
+					// for the day they no longer do.
+					first = live
+				}
 				delete(wrapped, k)
 			}
 		}
@@ -366,6 +374,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	}
 	if entry != nil {
 		entry.full = registryConfig(cfg)
+		entry.cfgWeak = weak.Make(cfg)
 	}
 	if first != nil {
 		// The re-observation installs the first wrap's configuration.

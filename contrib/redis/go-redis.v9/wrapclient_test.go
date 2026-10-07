@@ -1574,3 +1574,37 @@ func TestWrapClientReentryGuardDistinguishesTypes(t *testing.T) {
 		t.Fatalf("expected exactly 1 datadog hook on the shared member, got %d", n)
 	}
 }
+
+// A re-observed proxy's swapped-in delegate must use the first wrap's error
+// predicate, kept alive by the hooks the first wrap installed — not the
+// sanitized copy's default.
+func TestWrapClientReobserveKeepsFirstPredicate(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { read.Close() })
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+
+	router := &redisRouter{UniversalClient: read, write: read}
+	WrapClient(router, WithErrorCheck(func(error) bool {
+		return false // the first predicate rejects every error
+	}))
+	router.write = fresh
+	WrapClient(router, WithService("second"))
+
+	// The swapped-in delegate's span must carry the first predicate: the
+	// connection error is rejected, so no error tag is recorded.
+	_ = fresh.Get(context.Background(), "foo").Err()
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 command span, got %d", len(spans))
+	}
+	if spans[0].Tag(ext.ErrorMsg) != nil {
+		t.Fatalf("expected the first predicate to reject the connection error, got error tag %v", spans[0].Tag(ext.ErrorMsg))
+	}
+}
