@@ -1608,3 +1608,51 @@ func TestWrapClientReobserveKeepsFirstPredicate(t *testing.T) {
 		t.Fatalf("expected the first predicate to reject the connection error, got error tag %v", spans[0].Tag(ext.ErrorMsg))
 	}
 }
+
+// syncFanOutRetainProxy fans every hook out to its current member and retains
+// it, guarding its fields with a mutex. The embedded interface supplies the
+// command surface; the AddHook target is the current member.
+type syncFanOutRetainProxy struct {
+	redis.UniversalClient
+	mu      sync.Mutex
+	current *redis.Client
+	retains []redis.Hook
+}
+
+func (r *syncFanOutRetainProxy) AddHook(hook redis.Hook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retains = append(r.retains, hook)
+	if r.current != nil {
+		r.current.AddHook(hook)
+	}
+}
+
+// The retention scan must not try to re-acquire the root proxy's non-reentrant
+// mutex: a synchronized fan-out-and-retain proxy is classified as retaining,
+// and its future delegates inherit the real hook.
+func TestWrapClientSynchronizedFanOutRetain(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &syncFanOutRetainProxy{current: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.mu.Lock()
+	for _, hook := range proxy.retains {
+		later.AddHook(hook)
+	}
+	proxy.mu.Unlock()
+
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}

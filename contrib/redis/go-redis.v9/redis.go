@@ -437,7 +437,8 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			finish(proxy, entry, false)
 		}
 	}()
-	unlocked(func() { proxy.AddHook(probeHook{}) })
+	probe := probeHook{cfg: cfg}
+	unlocked(func() { proxy.AddHook(probe) })
 	// A proxy that keeps the probe in its own fields retains hooks for
 	// delegates it creates later; those delegates are traced only through a
 	// real hook passed to its AddHook. The same call fans that hook out to
@@ -449,7 +450,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// The scan takes the proxy's own mutex, so it runs with the package
 	// lock released.
 	var retained, known bool
-	unlocked(func() { retained, known = retainsHook(proxy, probeHook{}) })
+	unlocked(func() { retained, known = retainsHook(proxy, probe) })
 	if !known {
 		// The scan could not take the proxy's mutex. Missing spans are the
 		// worse evil, and an unknown scan is not evidence of absence: hand
@@ -676,7 +677,9 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 			unlock, ok := lockStruct(v)
 			if ok {
 				defer unlock()
-				return containsHook(v, hook, 3), true
+				// The root is locked here; scanning it must not re-acquire
+				// its non-reentrant mutex. Nested structs lock themselves.
+				return scanHooks(v, hook, 3), true
 			}
 			unlock()
 			time.Sleep(10 * time.Millisecond)
@@ -685,12 +688,58 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 		// with the update in progress: report unknown rather than guess.
 		return false, false
 	}
-	return containsHook(v, hook, 3), true
+	return scanHooks(v, hook, 3), true
+}
+
+// scanHooks reports whether s, or a struct embedded within it, holds the
+// hook; s itself is already locked by the caller.
+func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
+	if s.Kind() != reflect.Struct || depth == 0 {
+		return false
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+				return true
+			}
+		case reflect.Slice:
+			if f.Type() == redisHookSliceType {
+				for j := 0; j < f.Len(); j++ {
+					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+						return true
+					}
+				}
+			}
+		case reflect.Struct:
+			if containsHook(f, hook, depth-1) {
+				return true
+			}
+		case reflect.Pointer:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+				continue
+			}
+			if f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // containsHook reports whether s, or a struct embedded within it, holds the
-// hook in a field or in a hook slice. Hooks with non-comparable dynamic
-// types cannot be compared and are treated as absent.
+// hook in a field or in a hook slice, locking s as it is read. Hooks with
+// non-comparable dynamic types cannot be compared and are treated as absent.
 func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return false
@@ -760,8 +809,15 @@ func hookEqual(a, b redis.Hook) bool {
 }
 
 // probeHook is the no-op hook used to observe which concrete clients a
-// proxy's AddHook instruments; see wrapProxyMembers.
-type probeHook struct{}
+// proxy's AddHook instruments; see wrapProxyMembers. It carries the wrap's
+// configuration so the hook's lifetime anchors it: a proxy that retains the
+// probe keeps the configuration — the re-observation wants it with its user
+// callback — alive for exactly as long as the proxy, and one fanned out to a
+// member keeps it alive with that member's chain. Without an anchor, a wrap
+// that installs no hook of its own leaves the configuration to the next GC.
+type probeHook struct {
+	cfg *clientConfig
+}
 
 func (probeHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return hook
