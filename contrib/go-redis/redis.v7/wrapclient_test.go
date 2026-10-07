@@ -895,3 +895,70 @@ func TestWrapClientAddHookPanic(t *testing.T) {
 		t.Fatal("a later wrap waited forever on the marker left by a panicking AddHook")
 	}
 }
+
+// fanOutRetainProxy applies each hook to its current delegate and retains
+// it for delegates it creates later.
+type fanOutRetainProxy struct {
+	redis.UniversalClient
+	retained []redis.Hook
+}
+
+func (r *fanOutRetainProxy) AddHook(hook redis.Hook) {
+	r.retained = append(r.retained, hook)
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *fanOutRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range r.retained {
+		delegate.AddHook(hook)
+	}
+}
+
+// A proxy that fans hooks out to its current members and retains them for
+// later delegates must receive the real hook through its AddHook: the
+// current member is traced once, and a delegate created later is traced too.
+func TestWrapClientFanOutRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &fanOutRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	if n := datadogHooks(current); n != 1 {
+		t.Fatalf("expected the current member to carry exactly 1 datadog hook, got %d", n)
+	}
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// mutexValueDecorator is a decorator passed by value that carries a mutex.
+type mutexValueDecorator struct {
+	redis.UniversalClient
+	mu sync.RWMutex
+}
+
+// A decorator passed by value with a mutex of its own must not make the
+// field walk panic on the unaddressable copy.
+func TestWrapClientMutexValueDecorator(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	WrapClient(mutexValueDecorator{UniversalClient: client})
+	WrapClient(mutexValueDecorator{UniversalClient: client})
+
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after 2 wraps, got %d", n)
+	}
+}

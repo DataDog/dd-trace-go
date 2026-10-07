@@ -248,6 +248,21 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		}
 	}()
 	unlocked(func() { proxy.AddHook(probeHook{}) })
+	// A proxy that keeps the probe in its own fields retains hooks for
+	// delegates it creates later; those delegates are traced only through a
+	// real hook passed to its AddHook. The same call fans that hook out to
+	// the current members, so they must not be instrumented per member as
+	// well — every command would be traced twice.
+	// The scan takes the proxy's own mutex, so it runs with the package
+	// lock released.
+	var retained bool
+	unlocked(func() { retained = retainsHook(proxy, probeHook{}) })
+	if retained {
+		unlocked(func() { addHook(proxy, cfg) })
+		completed = true
+		finish(proxy, entry, true)
+		return
+	}
 	var instrumented bool
 	for i, member := range members {
 		if !readable[i] {
@@ -385,6 +400,78 @@ func unlocked(f func()) {
 	f()
 }
 
+// retainsHook reports whether the proxy kept the given hook in its own
+// fields: a proxy that retains hooks, to apply them to delegates it creates
+// later, keeps a copy of everything its AddHook is handed.
+func retainsHook(proxy redis.UniversalClient, hook redis.Hook) bool {
+	v := reflect.ValueOf(proxy)
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return false
+	}
+	if v.CanAddr() {
+		unlock := lockStruct(v)
+		defer unlock()
+	}
+	return containsHook(v, hook, 3)
+}
+
+// containsHook reports whether s, or a struct embedded within it, holds the
+// hook in a field or in a hook slice. Hooks with non-comparable dynamic
+// types cannot be compared and are treated as absent.
+func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
+	if s.Kind() != reflect.Struct || depth == 0 {
+		return false
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+				return true
+			}
+		case reflect.Slice:
+			if f.Type() == redisHookSliceType {
+				for j := 0; j < f.Len(); j++ {
+					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+						return true
+					}
+				}
+			}
+		case reflect.Struct:
+			if containsHook(f, hook, depth-1) {
+				return true
+			}
+		case reflect.Pointer:
+			if !f.IsNil() && f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hookEqual compares two hooks, guarding against non-comparable dynamic
+// types: comparing those would panic.
+func hookEqual(a, b redis.Hook) bool {
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
+		return false
+	}
+	return a == b
+}
+
 // probeHook is the no-op hook used to observe which concrete clients a
 // proxy's AddHook instruments; see wrapProxyMembers.
 type probeHook struct{}
@@ -466,6 +553,12 @@ func lockStruct(s reflect.Value) func() {
 			continue
 		}
 		f := s.Field(i)
+		if !f.CanAddr() {
+			// A copy of a struct — a decorator passed by value, say — cannot
+			// have its mutex locked; the copy is unshared, so nothing can
+			// race with reading it.
+			continue
+		}
 		if !f.CanInterface() {
 			// Unexported field: address it through its location.
 			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
