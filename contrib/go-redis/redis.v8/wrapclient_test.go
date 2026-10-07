@@ -1038,3 +1038,87 @@ func (r *slowPanickingProxy) AddHook(hook redis.Hook) {
 	time.Sleep(r.delay)
 	panic("AddHook panicked")
 }
+
+// A retaining proxy whose current member is already wrapped directly must
+// still receive the real hook, or delegates it creates later are untraced.
+func TestWrapClientRetainingProxyWithPrewrappedMember(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	WrapClient(current) // the member is already instrumented
+
+	proxy := &retainingProxy{UniversalClient: current}
+	WrapClient(proxy)
+	WrapClient(proxy) // repeated wraps of the same proxy: no second hand-off
+
+	if n := datadogHooks(current); n != 1 {
+		t.Fatalf("expected the pre-wrapped member to keep exactly 1 datadog hook, got %d", n)
+	}
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:2"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get(context.Background(), "foo").Err()
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) < 1 {
+		t.Fatal("expected the later delegate to be traced")
+	}
+	// The retained hook carries no endpoint tags: the later delegate's
+	// options differ from the current member's, and a missing tag is
+	// better than a wrong one.
+	for _, s := range spans {
+		if s.Tag(ext.TargetPort) != nil {
+			t.Fatalf("expected the retained hook's spans to carry no endpoint tags, got port %v", s.Tag(ext.TargetPort))
+		}
+	}
+}
+
+// dualMutexRouter guards its replaceable delegate with its second mutex; the
+// first is an unrelated lock.
+type dualMutexRouter struct {
+	statsMu               sync.Mutex
+	redis.UniversalClient // the read path
+	delegateMu            sync.RWMutex
+	write                 redis.UniversalClient // the replaceable write path
+}
+
+func (r *dualMutexRouter) AddHook(hook redis.Hook) {
+	r.delegateMu.Lock()
+	defer r.delegateMu.Unlock()
+	r.write.AddHook(hook)
+}
+
+// Every mutex a proxy owns is taken while reading its fields, so a delegate
+// guarded by the second one is still read under its real lock.
+func TestWrapClientDualMutexProxy(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &dualMutexRouter{UniversalClient: a, write: b}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				router.delegateMu.Lock()
+				router.write = b
+				router.delegateMu.Unlock()
+			}
+		}
+	})
+	WrapClient(router)
+	WrapClient(router)
+	close(stop)
+	wg.Wait()
+}

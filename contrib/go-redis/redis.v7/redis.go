@@ -213,30 +213,44 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	if !proceed {
 		return
 	}
-	// Nothing can be learned or added when every member already carries the
-	// hook: the proxy's AddHook can only hook members a second time. Wraps of
-	// freshly created but equivalent proxies then cost nothing — no probe
-	// lands in the members' chains — and the entry is not kept, so a later
-	// wrap that sees a new, unwrapped member still probes.
+	// Nothing can be learned and nothing can be added once every member
+	// already carries the hook and a probe from an earlier wrap: the proxy
+	// has been observed fanning out, its members are instrumented, and a
+	// retaining proxy would have kept the probe and been given the real
+	// hook then. Wraps of freshly created but equivalent proxies cost
+	// nothing, and the entry is not kept, so a later wrap that sees a new,
+	// unwrapped member still probes. A first wrap of an all-hooked proxy
+	// still probes, so a retaining one is detected and given the real hook
+	// for the delegates it creates later.
 	var hooked *configKey
 	allHooked := len(members) > 0
+	allProbed := allHooked
 	for _, member := range members {
 		prev, seen := datadogConfig(member)
 		if !seen || prev == nil {
 			allHooked = false
+			allProbed = false
 			break
 		}
 		if hooked == nil {
 			k := *prev
 			hooked = &k
 		}
+		if !memberCarriesProbe(member) {
+			allProbed = false
+		}
 	}
-	if allHooked {
+	if allHooked && allProbed {
 		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
 			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
 		}
 		finish(proxy, entry, false)
 		return
+	}
+	if allHooked {
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+		}
 	}
 	before := make([]int, len(members))
 	readable := make([]bool, len(members))
@@ -259,13 +273,16 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// delegates it creates later; those delegates are traced only through a
 	// real hook passed to its AddHook. The same call fans that hook out to
 	// the current members, so they must not be instrumented per member as
-	// well — every command would be traced twice.
+	// well — every command would be traced twice. The retained hook carries
+	// no endpoint tags: the delegate it eventually lands on may have
+	// different host, port, and database options than the proxy's current
+	// members, and a missing tag is better than a wrong one.
 	// The scan takes the proxy's own mutex, so it runs with the package
 	// lock released.
 	var retained bool
 	unlocked(func() { retained = retainsHook(proxy, probeHook{}) })
 	if retained {
-		unlocked(func() { addHook(proxy, cfg) })
+		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
 		completed = true
 		finish(proxy, entry, true)
 		return
@@ -418,6 +435,21 @@ func unlocked(f func()) {
 	f()
 }
 
+// memberCarriesProbe reports whether the client's hook chain already holds
+// one of the no-op probes an earlier wrap used to observe a proxy.
+func memberCarriesProbe(client redis.UniversalClient) bool {
+	hooks := hookSlice(client)
+	if !hooks.IsValid() {
+		return false
+	}
+	for i := 0; i < hooks.Len(); i++ {
+		if h, ok := hooks.Index(i).Interface().(redis.Hook); ok && hookEqual(h, probeHook{}) {
+			return true
+		}
+	}
+	return false
+}
+
 // retainsHook reports whether the proxy kept the given hook in its own
 // fields: a proxy that retains hooks, to apply them to delegates it creates
 // later, keeps a copy of everything its AddHook is handed.
@@ -517,6 +549,18 @@ func (probeHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) e
 	return nil
 }
 
+// addHookWithoutEndpoints installs a datadog hook carrying no endpoint tags
+// on client: for a hook a proxy retains, the delegate it eventually
+// instruments is not known at wrap time, and the proxy's own endpoints may
+// not match it.
+func addHookWithoutEndpoints(client redis.UniversalClient, cfg *clientConfig) {
+	hookParams := &params{
+		config: cfg,
+	}
+	hookParams.spanCfg = newSpanConfig(cfg, nil)
+	client.AddHook(&datadogHook{params: hookParams})
+}
+
 // addHook installs a datadog hook with the given configuration on client.
 func addHook(client redis.UniversalClient, cfg *clientConfig) {
 	hookParams := &params{
@@ -579,6 +623,13 @@ var (
 // would deadlock. A struct without a mutex does not synchronize those fields,
 // and reading them is then no more racy than the struct's own readers.
 func lockStruct(s reflect.Value) (unlock func(), ok bool) {
+	// Lock every mutex the struct owns — the one guarding a delegate field
+	// cannot be told apart from unrelated ones — and give up entirely when
+	// any stays held: the holder may be the very call chain running
+	// WrapClient, and blocking on it would deadlock the caller's own
+	// goroutine. Brief contention from another goroutine is ridden out with
+	// a few short retries.
+	var unlocks []func()
 	for i := 0; i < s.NumField(); i++ {
 		t := s.Type().Field(i).Type
 		if t != mutexType && t != rwMutexType {
@@ -595,11 +646,6 @@ func lockStruct(s reflect.Value) (unlock func(), ok bool) {
 			// Unexported field: address it through its location.
 			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 		}
-		// Try instead of block: the mutex may be held by the very call
-		// chain running WrapClient — a proxy updating a delegate before
-		// unlocking, say — and blocking on it would deadlock the caller's
-		// own goroutine. Brief contention from another goroutine is ridden
-		// out with a few short retries.
 		var locked bool
 		for range 100 {
 			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
@@ -609,14 +655,18 @@ func lockStruct(s reflect.Value) (unlock func(), ok bool) {
 			time.Sleep(time.Millisecond)
 		}
 		if !locked {
+			for _, u := range unlocks {
+				u()
+			}
 			return func() {}, false
 		}
-		if t == rwMutexType {
-			return func() { f.Addr().MethodByName("Unlock").Call(nil) }, true
-		}
-		return func() { f.Addr().MethodByName("Unlock").Call(nil) }, true
+		unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
 	}
-	return func() {}, true
+	return func() {
+		for _, u := range unlocks {
+			u()
+		}
+	}, true
 }
 
 // findHookSlice returns the first []redis.Hook field in s or in the structs
@@ -643,6 +693,17 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 			if !f.CanInterface() {
 				// Unexported field: read it through its address.
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			// An atomic snapshot stored by value exposes its target the
+			// same way: through its Load method.
+			if m := f.Addr().MethodByName("Load"); m.IsValid() &&
+				m.Type().NumIn() == 0 && m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.Pointer {
+				target := m.Call(nil)[0]
+				if !target.IsNil() && target.Elem().Kind() == reflect.Struct {
+					if h := findHookSlice(target.Elem(), depth-1); h.IsValid() {
+						return h
+					}
+				}
 			}
 			if h := findHookSlice(f, depth-1); h.IsValid() {
 				return h
