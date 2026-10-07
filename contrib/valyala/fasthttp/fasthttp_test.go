@@ -199,6 +199,24 @@ func TestHTTPURLQueryString(t *testing.T) {
 		assert.NotContains(url, "shouldberedacted")
 	})
 
+	t.Run("invalid regexp fails closed", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `(?<=x)a`)
+		instrhttptrace.ResetCfg()
+
+		addr := startServer(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret&safe=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, addr+"/any", spans[0].Tag(ext.HTTPURL))
+	})
+
 	t.Run("allowlist", func(t *testing.T) {
 		t.Cleanup(instrhttptrace.ResetCfg)
 		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
