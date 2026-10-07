@@ -22,15 +22,16 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'System Tests ref/tag/branch'
-        required: true
-        default: main
+        description: 'System Tests ref/tag/branch (defaults to the pinned SYSTEM_TESTS_REF)'
+        required: false
+        default: ''
         type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  SYSTEM_TESTS_REF: 3dba6b77a915f72e00db5aa97295bd9eb125c197 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 permissions:
   contents: read
@@ -70,7 +71,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
