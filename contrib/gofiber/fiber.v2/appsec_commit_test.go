@@ -236,7 +236,7 @@ func requireBlockOutcome(t *testing.T, keys []any, applied bool) {
 		if v.FieldByName("Name").String() != "waf.requests" {
 			continue
 		}
-		for _, tag := range strings.Split(v.FieldByName("Tags").String(), ",") {
+		for tag := range strings.SplitSeq(v.FieldByName("Tags").String(), ",") {
 			if strings.HasPrefix(tag, "request_blocked:") || strings.HasPrefix(tag, "block_failure:") {
 				outcomes = append(outcomes, tag)
 			}

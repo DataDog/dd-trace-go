@@ -6,6 +6,7 @@
 package fiber
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,24 +45,125 @@ func TestConvertRequest(t *testing.T) {
 	require.Equal(t, "example.com", req.Host)
 	require.Equal(t, "parent", req.Context().Value(contextKey{}))
 	require.Nil(t, req.Body)
-	require.Equal(t, []string{"$globals;x=1", "two"}, req.URL.Query()["name"])
-	require.Equal(t, "%zz", req.URL.Query().Get("raw"))
-	require.Equal(t, "a b", req.URL.Query().Get("plus"))
-	require.Equal(t, "a+b", req.URL.Query().Get("escaped"))
-	cookie, err := req.Cookie("session")
-	require.NoError(t, err)
-	require.Equal(t, "benign", cookie.Value)
+	// The WAF gets the query values from collectArgs. URL keeps the raw query.
+	require.Equal(t, "name=$globals;x=1&name=two&raw=%zz&plus=a+b&escaped=a%2Bb", req.URL.RawQuery)
+	query := collectArgs(fctx.QueryArgs().All())
+	require.Equal(t, []string{"$globals;x=1", "two"}, query["name"])
+	require.Equal(t, []string{"%zz"}, query["raw"])
+	require.Equal(t, []string{"a b"}, query["plus"])
+	require.Equal(t, []string{"a+b"}, query["escaped"])
+	require.Equal(t, map[string][]string{"session": {"benign"}}, collectArgs(fctx.Request.Header.Cookies()))
 
 	fctx.Request.Reset()
 	fctx.Request.SetRequestURI("/replacement?name=changed")
 	fctx.Request.Header.SetMethod("DELETE")
 	fctx.Request.Header.SetHost("replacement.com")
 	fctx.Request.Header.Set("X-Test", "replacement")
+	fctx.Request.Header.SetCookie("session", "changed")
 	require.Equal(t, target, req.RequestURI)
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "example.com", req.Host)
 	require.Equal(t, []string{"one", "two"}, req.Header.Values("X-Test"))
-	require.Equal(t, []string{"$globals;x=1", "two"}, req.URL.Query()["name"])
+	require.Equal(t, "name=$globals;x=1&name=two&raw=%zz&plus=a+b&escaped=a%2Bb", req.URL.RawQuery)
+	// collectArgs copies the values: a reused request buffer must not change them.
+	require.Equal(t, []string{"$globals;x=1", "two"}, query["name"])
+}
+
+func TestCollectArgs(t *testing.T) {
+	require.Nil(t, collectArgs(func(func([]byte, []byte) bool) {}))
+
+	key, value := []byte("k"), []byte("one")
+	got := collectArgs(func(yield func([]byte, []byte) bool) {
+		_ = yield(key, value) && yield([]byte("k"), []byte("two"))
+	})
+	copy(key, "x")
+	copy(value, "xxx")
+	require.Equal(t, map[string][]string{"k": {"one", "two"}}, got)
+}
+
+// TestAppSecRequestArgs sends cookie and query values that fasthttp accepts
+// but that net/http drops. Fiber gives these values to the handler, so the WAF
+// must inspect them and block before the handler runs.
+func TestAppSecRequestArgs(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/request-args-blocking.json")
+	testutils.StartAppSec(t)
+
+	setups := map[string]func() *fiber.App{
+		"Wrap": func() *fiber.App { return Wrap(fiber.New()) },
+		"Middleware": func() *fiber.App {
+			app := fiber.New()
+			app.Use(Middleware())
+			return app
+		},
+	}
+	for setupName, newApp := range setups {
+		for _, tc := range []struct {
+			name, target, header string
+			// rule is the rule that must block when fasthttp gives a token
+			// value that contains "evil". It is empty for benign requests.
+			rule string
+			// versionDependent tells that some fasthttp versions drop the
+			// value. All other cases with a rule must block.
+			versionDependent bool
+		}{
+			{"cookie-control", "/users/1", "Cookie: token=evil\r\n", "fiber-block-cookie", false},
+			// Some fasthttp versions drop a cookie value with a backslash. Then
+			// the handler does not see the value, and the request is benign.
+			{"cookie-backslash", "/users/1", "Cookie: token=evil\\value\r\n", "fiber-block-cookie", true},
+			{"cookie-quoted-space", "/users/1", "Cookie: token=\"evil value\"\r\n", "fiber-block-cookie", false},
+			{"cookie-non-ascii", "/users/1", "Cookie: token=evil\xc2\xa0\r\n", "fiber-block-cookie", false},
+			{"cookie-repeated", "/users/1", "Cookie: token=benign; token=evil\xc2\xa0\r\n", "fiber-block-cookie", false},
+			{"query-semicolon", "/users/1?q=evil;x", "", "fiber-block-query", false},
+			{"benign-cookie-non-ascii", "/users/1", "Cookie: token=benign\xc2\xa0\r\n", "", false},
+		} {
+			t.Run(setupName+"/"+tc.name, func(t *testing.T) {
+				// Use fasthttp's own parser to find the values that the
+				// handler can read with c.Cookies.
+				var reqHeader fasthttp.RequestHeader
+				require.NoError(t, reqHeader.Read(bufio.NewReader(strings.NewReader(
+					"GET "+tc.target+" HTTP/1.1\r\nHost: example.com\r\n"+tc.header+"\r\n"))))
+				blocked := tc.rule == "fiber-block-query"
+				for k, v := range reqHeader.Cookies() {
+					if string(k) == "token" && strings.Contains(string(v), "evil") {
+						blocked = tc.rule != ""
+					}
+				}
+				// Do not let a parser change make the bypass cases benign.
+				require.Equal(t, tc.rule != "", blocked || tc.versionDependent,
+					"fasthttp must give the attack value to the handler")
+
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				var calls atomic.Int32
+				var seen atomic.Value
+				app := newApp()
+				app.Get("/users/:id", func(c *fiber.Ctx) error {
+					calls.Add(1)
+					seen.Store(c.Cookies("token"))
+					return c.SendString("handler response")
+				})
+
+				status, _, body := appSecRawRequest(t, serveOnPipe(t, app), tc.target, tc.header)
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				if !blocked {
+					require.Equal(t, http.StatusOK, status)
+					require.Equal(t, int32(1), calls.Load())
+					require.Equal(t, string(reqHeader.Cookie("token")), seen.Load())
+					require.NotContains(t, seen.Load(), "evil")
+					require.Nil(t, spans[0].Tag("_dd.appsec.json"))
+					return
+				}
+				require.Equal(t, http.StatusForbidden, status)
+				require.Zero(t, calls.Load(), "a blocked request must not reach the handler")
+				require.NotContains(t, body, "handler response")
+				require.Equal(t, "403", spans[0].Tag("http.status_code"))
+				event, ok := spans[0].Tag("_dd.appsec.json").(string)
+				require.True(t, ok)
+				require.Contains(t, event, tc.rule)
+			})
+		}
+	}
 }
 
 func TestAppSecResponseHeaders(t *testing.T) {

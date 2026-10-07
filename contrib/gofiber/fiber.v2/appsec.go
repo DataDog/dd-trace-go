@@ -7,6 +7,7 @@ package fiber
 
 import (
 	"context"
+	"iter"
 	"maps"
 	"net/http"
 	"net/url"
@@ -75,7 +76,12 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 	w := &responseWriter{fctx: fctx}
 	_, tr, afterHandle, handled := httpsec.BeforeHandle(w, req, span, &httpsec.Config{
 		Framework: appsecFramework,
-		OnBlock:   []func(){w.discardHandlerResponse},
+		// Give the WAF all the cookie and query pairs that fasthttp parses.
+		// Fiber reads its values (c.Cookies, c.Query) from them. net/http drops some values that
+		// fasthttp accepts, such as a cookie value with non-ASCII bytes.
+		Cookies:     collectArgs(fctx.Request.Header.Cookies()),
+		QueryParams: collectArgs(fctx.QueryArgs().All()),
+		OnBlock:     []func(){w.discardHandlerResponse},
 		// The fiber handler chain writes to the fasthttp response directly
 		// rather than through w, so the headers AppSec reports have to be read
 		// back from there instead of from w.
@@ -144,20 +150,15 @@ func convertRequest(ctx context.Context, fctx *fasthttp.RequestCtx) *http.Reques
 	// would let a subsequent request corrupt a reported attack.
 	requestURI := string(fctx.RequestURI())
 	uri := fctx.URI()
-	// Use the same query parser as Fiber. net/url drops parameters containing
-	// semicolons or invalid escapes that fasthttp accepts. Re-encoding keeps
-	// those values intact when httpsec calls URL.Query(). Never reject the raw
-	// path here: doing so would let a malformed escape disable all monitoring.
-	// URL contains normalized values; raw-target inspection must use RequestURI.
-	query := make(url.Values)
-	for k, v := range fctx.QueryArgs().All() {
-		query.Add(string(k), string(v))
-	}
+	// Never reject the raw path here: doing so would let a malformed escape
+	// disable all monitoring. URL contains normalized values; raw-target
+	// inspection must use RequestURI. The WAF gets the query values from
+	// fasthttp through httpsec.Config.QueryParams, not from URL.
 	u := &url.URL{
 		Scheme:   string(uri.Scheme()),
 		Host:     string(uri.Host()),
 		Path:     string(uri.Path()),
-		RawQuery: query.Encode(),
+		RawQuery: string(uri.QueryString()),
 	}
 
 	header := make(http.Header, fctx.Request.Header.Len())
@@ -174,6 +175,22 @@ func convertRequest(ctx context.Context, fctx *fasthttp.RequestCtx) *http.Reques
 		Header:     header,
 	}
 	return req.WithContext(ctx)
+}
+
+// collectArgs copies fasthttp's decoded key/value pairs. It returns nil if
+// there are no pairs. httpsec then parses the converted request with net/http.
+// That fallback is defensive: if net/http finds a value that fasthttp drops,
+// the WAF still sees it.
+func collectArgs(all iter.Seq2[[]byte, []byte]) map[string][]string {
+	var values map[string][]string
+	for k, v := range all {
+		if values == nil {
+			values = make(map[string][]string)
+		}
+		key := string(k)
+		values[key] = append(values[key], string(v))
+	}
+	return values
 }
 
 func responseHeaders(fctx *fasthttp.RequestCtx) http.Header {

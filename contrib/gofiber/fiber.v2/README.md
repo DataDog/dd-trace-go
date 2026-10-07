@@ -57,9 +57,11 @@ handlers.
 ## Request monitoring
 
 The middleware starts the WAF operation before the handler chain. It keeps the
-raw request target for WAF inspection, and uses the query values that fasthttp
-parses. Invalid escapes and semicolons do not disable monitoring, and do not
-remove values that the application can read.
+raw request target for WAF inspection. The WAF inspects all the query and cookie
+pairs that fasthttp parses, including repeated keys. Fiber reads its values
+(for example, with `c.Query` and `c.Cookies`) from these pairs. Invalid escapes,
+semicolons, and cookie values that net/http rejects do not disable monitoring,
+and do not remove values that the application can read.
 
 ## Errors
 
