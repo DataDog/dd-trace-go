@@ -17,6 +17,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+// WithSpanEventHandler attaches a handler to spans started with the returned
+// context. The handler receives an owned copy of each serialized span event
+// before HTTP delivery, once regardless of transport retries. It must be
+// concurrency-safe and return promptly without network I/O. Panics are recovered.
+// A nil handler clears an inherited handler. Stop span producers and the tracer
+// before draining any downstream queue owned by the handler.
+func WithSpanEventHandler(ctx context.Context, handler func([]byte)) context.Context {
+	return illmobs.WithSpanEventHandler(ctx, handler)
+}
+
 // SpanFromContext retrieves the active LLMObs span from the given context.
 // Returns an AnySpan and true if found, nil and false otherwise.
 // The returned AnySpan can be converted to specific span types using the As* methods

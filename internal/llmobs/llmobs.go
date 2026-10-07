@@ -32,6 +32,12 @@ var (
 	activeLLMObs *LLMObs
 )
 
+type spanEventHandlerKey struct{}
+
+func WithSpanEventHandler(ctx context.Context, handler func([]byte)) context.Context {
+	return context.WithValue(ctx, spanEventHandlerKey{}, handler)
+}
+
 var (
 	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the tracer has been started with the option tracer.WithLLMObsEnabled(true) or set DD_LLMOBS_ENABLED=true")
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
@@ -539,6 +545,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		apm:       apmSpan,
 		startTime: cfg.StartTime,
 	}
+	span.spanEventHandler, _ = ctx.Value(spanEventHandlerKey{}).(func([]byte))
 	if !l.Config.Enabled {
 		log.Warn("llmobs: LLMObs span was started without enabling LLMObs") //errtrack:ignore caller used the LLMObs API before enabling it
 		return span, ctx

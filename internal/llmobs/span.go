@@ -239,7 +239,8 @@ type Span struct {
 	startTime  time.Time
 	finishTime time.Time
 
-	spanLinks []SpanLink
+	spanLinks        []SpanLink
+	spanEventHandler func([]byte)
 
 	// parentAgentName and parentAgentSpanID identify the nearest agent ancestor.
 	// Both are set exactly once in StartSpan and never mutated, so concurrent

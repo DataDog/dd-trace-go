@@ -302,6 +302,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	ev := &transport.LLMObsSpanEvent{
+		SpanEventHandler: span.spanEventHandler,
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,

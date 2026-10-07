@@ -8,9 +8,11 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -55,6 +57,7 @@ type DDAttributes struct {
 }
 
 type LLMObsSpanEvent struct {
+	SpanEventHandler func([]byte)       `json:"-"`
 	SpanID           string             `json:"span_id,omitempty"`
 	TraceID          string             `json:"trace_id,omitempty"`
 	ParentID         string             `json:"parent_id,omitempty"`
@@ -120,6 +123,12 @@ func (c *Transport) PushSpanEventsWithResult(
 	if err != nil {
 		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
 	}
+	for _, event := range events {
+		if event.SpanEventHandler != nil {
+			notifySpanEvents(events, body.Bytes())
+			break
+		}
+	}
 	return c.PushSpanEventsBodyWithResult(ctx, body.Bytes())
 }
 
@@ -144,4 +153,28 @@ func (c *Transport) PushSpanEventsBodyWithResult(ctx context.Context, body []byt
 		return summarizeRequest(result), fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 	return summarizeRequest(result), nil
+}
+
+func notifySpanEvents(events []*LLMObsSpanEvent, body []byte) {
+	var envelopes []struct {
+		Spans []json.RawMessage `json:"spans"`
+	}
+	if err := json.Unmarshal(body, &envelopes); err != nil {
+		log.Error("llmobs: failed to extract serialized span events")
+		return
+	}
+	for i, event := range events {
+		if event.SpanEventHandler != nil {
+			notifySpanEvent(event.SpanEventHandler, envelopes[i].Spans[0])
+		}
+	}
+}
+
+func notifySpanEvent(handler func([]byte), event []byte) {
+	defer func() {
+		if recover() != nil {
+			log.Error("llmobs: span event handler panicked") //errtrack:ignore user-supplied callback failure
+		}
+	}()
+	handler(event)
 }
