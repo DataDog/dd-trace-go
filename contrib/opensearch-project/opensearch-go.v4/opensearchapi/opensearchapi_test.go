@@ -2,12 +2,14 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025-present Datadog, Inc.
+
+//go:build linux || !githubci
+
 package opensearchapi
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
@@ -27,28 +30,18 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
-const (
-	openSearchV2Address       = "http://127.0.0.1:9212"
-	openSearchV2AdminUsername = "admin"
-	openSearchV2AdminPassword = "ADMIN-passw0rd"
-)
-
-func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
-	if !ok {
-		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
-
 func buildBody(t *testing.T, data any) *strings.Reader {
 	body, err := json.Marshal(data)
 	require.NoErrorf(t, err, "failed to marshal data: #%v", data)
 	return strings.NewReader(string(body))
 }
 
-func TestOpenSearchV2(t *testing.T) {
+func TestNewClient(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+	containers.SkipIfProviderIsNotHealthy(t)
+	_, addr := containers.StartOpenSearchTestContainer(t)
 	testutils.SetGlobalServiceName(t, "global-service")
 	tests := []struct {
 		name              string
@@ -207,9 +200,7 @@ func TestOpenSearchV2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opensearchConfig := opensearch.Config{
-				Addresses:         []string{openSearchV2Address},
-				Username:          openSearchV2AdminUsername,
-				Password:          openSearchV2AdminPassword,
+				Addresses:         []string{addr},
 				EnableDebugLogger: true,
 				Logger: &opensearchtransport.TextLogger{
 					Output:             os.Stdout,
@@ -263,4 +254,50 @@ func TestOpenSearchV2(t *testing.T) {
 			}
 		})
 	}
+}
+
+type discoveryTransport struct{}
+
+func (discoveryTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, context.Canceled
+}
+
+type discoveryLogger struct{ done chan error }
+
+func (l *discoveryLogger) LogRoundTrip(req *http.Request, _ *http.Response, err error, _ time.Time, _ time.Duration) error {
+	if req == nil {
+		l.done <- err
+	}
+	return nil
+}
+func (*discoveryLogger) RequestBodyEnabled() bool  { return false }
+func (*discoveryLogger) ResponseBodyEnabled() bool { return false }
+
+func TestNewClientStartupDiscovery(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	enabled := true
+	for range 100 {
+		logger := &discoveryLogger{done: make(chan error, 1)}
+		client, err := NewClient(opensearchapi.Config{Client: opensearch.Config{
+			Addresses:            []string{"http://localhost:9200"},
+			Transport:            discoveryTransport{},
+			DisableRetry:         true,
+			DiscoverNodesOnStart: &enabled,
+			Logger:               logger,
+		}})
+		require.NoError(t, err)
+		select {
+		case err := <-logger.done:
+			assert.ErrorIs(t, err, context.Canceled)
+		case <-time.After(5 * time.Second):
+			client.Close()
+			t.Fatal("startup discovery did not finish")
+		}
+		_, err = client.Cluster.Health(context.Background(), &opensearchapi.ClusterHealthReq{})
+		require.ErrorIs(t, err, context.Canceled)
+		require.NoError(t, client.Close())
+	}
+	assert.Len(t, mt.FinishedSpans(), 100, "requests made through the opensearchapi client should be traced")
 }

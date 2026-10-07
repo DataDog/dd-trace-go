@@ -11,11 +11,12 @@ meta:
 aspects:
   - id: NewClient
     join-point:
-      one-of:
-        - function-call: github.com/opensearch-project/opensearch-go/v4.NewClient
+      function-call: github.com/opensearch-project/opensearch-go/v4.NewClient
     advice:
-      - wrap-expression:
-          imports:
-            opensearchtrace: github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
-          template: |-
-           opensearchtrace.NewClient({{ index .AST.Args 0 }})
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2.NewClient
+
+  - id: NewDefaultClient
+    join-point:
+      function-call: github.com/opensearch-project/opensearch-go/v4.NewDefaultClient
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2.NewDefaultClient
