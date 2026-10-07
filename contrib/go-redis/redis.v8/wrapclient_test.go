@@ -602,3 +602,37 @@ func TestWrapClientSynchronizedProxyFields(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// selfWrappingLayer re-enters WrapClient for the same proxy that its
+// AddHook was called from.
+type selfWrappingLayer struct {
+	redis.UniversalClient
+	self redis.UniversalClient
+}
+
+func (r *selfWrappingLayer) AddHook(hook redis.Hook) {
+	WrapClient(r.self)
+}
+
+// A proxy whose AddHook re-enters WrapClient for that same proxy must not
+// wait for its own in-flight install: the outer call closes the marker only
+// once AddHook returns.
+func TestWrapClientReentrantSameProxy(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	layer := &selfWrappingLayer{UniversalClient: client}
+	outer := &redisDecorator{&redisDecorator{&redisDecorator{layer}}}
+	layer.self = outer
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(outer)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient deadlocked waiting for its own in-flight install")
+	}
+}

@@ -248,7 +248,11 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 		if !sameConfig(e.cfg, key) {
 			instr.Logger().Warn("contrib/go-redis/redis.v8: WrapClient called more than once on the same client; keeping the first configuration")
 		}
-		if e.done != nil {
+		// Wait for the recorded install, unless this call chain is the one
+		// running it — a proxy whose AddHook re-enters WrapClient for the
+		// same proxy would otherwise wait for a channel only that very call
+		// can close.
+		if e.done != nil && !reentrant() {
 			done := e.done
 			unlocked(func() { <-done })
 		}
@@ -267,6 +271,29 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 	// last mention was the weak handle above.
 	runtime.KeepAlive(client)
 	return e, true
+}
+
+// reentrant reports whether this goroutine is already running WrapClient
+// further down its own stack: a proxy's AddHook calling WrapClient again
+// from inside the install. Such a call must not wait for an install driven
+// by its own call chain.
+func reentrant() bool {
+	pcs := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(1, pcs)])
+	wrapClient := reflect.TypeOf(probeHook{}).PkgPath() + ".WrapClient"
+	seen := 0
+	for {
+		f, more := frames.Next()
+		if f.Function == wrapClient {
+			seen++
+			if seen > 1 {
+				return true
+			}
+		}
+		if !more {
+			return false
+		}
+	}
 }
 
 // registerWeak records cfg for the client under its weak identity and
