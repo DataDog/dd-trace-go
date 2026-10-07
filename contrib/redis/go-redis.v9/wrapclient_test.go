@@ -1681,3 +1681,154 @@ func TestWrapClientSelectiveProxyStable(t *testing.T) {
 		t.Fatalf("expected the targeted member's chain to stop growing after the observation, got %d then %d", first, after)
 	}
 }
+
+// A fan-out-and-retain proxy that swaps its delegate applies its retained
+// hooks to the new member itself; the new member already carries the hook, so
+// the observation must stand and no second real hook may be handed.
+func TestWrapClientFanOutRetainSwapNoRehand(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &fanOutRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	// Swap the delegate; the proxy applies its retained hooks itself.
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+	proxy.UniversalClient = fresh
+	proxy.applyTo(fresh)
+	WrapClient(proxy) // must not hand the proxy another real hook
+
+	_ = fresh.Get(context.Background(), "foo").Err()
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 1 {
+		t.Fatalf("expected the swapped-in member to trace exactly once, got %d spans", len(spans))
+	}
+	if n := len(proxy.retained); n != 2 { // probe + real hook from the first wrap only
+		t.Fatalf("expected the retained list to hold the probe and one real hook, got %d", n)
+	}
+}
+
+// lazyProxy has no current delegate: hooks given to its AddHook are applied
+// to the delegate it creates later.
+type lazyProxy struct {
+	redis.UniversalClient
+	retains []redis.Hook
+}
+
+func (r *lazyProxy) AddHook(hook redis.Hook) {
+	r.retains = append(r.retains, hook)
+}
+
+// A proxy whose member set becomes empty — the delegate was dropped — must be
+// re-observed, so a lazy proxy receives the real hook for the delegate it
+// creates next.
+func TestWrapClientLazyProxyEmptySet(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	delegate := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { delegate.Close() })
+	proxy := &lazyProxy{UniversalClient: delegate}
+	WrapClient(proxy)
+
+	// Drop the delegate and wrap again: the observation is stale.
+	proxy.UniversalClient = nil
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	for _, hook := range proxy.retains {
+		later.AddHook(hook)
+	}
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) < 1 {
+		t.Fatal("expected the later delegate to be traced")
+	}
+}
+
+// namedHookList is a named slice of hooks — the retention scan must
+// recognize it through its element type.
+type namedHookList []redis.Hook
+
+type namedListProxy struct {
+	redis.UniversalClient
+	store namedHookList
+}
+
+func (r *namedListProxy) AddHook(hook redis.Hook) {
+	r.store = append(r.store, hook)
+}
+
+func (r *namedListProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range r.store {
+		delegate.AddHook(hook)
+	}
+}
+
+func TestWrapClientNamedHookListProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &namedListProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// ptrMutexProxy guards its fields with an unexported pointer mutex.
+type ptrMutexProxy struct {
+	redis.UniversalClient
+	mu      *sync.Mutex
+	retains []redis.Hook
+}
+
+func (r *ptrMutexProxy) AddHook(hook redis.Hook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retains = append(r.retains, hook)
+}
+
+func TestWrapClientUnexportedPtrMutexProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &ptrMutexProxy{UniversalClient: current, mu: &sync.Mutex{}}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.mu.Lock()
+	for _, hook := range proxy.retains {
+		later.AddHook(hook)
+	}
+	proxy.mu.Unlock()
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}

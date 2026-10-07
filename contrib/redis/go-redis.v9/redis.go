@@ -181,6 +181,10 @@ var (
 	// user-controlled code that may call WrapClient again and would deadlock
 	// on the lock.
 	wrapMu sync.Mutex
+	// cleanupMark records the clients a runtime cleanup is already attached
+	// to; it is keyed weakly and cleaned by that very cleanup, so it never
+	// pins a client.
+	cleanupMark sync.Map // weak.Pointer[byte] -> struct{}
 	// wrapped deduplicates WrapClient calls for clients whose hook chain
 	// cannot be read and for proxies, keyed weakly. Entries are cleaned up
 	// when the client is retired, so the registry never keeps a client
@@ -344,9 +348,26 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// configuration, which the documented first-configuration-wins behavior
 	// requires.
 	var first *clientConfig
-	if k, ok := weakHandle(proxy); ok && len(members) > 0 {
+	if k, ok := weakHandle(proxy); ok {
 		if e, ok := wrapped[k]; ok && e.done == nil {
-			if !sameMembers(e.memberKeys, members) {
+			// A new member that already carries the hook was covered by the
+			// proxy's own fan-out — a fan-out-and-retain proxy applies its
+			// retained hooks to the delegate it swaps in — so only a new
+			// member that is unhooked requires observing again. A dropped
+			// delegate is a changed set too: a lazy proxy without a current
+			// member must still receive hooks for the delegate it creates
+			// next.
+			reobserve := len(e.memberKeys) != len(members)
+			for _, member := range members {
+				if key, ok := weakHandle(member); ok && containsKey(e.memberKeys, key) {
+					continue
+				}
+				if prev, seen := datadogConfig(member); !seen || prev == nil {
+					reobserve = true
+					break
+				}
+			}
+			if reobserve {
 				first = e.full
 				if live := e.cfgWeak.Value(); live != nil {
 					// The hooks the first wrap installed keep the first
@@ -546,11 +567,18 @@ func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wra
 	}
 	e := &wrapEntry{cfg: key, done: make(chan struct{}), goid: goid()}
 	wrapped[k] = e
-	runtime.AddCleanup(k.Value(), func(kk weak.Pointer[byte]) {
-		wrapMu.Lock()
-		delete(wrapped, kk)
-		wrapMu.Unlock()
-	}, k)
+	// One cleanup per client, not per entry: a proxy re-observed after a
+	// delegate swap deletes and recreates its entry, and every recreation
+	// would otherwise attach another cleanup to the same object.
+	if _, ok := cleanupMark.Load(k); !ok {
+		cleanupMark.Store(k, struct{}{})
+		runtime.AddCleanup(k.Value(), func(kk weak.Pointer[byte]) {
+			wrapMu.Lock()
+			delete(wrapped, kk)
+			wrapMu.Unlock()
+			cleanupMark.Delete(kk)
+		}, k)
+	}
 	// The cleanup is attached to the client: when it becomes unreachable the
 	// entry goes with it, even though neither side keeps the other alive.
 	// KeepAlive closes the window in which a GC could collect a client whose
@@ -578,6 +606,16 @@ func goid() uint64 {
 		id = id*10 + uint64(c-'0')
 	}
 	return id
+}
+
+// containsKey reports whether the recorded member handles include key.
+func containsKey(recorded []weak.Pointer[byte], key weak.Pointer[byte]) bool {
+	for _, k := range recorded {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // memberKeys returns weak handles for the members, in order; the registry
@@ -736,7 +774,9 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
 				return true
 			}
 		case reflect.Slice:
-			if f.Type() == redisHookSliceType {
+			// Match by element type: a named slice — type hookList
+			// []redis.Hook — is as much a hook store as the unnamed one.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true
@@ -794,7 +834,9 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 				return true
 			}
 		case reflect.Slice:
-			if f.Type() == redisHookSliceType {
+			// Match by element type: a named slice — type hookList
+			// []redis.Hook — is as much a hook store as the unnamed one.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true
@@ -959,8 +1001,15 @@ func lockStruct(s reflect.Value) (unlock func(), ok bool) {
 		if t == mutexPointerType || t == rwMutexPointerType {
 			// The mutex is behind a pointer; its methods hang off the field
 			// value itself.
-			if f.IsNil() || !f.CanInterface() {
+			if f.IsNil() {
 				continue
+			}
+			if !f.CanInterface() {
+				// Unexported field: address it through its location.
+				if !f.CanAddr() {
+					continue
+				}
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
 			var locked bool
 			for range 100 {
