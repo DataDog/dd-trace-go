@@ -472,22 +472,22 @@ func TestSyncProducerSendMessagesWithErrorCheck(t *testing.T) {
 
 			cfg := sarama.NewConfig()
 			cfg.Version = sarama.V0_11_0_0
-			// a plain error, rather than sarama.ProducerErrors, is applied to
-			// every message in the batch.
-			raw := &failingSyncProducer{err: errProduceFailed}
+			msgs := []*sarama.ProducerMessage{{Topic: "test"}, {Topic: "test"}}
+			producerErrors := sarama.ProducerErrors{
+				{Msg: msgs[0], Err: errProduceFailed},
+				{Msg: msgs[1], Err: errProduceFailed},
+			}
+			raw := &failingSyncProducer{err: producerErrors}
 			producer := WrapSyncProducer(cfg, raw, WithErrorCheck(tc.errCheck))
 
-			err := producer.SendMessages([]*sarama.ProducerMessage{
-				{Topic: "test"},
-				{Topic: "test"},
-			})
-			require.ErrorIs(t, err, errProduceFailed)
+			err := producer.SendMessages(msgs)
+			require.ErrorAs(t, err, new(sarama.ProducerErrors))
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
 			for _, s := range spans {
 				if tc.wantErr {
-					assert.Equal(t, errProduceFailed.Error(), s.Tag(ext.ErrorMsg))
+					assert.Equal(t, producerErrors[0].Error(), s.Tag(ext.ErrorMsg))
 				} else {
 					assert.Nil(t, s.Tag(ext.ErrorMsg))
 				}
