@@ -31,17 +31,33 @@ import (
 // with a suffix.
 var sensitiveKeywords = func() []string {
 	seps := []string{"", "-", "_"}
-	var kws []string
+	pwBases := []string{"old", "new"}
+	pws := []string{"password", "passwd", "pword", "pwd"}
+	pwDigits := []string{"", "1", "2"}
+	keyPrefixes := []string{"api", "private", "public", "access", "secret", "app", "application"}
+	keyIDs := []string{"", "id", "-id", "_id"}
+	consumerKeys := []string{"id", "key", "secret"}
+
 	// (?:old[-_]?|new[-_]?)?p(?:ass)?w(?:or)?d(?:1|2)?
-	pwPrefixes := []string{""}
-	for _, p := range []string{"old", "new"} {
+	pwPrefixes := make([]string, 1, 1+len(pwBases)*len(seps))
+	kws := make([]string, 0,
+		cap(pwPrefixes)*len(pws)*len(pwDigits)+ // password variants
+			4+ // pass, passphrase, pass-phrase, pass_phrase
+			1+ // secret
+			len(keyPrefixes)*len(seps)*len(keyIDs)+ // key variants
+			1+ // token
+			len(seps)*len(consumerKeys)+ // consumer variants
+			3+ // sign, signed, signature
+			3, // auth, authentication, authorization
+	)
+	for _, p := range pwBases {
 		for _, sep := range seps {
 			pwPrefixes = append(pwPrefixes, p+sep)
 		}
 	}
 	for _, p := range pwPrefixes {
-		for _, pw := range []string{"password", "passwd", "pword", "pwd"} {
-			for _, d := range []string{"", "1", "2"} {
+		for _, pw := range pws {
+			for _, d := range pwDigits {
 				kws = append(kws, p+pw+d)
 			}
 		}
@@ -51,9 +67,9 @@ var sensitiveKeywords = func() []string {
 	// secret
 	kws = append(kws, "secret")
 	// (?:api|private|public|access|secret|app|application)[-_]?key(?:[-_]?id)?
-	for _, p := range []string{"api", "private", "public", "access", "secret", "app", "application"} {
+	for _, p := range keyPrefixes {
 		for _, sep := range seps {
-			for _, id := range []string{"", "id", "-id", "_id"} {
+			for _, id := range keyIDs {
 				kws = append(kws, p+sep+"key"+id)
 			}
 		}
@@ -62,7 +78,7 @@ var sensitiveKeywords = func() []string {
 	kws = append(kws, "token")
 	// consumer[-_]?(?:id|key|secret)
 	for _, sep := range seps {
-		for _, k := range []string{"id", "key", "secret"} {
+		for _, k := range consumerKeys {
 			kws = append(kws, "consumer"+sep+k)
 		}
 	}

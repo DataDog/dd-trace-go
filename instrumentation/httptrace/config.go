@@ -198,13 +198,16 @@ func isServerError(statusCode int) bool {
 // the returned regexp has a capture group: replace its matches with
 // "${1}<redacted>" to keep the JWT delimiter, as the tracer does.
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
-		if s == "" {
-			return nil
-		}
-		if r, err := regexp.Compile(s); err == nil {
-			return r
-		}
+	s, ok := env.Lookup(EnvQueryStringRegexp)
+	if !ok {
+		// The value is not set: use the default regexp, with no log.
+		return defaultQueryStringRegexp
+	}
+	if s == "" {
+		return nil
+	}
+	if r, err := regexp.Compile(s); err == nil {
+		return r
 	}
 	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
 	return defaultQueryStringRegexp

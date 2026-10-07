@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestConfig(t *testing.T) {
@@ -98,6 +100,44 @@ func TestConfig(t *testing.T) {
 			require.Equal(t, tc.cfg.dropQueryString, c.dropQueryString)
 			require.Equal(t, tc.cfg.replaceJWTDelimiter, c.replaceJWTDelimiter)
 			require.Equal(t, tc.cfg.queryString, c.queryString)
+		})
+	}
+}
+
+func TestQueryStringRegexp(t *testing.T) {
+	const logMsg = "Could not compile regexp"
+	for _, tc := range []struct {
+		name    string
+		set     bool
+		value   string
+		want    *regexp.Regexp
+		wantLog bool
+	}{
+		{name: "unset", want: defaultQueryStringRegexp},
+		{name: "empty", set: true, value: "", want: nil},
+		{name: "custom", set: true, value: "secret=[^&]+", want: regexp.MustCompile("secret=[^&]+")},
+		{name: "invalid", set: true, value: "+", want: defaultQueryStringRegexp, wantLog: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(EnvQueryStringRegexp, tc.value)
+			} else {
+				unsetEnv(t, EnvQueryStringRegexp)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			require.Equal(t, tc.want, QueryStringRegexp())
+			// log.Error buffers the messages: flush them to the logger.
+			log.Flush()
+
+			logged := false
+			for _, l := range tp.Logs() {
+				if strings.Contains(l, logMsg) {
+					logged = true
+				}
+			}
+			require.Equal(t, tc.wantLog, logged, "logs: %v", tp.Logs())
 		})
 	}
 }

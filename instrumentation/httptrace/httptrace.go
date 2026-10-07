@@ -203,6 +203,8 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
 // When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
 // an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, false)
@@ -214,6 +216,8 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
 // When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
 // an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, true)
@@ -257,8 +261,10 @@ func skipCollectionCheck(c *obfuscateQueryStringConfig) {
 
 // ObfuscateQueryString returns rawQuery with sensitive query parameters obfuscated, following the same rules
 // as URLFromRequest. It returns "" when query string collection is disabled, when
-// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, or when rawQuery is empty. Use it for
-// integrations whose request type is not a *http.Request, such as fasthttp.
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, or when rawQuery is empty. When
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: it returns
+// rawQuery as-is, with no redaction of sensitive values. An allowlist still applies. Use it for integrations
+// whose request type is not a *http.Request, such as fasthttp.
 func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) string {
 	config := obfuscateQueryStringConfig{checkCollection: true}
 	for _, opt := range opts {
