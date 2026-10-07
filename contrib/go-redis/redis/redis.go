@@ -57,7 +57,12 @@ var (
 	// wrapper does not start another span for them: a command through a
 	// traced handle would otherwise be traced once by the handle's wrapper
 	// — with the caller's context — and once more by the chain's wrapper,
-	// with the client's context.
+	// with the client's context. go-redis v6 process wrappers receive no
+	// context and no chain identity, so the mark is scoped by the command
+	// object alone: a user wrapper that forwards the same command object to
+	// a second wrapped client within one invocation suppresses that
+	// client's span. The hook-based integrations deduplicate by reading
+	// hook chains instead, but v6 has no hook chain to read.
 	tracedCmds sync.Map // redis.Cmder -> struct{}
 )
 
