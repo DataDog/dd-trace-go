@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/IBM/sarama
+display_name: IBM Sarama
+description: Instruments IBM Sarama's synchronous and asynchronous Kafka producers, partition consumers, and consumer-group
+  handlers with message tracing, header propagation, and optional Data Streams monitoring.
+packages:
+- name: github.com/IBM/sarama
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- kafka
+creation_date: '2023-08-29'
