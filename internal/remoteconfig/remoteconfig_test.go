@@ -37,9 +37,9 @@ import (
 func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	sharedClient.Store(client)
 
 	t.Run("registerCallback", func(t *testing.T) {
 		client.callbacks = []Callback{}
@@ -82,6 +82,7 @@ func TestRCClient(t *testing.T) {
 	t.Run("subscribe", func(t *testing.T) {
 		client, err = newClient(cfg)
 		require.NoError(t, err)
+		sharedClient.Store(client)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
 		updates := new(int)
@@ -295,9 +296,9 @@ func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
 
 func TestRegistration(t *testing.T) {
 	t.Run("callbacks", func(t *testing.T) {
-		var err error
-		client, err = newClient(DefaultClientConfig())
+		client, err := newClient(DefaultClientConfig())
 		require.NoError(t, err)
+		sharedClient.Store(client)
 
 		err = RegisterCallback(dummyCallback1)
 		require.NoError(t, err)
@@ -333,9 +334,9 @@ func TestRegistration(t *testing.T) {
 }
 
 func TestSubscribe(t *testing.T) {
-	var err error
-	client, err = newClient(DefaultClientConfig())
+	client, err := newClient(DefaultClientConfig())
 	require.NoError(t, err)
+	sharedClient.Store(client)
 
 	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
@@ -376,9 +377,9 @@ func TestNewUpdateRequest(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	sharedClient.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -410,9 +411,9 @@ func TestProcessTags(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	sharedClient.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -545,6 +546,7 @@ func TestAsync(t *testing.T) {
 	wg.Wait()
 
 	// Verify we have 0 callbacks left after we're done.
+	client := sharedClient.Load()
 	client._callbacksMu.RLock()
 	defer client._callbacksMu.RUnlock()
 	require.Empty(t, client.callbacks)
@@ -557,7 +559,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	c, err := newClient(cfg)
 	require.NoError(t, err)
 
-	client = c
+	sharedClient.Store(c)
 	started = true
 	defer Reset()
 
@@ -755,7 +757,7 @@ func TestStopAllowsInFlightCallbackToReadClient(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(response)))}, nil
 	})}
 	require.NoError(t, Start(cfg))
-	c := loadClient()
+	c := sharedClient.Load()
 	callbackStarted := make(chan struct{})
 	readClient := make(chan struct{})
 	releaseCallback := sync.OnceFunc(func() { close(readClient) })
@@ -786,6 +788,39 @@ func TestStopAllowsInFlightCallbackToReadClient(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Stop blocked a callback's singleton lookup instead of letting it finish")
 	}
+}
+
+func TestConcurrentStartReusesClient(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	t.Cleanup(Stop)
+	cfg := recordingClientConfig(t, make(chan struct{}, 1))
+	const callers = 32
+	var clients [callers]*Client
+	var errors [callers]error
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			<-start
+			errors[i] = Start(cfg)
+			clients[i] = sharedClient.Load()
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	client := sharedClient.Load()
+	require.NotNil(t, client)
+	require.NotEmpty(t, client.clientID)
+	for i := range callers {
+		require.NoError(t, errors[i])
+		require.Same(t, client, clients[i], "Start caller %d must reuse the shared client", i)
+	}
+	require.Equal(t, client.clientID, ClientID())
+
+	require.NoError(t, Start(cfg))
+	require.Same(t, client, sharedClient.Load(), "a later Start must also reuse the shared client")
 }
 
 func TestConcurrentClientLifecycleAndSubscriptions(t *testing.T) {
