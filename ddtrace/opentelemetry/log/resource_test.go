@@ -37,7 +37,7 @@ func TestBuildResource(t *testing.T) {
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "my-service")
 	})
 
-	t.Run("DD_ENV maps to deployment.environment", func(t *testing.T) {
+	t.Run("DD_ENV maps to deployment.environment.name", func(t *testing.T) {
 		t.Setenv("DD_ENV", "production")
 
 		res, err := buildResource(context.Background())
@@ -73,6 +73,18 @@ func TestBuildResource(t *testing.T) {
 
 		assertResourceAttributeString(t, res, "otel.key", "otel.value")
 		assertResourceAttributeString(t, res, "another", "test")
+	})
+
+	t.Run("deprecated environment is exported with the stable name", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=production")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.DeploymentEnvironmentNameKey, "production")
+		for _, attr := range res.Attributes() {
+			assert.NotEqual(t, attribute.Key("deployment.environment"), attr.Key)
+		}
 	})
 }
 
@@ -118,7 +130,7 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("OTEL attributes used when DD not set", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=1.0.0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment=legacy-env,deployment.environment.name=otel-env,service.version=1.0.0")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)

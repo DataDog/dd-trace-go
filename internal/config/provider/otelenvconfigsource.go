@@ -92,9 +92,10 @@ var otelConfigs = map[string]*otelDDEnv{
 }
 
 var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+	"service.name":                "service",
+	"deployment.environment":      "env",
+	"deployment.environment.name": "env",
+	"service.version":             "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -201,7 +202,16 @@ func mapPropagationStyle(ot string) (string, error) {
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
 	ddTags := make([]string, 0)
+	hasNamedEnvironment := false
+	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, _ string) {
+		if key == "deployment.environment.name" {
+			hasNamedEnvironment = true
+		}
+	})
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		if key == "deployment.environment" && hasNamedEnvironment {
+			return
+		}
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)

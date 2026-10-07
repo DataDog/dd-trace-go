@@ -142,6 +142,17 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Contains(t, v, "custom.key:value")
 	})
 
+	t.Run("maps deployment environment aliases", func(t *testing.T) {
+		for _, attributes := range []string{
+			"deployment.environment=legacy,deployment.environment.name=stable",
+			"deployment.environment.name=stable,deployment.environment=legacy",
+		} {
+			v, err := mapDDTags(attributes)
+			assert.NoError(t, err)
+			assert.Equal(t, "env:stable", v)
+		}
+	})
+
 	t.Run("returns empty for unsupported key", func(t *testing.T) {
 		t.Setenv("OTEL_SERVICE_NAME", "my-service")
 		source := &otelEnvConfigSource{}

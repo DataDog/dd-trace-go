@@ -1605,7 +1605,7 @@ func TestEnvConfig(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing")
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
@@ -1628,7 +1628,7 @@ func TestEnvConfig(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.Env(), "")
 
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal("testing0", c.internalConfig.Env())
