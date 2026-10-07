@@ -8,6 +8,7 @@ package redis
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -1218,5 +1220,57 @@ func TestWrapClientFanOutRetainPrewrappedMember(t *testing.T) {
 	}
 	if n := datadogHooks(later); n != 1 {
 		t.Fatalf("expected the later delegate to carry 1 datadog hook, got %d", n)
+	}
+}
+
+// reenteringLogger's Log method calls WrapClient again.
+type reenteringLogger struct {
+	client  *redis.Client
+	calls   int32
+	entered bool
+}
+
+func (l *reenteringLogger) Log(msg string) {
+	if strings.Contains(msg, "WrapClient called more than once") {
+		atomic.AddInt32(&l.calls, 1)
+		if !l.entered {
+			l.entered = true
+			WrapClient(l.client, WithService("first"))
+		}
+	}
+}
+
+// logUseLogger installs l through the tracer's public logger hook and
+// returns a restore function; the restored default drops messages, matching
+// the tracer's silent default in tests.
+func logUseLogger(l tracer.Logger) (undo func()) {
+	tracer.UseLogger(l)
+	return func() { tracer.UseLogger(dropLogger{}) }
+}
+
+type dropLogger struct{}
+
+func (dropLogger) Log(string) {}
+
+// A custom logger is user-controlled code: a warning it emits on a duplicate
+// wrap must not be delivered while the package lock is held, or a logger
+// that re-enters WrapClient from its Log method deadlocks.
+func TestWrapClientLoggerReentry(t *testing.T) {
+	logger := &reenteringLogger{}
+	undo := logUseLogger(logger)
+	t.Cleanup(undo)
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	logger.client = client
+
+	WrapClient(client, WithService("first"))
+	WrapClient(client, WithService("second")) // warns; the logger re-enters
+
+	if n := atomic.LoadInt32(&logger.calls); n != 1 {
+		t.Fatalf("expected the duplicate-wrap warning once, got %d", n)
+	}
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook, got %d", n)
 	}
 }

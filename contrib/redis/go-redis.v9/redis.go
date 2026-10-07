@@ -144,8 +144,22 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		return
 	}
 
+	// Warnings are emitted after the lock is released: a custom logger is
+	// user-controlled code — like a proxy's AddHook — and may call WrapClient
+	// again from its Log method.
+	var warnings []string
+	defer func() {
+		for _, w := range warnings {
+			instr.Logger().Warn("%s", w)
+		}
+	}()
+
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
+
+	warn := func() {
+		warnings = append(warnings, "contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+	}
 
 	if len(targets) == 1 && targets[0] == client {
 		// The client itself is a concrete go-redis client — or a clone of
@@ -154,7 +168,7 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		// previous wrap of another decorator, or not at all. A client chain
 		// never carries two datadog hooks, which makes duplicate spans
 		// impossible.
-		wrapMember(client, cfg)
+		wrapMember(client, cfg, warn)
 		return
 	}
 	// Any other implementation is a proxy, with one member or several or
@@ -162,18 +176,18 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// decision — it may fan out to its current members, retain hooks for
 	// delegates it creates later, or apply them lazily — so it is observed
 	// before instrumented.
-	wrapProxyMembers(client, targets, cfg)
+	wrapProxyMembers(client, targets, cfg, warn)
 }
 
 // wrapMember instruments a single concrete client, deduplicated against the
 // hook it already carries or, when its chain cannot be read, against its
 // weak identity. The caller must hold wrapMu; a concrete client's AddHook is
 // go-redis code, not user code, so it runs under the lock.
-func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
+func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 	if prev, seen := datadogConfig(member); seen {
 		if prev != nil {
 			if !sameConfig(*prev, cfg.key()) {
-				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+				warn()
 			}
 			return
 		}
@@ -182,7 +196,7 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 	}
 	// The hook chain cannot be read: the weak identity is the only
 	// deduplication this client has, so its entry is kept.
-	if registerWeak(member, cfg) {
+	if registerWeak(member, cfg, warn) {
 		return
 	}
 	addHook(member, cfg)
@@ -206,8 +220,8 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig) {
 // proxy over the same members is still observed separately. The probe stays
 // in the chains it landed on as a no-op. The caller must hold wrapMu;
 // AddHook runs with the lock released.
-func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig) {
-	entry, proceed := begin(proxy, cfg.key())
+func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
+	entry, proceed := begin(proxy, cfg.key(), warn)
 	if !proceed {
 		// This proxy was observed by an earlier wrap: hooks cannot be
 		// removed, so its outcome stands.
@@ -236,13 +250,13 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	}
 	if allHooked && entry != nil && entry.observed {
 		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
-			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			warn()
 		}
 		return
 	}
 	if allHooked {
 		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
-			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			warn()
 		}
 	}
 	before := make([]int, len(members))
@@ -286,7 +300,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			continue
 		}
 		if h := hookSlice(member); h.Len() > before[i] {
-			wrapMember(member, cfg)
+			wrapMember(member, cfg, warn)
 			instrumented = true
 		}
 	}
@@ -306,7 +320,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 // already exists: its configuration is kept and, if the recorded install is
 // still in flight, this call waits for it to finish. The caller must hold
 // wrapMu.
-func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proceed bool) {
+func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wrapEntry, proceed bool) {
 	k, ok := weakHandle(client)
 	if !ok {
 		return nil, true
@@ -320,7 +334,7 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 		if !warned {
 			warned = true
 			if !sameConfig(e.cfg, key) {
-				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+				warn()
 			}
 		}
 		// Wait for the recorded install, unless this goroutine is the one
@@ -378,14 +392,14 @@ func goid() uint64 {
 // reports whether the client was already registered — an already-registered
 // client keeps its first configuration and gets no second hook. The caller
 // must hold wrapMu.
-func registerWeak(client redis.UniversalClient, cfg *clientConfig) bool {
+func registerWeak(client redis.UniversalClient, cfg *clientConfig, warn func()) bool {
 	k, ok := weakHandle(client)
 	if !ok {
 		return false
 	}
 	if e, ok := wrapped[k]; ok {
 		if !sameConfig(e.cfg, cfg.key()) {
-			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			warn()
 		}
 		return true
 	}

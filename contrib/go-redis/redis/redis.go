@@ -184,6 +184,15 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		port = "6379"
 	}
 
+	// Warnings are emitted after the lock is released: a custom logger is
+	// user-controlled code and may call WrapClient again from its Log method.
+	var warnDuplicate bool
+	defer func() {
+		if warnDuplicate {
+			instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
+		}
+	}()
+
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
 	key := weak.Make(c)
@@ -193,9 +202,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		// first wrap — and reuse the first configuration, so commands
 		// through the returned handle and its WithContext clones trace each
 		// command exactly once with that configuration.
-		if !sameConfig(first, cfg) {
-			instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
-		}
+		warnDuplicate = !sameConfig(first, cfg)
 		params := &params{
 			host:   host,
 			port:   port,
