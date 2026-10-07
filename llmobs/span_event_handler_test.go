@@ -7,13 +7,24 @@ package llmobs_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/export"
 )
+
+func TestExportSpanEventHasNoCallback(t *testing.T) {
+	fields := reflect.VisibleFields(reflect.TypeFor[export.SpanEvent]())
+	for _, field := range fields {
+		t.Run(field.Name, func(t *testing.T) {
+			require.NotEqual(t, reflect.Func, field.Type.Kind(), "export.SpanEvent must not expose a live-span callback")
+		})
+	}
+}
 
 func TestWithSpanEventHandlerScope(t *testing.T) {
 	for _, scope := range []string{"inherited", "cleared", "replaced"} {

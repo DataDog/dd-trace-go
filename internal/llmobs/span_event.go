@@ -147,7 +147,7 @@ func SetSpanErrorMeta(meta map[string]any, msg *transport.ErrorMessage) {
 }
 
 func (l *LLMObs) submitLLMObsSpan(span *Span) {
-	l.spanEventsCh <- l.llmobsSpanEvent(span)
+	l.spanEventsCh <- transport.LiveSpanEvent{Event: l.llmobsSpanEvent(span), Handler: span.spanEventHandler}
 }
 
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
@@ -302,7 +302,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	ev := &transport.LLMObsSpanEvent{
-		SpanEventHandler: span.spanEventHandler,
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,

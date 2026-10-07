@@ -40,20 +40,20 @@ func TestPushSpanEventsHandler(t *testing.T) {
 			transport := newTestTransport(t, server.URL)
 			var copies [][]byte
 			panicCalls := 0
-			events := []*LLMObsSpanEvent{
-				{SpanID: "panic", SpanEventHandler: func(event []byte) {
+			events := []LiveSpanEvent{
+				{Event: &LLMObsSpanEvent{SpanID: "panic"}, Handler: func(event []byte) {
 					panicCalls++
 					event[0] = '!'
 					panic("private-content")
 				}},
-				{SpanID: "copy", Name: "<&>", StartNS: 1791323456123456789,
-					SpanEventHandler: func(event []byte) { copies = append(copies, event) }},
-				{SpanID: "primary-only"},
+				{Event: &LLMObsSpanEvent{SpanID: "copy", Name: "<&>", StartNS: 1791323456123456789},
+					Handler: func(event []byte) { copies = append(copies, event) }},
+				{Event: &LLMObsSpanEvent{SpanID: "primary-only"}},
 			}
 			if mode == "encoding-error" {
-				events[1].Metrics = map[string]float64{"invalid": math.NaN()}
+				events[1].Event.Metrics = map[string]float64{"invalid": math.NaN()}
 			}
-			result, err := transport.PushSpanEventsWithResult(t.Context(), events)
+			result, err := transport.PushLiveSpanEvents(t.Context(), events)
 			if mode == "encoding-error" {
 				require.ErrorContains(t, err, "failed to json encode body")
 				require.Zero(t, attempts.Load())

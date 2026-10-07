@@ -57,7 +57,6 @@ type DDAttributes struct {
 }
 
 type LLMObsSpanEvent struct {
-	SpanEventHandler func([]byte)       `json:"-"`
 	SpanID           string             `json:"span_id,omitempty"`
 	TraceID          string             `json:"trace_id,omitempty"`
 	ParentID         string             `json:"parent_id,omitempty"`
@@ -74,6 +73,11 @@ type LLMObsSpanEvent struct {
 	CollectionErrors []string           `json:"collection_errors,omitempty"`
 	SpanLinks        []SpanLink         `json:"span_links,omitempty"`
 	DDAttributes     DDAttributes       `json:"_dd"`
+}
+
+type LiveSpanEvent struct {
+	Event   *LLMObsSpanEvent
+	Handler func([]byte)
 }
 
 type PushSpanEventsRequest struct {
@@ -116,6 +120,22 @@ func (c *Transport) PushSpanEventsWithResult(
 	ctx context.Context,
 	events []*LLMObsSpanEvent,
 ) (RequestResult, error) {
+	return c.pushSpanEvents(ctx, events, nil)
+}
+
+func (c *Transport) PushLiveSpanEvents(ctx context.Context, events []LiveSpanEvent) (RequestResult, error) {
+	wireEvents := make([]*LLMObsSpanEvent, len(events))
+	var notify func([]byte)
+	for i, event := range events {
+		wireEvents[i] = event.Event
+		if event.Handler != nil && notify == nil {
+			notify = func(body []byte) { notifySpanEvents(events, body) }
+		}
+	}
+	return c.pushSpanEvents(ctx, wireEvents, notify)
+}
+
+func (c *Transport) pushSpanEvents(ctx context.Context, events []*LLMObsSpanEvent, notify func([]byte)) (RequestResult, error) {
 	if len(events) == 0 {
 		return RequestResult{}, nil
 	}
@@ -123,11 +143,8 @@ func (c *Transport) PushSpanEventsWithResult(
 	if err != nil {
 		return RequestResult{}, fmt.Errorf("failed to json encode body: %w", err)
 	}
-	for _, event := range events {
-		if event.SpanEventHandler != nil {
-			notifySpanEvents(events, body.Bytes())
-			break
-		}
+	if notify != nil {
+		notify(body.Bytes())
 	}
 	return c.PushSpanEventsBodyWithResult(ctx, body.Bytes())
 }
@@ -155,7 +172,7 @@ func (c *Transport) PushSpanEventsBodyWithResult(ctx context.Context, body []byt
 	return summarizeRequest(result), nil
 }
 
-func notifySpanEvents(events []*LLMObsSpanEvent, body []byte) {
+func notifySpanEvents(events []LiveSpanEvent, body []byte) {
 	var envelopes []struct {
 		Spans []json.RawMessage `json:"spans"`
 	}
@@ -164,8 +181,8 @@ func notifySpanEvents(events []*LLMObsSpanEvent, body []byte) {
 		return
 	}
 	for i, event := range events {
-		if event.SpanEventHandler != nil {
-			notifySpanEvent(event.SpanEventHandler, envelopes[i].Spans[0])
+		if event.Handler != nil {
+			notifySpanEvent(event.Handler, envelopes[i].Spans[0])
 		}
 	}
 }
@@ -173,7 +190,7 @@ func notifySpanEvents(events []*LLMObsSpanEvent, body []byte) {
 func notifySpanEvent(handler func([]byte), event []byte) {
 	defer func() {
 		if recover() != nil {
-			log.Error("llmobs: span event handler panicked") //errtrack:ignore user-supplied callback failure
+			log.Error("llmobs: span event handler panicked")
 		}
 	}()
 	handler(event)

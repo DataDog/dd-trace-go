@@ -140,11 +140,11 @@ type LLMObs struct {
 	Tracer Tracer
 
 	// channels used by producers
-	spanEventsCh  chan *transport.LLMObsSpanEvent
+	spanEventsCh  chan transport.LiveSpanEvent
 	evalMetricsCh chan *transport.LLMObsMetric
 
 	// runtime buffers, payloads are accumulated here and flushed periodically
-	bufSpanEvents      []*transport.LLMObsSpanEvent
+	bufSpanEvents      []transport.LiveSpanEvent
 	bufSpanEventsSize  int // cumulative JSON size of buffered span events
 	bufEvalMetrics     []*transport.LLMObsMetric
 	bufEvalMetricsSize int // cumulative JSON size of buffered eval metrics
@@ -174,7 +174,7 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		Config:        cfg,
 		Transport:     transport.New(cfg),
 		Tracer:        tracer,
-		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
+		spanEventsCh:  make(chan transport.LiveSpanEvent),
 		evalMetricsCh: make(chan *transport.LLMObsMetric),
 		stopCh:        make(chan struct{}),
 		stoppedCh:     make(chan struct{}),
@@ -290,7 +290,7 @@ func (l *LLMObs) Run() {
 		for {
 			select {
 			case ev := <-l.spanEventsCh:
-				evSize := jsonSize(ev)
+				evSize := jsonSize(ev.Event)
 				if l.bufSpanEventsSize+evSize > SizeLimitEVPEvent {
 					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
 					l.sendAsync(l.clearBuffersNonLocked())
@@ -437,7 +437,7 @@ func (l *LLMObs) drainChannels() {
 }
 
 type batchSendParams struct {
-	spanEvents  []*transport.LLMObsSpanEvent
+	spanEvents  []transport.LiveSpanEvent
 	evalMetrics []*transport.LLMObsMetric
 }
 
@@ -461,12 +461,12 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 			log.Debug("llmobs: sending %d LLMObs Span Events", len(events))
 			if log.DebugEnabled() {
 				for _, ev := range events {
-					if b, err := json.Marshal(ev); err == nil {
+					if b, err := json.Marshal(ev.Event); err == nil {
 						log.Debug("llmobs: LLMObs Span Event: %s", b)
 					}
 				}
 			}
-			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
+			if _, err := l.Transport.PushLiveSpanEvents(ctx, events); err != nil {
 				log.Error("llmobs: failed to push span events: %v", err.Error()) //errtrack:ignore transport or user-provided payload failure
 				trackDroppedPayload(len(events), telemetryMetricDroppedSpanEvents, "transport_error")
 			} else {
