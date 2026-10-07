@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -671,6 +673,93 @@ func TestObfuscateQueryString(t *testing.T) {
 		cfg.serverQueryStringAllowlist = map[string]struct{}{"p1": {}}
 		require.Equal(t, "p1=a", ObfuscateQueryString("p1=a&secret=abc"))
 	})
+	t.Run("default obfuscator keeps the JWT delimiter", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = true
+		require.Equal(t, "jwt=<redacted>&a=1", ObfuscateQueryString("jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&a=1"))
+	})
+	t.Run("obfuscation disabled", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = false
+		cfg.queryStringRegexp = nil
+		require.Equal(t, "token=value", ObfuscateQueryString("token=value"))
+	})
+	t.Run("invalid regexp fails closed", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = false
+		cfg.queryStringRegexp = nil
+		cfg.dropQueryString = true
+		require.Equal(t, "", ObfuscateQueryString("token=value"))
+		// The fail-closed check has priority over the allowlist.
+		cfg.serverQueryStringAllowlist = map[string]struct{}{"p1": {}}
+		require.Equal(t, "", ObfuscateQueryString("p1=a"))
+	})
+}
+
+// unsetEnv unsets the environment variable name for the duration of the test.
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	t.Setenv(name, "") // Restores the original value at the end of the test.
+	require.NoError(t, os.Unsetenv(name))
+}
+
+// TestURLTagQueryStringRegexpEnv checks the value of http.url for each kind of
+// value of DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP, for server and client
+// spans.
+func TestURLTagQueryStringRegexpEnv(t *testing.T) {
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0"
+	const query = "jwt=" + jwt + "&q=%22" + jwt + "%22&a=1"
+	ptr := func(s string) *string { return &s }
+	for _, tc := range []struct {
+		name      string
+		value     *string // nil: not set
+		allowlist string
+		want      string
+	}{
+		// Not set: the JWT delimiter is kept.
+		{name: "unset", want: "http://example.com/x?jwt=<redacted>&q=%22<redacted>%22&a=1"},
+		// A configured copy of the default regexp: each match is replaced in
+		// full, thus the JWT delimiter is also replaced.
+		{name: "default", value: ptr(defaultQueryStringPattern), want: "http://example.com/x?jwt<redacted>&q=<redacted>%22&a=1"},
+		{name: "default-non-capturing", value: ptr(defaultQueryStringPatternNonCapturing), want: "http://example.com/x?jwt<redacted>&q=<redacted>%22&a=1"},
+		{name: "custom", value: ptr("a=[^&]+"), want: "http://example.com/x?jwt=" + jwt + "&q=%22" + jwt + "%22&<redacted>"},
+		// The groups of a custom regexp are not copied back.
+		{name: "custom-capture-groups", value: ptr("(a)=([^&]+)"), want: "http://example.com/x?jwt=" + jwt + "&q=%22" + jwt + "%22&<redacted>"},
+		{name: "disabled", value: ptr(""), want: "http://example.com/x?" + query},
+		// Fail closed, also when an allowlist is set.
+		{name: "invalid", value: ptr("(?<=x)a"), want: "http://example.com/x"},
+		{name: "invalid-with-allowlist", value: ptr("(?<=x)a"), allowlist: "a", want: "http://example.com/x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldCfg := cfg
+			t.Cleanup(func() { cfg = oldCfg })
+			if tc.value == nil {
+				unsetEnv(t, EnvQueryStringRegexp)
+			} else {
+				t.Setenv(EnvQueryStringRegexp, *tc.value)
+			}
+			unsetEnv(t, envQueryStringDisabled)
+			unsetEnv(t, envClientQueryStringAllowlist)
+			unsetEnv(t, envServerQueryStringAllowlist)
+			if tc.allowlist == "" {
+				unsetEnv(t, envQueryStringAllowlist)
+			} else {
+				t.Setenv(envQueryStringAllowlist, tc.allowlist)
+			}
+			ResetCfg()
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/x?"+query, nil)
+			require.Equal(t, tc.want, URLFromRequest(r, true), "server")
+			require.Equal(t, tc.want, URLFromClientRequest(r, true), "client")
+			wantQuery := ""
+			if _, q, ok := strings.Cut(tc.want, "?"); ok {
+				wantQuery = q
+			}
+			require.Equal(t, wantQuery, ObfuscateQueryString(query), "ObfuscateQueryString")
+		})
+	}
 }
 
 func TestURLTagWithClientServerAllowlist(t *testing.T) {
@@ -794,12 +883,54 @@ func TestFilterQueryStringByAllowlist(t *testing.T) {
 	}
 }
 
+// obfuscateWithDefaultRegexp is the oracle for obfuscateQueryStringDefault.
+func obfuscateWithDefaultRegexp(s string) string {
+	return defaultQueryStringRegexp.ReplaceAllString(s, defaultQueryStringReplacement)
+}
+
+// obfuscateWithDefaultRegexpLiteral is the oracle for
+// obfuscateQueryStringDefaultLiteral.
+func obfuscateWithDefaultRegexpLiteral(s string) string {
+	return defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+}
+
+func TestObfuscateQueryStringDefaultLiteral(t *testing.T) {
+	const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0"
+	nonCapturing := regexp.MustCompile(defaultQueryStringPatternNonCapturing)
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{
+		{input: jwt, want: "<redacted>"},
+		{input: "jwt=" + jwt, want: "jwt<redacted>"},
+		{input: "a=1&" + jwt + "&b=2", want: "a=1<redacted>&b=2"},
+		{input: "x=%22" + jwt + "%22", want: "x=<redacted>%22"},
+		{input: "\xff" + jwt, want: "<redacted>"},
+		{input: "password=x&é" + jwt, want: "<redacted>&<redacted>"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			got := obfuscateQueryStringDefaultLiteral(tc.input)
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, obfuscateWithDefaultRegexpLiteral(tc.input), got, "diverges from regex oracle")
+			assert.Equal(t, nonCapturing.ReplaceAllLiteralString(tc.input, "<redacted>"), got, "diverges from non-capturing regex oracle")
+		})
+	}
+}
+
 func TestObfuscateQueryStringDefault(t *testing.T) {
-	// SSH RSA key bodies for the 100-repetition boundary.
+	// SSH key bodies for the 100-repetition boundary.
 	// Note: {100,} counts group repetitions, not bytes — %2F/%5C/%2B each count as one.
 	ssh99 := strings.Repeat("a", 99)
 	ssh100 := strings.Repeat("a", 100)
 	ssh101 := strings.Repeat("a", 101)
+
+	const (
+		jwtHeader  = "eyJhbGciOiJIUzI1NiJ9"
+		jwtPayload = "eyJzdWIiOiJ1c2VyMTIzIn0"
+		jwtSig     = "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+		jwt2       = jwtHeader + "." + jwtPayload
+		jwt3       = jwt2 + "." + jwtSig
+	)
 
 	tests := []struct {
 		name  string
@@ -815,24 +946,43 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "PASSWORD_case", input: "PASSWORD=secret", want: "<redacted>"},
 		{name: "pwd", input: "pwd=secret", want: "<redacted>"},
 		{name: "passwd", input: "passwd=secret", want: "<redacted>"},
+		{name: "pword", input: "pword=secret", want: "<redacted>"},
 		{name: "pass", input: "pass=secret", want: "<redacted>"},
 		{name: "passphrase", input: "passphrase=secret", want: "<redacted>"},
 		{name: "pass_phrase", input: "pass_phrase=secret", want: "<redacted>"},
+		{name: "pass-phrase", input: "pass-phrase=secret", want: "<redacted>"},
 		{name: "secret", input: "secret=x", want: "<redacted>"},
 		{name: "token_eq", input: "token=abc", want: "<redacted>"},
 		{name: "auth", input: "auth=x", want: "<redacted>"},
 		{name: "authentication", input: "authentication=x", want: "<redacted>"},
 		{name: "authorization", input: "authorization=x", want: "<redacted>"},
 		{name: "api_key", input: "api_key=x", want: "<redacted>"},
+		{name: "api-key", input: "api-key=x", want: "<redacted>"},
 		{name: "apikey", input: "apikey=x", want: "<redacted>"},
 		{name: "api_key_id", input: "api_key_id=x", want: "<redacted>"},
+		{name: "api-key-id", input: "api-key-id=x", want: "<redacted>"},
 		{name: "access_key", input: "access_key=x", want: "<redacted>"},
 		{name: "private_key", input: "private_key=x", want: "<redacted>"},
+		{name: "app_key", input: "app_key=x", want: "<redacted>"},
+		{name: "appkey", input: "appkey=x", want: "<redacted>"},
+		{name: "application-key", input: "application-key=x", want: "<redacted>"},
+		{name: "application_keyid", input: "application_keyid=x", want: "<redacted>"},
 		{name: "consumer_id", input: "consumer_id=x", want: "<redacted>"},
 		{name: "consumer_key", input: "consumer_key=x", want: "<redacted>"},
+		{name: "consumer-key", input: "consumer-key=x", want: "<redacted>"},
 		{name: "consumer_secret", input: "consumer_secret=x", want: "<redacted>"},
 		{name: "signature", input: "signature=x", want: "<redacted>"},
 		{name: "signed", input: "signed=x", want: "<redacted>"},
+		// Password prefixes and suffixes.
+		{name: "old_password", input: "old_password=x", want: "<redacted>"},
+		{name: "oldpassword", input: "oldpassword=x", want: "<redacted>"},
+		{name: "new-pwd", input: "new-pwd=x", want: "<redacted>"},
+		{name: "password1", input: "password1=x", want: "<redacted>"},
+		{name: "new_password2", input: "new_password2=x", want: "<redacted>"},
+		// "password3" is not a keyword; "password" is followed by '3', not by a suffix.
+		{name: "password3", input: "password3=x", want: "password3=x"},
+		// The prefix is part of the match.
+		{name: "old_prefix_in_context", input: "a=1&old_pwd=x&b=2", want: "a=1&<redacted>&b=2"},
 		// Boundary: empty value does not match ([^&]+ requires ≥1 char).
 		{name: "empty_value", input: "password=", want: "password="},
 		{name: "empty_value_amp", input: "password=&foo=bar", want: "password=&foo=bar"},
@@ -846,19 +996,23 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "pct3D", input: "password%3Dsecret", want: "<redacted>"},
 		// %20 spaces around =.
 		{name: "pct20_spaces", input: "password%20=%20value", want: "<redacted>"},
-		// JSON-quoted form "key":"value": the leading '"' before the key name is
-		// not consumed by the match, so it is preserved in the output.
-		{name: "json_form", input: `"password":"value"`, want: `"<redacted>`},
+		// JSON-quoted form "key":"value": the optional leading quote is part of the match.
+		{name: "json_form", input: `"password":"value"`, want: `<redacted>`},
+		{name: "json_form_in_object", input: `{"user":"a","password":"value"}`, want: `{"user":"a",<redacted>}`},
 		// Same with %22/%3A URL-encoded delimiters.
-		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `%22<redacted>`},
+		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `<redacted>`},
+		// The leading quote is optional.
+		{name: "json_form_no_leading_quote", input: `password":"value"`, want: `<redacted>`},
+		// A leading quote on a key=value form is also part of the match.
+		{name: "quote_key_value", input: `"token=abc`, want: `<redacted>`},
+		// A quote that is not followed by a keyword is not part of a match.
+		{name: "quote_no_keyword", input: `"user":"value"`, want: `"user":"value"`},
 		// Value longer than the old 4096-byte truncation cap: the closing quote
 		// falls past the cutoff.  The full string must still be redacted (no
 		// partial secret exposed in http.url).
-		{name: "json_form_long_value", input: `"password":"` + strings.Repeat("x", 4100) + `"`, want: `"<redacted>`},
+		{name: "json_form_long_value", input: `"password":"` + strings.Repeat("x", 4100) + `"`, want: `<redacted>`},
 
-		// Alt 2: bearer token.
-		// Quirk: only ONE char is consumed after the whitespace — the regex has
-		// [a-z0-9._-] (no +), so "bearer xy" leaves "y" unredacted. Replicated verbatim.
+		// Alt 2: bearer token: all the token characters are redacted.
 		{name: "bearer_one_char", input: "bearer x", want: "<redacted>"},
 		{name: "bearer_case", input: "Bearer X", want: "<redacted>"},
 		{name: "bearer_one_char_digit", input: "bearer 1", want: "<redacted>"},
@@ -867,9 +1021,11 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "bearer_one_char_underscore", input: "bearer _", want: "<redacted>"},
 		{name: "bearer_pct20", input: "bearer%20x", want: "<redacted>"},
 		{name: "bearer_multi_space", input: "bearer  x", want: "<redacted>"},
-		// Quirk: only the first char after spaces is part of the match.
-		{name: "bearer_two_chars_quirk", input: "bearer xy", want: "<redacted>y"},
-		{name: "bearer_three_chars_quirk", input: "bearer abc", want: "<redacted>bc"},
+		{name: "bearer_long", input: "bearer abc.DEF_123-xyz", want: "<redacted>"},
+		{name: "bearer_stops_at_amp", input: "bearer abc&x=1", want: "<redacted>&x=1"},
+		{name: "bearer_stops_at_invalid", input: "bearer abc!def", want: "<redacted>!def"},
+		// Bearer with a JWT: the bearer branch has priority at the same start.
+		{name: "bearer_jwt", input: "bearer%20" + jwt3, want: "<redacted>"},
 		// No match: nothing after space.
 		{name: "bearer_no_char", input: "bearer ", want: "bearer "},
 		// No match: no space before token.
@@ -911,61 +1067,102 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Embedded in params.
 		{name: "gho_embedded", input: "key=x&gho_abcdefghijklmnopqrstuvwxyz0123456789&other=y", want: "key=x&<redacted>&other=y"},
 
-		// JWT shape: ey[I-L] + body + dot + ey[I-L] + body, optional third segment.
-		// Two-segment JWT.
-		{name: "jwt_2seg", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0", want: "<redacted>"},
-		// Three-segment JWT (with signature).
-		{name: "jwt_3seg", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", want: "<redacted>"},
-		// Base64 padding '=' is in the char class.
+		// JWT: a delimiter, then ey[I-L] + body + dot + ey[I-L] + body, optional
+		// third segment. The delimiter is kept in the output.
+		{name: "jwt_2seg", input: jwt2, want: "<redacted>"},
+		{name: "jwt_3seg", input: jwt3, want: "<redacted>"},
+		{name: "jwt_param", input: "jwt=" + jwt3, want: "jwt=<redacted>"},
+		{name: "jwt_param_amp", input: "a=1&" + jwt3 + "&b=2", want: "a=1&<redacted>&b=2"},
+		{name: "jwt_pct22", input: "x=%22" + jwt3 + "%22", want: "x=%22<redacted>%22"},
+		{name: "jwt_pct3D_delimiter", input: "x%3D" + jwt3, want: "x%3D<redacted>"},
+		{name: "jwt_pct_lower_hex", input: "x%3d" + jwt3, want: "x%3d<redacted>"},
+		{name: "jwt_dot_delimiter", input: "a." + jwt3, want: "a.<redacted>"},
+		{name: "jwt_colon_delimiter", input: "a:" + jwt3, want: "a:<redacted>"},
+		{name: "jwt_space_delimiter", input: "a " + jwt3, want: "a <redacted>"},
+		// '=' padding is only allowed at the end of a segment.
 		{name: "jwt_padding", input: "eyJhbGc=.eyJzdWI=", want: "<redacted>"},
-		// URL-encoded '=' (%3D) is also accepted.
 		{name: "jwt_pct3D", input: "eyJhbGc%3D.eyJzdWI%3D", want: "<redacted>"},
+		{name: "jwt_padding_middle", input: "eyJhb=Gc.eyJzdWI", want: "eyJhb=Gc.eyJzdWI"},
 		// Case-insensitive prefix: EY + [I-L] matches.
 		{name: "jwt_upper", input: "EYJhbGciOiJIUzI1NiJ9.EYJzdWIiOiJ1c2VyMTIzIn0", want: "<redacted>"},
 		// Third segment with URL-encoded chars.
-		{name: "jwt_3seg_pct", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.sig%2Fwith%2Bchars", want: "<redacted>"},
+		{name: "jwt_3seg_pct", input: jwtHeader + "." + jwtPayload + ".sig%2Fwith%2Bchars", want: "<redacted>"},
+		// No delimiter: a word character, '-' or '%' (without two hex digits) before the JWT.
+		{name: "jwt_glued_word", input: "x=abc" + jwt3, want: "x=abc" + jwt3},
+		{name: "jwt_glued_underscore", input: "x=_" + jwt3, want: "x=_" + jwt3},
+		{name: "jwt_glued_dash", input: "x=-" + jwt3, want: "x=-" + jwt3},
+		{name: "jwt_glued_bad_pct", input: "x=%g1" + jwt3, want: "x=%g1" + jwt3},
+		// Ordinary words that contain "ey[I-L]".
+		{name: "jwt_keyLength", input: "keyLength=12", want: "keyLength=12"},
+		{name: "jwt_monkeyIsland", input: "game=monkeyIsland", want: "game=monkeyIsland"},
+		{name: "jwt_heyJude", input: "song=heyJude.eyJoe", want: "song=heyJude.eyJoe"},
+		// A delimiter that is the end of a previous match cannot start a JWT.
+		{name: "jwt_after_pem_newline", input: "-----BEGIN PRIVATE KEY-----B-----END PRIVATE KEY-----\n" + jwt2, want: "<redacted>" + jwt2},
 		// No match: only one segment (no dot + second ey[I-L]).
-		{name: "jwt_one_seg", input: "eyJhbGciOiJIUzI1NiJ9", want: "eyJhbGciOiJIUzI1NiJ9"},
+		{name: "jwt_one_seg", input: jwtHeader, want: jwtHeader},
 		// No match: second segment doesn't start with ey[I-L].
-		{name: "jwt_bad_second", input: "eyJhbGciOiJIUzI1NiJ9.abc123", want: "eyJhbGciOiJIUzI1NiJ9.abc123"},
+		{name: "jwt_bad_second", input: jwtHeader + ".abc123", want: jwtHeader + ".abc123"},
 		// No match: third char not in [I-L] (M is out of range).
 		{name: "jwt_bad_prefix", input: "eyMhbGciOiJIUzI1NiJ9.eyMzdWIiOiJ1c2VyIn0", want: "eyMhbGciOiJIUzI1NiJ9.eyMzdWIiOiJ1c2VyIn0"},
 		// No match: first segment body is empty (dot immediately after ey[I-L]).
 		{name: "jwt_empty_first_body", input: "eyJ.eyJzdWIiOiJ1c2VyIn0", want: "eyJ.eyJzdWIiOiJ1c2VyIn0"},
 		// Embedded in params.
-		{name: "jwt_embedded", input: "safe=1&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=2", want: "safe=1&<redacted>&other=2"},
+		{name: "jwt_embedded", input: "safe=1&" + jwt2 + "&other=2", want: "safe=1&<redacted>&other=2"},
+		// Unicode: a non-ASCII rune is a delimiter, except the runes that fold to
+		// an ASCII letter (U+212A KELVIN SIGN, U+017F LATIN SMALL LETTER LONG S).
+		// An invalid UTF-8 byte is a delimiter.
+		{name: "jwt_unicode_delimiter", input: "é" + jwt2, want: "é<redacted>"},
+		{name: "jwt_kelvin_not_delimiter", input: "\u212a" + jwt2, want: "\u212a" + jwt2},
+		{name: "jwt_long_s_not_delimiter", input: "\u017f" + jwt2, want: "\u017f" + jwt2},
+		{name: "jwt_invalid_utf8_delimiter", input: "\xff" + jwt2, want: "\xff<redacted>"},
+		// A continuation byte of a valid UTF-8 sequence is not a delimiter.
+		{name: "jwt_kelvin_header", input: "&ey\u212aabc.eyJabc", want: "&<redacted>"},
 
-		// PEM private key block.
-		// Note: the pattern ends at the final KEY — trailing "-----" is NOT consumed.
+		// PEM private key block, with the optional trailing fence and newline.
 		// Note: (?:\s|%20) between PRIVATE and KEY has no +, so exactly one space/encoded-space.
-		{name: "pem_rsa", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----", want: "<redacted>-----"},
-		{name: "pem_ec", input: "-----BEGIN EC PRIVATE KEY-----MIIEABCDEF-----END EC PRIVATE KEY-----", want: "<redacted>-----"},
-		{name: "pem_no_type", input: "-----BEGIN PRIVATE KEY-----MIIEABCDEF-----END PRIVATE KEY-----", want: "<redacted>-----"},
-		{name: "pem_lower", input: "-----begin rsa private key-----miieabcdef-----end rsa private key-----", want: "<redacted>-----"},
-		{name: "pem_pct20", input: "-----BEGIN%20RSA%20PRIVATE%20KEY-----MIIEABCDEF-----END%20RSA%20PRIVATE%20KEY-----", want: "<redacted>-----"},
+		{name: "pem_rsa", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----", want: "<redacted>"},
+		{name: "pem_ec", input: "-----BEGIN EC PRIVATE KEY-----MIIEABCDEF-----END EC PRIVATE KEY-----", want: "<redacted>"},
+		{name: "pem_no_type", input: "-----BEGIN PRIVATE KEY-----MIIEABCDEF-----END PRIVATE KEY-----", want: "<redacted>"},
+		{name: "pem_lower", input: "-----begin rsa private key-----miieabcdef-----end rsa private key-----", want: "<redacted>"},
+		{name: "pem_pct20", input: "-----BEGIN%20RSA%20PRIVATE%20KEY-----MIIEABCDEF-----END%20RSA%20PRIVATE%20KEY-----", want: "<redacted>"},
+		{name: "pem_newline", input: "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\nx", want: "<redacted>x"},
+		{name: "pem_pct0A", input: "-----BEGIN RSA PRIVATE KEY-----%0AMIIE%0A-----END RSA PRIVATE KEY-----%0Ax", want: "<redacted>x"},
+		{name: "pem_no_trailing_fence", input: "-----BEGIN RSA PRIVATE KEY-----MIIE-----END RSA PRIVATE KEY&x", want: "<redacted>&x"},
+		{name: "pem_short_trailing_fence", input: "-----BEGIN RSA PRIVATE KEY-----MIIE-----END RSA PRIVATE KEY----", want: "<redacted>----"},
 		// No match: CERTIFICATE has no PRIVATE keyword.
 		{name: "pem_certificate", input: "-----BEGIN CERTIFICATE-----MIIEABCDEF-----END CERTIFICATE-----", want: "-----BEGIN CERTIFICATE-----MIIEABCDEF-----END CERTIFICATE-----"},
 		// No match: double space between PRIVATE and KEY — the single (?:\s|%20) can't span two spaces.
 		{name: "pem_double_space", input: "-----BEGIN RSA PRIVATE  KEY-----MIIEABCDEF-----END RSA PRIVATE  KEY-----", want: "-----BEGIN RSA PRIVATE  KEY-----MIIEABCDEF-----END RSA PRIVATE  KEY-----"},
 		// No match: missing END block.
 		{name: "pem_no_end", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF", want: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF"},
-		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
-		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
+		// Embedded in params.
+		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>&safe=1"},
 		// Label with two "PRIVATE KEY" occurrences: the first is followed by a
 		// space (not the fence), so matchPEMBodyAndEnd fails there in O(1).
 		// The scanner must continue to the second occurrence which IS directly
 		// followed by "-----BODY-----END PRIVATE KEY".  A break-on-first-failure
 		// would leave this block unredacted.
-		{name: "pem_double_label", input: "-----BEGIN PRIVATE KEY PRIVATE KEY-----BODY-----END PRIVATE KEY-----", want: "<redacted>-----"},
+		{name: "pem_double_label", input: "-----BEGIN PRIVATE KEY PRIVATE KEY-----BODY-----END PRIVATE KEY-----", want: "<redacted>"},
 
-		// SSH RSA key: ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
-		// Quirk: bare '\' is absent from [a-z0-9\/\.+]; only %5C (URL-encoded '\') is accepted.
+		// SSH public key: key type + ≥1 spaces + ≥100 repetitions of [a-z0-9/.+] or %2F/%5C/%2B.
+		// Quirk: bare '\' is absent from [a-z0-9/.+]; only %5C (URL-encoded '\') is accepted.
 		{name: "ssh_100", input: "ssh-rsa " + ssh100, want: "<redacted>"},
 		{name: "ssh_101", input: "ssh-rsa " + ssh101, want: "<redacted>"},
 		{name: "ssh_upper", input: "SSH-RSA " + ssh100, want: "<redacted>"},
-		// Zero spaces also accepted ((?:\s|%20)*).
-		{name: "ssh_no_space", input: "ssh-rsa" + ssh100, want: "<redacted>"},
 		{name: "ssh_pct20", input: "ssh-rsa%20" + ssh100, want: "<redacted>"},
+		{name: "ssh_pct09", input: "ssh-rsa%09" + ssh100, want: "<redacted>"},
+		{name: "ssh_tab", input: "ssh-rsa\t" + ssh100, want: "<redacted>"},
+		{name: "ssh_dss", input: "ssh-dss " + ssh100, want: "<redacted>"},
+		{name: "ecdsa", input: "ecdsa-sha2-nistp256 " + ssh100, want: "<redacted>"},
+		{name: "ecdsa_bad_type", input: "ecdsa-sha2 " + ssh100, want: "ecdsa-sha2 " + ssh100},
+		// Base64 padding and key comment.
+		{name: "ssh_padding", input: "ssh-rsa " + ssh100 + "==&x", want: "<redacted>&x"},
+		{name: "ssh_pct3D_padding", input: "ssh-rsa " + ssh100 + "%3D%3D&x", want: "<redacted>&x"},
+		{name: "ssh_comment", input: "ssh-rsa " + ssh100 + "= user@host&x", want: "<redacted>@host&x"},
+		{name: "ssh_comment_pct20", input: "ssh-rsa " + ssh100 + "%20user.name-1&x", want: "<redacted>&x"},
+		{name: "ssh_trailing_space", input: "ssh-rsa " + ssh100 + " &x", want: "<redacted> &x"},
+		// No match: a space is required after the key type.
+		{name: "ssh_no_space", input: "ssh-rsa" + ssh100, want: "ssh-rsa" + ssh100},
 		// / . + are valid body chars.
 		{name: "ssh_with_slash", input: "ssh-rsa " + ssh99 + "/", want: "<redacted>"},
 		{name: "ssh_with_dot", input: "ssh-rsa " + ssh99 + ".", want: "<redacted>"},
@@ -982,6 +1179,10 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "ssh_wrong_prefix", input: "ssh-dsa " + ssh100, want: "ssh-dsa " + ssh100},
 		// Embedded in params.
 		{name: "ssh_embedded", input: "key=x&ssh-rsa " + ssh100 + "&safe=1", want: "key=x&<redacted>&safe=1"},
+		// A short key body must not hide a later match. Regression test: the
+		// previous state machine skipped the body of a failed SSH key match.
+		{name: "ssh_short_body_then_key", input: "ssh-rsa AAApassword=secret", want: "ssh-rsa AAA<redacted>"},
+		{name: "ssh_short_body_then_jwt", input: "ssh-rsa AAA/" + jwt2, want: "ssh-rsa AAA/<redacted>"},
 
 		// Cross-alternative interactions.
 		// Multiple sensitive keywords: each sensitive param redacted independently.
@@ -990,31 +1191,72 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "mix_sensitive_key_bearer", input: "safe=1&password=secret&bearer x", want: "safe=1&<redacted>&<redacted>"},
 		// Sensitive key sub-string match: "token" inside "access_token" is matched (no word-boundary anchoring).
 		{name: "mix_sensitive_key_substring", input: "access_token=xxx", want: "access_<redacted>"},
+		// A JWT in a sensitive value is redacted by the sensitive-key branch.
+		{name: "mix_sensitive_key_jwt_value", input: "access_token=" + jwt3 + "&state=1", want: "access_<redacted>&state=1"},
 		// Sensitive key + JWT: safe param followed by a standalone JWT.
-		{name: "mix_sensitive_key_jwt", input: "callback=ok&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=1", want: "callback=ok&<redacted>&other=1"},
+		{name: "mix_sensitive_key_jwt", input: "callback=ok&" + jwt2 + "&other=1", want: "callback=ok&<redacted>&other=1"},
 		// Sensitive key + GitHub token.
 		{name: "mix_sensitive_key_github", input: "password=x&gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>&<redacted>"},
+		// A quote is both an optional prefix of alt 1 and a JWT delimiter: alt 1 has priority.
+		{name: "mix_quote_alt1_then_jwt", input: `"` + jwt2, want: `"<redacted>`},
 		// All 7 alternatives in one string.
-		// The PEM private key branch contributes "<redacted>-----" because the pattern ends at KEY (no trailing -----).
 		{
 			name: "mix_all_alts",
 			input: "password=secret" +
 				"&bearer x" +
 				"&token:1234567890abc" +
 				"&gho_abcdefghijklmnopqrstuvwxyz0123456789" +
-				"&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0" +
+				"&" + jwt2 +
 				"&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----" +
 				"&ssh-rsa " + ssh100,
-			want: "<redacted>&<redacted>&<redacted>&<redacted>&<redacted>&<redacted>-----&<redacted>",
+			want: "<redacted>&<redacted>&<redacted>&<redacted>&<redacted>&<redacted>&<redacted>",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := obfuscateQueryStringDefault(tc.input)
 			assert.Equal(t, tc.want, got)
-			oracle := defaultQueryStringRegexp.ReplaceAllLiteralString(tc.input, "<redacted>")
-			assert.Equal(t, oracle, got, "diverges from regex oracle")
+			assert.Equal(t, obfuscateWithDefaultRegexp(tc.input), got, "diverges from regex oracle")
 		})
+	}
+}
+
+// obfuscatorFragments are the parts of the random inputs of
+// TestDefaultObfuscatorMatchesRegexp. They are chosen to build many partial
+// and complete matches of each alternative of defaultQueryStringRegexp.
+var obfuscatorFragments = []string{
+	"a", "b", "e", "y", "J", "K", "z", "0", "1", "2", "_", "-", ".", "=", "&", ":", "/", "+", "\\",
+	" ", "\t", "\n", "\"", "%", "%2", "%22", "%20", "%3D", "%3d", "%3A", "%2F", "%5C", "%2B", "%09", "%0A", "%41",
+	"ey", "eyJ", "eyK", "eyJa", "ey\u212a", "\u212a", "\u017f", "é", "\xff", "\xc3",
+	"pass", "password", "pwd", "pword", "old", "new", "phrase", "secret", "api", "app", "application",
+	"private", "public", "access", "key", "id", "token", "consumer", "sign", "signed", "auth",
+	"bearer", "Bearer", "ghp_", "gho_", strings.Repeat("a1", 18), strings.Repeat("x", 13),
+	"-----", "BEGIN", "END", " RSA", "PRIVATE", " KEY", "PRIVATE KEY",
+	"ssh-rsa", "ssh-dss", "ecdsa-", "sha2-nistp256", strings.Repeat("A", 50), strings.Repeat("b/", 25),
+}
+
+// TestDefaultObfuscatorMatchesRegexp compares obfuscateQueryStringDefault with
+// the regex oracle on random inputs. It is deterministic. FuzzDefaultObfuscator
+// does the same with the Go fuzzer.
+func TestDefaultObfuscatorMatchesRegexp(t *testing.T) {
+	rnd := rand.New(rand.NewPCG(1, 2))
+	iterations := 100_000
+	if testing.Short() {
+		iterations = 10_000
+	}
+	var sb strings.Builder
+	for range iterations {
+		sb.Reset()
+		for range 1 + rnd.IntN(12) {
+			sb.WriteString(obfuscatorFragments[rnd.IntN(len(obfuscatorFragments))])
+		}
+		s := sb.String()
+		if got, want := obfuscateQueryStringDefault(s), obfuscateWithDefaultRegexp(s); got != want {
+			t.Fatalf("obfuscateQueryStringDefault(%q) = %q; want %q", s, got, want)
+		}
+		if got, want := obfuscateQueryStringDefaultLiteral(s), obfuscateWithDefaultRegexpLiteral(s); got != want {
+			t.Fatalf("obfuscateQueryStringDefaultLiteral(%q) = %q; want %q", s, got, want)
+		}
 	}
 }
 
@@ -1024,18 +1266,26 @@ func FuzzDefaultObfuscator(f *testing.F) {
 		"safe=value",
 		"password=secret",
 		"safe=1&password=secret&token=abc",
+		"old_password1=x",
+		"application-key-id=x",
 		"bearer x",
 		"bearer xy",
 		"token:1234567890abc",
 		"gho_abcdefghijklmnopqrstuvwxyz0123456789",
 		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0",
-		"-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----",
-		"ssh-rsa " + strings.Repeat("a", 100),
+		"jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0",
+		"x=%22eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0%22",
+		"x=abceyJa.eyJb",
+		"\u212aeyJa.eyJb",
+		"-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----\n",
+		"ssh-rsa " + strings.Repeat("a", 100) + "== user@host",
+		"ecdsa-sha2-nistp256 " + strings.Repeat("a", 100),
 		`"password":"value"`,
 		"password%3Dsecret",
 		"password=&foo=bar",
 		"-----BEGIN " + strings.Repeat("a", 200) + "-----",
 		"ssh-rsa " + strings.Repeat("a", 99) + "X",
+		"ssh-rsa AAApassword=secret",
 		"passwor",
 		"passwordX",
 		"tokens=",
@@ -1045,10 +1295,14 @@ func FuzzDefaultObfuscator(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		want := defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+		want := obfuscateWithDefaultRegexp(s)
 		got := obfuscateQueryStringDefault(s)
 		if got != want {
 			t.Errorf("obfuscateQueryStringDefault(%q) = %q; want %q", s, got, want)
+		}
+		wantLiteral := obfuscateWithDefaultRegexpLiteral(s)
+		if gotLiteral := obfuscateQueryStringDefaultLiteral(s); gotLiteral != wantLiteral {
+			t.Errorf("obfuscateQueryStringDefaultLiteral(%q) = %q; want %q", s, gotLiteral, wantLiteral)
 		}
 	})
 }
@@ -1146,71 +1400,116 @@ func BenchmarkObfuscateQueryStringDefault(b *testing.B) {
 	}
 }
 
-// TestObfuscateAdversarialCompletes is a timing regression guard that covers two
-// O(N²) failure paths in matchJWT:
-//
-//  1. No dot: "eyJ"×N — consumeJWTSegment scans the full string, then the outer
-//     loop re-anchors at every 'e'.  Fixed by returning segEnd on the no-dot path.
-//
-//  2. Dot present, second header absent: "eyJ"×N + "." — the first segment scan
-//     stops at the dot, the second header check fails.  Without the fix segEnd=0
-//     so every 'e' before the dot triggers a full re-scan.  Fixed by returning
-//     segEnd on the post-dot header failure paths too.
-//
-// Pre-fix both inputs took several seconds for 300 KB.  Post-fix both run in
-// < 1 ms, so 1 s is a ~1000× safety margin.
-func TestObfuscateAdversarialCompletes(t *testing.T) {
-	cases := []struct {
-		name  string
-		input string
-	}{
-		{"no_dot", strings.Repeat("eyJ", 100000)},           // 300 KB
-		{"dot_suffix", strings.Repeat("eyJ", 100000) + "."}, // 300 KB + dot
+// adversarialQueryStrings returns the adversarial inputs of the default
+// regexp. Each input repeats one piece until it has about n bytes. The pieces
+// cover the backtracking pattern and the RE2 "pending thread" pattern for
+// each alternative.
+func adversarialQueryStrings(n int) map[string]string {
+	gh := "ghp_" + strings.Repeat("a", 36)
+	pieces := map[string]string{
+		"eyJ":             "eyJ",
+		"eyJ=":            "eyJ=",
+		"eyJ%3D":          "eyJ%3D",
+		"=eyJ":            "=eyJ",
+		"%22eyJ":          "%22eyJ",
+		"-eyJ":            "-eyJ",
+		"eyJ+gh":          "eyJ" + gh,
+		"-eyJ+gh":         "-eyJ" + gh,
+		"=eyJ+gh":         "=eyJ" + gh,
+		"%22eyJ+gh":       "%22eyJ" + gh,
+		"=eyJa.eyJa&":     "=eyJa.eyJa&",
+		"=eyJa.eyJa+gh":   "=eyJa.eyJa" + gh,
+		"json+gh":         "pass%22%3A%22" + gh,
+		"pem+gh":          "-----BEGIN a PRIVATE KEY-----" + gh,
+		"token_space+gh":  "token%20%20%20" + gh,
+		"dot_eyJ":         ".eyJ",
+		"pem_label":       "PRIVATE KEY ",
+		"ssh_short":       "ssh-rsa " + strings.Repeat("a", 99) + "&",
+		"ecdsa":           "ecdsa-",
+		"bearer":          "bearer%20",
+		"quote_password":  `"password"`,
+		"jwt_header_only": "&eyJ" + strings.Repeat("a", 20),
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	out := make(map[string]string, len(pieces))
+	for name, piece := range pieces {
+		s := strings.Repeat(piece, n/len(piece)+1)
+		if name == "pem_label" {
+			s = "-----BEGIN " + s
+		}
+		out[name] = s
+	}
+	return out
+}
+
+// TestObfuscateAdversarialScaling checks that obfuscateQueryStringDefault runs
+// in linear time on adversarial inputs: when the input size doubles, the time
+// must not quadruple.
+func TestObfuscateAdversarialScaling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("timing test")
+	}
+	const n = 64 << 10
+	small, large := adversarialQueryStrings(n), adversarialQueryStrings(2*n)
+	// measure returns the best time per call of a few batches, to reduce the
+	// noise. Each batch runs for at least minBatch, thus fast inputs are also
+	// measured precisely.
+	const minBatch = 2 * time.Millisecond
+	measure := func(s string) time.Duration {
+		calls := 1
+		for {
 			start := time.Now()
-			obfuscateQueryStringDefault(tc.input)
-			if elapsed := time.Since(start); elapsed > time.Second {
-				t.Errorf("obfuscateQueryStringDefault took %v for %s adversarial input (limit 1s) — possible O(N²) regression", elapsed, tc.name)
+			for range calls {
+				obfuscateQueryStringDefault(s)
 			}
+			if time.Since(start) >= minBatch {
+				break
+			}
+			calls *= 2
+		}
+		best := time.Duration(math.MaxInt64)
+		for range 5 {
+			start := time.Now()
+			for range calls {
+				obfuscateQueryStringDefault(s)
+			}
+			if d := time.Since(start) / time.Duration(calls); d < best {
+				best = d
+			}
+		}
+		return best
+	}
+	for name, s := range small {
+		t.Run(name, func(t *testing.T) {
+			// The result must be the same as the regexp result.
+			require.Equal(t, obfuscateWithDefaultRegexp(s), obfuscateQueryStringDefault(s))
+			// A noisy machine can slow down one measurement. Linear code passes
+			// at least one of the attempts; quadratic code (ratio of about 4)
+			// fails all of them.
+			var ratio float64
+			var ds, dl time.Duration
+			for range 3 {
+				ds, dl = measure(s), measure(large[name])
+				if ratio = float64(dl) / float64(max(ds, 1)); ratio < 3.0 {
+					return
+				}
+			}
+			t.Errorf("doubling the input size multiplies the time by %.1f (small: %v, large: %v)", ratio, ds, dl)
 		})
 	}
 }
 
-// BenchmarkObfuscateAdversarial demonstrates an O(N²) scaling previously
-// present.
-//
-// Pre-fix: 4× input length ≈ 16× time.  Post-fix: 4× input ≈ 4× time.
+// BenchmarkObfuscateAdversarial reports the time per byte on adversarial
+// inputs. A linear algorithm has the same time per byte for each size.
 func BenchmarkObfuscateAdversarial(b *testing.B) {
-	cases := []struct {
-		name  string
-		input string
-	}{
-		// JWT no-dot: "eyJ" repeated — consumeJWTSegment scans the full string on
-		// each 'e' anchor (e, y, J are all in classJWTSeg = [\w=-]).
-		{"jwt_adversarial/9k", strings.Repeat("eyJ", 3000)},
-		{"jwt_adversarial/30k", strings.Repeat("eyJ", 10000)},
-		{"jwt_adversarial/100k", strings.Repeat("eyJ", 33333)},
-		// JWT dot-suffix: dot present but no second header — before the post-dot
-		// fix segEnd=0 left every 'e' before the dot triggering a full re-scan.
-		{"jwt_adversarial/dot_suffix/9k", strings.Repeat("eyJ", 3000) + "."},
-		{"jwt_adversarial/dot_suffix/30k", strings.Repeat("eyJ", 10000) + "."},
-		{"jwt_adversarial/dot_suffix/100k", strings.Repeat("eyJ", 33333) + "."},
-		// PEM: repeated "PRIVATE KEY" in the label — matchPEMPrivateKeyLiteral
-		// succeeds at every 12-byte boundary and matchPEMBodyAndEnd scans the
-		// rest of the string for each hit.
-		{"pem_adversarial/4k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 170)},
-		{"pem_adversarial/12k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 500)},
-		{"pem_adversarial/40k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 1666)},
-	}
-	for _, tc := range cases {
-		b.Run(tc.name, func(b *testing.B) {
-			b.SetBytes(int64(len(tc.input)))
-			for b.Loop() {
-				obfuscateQueryStringDefault(tc.input)
-			}
-		})
+	for _, n := range []int{4 << 10, 16 << 10, 64 << 10} {
+		for name, s := range adversarialQueryStrings(n) {
+			b.Run(fmt.Sprintf("%s/%dk", name, n>>10), func(b *testing.B) {
+				b.SetBytes(int64(len(s)))
+				for b.Loop() {
+					obfuscateQueryStringDefault(s)
+				}
+			})
+		}
 	}
 }
 
