@@ -83,6 +83,69 @@ type wrapEntry struct {
 	observed bool          // an observation completed for this client
 }
 
+// installing records, per goroutine, the proxies whose AddHook a WrapClient
+// call on that goroutine is currently running: an AddHook that re-enters
+// WrapClient for the same proxy must recognize its own installation instead
+// of recursing. Keyed by goroutine and by interface identity — a value
+// proxy has no weak pointer identity to key by.
+var installing sync.Map // uint64 (goid) -> []any
+
+// markInstalling records that this goroutine is about to run client's
+// AddHook; the returned function must be called once it returns.
+func markInstalling(client any) func() {
+	id := goid()
+	var list []any
+	if v, ok := installing.Load(id); ok {
+		list = v.([]any)
+	}
+	installing.Store(id, append(list, client))
+	return func() {
+		id := goid()
+		v, ok := installing.Load(id)
+		if !ok {
+			return
+		}
+		list := v.([]any)
+		for i := len(list) - 1; i >= 0; i-- {
+			if equalProxy(list[i], client) {
+				list = append(list[:i], list[i+1:]...)
+				break
+			}
+		}
+		if len(list) == 0 {
+			installing.Delete(id)
+		} else {
+			installing.Store(id, list)
+		}
+	}
+}
+
+// isInstalling reports whether this goroutine is currently running the
+// AddHook of client — a re-entrant call must not start its own installation.
+func isInstalling(client any) bool {
+	id := goid()
+	v, ok := installing.Load(id)
+	if !ok {
+		return false
+	}
+	for _, c := range v.([]any) {
+		if equalProxy(c, client) {
+			return true
+		}
+	}
+	return false
+}
+
+// equalProxy compares two clients for the reentrancy guard; proxies with
+// non-comparable dynamic types never match rather than panic.
+func equalProxy(a, b any) bool {
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
+		return false
+	}
+	return a == b
+}
+
 var (
 	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
 	// registry updates — hold it; AddHook does not, because it runs
@@ -222,6 +285,11 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 // in the chains it landed on as a no-op. The caller must hold wrapMu;
 // AddHook runs with the lock released.
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
+	if isInstalling(proxy) {
+		// This call is the re-entry of this goroutine's own AddHook for the
+		// same proxy: the installation it belongs to is still in flight.
+		return
+	}
 	// A proxy may have replaced its delegates since its last observation.
 	// A durable entry stands only while every current member still carries
 	// the hook; when a new member does not, the proxy must be observed
@@ -251,7 +319,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		return
 	}
 	if entry != nil {
-		entry.full = cfg
+		entry.full = registryConfig(cfg)
 	}
 	if first != nil {
 		// The re-observation installs the first wrap's configuration.
@@ -310,7 +378,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			finish(proxy, entry, false)
 		}
 	}()
+	unmark := markInstalling(proxy)
 	unlocked(func() { proxy.AddHook(probeHook{}) })
+	unmark()
 	// A proxy that keeps the probe in its own fields retains hooks for
 	// delegates it creates later; those delegates are traced only through a
 	// real hook passed to its AddHook. The same call fans that hook out to
@@ -331,7 +401,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		retained = true
 	}
 	if retained {
+		unmark := markInstalling(proxy)
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
+		unmark()
 		completed = true
 		finish(proxy, entry, true)
 		return
@@ -349,7 +421,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	if !instrumented {
 		// AddHook reached no concrete client we can see: instrument through
 		// the proxy itself, deduplicated by its identity.
+		unmark := markInstalling(proxy)
 		unlocked(func() { addHook(proxy, cfg) })
+		unmark()
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -428,6 +502,18 @@ func goid() uint64 {
 		id = id*10 + uint64(c-'0')
 	}
 	return id
+}
+
+// registryConfig returns a copy of cfg that retains no user callback: the
+// registry is globally rooted, and an error-check closure may capture the
+// client itself, pinning it for the lifetime of the process. A configuration
+// replayed from the registry — a proxy re-observed after a delegate swap —
+// traces with default error handling; the alternative leaks every client
+// whose callback closes over it.
+func registryConfig(cfg *clientConfig) *clientConfig {
+	sanitized := *cfg
+	sanitized.errCheck = func(error) bool { return true }
+	return &sanitized
 }
 
 // registerWeak records cfg for the client under its weak identity and

@@ -8,6 +8,7 @@ package redis
 import (
 	"context"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1337,4 +1338,73 @@ func TestWrapClientProxyDelegateSwappedKeepsFirstConfig(t *testing.T) {
 	if got := spans[0].Tag(ext.ServiceName); got != "first" {
 		t.Fatalf("expected the first configuration's service name %q, got %v", "first", got)
 	}
+}
+
+// reenteringValueProxy is a multi-member proxy passed by value whose AddHook
+// re-enters WrapClient for itself.
+type reenteringValueProxy struct {
+	redis.UniversalClient
+	other *redis.Client
+}
+
+func (r reenteringValueProxy) AddHook(hook redis.Hook) {
+	WrapClient(r)
+	r.UniversalClient.AddHook(hook)
+	r.other.AddHook(hook)
+}
+
+// A value-based proxy whose AddHook re-enters WrapClient for itself must not
+// recurse forever: it has no weak pointer identity to key an in-flight marker
+// by, so the guard keys on the goroutine and the proxy value instead.
+func TestWrapClientReentrantValueProxy(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(reenteringValueProxy{UniversalClient: a, other: b})
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient recursed without bound on a re-entrant value proxy")
+	}
+	if n := datadogHooks(a); n > 2 {
+		t.Fatalf("expected at most the proxy's fan-out plus one direct hook, got %d", n)
+	}
+}
+
+// The registry must not pin a proxy through a WithErrorCheck closure that
+// captures it: the stored configuration keeps no user callback.
+func TestWrapClientRegistryConfigNoCallback(t *testing.T) {
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	// A multi-member proxy, so the wrap goes through the observation path
+	// that records the full first configuration in the registry.
+	router := &redisRouter{UniversalClient: read, write: write}
+	captured := router
+	WrapClient(router, WithErrorCheck(func(error) bool {
+		return captured != nil // captures the proxy
+	}))
+
+	key, ok := weakHandle(router)
+	if !ok {
+		t.Fatal("expected the proxy to be keyable")
+	}
+	read, write = nil, nil
+	router = nil
+	for i := 0; i < 1000; i++ {
+		runtime.GC()
+		wrapMu.Lock()
+		_, alive := wrapped[key]
+		wrapMu.Unlock()
+		if !alive {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("registry entry outlived the proxy whose callback captured it")
 }
