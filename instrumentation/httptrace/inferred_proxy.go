@@ -135,10 +135,15 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 
 	startTime := requestProxyContext.startTime
 
-	configService := requestProxyContext.domainName
+	// A domain name cannot contain '?': remove a query string from the domain header.
+	domainName, _, _ := strings.Cut(requestProxyContext.domainName, "?")
+	configService := domainName
 	if configService == "" {
 		configService = globalconfig.ServiceName()
 	}
+
+	// The route and the resource name do not contain the query string.
+	path, _, _ := strings.Cut(requestProxyContext.path, "?")
 
 	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
@@ -156,9 +161,9 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 			cfg.Tags[ext.ServiceName] = configService
 			cfg.Tags[ext.Component] = proxySpanInfo.component
 			cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
-			cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
-			cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
-			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			cfg.Tags[ext.HTTPURL] = inferredProxyURL(domainName, requestProxyContext.path)
+			cfg.Tags[ext.HTTPRoute] = path
+			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, path)
 			cfg.Tags["_dd.inferred_span"] = 1
 			cfg.Tags["stage"] = requestProxyContext.stage
 		},
@@ -167,6 +172,24 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
 
 	return span
+}
+
+// inferredProxyURL returns the http.url tag of an inferred proxy span. The
+// domain and the path come from request headers. Like for the URL of the
+// request, the query string of the path is obfuscated, or removed when it must
+// not be reported. A domain name cannot contain '?': a query string in the
+// domain header is removed.
+func inferredProxyURL(domainName, path string) string {
+	domainName, _, _ = strings.Cut(domainName, "?")
+	path, rawQuery, ok := strings.Cut(path, "?")
+	url := domainName + path
+	if !ok {
+		return url
+	}
+	if query := ObfuscateQueryString(rawQuery); query != "" {
+		return url + "?" + query
+	}
+	return url
 }
 
 func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {

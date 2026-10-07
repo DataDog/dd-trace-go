@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: 3dba6b77a915f72e00db5aa97295bd9eb125c197 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: a0a993605b06ff21e00e205a73d2d54a5a4fc1c9 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -307,7 +307,7 @@ jobs:
         run: |
           git config safe.directory "$GITHUB_WORKSPACE"
           git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
-      
+
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
@@ -330,7 +330,7 @@ jobs:
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go-app-key
-          
+
       - name: Set credentials
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
@@ -375,7 +375,7 @@ jobs:
       - name: Load ${{ matrix.weblog-variant }} image
         if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
         run: docker load -i ${{ matrix.image_artifact }}.tar
-      
+
       - name: Set ${{ matrix.image_name }} image name
         if: ${{ matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim' }}
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image

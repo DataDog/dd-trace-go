@@ -262,6 +262,19 @@ func withClientAllowlist(c *obfuscateQueryStringConfig) {
 	c.isClient = true
 }
 
+// ForClientSpan makes ObfuscateQueryString use the rules of HTTP client spans, like URLFromClientRequest: it
+// selects the client allowlist (DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT) instead of the server one, and
+// it ignores DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED, which only applies to server spans. Use it for HTTP client
+// integrations whose request type is not a *http.Request.
+func ForClientSpan() ObfuscateQueryStringOption {
+	return forClientSpan
+}
+
+func forClientSpan(c *obfuscateQueryStringConfig) {
+	withClientAllowlist(c)
+	skipCollectionCheck(c)
+}
+
 // skipCollectionCheck makes the call ignore DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED.
 func skipCollectionCheck(c *obfuscateQueryStringConfig) {
 	c.checkCollection = false
