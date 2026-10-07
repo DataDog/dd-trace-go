@@ -8,10 +8,12 @@ package http
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,6 +30,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -753,40 +756,101 @@ func TestClientQueryStringObfuscated(t *testing.T) {
 		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?<redacted>$`), spans[0].Tag(ext.HTTPURL))
 	})
 	t.Run("empty", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
+		t.Cleanup(httptrace.ResetCfg)
 		t.Setenv(internal.EnvQueryStringRegexp, "")
+		httptrace.ResetCfg()
 
-		rt := WrapRoundTripper(http.DefaultTransport)
-		client := &http.Client{
-			Transport: rt,
-		}
-		resp, err := client.Get(s.URL + "/hello/world?custom=xyz")
-		assert.Nil(t, err)
-		defer resp.Body.Close()
-		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-
-		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?custom=xyz$`), spans[0].Tag(ext.HTTPURL))
-	})
-	t.Run("custom", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		t.Setenv(internal.EnvQueryStringRegexp, "^custom")
-
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
 			Transport: rt,
 		}
+		// The obfuscation is disabled: the default obfuscator would redact token=value.
 		resp, err := client.Get(s.URL + "/hello/world?token=value")
 		assert.Nil(t, err)
 		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 
-		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?<redacted>$`), spans[0].Tag(ext.HTTPURL))
+		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?token=value$`), spans[0].Tag(ext.HTTPURL))
+	})
+	t.Run("custom", func(t *testing.T) {
+		t.Cleanup(httptrace.ResetCfg)
+		t.Setenv(internal.EnvQueryStringRegexp, "^custom")
+		httptrace.ResetCfg()
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		// Only the custom regexp is used: the default obfuscator would redact token=value.
+		resp, err := client.Get(s.URL + "/hello/world?custom=xyz&token=value")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world\?<redacted>=xyz&token=value$`), spans[0].Tag(ext.HTTPURL))
+	})
+	t.Run("default regexp set explicitly", func(t *testing.T) {
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0"
+		for _, tc := range []struct {
+			name string
+			set  bool
+			want string
+		}{
+			// Not set: the JWT delimiter is kept.
+			{name: "unset", want: `^http://.*?/hello/world\?jwt=<redacted>$`},
+			// Set to a copy of the default regexp: the whole match is replaced.
+			{name: "set", set: true, want: `^http://.*?/hello/world\?jwt<redacted>$`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Cleanup(httptrace.ResetCfg)
+				t.Setenv(internal.EnvQueryStringRegexp, "")
+				if tc.set {
+					t.Setenv(internal.EnvQueryStringRegexp, httptraceDefaultQueryStringRegexp(t))
+				} else {
+					require.NoError(t, os.Unsetenv(internal.EnvQueryStringRegexp))
+				}
+				httptrace.ResetCfg()
+
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				client := &http.Client{Transport: WrapRoundTripper(http.DefaultTransport)}
+				resp, err := client.Get(s.URL + "/hello/world?jwt=" + jwt)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				assert.Regexp(t, regexp.MustCompile(tc.want), spans[0].Tag(ext.HTTPURL))
+			})
+		}
+	})
+	t.Run("invalid regexp fails closed", func(t *testing.T) {
+		t.Cleanup(httptrace.ResetCfg)
+		t.Setenv(internal.EnvQueryStringRegexp, `(?<=x)a`)
+		httptrace.ResetCfg()
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		resp, err := client.Get(s.URL + "/hello/world?token=value&safe=1")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		assert.Regexp(t, regexp.MustCompile(`^http://.*?/hello/world$`), spans[0].Tag(ext.HTTPURL))
 	})
 }
 
@@ -917,4 +981,25 @@ func TestBaggageControlCharsNotInjectedOnOutboundHTTP(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected an ot-baggage-* header on the outbound request")
+}
+
+// httptraceDefaultQueryStringRegexp returns the default value of
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP, from the configuration registry of
+// the repository. It skips the test when the file is not available (for
+// example, when this module is tested outside of the repository).
+func httptraceDefaultQueryStringRegexp(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../../../internal/env/supported_configurations.json")
+	if err != nil {
+		t.Skipf("configuration registry not available: %s", err.Error())
+	}
+	var file struct {
+		SupportedConfigurations map[string][]struct {
+			Default string `json:"default"`
+		} `json:"supportedConfigurations"`
+	}
+	require.NoError(t, json.Unmarshal(data, &file))
+	entries := file.SupportedConfigurations[internal.EnvQueryStringRegexp]
+	require.Len(t, entries, 1)
+	return entries[0].Default
 }
