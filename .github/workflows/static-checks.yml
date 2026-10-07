@@ -337,12 +337,12 @@ jobs:
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The golangci-lint steps above stop at Go workspace module boundaries.
-      # Nested modules still carry pre-existing findings, so report only the
-      # issues this change adds.
+      # Lint only the nested modules this change touches, and report only the
+      # issues it adds: those modules still carry pre-existing findings.
       - name: golangci-lint (nested modules)
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/lint_go_modules.sh --timeout 10m --new-from-rev=HEAD~1
+          ./scripts/lint_go_modules.sh HEAD~1 --timeout 10m
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
