@@ -80,6 +80,7 @@ func (cfg *clientConfig) key() configKey {
 type wrapEntry struct {
 	cfg  configKey
 	done chan struct{} // non-nil while the recorded install is in flight
+	goid uint64        // the goroutine that started the install, for reentry
 }
 
 var (
@@ -205,6 +206,31 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	if !proceed {
 		return
 	}
+	// Nothing can be learned or added when every member already carries the
+	// hook: the proxy's AddHook can only hook members a second time. Wraps of
+	// freshly created but equivalent proxies then cost nothing — no probe
+	// lands in the members' chains — and the entry is not kept, so a later
+	// wrap that sees a new, unwrapped member still probes.
+	var hooked *configKey
+	allHooked := len(members) > 0
+	for _, member := range members {
+		prev, seen := datadogConfig(member)
+		if !seen || prev == nil {
+			allHooked = false
+			break
+		}
+		if hooked == nil {
+			k := *prev
+			hooked = &k
+		}
+	}
+	if allHooked {
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
+		}
+		finish(proxy, entry, false)
+		return
+	}
 	before := make([]int, len(members))
 	readable := make([]bool, len(members))
 	for i, member := range members {
@@ -212,6 +238,15 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			before[i], readable[i] = h.Len(), true
 		}
 	}
+	// A panic in the proxy's AddHook — recovered by the application — must
+	// not leave an in-flight marker that later wraps wait on forever; the
+	// entry is dropped so the next wrap retries.
+	completed := false
+	defer func() {
+		if !completed {
+			finish(proxy, entry, false)
+		}
+	}()
 	unlocked(func() { proxy.AddHook(probeHook{}) })
 	var instrumented bool
 	for i, member := range members {
@@ -228,6 +263,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// the proxy itself, deduplicated by its identity.
 		unlocked(func() { addHook(proxy, cfg) })
 	}
+	completed = true
 	finish(proxy, entry, true)
 }
 
@@ -247,17 +283,19 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 		if !sameConfig(e.cfg, key) {
 			instr.Logger().Warn("contrib/go-redis/redis.v7: WrapClient called more than once on the same client; keeping the first configuration")
 		}
-		// Wait for the recorded install, unless this call chain is the one
-		// running it — a proxy whose AddHook re-enters WrapClient for the
+		// Wait for the recorded install, unless this goroutine is the one
+		// running it — a proxy whose AddHook re-enters WrapClient for that
 		// same proxy would otherwise wait for a channel only that very call
-		// can close.
-		if e.done != nil && !reentrant() {
+		// can close. Installs started by other goroutines are still waited
+		// on, so a nested wrap does not return before a concurrent install
+		// has finished.
+		if e.done != nil && e.goid != goid() {
 			done := e.done
 			unlocked(func() { <-done })
 		}
 		return nil, false
 	}
-	e := &wrapEntry{cfg: key, done: make(chan struct{})}
+	e := &wrapEntry{cfg: key, done: make(chan struct{}), goid: goid()}
 	wrapped[k] = e
 	runtime.AddCleanup(k.Value(), func(kk weak.Pointer[byte]) {
 		wrapMu.Lock()
@@ -272,27 +310,25 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 	return e, true
 }
 
-// reentrant reports whether this goroutine is already running WrapClient
-// further down its own stack: a proxy's AddHook calling WrapClient again
-// from inside the install. Such a call must not wait for an install driven
-// by its own call chain.
-func reentrant() bool {
-	pcs := make([]uintptr, 64)
-	frames := runtime.CallersFrames(pcs[:runtime.Callers(1, pcs)])
-	wrapClient := reflect.TypeOf(probeHook{}).PkgPath() + ".WrapClient"
-	seen := 0
-	for {
-		f, more := frames.Next()
-		if f.Function == wrapClient {
-			seen++
-			if seen > 1 {
-				return true
-			}
-		}
-		if !more {
-			return false
-		}
+// goid returns the current goroutine's ID, from the header of its stack
+// snapshot. It identifies the goroutine that started an in-flight install,
+// so a call chain re-entering its own install does not wait for it while
+// concurrent installs are still waited on.
+func goid() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	// The first line reads "goroutine 123 [running]:".
+	if len(b) < 11 || string(b[:10]) != "goroutine " {
+		return 0
 	}
+	var id uint64
+	for _, c := range b[10:] {
+		if c < '0' || c > '9' {
+			break
+		}
+		id = id*10 + uint64(c-'0')
+	}
+	return id
 }
 
 // registerWeak records cfg for the client under its weak identity and
@@ -486,12 +522,13 @@ func weakHandle(client any) (weak.Pointer[byte], bool) {
 }
 
 // concreteClients returns the distinct concrete go-redis clients reachable
-// from client within a few levels of fields, embedded or not, exported or
-// not. A client passed directly yields itself; a decorator delegating to one
-// client yields that client; a proxy holding several — a read/write router,
-// say — yields them all. It yields nothing when it cannot see through the
-// implementation, for example when the delegated clients are not held in
-// fields at all.
+// from client through several levels of fields, embedded or not, exported or
+// not, by pointer or by value. A client passed directly yields itself; a
+// decorator delegating to one client yields that client; a proxy holding
+// several — a read/write router, say — yields them all. It yields nothing
+// when it cannot see through the implementation, for example when the
+// delegated clients are not held in fields at all or are nested beyond the
+// search depth.
 func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 	var found []redis.UniversalClient
 	var walk func(c redis.UniversalClient, depth int)
@@ -514,10 +551,18 @@ func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 			return
 		}
 		v := reflect.ValueOf(c)
-		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return
+			}
+			v = v.Elem()
+		}
+		// A decorator may be passed by value as well as by pointer; its
+		// exported fields are readable either way.
+		if v.Kind() != reflect.Struct {
 			return
 		}
-		s := v.Elem()
+		s := v
 		// The struct's own mutex, when it has one, guards its delegate
 		// fields; read them under it.
 		unlock := lockStruct(s)
@@ -525,7 +570,12 @@ func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 		for i := 0; i < s.NumField(); i++ {
 			f := s.Field(i)
 			if !f.CanInterface() {
-				// Unexported field: read it through its address.
+				// Unexported field of an addressable struct: read it through
+				// its address. A non-addressable value cannot give access to
+				// its unexported fields; skip them.
+				if !f.CanAddr() {
+					continue
+				}
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
 			field, ok := f.Interface().(redis.UniversalClient)
@@ -535,7 +585,10 @@ func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 			walk(field, depth-1)
 		}
 	}
-	walk(client, 3)
+	// A proxy may nest its delegates a few levels deep; only nesting beyond
+	// this depth leaves the client undiscoverable, falling back to the
+	// proxy's own identity.
+	walk(client, 8)
 	return found
 }
 

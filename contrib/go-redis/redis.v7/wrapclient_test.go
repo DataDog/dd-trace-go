@@ -368,11 +368,14 @@ func TestWrapClientDeepProxy(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { client.Close() })
 
-	p3 := &redisDecorator{client}
-	p2 := &redisDecorator{p3}
-	p1 := &redisDecorator{p2}
-	WrapClient(p1)
-	WrapClient(p1)
+	// Nest beyond the field-walk depth, so the wrap falls back to the
+	// proxy's own identity.
+	p := redis.UniversalClient(client)
+	for range 10 {
+		p = &redisDecorator{p}
+	}
+	WrapClient(p)
+	WrapClient(p)
 
 	if n := datadogHooks(client); n != 1 {
 		t.Fatalf("expected exactly 1 datadog hook after 2 deep-proxy wraps, got %d", n)
@@ -541,7 +544,10 @@ func TestWrapClientReentrantAddHook(t *testing.T) {
 
 	// Nest beyond the field-walk depth, so the wrap goes through the
 	// proxy's own AddHook.
-	proxy := &redisDecorator{&redisDecorator{&redisDecorator{&reentrantLayer{client}}}}
+	proxy := redis.UniversalClient(&reentrantLayer{client})
+	for range 10 {
+		proxy = &redisDecorator{proxy}
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -620,7 +626,10 @@ func TestWrapClientReentrantSameProxy(t *testing.T) {
 	t.Cleanup(func() { client.Close() })
 
 	layer := &selfWrappingLayer{UniversalClient: client}
-	outer := &redisDecorator{&redisDecorator{&redisDecorator{layer}}}
+	outer := redis.UniversalClient(layer)
+	for range 10 {
+		outer = &redisDecorator{outer}
+	}
 	layer.self = outer
 
 	done := make(chan struct{})
@@ -728,4 +737,161 @@ func TestWrapClientProxyLockOrder(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+// valueDecorator is a decorator passed by value rather than by pointer.
+type valueDecorator struct {
+	redis.UniversalClient
+}
+
+// A decorator passed by value must still be deduplicated against the client
+// it embeds: repeated wraps install a single hook.
+func TestWrapClientValueDecorator(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+
+	WrapClient(valueDecorator{client})
+	WrapClient(valueDecorator{client})
+
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after 2 value-decorator wraps, got %d", n)
+	}
+
+	_ = client.Get("foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}
+
+// Wrapping freshly created but equivalent multi-client proxies must not
+// leave a new no-op probe in the members' chains on every wrap: once every
+// member carries the hook, a later wrap adds nothing at all.
+func TestWrapClientFreshProxyInstances(t *testing.T) {
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { read.Close() })
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { write.Close() })
+
+	chainLen := func() int {
+		return reflect.ValueOf(read).Elem().FieldByName("hooks").FieldByName("hooks").Len() +
+			reflect.ValueOf(write).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	}
+
+	WrapClient(&redisRouter{UniversalClient: read, write: write})
+	afterFirst := chainLen()
+	for i := 0; i < 5; i++ {
+		WrapClient(&redisRouter{UniversalClient: read, write: write})
+	}
+	if after := chainLen(); after != afterFirst {
+		t.Fatalf("expected the member chains to stop growing after the first wrap, got %d then %d", afterFirst, after)
+	}
+}
+
+// slowAddHookProxy delays its AddHook so another goroutine's wrap is in
+// flight while this one runs.
+type slowAddHookProxy struct {
+	redis.UniversalClient
+	delay time.Duration
+}
+
+func (r *slowAddHookProxy) AddHook(hook redis.Hook) {
+	time.Sleep(r.delay)
+	r.UniversalClient.AddHook(hook)
+}
+
+// nestedWrapLayer re-enters WrapClient for another proxy from its AddHook.
+type nestedWrapLayer struct {
+	redis.UniversalClient
+	target redis.UniversalClient
+}
+
+func (r *nestedWrapLayer) AddHook(hook redis.Hook) {
+	WrapClient(r.target)
+}
+
+// A nested wrap of a proxy whose install another goroutine started must
+// still wait for that install: only the caller's own in-flight install is
+// skipped, not every in-flight entry, or the nested wrap returns before the
+// proxy is instrumented.
+func TestWrapClientNestedWaitsForOtherInstalls(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	deep := redis.UniversalClient(&slowAddHookProxy{UniversalClient: b, delay: 400 * time.Millisecond})
+	for range 10 {
+		deep = &redisDecorator{deep}
+	}
+	x := redis.UniversalClient(&nestedWrapLayer{UniversalClient: b, target: deep})
+	for range 10 {
+		x = &redisDecorator{x}
+	}
+
+	installed := make(chan struct{})
+	go func() {
+		defer close(installed)
+		WrapClient(deep)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	WrapClient(x)
+
+	// x's wrap must not have returned before deep's install completed: the
+	// command through b must be traced.
+	_ = b.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the command to be traced once the wraps returned, got %d spans", len(spans))
+	}
+	<-installed
+	if n := datadogHooks(b); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook on the slow proxy's member, got %d", n)
+	}
+}
+
+// panickingProxy's AddHook panics, as user code may.
+type panickingProxy struct {
+	redis.UniversalClient
+}
+
+func (r *panickingProxy) AddHook(hook redis.Hook) {
+	panic("AddHook panicked")
+}
+
+// A panic in a proxy's AddHook — recovered by the application — must not
+// leave an in-flight marker that later wraps wait on forever.
+func TestWrapClientAddHookPanic(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	proxy := &panickingProxy{UniversalClient: client}
+
+	func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	}()
+
+	// The marker was dropped, so the later wrap retries instead of waiting
+	// forever; the proxy panics on every AddHook, so the retry panics again
+	// and the application recovers it too.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a later wrap waited forever on the marker left by a panicking AddHook")
+	}
 }
