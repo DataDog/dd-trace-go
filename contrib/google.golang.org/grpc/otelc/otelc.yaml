@@ -1,0 +1,80 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Like orchestrion, the rules rewrite call sites in every package of the build,
+# dependencies included, except grpc and the grpc contrib. grpc calls its own
+# constructors, and the contrib imports grpc, so rewriting those would create an
+# import cycle. The contrib's own tests create clients and servers, and
+# rewriting those would import the contrib into itself.
+
+client_dial:
+  target:
+    - "**"
+    - not: "google.golang.org/grpc/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/**"
+  where:
+    function_call: google.golang.org/grpc.Dial
+  do:
+    - wrap_call:
+        append_args:
+          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
+          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
+        variadic_type: "grpc.DialOption"
+  imports:
+    grpc: google.golang.org/grpc
+    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+
+client_dial_context:
+  target:
+    - "**"
+    - not: "google.golang.org/grpc/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/**"
+  where:
+    function_call: google.golang.org/grpc.DialContext
+  do:
+    - wrap_call:
+        append_args:
+          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
+          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
+        variadic_type: "grpc.DialOption"
+  imports:
+    grpc: google.golang.org/grpc
+    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+
+client_new_client:
+  target:
+    - "**"
+    - not: "google.golang.org/grpc/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/**"
+  where:
+    function_call: google.golang.org/grpc.NewClient
+  do:
+    - wrap_call:
+        append_args:
+          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
+          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
+        variadic_type: "grpc.DialOption"
+  imports:
+    grpc: google.golang.org/grpc
+    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+
+server_new_server:
+  target:
+    - "**"
+    - not: "google.golang.org/grpc/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/**"
+  where:
+    function_call: google.golang.org/grpc.NewServer
+  do:
+    - wrap_call:
+        append_args:
+          - "grpc.ChainStreamInterceptor(grpctrace.StreamServerInterceptor())"
+          - "grpc.ChainUnaryInterceptor(grpctrace.UnaryServerInterceptor())"
+        variadic_type: "grpc.ServerOption"
+  imports:
+    grpc: google.golang.org/grpc
+    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2

@@ -32,7 +32,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20261005130301-0399637fded6' }}
 
 jobs:
   go-versions-matrix:
@@ -119,7 +119,8 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all; do
+          for dir in internal/orchestrion/_integration otelc/all \
+                     contrib/google.golang.org/grpc/otelc; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -137,7 +138,8 @@ jobs:
             ${PREFIX}/otelc \
             ${PREFIX}/gls \
             ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart"
+            ${PREFIX}/otelc-autostart \
+            ${PREFIX}/grpc"
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"

@@ -1,13 +1,14 @@
-// Tests that an external application can be built with otelc. The module path
-// is third-party on purpose; a dd-trace-go one would defeat the point.
-module example.com/otelcexternalapp
+module github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2
 
 go 1.26.0
 
-require (
-	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
-)
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ./..
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../../instrumentation/testutils/grpc
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+
+require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-00010101000000-000000000000
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
@@ -20,8 +21,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
@@ -82,13 +82,3 @@ require (
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
-
-replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 => ../../../contrib/google.golang.org/grpc/otelc
-
-replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../../contrib/google.golang.org/grpc
-
-replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
