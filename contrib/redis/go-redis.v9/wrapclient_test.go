@@ -1274,3 +1274,37 @@ func TestWrapClientLoggerReentry(t *testing.T) {
 		t.Fatalf("expected exactly 1 datadog hook, got %d", n)
 	}
 }
+
+// A proxy that replaces its delegate must be observed again when a later
+// wrap sees the new member: the durable entry from the first observation
+// stands only while every current member still carries the hook.
+func TestWrapClientProxyDelegateSwapped(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:2"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &redisRouter{UniversalClient: a, write: b}
+	WrapClient(router)
+	if n := datadogHooks(b); n != 1 {
+		t.Fatalf("expected the write member to carry 1 datadog hook, got %d", n)
+	}
+
+	// The proxy swaps its write member to a fresh client; the same proxy
+	// wrapped again must instrument the new member.
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+	router.write = fresh
+	WrapClient(router)
+
+	_ = fresh.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the swapped-in member to be traced, got %d spans", len(spans))
+	}
+}

@@ -221,6 +221,25 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 // in the chains it landed on as a no-op. The caller must hold wrapMu;
 // AddHook runs with the lock released.
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
+	// A proxy may have replaced its delegates since its last observation.
+	// A durable entry stands only while every current member still carries
+	// the hook; when a new member does not, the proxy must be observed
+	// again. Drop the stale entry so begin recreates it.
+	if k, ok := weakHandle(proxy); ok && len(members) > 0 {
+		if e, ok := wrapped[k]; ok && e.done == nil {
+			allHookedNow := true
+			for _, member := range members {
+				if prev, seen := datadogConfig(member); !seen || prev == nil {
+					allHookedNow = false
+					break
+				}
+			}
+			if !allHookedNow {
+				delete(wrapped, k)
+			}
+		}
+	}
+
 	entry, proceed := begin(proxy, cfg.key(), warn)
 	if !proceed {
 		// This proxy was observed by an earlier wrap: hooks cannot be
@@ -286,8 +305,15 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// members, and a missing tag is better than a wrong one.
 	// The scan takes the proxy's own mutex, so it runs with the package
 	// lock released.
-	var retained bool
-	unlocked(func() { retained = retainsHook(proxy, probeHook{}) })
+	var retained, known bool
+	unlocked(func() { retained, known = retainsHook(proxy, probeHook{}) })
+	if !known {
+		// The scan could not take the proxy's mutex. Missing spans are the
+		// worse evil, and an unknown scan is not evidence of absence: hand
+		// the real hook to the proxy so delegates it creates later are
+		// traced too.
+		retained = true
+	}
 	if retained {
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
 		completed = true
@@ -452,28 +478,35 @@ func unlocked(f func()) {
 // retainsHook reports whether the proxy kept the given hook in its own
 // fields: a proxy that retains hooks, to apply them to delegates it creates
 // later, keeps a copy of everything its AddHook is handed.
-func retainsHook(proxy redis.UniversalClient, hook redis.Hook) bool {
+func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known bool) {
 	v := reflect.ValueOf(proxy)
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
-			return false
+			return false, true
 		}
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return false
+		return false, true
 	}
 	if v.CanAddr() {
-		unlock, ok := lockStruct(v)
-		defer unlock()
-		if !ok {
-			// The proxy's mutex stayed held; reading its retained-hook
-			// fields without it would race with the update in progress.
-			// Report unknown rather than guess.
-			return false
+		// The proxy's mutex may be held briefly by another goroutine — the
+		// scan rides contention out; a mutex held for the whole window
+		// leaves the retention unknown.
+		for range 3 {
+			unlock, ok := lockStruct(v)
+			if ok {
+				defer unlock()
+				return containsHook(v, hook, 3), true
+			}
+			unlock()
+			time.Sleep(10 * time.Millisecond)
 		}
+		// Reading the retained-hook fields without the mutex would race
+		// with the update in progress: report unknown rather than guess.
+		return false, false
 	}
-	return containsHook(v, hook, 3)
+	return containsHook(v, hook, 3), true
 }
 
 // containsHook reports whether s, or a struct embedded within it, holds the
