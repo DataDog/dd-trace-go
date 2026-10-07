@@ -1630,3 +1630,28 @@ func TestWrapClientSynchronizedFanOutRetain(t *testing.T) {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
 	}
 }
+
+// Repeated wraps of a selective proxy — one whose AddHook deliberately
+// ignores a member — must observe once: the untouched member does not make
+// the observation stale, so no new probe lands on the targeted member.
+func TestWrapClientSelectiveProxyStable(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	private := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { private.Close() })
+
+	chainLen := func() int {
+		return reflect.ValueOf(a).Elem().FieldByName("hooks").FieldByName("hooks").Len()
+	}
+
+	router := &selectiveRouter{UniversalClient: a, private: private}
+	WrapClient(router)
+	WrapClient(router)
+	WrapClient(router)
+	first := chainLen()
+	WrapClient(router)
+	WrapClient(router)
+	if after := chainLen(); after != first {
+		t.Fatalf("expected the targeted member's chain to stop growing after the observation, got %d then %d", first, after)
+	}
+}

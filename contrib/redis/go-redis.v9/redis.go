@@ -83,6 +83,7 @@ type wrapEntry struct {
 	goid       uint64                     // the goroutine that started the install, for reentry
 	observed   bool                       // an observation completed for this client
 	retainOnly bool                       // the proxy retains hooks; its members stay unhooked by design
+	memberKeys []weak.Pointer[byte]       // the members the observation saw, weakly: a changed set, not an unhooked member, marks a swap
 }
 
 // installing records, per goroutine, the proxies whose AddHook a WrapClient
@@ -336,23 +337,16 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// marker never outlives the wrap.
 	defer markInstalling(proxy, members)()
 	// A proxy may have replaced its delegates since its last observation.
-	// A durable entry stands only while every current member still carries
-	// the hook; when a new member does not, the proxy must be observed
-	// again — keeping the first wrap's configuration, which the documented
-	// first-configuration-wins behavior requires.
+	// A durable entry stands while the member set is unchanged: a member the
+	// proxy deliberately leaves unhooked is part of that set, not a swapped
+	// delegate, while a changed set — a member that was not there at the
+	// observation — requires observing again, keeping the first wrap's
+	// configuration, which the documented first-configuration-wins behavior
+	// requires.
 	var first *clientConfig
 	if k, ok := weakHandle(proxy); ok && len(members) > 0 {
-		if e, ok := wrapped[k]; ok && e.done == nil && !e.retainOnly {
-			// A retain-only proxy never hooks its current members: their
-			// missing hooks are the proxy's design, not a replaced delegate.
-			allHookedNow := true
-			for _, member := range members {
-				if prev, seen := datadogConfig(member); !seen || prev == nil {
-					allHookedNow = false
-					break
-				}
-			}
-			if !allHookedNow {
+		if e, ok := wrapped[k]; ok && e.done == nil {
+			if !sameMembers(e.memberKeys, members) {
 				first = e.full
 				if live := e.cfgWeak.Value(); live != nil {
 					// The hooks the first wrap installed keep the first
@@ -469,6 +463,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		}
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
 		if entry != nil {
+			entry.memberKeys = memberKeys(members)
 			// A retain-only proxy never hooks its current members; record
 			// that, so a later wrap does not mistake their missing hooks
 			// for a replaced delegate and re-hand the proxy another hook.
@@ -502,6 +497,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// AddHook reached no concrete client we can see: instrument through
 		// the proxy itself, deduplicated by its identity.
 		unlocked(func() { addHook(proxy, cfg) })
+	}
+	if entry != nil {
+		entry.memberKeys = memberKeys(members)
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -580,6 +578,33 @@ func goid() uint64 {
 		id = id*10 + uint64(c-'0')
 	}
 	return id
+}
+
+// memberKeys returns weak handles for the members, in order; the registry
+// never pins them, and weak-pointer identity survives reclamation.
+func memberKeys(members []redis.UniversalClient) []weak.Pointer[byte] {
+	keys := make([]weak.Pointer[byte], 0, len(members))
+	for _, member := range members {
+		if k, ok := weakHandle(member); ok {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
+// sameMembers reports whether the recorded member handles match the current
+// members in order and count.
+func sameMembers(recorded []weak.Pointer[byte], members []redis.UniversalClient) bool {
+	if len(recorded) != len(members) {
+		return false
+	}
+	for i, member := range members {
+		k, ok := weakHandle(member)
+		if !ok || k != recorded[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // registryConfig returns a copy of cfg that retains no user callback: the
@@ -903,6 +928,8 @@ func hookSlice(client redis.UniversalClient) reflect.Value {
 var (
 	mutexType              = reflect.TypeOf(sync.Mutex{})
 	rwMutexType            = reflect.TypeOf(sync.RWMutex{})
+	mutexPointerType       = reflect.TypeFor[*sync.Mutex]()
+	rwMutexPointerType     = reflect.TypeFor[*sync.RWMutex]()
 	redisClientType        = reflect.TypeFor[*redis.Client]()
 	redisClusterClientType = reflect.TypeFor[*redis.ClusterClient]()
 	redisRingType          = reflect.TypeFor[*redis.Ring]()
@@ -925,10 +952,33 @@ func lockStruct(s reflect.Value) (unlock func(), ok bool) {
 	var unlocks []func()
 	for i := 0; i < s.NumField(); i++ {
 		t := s.Type().Field(i).Type
-		if t != mutexType && t != rwMutexType {
+		if t != mutexType && t != rwMutexType && t != mutexPointerType && t != rwMutexPointerType {
 			continue
 		}
 		f := s.Field(i)
+		if t == mutexPointerType || t == rwMutexPointerType {
+			// The mutex is behind a pointer; its methods hang off the field
+			// value itself.
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			var locked bool
+			for range 100 {
+				if f.MethodByName("TryLock").Call(nil)[0].Bool() {
+					locked = true
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if !locked {
+				for _, u := range unlocks {
+					u()
+				}
+				return func() {}, false
+			}
+			unlocks = append(unlocks, func() { f.MethodByName("Unlock").Call(nil) })
+			continue
+		}
 		if !f.CanAddr() {
 			// A copy of a struct — a decorator passed by value, say — cannot
 			// have its mutex locked; the copy is unshared, so nothing can
