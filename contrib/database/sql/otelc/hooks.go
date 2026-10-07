@@ -32,11 +32,18 @@ type registration struct {
 }
 
 var (
-	// mu guards ready, pending, early and the fields of each earlyConnector.
+	// mu guards ready, pending, early, earlyOpens and the fields of each
+	// earlyConnector. setReady holds it while it calls into the contrib, so no
+	// code reachable from sqltrace.Register, wrapConnector or startDBStats may
+	// call database/sql.Register, Open or OpenDB: their hooks take mu too.
 	mu      sync.Mutex
 	ready   bool
 	pending []registration
 	early   []*earlyConnector
+	// earlyOpens counts database/sql.Open calls that started before init and
+	// have not returned. Their connectors wait in early until AfterOpen has
+	// given them the DSN, even if init runs in the meantime.
+	earlyOpens int
 )
 
 func isReady() bool {
@@ -57,19 +64,19 @@ func setReady() {
 		sqltrace.Register(r.name, r.drv)
 	}
 	pending = nil
-	var dbs []*sql.DB
-	for _, c := range early {
-		if c.trace() {
-			dbs = append(dbs, c.db)
-		}
+	if earlyOpens == 0 {
+		traceEarly()
 	}
-	early = nil
 	ready = true
 	mu.Unlock()
+}
 
-	for _, db := range dbs {
-		closeEarlyDBIdle(db)
+// traceEarly traces the connectors in early. mu must be held.
+func traceEarly() {
+	for _, c := range early {
+		c.trace()
 	}
+	early = nil
 }
 
 func AfterRegister(ictx hook.HookContext) {
@@ -98,12 +105,16 @@ type openResult struct {
 }
 
 func BeforeOpen(ictx hook.HookContext, driverName, dataSourceName string) {
-	if !isReady() {
+	mu.Lock()
+	if !ready {
 		// Let database/sql.Open run. The OpenDB hook it calls sets up an
 		// earlyConnector.
+		earlyOpens++
+		mu.Unlock()
 		ictx.SetData(earlyDSN(dataSourceName))
 		return
 	}
+	mu.Unlock()
 	// For a driver it does not know, sqltrace.Open calls database/sql.Open,
 	// which reaches this hook again. Letting that call through stops a loop.
 	if !isRegistered(driverName) {
@@ -120,23 +131,32 @@ func AfterOpen(ictx hook.HookContext, db *sql.DB, _ error) {
 		ictx.SetReturnVal(0, data.db)
 		ictx.SetReturnVal(1, data.err)
 	case earlyDSN:
-		if db == nil {
-			return
-		}
 		mu.Lock()
-		defer mu.Unlock()
-		for _, c := range early {
-			if c.db == db {
-				c.dsn = string(data)
+		earlyOpens--
+		if db != nil {
+			for _, c := range early {
+				if c.db == db {
+					c.dsn = string(data)
+				}
 			}
 		}
+		// init ran while database/sql.Open was running, and skipped the
+		// connectors waiting for a DSN.
+		if ready && earlyOpens == 0 {
+			traceEarly()
+		}
+		mu.Unlock()
 	}
 }
 
 func BeforeOpenDB(ictx hook.HookContext, c driver.Connector) {
-	if !isReady() {
+	mu.Lock()
+	waiting := !ready || earlyOpens > 0
+	mu.Unlock()
+	if waiting {
 		// The contrib cannot be called before init, so init traces this
-		// connector later.
+		// connector later. An Open that started before init also waits, so
+		// that it keeps its DSN.
 		ec := &earlyConnector{Connector: c}
 		ictx.SetParam(0, ec)
 		ictx.SetData(ec)
@@ -161,7 +181,7 @@ func AfterOpenDB(ictx hook.HookContext, db *sql.DB) {
 		mu.Lock()
 		defer mu.Unlock()
 		c.db = db
-		if ready {
+		if ready && earlyOpens == 0 {
 			// init ran while this database was being opened.
 			c.trace()
 			return

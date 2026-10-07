@@ -287,6 +287,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/kafka v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/opensearch v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.42.0 // indirect
 	github.com/tidwall/btree v1.6.0 // indirect

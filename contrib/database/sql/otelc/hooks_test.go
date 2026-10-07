@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,30 +34,6 @@ func (testConnector) Connect(context.Context) (driver.Conn, error) {
 
 func (testConnector) Driver() driver.Driver { return testDriver{} }
 
-// countingConnector opens connections that count how many times they close.
-type countingConnector struct {
-	closed *atomic.Int32
-}
-
-func (c countingConnector) Connect(context.Context) (driver.Conn, error) {
-	return testConn{c.closed}, nil
-}
-
-func (countingConnector) Driver() driver.Driver { return testDriver{} }
-
-type testConn struct {
-	closed *atomic.Int32
-}
-
-func (testConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not implemented") }
-func (testConn) Begin() (driver.Tx, error)           { return nil, errors.New("not implemented") }
-
-func (c testConn) Close() error {
-	c.closed.Add(1)
-	return nil
-}
-
-// closingConnector calls close from its Close method.
 type closingConnector struct {
 	testConnector
 	close func() error
@@ -101,6 +76,7 @@ func (c *testHookContext) GetData() any          { return c.data }
 func beforeInit(t *testing.T) {
 	mu.Lock()
 	ready = false
+	earlyOpens = 0
 	mu.Unlock()
 	t.Cleanup(func() {
 		if !isReady() {
@@ -155,6 +131,58 @@ func TestOpenBeforeInitKeepsDSN(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+// TestOpenKeepsDSNWhenInitRunsDuringOpen runs init at each point of a
+// database/sql.Open that started before it. The connector must only be traced
+// once AfterOpen has given it the DSN.
+func TestOpenKeepsDSNWhenInitRunsDuringOpen(t *testing.T) {
+	const dsn = "file::memory:"
+	for _, initAt := range []string{"before OpenDB", "during OpenDB", "after OpenDB"} {
+		t.Run(initAt, func(t *testing.T) {
+			beforeInit(t)
+			openCtx := &testHookContext{}
+			BeforeOpen(openCtx, "otelc-hooks-test-driver", dsn)
+			if initAt == "before OpenDB" {
+				setReady()
+			}
+
+			ictx := &testHookContext{params: []any{testConnector{}}}
+			BeforeOpenDB(ictx, testConnector{})
+			ec, ok := ictx.params[0].(*earlyConnector)
+			require.True(t, ok, "an Open that started before init must get an earlyConnector")
+			db := sql.OpenDB(ec)
+			if initAt == "during OpenDB" {
+				setReady()
+			}
+			AfterOpenDB(ictx, db)
+			if initAt == "after OpenDB" {
+				setReady()
+			}
+
+			assert.Nil(t, ec.traced.Load(), "the connector must wait for its DSN")
+			AfterOpen(openCtx, db, nil)
+			assert.Equal(t, dsn, ec.dsn)
+			requireTraced(t, ec)
+			assert.Empty(t, early)
+			require.NoError(t, db.Close())
+		})
+	}
+}
+
+// TestOpenDBWaitsForEarlyOpen checks that an OpenDB called while an early Open
+// is still running is traced once that Open returns.
+func TestOpenDBWaitsForEarlyOpen(t *testing.T) {
+	beforeInit(t)
+	openCtx := &testHookContext{}
+	BeforeOpen(openCtx, "otelc-hooks-test-driver", "file::memory:")
+	setReady()
+
+	db, ec := openDBBeforeInit(t, testConnector{})
+	assert.Nil(t, ec.traced.Load())
+	AfterOpen(openCtx, nil, errors.New("open failed"))
+	requireTraced(t, ec)
+	require.NoError(t, db.Close())
+}
+
 func TestCloseBeforeInit(t *testing.T) {
 	beforeInit(t)
 	db, ec := openDBBeforeInit(t, testConnector{})
@@ -177,20 +205,6 @@ func TestRegisterWhileInitRuns(t *testing.T) {
 	assert.True(t, isRegistered(name), "the driver must be registered whether it was queued or not")
 }
 
-func TestCloseEarlyDBIdle(t *testing.T) {
-	beforeInit(t)
-	var closed atomic.Int32
-	db, ec := openDBBeforeInit(t, countingConnector{&closed})
-	require.NoError(t, db.Ping())
-	require.Equal(t, 1, db.Stats().Idle)
-
-	setReady()
-	requireTraced(t, ec)
-	assert.Equal(t, int32(1), closed.Load(), "the connection from before init must be closed")
-	assert.Equal(t, 0, db.Stats().Idle)
-	require.NoError(t, db.Close())
-}
-
 func TestCloseConnectorClosingAnotherDB(t *testing.T) {
 	beforeInit(t)
 	other, _ := openDBBeforeInit(t, testConnector{})
@@ -204,4 +218,26 @@ func TestCloseConnectorClosingAnotherDB(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close deadlocked")
 	}
+}
+
+// TestSetReadyDoesNotDeadlock runs setReady with a queued driver and an early
+// connector. setReady calls the contrib while it holds mu, and the hooks take
+// mu, so the contrib calling database/sql.Register, Open or OpenDB would hang.
+func TestSetReadyDoesNotDeadlock(t *testing.T) {
+	beforeInit(t)
+	AfterRegister(&testHookContext{params: []any{"otelc-hooks-test-deadlock-driver", testDriver{}}})
+	db, ec := openDBBeforeInit(t, testConnector{})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		setReady()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("setReady deadlocked")
+	}
+	requireTraced(t, ec)
+	require.NoError(t, db.Close())
 }
