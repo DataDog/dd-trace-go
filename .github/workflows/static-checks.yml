@@ -292,6 +292,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 2 # HEAD^1 is the base for the nested-modules lint step
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
@@ -334,6 +335,14 @@ jobs:
         with:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The golangci-lint steps above stop at Go workspace module boundaries.
+      # Nested modules still carry pre-existing findings, so report only the
+      # issues this change adds.
+      - name: golangci-lint (nested modules)
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/lint_go_modules.sh --timeout 10m --new-from-rev=HEAD~1
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
