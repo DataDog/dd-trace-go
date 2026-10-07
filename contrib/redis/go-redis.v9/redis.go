@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 	"weak"
 
@@ -134,7 +135,13 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// while calling WrapClient (to replace and instrument a delegate, say),
 	// and wrapMu-then-proxy-mutex would then deadlock against
 	// proxy-mutex-then-wrapMu.
-	targets := concreteClients(client)
+	targets, ok := concreteClients(client)
+	if !ok {
+		// The proxy's mutex stayed held — possibly by this very call chain,
+		// which would deadlock on any further interaction with the proxy.
+		// Do nothing; a wrap after the mutex is released works normally.
+		return
+	}
 
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
@@ -291,9 +298,17 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 	if !ok {
 		return nil, true
 	}
-	if e, ok := wrapped[k]; ok {
-		if !sameConfig(e.cfg, key) {
-			instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+	var warned bool
+	for {
+		e, ok := wrapped[k]
+		if !ok {
+			break
+		}
+		if !warned {
+			warned = true
+			if !sameConfig(e.cfg, key) {
+				instr.Logger().Warn("contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+			}
 		}
 		// Wait for the recorded install, unless this goroutine is the one
 		// running it — a proxy whose AddHook re-enters WrapClient for that
@@ -304,6 +319,9 @@ func begin(client redis.UniversalClient, key configKey) (entry *wrapEntry, proce
 		if e.done != nil && e.goid != goid() {
 			done := e.done
 			unlocked(func() { <-done })
+			// The install may have failed and dropped its marker; recheck
+			// instead of returning without a hook.
+			continue
 		}
 		return nil, false
 	}
@@ -412,7 +430,7 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) bool {
 		return false
 	}
 	if v.CanAddr() {
-		unlock := lockStruct(v)
+		unlock, _ := lockStruct(v)
 		defer unlock()
 	}
 	return containsHook(v, hook, 3)
@@ -451,7 +469,16 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 				return true
 			}
 		case reflect.Pointer:
-			if !f.IsNil() && f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			// A concrete client field is a delegate, not proxy-owned
+			// storage: the probe the proxy's own AddHook fanned out to it
+			// is not evidence of retention.
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+				continue
+			}
+			if f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
 				return true
 			}
 		}
@@ -524,24 +551,29 @@ func hookSlice(client redis.UniversalClient) reflect.Value {
 		return reflect.Value{}
 	}
 	s := v.Elem()
-	// The hooks live in an unexported embedded struct: view the whole client
-	// through its address so its fields can be read.
+	// The hooks live in unexported embedded structs — v9.22 nests them
+	// behind the base-client pointer and an atomic snapshot: view the whole
+	// client through its address so its fields can be read.
 	s = reflect.NewAt(s.Type(), unsafe.Pointer(s.UnsafeAddr())).Elem()
-	return findHookSlice(s, 3)
+	return findHookSlice(s, 8)
 }
 
 var (
-	mutexType   = reflect.TypeOf(sync.Mutex{})
-	rwMutexType = reflect.TypeOf(sync.RWMutex{})
+	mutexType              = reflect.TypeOf(sync.Mutex{})
+	rwMutexType            = reflect.TypeOf(sync.RWMutex{})
+	redisClientType        = reflect.TypeFor[*redis.Client]()
+	redisClusterClientType = reflect.TypeFor[*redis.ClusterClient]()
+	redisRingType          = reflect.TypeFor[*redis.Ring]()
 )
 
-// lockStruct read-locks the struct's own mutex, when it has one, and returns
-// the unlock function: a proxy may replace its delegate fields while serving
-// traffic, guarded by that mutex, and reading them — here or in the hook
-// chain — must not race with it. A struct without a mutex does not
-// synchronize those fields, and reading them is then no more racy than the
-// struct's own readers.
-func lockStruct(s reflect.Value) func() {
+// lockStruct tries to take the struct's own mutex, when it has one, and
+// returns the unlock function: a proxy may replace its delegate fields while
+// serving traffic, guarded by that mutex, and reading them — here or in the
+// hook chain — must not race with it. It reports false when the mutex stays
+// held: the holder may be the caller's own goroutine, and blocking on it
+// would deadlock. A struct without a mutex does not synchronize those fields,
+// and reading them is then no more racy than the struct's own readers.
+func lockStruct(s reflect.Value) (unlock func(), ok bool) {
 	for i := 0; i < s.NumField(); i++ {
 		t := s.Type().Field(i).Type
 		if t != mutexType && t != rwMutexType {
@@ -558,14 +590,28 @@ func lockStruct(s reflect.Value) func() {
 			// Unexported field: address it through its location.
 			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 		}
-		if t == rwMutexType {
-			f.Addr().MethodByName("RLock").Call(nil)
-			return func() { f.Addr().MethodByName("RUnlock").Call(nil) }
+		// Try instead of block: the mutex may be held by the very call
+		// chain running WrapClient — a proxy updating a delegate before
+		// unlocking, say — and blocking on it would deadlock the caller's
+		// own goroutine. Brief contention from another goroutine is ridden
+		// out with a few short retries.
+		var locked bool
+		for range 100 {
+			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
+				locked = true
+				break
+			}
+			time.Sleep(time.Millisecond)
 		}
-		f.Addr().MethodByName("Lock").Call(nil)
-		return func() { f.Addr().MethodByName("Unlock").Call(nil) }
+		if !locked {
+			return func() {}, false
+		}
+		if t == rwMutexType {
+			return func() { f.Addr().MethodByName("Unlock").Call(nil) }, true
+		}
+		return func() { f.Addr().MethodByName("Unlock").Call(nil) }, true
 	}
-	return func() {}
+	return func() {}, true
 }
 
 // findHookSlice returns the first []redis.Hook field in s or in the structs
@@ -574,23 +620,57 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return reflect.Value{}
 	}
-	unlock := lockStruct(s)
+	unlock, _ := lockStruct(s)
 	defer unlock()
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
-		if f.Kind() == reflect.Slice && f.Type() == redisHookSliceType {
+		switch f.Kind() {
+		case reflect.Slice:
+			if f.Type() != redisHookSliceType {
+				continue
+			}
 			if !f.CanInterface() {
 				// Unexported field: read it through its address.
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
 			return f
-		}
-		if f.Kind() == reflect.Struct {
+		case reflect.Struct:
 			if !f.CanInterface() {
 				// Unexported field: read it through its address.
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
 			if h := findHookSlice(f, depth-1); h.IsValid() {
+				return h
+			}
+		case reflect.Pointer:
+			if f.IsNil() {
+				continue
+			}
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				if !f.CanAddr() {
+					continue
+				}
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			// go-redis v9.22 and later keep the hook snapshot behind an
+			// atomic pointer: reach it through its Load method. Other
+			// pointers to structs are followed directly.
+			if m := f.MethodByName("Load"); m.IsValid() &&
+				m.Type().NumIn() == 0 && m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.Pointer {
+				target := m.Call(nil)[0]
+				if target.IsNil() || target.Elem().Kind() != reflect.Struct {
+					continue
+				}
+				if h := findHookSlice(target.Elem(), depth-1); h.IsValid() {
+					return h
+				}
+				continue
+			}
+			if f.Elem().Kind() != reflect.Struct {
+				continue
+			}
+			if h := findHookSlice(f.Elem(), depth-1); h.IsValid() {
 				return h
 			}
 		}
@@ -617,8 +697,9 @@ func weakHandle(client any) (weak.Pointer[byte], bool) {
 // when it cannot see through the implementation, for example when the
 // delegated clients are not held in fields at all or are nested beyond the
 // search depth.
-func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
+func concreteClients(client redis.UniversalClient) (targets []redis.UniversalClient, ok bool) {
 	var found []redis.UniversalClient
+	var aborted bool
 	var walk func(c redis.UniversalClient, depth int)
 	walk = func(c redis.UniversalClient, depth int) {
 		if depth == 0 || c == nil {
@@ -652,9 +733,15 @@ func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 		}
 		s := v
 		// The struct's own mutex, when it has one, guards its delegate
-		// fields; read them under it.
-		unlock := lockStruct(s)
+		// fields; read them under it. A mutex that stays held may be held
+		// by this very call chain, and blocking on it would deadlock: treat
+		// the proxy as opaque instead, and let its AddHook see nothing.
+		unlock, locked := lockStruct(s)
 		defer unlock()
+		if !locked {
+			aborted = true
+			return
+		}
 		for i := 0; i < s.NumField(); i++ {
 			f := s.Field(i)
 			if !f.CanInterface() {
@@ -677,7 +764,10 @@ func concreteClients(client redis.UniversalClient) []redis.UniversalClient {
 	// this depth leaves the client undiscoverable, falling back to the
 	// proxy's own identity.
 	walk(client, 8)
-	return found
+	if aborted {
+		return nil, false
+	}
+	return found, true
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay

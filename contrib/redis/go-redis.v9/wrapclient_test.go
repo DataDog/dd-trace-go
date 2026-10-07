@@ -9,6 +9,7 @@ import (
 	"context"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -932,4 +933,134 @@ func TestWrapClientMutexValueDecorator(t *testing.T) {
 	if n := datadogHooks(client); n != 1 {
 		t.Fatalf("expected exactly 1 datadog hook after 2 wraps, got %d", n)
 	}
+}
+
+// concreteFanOutProxy stores its delegates as concrete clients and fans every
+// hook out to both.
+type concreteFanOutProxy struct {
+	*redis.Client
+	write *redis.Client
+}
+
+func (p *concreteFanOutProxy) AddHook(hook redis.Hook) {
+	p.Client.AddHook(hook)
+	p.write.AddHook(hook)
+}
+
+// A proxy whose delegates are concrete clients must not be mistaken for one
+// that retains hooks: the probe its AddHook fanned out to a delegate's hook
+// slice is not proxy-owned storage. Per-member endpoint tags must survive.
+func TestWrapClientConcreteFanOutProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	read := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { read.Close() })
+	write := redis.NewClient(&redis.Options{Addr: "127.0.0.1:2"})
+	t.Cleanup(func() { write.Close() })
+
+	WrapClient(&concreteFanOutProxy{Client: read, write: write})
+
+	_ = read.Get(context.Background(), "foo").Err()
+	_ = write.Get(context.Background(), "foo").Err()
+
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 2 {
+		t.Fatalf("expected 1 command span per member, got %d", len(spans))
+	}
+	ports := map[any]bool{}
+	for _, s := range spans {
+		ports[s.Tag(ext.TargetPort)] = true
+	}
+	if !ports["1"] || !ports["2"] {
+		t.Fatalf("expected spans tagged with each member's port, got %v", ports)
+	}
+}
+
+// A proxy may call WrapClient while holding its own mutex. The field walk
+// must not block on that mutex — held by the caller's own goroutine, waiting
+// would deadlock — and a wrap after the unlock instruments normally.
+func TestWrapClientHeldProxyMutex(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+	router := &hotSwapRouter{UniversalClient: a, write: b}
+
+	router.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(router)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient deadlocked on a proxy mutex held by the caller")
+	}
+	router.mu.Unlock()
+
+	WrapClient(router)
+	// The router's AddHook hooks its write member: that member is
+	// instrumented once the mutex is no longer held.
+	if n := datadogHooks(b); n != 1 {
+		t.Fatalf("expected the write member to carry 1 datadog hook after the unlocked wrap, got %d", n)
+	}
+}
+
+// A waiter for an install that failed — the installer's AddHook panicked and
+// the marker was dropped — must retry the install instead of returning
+// without a hook.
+func TestWrapClientWaiterRetriesFailedInstall(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	// Nest beyond the field-walk depth, so both wraps go through the
+	// proxy's own AddHook.
+	inner := &slowPanickingProxy{UniversalClient: client, delay: 300 * time.Millisecond}
+	proxy := redis.UniversalClient(inner)
+	for range 10 {
+		proxy = &redisDecorator{proxy}
+	}
+	// The first wrap starts the install and panics; a concurrent wrap waits
+	// for it and must retry after the marker is dropped.
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	})
+	time.Sleep(100 * time.Millisecond)
+	wg.Go(func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	})
+	wg.Wait()
+
+	// Both wraps panicked through the proxy's AddHook — the install was
+	// attempted twice, not zero times or once.
+	if n := inner.count.Load(); n != 2 {
+		t.Fatalf("expected the install to be attempted twice, got %d", n)
+	}
+}
+
+// slowPanickingProxy's AddHook panics after a delay, so another goroutine's
+// wrap waits on the in-flight install before it fails.
+type slowPanickingProxy struct {
+	redis.UniversalClient
+	delay time.Duration
+	count atomic.Int32
+}
+
+func (r *slowPanickingProxy) AddHook(hook redis.Hook) {
+	r.count.Add(1)
+	time.Sleep(r.delay)
+	panic("AddHook panicked")
 }
