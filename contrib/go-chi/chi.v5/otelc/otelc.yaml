@@ -5,6 +5,9 @@
 ---
 # otelc port of ../orchestrion.yml.
 #
+# The import names differ from the chi v1 rules, so a file that uses both chi
+# versions does not get two imports under the same name.
+#
 # Like orchestrion, the rules rewrite call sites in every package of the build,
 # dependencies included, except chi and the chi contrib. Inside chi, Route
 # creates sub-routers with NewRouter, which orchestrion does not wrap, and
@@ -21,14 +24,14 @@ new_mux:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
+          (func() *chiv5.Mux {
             mux := {{ . }}
-            mux.Use(chitrace.Middleware())
+            mux.Use(chiv5trace.Middleware())
             return mux
           })()
   imports:
-    chi: github.com/go-chi/chi/v5
-    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+    chiv5: github.com/go-chi/chi/v5
+    chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
 
 new_router:
   target:
@@ -40,11 +43,11 @@ new_router:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
+          (func() *chiv5.Mux {
             mux := {{ . }}
-            mux.Use(chitrace.Middleware())
+            mux.Use(chiv5trace.Middleware())
             return mux
           })()
   imports:
-    chi: github.com/go-chi/chi/v5
-    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+    chiv5: github.com/go-chi/chi/v5
+    chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
