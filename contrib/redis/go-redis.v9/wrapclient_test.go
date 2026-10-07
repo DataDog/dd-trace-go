@@ -1408,3 +1408,91 @@ func TestWrapClientRegistryConfigNoCallback(t *testing.T) {
 	}
 	t.Fatal("registry entry outlived the proxy whose callback captured it")
 }
+
+// A panic in a proxy's AddHook must not leave the installing marker behind
+// on the recovered goroutine: a later wrap from that same goroutine must
+// retry rather than mistake itself for the re-entry.
+func TestWrapClientPanicClearsInstallingMarker(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	proxy := &panickingProxy{UniversalClient: client}
+
+	func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	}()
+
+	// Same goroutine that panicked: a stale marker would be found here and
+	// make the next wrap skip the retry — this one, which reaches AddHook
+	// again and panics again.
+	if v, ok := installing.Load(goid()); ok {
+		for _, m := range v.([]installMark) {
+			if sameMark(m.proxy, m.members, proxy, nil) {
+				t.Fatal("the installing marker outlived the panicked AddHook")
+			}
+		}
+	}
+
+	func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	}()
+	if v, ok := installing.Load(goid()); ok {
+		for _, m := range v.([]installMark) {
+			if sameMark(m.proxy, m.members, proxy, nil) {
+				t.Fatal("the installing marker outlived the retried AddHook")
+			}
+		}
+	}
+}
+
+// nonComparableValueProxy has a map field, so its value is not comparable,
+// and its AddHook re-enters WrapClient for itself.
+type nonComparableValueProxy struct {
+	redis.UniversalClient
+	other *redis.Client
+	tags  map[string]string
+}
+
+func (r nonComparableValueProxy) AddHook(hook redis.Hook) {
+	WrapClient(r)
+	r.UniversalClient.AddHook(hook)
+	r.other.AddHook(hook)
+}
+
+// A value proxy whose type is not comparable has neither a weak identity nor
+// a comparable value; the reentrancy guard matches it through its member set.
+func TestWrapClientReentrantNonComparableProxy(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(nonComparableValueProxy{UniversalClient: a, other: b})
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("WrapClient recursed without bound on a re-entrant non-comparable value proxy")
+	}
+}
+
+// A retain-only proxy keeps its durable observation: its members never carry
+// the hook by design, and re-wrapping must not hand the proxy another real
+// hook for every wrap.
+func TestWrapClientRetainOnlyDurableEntry(t *testing.T) {
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &retainingProxy{UniversalClient: current}
+
+	WrapClient(proxy)
+	first := len(proxy.retained)
+	WrapClient(proxy)
+	WrapClient(proxy)
+	if after := len(proxy.retained); after != first {
+		t.Fatalf("expected the retained-hook list to stop growing after the first wrap, got %d then %d", first, after)
+	}
+}

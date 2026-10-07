@@ -76,11 +76,12 @@ func (cfg *clientConfig) key() configKey {
 // holds no reference to the client and no user callback, so it cannot pin
 // the client.
 type wrapEntry struct {
-	cfg      configKey
-	full     *clientConfig // the full configuration of the first proxy wrap
-	done     chan struct{} // non-nil while the recorded install is in flight
-	goid     uint64        // the goroutine that started the install, for reentry
-	observed bool          // an observation completed for this client
+	cfg        configKey
+	full       *clientConfig // the full configuration of the first proxy wrap
+	done       chan struct{} // non-nil while the recorded install is in flight
+	goid       uint64        // the goroutine that started the install, for reentry
+	observed   bool          // an observation completed for this client
+	retainOnly bool          // the proxy retains hooks; its members stay unhooked by design
 }
 
 // installing records, per goroutine, the proxies whose AddHook a WrapClient
@@ -90,24 +91,35 @@ type wrapEntry struct {
 // proxy has no weak pointer identity to key by.
 var installing sync.Map // uint64 (goid) -> []any
 
+// installMark identifies a proxy whose AddHook a WrapClient call on this
+// goroutine is currently running: an AddHook that re-enters WrapClient for
+// the same proxy must recognize its own installation instead of recursing.
+// The members make a non-comparable value proxy — which has neither a weak
+// pointer identity nor a comparable value — recognizable through the
+// concrete clients it delegates to.
+type installMark struct {
+	proxy   any
+	members []redis.UniversalClient
+}
+
 // markInstalling records that this goroutine is about to run client's
 // AddHook; the returned function must be called once it returns.
-func markInstalling(client any) func() {
+func markInstalling(client any, members []redis.UniversalClient) func() {
 	id := goid()
-	var list []any
+	var list []installMark
 	if v, ok := installing.Load(id); ok {
-		list = v.([]any)
+		list = v.([]installMark)
 	}
-	installing.Store(id, append(list, client))
+	installing.Store(id, append(list, installMark{proxy: client, members: members}))
 	return func() {
 		id := goid()
 		v, ok := installing.Load(id)
 		if !ok {
 			return
 		}
-		list := v.([]any)
+		list := v.([]installMark)
 		for i := len(list) - 1; i >= 0; i-- {
-			if equalProxy(list[i], client) {
+			if sameMark(list[i].proxy, list[i].members, client, members) {
 				list = append(list[:i], list[i+1:]...)
 				break
 			}
@@ -122,28 +134,40 @@ func markInstalling(client any) func() {
 
 // isInstalling reports whether this goroutine is currently running the
 // AddHook of client — a re-entrant call must not start its own installation.
-func isInstalling(client any) bool {
+func isInstalling(client any, members []redis.UniversalClient) bool {
 	id := goid()
 	v, ok := installing.Load(id)
 	if !ok {
 		return false
 	}
-	for _, c := range v.([]any) {
-		if equalProxy(c, client) {
+	for _, m := range v.([]installMark) {
+		if sameMark(m.proxy, m.members, client, members) {
 			return true
 		}
 	}
 	return false
 }
 
-// equalProxy compares two clients for the reentrancy guard; proxies with
-// non-comparable dynamic types never match rather than panic.
-func equalProxy(a, b any) bool {
-	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
-	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
+// sameMark reports whether two proxies in installation marks identify the
+// same client. Proxies with non-comparable dynamic types are matched through
+// their member sets — the same concrete clients — rather than by value.
+func sameMark(pa any, ma []redis.UniversalClient, pb any, mb []redis.UniversalClient) bool {
+	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
+	if ta == nil || tb == nil {
 		return false
 	}
-	return a == b
+	if ta == tb && ta.Comparable() {
+		return pa == pb
+	}
+	if len(ma) != len(mb) {
+		return false
+	}
+	for i := range ma {
+		if ma[i] != mb[i] {
+			return false
+		}
+	}
+	return true
 }
 
 var (
@@ -285,11 +309,16 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 // in the chains it landed on as a no-op. The caller must hold wrapMu;
 // AddHook runs with the lock released.
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
-	if isInstalling(proxy) {
+	if isInstalling(proxy, members) {
 		// This call is the re-entry of this goroutine's own AddHook for the
 		// same proxy: the installation it belongs to is still in flight.
 		return
 	}
+	// Every user-controlled AddHook in this function runs with the proxy
+	// marked as being installed on this goroutine; the deferred unmark also
+	// runs when one of them panics and the application recovers, so the
+	// marker never outlives the wrap.
+	defer markInstalling(proxy, members)()
 	// A proxy may have replaced its delegates since its last observation.
 	// A durable entry stands only while every current member still carries
 	// the hook; when a new member does not, the proxy must be observed
@@ -297,7 +326,9 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// first-configuration-wins behavior requires.
 	var first *clientConfig
 	if k, ok := weakHandle(proxy); ok && len(members) > 0 {
-		if e, ok := wrapped[k]; ok && e.done == nil {
+		if e, ok := wrapped[k]; ok && e.done == nil && !e.retainOnly {
+			// A retain-only proxy never hooks its current members: their
+			// missing hooks are the proxy's design, not a replaced delegate.
 			allHookedNow := true
 			for _, member := range members {
 				if prev, seen := datadogConfig(member); !seen || prev == nil {
@@ -378,9 +409,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			finish(proxy, entry, false)
 		}
 	}()
-	unmark := markInstalling(proxy)
 	unlocked(func() { proxy.AddHook(probeHook{}) })
-	unmark()
 	// A proxy that keeps the probe in its own fields retains hooks for
 	// delegates it creates later; those delegates are traced only through a
 	// real hook passed to its AddHook. The same call fans that hook out to
@@ -401,11 +430,22 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		retained = true
 	}
 	if retained {
-		unmark := markInstalling(proxy)
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
-		unmark()
+		if entry != nil {
+			// A retain-only proxy never hooks its current members; record
+			// that, so a later wrap does not mistake their missing hooks
+			// for a replaced delegate and re-hand the proxy another hook.
+			hookedAny := false
+			for _, member := range members {
+				if prev, seen := datadogConfig(member); seen && prev != nil {
+					hookedAny = true
+					break
+				}
+			}
+			entry.retainOnly = !hookedAny
+		}
 		completed = true
-		finish(proxy, entry, true)
+		finishObserved(proxy, entry, true, true)
 		return
 	}
 	var instrumented bool
@@ -421,9 +461,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	if !instrumented {
 		// AddHook reached no concrete client we can see: instrument through
 		// the proxy itself, deduplicated by its identity.
-		unmark := markInstalling(proxy)
 		unlocked(func() { addHook(proxy, cfg) })
-		unmark()
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -824,8 +862,14 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return reflect.Value{}
 	}
-	unlock, _ := lockStruct(s)
+	unlock, ok := lockStruct(s)
 	defer unlock()
+	if !ok {
+		// The struct's mutex stayed held; reading its hook slice without it
+		// would race with the update in progress. Report no readable chain —
+		// the caller falls back to the client's weak identity.
+		return reflect.Value{}
+	}
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
 		switch f.Kind() {
