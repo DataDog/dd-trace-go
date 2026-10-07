@@ -377,12 +377,16 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		entry.cfgWeak = weak.Make(cfg)
 	}
 	if first != nil {
-		// The re-observation installs the first wrap's configuration.
+		// The re-observation installs the first wrap's configuration. Its
+		// registry copy stays callback-free — the live configuration, user
+		// callback included, is reached only through the weak pointer the
+		// installed hooks keep alive.
 		if !sameConfig(first.key(), cfg.key()) {
 			warn()
 		}
 		entry.cfg = first.key()
-		entry.full = first
+		entry.full = registryConfig(first)
+		entry.cfgWeak = weak.Make(first)
 		cfg = first
 	}
 	// Nothing can be learned and nothing can be added once this proxy has
@@ -690,6 +694,17 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return false
+	}
+	// Each nested struct is locked as it is traversed, like the root: a
+	// synchronized hook store shared by several proxies updates its slice
+	// under its own mutex, and reading it without that races with the
+	// update.
+	if s.CanAddr() {
+		unlock, ok := lockStruct(s)
+		defer unlock()
+		if !ok {
+			return false
+		}
 	}
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
