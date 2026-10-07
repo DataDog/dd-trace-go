@@ -1,0 +1,12 @@
+_v: 1
+name: go.mongodb.org/mongo-driver/v2
+display_name: MongoDB Go Driver v2
+description: Instruments MongoDB Go Driver v2 database commands with client spans, capturing command payloads, database and
+  peer details, and command failures.
+packages:
+- name: go.mongodb.org/mongo-driver/v2
+category:
+- db.client
+systems:
+- mongodb
+creation_date: '2025-06-13'

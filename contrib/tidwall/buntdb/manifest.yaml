@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/tidwall/buntdb
+display_name: BuntDB
+description: Instruments BuntDB transaction operations, including key reads, writes and deletions, ordered scans, spatial
+  queries, index management, key counts and expiration lookups.
+packages:
+- name: github.com/tidwall/buntdb
+category:
+- db.client
+systems:
+- buntdb
+creation_date: '2018-09-12'
