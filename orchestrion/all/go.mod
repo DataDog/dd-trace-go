@@ -74,7 +74,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 v2.0.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.4 // indirect
@@ -347,6 +347,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../contrib/graph-gophers/graphql-go
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../contrib/graphql-go/graphql
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../contrib/hashicorp/vault
+	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 => ../../contrib/internal/rediswrap
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 => ../../contrib/jackc/pgx.v5
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../contrib/julienschmidt/httprouter
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 => ../../contrib/k8s.io/client-go
@@ -367,5 +368,3 @@ replace (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 => ../../contrib/internal/rediswrap

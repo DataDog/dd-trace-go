@@ -10,4 +10,3 @@ require (
 replace example.com/root/v2 => ./..
 
 replace example.com/root/moduleA/v2 => ../moduleA
-

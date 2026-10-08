@@ -1468,11 +1468,12 @@ func assertJSONErrorCode(t *testing.T, stderrOut, wantCode string) {
 }
 
 // TestInternalHelperModuleTagged probes the same unit-level slice as
-// TestExcludeModulesSkipsTagCreation: a repository-internal module that no
+// TestExcludeModulesSkipsTagCreation: a repository-internal module with no
 // root-module dependency of its own, but that a published integration
 // requires (contrib/internal/rediswrap's shape), must be included in the
 // tag set — otherwise the integration's published requirement resolves to a
-// nonexistent version.
+// nonexistent version. The helper module is created in the scaffold (not in
+// testdata) so fix-modules never churns a fixture it cannot tidy.
 func TestInternalHelperModuleTagged(t *testing.T) {
 	t.Parallel()
 	testLogger()
@@ -1480,9 +1481,35 @@ func TestInternalHelperModuleTagged(t *testing.T) {
 	const (
 		branch  = "release-v2.9.x"
 		version = "v2.9.9-rc.1"
+
+		helperModule = "example.com/root/contrib/internal/helper/v2"
+		helperDir    = "contrib/internal/helper"
 	)
 
 	tmpDir := scaffoldRepo(t, branch)
+
+	// Create the internal helper module: a repository module with no
+	// dependency on the root.
+	if err := os.MkdirAll(filepath.Join(tmpDir, helperDir), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	helperGoMod := "module " + helperModule + "\n\ngo 1.26.0\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, helperDir, "go.mod"), []byte(helperGoMod), 0o644); err != nil {
+		t.Fatalf("write helper go.mod failed: %v", err)
+	}
+
+	// moduleA requires the helper and replaces it with the local module.
+	moduleAGoMod, err := os.ReadFile(filepath.Join(tmpDir, "moduleA", "go.mod"))
+	if err != nil {
+		t.Fatalf("read moduleA go.mod failed: %v", err)
+	}
+	newGoMod := strings.Replace(string(moduleAGoMod),
+		"require example.com/root/v2 v2.0.0",
+		"require (\n\t"+helperModule+" v2.0.0\n\texample.com/root/v2 v2.0.0\n)\n\nreplace "+helperModule+" => ../"+helperDir,
+		1)
+	if err := os.WriteFile(filepath.Join(tmpDir, "moduleA", "go.mod"), []byte(newGoMod), 0o644); err != nil {
+		t.Fatalf("write moduleA go.mod failed: %v", err)
+	}
 
 	modules, err := findModules(tmpDir, []string{})
 	if err != nil {
@@ -1495,10 +1522,9 @@ func TestInternalHelperModuleTagged(t *testing.T) {
 	}
 
 	filtered := filterModules(modules, rootMod.Module.Path, []string{})
-	helperPath := "example.com/root/contrib/internal/helper/v2"
-	if _, ok := filtered[helperPath]; !ok {
+	if _, ok := filtered[helperModule]; !ok {
 		t.Fatalf("filterModules must include the internal helper %q required by moduleA; filtered: %v",
-			helperPath, filtered)
+			helperModule, filtered)
 	}
 
 	sorted, err := topologicalSort(buildDependencyGraph(filtered))
