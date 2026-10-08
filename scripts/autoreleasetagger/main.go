@@ -15,12 +15,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -289,17 +287,6 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	if err != nil {
 		return fmt.Errorf("failed to find modules: %w", err)
 	}
-	// Modules under excluded directories are as unpublished as ones excluded
-	// by name: they join the exclusion list, while staying in the walk set
-	// so the dependency check classifies requirements on them as
-	// repository-internal — and drops their dependents, which could not be
-	// resolved either.
-	dirExcluded, dirExcludedPaths, err := excludedDirModules(root, excludedDirs)
-	if err != nil {
-		return fmt.Errorf("failed to collect modules under excluded directories: %w", err)
-	}
-	maps.Copy(modules, dirExcluded)
-	excludedModules = append(excludedModules, dirExcludedPaths...)
 	slog.Info("Found modules:", "count", len(modules))
 	moduleKeys := make([]string, 0, len(modules))
 	for k := range modules {
@@ -315,7 +302,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	slog.Info("Root module", "module", rootModule.Module.Path)
 
 	// Filter modules to only include those that depend on the root module.
-	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules, untaggedModules)
+	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
 	slog.Info("Filtered modules:", "count", len(filteredModules))
 	filteredKeys := make([]string, 0, len(filteredModules))
 	for k := range filteredModules {
@@ -983,7 +970,7 @@ func runCommand(dir string, name string, args ...string) error {
 // requires an internal helper module (contrib/internal/...) needs that
 // helper published too, or its published version resolves to a tag that
 // does not exist.
-func filterModules(modules map[string]GoMod, rootModulePath string, excludedModules, untaggedModules []string) map[string]GoMod {
+func filterModules(modules map[string]GoMod, rootModulePath string, excludedModules []string) map[string]GoMod {
 	filtered := make(map[string]GoMod)
 
 	for path, mod := range modules {
@@ -1026,74 +1013,7 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 		}
 	}
 
-	// A module whose repository-internal requirement — a module of this
-	// repository, present in the walk — is excluded by name, or updated but
-	// never tagged, cannot be published resolvably: phase 1 rewrites its
-	// requirement to the new release version, and a dependency with no tag
-	// cannot be resolved by consumers. Drop such dependents, and repeat:
-	// each removal can orphan the dependents of the removed module too.
-	for changed := true; changed; {
-		changed = false
-		for path, mod := range filtered {
-			for _, req := range mod.Require {
-				if req.Path == rootModulePath {
-					continue
-				}
-				if _, repoInternal := modules[req.Path]; !repoInternal {
-					continue
-				}
-				if _, published := filtered[req.Path]; !published || containsPath(untaggedModules, req.Path) {
-					slog.Warn("dropping module with unresolvable dependency",
-						"module", req.Path, "dependent", path,
-						"reason", "the dependent requires a repository module that is excluded or never tagged, and cannot be published resolvably")
-					delete(filtered, path)
-					changed = true
-					break
-				}
-			}
-		}
-	}
-
 	return filtered
-}
-
-// excludedDirModules collects the modules under the excluded directories.
-// They are not released, but their dependents' requirements name them, and
-// the dependency check must classify those requirements as
-// repository-internal to drop the dependents — otherwise a released
-// integration would carry a rewritten requirement on a deliberately
-// untagged helper that no consumer can resolve.
-func excludedDirModules(root string, excludedDirs []string) (map[string]GoMod, []string, error) {
-	found := make(map[string]GoMod)
-	for _, dir := range excludedDirs {
-		abs := dir
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(root, dir)
-		}
-		if _, err := os.Stat(abs); err != nil {
-			continue
-		}
-		err := filepath.WalkDir(abs, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() && entry.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			if entry.Name() == "go.mod" {
-				m, err := readModule(path)
-				if err != nil {
-					return fmt.Errorf("failed to read module: %w", err)
-				}
-				found[m.Module.Path] = m
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to walk excluded directory: %w", err)
-		}
-	}
-	return found, slices.Collect(maps.Keys(found)), nil
 }
 
 func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {

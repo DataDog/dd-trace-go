@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap"
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -1828,6 +1828,77 @@ func TestWrapClientUnexportedPtrMutexProxy(t *testing.T) {
 		later.AddHook(hook)
 	}
 	proxy.mu.Unlock()
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// nestedStoreProxy fans every hook out to its current member and keeps a copy
+// in a nested store guarded by the store's own mutex.
+type nestedStoreProxy struct {
+	redis.UniversalClient
+	store struct {
+		mu    *sync.Mutex
+		hooks []redis.Hook
+	}
+}
+
+func (r *nestedStoreProxy) AddHook(hook redis.Hook) {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	r.store.hooks = append(r.store.hooks, hook)
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *nestedStoreProxy) applyTo(delegate redis.UniversalClient) {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	for _, hook := range r.store.hooks {
+		delegate.AddHook(hook)
+	}
+}
+
+// A nested hook store whose mutex stays busy during the retention scan must
+// not be misclassified as non-retaining: the probe already reached the
+// current member, so without the conservative hand-off the real hook never
+// reaches the proxy and the delegates it creates later inherit only the
+// no-op probe.
+func TestWrapClientNestedStoreContention(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &nestedStoreProxy{UniversalClient: current}
+	proxy.store.mu = &sync.Mutex{}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				// Hold the store's mutex in bursts longer than the scan's
+				// retry window.
+				proxy.store.mu.Lock()
+				time.Sleep(200 * time.Millisecond)
+				proxy.store.mu.Unlock()
+			}
+		}
+	})
+	WrapClient(proxy)
+	close(stop)
+	wg.Wait()
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
 	_ = later.Get(context.Background(), "foo").Err()
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))

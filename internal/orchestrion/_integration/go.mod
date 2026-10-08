@@ -138,7 +138,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.12.0-dev.3 // indirect
-	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap v0.0.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 v2.0.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.12.0-dev.3 // indirect
@@ -527,4 +527,4 @@ replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../..
 
 replace github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../../contrib/opensearch-project/opensearch-go.v4
 
-replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap => ../../../contrib/internal/rediswrap
+replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 => ../../../contrib/internal/rediswrap

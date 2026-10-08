@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap v0.0.0
+	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/stretchr/testify v1.11.1
@@ -85,7 +85,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap => ../../internal/rediswrap
+replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 => ../../internal/rediswrap
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 

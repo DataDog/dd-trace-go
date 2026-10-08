@@ -21,7 +21,7 @@ import (
 	"unsafe"
 	"weak"
 
-	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap"
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -608,7 +608,9 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 				defer unlock()
 				// The root is locked here; scanning it must not re-acquire
 				// its non-reentrant mutex. Nested structs lock themselves.
-				return scanHooks(v, hook, 3), true
+				// Nested structs lock themselves and propagate their
+				// own unknowns.
+				return scanHooks(v, hook, 3)
 			}
 			unlock()
 			time.Sleep(10 * time.Millisecond)
@@ -617,14 +619,14 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 		// with the update in progress: report unknown rather than guess.
 		return false, false
 	}
-	return scanHooks(v, hook, 3), true
+	return scanHooks(v, hook, 3)
 }
 
 // scanHooks reports whether s, or a struct embedded within it, holds the
 // hook; s itself is already locked by the caller.
-func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
+func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
 	if s.Kind() != reflect.Struct || depth == 0 {
-		return false
+		return false, true
 	}
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
@@ -637,7 +639,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
 		switch f.Kind() {
 		case reflect.Interface:
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
-				return true
+				return true, true
 			}
 		case reflect.Slice:
 			// Match by element type: a named slice — type hookList
@@ -645,13 +647,13 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
-						return true
+						return true, true
 					}
 				}
 			}
 		case reflect.Struct:
-			if containsHook(f, hook, depth-1) {
-				return true
+			if found, known := containsHook(f, hook, depth-1); found || !known {
+				return found, known
 			}
 		case reflect.Pointer:
 			if f.IsNil() || !f.CanInterface() {
@@ -660,12 +662,14 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
 			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
 				continue
 			}
-			if f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
-				return true
+			if f.Elem().Kind() == reflect.Struct {
+				if found, known := containsHook(f.Elem(), hook, depth-1); found || !known {
+					return found, known
+				}
 			}
 		}
 	}
-	return false
+	return false, true
 }
 
 // containsHook reports whether s, or a struct embedded within it, holds the
@@ -679,19 +683,20 @@ var (
 	redisRingType          = reflect.TypeFor[*redis.Ring]()
 )
 
-func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
+func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
 	if s.Kind() != reflect.Struct || depth == 0 {
-		return false
+		return false, true
 	}
 	// Each nested struct is locked as it is traversed, like the root: a
 	// synchronized hook store shared by several proxies updates its slice
 	// under its own mutex, and reading it without that races with the
-	// update.
+	// update. A lock that stays held leaves the scan unknown — the
+	// conservative caller then treats the proxy as retaining.
 	if s.CanAddr() {
 		unlock, ok := rediswrap.LockStruct(s)
 		defer unlock()
 		if !ok {
-			return false
+			return false, false
 		}
 	}
 	for i := 0; i < s.NumField(); i++ {
@@ -705,7 +710,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 		switch f.Kind() {
 		case reflect.Interface:
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
-				return true
+				return true, true
 			}
 		case reflect.Slice:
 			// Match by element type: a named slice — type hookList
@@ -713,13 +718,13 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
-						return true
+						return true, true
 					}
 				}
 			}
 		case reflect.Struct:
-			if containsHook(f, hook, depth-1) {
-				return true
+			if found, known := containsHook(f, hook, depth-1); found || !known {
+				return found, known
 			}
 		case reflect.Pointer:
 			if f.IsNil() || !f.CanInterface() {
@@ -731,12 +736,14 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
 				continue
 			}
-			if f.Elem().Kind() == reflect.Struct && containsHook(f.Elem(), hook, depth-1) {
-				return true
+			if f.Elem().Kind() == reflect.Struct {
+				if found, known := containsHook(f.Elem(), hook, depth-1); found || !known {
+					return found, known
+				}
 			}
 		}
 	}
-	return false
+	return false, true
 }
 
 // hookEqual compares two hooks, guarding against non-comparable dynamic

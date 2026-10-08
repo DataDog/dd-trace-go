@@ -74,7 +74,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap v0.0.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 v2.0.0 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.4 // indirect
@@ -368,4 +368,4 @@ replace (
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap => ../../contrib/internal/rediswrap
+replace github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2 => ../../contrib/internal/rediswrap

@@ -2,6 +2,11 @@ module example.com/root/moduleA/v2
 
 go 1.26.0
 
-require example.com/root/v2 v2.0.0
+require (
+	example.com/root/contrib/internal/helper/v2 v2.0.0
+	example.com/root/v2 v2.0.0
+)
 
 replace example.com/root/v2 => ./..
+
+replace example.com/root/contrib/internal/helper/v2 => ../contrib/internal/helper
