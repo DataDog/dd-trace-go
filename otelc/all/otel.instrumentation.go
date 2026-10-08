@@ -19,5 +19,7 @@ import (
 	// AppSec operation GLS lifecycle.
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 
-	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2" // integration
+	// Integrations.
+	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2"
 )

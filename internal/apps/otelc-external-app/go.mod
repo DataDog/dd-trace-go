@@ -22,6 +22,8 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
@@ -85,6 +87,10 @@ require (
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
 
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../../contrib/gomodule/redigo/otelc
 
