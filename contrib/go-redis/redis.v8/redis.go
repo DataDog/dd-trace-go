@@ -1073,7 +1073,17 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 		var members []redis.UniversalClient
 		iter := v.MapRange()
 		for iter.Next() {
-			m, ok := findMembers(iter.Value(), depth-1)
+			val := iter.Value()
+			if val.Kind() == reflect.Struct && !val.CanAddr() {
+				// A value held in a map is not addressable: an unexported
+				// client field of a holder stored by value could not be
+				// read. Copy it to an addressable location first, so the
+				// holder reads like any other.
+				p := reflect.New(val.Type())
+				p.Elem().Set(val)
+				val = p.Elem()
+			}
+			m, ok := findMembers(val, depth-1)
 			if !ok {
 				return nil, false
 			}
@@ -1089,10 +1099,11 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 		if u, ok := v.Interface().(redis.UniversalClient); ok {
 			return []redis.UniversalClient{u}, true
 		}
-		if v.Elem().Kind() == reflect.Struct {
-			return findMembers(v.Elem(), depth-1)
-		}
-		return nil, true
+		// Any other pointee may still be a holder: a pointer to a client
+		// container — *[]redis.UniversalClient, *redis.UniversalClient —
+		// or to a struct. Descend regardless of kind; the recursive cases
+		// decide what they find.
+		return findMembers(v.Elem(), depth-1)
 	case reflect.Struct:
 		// A mutex field is not a holder — it guards the outer struct,
 		// whose lock the walk already holds — and descending into it would
