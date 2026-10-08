@@ -1967,3 +1967,95 @@ func TestWrapClientArrayRetainProxy(t *testing.T) {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
 	}
 }
+
+// ifaceRetainProxy fans hooks out to its current member and keeps them behind
+// an interface.
+type ifaceRetainProxy struct {
+	redis.UniversalClient
+	store any
+	n     int
+}
+
+func (r *ifaceRetainProxy) AddHook(hook redis.Hook) {
+	switch s := r.store.(type) {
+	case nil:
+		r.store = []redis.Hook{hook}
+	case []redis.Hook:
+		r.store = append(s, hook)
+	}
+	r.n++
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *ifaceRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range r.store.([]redis.Hook) {
+		delegate.AddHook(hook)
+	}
+}
+
+// An interface-backed hook container is a hook store like any other; the
+// retention scan must unwrap the interface and find the probe.
+func TestWrapClientIfaceRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &ifaceRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// sliceRouter keeps its delegates in a slice; AddHook fans out to all of them.
+type sliceRouter struct {
+	redis.UniversalClient
+	members []redis.UniversalClient
+}
+
+func (r *sliceRouter) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+	for _, m := range r.members {
+		m.AddHook(hook)
+	}
+}
+
+// A delegate stored in a container must be observable: swapping a slice member
+// invalidates the observation, and the re-wrap instruments the new client.
+func TestWrapClientContainerDelegateSwapped(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &sliceRouter{UniversalClient: a, members: []redis.UniversalClient{b}}
+	WrapClient(router)
+	if n := datadogHooks(b); n != 1 {
+		t.Fatalf("expected the slice member to carry 1 datadog hook, got %d", n)
+	}
+
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+	router.members = []redis.UniversalClient{fresh}
+	WrapClient(router)
+
+	_ = fresh.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the swapped-in member to be traced, got %d spans", len(spans))
+	}
+}

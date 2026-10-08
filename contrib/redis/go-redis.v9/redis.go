@@ -619,6 +619,39 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 	return scanHooks(v, hook, 3)
 }
 
+// hookInContainer reports whether the slice, array, map, or struct value v
+// holds the hook; nested structs are scanned with their own locks. It never
+// looks at v's addressability for a lock, so callers holding a lock on v's
+// owner must pass depth such that recursion stays below the owner.
+func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known bool) {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+			for j := 0; j < v.Len(); j++ {
+				if h, ok := v.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					return true, true
+				}
+			}
+		}
+	case reflect.Map:
+		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+			iter := v.MapRange()
+			for iter.Next() {
+				if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					return true, true
+				}
+			}
+		}
+	case reflect.Struct:
+		return containsHook(v, hook, depth-1)
+	case reflect.Interface:
+		if !v.IsNil() && v.CanInterface() {
+			return hookInContainer(v.Elem(), hook, depth)
+		}
+	}
+	return false, true
+}
+
 // scanHooks reports whether s, or a struct embedded within it, holds the
 // hook; s itself is already locked by the caller.
 func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
@@ -637,6 +670,14 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 		case reflect.Interface:
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
 				return true, true
+			}
+			// An interface-backed container — a slice, array, map, or struct
+			// behind any — is a hook store like any other; scan the dynamic
+			// value.
+			if !f.IsNil() && f.CanInterface() {
+				if found, known := hookInContainer(f.Elem(), hook, depth); found || !known {
+					return found, known
+				}
 			}
 		case reflect.Slice, reflect.Array:
 			// Match by element type: a named slice — type hookList
@@ -720,6 +761,14 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 		case reflect.Interface:
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
 				return true, true
+			}
+			// An interface-backed container — a slice, array, map, or struct
+			// behind any — is a hook store like any other; scan the dynamic
+			// value.
+			if !f.IsNil() && f.CanInterface() {
+				if found, known := hookInContainer(f.Elem(), hook, depth); found || !known {
+					return found, known
+				}
 			}
 		case reflect.Slice, reflect.Array:
 			// Match by element type: a named slice — type hookList
@@ -950,6 +999,39 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 	return reflect.Value{}
 }
 
+// findMembers returns the concrete clients reachable inside a container
+// value — a slice, array, map, or interface — without descending into
+// structs: struct fields are the walker's job.
+func findMembers(v reflect.Value, depth int) []redis.UniversalClient {
+	if depth == 0 || !v.CanInterface() {
+		return nil
+	}
+	switch v.Kind() {
+	case reflect.Interface:
+		if v.IsNil() {
+			return nil
+		}
+		if u, ok := v.Interface().(redis.UniversalClient); ok {
+			return []redis.UniversalClient{u}
+		}
+		return findMembers(v.Elem(), depth-1)
+	case reflect.Slice, reflect.Array:
+		var members []redis.UniversalClient
+		for i := 0; i < v.Len(); i++ {
+			members = append(members, findMembers(v.Index(i), depth-1)...)
+		}
+		return members
+	case reflect.Map:
+		var members []redis.UniversalClient
+		iter := v.MapRange()
+		for iter.Next() {
+			members = append(members, findMembers(iter.Value(), depth-1)...)
+		}
+		return members
+	}
+	return nil
+}
+
 // concreteClients returns the distinct concrete go-redis clients reachable
 // from client through several levels of fields, embedded or not, exported or
 // not, by pointer or by value. A client passed directly yields itself; a
@@ -1015,10 +1097,16 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
 			field, ok := f.Interface().(redis.UniversalClient)
-			if !ok {
+			if ok {
+				walk(field, depth-1)
 				continue
 			}
-			walk(field, depth-1)
+			// A delegate may sit in a container — a slice, array, or map of
+			// clients — or behind a holder struct; walk into it so swapped
+			// members remain observable.
+			for _, target := range findMembers(f, depth-1) {
+				walk(target, depth-1)
+			}
 		}
 	}
 	// A proxy may nest its delegates a few levels deep; only nesting beyond
