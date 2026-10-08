@@ -542,9 +542,9 @@ func TestWrapTracer(t *testing.T) {
 	}
 }
 
-// The WithTrace* options govern dd-trace's own spans, not whether a wrapped tracer's hooks
-// run. pgx and pgxpool find each hook by type-asserting the single tracer they hold, so
-// skipping a delegation removes that hook from every tracer underneath this one.
+// The WithTrace* options control the spans of this package, not the hooks of a wrapped
+// tracer. pgx and pgxpool find each hook by one type assertion on the tracer they hold, so a
+// hook that skips its delegation removes that hook from every tracer beneath it.
 func TestWrapTracerForwardsWithTracingDisabled(t *testing.T) {
 	testCases := []struct {
 		name           string

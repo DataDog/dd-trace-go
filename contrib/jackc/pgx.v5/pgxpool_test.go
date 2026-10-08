@@ -93,8 +93,8 @@ func TestPoolWithPoolStats(t *testing.T) {
 	}
 }
 
-// ConnectionUseTime is measured on release rather than polled, so it lands synchronously
-// once the caller is done with the connection.
+// TraceRelease submits ConnectionUseTime as soon as the caller releases the connection, so
+// this test needs no wait for the stats poller.
 func TestPoolConnectionUseTime(t *testing.T) {
 	t.Run("enabled with pool stats", func(t *testing.T) {
 		ctx := context.Background()
@@ -106,8 +106,8 @@ func TestPoolConnectionUseTime(t *testing.T) {
 		var x int
 		require.NoError(t, pool.QueryRow(ctx, `select 1`).Scan(&x))
 
-		// Reading from TimingCalls also pins that use time is submitted as a timing rather
-		// than a gauge, since only Timing lands there.
+		// Only Timing appends to TimingCalls, so this loop also proves that the tracer submits
+		// use time as a timing and not as a gauge.
 		var found int
 		for _, call := range statsd.TimingCalls() {
 			if call.Name() != ConnectionUseTime {
@@ -119,6 +119,24 @@ func TestPoolConnectionUseTime(t *testing.T) {
 			assert.Less(t, call.TimeVal(), time.Minute, "use time should span one query, not the zero time")
 		}
 		require.Positive(t, found, "expected a %s timing after the connection was released", ConnectionUseTime)
+	})
+
+	// Hijack takes a connection out of the pool without a release, so the acquire time
+	// must stay on the connection and not in the tracer.
+	t.Run("hijack", func(t *testing.T) {
+		ctx := context.Background()
+		statsd := testutils.NewMockStatsdClient()
+		pool, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd), WithPoolStats())
+		require.NoError(t, err)
+		defer pool.Close()
+
+		poolConn, err := pool.Acquire(ctx)
+		require.NoError(t, err)
+		conn := poolConn.Hijack()
+		defer conn.Close(ctx)
+
+		assert.Contains(t, conn.PgConn().CustomData(), customDataKeyAcquiredAt)
+		assert.Empty(t, statsd.GetCallsByName(ConnectionUseTime))
 	})
 
 	t.Run("disabled without pool stats", func(t *testing.T) {

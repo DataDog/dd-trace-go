@@ -35,10 +35,9 @@ const (
 	HealthCheckPeriod       = tracerPrefix + "pgx.pool.connections.health_check_period"
 	EmptyAcquireWaitTime    = tracerPrefix + "pgx.pool.connections.empty_acquire_wait_time"
 
-	// ConnectionUseTime is how long a connection was held by its caller, from the acquire
-	// that handed it over to the release that returned it. pgxpool.Stat does not report
-	// this, so unlike the metrics above it is measured on the release hook rather than
-	// polled. It follows OpenTelemetry's db.client.connection.use_time.
+	// ConnectionUseTime is how long the caller holds a pooled connection, from acquire to
+	// release. pgxpool.Stat does not report use time, so TraceRelease measures it directly.
+	// The name follows the OpenTelemetry metric db.client.connection.use_time.
 	ConnectionUseTime = tracerPrefix + "pgx.pool.connections.use_time"
 )
 

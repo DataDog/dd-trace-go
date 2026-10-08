@@ -8,7 +8,6 @@ package pgx
 import (
 	"context"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -50,6 +49,11 @@ type batchState struct {
 }
 
 type contextKeyBatchState struct{}
+
+// customDataKeyAcquiredAt is the PgConn.CustomData key that holds the time a connection
+// leaves the pool. The value lives on the connection, so a hijacked connection that never
+// reaches TraceRelease leaks nothing into the tracer.
+const customDataKeyAcquiredAt = "dd-trace-go.pgx.acquired_at"
 
 type allPgxTracers interface {
 	pgx.QueryTracer
@@ -103,14 +107,6 @@ type pgxTracer struct {
 	// a copy of the base config and can rewrite host, port, database or user per
 	// connection, so the snapshot cannot be trusted for connection-scoped spans.
 	perConnInfo bool
-
-	acquiredMu sync.Mutex
-	// acquiredAt maps each checked-out connection to the time it left the pool, so that
-	// TraceRelease can report how long it was held. pgx exposes no per-connection storage
-	// and hands the release hook the same *pgx.Conn as the acquire hook, so the pointer is
-	// the key. An entry is added on a successful acquire and removed on release, which
-	// bounds the map by the pool's MaxConns. Nil unless the metric is enabled.
-	acquiredAt map[*pgx.Conn]time.Time // +checklocks:acquiredMu
 }
 
 var (
@@ -146,9 +142,6 @@ func newPgxTracer(connConfig *pgx.ConnConfig, poolName string, perConnInfo bool,
 		cfg:         cfg,
 		connInfo:    newConnInfo(connConfig),
 		perConnInfo: perConnInfo,
-	}
-	if cfg.measureUseTime() {
-		tr.acquiredAt = make(map[*pgx.Conn]time.Time)
 	}
 	if prev := connConfig.Tracer; prev != nil {
 		tr.wrapped.query = prev
@@ -375,12 +368,9 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	if t.wrapped.poolAcquire != nil {
 		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
 	}
-	// A failed acquire never took a connection out of the pool, so no release follows it
-	// and there is nothing to time.
+	// pgxpool never releases a failed acquire, so there is nothing to time.
 	if data.Err == nil && data.Conn != nil && t.cfg.measureUseTime() {
-		t.acquiredMu.Lock()
-		t.acquiredAt[data.Conn] = time.Now()
-		t.acquiredMu.Unlock()
+		data.Conn.PgConn().CustomData()[customDataKeyAcquiredAt] = time.Now()
 	}
 	if !t.cfg.traceAcquire {
 		return
@@ -388,10 +378,10 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	t.finishSpan(ctx, data.Err)
 }
 
-// TraceRelease reports how long the connection was held and forwards to the wrapped tracer.
-// It starts no span of its own: a release carries no context to parent one from. Without this
-// method pgxpool's lone type assertion on the outermost tracer fails, and every wrapped
-// ReleaseTracer stops being called.
+// TraceRelease records the use time of the connection and forwards the call to the wrapped
+// tracer. TraceRelease starts no span because a release carries no context to parent one from.
+// pgxpool finds this hook by one type assertion on the outermost tracer, so a tracer that
+// omits TraceRelease silences every wrapped ReleaseTracer beneath it.
 func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
 	if t.wrapped.poolRelease != nil {
 		t.wrapped.poolRelease.TraceRelease(pool, data)
@@ -399,12 +389,11 @@ func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseDa
 	if data.Conn == nil || !t.cfg.measureUseTime() {
 		return
 	}
-	t.acquiredMu.Lock()
-	acquiredAt, ok := t.acquiredAt[data.Conn]
-	delete(t.acquiredAt, data.Conn)
-	t.acquiredMu.Unlock()
-	// AcquireAllIdle hands out connections without running the acquire hooks, so a release
-	// can arrive for a connection that was never timed.
+	customData := data.Conn.PgConn().CustomData()
+	acquiredAt, ok := customData[customDataKeyAcquiredAt].(time.Time)
+	delete(customData, customDataKeyAcquiredAt)
+	// AcquireAllIdle returns connections without running the acquire hooks, so a release can
+	// arrive for a connection that has no acquire time.
 	if !ok {
 		return
 	}
