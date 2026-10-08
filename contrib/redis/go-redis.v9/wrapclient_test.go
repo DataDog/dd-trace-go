@@ -1429,7 +1429,7 @@ func TestWrapClientPanicClearsInstallingMarker(t *testing.T) {
 	// again and panics again.
 	if v, ok := rediswrap.Installing.Load(rediswrap.Goid()); ok {
 		for _, m := range v.([]rediswrap.Mark) {
-			if rediswrap.SameMark(m.Proxy, m.Members, proxy, nil) {
+			if rediswrap.SameMark(m.Proxy, m.Members, m.Refs, proxy, nil, rediswrap.RefIDs(proxy)) {
 				t.Fatal("the installing marker outlived the panicked AddHook")
 			}
 		}
@@ -1441,7 +1441,7 @@ func TestWrapClientPanicClearsInstallingMarker(t *testing.T) {
 	}()
 	if v, ok := rediswrap.Installing.Load(rediswrap.Goid()); ok {
 		for _, m := range v.([]rediswrap.Mark) {
-			if rediswrap.SameMark(m.Proxy, m.Members, proxy, nil) {
+			if rediswrap.SameMark(m.Proxy, m.Members, m.Refs, proxy, nil, rediswrap.RefIDs(proxy)) {
 				t.Fatal("the installing marker outlived the retried AddHook")
 			}
 		}

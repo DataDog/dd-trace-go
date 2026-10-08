@@ -280,17 +280,17 @@ func TestSameMarkMapOrderIndependent(t *testing.T) {
 	q := nonComparableMapProxy{tags: map[string]string{}, members: map[int]any{0: a, 1: b}}
 	ma := []any{a, b}
 	mb := []any{b, a} // reversed order: consecutive walks can differ
-	if !SameMark(q, ma, q, []any{a, b}) {
+	if !SameMark(q, ma, RefIDs(q), q, []any{a, b}, RefIDs(q)) {
 		t.Fatal("same members in walk order must match")
 	}
-	if !SameMark(q, ma, q, mb) {
+	if !SameMark(q, ma, RefIDs(q), q, mb, RefIDs(q)) {
 		t.Fatal("same members in different walk order must match")
 	}
 	other := &fakeClient{}
-	if SameMark(q, ma, q, []any{a, other}) {
+	if SameMark(q, ma, RefIDs(q), q, []any{a, other}, RefIDs(q)) {
 		t.Fatal("different member sets must not match")
 	}
-	if SameMark(q, ma, q, []any{a}) {
+	if SameMark(q, ma, RefIDs(q), q, []any{a}, RefIDs(q)) {
 		t.Fatal("different member counts must not match")
 	}
 }

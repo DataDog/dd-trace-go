@@ -684,7 +684,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 // scanHooks reports whether s, or a struct embedded within it, holds the
 // hook; s itself is already locked by the caller.
 func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
-	if s.Kind() != reflect.Struct || depth == 0 {
+	if s.Kind() != reflect.Struct || depth <= 0 {
 		return false, true
 	}
 	for i := 0; i < s.NumField(); i++ {
@@ -763,7 +763,7 @@ var (
 )
 
 func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
-	if s.Kind() != reflect.Struct || depth == 0 {
+	if s.Kind() != reflect.Struct || depth <= 0 {
 		return false, true
 	}
 	// Each nested struct is locked as it is traversed, like the root: a
@@ -950,7 +950,7 @@ func hookSlice(client redis.UniversalClient) reflect.Value {
 // findHookSlice returns the first []redis.Hook field in s or in the structs
 // embedded within it, read under the struct's own mutex when it has one.
 func findHookSlice(s reflect.Value, depth int) reflect.Value {
-	if s.Kind() != reflect.Struct || depth == 0 {
+	if s.Kind() != reflect.Struct || depth <= 0 {
 		return reflect.Value{}
 	}
 	unlock, ok := rediswrap.LockStruct(s)
@@ -1034,7 +1034,7 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 // held: the caller treats the client as unreadable rather than race with the
 // update in progress.
 func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
-	if depth == 0 {
+	if depth <= 0 {
 		return nil, true
 	}
 	if !v.CanInterface() {
@@ -1130,7 +1130,7 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 	var aborted bool
 	var walk func(c redis.UniversalClient, depth int)
 	walk = func(c redis.UniversalClient, depth int) {
-		if depth == 0 || c == nil {
+		if depth <= 0 || c == nil {
 			return
 		}
 		if v := reflect.ValueOf(c); v.Kind() == reflect.Pointer && v.IsNil() {

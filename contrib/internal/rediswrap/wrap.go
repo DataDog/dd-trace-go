@@ -101,10 +101,57 @@ func BeginWalk(key Handle) func() {
 // must recognize its own installation instead of recursing. The members make a
 // non-comparable value proxy — which has neither a weak pointer identity nor
 // a comparable value — recognizable through the concrete clients it delegates
-// to.
+// to. Refs adds the addresses its reference-bearing fields hold, so two
+// non-comparable proxies of the same type over the same members — two lazy
+// proxies, say — are not mistaken for each other when their fields point at
+// distinct objects.
 type Mark struct {
 	Proxy   any
 	Members []any
+	Refs    []unsafe.Pointer
+}
+
+// RefIDs collects the addresses the value's reference-bearing fields hold —
+// pointer fields, and interfaces holding pointers — through two levels of
+// struct fields. Two values that store the same addresses share the objects
+// those fields point at.
+func RefIDs(v any) []unsafe.Pointer {
+	return refIDs(reflect.ValueOf(v), 2)
+}
+
+func refIDs(v reflect.Value, depth int) []unsafe.Pointer {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			return []unsafe.Pointer{v.UnsafePointer()}
+		}
+	case reflect.Interface:
+		if !v.IsNil() {
+			return refIDs(v.Elem(), depth)
+		}
+	case reflect.Struct:
+		if depth == 0 {
+			return nil
+		}
+		var ids []unsafe.Pointer
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Field(i)
+			if !f.CanInterface() && f.CanAddr() {
+				// Unexported fields still identify a proxy: a private
+				// delegate or marker pointer differs between two proxies
+				// that nothing else can tell apart. Addressable values —
+				// a pointer receiver's struct, or the fields reached
+				// through one — expose them; a plain value copy does not.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			if !f.CanInterface() {
+				continue
+			}
+			ids = append(ids, refIDs(f, depth-1)...)
+		}
+		return ids
+	}
+	return nil
 }
 
 // Installing records, per goroutine, the proxies currently being installed.
@@ -118,7 +165,7 @@ func MarkInstalling(client any, members []any) func() {
 	if v, ok := Installing.Load(id); ok {
 		list = v.([]Mark)
 	}
-	Installing.Store(id, append(list, Mark{Proxy: client, Members: members}))
+	Installing.Store(id, append(list, Mark{Proxy: client, Members: members, Refs: RefIDs(client)}))
 	return func() {
 		id := Goid()
 		v, ok := Installing.Load(id)
@@ -127,7 +174,7 @@ func MarkInstalling(client any, members []any) func() {
 		}
 		list := v.([]Mark)
 		for i := len(list) - 1; i >= 0; i-- {
-			if SameMark(list[i].Proxy, list[i].Members, client, members) {
+			if SameMark(list[i].Proxy, list[i].Members, list[i].Refs, client, members, RefIDs(client)) {
 				list = append(list[:i], list[i+1:]...)
 				break
 			}
@@ -149,7 +196,7 @@ func IsInstalling(client any, members []any) bool {
 		return false
 	}
 	for _, m := range v.([]Mark) {
-		if SameMark(m.Proxy, m.Members, client, members) {
+		if SameMark(m.Proxy, m.Members, m.Refs, client, members, RefIDs(client)) {
 			return true
 		}
 	}
@@ -161,7 +208,7 @@ func IsInstalling(client any, members []any) bool {
 // member sets — the same concrete clients — rather than by value; the set
 // comparison ignores order, since consecutive walks over a map-backed proxy
 // can enumerate the same members differently.
-func SameMark(pa any, ma []any, pb any, mb []any) bool {
+func SameMark(pa any, ma []any, ra []unsafe.Pointer, pb any, mb []any, rb []unsafe.Pointer) bool {
 	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
 	if ta == nil || tb == nil || ta != tb {
 		return false
@@ -184,6 +231,14 @@ func SameMark(pa any, ma []any, pb any, mb []any) bool {
 			}
 		}
 		if !found {
+			return false
+		}
+	}
+	if len(ra) != len(rb) {
+		return false
+	}
+	for i := range ra {
+		if ra[i] != rb[i] {
 			return false
 		}
 	}
