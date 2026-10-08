@@ -36,7 +36,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
-	cfg.appsecConfig.OTelSemanticsEnabled = cfg.otelEnabled
 	instr.Logger().Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.Tag(ext.Component, componentName),
@@ -64,7 +63,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, span, cfg)
+				next = withAppsec(next, r, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
