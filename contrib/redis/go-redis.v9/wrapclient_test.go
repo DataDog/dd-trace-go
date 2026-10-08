@@ -2265,3 +2265,116 @@ func TestWrapClientConcurrentFirstWrapRetaining(t *testing.T) {
 		t.Fatalf("expected no spans (retain-only proxy), got %d", len(spans))
 	}
 }
+
+// ptrSliceRetainProxy fans hooks out and stores them behind *[]redis.Hook.
+type ptrSliceRetainProxy struct {
+	redis.UniversalClient
+	hooks *[]redis.Hook
+}
+
+func (r *ptrSliceRetainProxy) AddHook(hook redis.Hook) {
+	*r.hooks = append(*r.hooks, hook)
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *ptrSliceRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range *r.hooks {
+		delegate.AddHook(hook)
+	}
+}
+
+// A pointer-backed container — hooks *[]redis.Hook — is a hook store like
+// any slice; the retention scan must follow the pointer.
+func TestWrapClientPtrSliceRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	hooks := make([]redis.Hook, 0)
+	proxy := &ptrSliceRetainProxy{UniversalClient: current, hooks: &hooks}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// singleHookRetainProxy stores hooks behind hook *redis.Hook.
+type singleHookRetainProxy struct {
+	redis.UniversalClient
+	hook *redis.Hook
+}
+
+func (r *singleHookRetainProxy) AddHook(hook redis.Hook) {
+	r.hook = &hook
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *singleHookRetainProxy) applyTo(delegate redis.UniversalClient) {
+	if r.hook != nil {
+		delegate.AddHook(*r.hook)
+	}
+}
+
+func TestWrapClientSingleHookRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &singleHookRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// delegatingLogger forwards Log to another goroutine and waits for it. That
+// goroutine calls WrapClient for the same client: the walk guard must be
+// released before the warning reaches the logger, or the nested call blocks
+// while the original waits for the logger.
+type delegatingLogger struct {
+	client *redis.Client
+	done   chan struct{}
+}
+
+func (l *delegatingLogger) Log(msg string) {
+	if strings.Contains(msg, "WrapClient called more than once") {
+		go func() {
+			defer close(l.done)
+			WrapClient(l.client, WithService("first"))
+		}()
+		<-l.done
+	}
+}
+
+func TestWrapClientLoggerDelegatesToGoroutine(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	logger := &delegatingLogger{client: client, done: make(chan struct{})}
+	tracer.UseLogger(logger)
+	t.Cleanup(func() { tracer.UseLogger(dropLogger{}) })
+
+	WrapClient(client, WithService("first"))
+	WrapClient(client, WithService("second")) // warns; the logger's goroutine re-wraps
+
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook, got %d", n)
+	}
+}

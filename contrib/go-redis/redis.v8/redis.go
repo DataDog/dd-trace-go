@@ -145,10 +145,22 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		fn.apply(cfg)
 	}
 
+	// Warnings are emitted after the lock is released: a custom logger is
+	// user-controlled code — like a proxy's AddHook — and may call WrapClient
+	// again from its Log method.
+	var warnings []string
+	defer func() {
+		for _, w := range warnings {
+			instr.Logger().Warn("%s", w)
+		}
+	}()
+
 	// A concurrent first wrap of this client may be running its unlocked
 	// AddHook — user-controlled code that mutates the proxy's retained-hook
 	// fields while a field walk over those same fields would race. The walk
-	// guard serializes the two calls for the whole wrap, AddHook included.
+	// guard serializes the two calls for the whole wrap, AddHook included;
+	// its closer is registered after the warning defer so it releases
+	// before the user logger runs.
 	if k, ok := rediswrap.HandleOf(client); ok {
 		defer rediswrap.BeginWalk(k)()
 	}
@@ -166,16 +178,6 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		// Do nothing; a wrap after the mutex is released works normally.
 		return
 	}
-
-	// Warnings are emitted after the lock is released: a custom logger is
-	// user-controlled code — like a proxy's AddHook — and may call WrapClient
-	// again from its Log method.
-	var warnings []string
-	defer func() {
-		for _, w := range warnings {
-			instr.Logger().Warn("%s", w)
-		}
-	}()
 
 	wrapMu.Lock()
 	defer wrapMu.Unlock()
@@ -656,9 +658,15 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 	case reflect.Struct:
 		return containsHook(v, hook, depth-1)
 	case reflect.Interface:
-		if !v.IsNil() && v.CanInterface() {
-			return hookInContainer(v.Elem(), hook, depth)
+		if v.IsNil() || !v.CanInterface() {
+			return false, true
 		}
+		// The interface may be the stored hook itself — hook *redis.Hook
+		// unwraps to the value the pointer holds.
+		if h, ok := v.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+			return true, true
+		}
+		return hookInContainer(v.Elem(), hook, depth)
 	case reflect.Pointer:
 		// A concrete client behind the pointer — *redis.Client — is a
 		// delegate, not proxy-owned storage: the probe the proxy's own
@@ -736,10 +744,10 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
 				continue
 			}
-			if f.Elem().Kind() == reflect.Struct {
-				if found, known := containsHook(f.Elem(), hook, depth-1); found || !known {
-					return found, known
-				}
+			// Any other pointer — a struct holder, a pointer-backed
+			// slice or map, a single hook — is scanned like its target.
+			if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+				return found, known
 			}
 		}
 	}
@@ -830,10 +838,10 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
 				continue
 			}
-			if f.Elem().Kind() == reflect.Struct {
-				if found, known := containsHook(f.Elem(), hook, depth-1); found || !known {
-					return found, known
-				}
+			// Any other pointer — a struct holder, a pointer-backed
+			// slice or map, a single hook — is scanned like its target.
+			if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+				return found, known
 			}
 		}
 	}
