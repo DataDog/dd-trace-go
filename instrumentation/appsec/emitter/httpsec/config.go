@@ -11,6 +11,9 @@ import (
 )
 
 type Config struct {
+	// OTelSemanticsEnabled uses OpenTelemetry names for span tags emitted by
+	// AppSec. It does not affect WAF addresses.
+	OTelSemanticsEnabled bool
 	// Framework is the name of the framework or library being used (optional).
 	Framework string
 	// ClientIP is the client identity supplied by an integration rather than
