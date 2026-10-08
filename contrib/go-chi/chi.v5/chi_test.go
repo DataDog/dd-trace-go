@@ -823,6 +823,7 @@ func TestOTelSemanticsContextPropagation(t *testing.T) {
 }
 
 func TestOTelSemanticsAppSecRouteParams(t *testing.T) {
+	t.Setenv("DD_APPSEC_ENABLED", "true")
 	setChiHTTPConfig(t, "true")
 	testutils.StartAppSec(t)
 	httptrace.ResetCfg()
