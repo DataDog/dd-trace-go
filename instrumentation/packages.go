@@ -511,20 +511,6 @@ var packages = map[Package]PackageInfo{
 	PackageGoKratosV3: {
 		TracedPackage: "github.com/go-kratos/kratos/v3",
 		EnvVarPrefix:  "KRATOS",
-		naming: map[Component]componentNames{
-			ComponentServer: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("kratos"),
-				buildOpNameV0:      operationNameByRPCSystem("http.request", "grpc.server", "kratos.server.request"),
-				buildOpNameV1:      operationNameByRPCSystem("http.server.request", "grpc.server.request", "kratos.server.request"),
-			},
-			ComponentClient: {
-				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("kratos.client"),
-				buildOpNameV0:      operationNameByRPCSystem("http.request", "grpc.client", "kratos.client.request"),
-				buildOpNameV1:      operationNameByRPCSystem("http.client.request", "grpc.client.request", "kratos.client.request"),
-			},
-		},
 	},
 	PackageRedigo: {
 		TracedPackage: "github.com/gomodule/redigo",

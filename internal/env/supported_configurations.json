@@ -1543,13 +1543,6 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_KRATOS_ANALYTICS_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
-      }
-    ],
     "DD_TRACE_LEVELDB_ANALYTICS_ENABLED": [
       {
         "implementation": "A",

@@ -10,7 +10,6 @@ package httptrace
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -352,18 +351,6 @@ func SetClientIPTagsFromRequest(tags map[string]any, req *http.Request) {
 	_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
 	for key, value := range clientip.TagsFor(req.RemoteAddr, clientIP) {
 		tags[key] = value
-	}
-}
-
-// BaggageTags adds configured baggage items as span tags.
-func BaggageTags(items map[string]string) tracer.StartSpanOption {
-	tags := make(map[string]any, len(items))
-	SetBaggageTags(tags, items)
-	return func(spanCfg *tracer.StartSpanConfig) {
-		if spanCfg.Tags == nil {
-			spanCfg.Tags = make(map[string]any, len(tags))
-		}
-		maps.Copy(spanCfg.Tags, tags)
 	}
 }
 

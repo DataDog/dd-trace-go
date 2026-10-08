@@ -475,22 +475,6 @@ func TestSetClientIPTagsFromRequest(t *testing.T) {
 	assert.Equal(t, "10.0.0.1", tags[ext.NetworkClientIP])
 }
 
-func TestBaggageTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	span := tracer.StartSpan("http.request", BaggageTags(map[string]string{
-		"user.id": "1234",
-		"ignored": "value",
-	}))
-	span.Finish()
-
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, "1234", spans[0].Tag("baggage.user.id"))
-	assert.NotContains(t, spans[0].Tags(), "baggage.ignored")
-}
-
 func TestSetBaggageTags(t *testing.T) {
 	tags := map[string]any{"existing": "value"}
 	SetBaggageTags(tags, map[string]string{

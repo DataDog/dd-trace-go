@@ -15,6 +15,19 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
+func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	server := kratoshttp.NewServer(kratoshttp.Middleware(kratostrace.Server()))
+	client, err := kratoshttp.NewClient(context.Background(), kratoshttp.WithEndpoint("http://127.0.0.1:8000"), kratoshttp.WithMiddleware(kratostrace.Client()))
+	if err != nil {
+		return
+	}
+	defer client.Close()
+	_, _ = server, client
+}
+
 func ExampleServer() {
 	tracer.Start()
 	defer tracer.Stop()

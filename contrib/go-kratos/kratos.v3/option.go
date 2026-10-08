@@ -6,7 +6,6 @@
 package kratos
 
 import (
-	"math"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -32,7 +31,6 @@ type config struct {
 	serviceNameOption tracer.StartSpanOption
 	serviceNameStatic bool
 	headerTags        instrumentation.HeaderTags
-	analyticsRate     float64
 	queryString       bool
 	isStatusError     func(int) bool
 }
@@ -71,7 +69,6 @@ func applyOptions(cfg *config, opts []Option) {
 
 func defaults(cfg *config) {
 	cfg.headerTags = instr.HTTPHeadersAsTags()
-	cfg.analyticsRate = instr.AnalyticsRate(true)
 	cfg.queryString = !options.GetBoolEnv(envQueryStringDisabled, false)
 }
 
@@ -121,28 +118,6 @@ func WithService(name string) Option {
 func NoDebugStack() Option {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
-	}
-}
-
-// WithAnalytics enables or disables Trace Analytics for spans created by the middleware.
-func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// WithAnalyticsRate sets the Trace Analytics sampling rate for spans created by the middleware.
-func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
 	}
 }
 

@@ -72,18 +72,18 @@ func TestServerHTTP(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "reply", reply)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	span := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, activeSpanID, span.SpanID())
 	assert.Equal(t, parent.Context().SpanID(), span.ParentID())
 	assert.Equal(t, parent.Context().TraceID(), span.Context().TraceID())
-	assert.Equal(t, "kratos", span.Tag(ext.ServiceName))
-	assert.Equal(t, string(instrumentation.PackageGoKratosV3), span.Tag(ext.KeyServiceSource))
+	assert.Empty(t, span.Tag(ext.ServiceName))
+	assert.Nil(t, span.Tag(ext.KeyServiceSource))
 	assert.Equal(t, "/helloworld.v1.Greeter/SayHello", span.Tag(ext.ResourceName))
 	assert.Equal(t, ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal(t, "go-kratos/kratos.v3", span.Tag(ext.Component))
 	assert.Equal(t, string(instrumentation.PackageGoKratosV3), span.Integration())
-	assert.Equal(t, "http", span.Tag(ext.RPCSystem))
+	assert.Equal(t, "kratos", span.Tag(ext.RPCSystem))
 	assert.Equal(t, "helloworld.v1.Greeter", span.Tag(ext.RPCService))
 	assert.Equal(t, "SayHello", span.Tag(ext.RPCMethod))
 	assert.Equal(t, http.MethodPost, span.Tag(ext.HTTPMethod))
@@ -119,7 +119,7 @@ func TestServerHTTPClientIP(t *testing.T) {
 	_, err = Server()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 	require.NoError(t, err)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	span := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, "203.0.113.10", span.Tag(ext.HTTPClientIP))
 	assert.Equal(t, "10.0.0.1", span.Tag(ext.NetworkClientIP))
 }
@@ -151,7 +151,7 @@ func TestServerHTTPInferredProxy(t *testing.T) {
 	_, err = Server()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 	require.NoError(t, err)
 
-	serverSpan := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	serverSpan := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	var inferredSpan *mocktracer.Span
 	for _, span := range mt.FinishedSpans() {
 		if span.OperationName() == "aws.apigateway" {
@@ -221,11 +221,11 @@ func TestClientGRPC(t *testing.T) {
 	assert.Equal(t, "reply", reply)
 	parent.Finish()
 
-	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, parent.Context().SpanID(), span.ParentID())
 	assert.Equal(t, ext.AppTypeRPC, span.Tag(ext.SpanType))
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
-	assert.Equal(t, ext.RPCSystemGRPC, span.Tag(ext.RPCSystem))
+	assert.Equal(t, "kratos", span.Tag(ext.RPCSystem))
 	assert.Equal(t, "/helloworld.v1.Greeter/SayHello", span.Tag(ext.GRPCFullMethod))
 	assert.Equal(t, "helloworld.v1.Greeter", span.Tag(ext.RPCService))
 	assert.Equal(t, "SayHello", span.Tag(ext.RPCMethod))
@@ -254,7 +254,7 @@ func TestClientHTTPMetadataAndBaggage(t *testing.T) {
 	_, err = Client()(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 	require.NoError(t, err)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, "payments.internal", span.Tag(ext.NetworkDestinationName))
 	assert.Equal(t, float64(8443), span.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "user.id=1234", header.Get("baggage"))
@@ -284,7 +284,7 @@ func TestServerPropagatesExtractedBaggage(t *testing.T) {
 	})(ctx, nil)
 	require.NoError(t, err)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	span := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, "1234", span.Tag("baggage.user.id"))
 }
 
@@ -312,7 +312,7 @@ func TestServerSpanOptionOverridesBaggageTag(t *testing.T) {
 	})(ctx, nil)
 	require.NoError(t, err)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	span := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, "redacted", span.Tag("baggage.user.id"))
 }
 
@@ -359,8 +359,8 @@ func TestHTTPTransportEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "hello", reply["message"])
 
-	clientSpan := findSpan(t, mt, "http.request", ext.SpanKindClient)
-	serverSpan := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	clientSpan := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
+	serverSpan := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, clientSpan.TraceID(), serverSpan.TraceID())
 	assert.Equal(t, clientSpan.SpanID(), serverSpan.ParentID())
 	assert.Equal(t, "kratos-client", clientSpan.Tag(ext.ServiceName))
@@ -404,41 +404,8 @@ func TestHTTPQueryStringDisabled(t *testing.T) {
 			_, err = mw(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 			require.NoError(t, err)
 
-			span := findSpan(t, mt, "http.request", tc.spanKind)
+			span := findSpan(t, mt, operationNameForSpanKind(tc.spanKind), tc.spanKind)
 			assert.Equal(t, "http://example.com/search", span.Tag(ext.HTTPURL))
-		})
-	}
-}
-
-func TestAnalyticsConfiguration(t *testing.T) {
-	tests := []struct {
-		name    string
-		enabled bool
-		opts    []Option
-		want    any
-	}{
-		{name: "environment", enabled: true, want: 1.0},
-		{name: "disabled_option", enabled: true, opts: []Option{WithAnalytics(false)}},
-		{name: "enabled_option", opts: []Option{WithAnalytics(true)}, want: 1.0},
-		{name: "rate_option", opts: []Option{WithAnalyticsRate(0.25)}, want: 0.25},
-		{name: "invalid_rate", opts: []Option{WithAnalyticsRate(2)}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_KRATOS_ANALYTICS_ENABLED", strconv.FormatBool(tc.enabled))
-			mt := mocktracer.Start()
-			defer mt.Stop()
-
-			req, err := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
-			require.NoError(t, err)
-			tr := &testTransport{kind: transport.KindHTTP, operation: "/example.v1.Service/Test", header: testHeader{}, request: req}
-			ctx := transport.NewServerContext(context.Background(), tr)
-
-			_, err = Server(tc.opts...)(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
-			require.NoError(t, err)
-
-			span := findSpan(t, mt, "http.request", ext.SpanKindServer)
-			assert.Equal(t, tc.want, span.Tag(ext.EventSampleRate))
 		})
 	}
 }
@@ -477,8 +444,8 @@ func TestGRPCTransportEndToEnd(t *testing.T) {
 	_, err = grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
 	require.NoError(t, err)
 
-	clientSpan := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
-	serverSpan := findSpan(t, mt, "grpc.server", ext.SpanKindServer)
+	clientSpan := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
+	serverSpan := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, clientSpan.TraceID(), serverSpan.TraceID())
 	assert.Equal(t, clientSpan.SpanID(), serverSpan.ParentID())
 	assert.Equal(t, "kratos-grpc-client", clientSpan.Tag(ext.ServiceName))
@@ -514,7 +481,7 @@ func TestErrorAndOptions(t *testing.T) {
 	)(next)(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, "kratos-client-test", span.Tag(ext.ServiceName))
 	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, span.Tag(ext.KeyServiceSource))
 	assert.Equal(t, "custom-value", span.Tag("custom.tag"))
@@ -543,7 +510,7 @@ func TestGRPCError(t *testing.T) {
 	_, err := Client()(next)(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
 
-	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, "NotFound", span.Tag("grpc.code"))
 	assert.Equal(t, float64(http.StatusNotFound), span.Tag("kratos.status_code"))
 	assert.Nil(t, span.Tag(ext.HTTPCode))
@@ -555,8 +522,8 @@ func TestGRPCEOFIsNotSpanError(t *testing.T) {
 		spanKind      string
 		operationName string
 	}{
-		{name: "server", spanKind: ext.SpanKindServer, operationName: "grpc.server"},
-		{name: "client", spanKind: ext.SpanKindClient, operationName: "grpc.client"},
+		{name: "server", spanKind: ext.SpanKindServer, operationName: "kratos.server.request"},
+		{name: "client", spanKind: ext.SpanKindClient, operationName: "kratos.client.request"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -603,7 +570,7 @@ func TestGRPCCanceledIsNotSpanError(t *testing.T) {
 	})(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
 
-	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, codes.Canceled.String(), span.Tag("grpc.code"))
 	assert.Nil(t, span.Tag(ext.ErrorMsg))
 }
@@ -624,7 +591,7 @@ func TestRawContextCanceledIsNotSpanError(t *testing.T) {
 	})(ctx, nil)
 	require.ErrorIs(t, err, context.Canceled)
 
-	span := findSpan(t, mt, "grpc.client", ext.SpanKindClient)
+	span := findSpan(t, mt, "kratos.client.request", ext.SpanKindClient)
 	assert.Equal(t, codes.Canceled.String(), span.Tag("grpc.code"))
 	assert.Nil(t, span.Tag(ext.ErrorMsg))
 }
@@ -649,7 +616,7 @@ func TestHTTPServerClientErrorIsNotSpanError(t *testing.T) {
 	})(ctx, nil)
 	require.ErrorIs(t, err, wantErr)
 
-	span := findSpan(t, mt, "http.request", ext.SpanKindServer)
+	span := findSpan(t, mt, "kratos.server.request", ext.SpanKindServer)
 	assert.Equal(t, "404", span.Tag(ext.HTTPCode))
 	assert.Equal(t, float64(http.StatusNotFound), span.Tag("kratos.status_code"))
 	assert.Equal(t, "NOT_FOUND", span.Tag("kratos.error_reason"))
@@ -695,7 +662,7 @@ func TestHTTPConfiguredErrorStatuses(t *testing.T) {
 			_, err = mw(func(context.Context, any) (any, error) { return nil, wantErr })(ctx, nil)
 			require.ErrorIs(t, err, wantErr)
 
-			span := findSpan(t, mt, "http.request", tc.spanKind)
+			span := findSpan(t, mt, operationNameForSpanKind(tc.spanKind), tc.spanKind)
 			assert.Equal(t, strconv.Itoa(tc.statusCode), span.Tag(ext.HTTPCode))
 			if tc.wantError {
 				assert.Equal(t, wantErr.Error(), span.Tag(ext.ErrorMsg))
@@ -717,10 +684,10 @@ func TestNamingSchema(t *testing.T) {
 		wantV0     string
 		wantV1     string
 	}{
-		{name: "http_server", kind: transport.KindHTTP, spanKind: ext.SpanKindServer, middleware: Server(), wantV0: "http.request", wantV1: "http.server.request"},
-		{name: "http_client", kind: transport.KindHTTP, spanKind: ext.SpanKindClient, middleware: Client(), wantV0: "http.request", wantV1: "http.client.request"},
-		{name: "grpc_server", kind: transport.KindGRPC, spanKind: ext.SpanKindServer, middleware: Server(), wantV0: "grpc.server", wantV1: "grpc.server.request"},
-		{name: "grpc_client", kind: transport.KindGRPC, spanKind: ext.SpanKindClient, middleware: Client(), wantV0: "grpc.client", wantV1: "grpc.client.request"},
+		{name: "http_server", kind: transport.KindHTTP, spanKind: ext.SpanKindServer, middleware: Server(), wantV0: "kratos.server.request", wantV1: "kratos.server.request"},
+		{name: "http_client", kind: transport.KindHTTP, spanKind: ext.SpanKindClient, middleware: Client(), wantV0: "kratos.client.request", wantV1: "kratos.client.request"},
+		{name: "grpc_server", kind: transport.KindGRPC, spanKind: ext.SpanKindServer, middleware: Server(), wantV0: "kratos.server.request", wantV1: "kratos.server.request"},
+		{name: "grpc_client", kind: transport.KindGRPC, spanKind: ext.SpanKindClient, middleware: Client(), wantV0: "kratos.client.request", wantV1: "kratos.client.request"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -790,7 +757,7 @@ func TestDefaultServiceNameUsesDDService(t *testing.T) {
 			_, err = tc.middleware(func(context.Context, any) (any, error) { return nil, nil })(ctx, nil)
 			require.NoError(t, err)
 
-			span := findSpan(t, mt, "http.request", tc.spanKind)
+			span := findSpan(t, mt, operationNameForSpanKind(tc.spanKind), tc.spanKind)
 			assert.Equal(t, "checkout-api", span.Tag(ext.ServiceName))
 		})
 	}
@@ -985,6 +952,13 @@ func findSpan(t *testing.T, mt mocktracer.Tracer, operation, spanKind string) *m
 	}
 	require.FailNow(t, "span not found", "operation: %s, span.kind: %s", operation, spanKind)
 	return nil
+}
+
+func operationNameForSpanKind(spanKind string) string {
+	if spanKind == ext.SpanKindClient {
+		return "kratos.client.request"
+	}
+	return "kratos.server.request"
 }
 
 type testHeader map[string][]string

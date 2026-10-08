@@ -1,0 +1,65 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+  description: Tracing middleware for Kratos v3.
+
+aspects:
+  - id: HTTPServer
+    join-point:
+      function-call: github.com/go-kratos/kratos/v3/transport/http.NewServer
+    advice:
+      - append-args:
+          type: github.com/go-kratos/kratos/v3/transport/http.ServerOption
+          values:
+            - imports:
+                kratoshttp: github.com/go-kratos/kratos/v3/transport/http
+                kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+              template: kratoshttp.Middleware(kratostrace.Server())
+  - id: GRPCServer
+    join-point:
+      function-call: github.com/go-kratos/kratos/v3/transport/grpc.NewServer
+    advice:
+      - append-args:
+          type: github.com/go-kratos/kratos/v3/transport/grpc.ServerOption
+          values:
+            - imports:
+                kratosgrpc: github.com/go-kratos/kratos/v3/transport/grpc
+                kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+              template: kratosgrpc.Middleware(kratostrace.Server())
+  # Append middleware after all caller options have been applied, since
+  # WithMiddleware replaces the chain rather than extending it.
+  - id: HTTPClientMiddleware
+    join-point:
+      all-of:
+        - import-path: github.com/go-kratos/kratos/v3/transport/http
+        - function-body:
+            function:
+              - name: NewClient
+    advice:
+      - prepend-statements:
+          imports:
+            kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+          template: |
+            {{ .Function.Argument 1 }} = append({{ .Function.Argument 1 }}, func(o *clientOptions) {
+              o.middleware = append(o.middleware, kratostrace.Client())
+            })
+  - id: GRPCClientMiddleware
+    join-point:
+      all-of:
+        - import-path: github.com/go-kratos/kratos/v3/transport/grpc
+        - function-body:
+            function:
+              - name: NewClient
+    advice:
+      - prepend-statements:
+          imports:
+            kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+          template: |
+            {{ .Function.Argument 1 }} = append({{ .Function.Argument 1 }}, func(o *clientOptions) {
+              o.middleware = append(o.middleware, kratostrace.Client())
+            })

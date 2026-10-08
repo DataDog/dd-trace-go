@@ -4,15 +4,17 @@
 // Copyright 2026 Datadog, Inc.
 
 // Package kratos provides tracing middleware for Kratos v3 request/response
-// HTTP and unary gRPC clients and servers.
+// HTTP and unary gRPC clients and servers. Transport metadata and extracted
+// context are applied before caller-supplied span options, so explicit options
+// retain precedence.
 package kratos // import "github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2"
 
 import (
 	"context"
 	"errors"
 	"io"
-	"math"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -27,13 +29,20 @@ import (
 	kratoserrors "github.com/go-kratos/kratos/v3/errors"
 	"github.com/go-kratos/kratos/v3/middleware"
 	"github.com/go-kratos/kratos/v3/transport"
-	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 )
 
 const component = instrumentation.PackageGoKratosV3
+
+// A structural interface avoids importing the HTTP transport, allowing
+// Orchestrion to inject this middleware into transport constructors.
+type httpTransporter interface {
+	transport.Transporter
+	Request() *http.Request
+	PathTemplate() string
+}
 
 var instr *instrumentation.Instrumentation
 
@@ -58,7 +67,7 @@ func Server(opts ...Option) middleware.Middleware {
 
 			var inferredSpan *tracer.Span
 			if tr.Kind() == transport.KindHTTP {
-				if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
+				if httpTr, ok := tr.(httpTransporter); ok && httpTr.Request() != nil {
 					inferredSpan, ctx = httptrace.StartInferredSpanFromRequest(ctx, httpTr.Request())
 				}
 			}
@@ -145,7 +154,7 @@ func Client(opts ...Option) middleware.Middleware {
 func startSpanTags(cfg *config, tr transport.Transporter, spanKind string) map[string]any {
 	tags := make(map[string]any, 12)
 	tags[ext.ResourceName] = resourceName(tr)
-	tags[ext.RPCSystem] = tr.Kind().String()
+	tags[ext.RPCSystem] = "kratos"
 
 	service, method := splitOperation(tr.Operation())
 	if service != "" {
@@ -156,7 +165,7 @@ func startSpanTags(cfg *config, tr transport.Transporter, spanKind string) map[s
 	}
 
 	if tr.Kind() == transport.KindHTTP {
-		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil {
+		if httpTr, ok := tr.(httpTransporter); ok && httpTr.Request() != nil {
 			req := httpTr.Request()
 			spanType := ext.SpanTypeHTTP
 			httpURL := httptrace.URLFromClientRequest(req, cfg.queryString)
@@ -217,9 +226,6 @@ func prepareSpanConfig(cfg *config, spanKind string) {
 	staticOpts := []tracer.StartSpanOption{
 		tracer.Tag(ext.Component, component),
 		tracer.Tag(ext.SpanKind, spanKind),
-	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		staticOpts = append(staticOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	if spanKind == ext.SpanKindServer {
 		staticOpts = append(staticOpts, tracer.Measured())
@@ -312,10 +318,11 @@ func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config) {
 	span.Finish(finishOpts...)
 }
 
-func operationName(tr transport.Transporter, componentType instrumentation.Component) string {
-	return instr.OperationName(componentType, instrumentation.OperationContext{
-		ext.RPCSystem: tr.Kind().String(),
-	})
+func operationName(_ transport.Transporter, componentType instrumentation.Component) string {
+	if componentType == instrumentation.ComponentClient {
+		return "kratos.client.request"
+	}
+	return "kratos.server.request"
 }
 
 func splitOperation(operation string) (service, method string) {
@@ -329,7 +336,7 @@ func resourceName(tr transport.Transporter) string {
 		return operation
 	}
 	if tr.Kind() == transport.KindHTTP {
-		if httpTr, ok := tr.(kratoshttp.Transporter); ok && httpTr.Request() != nil && httpTr.PathTemplate() != "" {
+		if httpTr, ok := tr.(httpTransporter); ok && httpTr.Request() != nil && httpTr.PathTemplate() != "" {
 			return httpTr.Request().Method + " " + httpTr.PathTemplate()
 		}
 	}

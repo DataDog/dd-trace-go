@@ -37,6 +37,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"                            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"                            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2"                               // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2"                      // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"                           // integration
