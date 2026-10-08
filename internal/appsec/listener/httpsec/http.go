@@ -141,18 +141,7 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	ipTags := clientip.TagsFor(args.RemoteAddr, args.ClientIP)
-	if args.OTelSemanticsEnabled {
-		if clientIP, ok := ipTags[ext.HTTPClientIP]; ok {
-			delete(ipTags, ext.HTTPClientIP)
-			ipTags[ext.ClientAddress] = clientIP
-		}
-		if peerIP, ok := ipTags[ext.NetworkClientIP]; ok {
-			delete(ipTags, ext.NetworkClientIP)
-			ipTags[ext.NetworkPeerAddress] = peerIP
-		}
-	}
-	op.SetStringTags(ipTags)
+	op.SetStringTags(clientip.TagsFor(args.RemoteAddr, args.ClientIP))
 
 	headers := headersRemoveCookies(args.Headers)
 	headers["host"] = []string{args.Host}

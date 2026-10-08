@@ -71,18 +71,17 @@ type (
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		Framework            string // Optional: name of the framework or library being used
-		Method               string
-		RequestURI           string
-		RequestRoute         string
-		Host                 string
-		RemoteAddr           string
-		ClientIP             netip.Addr
-		Headers              map[string][]string
-		OTelSemanticsEnabled bool
-		Cookies              map[string][]string
-		QueryParams          map[string][]string
-		PathParams           map[string]string
+		Framework    string // Optional: name of the framework or library being used
+		Method       string
+		RequestURI   string
+		RequestRoute string
+		Host         string
+		RemoteAddr   string
+		ClientIP     netip.Addr
+		Headers      map[string][]string
+		Cookies      map[string][]string
+		QueryParams  map[string][]string
+		PathParams   map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -420,18 +419,17 @@ func BeforeHandle(
 	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Framework:            opts.Framework,
-		Method:               r.Method,
-		RequestURI:           r.RequestURI,
-		RequestRoute:         opts.Route,
-		Host:                 r.Host,
-		RemoteAddr:           r.RemoteAddr,
-		ClientIP:             clientIP,
-		Headers:              r.Header,
-		OTelSemanticsEnabled: opts.OTelSemanticsEnabled,
-		Cookies:              cookies,
-		QueryParams:          queryParams,
-		PathParams:           opts.RouteParams,
+		Framework:    opts.Framework,
+		Method:       r.Method,
+		RequestURI:   r.RequestURI,
+		RequestRoute: opts.Route,
+		Host:         r.Host,
+		RemoteAddr:   r.RemoteAddr,
+		ClientIP:     clientIP,
+		Headers:      r.Header,
+		Cookies:      cookies,
+		QueryParams:  queryParams,
+		PathParams:   opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
 

@@ -94,14 +94,13 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	handled := false
 	if appsecEnabled {
 		appsecConfig := &httpsec.Config{
-			Framework:            cfg.Framework,
-			Route:                renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
-			RouteParams:          cfg.RouteParams,
-			ClientIP:             clientIP,
-			OTelSemanticsEnabled: otelSemanticsEnabled(),
+			Framework:   cfg.Framework,
+			Route:       renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
+			RouteParams: cfg.RouteParams,
+			ClientIP:    clientIP,
 		}
 
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, AppSecSpanTagSetter(span, otelSemanticsEnabled()), appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()
