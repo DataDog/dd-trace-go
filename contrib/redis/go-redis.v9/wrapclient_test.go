@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -1895,6 +1896,51 @@ func TestWrapClientNestedStoreContention(t *testing.T) {
 	WrapClient(proxy)
 	close(stop)
 	wg.Wait()
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// mapRetainProxy fans hooks out to its current member and retains them in a
+// map-backed store.
+type mapRetainProxy struct {
+	redis.UniversalClient
+	store map[string]redis.Hook
+}
+
+func (r *mapRetainProxy) AddHook(hook redis.Hook) {
+	if r.store == nil {
+		r.store = map[string]redis.Hook{}
+	}
+	r.store[fmt.Sprintf("hook-%d", len(r.store))] = hook
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *mapRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range r.store {
+		delegate.AddHook(hook)
+	}
+}
+
+// A map of hooks is a hook store like any slice: the retention scan must
+// find the probe in it, classify the proxy as retaining, and hand it the
+// real hook for the delegates it creates later.
+func TestWrapClientMapRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &mapRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
 
 	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { later.Close() })

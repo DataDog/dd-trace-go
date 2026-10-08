@@ -648,6 +648,17 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 					}
 				}
 			}
+		case reflect.Map:
+			// A map of hooks is a hook store like any slice: match by
+			// element (value) type.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			}
 		case reflect.Struct:
 			if found, known := containsHook(f, hook, depth-1); found || !known {
 				return found, known
@@ -715,6 +726,17 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			}
+		case reflect.Map:
+			// A map of hooks is a hook store like any slice: match by
+			// element (value) type.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}

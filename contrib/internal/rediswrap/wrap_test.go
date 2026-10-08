@@ -216,3 +216,28 @@ func TestLockStruct(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+type aliased struct {
+	a *sync.Mutex
+	b *sync.Mutex
+	c *sync.Mutex
+}
+
+// Two pointer fields referencing the same mutex must not read as
+// contention: the walker locks each underlying lock once.
+func TestLockStructAliasedPointers(t *testing.T) {
+	m := &sync.Mutex{}
+	g := &aliased{a: m, b: m, c: &sync.Mutex{}}
+
+	unlock, ok := LockStruct(reflect.ValueOf(g).Elem())
+	if !ok {
+		t.Fatal("expected aliased mutexes to deduplicate, not abort")
+	}
+	unlock()
+
+	// The underlying shared mutex really is unlocked after.
+	if !g.a.TryLock() {
+		t.Fatal("expected the aliased mutex to be released")
+	}
+	g.a.Unlock()
+}
