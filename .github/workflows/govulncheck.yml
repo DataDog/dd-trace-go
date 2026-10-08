@@ -153,11 +153,19 @@ jobs:
         run: |-
           git reset --hard HEAD
           git clean -fdx -e govulncheck-contribs.sarif
+      - name: Deduplicate identical contrib SARIF stacks
+        # govulncheck can emit duplicate stacks, violating SARIF's uniqueItems constraint.
+        # Remove only identical stacks; keep all findings and distinct call stacks.
+        # Upstream: https://github.com/golang/go/issues/81953
+        if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
+        run: |-
+          jq '(.runs[].results[] | select(.stacks != null) | .stacks) |= unique' \
+            govulncheck-contribs.sarif > govulncheck-contribs-deduplicated.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
-          sarif_file: govulncheck-contribs.sarif
+          sarif_file: govulncheck-contribs-deduplicated.sarif
           category: govulncheck-contribs
 
   # Blocking: fails the build if any reachable vulnerability is found.
