@@ -195,3 +195,63 @@ func TestInferredProxySpans(t *testing.T) {
 		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 	})
 }
+
+// TestInferredProxySpanQueryString checks that the query string in the
+// X-Dd-Proxy-Path header is obfuscated in http.url, removed when the
+// configured obfuscation regexp is not valid, and never in the route or the
+// resource name.
+func TestInferredProxySpanQueryString(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    map[string]string
+		path   string
+		domain string
+		want   string
+	}{
+		{name: "no query", path: "/test", domain: "example.com", want: "example.com/test"},
+		{name: "obfuscated", path: "/test?password=secret&a=1", domain: "example.com", want: "example.com/test?<redacted>&a=1"},
+		// A domain name cannot contain '?': the query string of the domain header is removed.
+		{name: "query in domain", path: "/test?a=1", domain: "example.com?token=secret", want: "example.com/test?a=1"},
+		{name: "invalid regexp fails closed", env: map[string]string{EnvQueryStringRegexp: `(?<=x)a`}, path: "/test?password=secret&a=1", domain: "example.com", want: "example.com/test"},
+		{name: "obfuscation disabled", env: map[string]string{EnvQueryStringRegexp: ""}, path: "/test?a=1", domain: "example.com", want: "example.com/test?a=1"},
+		{name: "query string disabled", env: map[string]string{envQueryStringDisabled: "true"}, path: "/test?a=1", domain: "example.com", want: "example.com/test"},
+		{name: "server allowlist", env: map[string]string{envServerQueryStringAllowlist: "a", envClientQueryStringAllowlist: "b"}, path: "/test?a=1&b=2&token=x", domain: "example.com", want: "example.com/test?a=1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldCfg := cfg
+			t.Cleanup(func() { cfg = oldCfg })
+			t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
+			for _, k := range []string{EnvQueryStringRegexp, envQueryStringDisabled, envQueryStringAllowlist, envClientQueryStringAllowlist, envServerQueryStringAllowlist} {
+				if v, ok := tc.env[k]; ok {
+					t.Setenv(k, v)
+				} else {
+					unsetEnv(t, k)
+				}
+			}
+			ResetCfg()
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", "https://example.com/test", nil)
+			require.NoError(t, err)
+			req.Header.Set("x-dd-proxy", "aws-apigateway")
+			req.Header.Set("x-dd-proxy-request-time-ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+			req.Header.Set("x-dd-proxy-path", tc.path)
+			req.Header.Set("x-dd-proxy-httpmethod", "GET")
+			req.Header.Set("x-dd-proxy-domain-name", tc.domain)
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(200, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			gwSpan := spans[1]
+			require.Equal(t, "aws.apigateway", gwSpan.OperationName())
+			assert.Equal(t, tc.want, gwSpan.Tag(ext.HTTPURL))
+			assert.Equal(t, "/test", gwSpan.Tag(ext.HTTPRoute))
+			assert.Equal(t, "GET /test", gwSpan.Tag(ext.ResourceName))
+			assert.Equal(t, "example.com", gwSpan.Tag(ext.ServiceName))
+		})
+	}
+}
