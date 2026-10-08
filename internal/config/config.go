@@ -251,13 +251,19 @@ type Config struct {
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
 	otlpMetricsProtocol string
 
-	// OTel runtime metrics exporter transport settings, resolved from the environment only.
-	runtimeMetricsProtocol     string
-	runtimeMetricsHTTPEndpoint string
-	runtimeMetricsHTTPPath     string
-	runtimeMetricsGRPCEndpoint string
-	runtimeMetricsInsecure     bool
-	runtimeMetricsHeaders      map[string]string
+	// OTel runtime metrics exporter and reader settings, resolved from the environment only.
+	runtimeMetricsProtocol        string
+	runtimeMetricsHTTPEndpoint    string
+	runtimeMetricsHTTPPath        string
+	runtimeMetricsGRPCEndpoint    string
+	runtimeMetricsInsecure        bool
+	runtimeMetricsHeaders         map[string]string
+	runtimeMetricsExportInterval  time.Duration
+	runtimeMetricsExportTimeout   time.Duration
+	runtimeMetricsSDKInterval     time.Duration
+	runtimeMetricsSDKTimeout      time.Duration
+	runtimeMetricsTemporality     string
+	runtimeMetricsReaderTelemetry [2]telemetry.Configuration
 
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
@@ -531,6 +537,9 @@ func loadConfig() *Config {
 		cfg.agentURL,
 	)
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
+	cfg.runtimeMetricsExportInterval, cfg.runtimeMetricsSDKInterval, cfg.runtimeMetricsReaderTelemetry[0] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_INTERVAL", env.Get("OTEL_METRIC_EXPORT_INTERVAL"), defaultRuntimeMetricsExportInterval, defaultSDKMetricsExportInterval)
+	cfg.runtimeMetricsExportTimeout, cfg.runtimeMetricsSDKTimeout, cfg.runtimeMetricsReaderTelemetry[1] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_TIMEOUT", env.Get("OTEL_METRIC_EXPORT_TIMEOUT"), defaultRuntimeMetricsExportTimeout, defaultSDKMetricsExportTimeout)
+	cfg.runtimeMetricsTemporality = resolveRuntimeMetricsTemporality(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", ""))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1974,6 +1983,55 @@ func (c *Config) RuntimeMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.runtimeMetricsHeaders)
+}
+
+func (c *Config) RuntimeMetricsExportInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportInterval
+}
+
+func (c *Config) RuntimeMetricsExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportTimeout
+}
+
+func (c *Config) ResolveRuntimeMetricsExportInterval(interval time.Duration) time.Duration {
+	if interval > 0 {
+		return interval
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsSDKInterval
+}
+
+func (c *Config) ResolveRuntimeMetricsExportTimeout(timeout time.Duration) time.Duration {
+	if timeout > 0 {
+		return timeout
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsSDKTimeout
+}
+
+func (c *Config) RuntimeMetricsTemporalityPreference() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsTemporality
+}
+
+// ReportRuntimeMetricsReaderConfig reports input values when an enabled MeterProvider is created.
+func (c *Config) ReportRuntimeMetricsReaderConfig() {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, input := range c.runtimeMetricsReaderTelemetry {
+		if input.Origin == telemetry.OriginDefault {
+			configtelemetry.ReportDefault(input.Name, input.Value)
+		} else {
+			configtelemetry.Report(input.Name, input.Value, input.Origin)
+		}
+	}
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

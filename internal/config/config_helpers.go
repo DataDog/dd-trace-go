@@ -92,6 +92,15 @@ const (
 	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
 	otlpDefaultGRPCPort = "4317"
 
+	// defaultRuntimeMetricsExportInterval is the default value for OTEL_METRIC_EXPORT_INTERVAL.
+	defaultRuntimeMetricsExportInterval = 10 * time.Second
+	// defaultRuntimeMetricsExportTimeout is the default value for OTEL_METRIC_EXPORT_TIMEOUT.
+	defaultRuntimeMetricsExportTimeout = 7500 * time.Millisecond
+	// defaultSDKMetricsExportInterval is the OTel SDK fallback for a nonpositive export interval.
+	defaultSDKMetricsExportInterval = 60 * time.Second
+	// defaultSDKMetricsExportTimeout is the OTel SDK fallback for a nonpositive export timeout.
+	defaultSDKMetricsExportTimeout = 30 * time.Second
+
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
 
@@ -590,6 +599,34 @@ func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[str
 		}
 	}
 	return headers
+}
+
+// resolveRuntimeMetricsDuration resolves a millisecond reader setting. It returns the duration, the
+// SDK fallback used for nonpositive values, and the input value for telemetry.
+func resolveRuntimeMetricsDuration(key, raw string, def, sdkDef time.Duration) (time.Duration, time.Duration, telemetry.Configuration) {
+	input := telemetry.Configuration{Name: key, Value: int(def.Milliseconds()), Origin: telemetry.OriginDefault}
+	duration := def
+	if milliseconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+		duration = time.Duration(milliseconds) * time.Millisecond
+		input.Value = milliseconds
+		input.Origin = telemetry.OriginEnvVar
+	}
+	// The SDK parses its environment fallback without trimming.
+	if milliseconds, err := strconv.Atoi(raw); err == nil && milliseconds > 0 {
+		sdkDef = time.Duration(milliseconds) * time.Millisecond
+	}
+	if duration <= 0 {
+		duration = sdkDef
+	}
+	return duration, sdkDef, input
+}
+
+// resolveRuntimeMetricsTemporality returns "cumulative" when requested, and "delta" otherwise.
+func resolveRuntimeMetricsTemporality(preference string) string {
+	if strings.EqualFold(strings.TrimSpace(preference), "cumulative") {
+		return "cumulative"
+	}
+	return "delta"
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -17,10 +18,6 @@ import (
 // Environment variable names for telemetry reporting
 // Note: envOtelMetricsExporter and envDDMetricsOtelEnabled are defined in meter_provider.go
 const (
-	// OTel Metrics SDK configurations
-	envOtelMetricExportInterval = "OTEL_METRIC_EXPORT_INTERVAL"
-	envOtelMetricExportTimeout  = "OTEL_METRIC_EXPORT_TIMEOUT"
-
 	// Generic OTLP exporter configurations (apply to all signals)
 	envOTLPTimeout = "OTEL_EXPORTER_OTLP_TIMEOUT"
 
@@ -28,9 +25,7 @@ const (
 	envOTLPMetricsTimeout = "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"
 
 	// Default values (in milliseconds) per OTel spec
-	defaultExportIntervalMs = 10000 // 10 seconds
-	defaultExportTimeoutMs  = 7500  // 7.5 seconds (75% of interval, per OTel spec)
-	defaultOTLPTimeoutMs    = 10000 // 10 seconds
+	defaultOTLPTimeoutMs = 10000 // 10 seconds
 )
 
 // registerTelemetry reports OTel metrics configuration to Datadog telemetry.
@@ -68,25 +63,7 @@ func registerTelemetry(cfg *config) {
 		Origin: metricsTimeout.origin,
 	})
 
-	// ===========================================
-	// OpenTelemetry Metrics SDK Configurations
-	// ===========================================
-
-	// OTEL_METRIC_EXPORT_INTERVAL
-	exportInterval := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envOtelMetricExportInterval,
-		Value:  exportInterval.value,
-		Origin: exportInterval.origin,
-	})
-
-	// OTEL_METRIC_EXPORT_TIMEOUT
-	exportTimeout := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envOtelMetricExportTimeout,
-		Value:  exportTimeout.value,
-		Origin: exportTimeout.origin,
-	})
+	internalconfig.Get().ReportRuntimeMetricsReaderConfig()
 
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }

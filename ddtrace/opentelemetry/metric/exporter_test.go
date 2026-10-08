@@ -28,7 +28,10 @@ import (
 // - Non-monotonic instruments (UpDownCounter, ObservableUpDownCounter, ObservableGauge) → Cumulative
 // - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE overrides for monotonic instruments only
 func TestDeltaTemporalitySelector(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "")
 	t.Run("Default behavior (no env var set)", func(t *testing.T) {
+		internalconfig.CreateNew()
 		selector := deltaTemporalitySelector()
 
 		// Test temporality for each instrument kind per OTel spec:
@@ -60,6 +63,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=CUMULATIVE", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "CUMULATIVE")
+		internalconfig.CreateNew()
 		selector := deltaTemporalitySelector()
 
 		// All instruments should use cumulative when explicitly set
@@ -80,6 +84,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=DELTA", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "DELTA")
+		internalconfig.CreateNew()
 		selector := deltaTemporalitySelector()
 
 		// Monotonic instruments should use delta
@@ -107,6 +112,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 
 	t.Run("Case insensitive", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "cumulative")
+		internalconfig.CreateNew()
 		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)
@@ -115,6 +121,7 @@ func TestDeltaTemporalitySelector(t *testing.T) {
 
 	t.Run("With whitespace", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "  CUMULATIVE  ")
+		internalconfig.CreateNew()
 		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)

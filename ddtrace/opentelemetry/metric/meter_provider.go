@@ -91,7 +91,7 @@ func installGlobal(opts ...Option) error {
 // - Resource with DD service, env, version, hostname, and tags
 // - OTLP HTTP exporter with DD defaults (localhost:4318, http/protobuf)
 // - Delta temporality for all metrics (default)
-// - 60-second export interval
+// - 10-second export interval
 //
 // Users can override these defaults by passing additional options.
 func NewMeterProvider(opts ...Option) (otelmetric.MeterProvider, error) {
@@ -139,23 +139,25 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 		return nil, err
 	}
 
-	// Build metric reader with DD defaults
-	// Note: Temporality is configured via the exporter's TemporalitySelector option
-	// The default OTLP exporter uses cumulative, but we configure delta via exporter options
-	readerOpts := []metric.PeriodicReaderOption{
-		metric.WithInterval(cfg.exportInterval),
-		metric.WithTimeout(cfg.exportTimeout),
-	}
-	for _, p := range cfg.producers {
-		readerOpts = append(readerOpts, metric.WithProducer(p))
-	}
-	reader := metric.NewPeriodicReader(exporter, readerOpts...)
+	reader := newPeriodicReader(exporter, cfg)
 
 	// Create the MeterProvider
 	return metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(reader),
 	), nil
+}
+
+func newPeriodicReader(exporter metric.Exporter, cfg *config) *metric.PeriodicReader {
+	readerOpts := make([]metric.PeriodicReaderOption, 0, 2+len(cfg.producers))
+	readerOpts = append(readerOpts,
+		metric.WithInterval(cfg.exportInterval),
+		metric.WithTimeout(cfg.exportTimeout),
+	)
+	for _, p := range cfg.producers {
+		readerOpts = append(readerOpts, metric.WithProducer(p))
+	}
+	return metric.NewPeriodicReader(exporter, readerOpts...)
 }
 
 func metricsEnabled(c *internalconfig.Config) bool {
@@ -214,7 +216,7 @@ func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
 // UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested).
 func deltaTemporalitySelector() metric.TemporalitySelector {
 	// Check if user has explicitly set temporality preference
-	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
+	temporalityPref := internalconfig.Get().RuntimeMetricsTemporalityPreference()
 
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
 		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference
@@ -226,7 +228,7 @@ func deltaTemporalitySelector() metric.TemporalitySelector {
 		}
 
 		// For monotonic instruments, respect the user's preference if set
-		if temporalityPref == "CUMULATIVE" {
+		if temporalityPref == "cumulative" {
 			return metricdata.CumulativeTemporality
 		}
 
