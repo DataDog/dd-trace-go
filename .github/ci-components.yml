@@ -25,6 +25,7 @@ gates:
   - pull-request-tests
   - system-tests
   - orchestrion
+  - benchmark-apps
   - otelc
   - parametric-tests
   - codeql
@@ -56,6 +57,7 @@ groups:
     - pull-request-tests
     - system-tests
     - orchestrion
+    - benchmark-apps
     - otelc
     - parametric-tests
     - static-actions
@@ -73,6 +75,7 @@ workflow-gates:
   main-branch-tests.yml: [ pull-request-tests ]
   system-tests.yml: [ system-tests ]
   orchestrion.yml: [ orchestrion ]
+  benchmark-apps.yml: [ benchmark-apps ]
   otelc.yml: [ otelc ]
   parametric-tests.yml: [ parametric-tests ]
   codeql-analysis.yml: [ codeql ]
@@ -98,6 +101,7 @@ workflow-gates:
   config-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
+  dora-metrics.yml: []
   dynamic-checks.yml: []
   ecosystems-label-issue.yml: []
   ecosystems-label-pr.yml: []
@@ -115,6 +119,7 @@ workflow-gates:
   test-apps-schedule.yml: []
   test-apps.yml: []
   update-supported-versions-doc.yml: []
+  update-system-tests.yml: []
 
 # Workflows allowed to filter with a native `on.pull_request.paths:` block
 # instead of a ciselect gate. `workflows_test.go` asserts nothing else uses one,
@@ -187,6 +192,14 @@ components:
     paths:
       - .github/workflows/Makefile
       - .github/workflows/test-apps.cue
+    gates: [ static-actions ]
+
+  - id: system-tests-updater
+    why: >-
+      The reference-bump script executed only by the scheduled
+      update-system-tests.yml workflow. It feeds no PR gate; static-actions
+      keeps the ciselect invariants that validate its own registration.
+    paths: [ .github/scripts/update_reference.sh ]
     gates: [ static-actions ]
 
   - id: github-meta
@@ -266,7 +279,7 @@ components:
     paths:
       - "**/orchestrion.yml"
       - "**/orchestrion.tool.go"
-    gates: [ "@go-hygiene", orchestrion ]
+    gates: [ "@go-hygiene", orchestrion, benchmark-apps ]
 
   - id: orchestrion-suite
     why: >-
@@ -280,10 +293,13 @@ components:
     gates: [ "@go-hygiene", orchestrion ]
 
   - id: orchestrion-public
-    why: Top-level orchestrion/ and orchestrion/all; no contrib imports them.
+    why: >-
+      Top-level orchestrion/ and orchestrion/all; no contrib imports them. The
+      benchmark apps build against orchestrion/all/v2 resolved from the module
+      proxy, so changes here need the benchmark-apps build check too.
     paths: [ orchestrion/** ]
     dependent-modules: []
-    gates: [ "@go-hygiene", orchestrion, pull-request-tests ]
+    gates: [ "@go-hygiene", orchestrion, pull-request-tests, benchmark-apps ]
 
   - id: otelc-public
     why: Top-level otelc/ and otelc/all; no contrib imports them.
@@ -313,9 +329,13 @@ components:
     gates: [ "@go-hygiene", pull-request-tests, system-tests ]
 
   - id: crashtracker
+    why: >-
+      Root-module package blank-imported by orchestrion/all/v2's tool file. The
+      benchmark apps must resolve it from a published tag, not from a local
+      replace directive.
     paths: [ crashtracker/** ]
     dependent-modules: []
-    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps ]
 
   - id: civisibility
     why: Public wrapper. internal/civisibility is core and matched by `core`.
@@ -337,10 +357,13 @@ components:
     gates: [ "@go-hygiene", pull-request-tests ]
 
   - id: profiler
-    why: profiler/orchestrion.yml is an injected aspect, so orchestrion runs.
+    why: >-
+      profiler/orchestrion.yml is an injected aspect, so orchestrion runs.
+      The profiler package is also blank-imported by orchestrion/all/v2's
+      tool file, hence the benchmark-apps build check.
     paths: [ profiler/** ]
     dependent-modules: [ internal/apps, internal/setup-smoke-test ]
-    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps ]
 
   - id: llmobs
     paths: [ llmobs/** ]
@@ -429,10 +452,14 @@ components:
       - "@go-hygiene"
       - pull-request-tests
       - orchestrion
+      - benchmark-apps
       - system-tests
     # system-tests: weblog variants are built from contrib/net/http, gin, echo,
     # chi and the graphql contribs. The mapping lives in DataDog/system-tests
     # and cannot be verified from here, so all contribs keep the gate.
+    # benchmark-apps: the apps resolve every contrib module from published
+    # tags through orchestrion/all/v2. A new nested module without a
+    # published tag breaks those builds, so it must break this check first.
 
   # ------------------------------------------------------------------- tools
   - id: release-tooling

@@ -80,5 +80,15 @@
     "image": "mongo:8",
     "ports": ["27017:27017"],
     "options": "--name \"mongodb\""
+  },
+  "opensearch2": {
+    "image": "opensearchproject/opensearch:2",
+    "env": {
+      "discovery.type": "single-node",
+      "DISABLE_INSTALL_DEMO_CONFIG": "true",
+      "DISABLE_SECURITY_PLUGIN": "true"
+    },
+    "ports": ["9213:9200"],
+    "options": "--name \"opensearch2\""
   }
 }

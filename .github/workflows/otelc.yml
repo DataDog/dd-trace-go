@@ -32,7 +32,23 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20260921082946-d9bea29c5675' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20261005130301-0399637fded6' }}
+  # Modules otelc reads, tidied by both jobs next to the application each one
+  # builds.
+  OTELC_MODULES: >-
+    otelc/all
+    contrib/net/http
+    contrib/net/http/otelc
+    contrib/database/sql
+    contrib/database/sql/otelc
+  # Suites under internal/orchestrion/_integration that run with otelc.
+  OTELC_TEST_PACKAGES: >-
+    otelc
+    gls
+    gls-leak
+    otelc-autostart
+    net_http
+    sql
 
 jobs:
   go-versions-matrix:
@@ -42,15 +58,15 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-matrix
+          cache-provider: github-cache
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -78,18 +94,23 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-integration
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "instrumentation":"otelc",
+             "workspace":"off"}
 
+      # Deliberately not tools-cache: `make tools-install` also installs
+      # checkmake, which the tools cache does not cover.
       - name: Install development tools
         run: make tools-install
 
@@ -114,7 +135,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration otelc/all; do
+          for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -124,15 +145,12 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           otelc version
 
-          # Listed explicitly: _integration directory names do not map mechanically
-          # onto contrib paths (_integration/redigo lives at contrib/gomodule/redigo),
-          # so this cannot be discovered. Each migrated contrib adds its package here.
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          export PACKAGE_NAMES="\
-            ${PREFIX}/otelc \
-            ${PREFIX}/gls \
-            ${PREFIX}/gls-leak \
-            ${PREFIX}/otelc-autostart"
+          PACKAGE_NAMES=""
+          for pkg in ${OTELC_TEST_PACKAGES}; do
+            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+          done
+          export PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
@@ -194,16 +212,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.26.4"
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          workload: otelc-external-app
+          variant: |-
+            {"instrumentation":"otelc",
+             "workspace":"off"}
 
       - name: Install otelc binary
         shell: bash
@@ -217,7 +237,7 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/apps/otelc-external-app otelc/all; do
+          for dir in internal/apps/otelc-external-app ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 

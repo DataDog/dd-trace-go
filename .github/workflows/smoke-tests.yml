@@ -50,12 +50,20 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: smoke-setup
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Compile dd-trace-go with updated dependencies (sandboxed)
         # go get -u executes dependency code from the network. Keep those
@@ -123,12 +131,21 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.27"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: smoke-deps-update
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Capture trusted commit SHA
         # Pinned before any sandboxed step so we can re-checkout this exact
         # commit after the sandbox runs. Anything that escapes the sandbox
@@ -233,6 +250,20 @@ jobs:
           files: coverage-contrib-merged.txt
           format: go-coverprofile
 
+      # The sandboxed contrib step may have modified the workspace; the
+      # trusted re-checkout and artifact restore gate every other
+      # post-sandbox step, and this local action must be no different:
+      # loading action code from a tampered workspace with id-token
+      # write available would let attacker-controlled steps request an
+      # OIDC token even though the guarded dd-sts step never ran.
+      - name: Report cache metrics to Datadog
+        if: always() && steps.restore.outcome == 'success'
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+
   smoke-test-tracer:
     name: Test dd-trace-go
     runs-on: ubuntu-latest
@@ -244,12 +275,21 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: smoke-tracer
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run tests
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -275,6 +315,14 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.26,arch:${{ runner.arch }},os:${{ runner.os }}
 
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
     runs-on: ubuntu-latest
@@ -291,12 +339,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: "1.26"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: smoke-gen
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run generate scripts and check diff
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -388,9 +445,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile
