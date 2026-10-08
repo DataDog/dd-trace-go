@@ -28,6 +28,15 @@ export __DD_TRACE_SQL_TEST=true
 
 report_error=0
 
+# Opt-in flaky-failure retry; see ci_test_core.sh for the coverprofile,
+# off-switch and bash 3.2 caveats. Packages move to --packages below because --rerun-fails
+# rejects them as go test args after `--`.
+RERUN_ARGS=()
+if [[ -n "${RERUN_FAILS:-}" && "${RERUN_FAILS}" != "0" ]]; then
+  RERUN_ARGS=(--rerun-fails="${RERUN_FAILS}")
+  echo "Retrying failed tests up to ${RERUN_FAILS} time(s); coverage from a rerun is not trustworthy"
+fi
+
 # Build the tags argument if BUILD_TAGS is set
 TAGS_ARG="-tags="
 if [[ -n "$BUILD_TAGS" ]]; then
@@ -59,7 +68,7 @@ for contrib in $CONTRIBS; do
     retry_on_corruption go get github.com/quic-go/qpack@v0.5.1 || report_error=1
   fi
   retry_on_corruption go mod tidy || report_error=1
-  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" --packages=./... -- -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -72,7 +81,7 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
   if [[ "$1" = "smoke" ]]; then
     retry_on_corruption go get -u -t ./... || report_error=1
   fi
-  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" --packages=./... -- -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1

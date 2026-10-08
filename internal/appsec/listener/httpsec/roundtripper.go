@@ -75,8 +75,12 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		WithDownwardMethod(args.Method).
 		WithDownwardRequestHeaders(headersToLower(args.Headers))
 
-	// Increment the span metric for downward requests
-	op.HandlerOp.ContextOperation.GetMetricsInstance().SumDownstreamRequestsCalls.Add(1)
+	// Increment the span metric for downward requests. Metrics is nil when the WAF context could not
+	// be created (no WAF handle, or NewContext failed) yet the listener still runs on an outbound
+	// request, so guard the dereference the same way runWAF does.
+	if metrics := op.HandlerOp.ContextOperation.GetMetricsInstance(); metrics != nil {
+		metrics.SumDownstreamRequestsCalls.Add(1)
+	}
 
 	// Increment the internal sampling counter for downward requests
 	requestCount := feature.downstreamRequestAnalysis.Add(1)

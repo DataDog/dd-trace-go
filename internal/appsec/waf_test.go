@@ -44,6 +44,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+// isolateTelemetry installs a dedicated telemetry client for the duration of
+// the test. A test that runs WAF-monitored requests without one leaves its
+// waf.requests submissions pending in the global recorder, and the next test
+// that swaps in a telemetry client inherits them through SwapClient's replay —
+// an order-dependent effect under -shuffle=on.
+func isolateTelemetry(t *testing.T) {
+	testutils.StartTelemetryRecorder(t)
+}
+
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
 	testutils.StartAppSec(t)
@@ -80,9 +89,10 @@ func TestCustomRules(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
-			// Build tags and capture count before request to measure the delta
+			// Build tags
 			tags := []string{
 				"request_blocked:false",
+				"block_failure:false",
 				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
 				"waf_timeout:false",
 				"rate_limited:false",
@@ -91,7 +101,6 @@ func TestCustomRules(t *testing.T) {
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
 			}
-			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
 
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
@@ -111,13 +120,14 @@ func TestCustomRules(t *testing.T) {
 			}
 
 			// Assert that exactly one waf.requests metric was submitted during this request
-			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
 }
 
 func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	isolateTelemetry(t)
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
@@ -179,6 +189,7 @@ func TestUserRules(t *testing.T) {
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
+	isolateTelemetry(t)
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
@@ -352,16 +363,25 @@ func TestBlocking(t *testing.T) {
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
+	mux.HandleFunc("/body-after-response", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		// Commit the response before asking the WAF to inspect the body. A block
+		// decision at this point cannot replace the response.
+		w.Write([]byte("Hello World!\n"))
+		_ = pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String())
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	for _, tc := range []struct {
-		name      string
-		headers   map[string]string
-		endpoint  string
-		status    int
-		ruleMatch string
-		reqBody   string
+		name         string
+		headers      map[string]string
+		endpoint     string
+		status       int
+		ruleMatch    string
+		reqBody      string
+		blockFailure bool
 	}{
 		{
 			name:     "ip/no-block/no-ip",
@@ -421,6 +441,14 @@ func TestBlocking(t *testing.T) {
 			reqBody:   "$globals",
 			ruleMatch: bodyBlockingRule,
 		},
+		{
+			name:         "body/block-after-response",
+			endpoint:     "/body-after-response",
+			status:       200,
+			reqBody:      "$globals",
+			ruleMatch:    bodyBlockingRule,
+			blockFailure: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -429,9 +457,10 @@ func TestBlocking(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			t.Cleanup(func() { telemetry.SwapClient(prevClient) })
 
-			// Build tags and capture count before request to measure the delta
+			// Build tags
 			tags := []string{
 				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"block_failure:" + strconv.FormatBool(tc.blockFailure),
 				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
 				"waf_timeout:false",
 				"rate_limited:false",
@@ -440,7 +469,6 @@ func TestBlocking(t *testing.T) {
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
 			}
-			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
 
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
@@ -462,6 +490,11 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.blockFailure {
+					assert.NotEqual(t, "true", spans[0].Tag("appsec.blocked"))
+				} else if tc.status != http.StatusOK {
+					assert.Equal(t, "true", spans[0].Tag("appsec.blocked"))
+				}
 				if tc.status != 200 {
 					var payload struct {
 						Triggers []struct {
@@ -484,9 +517,49 @@ func TestBlocking(t *testing.T) {
 			}
 
 			// Assert that exactly one waf.requests metric was submitted during this request
-			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
+}
+
+func TestBlockingUnavailable(t *testing.T) {
+	telemetryClient := testutils.StartTelemetryRecorder(t)
+	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	testutils.StartAppSec(t, config.WithBlockingUnavailable(true))
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	req.Header.Set("x-forwarded-for", "1.2.3.4")
+	res, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { res.Body.Close() })
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.NotEqual(t, "true", spans[0].Tag("appsec.blocked"))
+
+	tags := []string{
+		"request_blocked:false",
+		"block_failure:true",
+		"rule_triggered:true",
+		"waf_timeout:false",
+		"rate_limited:false",
+		"waf_error:false",
+		"waf_version:" + libddwaf.Version(),
+		"event_rules_version:1.4.2",
+		"input_truncated:false",
+	}
+	assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 }
 
 // Test that API Security schemas get collected when API security is enabled
@@ -496,6 +569,7 @@ func TestAPISecurity(t *testing.T) {
 	if wafOK, err := libddwaf.Usable(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
+	isolateTelemetry(t)
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec/{id}", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
@@ -589,6 +663,7 @@ func TestAPISecurityProxy(t *testing.T) {
 	if wafOK, err := libddwaf.Usable(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
+	isolateTelemetry(t)
 
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -721,7 +796,7 @@ func TestRASPLFI(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
-			// Build tags and capture counts before request to measure the delta
+			// Build tags
 			evalTags := []string{
 				"rule_type:lfi",
 				"waf_version:" + libddwaf.Version(),
@@ -733,8 +808,6 @@ func TestRASPLFI(t *testing.T) {
 				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 			}
-			evalCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get()
-			matchCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get()
 
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
@@ -754,20 +827,21 @@ func TestRASPLFI(t *testing.T) {
 			}
 
 			// Assert that exactly one rasp.rule.eval metric was submitted during this request
-			assert.Equal(t, evalCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get())
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get())
 
 			if !tc.block {
 				return
 			}
 
 			// Assert that exactly one rasp.rule.match metric was submitted during this request
-			assert.Equal(t, matchCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get())
+			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get())
 		})
 	}
 }
 
 func TestSuspiciousAttackerBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
+	isolateTelemetry(t)
 	testutils.StartAppSec(t)
 
 	const bodyBlockingRule = "crs-933-130-block"
@@ -882,6 +956,7 @@ func TestSuspiciousAttackerBlocking(t *testing.T) {
 
 func TestWafEventsInMetaStruct(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	isolateTelemetry(t)
 	appsec.Start(config.WithMetaStructAvailable(true))
 	defer appsec.Stop()
 
@@ -1120,6 +1195,7 @@ func BenchmarkSampleWAFSubContext(b *testing.B) {
 
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
+	isolateTelemetry(t)
 	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server

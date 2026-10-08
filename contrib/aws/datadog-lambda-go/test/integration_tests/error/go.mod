@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/inte
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.12.0-dev.3
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
@@ -18,7 +18,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
@@ -47,7 +47,7 @@ require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -82,10 +82,10 @@ require (
 	go.opentelemetry.io/collector/featuregate v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.155.0 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/otel v1.45.0 // indirect
+	go.opentelemetry.io/otel/metric v1.45.0 // indirect
+	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -98,8 +98,8 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 )
 

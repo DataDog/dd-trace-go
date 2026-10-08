@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.11.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 	golang.org/x/sync v0.22.0
 )
 
@@ -63,10 +63,10 @@ require (
 	go.opentelemetry.io/collector/featuregate v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.155.0 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/otel v1.45.0 // indirect
+	go.opentelemetry.io/otel/metric v1.45.0 // indirect
+	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -74,7 +74,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.40.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -90,3 +90,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
+
+retract v2.12.0-dev // An accidental squash merge orphaned this tag. v2.12.0-dev.1 replaces it.

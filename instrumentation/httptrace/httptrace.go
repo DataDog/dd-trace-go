@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -201,18 +202,46 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 // collected and obfuscated either by the default query string obfuscator or a custom one provided via
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER is set it takes
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
+// an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
-	return urlFromRequest(r, queryString, false)
+	return urlFromRequest(r, queryString, false, r.Host)
 }
 
 // URLFromClientRequest returns the full URL from the HTTP request for client-side spans. If queryString is true, params
 // are collected and obfuscated either by the default query string obfuscator or a custom one provided via
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT is set it takes
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
+// an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
-	return urlFromRequest(r, queryString, true)
+	return urlFromRequest(r, queryString, true, r.Host)
+}
+
+// URLFullFromClientRequest returns the OpenTelemetry url.full, identifying which URL
+// the client asked for, the Request.URL, falling back to Request.Host.
+// In contrast, [ServerAddressPortFromClientRequest] returns the resolved
+// destination authority, which can differ (e.g virtual host, reverse proxy).
+// The URL userinfo is replaced with REDACTED:REDACTED.
+func URLFullFromClientRequest(r *http.Request, queryString bool) string {
+	authority := r.URL.Host
+	if authority == "" {
+		authority = r.Host
+	}
+	if authority != "" {
+		authorityURL := url.URL{Host: authority}
+		if r.URL.User != nil {
+			authorityURL.User = url.UserPassword("REDACTED", "REDACTED")
+		}
+		authority = strings.TrimPrefix(authorityURL.String(), "//")
+	}
+	return urlFromRequest(r, queryString, true, authority)
 }
 
 // obfuscateQueryStringConfig holds the settings for one call to ObfuscateQueryString.
@@ -233,14 +262,30 @@ func withClientAllowlist(c *obfuscateQueryStringConfig) {
 	c.isClient = true
 }
 
+// ForClientSpan makes ObfuscateQueryString use the rules of HTTP client spans, like URLFromClientRequest: it
+// selects the client allowlist (DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT) instead of the server one, and
+// it ignores DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED, which only applies to server spans. Use it for HTTP client
+// integrations whose request type is not a *http.Request.
+func ForClientSpan() ObfuscateQueryStringOption {
+	return forClientSpan
+}
+
+func forClientSpan(c *obfuscateQueryStringConfig) {
+	withClientAllowlist(c)
+	skipCollectionCheck(c)
+}
+
 // skipCollectionCheck makes the call ignore DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED.
 func skipCollectionCheck(c *obfuscateQueryStringConfig) {
 	c.checkCollection = false
 }
 
 // ObfuscateQueryString returns rawQuery with sensitive query parameters obfuscated, following the same rules
-// as URLFromRequest. It returns "" when query string collection is disabled or rawQuery is empty. Use it for
-// integrations whose request type is not a *http.Request, such as fasthttp.
+// as URLFromRequest. It returns "" when query string collection is disabled, when
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, or when rawQuery is empty. When
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: it returns
+// rawQuery as-is, with no redaction of sensitive values. An allowlist still applies. Use it for integrations
+// whose request type is not a *http.Request, such as fasthttp.
 func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) string {
 	config := obfuscateQueryStringConfig{checkCollection: true}
 	for _, opt := range opts {
@@ -251,12 +296,20 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 	if rawQuery == "" || (config.checkCollection && !cfg.queryString) {
 		return ""
 	}
+	if cfg.dropQueryString {
+		// Fail closed: the configured regexp is not valid, thus the query string
+		// cannot be obfuscated.
+		return ""
+	}
 	if allowlist := cfg.getQueryStringAllowlist(config.isClient); allowlist != nil {
 		// When an allowlist is configured, only keep the specified parameter keys.
 		// This avoids running the expensive obfuscation regex entirely.
 		return filterQueryStringByAllowlist(rawQuery, allowlist)
 	}
 	if cfg.useDefaultObfuscator {
+		if cfg.replaceJWTDelimiter {
+			return obfuscateQueryStringDefaultLiteral(rawQuery)
+		}
 		return obfuscateQueryStringDefault(rawQuery)
 	}
 	if cfg.queryStringRegexp != nil {
@@ -265,7 +318,7 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 	return rawQuery
 }
 
-func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
+func urlFromRequest(r *http.Request, queryString bool, isClient bool, authority string) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
@@ -278,8 +331,8 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 	} else if r.TLS != nil {
 		scheme = "https"
 	}
-	if r.Host != "" {
-		url = scheme + "://" + r.Host + path
+	if authority != "" {
+		url = scheme + "://" + authority + path
 	} else {
 		url = path
 	}

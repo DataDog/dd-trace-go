@@ -14,6 +14,7 @@ use (
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
+	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
@@ -57,8 +58,10 @@ use (
 	./contrib/miekg/dns
 	./contrib/modelcontextprotocol/go-sdk
 	./contrib/net/http
+	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
+	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
@@ -81,6 +84,7 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./otelc/all
 	./scripts/autoreleasetagger
 	./scripts/fixmodules
 	./scripts/gencontribdoc

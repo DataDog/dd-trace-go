@@ -18,6 +18,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -41,7 +42,13 @@ const (
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
+
+	datadogProviderName = "Datadog Provider"
 )
+
+func init() {
+	internalffe.NewEvaluator = newEvaluator
+}
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
@@ -106,9 +113,11 @@ type DatadogProvider struct {
 	// rather than ProviderStale. Used to re-emit ProviderReady on every
 	// not-ready-to-ready transition, not just the first one. // +checklocks:mu
 	ready bool
-	// firstReadyDelegated records that the first ready transition was left to
-	// the SDK, which emits its own ProviderReady from Init. // +checklocks:mu
-	firstReadyDelegated bool
+	// initialReadyHandoffComplete records that Init's one-time synthetic event
+	// outcome is known. If configuration arrives before Init returns, the first
+	// ready event is left to the SDK. If Init returns an error first, a later
+	// configuration must emit ProviderReady itself. // +checklocks:mu
+	initialReadyHandoffComplete bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -140,8 +149,58 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	}
 }
 
+func newEvaluator(domain string) (internalffe.Evaluator, error) {
+	client := openfeature.NewDefaultClient()
+	if openfeature.ProviderMetadata().Name != datadogProviderName {
+		provider, err := NewDatadogProvider(ProviderConfig{})
+		if err != nil {
+			return nil, err
+		}
+		if provider.Metadata().Name != datadogProviderName {
+			return nil, errors.New("openfeature: Datadog provider is unavailable")
+		}
+		if err := openfeature.SetNamedProvider(domain, provider); err != nil {
+			return nil, err
+		}
+		client = openfeature.NewClient(domain)
+	}
+	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
+		if err := waitForProvider(ctx, client); err != nil {
+			return nil, err
+		}
+		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+		return details.Value, err
+	}, nil
+}
+
+func waitForProvider(ctx context.Context, client *openfeature.Client) error {
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	stateChanged := make(chan struct{}, 1)
+	notify := func(openfeature.EventDetails) {
+		select {
+		case stateChanged <- struct{}{}:
+		default:
+		}
+	}
+	client.AddHandler(openfeature.ProviderReady, &notify)
+	client.AddHandler(openfeature.ProviderError, &notify)
+	defer client.RemoveHandler(openfeature.ProviderReady, &notify)
+	defer client.RemoveHandler(openfeature.ProviderError, &notify)
+	if client.State() != openfeature.NotReadyState {
+		return nil
+	}
+	select {
+	case <-stateChanged:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
-	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
+	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead") //errtrack:ignore deprecated user configuration
 })
 
 // newDatadogProvider is a test-only bare provider constructor. Tests that use
@@ -154,6 +213,19 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		internalffe.SourceRemoteConfig,
 		newEVPClient(),
 	)
+}
+
+func reportFlagEvalMetricsCreationError(err error) {
+	telemetrylog.LogAndReportError("openfeature: failed to create flag evaluation metrics", err)
+}
+
+func handleFlagEvalMetricsCreationError(err error) {
+	var providerErr *flagEvalMeterProviderError
+	if errors.As(err, &providerErr) {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error()) //errtrack:ignore invalid user configuration
+		return
+	}
+	reportFlagEvalMetricsCreationError(err)
 }
 
 func newDatadogProviderWithSourceAndEVP(
@@ -170,7 +242,7 @@ func newDatadogProviderWithSourceAndEVP(
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
-		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
+		handleFlagEvalMetricsCreationError(err)
 	}
 	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 
@@ -209,7 +281,7 @@ func newDatadogProviderWithSourceAndEVP(
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
-			Name: "Datadog Provider",
+			Name: datadogProviderName,
 		},
 		hooks:                 hooks,
 		exposureWriter:        writer,
@@ -240,7 +312,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 	src, err := newAgentlessSource(settings, p.updateConfiguration)
 	if err != nil {
 		// err never contains the configured endpoint or credentials.
-		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error())
+		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error()) //errtrack:ignore invalid user configuration
 		p.mu.Lock()
 		p.deliveryErr = err
 		p.mu.Unlock()
@@ -320,12 +392,10 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 }
 
 // Init initializes the provider. For the Datadog provider,
-// this is waiting for the first configuration to be loaded.
+// this is waiting for the first configuration to be loaded, bounded by
+// DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
-	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), internalconfig.Get().FlaggingProviderInitTimeout())
-	defer cancel()
-	return p.InitWithContext(ctx, evaluationContext)
+	return p.InitWithContext(context.Background(), evaluationContext)
 }
 
 // waitForConfigurationUpdate waits for a configuration update or context
@@ -351,8 +421,17 @@ func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error 
 
 // InitWithContext initializes the provider with context support.
 // This method respects context cancellation and timeouts, allowing users
-// to cancel the initialization process if needed.
+// to cancel the initialization process if needed. A context without a
+// deadline gets DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
 func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+	// The SDK's SetProviderAndWait calls this directly with context.Background(),
+	// never Init, so the timeout has to be applied here or it waits forever.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, internalconfig.Get().FlaggingProviderInitTimeout())
+		defer cancel()
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -373,6 +452,10 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			// arrive. Return an error rather than nil — nil would tell the
 			// OpenFeature SDK initialization succeeded and move it to
 			// ReadyState, even though the provider just tore itself down.
+			// Unlike the cancel and timeout branches below, this one leaves
+			// initialReadyHandoffComplete unset: updateConfiguration returns
+			// early once shutdownCalled is true, so no later configuration can
+			// reach emitFirstOrChangeEvent and the flag would have no effect.
 			return &openfeature.ProviderInitError{
 				ErrorCode: openfeature.ProviderFatalCode,
 				Message:   "provider was shut down before configuration arrived",
@@ -381,20 +464,22 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		if err := p.waitForConfigurationUpdate(ctx); err != nil {
 			if errors.Is(err, context.Canceled) {
 				// The caller explicitly asked to stop waiting, unlike a deadline
-				// which we deliberately tolerate below: report this as a real
-				// failure rather than telling the SDK initialization succeeded.
+				// which may come from the configured fallback below.
+				p.initialReadyHandoffComplete = true
 				return &openfeature.ProviderInitError{
 					ErrorCode: openfeature.ProviderNotReadyCode,
 					Message:   "initialization was canceled before configuration arrived",
 				}
 			}
-			// Timed out with delivery still running. This is not an error: Go's
-			// ErrorState does not block evaluation, and configuration arriving
-			// later promotes the provider to ReadyState (updateConfiguration
-			// also starts the writers below at that point, so nothing is lost
-			// by giving up here).
-			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
-			return nil
+			// Delivery remains active after a timeout. Mark the initial SDK
+			// handoff complete so a later configuration emits ProviderReady and
+			// recovers the SDK from this not-ready initialization result.
+			p.initialReadyHandoffComplete = true
+			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives") //errtrack:ignore remote configuration timeout
+			return &openfeature.ProviderInitError{
+				ErrorCode: openfeature.ProviderNotReadyCode,
+				Message:   "initialization timed out before configuration arrived",
+			}
 		}
 	}
 
@@ -450,7 +535,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
 				// The outer select can still report success on this path, so
 				// without this a truncated teardown would be invisible.
-				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error())
+				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
 			}
 		}
 

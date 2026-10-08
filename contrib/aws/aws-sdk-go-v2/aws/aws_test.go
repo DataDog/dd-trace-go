@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const pathwayContextKey = "dd-pathway-ctx-base64"
@@ -60,7 +63,8 @@ func TestAppendMiddleware(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -108,7 +112,7 @@ func TestAppendMiddleware(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -139,7 +143,8 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -186,7 +191,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -217,7 +222,8 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -264,7 +270,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -373,7 +379,8 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -415,7 +422,8 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
+			assert.Contains(t, s.Tag(ext.HTTPURL), "/MyBucketName")
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -472,7 +480,8 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -524,7 +533,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -576,7 +585,8 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -623,7 +633,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -654,7 +664,8 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -711,7 +722,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -762,7 +773,8 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -804,7 +816,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1054,7 +1066,8 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := mockAWS(tt.expectedStatusCode)
+			var wire wireRecorder
+			server := mockAWSRecording(tt.expectedStatusCode, &wire)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
@@ -1096,7 +1109,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
-			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assertHTTPURL(t, server, &wire, s)
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
@@ -1203,6 +1216,48 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 
 }
 
+// wireRecorder captures the request path a mock AWS server actually received.
+type wireRecorder struct {
+	mu   sync.Mutex
+	seen string
+}
+
+func (w *wireRecorder) record(r *http.Request) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.seen = r.URL.Path
+}
+
+func (w *wireRecorder) path() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.seen
+}
+
+// assertHTTPURL asserts that the http.url span tag equals the URL a mock AWS
+// server actually received. The AWS SDK's exact path serialization is an
+// internal detail that shifts across releases -- smithy-go v1.28.2 made
+// JoinPath preserve a trailing slash, which turned the S3 ListObjects path
+// from "/Bucket" into "/Bucket/" -- so this compares against the real wire
+// request instead of a hardcoded path.
+func assertHTTPURL(t *testing.T, server *httptest.Server, wire *wireRecorder, span *mocktracer.Span) {
+	t.Helper()
+	got, ok := span.Tag(ext.HTTPURL).(string)
+	require.True(t, ok, "http.url tag missing or not a string")
+	assert.Equal(t, server.URL+wire.path(), got)
+}
+
+// mockAWSRecording is mockAWS plus recording of the request path it received.
+func mockAWSRecording(statusCode int, rec *wireRecorder) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			rec.record(r)
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(statusCode)
+			w.Write([]byte(`{}`))
+		}))
+}
+
 func mockAWS(statusCode int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) {
@@ -1298,8 +1353,10 @@ func TestHTTPCredentials(t *testing.T) {
 
 	var auth string
 
+	var wire wireRecorder
 	server := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			wire.record(r)
 			if enc, ok := r.Header["Authorization"]; ok {
 				encoded := strings.TrimPrefix(enc[0], "Basic ")
 				if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
@@ -1339,7 +1396,7 @@ func TestHTTPCredentials(t *testing.T) {
 	spans := mt.FinishedSpans()
 
 	s := spans[0]
-	assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+	assertHTTPURL(t, server, &wire, s)
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "mypassword")
 	assert.NotContains(t, s.Tag(ext.HTTPURL), "myuser")
 	// Make sure we haven't modified the outgoing request, and the server still
@@ -1581,6 +1638,144 @@ func TestExtractSQSMetadata(t *testing.T) {
 			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region, partition)
 			assert.Equal(t, tt.expectedQueueName, queueName)
 			assert.Equal(t, tt.expectedARN, arn)
+		})
+	}
+}
+
+// queryStringEnv are the environment variables that change the query string
+// in the http.url tag.
+var queryStringEnv = []string{
+	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER",
+}
+
+// setQueryStringEnv sets the query string environment variables to env, and
+// unsets the others. It also resets the httptrace configuration, before and
+// after the test.
+func setQueryStringEnv(t *testing.T, env map[string]string) {
+	t.Helper()
+	t.Cleanup(httptrace.ResetCfg) // Runs after the environment is restored.
+	for _, k := range queryStringEnv {
+		t.Setenv(k, "") // Restores the original value at the end of the test.
+		if v, ok := env[k]; ok {
+			t.Setenv(k, v)
+		} else {
+			require.NoError(t, os.Unsetenv(k))
+		}
+	}
+	httptrace.ResetCfg()
+}
+
+// TestHTTPURLQueryString checks that the query string in the http.url tag is
+// obfuscated, and that it is removed when the configured obfuscation regexp is
+// not valid.
+func TestHTTPURLQueryString(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, server *httptest.Server, url string)
+	}{
+		{
+			name: "obfuscated",
+			check: func(t *testing.T, server *httptest.Server, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "invalid regexp fails closed",
+			env:  map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`},
+			check: func(t *testing.T, server *httptest.Server, url string) {
+				assert.Equal(t, server.URL+"/MyBucketName", url)
+			},
+		},
+		{
+			// DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED only applies to server spans.
+			name: "query string disabled for server spans",
+			env:  map[string]string{"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": "true"},
+			check: func(t *testing.T, server *httptest.Server, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "client allowlist",
+			env: map[string]string{
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": "list-type",
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": "continuation-token",
+			},
+			check: func(t *testing.T, server *httptest.Server, url string) {
+				assert.Equal(t, server.URL+"/MyBucketName?list-type=2", url)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			var gotQuery string
+			server := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.RawQuery
+					w.Header().Set("X-Amz-RequestId", "test_req")
+					w.WriteHeader(200)
+					w.Write([]byte(`{}`))
+				}))
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+			AppendMiddleware(&awsCfg)
+
+			s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.UsePathStyle = true })
+			s3Client.ListObjectsV2(context.Background(), &s3.ListObjectsV2Input{
+				Bucket:            aws.String("MyBucketName"),
+				ContinuationToken: aws.String("supersecret"),
+			})
+
+			// The outgoing request is not changed.
+			assert.Contains(t, gotQuery, "supersecret")
+			spans := mt.FinishedSpans()
+			require.NotEmpty(t, spans)
+			url, _ := spans[0].Tag(ext.HTTPURL).(string)
+			assert.NotContains(t, url, "supersecret")
+			tc.check(t, server, url)
+		})
+	}
+}
+
+func TestRedactURLQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		url  url.URL
+		want string
+	}{
+		{name: "raw query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", RawQuery: "token=secret&a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query", url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret", RawQuery: "a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query fails closed", env: map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`}, url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret"}, want: "https://h/p"},
+		{name: "opaque user information", url: url.URL{Scheme: "https", Opaque: "//user:password@h/p?a=1"}, want: "https://h/p?a=1"},
+		{name: "opaque user information without path", url: url.URL{Scheme: "https", Opaque: "//user:password@h"}, want: "https://h"},
+		{name: "force query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", ForceQuery: true}, want: "https://h/p"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+			u := tc.url
+			redactURLQuery(&u)
+			assert.Equal(t, tc.want, u.String())
 		})
 	}
 }
