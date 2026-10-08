@@ -97,7 +97,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			c.SetRequest(request.WithContext(ctx))
 
 			if instr.AppSecEnabled() {
-				next = withAppSec(next, span, cfg.otelEnabled)
+				next = withAppSec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
 			}
 			// serve the request to the next middleware
 			err := next(c)
