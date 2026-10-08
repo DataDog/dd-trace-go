@@ -22,9 +22,9 @@ on:
   workflow_dispatch:
     inputs:
         ref:
-            description: 'System Tests ref/tag/branch'
-            required: true
-            default: main
+            description: 'System Tests ref/tag/branch (defaults to the pinned SYSTEM_TESTS_REF)'
+            required: false
+            default: ''
             type: string
   schedule:
     - cron:  '00 04 * * *'
@@ -33,6 +33,9 @@ permissions:
   id-token: write
   contents: read
   packages: write
+
+env:
+  SYSTEM_TESTS_REF: a0a993605b06ff21e00e205a73d2d54a5a4fc1c9 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -66,7 +69,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
@@ -121,7 +124,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.warm-repo-cache.outputs.sha }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -304,7 +307,7 @@ jobs:
         run: |
           git config safe.directory "$GITHUB_WORKSPACE"
           git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
-      
+
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
@@ -312,7 +315,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.warm-repo-cache.outputs.sha }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -320,14 +323,14 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
-      
+
       # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go-app-key
-          
+
       - name: Set credentials
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
@@ -372,7 +375,7 @@ jobs:
       - name: Load ${{ matrix.weblog-variant }} image
         if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
         run: docker load -i ${{ matrix.image_artifact }}.tar
-      
+
       - name: Set ${{ matrix.image_name }} image name
         if: ${{ matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim' }}
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
@@ -467,7 +470,7 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@3dba6b77a915f72e00db5aa97295bd9eb125c197 # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write

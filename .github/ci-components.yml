@@ -119,6 +119,7 @@ workflow-gates:
   test-apps-schedule.yml: []
   test-apps.yml: []
   update-supported-versions-doc.yml: []
+  update-system-tests.yml: []
 
 # Workflows allowed to filter with a native `on.pull_request.paths:` block
 # instead of a ciselect gate. `workflows_test.go` asserts nothing else uses one,
@@ -191,6 +192,14 @@ components:
     paths:
       - .github/workflows/Makefile
       - .github/workflows/test-apps.cue
+    gates: [ static-actions ]
+
+  - id: system-tests-updater
+    why: >-
+      The reference-bump script executed only by the scheduled
+      update-system-tests.yml workflow. It feeds no PR gate; static-actions
+      keeps the ciselect invariants that validate its own registration.
+    paths: [ .github/scripts/update_reference.sh ]
     gates: [ static-actions ]
 
   - id: github-meta

@@ -492,6 +492,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/modern-go/concurrent",
 		"github.com/modern-go/reflect2",
 		"github.com/modocache/gover",
+		"github.com/molecule-man/go-brrr",
 		"github.com/montanaflynn/stats",
 		"github.com/munnerz/goautoneg",
 		"github.com/mwitkow/go-conntrack",

@@ -226,6 +226,10 @@ for its behavior and limitations.
 
 ### Block outcome telemetry
 
+Tests that inspect WAF telemetry should install `testutils.StartTelemetryRecorder`
+before starting AppSec. This isolates the recorded metrics from submissions
+buffered by earlier tests while preserving exact request-count assertions.
+
 The `waf.requests` metric has one data point for each WAF context. Two of its
 tags show the block outcome of the request:
 
