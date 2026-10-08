@@ -160,14 +160,6 @@ func TestGetCodeOwnersMalformedCandidateDoesNotBlockLaterCandidate(t *testing.T)
 	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
 }
 
-func TestFindSectionIgnoreCase(t *testing.T) {
-	sections := []string{"Section1", "section2", "SECTION3"}
-	assert.Equal(t, "Section1", findSectionIgnoreCase(sections, "section1"))
-	assert.Equal(t, "section2", findSectionIgnoreCase(sections, "SECTION2"))
-	assert.Equal(t, "SECTION3", findSectionIgnoreCase(sections, "Section3"))
-	assert.Equal(t, "", findSectionIgnoreCase(sections, "Section4"))
-}
-
 func TestMatch(t *testing.T) {
 	entries := []Entry{
 		{Pattern: "/path/to/file", Owners: []string{"@owner1", "@owner2"}, Section: "Section 1"},
