@@ -61,21 +61,35 @@ var (
 	// context and no chain identity, so the mark is scoped by the command
 	// object alone: a user wrapper that forwards the same command object to
 	// a second wrapped client within one invocation suppresses that
-	// client's span. The key is the command's object identity — the
-	// interface data word — so a command that cannot be compared, holding
-	// a map or a slice, is deduplicated like any other. The hook-based
-	// integrations deduplicate by reading hook chains instead, but v6 has
-	// no hook chain to read.
-	tracedCmds sync.Map // cmdKey(cmd) -> struct{}
+	// client's span. The key is the command's dynamic type and the
+	// interface data word — the command itself when it is pointer-shaped,
+	// a pointer to its interface copy otherwise — so a command that cannot
+	// be compared, holding a map or a slice, is deduplicated like any
+	// other, and commands of different types never collide on a shared
+	// boxing address. Two commands whose interface values are bit-identical
+	// — equal values that share the runtime's static boxing storage, or a
+	// zero-sized value — are one command as far as any value the public API
+	// exposes can tell, and deduplicate like the equal commands the
+	// original value-keyed mark always did. The hook-based integrations
+	// deduplicate by reading hook chains instead, but v6 has no hook chain
+	// to read.
+	tracedCmds sync.Map // cmdKey -> struct{}
 )
 
-// cmdKey returns an identity for a command value: the interface's data word,
-// which holds the command itself when it is pointer-shaped and a pointer to
-// its interface copy otherwise. It is a distinct, comparable identity for
-// every live command — even one that cannot be compared, with a map or a
-// slice inside — and the two wrappers of one command see the same word.
-func cmdKey(cmd redis.Cmder) unsafe.Pointer {
-	return (*[2]unsafe.Pointer)(unsafe.Pointer(&cmd))[1]
+// cmdKey identifies a command value: its dynamic type and the interface's
+// data word, which holds the command itself when it is pointer-shaped and a
+// pointer to its interface copy otherwise. The two wrappers of one command
+// see the same pair, while commands of different types never collide on a
+// shared boxing address — the zero base of zero-sized values included. Two
+// commands of the same type share an address only when their values are
+// equal, which no API can tell apart.
+type cmdKey struct {
+	typ  reflect.Type
+	word unsafe.Pointer
+}
+
+func newCmdKey(cmd redis.Cmder) cmdKey {
+	return cmdKey{typ: reflect.TypeOf(cmd), word: (*[2]unsafe.Pointer)(unsafe.Pointer(&cmd))[1]}
 }
 
 // currentProcess returns the client's current process chain, read through
@@ -347,7 +361,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			tc.process = oldProcess
 		}
 		return func(cmd redis.Cmder) error {
-			key := cmdKey(cmd)
+			key := newCmdKey(cmd)
 			if _, traced := tracedCmds.Load(key); traced {
 				// A datadog wrapper further out is driving this command and
 				// already started its span for it; see tracedCmds.

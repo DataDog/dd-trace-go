@@ -67,12 +67,18 @@ type walkGuard struct {
 // walking records the in-progress WrapClient call per client, keyed weakly.
 var walking sync.Map // Handle -> *walkGuard
 
-// BeginWalk serializes WrapClient calls for one client: it blocks until a
-// concurrent call for the same client — including its unlocked, user-controlled
-// AddHook — completes, then marks this call as the one in progress. A call on
-// the same goroutine (an AddHook re-entering WrapClient) never blocks. The
-// returned function must be called when the WrapClient call ends.
-func BeginWalk(key Handle) func() {
+// BeginWalk serializes WrapClient calls for one client: it waits for a
+// concurrent call for the same client — including its unlocked,
+// user-controlled AddHook — to complete, then marks this call as the one
+// in progress. A call on the same goroutine (an AddHook re-entering
+// WrapClient) never waits. The wait is bounded: a user callback that
+// delegates to another goroutine — starting one that calls WrapClient for
+// this very client and waiting for it — must not deadlock against the
+// guard, and the in-flight call instruments the client either way, so a
+// wait that outlives the bound reports false and the caller returns
+// without wrapping. The returned function must be called when the
+// WrapClient call ends, and only when ok is true.
+func BeginWalk(key Handle, wait time.Duration) (release func(), ok bool) {
 	id := Goid()
 	for {
 		v, ok := walking.Load(key)
@@ -82,7 +88,7 @@ func BeginWalk(key Handle) func() {
 				return func() {
 					close(g.done)
 					walking.Delete(key)
-				}
+				}, true
 			}
 			continue // someone else registered; re-check
 		}
@@ -90,10 +96,35 @@ func BeginWalk(key Handle) func() {
 		if g.goid == id {
 			// The guard belongs to this goroutine — an AddHook re-entering
 			// WrapClient; it is already serialized.
-			return func() {}
+			return func() {}, true
 		}
-		<-g.done
+		select {
+		case <-g.done:
+		case <-time.After(wait):
+			// The holder did not finish within the wait: it instruments the
+			// client, and a nested call synchronously waiting on it must not
+			// block it forever.
+			return func() {}, false
+		}
 	}
+}
+
+// Unguarded reports whether s is a struct copy whose mutex field cannot be
+// taken: a value mutex of a non-addressable struct — a proxy passed by
+// value — locks nothing, because the state its fields reach through maps,
+// slices, and pointers is the original's, guarded by the original's mutex.
+// Readers must not treat such a copy's interiors as safe; its own header
+// fields are snapshots and stay readable.
+func Unguarded(s reflect.Value) bool {
+	if s.Kind() != reflect.Struct || s.CanAddr() {
+		return false
+	}
+	for i := 0; i < s.NumField(); i++ {
+		if t := s.Type().Field(i).Type; t == mutexType || t == rwMutexType {
+			return true
+		}
+	}
+	return false
 }
 
 // Mark identifies a proxy whose AddHook a WrapClient call on this goroutine is
