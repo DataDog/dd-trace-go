@@ -126,6 +126,8 @@
 # civisibility
 /civisibility/                  @DataDog/ci-app-libraries
 /internal/civisibility/         @DataDog/ci-app-libraries
+/ddtrace/tracer/civisibility_*   @DataDog/ci-app-libraries
+/ddtrace/mocktracer/civisibility* @DataDog/ci-app-libraries
 
 # llm observability
 /llmobs/                                   @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go

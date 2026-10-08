@@ -289,6 +289,9 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 			} else if strings.HasSuffix(pattern, "/*") {
 				includeAnythingAfter = true
 				finalPattern = finalPattern[:len(finalPattern)-1]
+			} else if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "*") && !strings.ContainsAny(pattern[:len(pattern)-1], "*?[]\\") {
+				includeAnythingAfter = true
+				finalPattern = finalPattern[:len(finalPattern)-1]
 			} else {
 				includeAnythingAfter = false
 			}

@@ -277,7 +277,7 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
-	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	setGlobalTracerWithCIVisibility(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}

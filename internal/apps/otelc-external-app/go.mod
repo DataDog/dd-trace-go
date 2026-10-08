@@ -22,6 +22,10 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
@@ -35,6 +39,8 @@ require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/go-chi/chi v1.5.5 // indirect
+	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
@@ -86,6 +92,14 @@ require (
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
+
+replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 => ../../../contrib/go-chi/chi/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 => ../../../contrib/go-chi/chi.v5/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 => ../../../contrib/go-chi/chi
+
+replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 => ../../../contrib/go-chi/chi.v5
 
 replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
 
