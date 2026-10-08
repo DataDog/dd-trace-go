@@ -40,9 +40,8 @@ Two further limits inside `where.file`:
 - Leaf predicates do not conjoin implicitly. Two of them fail with "where.file has multiple active
   predicates"; write an explicit `all-of` instead.
 
-`target: $root` substitutes for the common `not: {import-path: <the library>}` when the excluded
-package is a separate module, since `$root` stops at the module boundary. The cost is that the rule
-then also skips call sites inside third-party dependency modules.
+A target list with `not:` entries replaces the common `not: {import-path: <the library>}`:
+`target: ["**", not: "<the library>/**"]`.
 
 ## 4. Excluding one call site from a definition-side hook
 
