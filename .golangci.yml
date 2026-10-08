@@ -134,3 +134,4 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/DataDog/dd-trace-go/v2
+        - github.com/DataDog/dd-trace-go/contrib/internal

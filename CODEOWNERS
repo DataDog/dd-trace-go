@@ -58,6 +58,7 @@
 
 # tracing
 /contrib/                       @DataDog/apm-go @DataDog/apm-idm-go
+/contrib/internal/rediswrap/  @DataDog/apm-go
 /ddtrace/                       @DataDog/apm-go
 
 # profiling

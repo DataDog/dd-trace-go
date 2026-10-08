@@ -21,6 +21,7 @@ import (
 	"unsafe"
 	"weak"
 
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -86,7 +87,7 @@ type wrapEntry struct {
 	goid       uint64                     // the goroutine that started the install, for reentry
 	observed   bool                       // an observation completed for this client
 	retainOnly bool                       // the proxy retains hooks; its members stay unhooked by design
-	memberKeys []weak.Pointer[byte]       // the members the observation saw, weakly: a changed set, not an unhooked member, marks a swap
+	memberKeys []rediswrap.Handle         // the members the observation saw, weakly: a changed set, not an unhooked member, marks a swap
 }
 
 // installing records, per goroutine, the proxies whose AddHook a WrapClient
@@ -96,98 +97,12 @@ type wrapEntry struct {
 // proxy has no weak pointer identity to key by.
 var installing sync.Map // uint64 (goid) -> []any
 
-// installMark identifies a proxy whose AddHook a WrapClient call on this
-// goroutine is currently running: an AddHook that re-enters WrapClient for
-// the same proxy must recognize its own installation instead of recursing.
-// The members make a non-comparable value proxy — which has neither a weak
-// pointer identity nor a comparable value — recognizable through the
-// concrete clients it delegates to.
-type installMark struct {
-	proxy   any
-	members []redis.UniversalClient
-}
-
-// markInstalling records that this goroutine is about to run client's
-// AddHook; the returned function must be called once it returns.
-func markInstalling(client any, members []redis.UniversalClient) func() {
-	id := goid()
-	var list []installMark
-	if v, ok := installing.Load(id); ok {
-		list = v.([]installMark)
-	}
-	installing.Store(id, append(list, installMark{proxy: client, members: members}))
-	return func() {
-		id := goid()
-		v, ok := installing.Load(id)
-		if !ok {
-			return
-		}
-		list := v.([]installMark)
-		for i := len(list) - 1; i >= 0; i-- {
-			if sameMark(list[i].proxy, list[i].members, client, members) {
-				list = append(list[:i], list[i+1:]...)
-				break
-			}
-		}
-		if len(list) == 0 {
-			installing.Delete(id)
-		} else {
-			installing.Store(id, list)
-		}
-	}
-}
-
-// isInstalling reports whether this goroutine is currently running the
-// AddHook of client — a re-entrant call must not start its own installation.
-func isInstalling(client any, members []redis.UniversalClient) bool {
-	id := goid()
-	v, ok := installing.Load(id)
-	if !ok {
-		return false
-	}
-	for _, m := range v.([]installMark) {
-		if sameMark(m.proxy, m.members, client, members) {
-			return true
-		}
-	}
-	return false
-}
-
-// sameMark reports whether two proxies in installation marks identify the
-// same client. Proxies with non-comparable dynamic types are matched through
-// their member sets — the same concrete clients — rather than by value.
-func sameMark(pa any, ma []redis.UniversalClient, pb any, mb []redis.UniversalClient) bool {
-	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
-	if ta == nil || tb == nil || ta != tb {
-		return false
-	}
-	if ta.Comparable() {
-		// Different comparable proxies are different, even over the same
-		// members: only a proxy that cannot be compared at all falls back
-		// to matching through its member set.
-		return pa == pb
-	}
-	if len(ma) != len(mb) {
-		return false
-	}
-	for i := range ma {
-		if ma[i] != mb[i] {
-			return false
-		}
-	}
-	return true
-}
-
 var (
 	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
 	// registry updates — hold it; AddHook does not, because it runs
 	// user-controlled code that may call WrapClient again and would deadlock
 	// on the lock.
 	wrapMu sync.Mutex
-	// cleanupMark records the clients a runtime cleanup is already attached
-	// to; it is keyed weakly and cleaned by that very cleanup, so it never
-	// pins a client.
-	cleanupMark sync.Map // weak.Pointer[byte] -> struct{}
 	// wrapped deduplicates WrapClient calls for clients whose hook chain
 	// cannot be read and for proxies, keyed weakly. Entries are cleaned up
 	// when the client is retired, so the registry never keeps a client
@@ -332,8 +247,18 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 // proxy over the same members is still observed separately. The probe stays
 // in the chains it landed on as a no-op. The caller must hold wrapMu;
 // AddHook runs with the lock released.
+
+// membersAny boxes the concrete members for the shared installation marks.
+func membersAny(members []redis.UniversalClient) []any {
+	out := make([]any, len(members))
+	for i, m := range members {
+		out[i] = m
+	}
+	return out
+}
+
 func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
-	if isInstalling(proxy, members) {
+	if rediswrap.IsInstalling(proxy, membersAny(members)) {
 		// This call is the re-entry of this goroutine's own AddHook for the
 		// same proxy: the installation it belongs to is still in flight.
 		return
@@ -342,7 +267,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// marked as being installed on this goroutine; the deferred unmark also
 	// runs when one of them panics and the application recovers, so the
 	// marker never outlives the wrap.
-	defer markInstalling(proxy, members)()
+	defer rediswrap.MarkInstalling(proxy, membersAny(members))()
 	// A proxy may have replaced its delegates since its last observation.
 	// A durable entry stands while the member set is unchanged: a member the
 	// proxy deliberately leaves unhooked is part of that set, not a swapped
@@ -351,7 +276,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// configuration, which the documented first-configuration-wins behavior
 	// requires.
 	var first *clientConfig
-	if k, ok := weakHandle(proxy); ok {
+	if k, ok := rediswrap.HandleOf(proxy); ok {
 		if e, ok := wrapped[k]; ok && e.done == nil {
 			// A new member that already carries the hook was covered by the
 			// proxy's own fan-out — a fan-out-and-retain proxy applies its
@@ -362,7 +287,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			// next.
 			reobserve := len(e.memberKeys) != len(members)
 			for _, member := range members {
-				if key, ok := weakHandle(member); ok && containsKey(e.memberKeys, key) {
+				if key, ok := rediswrap.HandleOf(member); ok && rediswrap.ContainsKey(e.memberKeys, key) {
 					continue
 				}
 				if prev, seen := datadogConfig(member); !seen || prev == nil {
@@ -487,7 +412,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		}
 		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
 		if entry != nil {
-			entry.memberKeys = memberKeys(members)
+			entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
 			// A retain-only proxy never hooks its current members; record
 			// that, so a later wrap does not mistake their missing hooks
 			// for a replaced delegate and re-hand the proxy another hook.
@@ -523,7 +448,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		unlocked(func() { addHook(proxy, cfg) })
 	}
 	if entry != nil {
-		entry.memberKeys = memberKeys(members)
+		entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -537,7 +462,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 // still in flight, this call waits for it to finish. The caller must hold
 // wrapMu.
 func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wrapEntry, proceed bool) {
-	k, ok := weakHandle(client)
+	k, ok := rediswrap.HandleOf(client)
 	if !ok {
 		return nil, true
 	}
@@ -559,7 +484,7 @@ func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wra
 		// can close. Installs started by other goroutines are still waited
 		// on, so a nested wrap does not return before a concurrent install
 		// has finished.
-		if e.done != nil && e.goid != goid() {
+		if e.done != nil && e.goid != rediswrap.Goid() {
 			done := e.done
 			unlocked(func() { <-done })
 			// The install may have failed and dropped its marker; recheck
@@ -568,84 +493,22 @@ func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wra
 		}
 		return nil, false
 	}
-	e := &wrapEntry{cfg: key, done: make(chan struct{}), goid: goid()}
+	e := &wrapEntry{cfg: key, done: make(chan struct{}), goid: rediswrap.Goid()}
 	wrapped[k] = e
 	// One cleanup per client, not per entry: a proxy re-observed after a
 	// delegate swap deletes and recreates its entry, and every recreation
 	// would otherwise attach another cleanup to the same object.
-	if _, ok := cleanupMark.Load(k); !ok {
-		cleanupMark.Store(k, struct{}{})
-		runtime.AddCleanup(k.Value(), func(kk weak.Pointer[byte]) {
-			wrapMu.Lock()
-			delete(wrapped, kk)
-			wrapMu.Unlock()
-			cleanupMark.Delete(kk)
-		}, k)
-	}
+	rediswrap.RegisterCleanup(k.Value(), func(kk rediswrap.Handle) {
+		wrapMu.Lock()
+		delete(wrapped, kk)
+		wrapMu.Unlock()
+	}, k)
 	// The cleanup is attached to the client: when it becomes unreachable the
 	// entry goes with it, even though neither side keeps the other alive.
 	// KeepAlive closes the window in which a GC could collect a client whose
 	// last mention was the weak handle above.
 	runtime.KeepAlive(client)
 	return e, true
-}
-
-// goid returns the current goroutine's ID, from the header of its stack
-// snapshot. It identifies the goroutine that started an in-flight install,
-// so a call chain re-entering its own install does not wait for it while
-// concurrent installs are still waited on.
-func goid() uint64 {
-	b := make([]byte, 64)
-	b = b[:runtime.Stack(b, false)]
-	// The first line reads "goroutine 123 [running]:".
-	if len(b) < 11 || string(b[:10]) != "goroutine " {
-		return 0
-	}
-	var id uint64
-	for _, c := range b[10:] {
-		if c < '0' || c > '9' {
-			break
-		}
-		id = id*10 + uint64(c-'0')
-	}
-	return id
-}
-
-// containsKey reports whether the recorded member handles include key.
-func containsKey(recorded []weak.Pointer[byte], key weak.Pointer[byte]) bool {
-	for _, k := range recorded {
-		if k == key {
-			return true
-		}
-	}
-	return false
-}
-
-// memberKeys returns weak handles for the members, in order; the registry
-// never pins them, and weak-pointer identity survives reclamation.
-func memberKeys(members []redis.UniversalClient) []weak.Pointer[byte] {
-	keys := make([]weak.Pointer[byte], 0, len(members))
-	for _, member := range members {
-		if k, ok := weakHandle(member); ok {
-			keys = append(keys, k)
-		}
-	}
-	return keys
-}
-
-// sameMembers reports whether the recorded member handles match the current
-// members in order and count.
-func sameMembers(recorded []weak.Pointer[byte], members []redis.UniversalClient) bool {
-	if len(recorded) != len(members) {
-		return false
-	}
-	for i, member := range members {
-		k, ok := weakHandle(member)
-		if !ok || k != recorded[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // registryConfig returns a copy of cfg that retains no user callback: the
@@ -665,7 +528,7 @@ func registryConfig(cfg *clientConfig) *clientConfig {
 // client keeps its first configuration and gets no second hook. The caller
 // must hold wrapMu.
 func registerWeak(client redis.UniversalClient, cfg *clientConfig, warn func()) bool {
-	k, ok := weakHandle(client)
+	k, ok := rediswrap.HandleOf(client)
 	if !ok {
 		return false
 	}
@@ -705,7 +568,7 @@ func finishObserved(client redis.UniversalClient, entry *wrapEntry, keep, observ
 	entry.done = nil
 	entry.observed = entry.observed || observed
 	if !keep {
-		if k, ok := weakHandle(client); ok {
+		if k, ok := rediswrap.HandleOf(client); ok {
 			delete(wrapped, k)
 		}
 	}
@@ -740,7 +603,7 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 		// scan rides contention out; a mutex held for the whole window
 		// leaves the retention unknown.
 		for range 3 {
-			unlock, ok := lockStruct(v)
+			unlock, ok := rediswrap.LockStruct(v)
 			if ok {
 				defer unlock()
 				// The root is locked here; scanning it must not re-acquire
@@ -808,6 +671,14 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) bool {
 // containsHook reports whether s, or a struct embedded within it, holds the
 // hook in a field or in a hook slice, locking s as it is read. Hooks with
 // non-comparable dynamic types cannot be compared and are treated as absent.
+// The concrete client types are skipped during proxy-field scans: a delegate
+// is not proxy-owned storage.
+var (
+	redisClientType        = reflect.TypeFor[*redis.Client]()
+	redisClusterClientType = reflect.TypeFor[*redis.ClusterClient]()
+	redisRingType          = reflect.TypeFor[*redis.Ring]()
+)
+
 func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return false
@@ -817,7 +688,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) bool {
 	// under its own mutex, and reading it without that races with the
 	// update.
 	if s.CanAddr() {
-		unlock, ok := lockStruct(s)
+		unlock, ok := rediswrap.LockStruct(s)
 		defer unlock()
 		if !ok {
 			return false
@@ -972,107 +843,13 @@ func hookSlice(client redis.UniversalClient) reflect.Value {
 	return findHookSlice(s, 8)
 }
 
-var (
-	mutexType              = reflect.TypeOf(sync.Mutex{})
-	rwMutexType            = reflect.TypeOf(sync.RWMutex{})
-	mutexPointerType       = reflect.TypeFor[*sync.Mutex]()
-	rwMutexPointerType     = reflect.TypeFor[*sync.RWMutex]()
-	redisClientType        = reflect.TypeFor[*redis.Client]()
-	redisClusterClientType = reflect.TypeFor[*redis.ClusterClient]()
-	redisRingType          = reflect.TypeFor[*redis.Ring]()
-)
-
-// lockStruct tries to take the struct's own mutex, when it has one, and
-// returns the unlock function: a proxy may replace its delegate fields while
-// serving traffic, guarded by that mutex, and reading them — here or in the
-// hook chain — must not race with it. It reports false when the mutex stays
-// held: the holder may be the caller's own goroutine, and blocking on it
-// would deadlock. A struct without a mutex does not synchronize those fields,
-// and reading them is then no more racy than the struct's own readers.
-func lockStruct(s reflect.Value) (unlock func(), ok bool) {
-	// Lock every mutex the struct owns — the one guarding a delegate field
-	// cannot be told apart from unrelated ones — and give up entirely when
-	// any stays held: the holder may be the very call chain running
-	// WrapClient, and blocking on it would deadlock the caller's own
-	// goroutine. Brief contention from another goroutine is ridden out with
-	// a few short retries.
-	var unlocks []func()
-	for i := 0; i < s.NumField(); i++ {
-		t := s.Type().Field(i).Type
-		if t != mutexType && t != rwMutexType && t != mutexPointerType && t != rwMutexPointerType {
-			continue
-		}
-		f := s.Field(i)
-		if t == mutexPointerType || t == rwMutexPointerType {
-			// The mutex is behind a pointer; its methods hang off the field
-			// value itself.
-			if f.IsNil() {
-				continue
-			}
-			if !f.CanInterface() {
-				// Unexported field: address it through its location.
-				if !f.CanAddr() {
-					continue
-				}
-				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
-			}
-			var locked bool
-			for range 100 {
-				if f.MethodByName("TryLock").Call(nil)[0].Bool() {
-					locked = true
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
-			if !locked {
-				for _, u := range unlocks {
-					u()
-				}
-				return func() {}, false
-			}
-			unlocks = append(unlocks, func() { f.MethodByName("Unlock").Call(nil) })
-			continue
-		}
-		if !f.CanAddr() {
-			// A copy of a struct — a decorator passed by value, say — cannot
-			// have its mutex locked; the copy is unshared, so nothing can
-			// race with reading it.
-			continue
-		}
-		if !f.CanInterface() {
-			// Unexported field: address it through its location.
-			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
-		}
-		var locked bool
-		for range 100 {
-			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
-				locked = true
-				break
-			}
-			time.Sleep(time.Millisecond)
-		}
-		if !locked {
-			for _, u := range unlocks {
-				u()
-			}
-			return func() {}, false
-		}
-		unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
-	}
-	return func() {
-		for _, u := range unlocks {
-			u()
-		}
-	}, true
-}
-
 // findHookSlice returns the first []redis.Hook field in s or in the structs
 // embedded within it, read under the struct's own mutex when it has one.
 func findHookSlice(s reflect.Value, depth int) reflect.Value {
 	if s.Kind() != reflect.Struct || depth == 0 {
 		return reflect.Value{}
 	}
-	unlock, ok := lockStruct(s)
+	unlock, ok := rediswrap.LockStruct(s)
 	defer unlock()
 	if !ok {
 		// The struct's mutex stayed held; reading its hook slice without it
@@ -1147,17 +924,6 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 	return reflect.Value{}
 }
 
-// weakHandle returns a weak identity for any pointer client, by referencing
-// the start of the object it points to. Two handles compare equal exactly for
-// the same object, and the handle never keeps the client alive.
-func weakHandle(client any) (weak.Pointer[byte], bool) {
-	v := reflect.ValueOf(client)
-	if v.Kind() != reflect.Pointer || v.IsNil() {
-		return weak.Pointer[byte]{}, false
-	}
-	return weak.Make((*byte)(v.UnsafePointer())), true
-}
-
 // concreteClients returns the distinct concrete go-redis clients reachable
 // from client through several levels of fields, embedded or not, exported or
 // not, by pointer or by value. A client passed directly yields itself; a
@@ -1205,7 +971,7 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 		// fields; read them under it. A mutex that stays held may be held
 		// by this very call chain, and blocking on it would deadlock: treat
 		// the proxy as opaque instead, and let its AddHook see nothing.
-		unlock, locked := lockStruct(s)
+		unlock, locked := rediswrap.LockStruct(s)
 		defer unlock()
 		if !locked {
 			aborted = true

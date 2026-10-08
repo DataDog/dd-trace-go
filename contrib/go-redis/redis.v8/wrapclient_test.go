@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -1364,7 +1365,7 @@ func TestWrapClientRegistryConfigNoCallback(t *testing.T) {
 		return captured != nil // captures the proxy
 	}))
 
-	key, ok := weakHandle(router)
+	key, ok := rediswrap.HandleOf(router)
 	if !ok {
 		t.Fatal("expected the proxy to be keyable")
 	}
@@ -1399,9 +1400,9 @@ func TestWrapClientPanicClearsInstallingMarker(t *testing.T) {
 	// Same goroutine that panicked: a stale marker would be found here and
 	// make the next wrap skip the retry — this one, which reaches AddHook
 	// again and panics again.
-	if v, ok := installing.Load(goid()); ok {
-		for _, m := range v.([]installMark) {
-			if sameMark(m.proxy, m.members, proxy, nil) {
+	if v, ok := rediswrap.Installing.Load(rediswrap.Goid()); ok {
+		for _, m := range v.([]rediswrap.Mark) {
+			if rediswrap.SameMark(m.Proxy, m.Members, proxy, nil) {
 				t.Fatal("the installing marker outlived the panicked AddHook")
 			}
 		}
@@ -1411,9 +1412,9 @@ func TestWrapClientPanicClearsInstallingMarker(t *testing.T) {
 		defer func() { _ = recover() }()
 		WrapClient(proxy)
 	}()
-	if v, ok := installing.Load(goid()); ok {
-		for _, m := range v.([]installMark) {
-			if sameMark(m.proxy, m.members, proxy, nil) {
+	if v, ok := rediswrap.Installing.Load(rediswrap.Goid()); ok {
+		for _, m := range v.([]rediswrap.Mark) {
+			if rediswrap.SameMark(m.Proxy, m.Members, proxy, nil) {
 				t.Fatal("the installing marker outlived the retried AddHook")
 			}
 		}

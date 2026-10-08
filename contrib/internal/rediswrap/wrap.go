@@ -12,7 +12,6 @@
 package rediswrap
 
 import (
-	"encoding/binary"
 	"reflect"
 	"runtime"
 	"sync"
@@ -57,158 +56,15 @@ func Goid() uint64 {
 	return id
 }
 
-// walkGuard marks a WrapClient call in progress for one client: its unlocked
-// AddHook — user-controlled code mutating the proxy's fields — must not
-// overlap another call's reflective field walk over those same fields.
-type walkGuard struct {
-	goid uint64
-	done chan struct{}
-}
-
-// walking records the in-progress WrapClient call per client, keyed weakly.
-var walking sync.Map // Handle -> *walkGuard
-
-// BeginWalk serializes WrapClient calls for one client: it waits for a
-// concurrent call for the same client — including its unlocked,
-// user-controlled AddHook — to complete, then marks this call as the one
-// in progress. A call on the same goroutine (an AddHook re-entering
-// WrapClient) never waits. The wait is bounded: a user callback that
-// delegates to another goroutine — starting one that calls WrapClient for
-// this very client and waiting for it — must not deadlock against the
-// guard, and the in-flight call instruments the client either way, so a
-// wait that outlives the bound reports false and the caller returns
-// without wrapping. The returned function must be called when the
-// WrapClient call ends, and only when ok is true.
-func BeginWalk(key Handle, wait time.Duration) (release func(), ok bool) {
-	id := Goid()
-	for {
-		v, ok := walking.Load(key)
-		if !ok {
-			g := &walkGuard{goid: id, done: make(chan struct{})}
-			if _, loaded := walking.LoadOrStore(key, g); !loaded {
-				return func() {
-					close(g.done)
-					walking.Delete(key)
-				}, true
-			}
-			continue // someone else registered; re-check
-		}
-		g := v.(*walkGuard)
-		if g.goid == id {
-			// The guard belongs to this goroutine — an AddHook re-entering
-			// WrapClient; it is already serialized.
-			return func() {}, true
-		}
-		select {
-		case <-g.done:
-		case <-time.After(wait):
-			// The holder did not finish within the wait: it instruments the
-			// client, and a nested call synchronously waiting on it must not
-			// block it forever.
-			return func() {}, false
-		}
-	}
-}
-
-// Unguarded reports whether s is a struct copy whose mutex field cannot be
-// taken: a value mutex of a non-addressable struct — a proxy passed by
-// value — locks nothing, because the state its fields reach through maps,
-// slices, and pointers is the original's, guarded by the original's mutex.
-// An unexported pointer mutex on such a copy cannot even be read to be
-// taken, and counts the same. Readers must not treat such a copy's
-// interiors as safe; its own header fields are snapshots and stay
-// readable.
-func Unguarded(s reflect.Value) bool {
-	if s.Kind() != reflect.Struct || s.CanAddr() {
-		return false
-	}
-	for i := 0; i < s.NumField(); i++ {
-		t := s.Type().Field(i).Type
-		if t == mutexType || t == rwMutexType {
-			return true
-		}
-		if t == mutexPointerType || t == rwMutexPointerType {
-			// A pointer mutex hangs off the field value itself: an exported
-			// one can be taken without the field's address, but an
-			// unexported one on a copy cannot even be read — LockStruct
-			// skips it, and the shared state it guards must not be
-			// descended into.
-			if s.Field(i).CanInterface() {
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
 // Mark identifies a proxy whose AddHook a WrapClient call on this goroutine is
 // currently running: an AddHook that re-enters WrapClient for the same proxy
 // must recognize its own installation instead of recursing. The members make a
 // non-comparable value proxy — which has neither a weak pointer identity nor
 // a comparable value — recognizable through the concrete clients it delegates
-// to. Refs adds the addresses its reference-bearing fields hold, so two
-// non-comparable proxies of the same type over the same members — two lazy
-// proxies, say — are not mistaken for each other when their fields point at
-// distinct objects.
+// to.
 type Mark struct {
 	Proxy   any
 	Members []any
-	Refs    []unsafe.Pointer
-}
-
-// RefIDs collects the addresses the value's reference-bearing fields hold —
-// pointer fields, and interfaces holding pointers — through two levels of
-// struct fields. Two values that store the same addresses share the objects
-// those fields point at.
-// walkDepth is the depth limit shared by the identity and reference
-// traversals, matching the depth the proxy walkers use.
-const walkDepth = 8
-
-func RefIDs(v any) []unsafe.Pointer {
-	return refIDs(reflect.ValueOf(v), walkDepth)
-}
-
-func refIDs(v reflect.Value, depth int) []unsafe.Pointer {
-	switch v.Kind() {
-	case reflect.Pointer:
-		if !v.IsNil() {
-			return []unsafe.Pointer{v.UnsafePointer()}
-		}
-	case reflect.Interface:
-		if !v.IsNil() {
-			return refIDs(v.Elem(), depth)
-		}
-	case reflect.Map, reflect.Slice:
-		// A map or slice field is reference-bearing: the map's and the
-		// backing array's addresses differ between two proxies that nothing
-		// else distinguishes.
-		if p := v.UnsafePointer(); p != nil {
-			return []unsafe.Pointer{p}
-		}
-	case reflect.Struct:
-		if depth == 0 {
-			return nil
-		}
-		var ids []unsafe.Pointer
-		for i := 0; i < v.NumField(); i++ {
-			f := v.Field(i)
-			if !f.CanInterface() && f.CanAddr() {
-				// Unexported fields still identify a proxy: a private
-				// delegate or marker pointer differs between two proxies
-				// that nothing else can tell apart. Addressable values —
-				// a pointer receiver's struct, or the fields reached
-				// through one — expose them; a plain value copy does not.
-				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
-			}
-			if !f.CanInterface() {
-				continue
-			}
-			ids = append(ids, refIDs(f, depth-1)...)
-		}
-		return ids
-	}
-	return nil
 }
 
 // Installing records, per goroutine, the proxies currently being installed.
@@ -222,7 +78,7 @@ func MarkInstalling(client any, members []any) func() {
 	if v, ok := Installing.Load(id); ok {
 		list = v.([]Mark)
 	}
-	Installing.Store(id, append(list, Mark{Proxy: client, Members: members, Refs: RefIDs(client)}))
+	Installing.Store(id, append(list, Mark{Proxy: client, Members: members}))
 	return func() {
 		id := Goid()
 		v, ok := Installing.Load(id)
@@ -231,7 +87,7 @@ func MarkInstalling(client any, members []any) func() {
 		}
 		list := v.([]Mark)
 		for i := len(list) - 1; i >= 0; i-- {
-			if SameMark(list[i].Proxy, list[i].Members, list[i].Refs, client, members, RefIDs(client)) {
+			if SameMark(list[i].Proxy, list[i].Members, client, members) {
 				list = append(list[:i], list[i+1:]...)
 				break
 			}
@@ -253,7 +109,7 @@ func IsInstalling(client any, members []any) bool {
 		return false
 	}
 	for _, m := range v.([]Mark) {
-		if SameMark(m.Proxy, m.Members, m.Refs, client, members, RefIDs(client)) {
+		if SameMark(m.Proxy, m.Members, client, members) {
 			return true
 		}
 	}
@@ -262,10 +118,8 @@ func IsInstalling(client any, members []any) bool {
 
 // SameMark reports whether two proxies in installation marks identify the same
 // client. Proxies with non-comparable dynamic types are matched through their
-// member sets — the same concrete clients — rather than by value; the set
-// comparison ignores order, since consecutive walks over a map-backed proxy
-// can enumerate the same members differently.
-func SameMark(pa any, ma []any, ra []unsafe.Pointer, pb any, mb []any, rb []unsafe.Pointer) bool {
+// member sets — the same concrete clients — rather than by value.
+func SameMark(pa any, ma []any, pb any, mb []any) bool {
 	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
 	if ta == nil || tb == nil || ta != tb {
 		return false
@@ -273,32 +127,14 @@ func SameMark(pa any, ma []any, ra []unsafe.Pointer, pb any, mb []any, rb []unsa
 	if ta.Comparable() {
 		// Different comparable proxies are different, even over the same
 		// members: only a proxy that cannot be compared at all falls back
-		// to matching through its member set. A statically comparable type
-		// may still hold non-comparable dynamic values behind interface
-		// fields — comparing those panics — so the comparison runs under a
-		// recovered panic, which only ever means "not equal".
-		return safeEqual(pa, pb)
+		// to matching through its member set.
+		return pa == pb
 	}
 	if len(ma) != len(mb) {
 		return false
 	}
-	for _, a := range ma {
-		found := false
-		for _, b := range mb {
-			if a == b {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	if len(ra) != len(rb) {
-		return false
-	}
-	for i := range ra {
-		if ra[i] != rb[i] {
+	for i := range ma {
+		if ma[i] != mb[i] {
 			return false
 		}
 	}
@@ -382,136 +218,8 @@ var (
 // contention from another goroutine is ridden out with short retries. A
 // struct without mutexes does not synchronize those fields, and reading them
 // is then no more racy than the struct's own readers.
-// safeEqual reports whether two statically comparable values are equal,
-// treating a comparison that panics on non-comparable dynamic values — a
-// map or slice behind an interface field — as inequality.
-func safeEqual(a, b any) (eq bool) {
-	defer func() {
-		if recover() != nil {
-			eq = false
-		}
-	}()
-	return a == b
-}
-
-// HookState describes the outcome of trying to become the installer of a
-// client's hook.
-type HookState uint8
-
-const (
-	// HookBegin: this call is the installer; it must finish with EndHooking.
-	HookBegin HookState = iota
-	// HookSelfReentry: this goroutine is already installing for the client;
-	// it must not install again.
-	HookSelfReentry
-	// HookOtherInstalling: another goroutine is installing; wait on the
-	// returned mark's Done, then re-examine the client.
-	HookOtherInstalling
-)
-
-// HookMark records one in-flight hook installation.
-type HookMark struct {
-	Goid uint64
-	Done chan struct{}
-}
-
-// Hooking marks the clients whose hook installation is in flight, keyed by
-// client handle: a client's own AddHook rebuilds its hook chain by calling
-// every hook's constructors — user code, which may re-enter WrapClient — so
-// the installation runs with the caller's package lock released, and a
-// concurrent wrap of the same client must wait for it instead of racing a
-// second hook onto the chain.
-var Hooking sync.Map // Handle -> *HookMark
-
-// TryBeginHooking records an in-flight hook installation for k on this
-// goroutine, or reports why it cannot.
-func TryBeginHooking(k Handle) (HookState, *HookMark) {
-	mark := &HookMark{Goid: Goid(), Done: make(chan struct{})}
-	for {
-		v, loaded := Hooking.LoadOrStore(k, mark)
-		if !loaded {
-			return HookBegin, mark
-		}
-		existing := v.(*HookMark)
-		if existing.Goid == Goid() {
-			return HookSelfReentry, existing
-		}
-		return HookOtherInstalling, existing
-	}
-}
-
-// EndHooking completes the installation mark recorded for k, releasing
-// every waiter.
-func EndHooking(k Handle, mark *HookMark) {
-	Hooking.CompareAndDelete(k, mark)
-	close(mark.Done)
-}
-
-// ValueHooking marks the value proxies whose hook installation is in
-// flight, keyed by RefKey: a value proxy has no weak handle, but two
-// concurrent wraps of it pass copies whose reference-bearing fields agree,
-// so the key is shared between them and the install is serialized on it.
-var ValueHooking sync.Map // string -> *HookMark
-
-// TryBeginValueHooking records an in-flight hook installation for the value
-// proxy keyed by key, or reports why it cannot.
-func TryBeginValueHooking(key string) (HookState, *HookMark) {
-	mark := &HookMark{Goid: Goid(), Done: make(chan struct{})}
-	for {
-		v, loaded := ValueHooking.LoadOrStore(key, mark)
-		if !loaded {
-			return HookBegin, mark
-		}
-		existing := v.(*HookMark)
-		if existing.Goid == Goid() {
-			return HookSelfReentry, existing
-		}
-		return HookOtherInstalling, existing
-	}
-}
-
-// EndValueHooking completes the installation mark recorded for key,
-// releasing every waiter.
-func EndValueHooking(key string, mark *HookMark) {
-	ValueHooking.CompareAndDelete(key, mark)
-	close(mark.Done)
-}
-
-// RefKey returns a comparable identity for a value with no weak handle:
-// its dynamic type and the addresses its reference-bearing fields hold. Two
-// copies of the same value proxy share it — their fields agree — while
-// distinct proxies holding distinct references do not. A value with no
-// references at all has no identity to share, and the key is empty. The
-// traversal matches the member walk's depth limit; shared references deeper
-// than that are unreachable by the walkers too.
-func RefKey(v any) string {
-	refs := refIDs(reflect.ValueOf(v), walkDepth)
-	if len(refs) == 0 {
-		return ""
-	}
-	b := make([]byte, 0, 16+len(refs)*8)
-	b = append(b, reflect.TypeOf(v).String()...)
-	for _, r := range refs {
-		b = binary.LittleEndian.AppendUint64(b, uint64(uintptr(r)))
-	}
-	return string(b)
-}
-
-// IsMutexType reports whether t is one of the mutex types — a value or a
-// pointer to a sync.Mutex or sync.RWMutex. Holder scans skip such fields:
-// LockStruct has already taken them, and descending into one would
-// re-acquire the same non-reentrant lock and read as self-inflicted
-// contention.
-func IsMutexType(t reflect.Type) bool {
-	return t == mutexType || t == rwMutexType || t == mutexPointerType || t == rwMutexPointerType
-}
-
 func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 	var unlocks []func()
-	// Two fields — pointer-pointer or value-pointer — may alias the same
-	// mutex; locking it twice would deadlock the second TryLock and read as
-	// contention. Each underlying lock is taken once.
-	taken := make(map[unsafe.Pointer]struct{})
 	for i := 0; i < s.NumField(); i++ {
 		t := s.Type().Field(i).Type
 		if t != mutexType && t != rwMutexType && t != mutexPointerType && t != rwMutexPointerType {
@@ -531,54 +239,21 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 				}
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
-			if _, dup := taken[f.UnsafePointer()]; dup {
-				continue
-			}
-			// The lock is taken through its concrete type, not through
-			// reflect.Value.Call: a lock method invoked by reflection runs
-			// outside the race detector's mutex bookkeeping, and a release
-			// that races a caller's own lock use reads as a data race.
-			// An RWMutex guards its fields against writers: a read lock
-			// excludes them — the updates that race a field walk — while
-			// allowing other readers, a caller holding its own read lock
-			// included. An exclusive TryLock would report contention for
-			// as long as any reader runs, and the walk would give up.
 			var locked bool
-			if t == rwMutexPointerType {
-				mu := (*sync.RWMutex)(f.UnsafePointer())
-				for range 100 {
-					if mu.TryRLock() {
-						locked = true
-						break
-					}
-					time.Sleep(time.Millisecond)
+			for range 100 {
+				if f.MethodByName("TryLock").Call(nil)[0].Bool() {
+					locked = true
+					break
 				}
-				if !locked {
-					for _, u := range unlocks {
-						u()
-					}
-					return func() {}, false
-				}
-				taken[f.UnsafePointer()] = struct{}{}
-				unlocks = append(unlocks, mu.RUnlock)
-			} else {
-				mu := (*sync.Mutex)(f.UnsafePointer())
-				for range 100 {
-					if mu.TryLock() {
-						locked = true
-						break
-					}
-					time.Sleep(time.Millisecond)
-				}
-				if !locked {
-					for _, u := range unlocks {
-						u()
-					}
-					return func() {}, false
-				}
-				taken[f.UnsafePointer()] = struct{}{}
-				unlocks = append(unlocks, mu.Unlock)
+				time.Sleep(time.Millisecond)
 			}
+			if !locked {
+				for _, u := range unlocks {
+					u()
+				}
+				return func() {}, false
+			}
+			unlocks = append(unlocks, func() { f.MethodByName("Unlock").Call(nil) })
 			continue
 		}
 		if !f.CanAddr() {
@@ -591,51 +266,24 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			// Unexported field: address it through its location.
 			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 		}
-		// A value mutex can be aliased by a pointer field elsewhere in the
-		// same struct; record its address so the pointer path skips it.
-		if _, dup := taken[f.Addr().UnsafePointer()]; dup {
-			continue
-		}
-		// Locked through its concrete type, like the pointer path above:
-		// a lock method invoked by reflection runs outside the race
-		// detector's mutex bookkeeping. An RWMutex value guards its fields
-		// against writers: read-locked like its pointer counterpart, so a
-		// caller's own read lock does not read as contention.
 		var locked bool
+		for range 100 {
+			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
+				locked = true
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if !locked {
+			for _, u := range unlocks {
+				u()
+			}
+			return func() {}, false
+		}
 		if t == rwMutexType {
-			mu := (*sync.RWMutex)(f.Addr().UnsafePointer())
-			for range 100 {
-				if mu.TryRLock() {
-					locked = true
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
-			if !locked {
-				for _, u := range unlocks {
-					u()
-				}
-				return func() {}, false
-			}
-			taken[f.Addr().UnsafePointer()] = struct{}{}
-			unlocks = append(unlocks, mu.RUnlock)
+			unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
 		} else {
-			mu := (*sync.Mutex)(f.Addr().UnsafePointer())
-			for range 100 {
-				if mu.TryLock() {
-					locked = true
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
-			if !locked {
-				for _, u := range unlocks {
-					u()
-				}
-				return func() {}, false
-			}
-			taken[f.Addr().UnsafePointer()] = struct{}{}
-			unlocks = append(unlocks, mu.Unlock)
+			unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
 		}
 	}
 	return func() {
