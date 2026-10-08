@@ -2136,3 +2136,137 @@ func TestWrapClientHolderStructDelegateSwapped(t *testing.T) {
 		t.Fatalf("expected the swapped-in delegate to be traced, got %d spans", len(spans))
 	}
 }
+
+// ptrIfaceRetainProxy stores its hooks behind any(&struct{...}).
+type ptrHookStore struct {
+	hooks []redis.Hook
+}
+
+type ptrIfaceRetainProxy struct {
+	redis.UniversalClient
+	store any
+}
+
+func (r *ptrIfaceRetainProxy) AddHook(hook redis.Hook) {
+	s, _ := r.store.(*ptrHookStore)
+	if s == nil {
+		s = &ptrHookStore{}
+		r.store = s
+	}
+	s.hooks = append(s.hooks, hook)
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *ptrIfaceRetainProxy) applyTo(delegate redis.UniversalClient) {
+	s, _ := r.store.(*ptrHookStore)
+	for _, hook := range s.hooks {
+		delegate.AddHook(hook)
+	}
+}
+
+// A store behind any(&struct{...}) is scanned like the struct itself: the
+// retention scan must find the probe and hand the real hook for later
+// delegates.
+func TestWrapClientPtrIfaceRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &ptrIfaceRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// guardedHolder guards delegate replacement with its own mutex.
+type guardedHolder struct {
+	mu     *sync.Mutex
+	client *redis.Client
+}
+
+type guardedHolderRouter struct {
+	redis.UniversalClient
+	holder *guardedHolder
+}
+
+func (r *guardedHolderRouter) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+	r.holder.mu.Lock()
+	defer r.holder.mu.Unlock()
+	r.holder.client.AddHook(hook)
+}
+
+// A nested holder guarded by its own mutex must be read under that mutex: a
+// concurrent, correctly synchronized delegate replacement must not race with
+// the member walk.
+func TestWrapClientGuardedHolderDelegateSwapped(t *testing.T) {
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &guardedHolderRouter{UniversalClient: a, holder: &guardedHolder{mu: &sync.Mutex{}, client: b}}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+				router.holder.mu.Lock()
+				router.holder.client = fresh
+				router.holder.mu.Unlock()
+				fresh.Close()
+			}
+		}
+	})
+	WrapClient(router)
+	WrapClient(router)
+	close(stop)
+	wg.Wait()
+}
+
+// Two concurrent first-time wraps of a retaining proxy without its own mutex:
+// one wrap's unlocked AddHook must not overlap the other's field walk. The
+// pre-walk in-flight wait serializes them, so both complete and exactly one
+// real hook reaches the proxy.
+func TestWrapClientConcurrentFirstWrapRetaining(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &retainingProxy{UniversalClient: current}
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		WrapClient(proxy)
+	})
+	wg.Go(func() {
+		WrapClient(proxy)
+	})
+	wg.Wait()
+
+	if n := len(proxy.retained); n > 2 { // probe + one real hook
+		t.Fatalf("expected at most the probe and one real hook, got %d", n)
+	}
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 0 {
+		t.Fatalf("expected no spans (retain-only proxy), got %d", len(spans))
+	}
+}

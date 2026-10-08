@@ -56,6 +56,46 @@ func Goid() uint64 {
 	return id
 }
 
+// walkGuard marks a WrapClient call in progress for one client: its unlocked
+// AddHook — user-controlled code mutating the proxy's fields — must not
+// overlap another call's reflective field walk over those same fields.
+type walkGuard struct {
+	goid uint64
+	done chan struct{}
+}
+
+// walking records the in-progress WrapClient call per client, keyed weakly.
+var walking sync.Map // Handle -> *walkGuard
+
+// BeginWalk serializes WrapClient calls for one client: it blocks until a
+// concurrent call for the same client — including its unlocked, user-controlled
+// AddHook — completes, then marks this call as the one in progress. A call on
+// the same goroutine (an AddHook re-entering WrapClient) never blocks. The
+// returned function must be called when the WrapClient call ends.
+func BeginWalk(key Handle) func() {
+	id := Goid()
+	for {
+		v, ok := walking.Load(key)
+		if !ok {
+			g := &walkGuard{goid: id, done: make(chan struct{})}
+			if _, loaded := walking.LoadOrStore(key, g); !loaded {
+				return func() {
+					close(g.done)
+					walking.Delete(key)
+				}
+			}
+			continue // someone else registered; re-check
+		}
+		g := v.(*walkGuard)
+		if g.goid == id {
+			// The guard belongs to this goroutine — an AddHook re-entering
+			// WrapClient; it is already serialized.
+			return func() {}
+		}
+		<-g.done
+	}
+}
+
 // Mark identifies a proxy whose AddHook a WrapClient call on this goroutine is
 // currently running: an AddHook that re-enters WrapClient for the same proxy
 // must recognize its own installation instead of recursing. The members make a

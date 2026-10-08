@@ -142,6 +142,14 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		fn.apply(cfg)
 	}
 
+	// A concurrent first wrap of this client may be running its unlocked
+	// AddHook — user-controlled code that mutates the proxy's retained-hook
+	// fields while a field walk over those same fields would race. The walk
+	// guard serializes the two calls for the whole wrap, AddHook included.
+	if k, ok := rediswrap.HandleOf(client); ok {
+		defer rediswrap.BeginWalk(k)()
+	}
+
 	// Resolve the concrete clients before taking the package lock: the
 	// field walk takes each proxy's own mutex when it has one, and that
 	// mutex must not be nested inside wrapMu — a proxy may hold its mutex
@@ -648,6 +656,19 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if !v.IsNil() && v.CanInterface() {
 			return hookInContainer(v.Elem(), hook, depth)
 		}
+	case reflect.Pointer:
+		// A concrete client behind the pointer — *redis.Client — is a
+		// delegate, not proxy-owned storage: the probe the proxy's own
+		// AddHook fanned out to the client's hook chain is not evidence of
+		// retention. Any other pointer — any(&hookStore{...}) — is scanned
+		// like the store itself.
+		if v.IsNil() || !v.CanInterface() {
+			return false, true
+		}
+		if t := v.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+			return false, true
+		}
+		return hookInContainer(v.Elem(), hook, depth)
 	}
 	return false, true
 }
@@ -1001,64 +1022,91 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 
 // findMembers returns the concrete clients reachable inside a container
 // value — a slice, array, map, interface, or a holder struct or pointer
-// around any of those.
-func findMembers(v reflect.Value, depth int) []redis.UniversalClient {
+// around any of those. It reports false when a nested holder's mutex stays
+// held: the caller treats the client as unreadable rather than race with the
+// update in progress.
+func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 	if depth == 0 {
-		return nil
+		return nil, true
 	}
 	if !v.CanInterface() {
 		// Unexported field of an addressable struct: read it through its
 		// address; a non-addressable value cannot give access to them.
 		if !v.CanAddr() {
-			return nil
+			return nil, true
 		}
 		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
 	}
 	switch v.Kind() {
 	case reflect.Interface:
 		if v.IsNil() {
-			return nil
+			return nil, true
 		}
 		if u, ok := v.Interface().(redis.UniversalClient); ok {
-			return []redis.UniversalClient{u}
+			return []redis.UniversalClient{u}, true
 		}
 		return findMembers(v.Elem(), depth-1)
 	case reflect.Slice, reflect.Array:
 		var members []redis.UniversalClient
 		for i := 0; i < v.Len(); i++ {
-			members = append(members, findMembers(v.Index(i), depth-1)...)
+			m, ok := findMembers(v.Index(i), depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
 		}
-		return members
+		return members, true
 	case reflect.Map:
 		var members []redis.UniversalClient
 		iter := v.MapRange()
 		for iter.Next() {
-			members = append(members, findMembers(iter.Value(), depth-1)...)
+			m, ok := findMembers(iter.Value(), depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
 		}
-		return members
+		return members, true
 	case reflect.Pointer:
 		if v.IsNil() {
-			return nil
+			return nil, true
 		}
 		// A pointer field that is itself a client — *redis.Client — is a
 		// member, not a holder; a pointer to a holder struct descends.
 		if u, ok := v.Interface().(redis.UniversalClient); ok {
-			return []redis.UniversalClient{u}
+			return []redis.UniversalClient{u}, true
 		}
 		if v.Elem().Kind() == reflect.Struct {
 			return findMembers(v.Elem(), depth-1)
 		}
-		return nil
+		return nil, true
 	case reflect.Struct:
+		// A mutex field is not a holder — it guards the outer struct,
+		// whose lock the walk already holds — and descending into it would
+		// re-acquire the same non-reentrant lock and read as contention.
+		if t := v.Type(); t == reflect.TypeOf(sync.Mutex{}) || t == reflect.TypeOf(sync.RWMutex{}) {
+			return nil, true
+		}
 		// A holder struct around delegates: a field that is itself a
-		// client, or a container of them.
+		// client, or a container of them. The holder's own mutex, when it
+		// has one, guards delegate replacement; read the fields under it
+		// like the walker does, and give up on contention rather than race.
+		unlock, locked := rediswrap.LockStruct(v)
+		defer unlock()
+		if !locked {
+			return nil, false
+		}
 		var members []redis.UniversalClient
 		for i := 0; i < v.NumField(); i++ {
-			members = append(members, findMembers(v.Field(i), depth-1)...)
+			m, ok := findMembers(v.Field(i), depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
 		}
-		return members
+		return members, true
 	}
-	return nil
+	return nil, true
 }
 
 // concreteClients returns the distinct concrete go-redis clients reachable
@@ -1132,8 +1180,12 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 			}
 			// A delegate may sit in a container — a slice, array, or map of
 			// clients — or behind a holder struct; walk into it so swapped
-			// members remain observable.
-			for _, target := range findMembers(f, depth-1) {
+			// members remain observable. A nested holder whose mutex stays
+			// held only skips that holder's members: the proxy itself is
+			// readable, and the observation still covers what its own
+			// fields say.
+			targets, _ := findMembers(f, depth-1)
+			for _, target := range targets {
 				walk(target, depth-1)
 			}
 		}
