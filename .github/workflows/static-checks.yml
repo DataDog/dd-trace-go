@@ -342,7 +342,23 @@ jobs:
       - name: golangci-lint (nested modules)
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/lint_go_modules.sh HEAD~1 --timeout 10m
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          base="HEAD~1"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            before="${{ github.event.before }}"
+            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
+              # The push creates the branch, so no earlier tip exists to
+              # diff against. The step lints nothing.
+              before="$GITHUB_SHA"
+            else
+              # A push can carry several commits, and HEAD~1 covers only the
+              # last commit of the range. Fetch the whole push: git
+              # merge-base cannot pass the shallow boundary of the checkout.
+              git fetch --no-tags --depth="$(( ${{ (github.event.commits || '') | length }} + 2 ))" origin "$GITHUB_SHA"
+            fi
+            base="$before"
+          fi
+          ./scripts/lint_go_modules.sh "$base" --timeout 10m
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
