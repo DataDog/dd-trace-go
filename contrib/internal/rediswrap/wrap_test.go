@@ -241,3 +241,27 @@ func TestLockStructAliasedPointers(t *testing.T) {
 	}
 	g.a.Unlock()
 }
+
+type valuePtrAlias struct {
+	mu   sync.Mutex
+	byOp *sync.Mutex
+}
+
+// A value mutex and a pointer field referencing that same mutex must not read
+// as contention: the walker recognizes the alias through the value field's
+// address.
+func TestLockStructValuePointerAlias(t *testing.T) {
+	g := &valuePtrAlias{}
+	g.byOp = &g.mu
+
+	unlock, ok := LockStruct(reflect.ValueOf(g).Elem())
+	if !ok {
+		t.Fatal("expected the value/pointer alias to deduplicate, not abort")
+	}
+	unlock()
+
+	if !g.byOp.TryLock() {
+		t.Fatal("expected the aliased mutex to be released")
+	}
+	g.byOp.Unlock()
+}

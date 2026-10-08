@@ -220,9 +220,9 @@ var (
 // is then no more racy than the struct's own readers.
 func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 	var unlocks []func()
-	// Two pointer fields may alias the same mutex; locking it twice would
-	// deadlock the second TryLock and read as contention. Each underlying
-	// lock is taken once.
+	// Two fields — pointer-pointer or value-pointer — may alias the same
+	// mutex; locking it twice would deadlock the second TryLock and read as
+	// contention. Each underlying lock is taken once.
 	taken := make(map[unsafe.Pointer]struct{})
 	for i := 0; i < s.NumField(); i++ {
 		t := s.Type().Field(i).Type
@@ -274,6 +274,11 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			// Unexported field: address it through its location.
 			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 		}
+		// A value mutex can be aliased by a pointer field elsewhere in the
+		// same struct; record its address so the pointer path skips it.
+		if _, dup := taken[f.Addr().UnsafePointer()]; dup {
+			continue
+		}
 		var locked bool
 		for range 100 {
 			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
@@ -288,6 +293,7 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			}
 			return func() {}, false
 		}
+		taken[f.Addr().UnsafePointer()] = struct{}{}
 		if t == rwMutexType {
 			unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
 		} else {

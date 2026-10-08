@@ -638,9 +638,10 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
 				return true, true
 			}
-		case reflect.Slice:
+		case reflect.Slice, reflect.Array:
 			// Match by element type: a named slice — type hookList
-			// []redis.Hook — is as much a hook store as the unnamed one.
+			// []redis.Hook — or a fixed array is as much a hook store as
+			// the unnamed slice.
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
@@ -720,9 +721,10 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
 				return true, true
 			}
-		case reflect.Slice:
+		case reflect.Slice, reflect.Array:
 			// Match by element type: a named slice — type hookList
-			// []redis.Hook — is as much a hook store as the unnamed one.
+			// []redis.Hook — or a fixed array is as much a hook store as
+			// the unnamed slice.
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
 					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {

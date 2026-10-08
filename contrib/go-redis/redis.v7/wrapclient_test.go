@@ -1955,3 +1955,46 @@ func TestWrapClientMapRetainProxy(t *testing.T) {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
 	}
 }
+
+// arrayRetainProxy fans hooks out to its current member and keeps them in a
+// fixed array.
+type arrayRetainProxy struct {
+	redis.UniversalClient
+	store [4]redis.Hook
+	n     int
+}
+
+func (r *arrayRetainProxy) AddHook(hook redis.Hook) {
+	r.store[r.n] = hook
+	r.n++
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *arrayRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for i := 0; i < r.n; i++ {
+		delegate.AddHook(r.store[i])
+	}
+}
+
+// A fixed array of hooks is a hook store like any slice; the retention scan
+// must find the probe in it.
+func TestWrapClientArrayRetainProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &arrayRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+	_ = later.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
