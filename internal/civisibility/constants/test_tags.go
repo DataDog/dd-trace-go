@@ -34,6 +34,25 @@ const (
 	// This constant is used to tag traces with the execution status of the test.
 	TestStatus = "test.status"
 
+	// TestActiveDuration is the observed active test execution duration. For
+	// parallel tests, it excludes the native scheduler wait in testing.T.Parallel.
+	TestActiveDuration = "test.active_duration"
+
+	// TestIsParallel indicates whether the test called testing.T.Parallel.
+	TestIsParallel = "test.is_parallel"
+
+	// TestParallelPauseStartOffset is the projected start of the native parallel
+	// scheduler wait relative to the test event start.
+	TestParallelPauseStartOffset = "test.parallel.pause.start_offset"
+
+	// TestParallelPauseEndOffset is the projected end of the native parallel
+	// scheduler wait relative to the test event start.
+	TestParallelPauseEndOffset = "test.parallel.pause.end_offset"
+
+	// TestParallelPauseDuration is the native parallel scheduler wait excluded
+	// from TestActiveDuration.
+	TestParallelPauseDuration = "test.parallel.pause.duration"
+
 	// TestFinalStatus indicates the final adjusted status for a test after considering retries.
 	// This constant is used to tag the final execution span with the overall test result.
 	TestFinalStatus = "test.final_status"
