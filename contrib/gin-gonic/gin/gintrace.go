@@ -64,7 +64,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// Use AppSec if enabled by user
 		if instr.AppSecEnabled() {
-			useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
+			useAppSec(c, span, cfg.otelEnabled)
 		}
 
 		// serve the request to the next middleware
