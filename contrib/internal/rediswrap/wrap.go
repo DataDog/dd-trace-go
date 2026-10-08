@@ -118,7 +118,9 @@ func IsInstalling(client any, members []any) bool {
 
 // SameMark reports whether two proxies in installation marks identify the same
 // client. Proxies with non-comparable dynamic types are matched through their
-// member sets — the same concrete clients — rather than by value.
+// member sets — the same concrete clients — rather than by value; the set
+// comparison ignores order, since consecutive walks over a map-backed proxy
+// can enumerate the same members differently.
 func SameMark(pa any, ma []any, pb any, mb []any) bool {
 	ta, tb := reflect.TypeOf(pa), reflect.TypeOf(pb)
 	if ta == nil || tb == nil || ta != tb {
@@ -133,8 +135,15 @@ func SameMark(pa any, ma []any, pb any, mb []any) bool {
 	if len(ma) != len(mb) {
 		return false
 	}
-	for i := range ma {
-		if ma[i] != mb[i] {
+	for _, a := range ma {
+		found := false
+		for _, b := range mb {
+			if a == b {
+				found = true
+				break
+			}
+		}
+		if !found {
 			return false
 		}
 	}

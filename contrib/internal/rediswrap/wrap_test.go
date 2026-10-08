@@ -265,3 +265,32 @@ func TestLockStructValuePointerAlias(t *testing.T) {
 	}
 	g.byOp.Unlock()
 }
+
+type nonComparableMapProxy struct {
+	tags    map[string]string
+	members map[int]any
+}
+
+// A non-comparable proxy holding map members must be recognized regardless of
+// the order consecutive map walks enumerate: matching a set, not a sequence,
+// prevents recursive AddHook re-entry.
+func TestSameMarkMapOrderIndependent(t *testing.T) {
+	a, b := &fakeClient{}, &fakeClient{}
+	// Build the proxy; map iteration order can differ per walk.
+	q := nonComparableMapProxy{tags: map[string]string{}, members: map[int]any{0: a, 1: b}}
+	ma := []any{a, b}
+	mb := []any{b, a} // reversed order: consecutive walks can differ
+	if !SameMark(q, ma, q, []any{a, b}) {
+		t.Fatal("same members in walk order must match")
+	}
+	if !SameMark(q, ma, q, mb) {
+		t.Fatal("same members in different walk order must match")
+	}
+	other := &fakeClient{}
+	if SameMark(q, ma, q, []any{a, other}) {
+		t.Fatal("different member sets must not match")
+	}
+	if SameMark(q, ma, q, []any{a}) {
+		t.Fatal("different member counts must not match")
+	}
+}

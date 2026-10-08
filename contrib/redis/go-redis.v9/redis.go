@@ -1000,11 +1000,19 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 }
 
 // findMembers returns the concrete clients reachable inside a container
-// value — a slice, array, map, or interface — without descending into
-// structs: struct fields are the walker's job.
+// value — a slice, array, map, interface, or a holder struct or pointer
+// around any of those.
 func findMembers(v reflect.Value, depth int) []redis.UniversalClient {
-	if depth == 0 || !v.CanInterface() {
+	if depth == 0 {
 		return nil
+	}
+	if !v.CanInterface() {
+		// Unexported field of an addressable struct: read it through its
+		// address; a non-addressable value cannot give access to them.
+		if !v.CanAddr() {
+			return nil
+		}
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
 	}
 	switch v.Kind() {
 	case reflect.Interface:
@@ -1026,6 +1034,27 @@ func findMembers(v reflect.Value, depth int) []redis.UniversalClient {
 		iter := v.MapRange()
 		for iter.Next() {
 			members = append(members, findMembers(iter.Value(), depth-1)...)
+		}
+		return members
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil
+		}
+		// A pointer field that is itself a client — *redis.Client — is a
+		// member, not a holder; a pointer to a holder struct descends.
+		if u, ok := v.Interface().(redis.UniversalClient); ok {
+			return []redis.UniversalClient{u}
+		}
+		if v.Elem().Kind() == reflect.Struct {
+			return findMembers(v.Elem(), depth-1)
+		}
+		return nil
+	case reflect.Struct:
+		// A holder struct around delegates: a field that is itself a
+		// client, or a container of them.
+		var members []redis.UniversalClient
+		for i := 0; i < v.NumField(); i++ {
+			members = append(members, findMembers(v.Field(i), depth-1)...)
 		}
 		return members
 	}

@@ -2085,3 +2085,49 @@ func TestWrapClientContainerDelegateSwapped(t *testing.T) {
 		t.Fatalf("expected the swapped-in member to be traced, got %d spans", len(spans))
 	}
 }
+
+// holderRouter wraps its delegate in a holder struct.
+type delegateHolder struct {
+	client *redis.Client
+}
+
+type holderRouter struct {
+	redis.UniversalClient
+	holder *delegateHolder
+}
+
+func (r *holderRouter) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+	r.holder.client.AddHook(hook)
+}
+
+// A delegate inside a holder struct must be observable: swapping it invalidates
+// the observation, and the re-wrap instruments the replacement.
+func TestWrapClientHolderStructDelegateSwapped(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	a := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { a.Close() })
+	b := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { b.Close() })
+
+	router := &holderRouter{UniversalClient: a, holder: &delegateHolder{client: b}}
+	WrapClient(router)
+	if n := datadogHooks(b); n != 1 {
+		t.Fatalf("expected the holder delegate to carry 1 datadog hook, got %d", n)
+	}
+
+	fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { fresh.Close() })
+	router.holder = &delegateHolder{client: fresh}
+	WrapClient(router)
+
+	_ = fresh.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the swapped-in delegate to be traced, got %d spans", len(spans))
+	}
+}
