@@ -89,6 +89,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
+	example.com/httpdep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.1 // indirect
@@ -111,6 +112,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.12.0-dev.3 // indirect
+	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.12.0-dev.3 // indirect
@@ -137,6 +139,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.12.0-dev.3 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.12.0-dev.3 // indirect
@@ -361,6 +364,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261005130301-0399637fded6 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
@@ -501,5 +505,11 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 =
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
 
 replace github.com/DataDog/dd-trace-go/otelc/all/v2 => ../../../otelc/all
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 => ../../../contrib/database/sql/otelc
+
+replace example.com/httpdep => ./internal/httpdep
 
 replace github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../../contrib/opensearch-project/opensearch-go.v4

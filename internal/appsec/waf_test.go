@@ -523,6 +523,7 @@ func TestBlocking(t *testing.T) {
 }
 
 func TestBlockingUnavailable(t *testing.T) {
+	telemetryClient := testutils.StartTelemetryRecorder(t)
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
 	testutils.StartAppSec(t, config.WithBlockingUnavailable(true))
 
@@ -535,9 +536,6 @@ func TestBlockingUnavailable(t *testing.T) {
 
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
-	telemetryClient := new(telemetrytest.RecordClient)
-	prevClient := telemetry.SwapClient(telemetryClient)
-	t.Cleanup(func() { telemetry.SwapClient(prevClient) })
 
 	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
