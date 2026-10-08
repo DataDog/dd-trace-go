@@ -28,7 +28,7 @@ const (
 	defaultOTLPHTTPPort = "4318"
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-	defaultOTLPProtocol = "http/json"
+	defaultOTLPProtocol = "http/protobuf"
 
 	// OTLP environment variables (logs-specific)
 	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
@@ -82,7 +82,6 @@ const (
 	// Protocol and encoding constants for telemetry tagging
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
-	encodingJSON     = "json"
 	encodingProtobuf = "protobuf"
 )
 
@@ -111,11 +110,10 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // Protocol selection priority:
 // 1. OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
 // 2. OTEL_EXPORTER_OTLP_PROTOCOL
-// 3. Default: http/json
+// 3. Default: http/protobuf
 //
 // Supported protocols:
-// - "http/json": HTTP with JSON encoding (default)
-// - "http/protobuf" or "http": HTTP with protobuf encoding
+// - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
 // Endpoint resolution priority:
@@ -137,10 +135,6 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
 		encodingTag = encodingProtobuf
-	case "http/json":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingJSON
 	case "http/protobuf", "http":
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
@@ -149,7 +143,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
-		encodingTag = encodingJSON
+		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {
@@ -164,7 +158,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 }
 
 // resolveOTLPProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/json"
+// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
 func resolveOTLPProtocol() string {
 	// Check logs-specific protocol first
 	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
@@ -174,7 +168,7 @@ func resolveOTLPProtocol() string {
 	if protocol := env.Get(envOTLPProtocol); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
-	// Default to HTTP with JSON
+	// Default to HTTP with protobuf
 	return defaultOTLPProtocol
 }
 

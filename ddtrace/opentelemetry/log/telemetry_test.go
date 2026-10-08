@@ -120,12 +120,12 @@ func TestRegisterTelemetry(t *testing.T) {
 // TestLogsExportTelemetry verifies that the LogsExportTelemetry struct correctly
 // tracks log record exports with different protocols and encodings.
 func TestLogsExportTelemetry(t *testing.T) {
-	t.Run("http/json", func(t *testing.T) {
+	t.Run("http/protobuf accumulated records", func(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		// Create telemetry tracker for HTTP/JSON
-		let := NewLogsExportTelemetry("http", "json")
+		// Create telemetry tracker for HTTP/protobuf
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record some log exports
 		let.RecordLogRecords(5)
@@ -136,7 +136,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -198,7 +198,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Create a test exporter
 		testExp := &testExporter{}
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Wrap it with telemetry
 		te := &telemetryExporter{
@@ -223,7 +223,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -244,7 +244,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record zero
 		let.RecordLogRecords(0)
@@ -253,7 +253,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
