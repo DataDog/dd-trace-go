@@ -83,16 +83,10 @@ type wrapEntry struct {
 	done       chan struct{}              // non-nil while the recorded install is in flight
 	goid       uint64                     // the goroutine that started the install, for reentry
 	observed   bool                       // an observation completed for this client
+	incomplete bool                       // an observation left a member unreadable: the next wrap re-observes
 	retainOnly bool                       // the proxy retains hooks; its members stay unhooked by design
 	memberKeys []rediswrap.Handle         // the members the observation saw, weakly: a changed set, not an unhooked member, marks a swap
 }
-
-// installing records, per goroutine, the proxies whose AddHook a WrapClient
-// call on that goroutine is currently running: an AddHook that re-enters
-// WrapClient for the same proxy must recognize its own installation instead
-// of recursing. Keyed by goroutine and by interface identity — a value
-// proxy has no weak pointer identity to key by.
-var installing sync.Map // uint64 (goid) -> []any
 
 var (
 	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
@@ -292,7 +286,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			// delegate is a changed set too: a lazy proxy without a current
 			// member must still receive hooks for the delegate it creates
 			// next.
-			reobserve := len(e.memberKeys) != len(members)
+			reobserve := e.incomplete || len(e.memberKeys) != len(members)
 			for _, member := range members {
 				if key, ok := rediswrap.HandleOf(member); ok && rediswrap.ContainsKey(e.memberKeys, key) {
 					continue
@@ -439,9 +433,29 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		finishObserved(proxy, entry, true, true)
 		return
 	}
-	var instrumented bool
+	var instrumented, incomplete bool
 	for i, member := range members {
 		if !readable[i] {
+			// The member's hook chain was transiently unreadable at the
+			// snapshot — a busy client mutex. Retry briefly; a chain that
+			// stays unreadable leaves the member's fan-out unknown.
+			recovered := false
+			for range 3 {
+				if h := hookSlice(member); h.IsValid() {
+					// The pre-probe length is unknown, so any hook counts
+					// as growth; wrapMember is idempotent either way.
+					if h.Len() > 0 {
+						wrapMember(member, cfg, warn)
+						instrumented = true
+					}
+					recovered = true
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if !recovered {
+				incomplete = true
+			}
 			continue
 		}
 		if h := hookSlice(member); h.Len() > before[i] {
@@ -456,6 +470,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	}
 	if entry != nil {
 		entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
+		entry.incomplete = incomplete
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -961,8 +976,16 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 		// the caller falls back to the client's weak identity.
 		return reflect.Value{}
 	}
+	if s.Type().String() == "redis.hooksMixin" {
+	}
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
+		// A mutex field is a lock, not a holder: LockStruct has already
+		// taken it, and descending into it would re-acquire the same
+		// non-reentrant lock — self-inflicted contention.
+		if rediswrap.IsMutexType(f.Type()) {
+			continue
+		}
 		switch f.Kind() {
 		case reflect.Slice:
 			if f.Type() != redisHookSliceType {

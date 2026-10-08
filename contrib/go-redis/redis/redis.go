@@ -61,10 +61,22 @@ var (
 	// context and no chain identity, so the mark is scoped by the command
 	// object alone: a user wrapper that forwards the same command object to
 	// a second wrapped client within one invocation suppresses that
-	// client's span. The hook-based integrations deduplicate by reading
-	// hook chains instead, but v6 has no hook chain to read.
-	tracedCmds sync.Map // redis.Cmder -> struct{}
+	// client's span. The key is the command's object identity — the
+	// interface data word — so a command that cannot be compared, holding
+	// a map or a slice, is deduplicated like any other. The hook-based
+	// integrations deduplicate by reading hook chains instead, but v6 has
+	// no hook chain to read.
+	tracedCmds sync.Map // cmdKey(cmd) -> struct{}
 )
+
+// cmdKey returns an identity for a command value: the interface's data word,
+// which holds the command itself when it is pointer-shaped and a pointer to
+// its interface copy otherwise. It is a distinct, comparable identity for
+// every live command — even one that cannot be compared, with a map or a
+// slice inside — and the two wrappers of one command see the same word.
+func cmdKey(cmd redis.Cmder) unsafe.Pointer {
+	return (*[2]unsafe.Pointer)(unsafe.Pointer(&cmd))[1]
+}
 
 // currentProcess returns the client's current process chain, read through
 // the unexported field it lives in, without reassigning it the way upstream
@@ -335,17 +347,14 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			tc.process = oldProcess
 		}
 		return func(cmd redis.Cmder) error {
-			// A command value that cannot be compared cannot key the map;
-			// such wrappers are exotic, and they trace once per wrapper.
-			if reflect.TypeOf(cmd).Comparable() {
-				if _, traced := tracedCmds.Load(cmd); traced {
-					// A datadog wrapper further out is driving this command and
-					// already started its span for it; see tracedCmds.
-					return tc.process(cmd)
-				}
-				tracedCmds.Store(cmd, struct{}{})
-				defer tracedCmds.Delete(cmd)
+			key := cmdKey(cmd)
+			if _, traced := tracedCmds.Load(key); traced {
+				// A datadog wrapper further out is driving this command and
+				// already started its span for it; see tracedCmds.
+				return tc.process(cmd)
 			}
+			tracedCmds.Store(key, struct{}{})
+			defer tracedCmds.Delete(key)
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")

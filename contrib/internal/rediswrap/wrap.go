@@ -322,6 +322,15 @@ var (
 // contention from another goroutine is ridden out with short retries. A
 // struct without mutexes does not synchronize those fields, and reading them
 // is then no more racy than the struct's own readers.
+// IsMutexType reports whether t is one of the mutex types — a value or a
+// pointer to a sync.Mutex or sync.RWMutex. Holder scans skip such fields:
+// LockStruct has already taken them, and descending into one would
+// re-acquire the same non-reentrant lock and read as self-inflicted
+// contention.
+func IsMutexType(t reflect.Type) bool {
+	return t == mutexType || t == rwMutexType || t == mutexPointerType || t == rwMutexPointerType
+}
+
 func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 	var unlocks []func()
 	// Two fields — pointer-pointer or value-pointer — may alias the same

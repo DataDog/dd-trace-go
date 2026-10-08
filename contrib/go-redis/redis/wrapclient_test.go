@@ -320,3 +320,27 @@ func TestWrapClientUnhashableCmd(t *testing.T) {
 		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
+
+// A command value that cannot be compared must be deduplicated across a
+// traced handle's clone too: the clone's wrapper and the inherited chain
+// wrapper each see the same command object, and it must trace once.
+func TestWrapClientUnhashableCmdClone(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	clone := WrapClient(client).WithContext(context.Background())
+
+	cmd := unhashableCmd{StringCmd: redis.NewStringCmd("get", "foo"), extra: map[string]string{"a": "b"}}
+	if err := clone.Process(cmd); err == nil {
+		t.Fatal("expected the unreachable address to error")
+	}
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}
