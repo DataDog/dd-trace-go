@@ -38,6 +38,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -236,11 +237,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		fn(c)
 	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
-	if c.httpClient == nil || orchestrion.Enabled() {
-		if orchestrion.Enabled() && c.httpClient != nil {
+	instrumented := orchestrion.Enabled() || otelc.Enabled()
+	if c.httpClient == nil || instrumented {
+		if instrumented && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
-			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+			log.Debug("Compile-time instrumentation is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
 		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
