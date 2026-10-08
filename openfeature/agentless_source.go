@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -115,13 +116,15 @@ func (s *agentlessSource) start() {
 	go s.run()
 }
 
-// Stop signals the poll loop to exit and waits for it to finish, or for ctx
-// to expire.
-func (s *agentlessSource) Stop(ctx context.Context) {
+// Stop signals the poll loop to exit and waits for it to finish. It returns
+// ctx.Err() if ctx expires first, leaving the loop still draining.
+func (s *agentlessSource) Stop(ctx context.Context) error {
 	s.stopOnce.Do(func() { close(s.stopCh) })
 	select {
 	case <-s.doneCh:
+		return nil
 	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -209,6 +212,11 @@ const (
 // acknowledged as received. The returned time.Duration is a server-requested
 // Retry-After to honor on the next attempt; it is zero unless the response
 // carried one.
+func reportMalformedAgentlessConfiguration(err error) {
+	log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error()) //errtrack:ignore reported by ReportError below
+	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
+}
+
 func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
 	defer cancel()
@@ -228,7 +236,7 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
 	if err != nil {
 		if s.warnOnce("request-build") {
-			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err))
+			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err)) //errtrack:ignore invalid user endpoint configuration
 		}
 		return pollOutcomeStop, 0
 	}
@@ -251,7 +259,7 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 		default:
 		}
 		if s.warnOnce("http-transport") {
-			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err))
+			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err)) //errtrack:ignore remote request failure
 		}
 		return pollOutcomeRetryable, 0
 	}
@@ -268,7 +276,7 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 		return pollOutcomeSuccess, 0
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if s.warnOnce("authentication") {
-			log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode)
+			log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode) //errtrack:ignore invalid user authentication
 		}
 		return pollOutcomeStop, 0
 	case http.StatusOK:
@@ -276,12 +284,12 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	default:
 		if isRetryablePollStatus(resp.StatusCode) {
 			if s.warnOnce("http-status-retryable") {
-				log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode)
+				log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode) //errtrack:ignore remote service response
 			}
 			return pollOutcomeRetryable, retryAfterDuration(resp.Header)
 		}
 		if s.warnOnce("http-status-unexpected") {
-			log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode)
+			log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode) //errtrack:ignore remote service response
 		}
 		return pollOutcomeStop, 0
 	}
@@ -291,12 +299,12 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 		if errors.Is(err, errResponseTooLarge) {
 			// Retrying cannot help: the same oversized body would come back.
 			if s.warnOnce("size") {
-				log.Warn("openfeature: agentless: response exceeds the %d byte limit; keeping the last known configuration", maxResponseBodyBytes)
+				log.Warn("openfeature: agentless: response exceeds the %d byte limit; keeping the last known configuration", maxResponseBodyBytes) //errtrack:ignore remote payload capacity limit
 			}
 			return pollOutcomeStop, 0
 		}
 		if s.warnOnce("http-body") {
-			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error())
+			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error()) //errtrack:ignore remote response transport failure
 		}
 		return pollOutcomeRetryable, 0
 	}
@@ -304,7 +312,7 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 	config, err := parseUFCEnvelope(body)
 	if err != nil {
 		if s.warnOnce("config-parse") {
-			log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error())
+			reportMalformedAgentlessConfiguration(err)
 		}
 		return pollOutcomeStop, 0
 	}

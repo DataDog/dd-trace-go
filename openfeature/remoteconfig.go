@@ -22,7 +22,11 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProvider(config)
+	provider := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
@@ -73,7 +77,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -83,7 +87,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),

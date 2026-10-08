@@ -37,7 +37,7 @@ func mustMarshalJSONMap(t *testing.T, payload any) map[string]any {
 }
 
 func TestFlagEvaluationEndpointUsesTrackName(t *testing.T) {
-	const want = "/evp_proxy/v2/api/v2/flagevaluation"
+	const want = "/api/v2/flagevaluation"
 	if flagEvalLoggingEndpoint != want {
 		t.Fatalf("flagEvalLoggingEndpoint = %q, want %q", flagEvalLoggingEndpoint, want)
 	}
@@ -1231,8 +1231,9 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		if r.URL.Path != flagEvalLoggingEndpoint {
-			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, flagEvalLoggingEndpoint)
+		wantPath := joinEVPPath(evpProxyV2Path, flagEvalLoggingEndpoint)
+		if r.URL.Path != wantPath {
+			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, wantPath)
 		}
 
 		var payload flagEvalLoggingPayload

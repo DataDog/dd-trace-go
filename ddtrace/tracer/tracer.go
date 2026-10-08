@@ -17,6 +17,7 @@ import (
 	rt "runtime/trace"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -297,6 +299,11 @@ func Start(opts ...StartOption) error {
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
+		} else if isRuntimeMetricsAlreadyStarted(err) {
+			// Another component (e.g. an application framework calling
+			// runtimemetrics.Start) owns the process-wide emitter. This is a
+			// configuration conflict rather than a tracer failure.
+			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
 		}
@@ -329,6 +336,15 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// isRuntimeMetricsAlreadyStarted reports whether err is the error returned by
+// runtimemetrics.NewEmitter when another emitter is already running. The
+// library (go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d)
+// returns an unexported errors.New value without a sentinel, so the message is
+// matched.
+func isRuntimeMetricsAlreadyStarted(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "runtimemetrics has already been started")
 }
 
 // buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
@@ -425,12 +441,28 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
+		// Not reported to Error Tracking: on Linux, memfd_create can fail
+		// because the runtime environment denies it (or sealing) via seccomp,
+		// kernel capabilities, or resource limits. That's a customer-environment
+		// condition, not an actionable SDK defect, and reporting it would create
+		// fleet-wide false positives for hardened deployments (e.g. gVisor,
+		// locked-down seccomp profiles).
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to publish the OTEL process context: %s", err.Error())
+		// Unlike the memfd site above, this stays reported: PublishProcessContext's
+		// error path is not exclusively an environment-hardening condition.
+		// otelcontextmapping_linux.go's updateOtelProcessContextMapping can return
+		// ErrPayloadTooLarge on a second-or-later Start() in the same process (e.g.
+		// Stop() then Start() with a longer ServiceName/Env/Version/ContainerID) if
+		// the new payload outgrows the mapping sized on the first call — a genuine
+		// dd-trace-go sizing bug across restarts within one process, not seccomp or
+		// kernel-capability denial. proto.Marshal failing in PublishProcessContext
+		// itself would likewise be our own defect. Silencing this site would also
+		// hide those, so it's kept distinct from the memfd sibling deliberately.
+		telemetrylog.LogAndReportError("failed to publish the OTEL process context", err)
 	}
 }
 
@@ -535,6 +567,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
 	var otlpExportMode bool
+	var supportsOTLPSpanMetrics bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -545,8 +578,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 		otlpExportMode = true
+		supportsOTLPSpanMetrics = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
+		supportsOTLPSpanMetrics = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
@@ -561,11 +596,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	useOTLPSpanMetrics := c.internalConfig.OTLPSpanMetricsEnabled()
+	skipStats := c.internalConfig.OTLPExportMode()
+	if c.internalConfig.OTelSemanticsEnabled() {
+		useOTLPSpanMetrics = useOTLPSpanMetrics && supportsOTLPSpanMetrics
+		skipStats = otlpExportMode
+	}
 	var sc statsConcentrator
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
+	if useOTLPSpanMetrics {
 		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
-	} else if c.internalConfig.OTLPExportMode() {
+	} else if skipStats {
 		sc = &noopConcentrator{}
 	} else {
 		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
@@ -1115,6 +1156,10 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Apply the pprof labels before t.sample: a custom Sampler receives the span
+	// and may publish it to another goroutine, after which writing span fields
+	// here would race with that goroutine (e.g. SetTag or Finish).
+	t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
@@ -1123,11 +1168,6 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
-	}
-	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
-		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
-	} else {
-		span.pprofCtxRestore = nil
 	}
 	if cSnap.DebugAbandonedSpans {
 		select {
@@ -1153,29 +1193,33 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
-// endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally, this func informs the profiler how
-// many times each endpoint is called.
-// +checklocksignore — Initialization time, called from StartSpan before span is shared.
+// endpoint filtering features, and the trace correlation label for AppSec.
+// When span finishes, any pprof labels found in ctx are restored. Additionally,
+// this func informs the profiler how many times each endpoint is called.
+// +checklocksignore — Initialization time, called from StartSpan before the span
+// is handed to the sampler, so it is not yet shared with other goroutines.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
+	// The "trace id" pprof label is AppSec-only. Profiling features retain their
+	// own labels without adding trace correlation cardinality.
+	appsecCorrelation := appsec.Enabled()
+	if !snap.ProfilerHotspotsEnabled && !snap.ProfilerEndpoints && !appsecCorrelation {
+		// No feature needs pprof labels; nothing to restore when the span finishes.
+		span.pprofCtxRestore = nil
+		return
+	}
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
-	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
-	localRootSpan := span.Root()
-	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
-		spanID := localRootSpan.getSpanID()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
-	}
+	labels := make([]string, 0, 3*2)
 	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if snap.ProfilerEndpoints && localRootSpan != nil {
-		resource, piiSafe := localRootSpan.getResourceWithPIISafe()
+	if root := span.Root(); snap.ProfilerEndpoints && root != nil {
+		resource, piiSafe := root.getResourceWithPIISafe()
 		if piiSafe {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
-			if span == localRootSpan {
+			if span == root {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
@@ -1183,12 +1227,27 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 			}
 		}
 	}
-	if len(labels) > 0 {
-		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
-		span.pprofCtxRestore = ctx
-		span.pprofCtxActive = pprofActive
-		pprof.SetGoroutineLabels(pprofActive)
+	if appsecCorrelation {
+		// newSpanContext already finalized the hex cache, so this is a pure read.
+		labels = append(labels, traceprof.TraceID, span.context.traceID.HexEncoded())
 	}
+	if len(labels) == 0 {
+		// Every enabled feature declined to label this span, so there is nothing
+		// to restore when it finishes.
+		span.pprofCtxRestore = nil
+		return
+	}
+	pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
+	span.pprofCtxRestore = ctx
+	span.pprofCtxActive = pprofActive
+	pprof.SetGoroutineLabels(pprofActive)
+}
+
+// hasEndpointLabel reports whether ctx already carries the profiler's endpoint
+// label, i.e. whether endpoint profiling labelled the span when it started.
+func hasEndpointLabel(ctx gocontext.Context) bool {
+	_, ok := pprof.Label(ctx, traceprof.TraceEndpoint)
+	return ok
 }
 
 // spanResourcePIISafe returns true if s.resource can be considered to not

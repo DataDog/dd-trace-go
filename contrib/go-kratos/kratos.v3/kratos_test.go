@@ -674,7 +674,7 @@ func TestHTTPConfiguredErrorStatuses(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	t.Cleanup(instrumentation.ReloadConfig)
+	t.Cleanup(tracer.Stop)
 
 	tests := []struct {
 		name       string
@@ -700,7 +700,7 @@ func TestNamingSchema(t *testing.T) {
 			} {
 				t.Run(schema.name, func(t *testing.T) {
 					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", schema.name)
-					instrumentation.ReloadConfig()
+					tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
 
 					mt := mocktracer.Start()
 					defer mt.Stop()
@@ -735,10 +735,10 @@ func TestDefaultServiceNameUsesDDService(t *testing.T) {
 		"client": {kind: transport.KindHTTP, spanKind: ext.SpanKindClient, middleware: Client()},
 	}
 
-	t.Cleanup(instrumentation.ReloadConfig)
+	t.Cleanup(tracer.Stop)
 	t.Setenv("DD_SERVICE", "checkout-api")
 	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
-	instrumentation.ReloadConfig()
+	tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
 
 	mt := mocktracer.Start()
 	defer mt.Stop()

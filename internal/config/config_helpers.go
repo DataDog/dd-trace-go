@@ -6,8 +6,8 @@
 package config
 
 import (
-	"fmt"
 	"maps"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -111,9 +111,8 @@ func validateAgentTimeout(timeout int) bool {
 	return true
 }
 
-// validateFeatureFlagsAgentlessPollInterval rejects an out-of-range poll interval so the
-// caller falls back to the default rather than clamping it (clamping would silently move a
-// misconfigured billed-polling interval to a valid one instead of surfacing the mistake).
+// validateFeatureFlagsAgentlessPollInterval rejects rather than clamps: clamping would
+// silently move a misconfigured billed-polling interval to a valid one.
 func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 	if seconds <= 0 || seconds > 3600 {
 		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds)
@@ -122,15 +121,30 @@ func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 	return true
 }
 
-// validateFeatureFlagsAgentlessRequestTimeout rejects a non-positive value and caps the upper
-// bound at 300s: without an upper bound, a large-but-plausible-looking value (e.g. 9223372037)
-// overflows int64 once converted to a time.Duration in nanoseconds and multiplied by
-// time.Second, wrapping to a negative duration. http.Client treats a non-positive Timeout as
-// "no timeout", so an overflowed value would silently disable request timeout enforcement
-// entirely instead of surfacing the misconfiguration.
+// validateFeatureFlagsAgentlessRequestTimeout caps the upper bound because a larger value
+// overflows int64 as a nanosecond duration, and http.Client reads a negative Timeout as
+// "no timeout".
 func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 	if seconds <= 0 || seconds > 300 {
 		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		return false
+	}
+	return true
+}
+
+// maxFlaggingProviderInitTimeoutMs is the largest value that still converts to a
+// time.Duration without overflowing int64 into a negative duration.
+const maxFlaggingProviderInitTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
+
+// maxDurationSeconds is the largest whole-second value that converts to a
+// time.Duration without overflowing.
+const maxDurationSeconds = float64(math.MaxInt64 / int64(time.Second))
+
+// validateFlaggingProviderInitTimeout rejects an overflow-prone value so the caller falls
+// back to the default rather than Init receiving an already-expired context.
+func validateFlaggingProviderInitTimeout(ms int) bool {
+	if ms <= 0 || int64(ms) > maxFlaggingProviderInitTimeoutMs {
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs)
 		return false
 	}
 	return true
@@ -357,22 +371,18 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
-// else derives a default from agentURL host + port 4318 + /v1/traces.
-// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
-func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
-	if otlpTracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
-			return otlpTracesEndpoint
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
+// precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
+// genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
+// since it is used when tracesEndpoint is unset or invalid.
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
+	if tracesEndpoint != "" {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
+			return tracesEndpoint
 		}
 	}
-	host := internal.DefaultAgentHostname
-	if rawAgentURL != nil {
-		if h := rawAgentURL.Hostname(); h != "" {
-			host = h
-		}
-	}
-	return fmt.Sprintf("http://%s%s", net.JoinHostPort(host, otlpDefaultPort), otlpTracesPath)
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	return u.JoinPath(otlpTracesPath).String()
 }
 
 // buildOTLPHeaders builds the OTLP headers map from the provided map.
@@ -470,12 +480,11 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 		}
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
-	return u.String()
+	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
-func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
+func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
 		return nil
 	}
@@ -487,11 +496,14 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
 // envVar is used in the warning message to identify which env var had the bad value.
-func validateOTLPProtocol(v, envVar string) bool {
+// The warning is only logged when warn is true.
+func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	if warn {
+		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
+	}
 	return false
 }
 

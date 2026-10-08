@@ -15,14 +15,20 @@ jobs:
       - name: Run Ensure CI Success
         uses: DataDog/ensure-ci-success@b0d931ac77c810490e61964c321103040eef888e
         with:
-          initial-delay-seconds: "600"
-          max-retries: "60"
-          # polling-interval-seconds: "60" # Default
+          # This action only evaluates checks that exist when it polls, so the
+          # delay has to outlast GitHub's fan-out of the triggering event.
+          # max-retries rises with it to hold the ceiling near 70 minutes.
+          initial-delay-seconds: "300"
+          max-retries: "65"
+          # polling-interval-seconds is a no-op: the action reads `polling-interval`.
+          # polling-interval-seconds: "60"
           ignored-name-patterns: |
             devflow/merge
             devflow/mergegate
             label_issues
             check-title
+            dd-gitlab/.*
+            DDCI Status
 
 # Reason for ignored-name-patterns:
 #
@@ -31,3 +37,6 @@ jobs:
 #   prevents all open PRs from appearing as failing CI before reviews are complete, making PRs with actual
 #   CI failures indistinguishable from PRs that are simply awaiting review.
 # * check-title: CI job used to validate the PR title, enforced by branch protection rules, do not remove it.
+# * dd-gitlab/.* and DDCI Status: Datadog-internal GitLab statuses. They cannot be re-run from GitHub, and
+#   DDCI Status is already marked "Not required to merge", so re-reporting them as this workflow's failure
+#   sends people to the wrong place.

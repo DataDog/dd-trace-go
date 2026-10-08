@@ -135,6 +135,15 @@ services:
     ports:
       - "9204:9200"
 
+  opensearch2:
+    image: opensearchproject/opensearch:2@sha256:e321cb03c643874c42240458a618db56bc1e4fc143b10c41bec653542bc6851b
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ADMIN-passw0rd
+      DISABLE_SECURITY_PLUGIN: "true"
+    ports:
+      - "9212:9200"
+
   mongo3:
     image: mongo:3@sha256:146c1fd999a660e697aac40bc6da842b005c7868232eb0b7d8996c8f3545b05d
     ports:

@@ -60,7 +60,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 
 			notEnoughSamples := (prof.Duration() < minCPUDuration) ||
 				(prof.LabelsDuration(CustomLabels) < minCPUDuration) ||
-				(c.CodeHotspots && prof.LabelsDuration(map[string]string{traceprof.LocalRootSpanID: res.LocalRootSpanId, traceprof.SpanID: res.SpanId}) < minCPUDuration) ||
+				(c.CodeHotspots && prof.LabelDuration(traceprof.SpanID, res.SpanId) < minCPUDuration) ||
 				(c.Endpoints && prof.LabelDuration(traceprof.TraceEndpoint, c.AppType.Endpoint()) < minCPUDuration)
 			if notEnoughSamples {
 				req.CpuDuration *= 2
@@ -69,7 +69,6 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				continue
 			}
 			require.True(t, ValidSpanID(res.SpanId))
-			require.True(t, ValidSpanID(res.LocalRootSpanId))
 			return res, prof
 		}
 		// Failed after 5 attempts, identify which condition wasn't met
@@ -79,7 +78,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, c.AppType.Endpoint()), minCPUDuration)
 		}
 		if c.CodeHotspots {
-			require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{traceprof.LocalRootSpanID: res.LocalRootSpanId, traceprof.SpanID: res.SpanId}), minCPUDuration)
+			require.GreaterOrEqual(t, prof.LabelDuration(traceprof.SpanID, res.SpanId), minCPUDuration)
 		}
 		return nil, nil
 	}
@@ -91,7 +90,6 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					AppType: appType,
 				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
-				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
@@ -101,7 +99,6 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					Endpoints: true,
 				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
-				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), minCPUDuration)
 			})
 
@@ -110,10 +107,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					AppType:      appType,
 					CodeHotspots: true,
 				})
-				require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{
-					traceprof.SpanID:          res.SpanId,
-					traceprof.LocalRootSpanID: res.LocalRootSpanId,
-				}), minCPUDuration)
+				require.GreaterOrEqual(t, prof.LabelDuration(traceprof.SpanID, res.SpanId), minCPUDuration)
 				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
@@ -123,12 +117,10 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					CodeHotspots: true,
 					Endpoints:    true,
 				})
-				wantLabels := map[string]string{
-					traceprof.SpanID:          res.SpanId,
-					traceprof.LocalRootSpanID: res.LocalRootSpanId,
-				}
-				wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
-				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
+				require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{
+					traceprof.SpanID:        res.SpanId,
+					traceprof.TraceEndpoint: appType.Endpoint(),
+				}), minCPUDuration)
 			})
 
 			t.Run("none-child-of", func(t *testing.T) {
@@ -137,7 +129,6 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					ChildOf: true,
 				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
-				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
@@ -148,10 +139,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					Endpoints:    true,
 					ChildOf:      true,
 				})
-				wantLabels := map[string]string{
-					traceprof.SpanID:          res.SpanId,
-					traceprof.LocalRootSpanID: res.LocalRootSpanId,
-				}
+				wantLabels := map[string]string{traceprof.SpanID: res.SpanId}
 				if appType != Direct {
 					wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
 				}
@@ -200,7 +188,6 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			require.Greater(b, prof.Duration(), time.Duration(0))
 			if config.CodeHotspots {
 				require.Greater(b, prof.LabelDuration(traceprof.SpanID, "*"), time.Duration(0))
-				require.Greater(b, prof.LabelDuration(traceprof.LocalRootSpanID, "*"), time.Duration(0))
 			}
 			if config.Endpoints && appType != Direct {
 				require.Greater(b, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), time.Duration(0))

@@ -12,6 +12,8 @@
 # Note: Later matches take precedence
 
 # shared modules and repository tooling
+/.agents/                       @DataDog/dd-trace-go-guild
+/.backpassrc.json               @DataDog/dd-trace-go-guild
 /.claude/                       @DataDog/dd-trace-go-guild
 /.llm-validation/               @DataDog/dd-trace-go-guild
 /_docs/                         @DataDog/dd-trace-go-guild
@@ -155,6 +157,9 @@
 /ddtrace/tracer/sqlcomment.go       @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 /ddtrace/tracer/sqlcomment_test.go  @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 /contrib/database/sql/              @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+
+# language platform
+/.github/workflows/team-freeze-guard.yml    @DataDog/apm-go
 
 # dependency-file review
 *go.mod                         @DataDog/apm-go

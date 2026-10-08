@@ -54,6 +54,7 @@ func NewClient(clientOption rueidis.ClientOption, opts ...Option) (rueidis.Clien
 			tClient.port = port
 		}
 	}
+	tClient.spanCfg = newSpanConfig(cfg, tClient.host, tClient.port, tClient.dbIndex, tClient.user)
 	return tClient, nil
 }
 
@@ -64,6 +65,36 @@ type client struct {
 	port    string
 	dbIndex string
 	user    string
+	// spanCfg holds the tags that are constant for every command issued by
+	// this client (component, span kind, db system, target host/port/db/
+	// user). It is built once and merged into each request via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every call.
+	spanCfg *tracer.StartSpanConfig
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every command issued through a client with the given static
+// attributes, so per-request calls don't need to rebuild them.
+func newSpanConfig(cfg *config, host, port, dbIndex, user string) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		tracer.SpanType(ext.SpanTypeRedis),
+		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		tracer.Tag(ext.TargetDB, dbIndex),
+	}
+	if host != "" {
+		opts = append(opts, tracer.Tag(ext.TargetHost, host))
+	}
+	if port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, port))
+	}
+	if user != "" {
+		opts = append(opts, tracer.Tag(ext.DBUser, user))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 type command struct {
@@ -72,28 +103,14 @@ type command struct {
 }
 
 func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(c.cfg.serviceName, c.cfg.serviceSource),
-		tracer.ResourceName(cmd.statement),
-		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-		tracer.Tag(ext.TargetDB, c.dbIndex),
-	}
+	tags := map[string]any{ext.ResourceName: cmd.statement}
 	if c.cfg.rawCommand {
-		opts = append(opts, tracer.Tag(ext.RedisRawCommand, cmd.raw))
+		tags[ext.RedisRawCommand] = cmd.raw
 	}
-	if c.host != "" {
-		opts = append(opts, tracer.Tag(ext.TargetHost, c.host))
-	}
-	if c.port != "" {
-		opts = append(opts, tracer.Tag(ext.TargetPort, c.port))
-	}
-	if c.user != "" {
-		opts = append(opts, tracer.Tag(ext.DBUser, c.user))
-	}
-	return tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	return tracer.StartSpanFromContext(ctx, "redis.command",
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(c.spanCfg),
+	)
 }
 
 func (c *client) finishSpan(span *tracer.Span, err error) {
@@ -200,6 +217,7 @@ func (c *client) Nodes() map[string]rueidis.Client {
 			port:    port,
 			dbIndex: c.dbIndex,
 			user:    c.user,
+			spanCfg: newSpanConfig(c.cfg, host, port, c.dbIndex, c.user),
 		}
 	}
 	return nodes
