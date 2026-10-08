@@ -241,7 +241,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.7 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
@@ -363,6 +363,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 => ../../contrib/twmb/franz-go
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../contrib/valkey-io/valkey-go
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../contrib/valyala/fasthttp
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../instrumentation/testutils/containers
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )

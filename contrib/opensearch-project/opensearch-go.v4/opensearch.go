@@ -37,14 +37,15 @@ var (
 	_ opensearchtransport.Measurable   = (*transport)(nil)
 	_ opensearch.Streamer              = (*transport)(nil)
 	_ io.Closer                        = (*transport)(nil)
-	_ http.RoundTripper                = (*roundTripper)(nil)
 )
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageOpenSearchProjectOpenSearchGoV4)
 }
 
-// TraceClient traces OpenSearch client.
+// TraceClient traces OpenSearch client. It replaces c.Transport in place, so it must not be
+// called while other goroutines use c, such as a client created with DiscoverNodesOnStart.
+// Use NewClient in that case.
 func TraceClient(c *opensearch.Client, opts ...Option) {
 	c.Transport = newTransport(c.Transport, newConfig(opts...))
 }
@@ -65,27 +66,6 @@ func NewClient(cfg opensearch.Config, opts ...Option) (*opensearch.Client, error
 	traced := *c
 	traced.Transport = newTransport(c.Transport, newConfig(opts...))
 	return &traced, nil
-}
-
-// TraceRoundTripper traces an http.RoundTripper.
-func TraceRoundTripper(rt http.RoundTripper) http.RoundTripper {
-	return &roundTripper{roundtripper: rt}
-}
-
-type roundTripper struct {
-	roundtripper http.RoundTripper
-}
-
-// RoundTrip sets the destination host and port tags on the span.
-// opensearch-go client can have multiple addresses, so we can't determine those tags when initializing the client.
-func (r *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Hostname and port are not decided when Perform() is called.
-	if span, ok := tracer.SpanFromContext(req.Context()); ok {
-		span.SetTag(ext.NetworkDestinationName, req.URL.Hostname())
-		span.SetTag(ext.TargetHost, req.URL.Hostname())
-		span.SetTag(ext.TargetPort, req.URL.Port())
-	}
-	return r.roundtripper.RoundTrip(req)
 }
 
 type transport struct {

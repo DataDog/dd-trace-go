@@ -7,8 +7,6 @@
 package opensearchapi
 
 import (
-	"net/http"
-
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 
@@ -19,15 +17,14 @@ var _ = instrumentation.Load(instrumentation.PackageOpenSearchProjectOpenSearchG
 
 // NewClient returns a opensearchapi client enhanced with tracing.
 func NewClient(config opensearchapi.Config, opts ...opensearchtrace.Option) (*opensearchapi.Client, error) {
-	if config.Client.Transport == nil {
-		config.Client.Transport = opensearchtrace.TraceRoundTripper(http.DefaultTransport)
-	} else {
-		config.Client.Transport = opensearchtrace.TraceRoundTripper(config.Client.Transport)
-	}
 	c, err := opensearchapi.NewClient(config)
 	if err != nil {
 		return nil, err
 	}
-	opensearchtrace.TraceClient(c.Client, opts...)
+	// Startup discovery may already be reading c.Client.Transport in another goroutine.
+	// Trace a copy so that goroutine keeps using the upstream client unchanged.
+	traced := *c.Client
+	opensearchtrace.TraceClient(&traced, opts...)
+	c.Client = &traced
 	return c, nil
 }
