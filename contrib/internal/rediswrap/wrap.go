@@ -322,6 +322,59 @@ var (
 // contention from another goroutine is ridden out with short retries. A
 // struct without mutexes does not synchronize those fields, and reading them
 // is then no more racy than the struct's own readers.
+// HookState describes the outcome of trying to become the installer of a
+// client's hook.
+type HookState uint8
+
+const (
+	// HookBegin: this call is the installer; it must finish with EndHooking.
+	HookBegin HookState = iota
+	// HookSelfReentry: this goroutine is already installing for the client;
+	// it must not install again.
+	HookSelfReentry
+	// HookOtherInstalling: another goroutine is installing; wait on the
+	// returned mark's Done, then re-examine the client.
+	HookOtherInstalling
+)
+
+// HookMark records one in-flight hook installation.
+type HookMark struct {
+	Goid uint64
+	Done chan struct{}
+}
+
+// Hooking marks the clients whose hook installation is in flight, keyed by
+// client handle: a client's own AddHook rebuilds its hook chain by calling
+// every hook's constructors — user code, which may re-enter WrapClient — so
+// the installation runs with the caller's package lock released, and a
+// concurrent wrap of the same client must wait for it instead of racing a
+// second hook onto the chain.
+var Hooking sync.Map // Handle -> *HookMark
+
+// TryBeginHooking records an in-flight hook installation for k on this
+// goroutine, or reports why it cannot.
+func TryBeginHooking(k Handle) (HookState, *HookMark) {
+	mark := &HookMark{Goid: Goid(), Done: make(chan struct{})}
+	for {
+		v, loaded := Hooking.LoadOrStore(k, mark)
+		if !loaded {
+			return HookBegin, mark
+		}
+		existing := v.(*HookMark)
+		if existing.Goid == Goid() {
+			return HookSelfReentry, existing
+		}
+		return HookOtherInstalling, existing
+	}
+}
+
+// EndHooking completes the installation mark recorded for k, releasing
+// every waiter.
+func EndHooking(k Handle, mark *HookMark) {
+	Hooking.CompareAndDelete(k, mark)
+	close(mark.Done)
+}
+
 // IsMutexType reports whether t is one of the mutex types — a value or a
 // pointer to a sync.Mutex or sync.RWMutex. Holder scans skip such fields:
 // LockStruct has already taken them, and descending into one would

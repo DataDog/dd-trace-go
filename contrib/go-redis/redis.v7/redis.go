@@ -215,22 +215,59 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if seen {
-		if prev != nil {
+	for {
+		if seen && prev != nil {
 			if !sameConfig(*prev, cfg.key()) {
 				warn()
 			}
 			return
 		}
-		addHook(member, cfg)
+		if !seen {
+			// The hook chain cannot be read: the weak identity is the only
+			// deduplication this client has, so its entry is kept.
+			if registerWeak(member, cfg, warn) {
+				return
+			}
+		}
+		// The client's own AddHook rebuilds its hook chain by calling
+		// every hook's constructors — DialHook, ProcessHook,
+		// ProcessPipelineHook — and a custom hook may re-enter WrapClient
+		// from them: it is user-controlled code, run with the package lock
+		// released and under an in-flight marker, so a concurrent wrap of
+		// the same client waits for this one rather than racing a second
+		// hook onto the chain.
+		if k, keyed := rediswrap.HandleOf(member); keyed {
+			state, mark := rediswrap.TryBeginHooking(k)
+			switch state {
+			case rediswrap.HookSelfReentry:
+				// This goroutine's own installation is still in flight;
+				// the hook it is adding covers this call.
+				return
+			case rediswrap.HookOtherInstalling:
+				// Another wrap is adding the hook right now: wait for it,
+				// then re-examine the chain it leaves behind — the install
+				// may have failed and left no hook, in which case this
+				// call takes its turn.
+				done := mark.Done
+				unlocked(func() { <-done })
+				prev, seen = datadogConfig(member)
+				if !seen {
+					for range 3 {
+						prev, seen = datadogConfig(member)
+						if seen {
+							break
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+				}
+				continue
+			default:
+				defer rediswrap.EndHooking(k, mark)
+			}
+		}
+		unlocked(func() { addHook(member, cfg) })
 		return
 	}
-	// The hook chain cannot be read: the weak identity is the only
-	// deduplication this client has, so its entry is kept.
-	if registerWeak(member, cfg, warn) {
-		return
-	}
-	addHook(member, cfg)
 }
 
 // wrapProxyMembers instruments a proxy — one delegating to a single concrete
@@ -363,6 +400,20 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		}
 		return
 	}
+	if allHooked && entry == nil {
+		// A proxy with no registry entry — a value proxy, which no weak
+		// key can track — would otherwise be re-observed on every wrap and
+		// handed another real hook each time: its members would carry one
+		// datadog hook per wrap and trace every command once per hook.
+		// Their hook state is the durable identity a repeated wrap can
+		// see: all hooked means a previous wrap already fanned its hooks
+		// to them, and another would only add duplicates.
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			warn()
+		}
+		return
+	}
+
 	if allHooked {
 		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
 			warn()
@@ -998,7 +1049,12 @@ func findHookSlice(s reflect.Value, depth int) reflect.Value {
 				// Unexported field: read it through its address.
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
-			return f
+			// Copy the slice while the lock is held: the returned value must
+			// not alias the live field, or the caller's later Len and Index
+			// would race with the appends a concurrent AddHook makes.
+			snapshot := reflect.MakeSlice(redisHookSliceType, f.Len(), f.Len())
+			reflect.Copy(snapshot, f)
+			return snapshot
 		case reflect.Struct:
 			if !f.CanInterface() {
 				// Unexported field: read it through its address.
