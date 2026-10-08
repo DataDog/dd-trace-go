@@ -30,6 +30,7 @@ on:
 
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  SYSTEM_TESTS_REF: a0a993605b06ff21e00e205a73d2d54a5a4fc1c9 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 permissions:
   contents: read
