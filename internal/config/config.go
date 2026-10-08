@@ -243,7 +243,13 @@ type Config struct {
 	// otlpMetricsFlushInterval is the span metrics flush cadence (default 10s).
 	otlpMetricsFlushInterval time.Duration
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
-	otlpMetricsProtocol string
+	otlpMetricsProtocol        string
+	runtimeMetricsProtocol     string
+	runtimeMetricsHTTPEndpoint string
+	runtimeMetricsHTTPPath     string
+	runtimeMetricsGRPCEndpoint string
+	runtimeMetricsInsecure     bool
+	runtimeMetricsHeaders      map[string]string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -502,6 +508,7 @@ func loadConfig() *Config {
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
 		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
 	})
+	cfg.loadRuntimeMetricsTransport()
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")

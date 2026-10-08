@@ -7,7 +7,14 @@ package metric
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"time"
+
 	"testing"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,177 +22,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
-
-// TestResolveOTLPEndpoint_Default verifies that the default HTTP endpoint
-// is localhost:4318 with /v1/metrics path and insecure connection.
-func TestResolveOTLPEndpoint_Default(t *testing.T) {
-	endpoint, path, insecure := resolveOTLPEndpointHTTP()
-	assert.Equal(t, "localhost:4318", endpoint)
-	assert.Equal(t, "/v1/metrics", path)
-	assert.True(t, insecure)
-}
-
-// TestResolveOTLPEndpoint_DDTraceAgentURL verifies that DD_TRACE_AGENT_URL is used
-// to derive the OTLP endpoint by extracting the hostname and using port 4318.
-func TestResolveOTLPEndpoint_DDTraceAgentURL(t *testing.T) {
-	tests := []struct {
-		name             string
-		agentURL         string
-		expectedEndpoint string
-		expectedInsecure bool
-	}{
-		{
-			name:             "http URL",
-			agentURL:         "http://ddapm-test-agent-335a19:8126",
-			expectedEndpoint: "ddapm-test-agent-335a19:4318",
-			expectedInsecure: true,
-		},
-		{
-			name:             "https URL",
-			agentURL:         "https://agent.example.com:8126",
-			expectedEndpoint: "agent.example.com:4318",
-			expectedInsecure: false,
-		},
-		{
-			name:             "URL with path",
-			agentURL:         "http://agent.example.com:8126/v1.0/traces",
-			expectedEndpoint: "agent.example.com:4318",
-			expectedInsecure: true,
-		},
-		{
-			name:             "URL without port",
-			agentURL:         "http://agent.example.com",
-			expectedEndpoint: "agent.example.com:4318",
-			expectedInsecure: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(envDDTraceAgentURL, tt.agentURL)
-
-			endpoint, path, insecure := resolveOTLPEndpointHTTP()
-			assert.Equal(t, tt.expectedEndpoint, endpoint)
-			assert.Equal(t, "/v1/metrics", path)
-			assert.Equal(t, tt.expectedInsecure, insecure)
-		})
-	}
-}
-
-// TestResolveOTLPEndpoint_Priority verifies endpoint resolution priority:
-// DD_TRACE_AGENT_URL > DD_AGENT_HOST > default (localhost:4318)
-func TestResolveOTLPEndpoint_Priority(t *testing.T) {
-	t.Run("DD_TRACE_AGENT_URL takes priority", func(t *testing.T) {
-		t.Setenv(envDDTraceAgentURL, "http://priority-agent:8126")
-		t.Setenv(envDDAgentHost, "fallback-agent")
-
-		endpoint, _, _ := resolveOTLPEndpointHTTP()
-		assert.Equal(t, "priority-agent:4318", endpoint)
-	})
-
-	t.Run("DD_AGENT_HOST as fallback", func(t *testing.T) {
-		t.Setenv(envDDAgentHost, "fallback-agent")
-
-		endpoint, path, insecure := resolveOTLPEndpointHTTP()
-		assert.Equal(t, "fallback-agent:4318", endpoint)
-		assert.Equal(t, "/v1/metrics", path)
-		assert.True(t, insecure)
-	})
-}
-
-// TestResolveOTLPEndpoint_InvalidURL verifies that when DD_TRACE_AGENT_URL is invalid,
-// the endpoint resolution falls back to DD_AGENT_HOST.
-func TestResolveOTLPEndpoint_InvalidURL(t *testing.T) {
-	t.Setenv(envDDTraceAgentURL, "://invalid-url")
-	t.Setenv(envDDAgentHost, "fallback-agent")
-
-	// Should fall back to DD_AGENT_HOST when URL parsing fails
-	endpoint, _, _ := resolveOTLPEndpointHTTP()
-	assert.Equal(t, "fallback-agent:4318", endpoint)
-}
-
-// TestHasOTLPEndpointInEnv verifies detection of OTEL_EXPORTER_OTLP_ENDPOINT
-// and OTEL_EXPORTER_OTLP_METRICS_ENDPOINT environment variables.
-func TestHasOTLPEndpointInEnv(t *testing.T) {
-	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT set", func(t *testing.T) {
-		t.Setenv(envOTLPMetricsEndpoint, "http://custom:4318")
-		assert.True(t, hasOTLPEndpointInEnv())
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT set", func(t *testing.T) {
-		t.Setenv(envOTLPEndpoint, "http://custom:4318")
-		assert.True(t, hasOTLPEndpointInEnv())
-	})
-
-	t.Run("no OTEL endpoint set", func(t *testing.T) {
-		assert.False(t, hasOTLPEndpointInEnv())
-	})
-}
-
-// TestGetOTLPProtocol verifies protocol selection from environment variables:
-// - OTEL_EXPORTER_OTLP_METRICS_PROTOCOL takes priority
-// - OTEL_EXPORTER_OTLP_PROTOCOL as fallback
-// - Default: http/protobuf
-func TestGetOTLPProtocol(t *testing.T) {
-	t.Run("Default to http/protobuf", func(t *testing.T) {
-		protocol := otlpProtocol()
-		assert.Equal(t, defaultOTLPProtocol, protocol)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL takes priority", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http")
-
-		protocol := otlpProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_PROTOCOL as fallback", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-
-		protocol := otlpProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("Case insensitive", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "GRPC")
-
-		protocol := otlpProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("Trim whitespace", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "  http/protobuf  ")
-
-		protocol := otlpProtocol()
-		assert.Equal(t, defaultOTLPProtocol, protocol)
-	})
-}
-
-// TestResolveOTLPEndpointGRPC verifies gRPC endpoint resolution with default port 4317
-// and proper handling of DD_TRACE_AGENT_URL and DD_AGENT_HOST.
-func TestResolveOTLPEndpointGRPC(t *testing.T) {
-	t.Run("Default to localhost:4317", func(t *testing.T) {
-		endpoint, insecure := resolveOTLPEndpointGRPC()
-		assert.Equal(t, "localhost:4317", endpoint)
-		assert.True(t, insecure)
-	})
-
-	t.Run("DD_TRACE_AGENT_URL", func(t *testing.T) {
-		t.Setenv(envDDTraceAgentURL, "http://custom-agent:8126")
-
-		endpoint, insecure := resolveOTLPEndpointGRPC()
-		assert.Equal(t, "custom-agent:4317", endpoint)
-		assert.True(t, insecure)
-	})
-
-	t.Run("DD_AGENT_HOST", func(t *testing.T) {
-		t.Setenv(envDDAgentHost, "custom-host")
-
-		endpoint, _ := resolveOTLPEndpointGRPC()
-		assert.Equal(t, "custom-host:4317", endpoint)
-	})
-}
 
 // TestDeltaTemporalitySelector verifies temporality selection per OTel spec:
 // - Monotonic instruments (Counter, Histogram, ObservableCounter) → Delta
@@ -314,4 +150,45 @@ func TestTemporalitySelectorHonored(t *testing.T) {
 
 		assert.Equal(t, metricdata.DeltaTemporality, exp.Temporality(metric.InstrumentKindCounter))
 	})
+}
+
+func TestRuntimeMetricsTransportOptions(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	requests := make(chan *http.Request, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		requests <- r
+		w.Header().Set("Content-Type", "application/x-protobuf")
+	}))
+	t.Cleanup(server.Close)
+	parent := t
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", server.URL+"/configured")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "Authorization=Bearer%20configured")
+	internalconfig.CreateNew()
+
+	for _, tc := range []struct {
+		name, path, authorization string
+		options                   []Option
+	}{
+		{"override", "/override", "local", []Option{WithHTTPExporter(otlpmetrichttp.WithEndpointURL(server.URL+"/override"), otlpmetrichttp.WithHeaders(map[string]string{"Authorization": "local"}))}},
+		{"default after override", "/configured", "Bearer configured", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := append([]Option{WithExportInterval(time.Hour)}, tc.options...)
+			mp, err := NewMeterProvider(opts...)
+			require.NoError(t, err)
+			parent.Cleanup(func() { _ = Shutdown(context.Background(), mp) })
+			counter, err := mp.Meter("transport-test").Int64Counter("requests")
+			require.NoError(t, err)
+			counter.Add(t.Context(), 1)
+			require.NoError(t, ForceFlush(t.Context(), mp))
+			request := <-requests
+			assert.Equal(t, tc.path, request.URL.Path)
+			assert.Equal(t, tc.authorization, request.Header.Get("Authorization"))
+			assert.Equal(t, "application/x-protobuf", request.Header.Get("Content-Type"))
+		})
+	}
+	assert.Equal(t, map[string]string{"Authorization": "Bearer configured"}, internalconfig.Get().RuntimeMetricsHeaders())
 }
