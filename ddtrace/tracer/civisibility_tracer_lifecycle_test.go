@@ -45,7 +45,7 @@ func (p *preservingTestTracer) SetCIVisibilityTracer(real Tracer) bool {
 	return p.accept
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t *testing.T) {
+func TestSetGlobalTracerWithCIVisibilityPreservesWhenAccepted(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -54,7 +54,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
+	setGlobalTracerWithCIVisibility(real, true)
 
 	if got := getGlobalTracer(); got != current {
 		t.Fatalf("global tracer = %T, want preserved tracer", got)
@@ -73,7 +73,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerPreservesWhenAccepted(t 
 	}
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilityDisabled(t *testing.T) {
+func TestSetGlobalTracerWithCIVisibilityFallsBackWhenCIVisibilityDisabled(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -82,7 +82,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilit
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, false)
+	setGlobalTracerWithCIVisibility(real, false)
 
 	if got := getGlobalTracer(); got != real {
 		t.Fatalf("global tracer = %T, want real tracer", got)
@@ -98,7 +98,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenCIVisibilit
 	}
 }
 
-func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenPreserverRejects(t *testing.T) {
+func TestSetGlobalTracerWithCIVisibilityFallsBackWhenPreserverRejects(t *testing.T) {
 	t.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
 	})
@@ -107,7 +107,7 @@ func TestSetGlobalTracerPreservingCIVisibilityMockTracerFallsBackWhenPreserverRe
 	real := &preservingTestTracer{}
 	setGlobalTracer(current)
 
-	setGlobalTracerPreservingCIVisibilityMockTracer(real, true)
+	setGlobalTracerWithCIVisibility(real, true)
 
 	if got := getGlobalTracer(); got != real {
 		t.Fatalf("global tracer = %T, want real tracer", got)
