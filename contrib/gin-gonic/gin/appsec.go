@@ -60,7 +60,7 @@ func init() {
 }
 
 // useAppSec executes the AppSec logic related to the operation start
-func useAppSec(c *gin.Context, span trace.TagSetter, otelSemanticsEnabled bool) {
+func useAppSec(c *gin.Context, span trace.TagSetter) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)
@@ -73,11 +73,10 @@ func useAppSec(c *gin.Context, span trace.TagSetter, otelSemanticsEnabled bool) 
 		c.Next()
 	})
 	httpsec.WrapHandler(httpWrapper, span, &httpsec.Config{
-		Framework:            "github.com/gin-gonic/gin",
-		OnBlock:              []func(){func() { c.Abort() }},
-		Route:                c.FullPath(),
-		RouteParams:          params,
-		OTelSemanticsEnabled: otelSemanticsEnabled,
+		Framework:   "github.com/gin-gonic/gin",
+		OnBlock:     []func(){func() { c.Abort() }},
+		Route:       c.FullPath(),
+		RouteParams: params,
 	}).ServeHTTP(c.Writer, c.Request)
 }
 
