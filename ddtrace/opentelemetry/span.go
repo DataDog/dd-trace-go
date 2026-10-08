@@ -103,8 +103,9 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		_, hasErrorMsg := s.attributes[ext.ErrorMsg]
 		_, hasErrorType := s.attributes[ext.ErrorType]
 		_, hasErrorStack := s.attributes[ext.ErrorStack]
-		// Under semantics, always set it: this feeds the OTLP status message (see
-		// convertSpanStatus), where error.msg is otherwise suppressed as a raw attribute.
+		// With the DD_TRACE_OTEL_SEMANTICS_ENABLED config, error.message only feeds the
+		// OTLP status message, so it always takes the status description. Otherwise it
+		// is a regular tag, so a user-set value is kept.
 		if s.otelSemanticsEnabled || !hasErrorMsg {
 			s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		}
