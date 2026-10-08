@@ -35,11 +35,9 @@ type config struct {
 // OTEL_METRIC_EXPORT_TIMEOUT (in milliseconds) when set, otherwise fall back
 // to the package defaults.
 func newConfig() *config {
-	intervalMs := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
-	timeoutMs := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
 	return &config{
-		exportInterval: time.Duration(intervalMs.value) * time.Millisecond,
-		exportTimeout:  time.Duration(timeoutMs.value) * time.Millisecond,
+		exportInterval: internalconfig.Get().RuntimeMetricsExportInterval(),
+		exportTimeout:  internalconfig.Get().RuntimeMetricsExportTimeout(),
 	}
 }
 
@@ -83,18 +81,18 @@ func WithExporter(opts ...otlpmetrichttp.Option) Option {
 }
 
 // WithExportInterval sets the interval at which metrics are exported.
-// Default is 60 seconds.
+// Default is 10 seconds. Nonpositive values use the SDK environment/default fallback.
 func WithExportInterval(interval time.Duration) Option {
 	return optionFunc(func(c *config) {
-		c.exportInterval = interval
+		c.exportInterval = internalconfig.Get().ResolveRuntimeMetricsExportInterval(interval)
 	})
 }
 
 // WithExportTimeout sets the timeout for each export operation.
-// Default is 30 seconds.
+// Default is 7.5 seconds. Nonpositive values use the SDK environment/default fallback.
 func WithExportTimeout(timeout time.Duration) Option {
 	return optionFunc(func(c *config) {
-		c.exportTimeout = timeout
+		c.exportTimeout = internalconfig.Get().ResolveRuntimeMetricsExportTimeout(timeout)
 	})
 }
 

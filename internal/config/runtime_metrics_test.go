@@ -6,7 +6,12 @@
 package config
 
 import (
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -240,6 +245,79 @@ func TestRuntimeMetricsEffectiveProtocol(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", raw)
 			assert.Equal(t, "http/protobuf", loadConfig().RuntimeMetricsEffectiveProtocol())
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderResolution(t *testing.T) {
+	for _, tc := range []struct {
+		raw                                                  string
+		interval, timeout, rejectedInterval, rejectedTimeout time.Duration
+	}{
+		{"", 10 * time.Second, 7500 * time.Millisecond, time.Minute, 30 * time.Second},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond, time.Minute, 30 * time.Second},
+		{"0", time.Minute, 30 * time.Second, time.Minute, 30 * time.Second},
+		{"-1", time.Minute, 30 * time.Second, time.Minute, 30 * time.Second},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 25 * time.Millisecond, 25 * time.Millisecond, time.Minute, 30 * time.Second},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv(runtimeMetricsIntervalKey, tc.raw)
+			t.Setenv(runtimeMetricsTimeoutKey, tc.raw)
+			cfg := loadConfig()
+			assert.Equal(t, tc.interval, cfg.RuntimeMetricsExportInterval())
+			assert.Equal(t, tc.timeout, cfg.RuntimeMetricsExportTimeout())
+			assert.Equal(t, tc.rejectedInterval, cfg.ResolveRuntimeMetricsExportInterval(0))
+			assert.Equal(t, tc.rejectedTimeout, cfg.ResolveRuntimeMetricsExportTimeout(-1))
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderOverflow(t *testing.T) {
+	t.Setenv(runtimeMetricsIntervalKey, "9223372036854775807")
+	t.Setenv(runtimeMetricsTimeoutKey, "9223372036854775807")
+	cfg := loadConfig()
+	if strconv.IntSize == 64 {
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportTimeout())
+	} else {
+		assert.Equal(t, defaultRuntimeMetricsInterval, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, defaultRuntimeMetricsTimeout, cfg.RuntimeMetricsExportTimeout())
+	}
+	t.Setenv(runtimeMetricsIntervalKey, " 9223372036854775807 ")
+	if strconv.IntSize == 64 {
+		assert.Equal(t, time.Minute, loadConfig().RuntimeMetricsExportInterval())
+	}
+}
+
+func TestRuntimeMetricsReaderTelemetryUsesInput(t *testing.T) {
+	t.Setenv(runtimeMetricsIntervalKey, "0")
+	recorder := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(recorder)()
+	cfg := loadConfig()
+	for _, input := range recorder.Configuration {
+		assert.NotEqual(t, runtimeMetricsIntervalKey, input.Name)
+	}
+	cfg.ReportRuntimeMetricsReaderConfig()
+	assert.Equal(t, time.Minute, cfg.RuntimeMetricsExportInterval())
+	found := false
+	for _, input := range recorder.Configuration {
+		if input.Name == runtimeMetricsIntervalKey {
+			assert.Equal(t, 0, input.Value)
+			assert.Equal(t, telemetry.OriginEnvVar, input.Origin)
+			found = true
+		}
+	}
+	assert.True(t, found)
+}
+
+func TestRuntimeMetricsTemporalityPolicy(t *testing.T) {
+	for _, tc := range []struct{ raw, expected string }{
+		{"", "delta"}, {" CUMULATIVE ", "cumulative"}, {"DELTA", "delta"}, {"LOWMEMORY", "delta"}, {"unknown", "delta"},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", tc.raw)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsTemporalityPreference())
 		})
 	}
 }

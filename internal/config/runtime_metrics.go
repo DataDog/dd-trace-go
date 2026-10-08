@@ -10,9 +10,14 @@ import (
 	"net"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 const runtimeMetricsPath = "/v1/metrics"
@@ -122,4 +127,90 @@ func (c *Config) RuntimeMetricsEffectiveProtocol() string {
 		return "grpc"
 	}
 	return "http/protobuf"
+}
+
+const (
+	runtimeMetricsIntervalKey     = "OTEL_METRIC_EXPORT_INTERVAL"
+	runtimeMetricsTimeoutKey      = "OTEL_METRIC_EXPORT_TIMEOUT"
+	defaultRuntimeMetricsInterval = 10 * time.Second
+	defaultRuntimeMetricsTimeout  = 7500 * time.Millisecond
+	defaultSDKMetricsInterval     = 60 * time.Second
+	defaultSDKMetricsTimeout      = 30 * time.Second
+)
+
+func (c *Config) loadRuntimeMetricsReader() {
+	c.runtimeMetricsExportInterval, c.runtimeMetricsSDKInterval, c.runtimeMetricsReaderTelemetry[0] = resolveRuntimeMetricsDuration(runtimeMetricsIntervalKey, defaultRuntimeMetricsInterval, defaultSDKMetricsInterval)
+	c.runtimeMetricsExportTimeout, c.runtimeMetricsSDKTimeout, c.runtimeMetricsReaderTelemetry[1] = resolveRuntimeMetricsDuration(runtimeMetricsTimeoutKey, defaultRuntimeMetricsTimeout, defaultSDKMetricsTimeout)
+	c.runtimeMetricsTemporality = "delta"
+	if strings.EqualFold(strings.TrimSpace(provider.NewEnvironment().GetString("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "")), "cumulative") {
+		c.runtimeMetricsTemporality = "cumulative"
+	}
+}
+
+func resolveRuntimeMetricsDuration(key string, fallback, sdkFallback time.Duration) (time.Duration, time.Duration, telemetry.Configuration) {
+	raw := env.Get(key)
+	input := telemetry.Configuration{Name: key, Value: int(fallback.Milliseconds()), Origin: telemetry.OriginDefault}
+	duration := fallback
+	if milliseconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+		duration = time.Duration(milliseconds) * time.Millisecond
+		input.Value = milliseconds
+		input.Origin = telemetry.OriginEnvVar
+	}
+	// SDK environment fallback parses without trimming and checks positivity before conversion.
+	if milliseconds, err := strconv.Atoi(raw); err == nil && milliseconds > 0 {
+		sdkFallback = time.Duration(milliseconds) * time.Millisecond
+	}
+	if duration <= 0 {
+		duration = sdkFallback
+	}
+	return duration, sdkFallback, input
+}
+
+func (c *Config) RuntimeMetricsExportInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportInterval
+}
+
+func (c *Config) RuntimeMetricsExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportTimeout
+}
+
+func (c *Config) ResolveRuntimeMetricsExportInterval(interval time.Duration) time.Duration {
+	if interval > 0 {
+		return interval
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsSDKInterval
+}
+
+func (c *Config) ResolveRuntimeMetricsExportTimeout(timeout time.Duration) time.Duration {
+	if timeout > 0 {
+		return timeout
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsSDKTimeout
+}
+
+func (c *Config) RuntimeMetricsTemporalityPreference() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsTemporality
+}
+
+// ReportRuntimeMetricsReaderConfig reports input values when an enabled MeterProvider is created.
+func (c *Config) ReportRuntimeMetricsReaderConfig() {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, input := range c.runtimeMetricsReaderTelemetry {
+		if input.Origin == telemetry.OriginDefault {
+			configtelemetry.ReportDefault(input.Name, input.Value)
+		} else {
+			configtelemetry.Report(input.Name, input.Value, input.Origin)
+		}
+	}
 }
