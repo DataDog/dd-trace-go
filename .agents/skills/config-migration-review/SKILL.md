@@ -104,7 +104,7 @@ Blocking (dead/duplicate telemetry) unless trivially cosmetic.
 ### Scope discipline
 
 References `config-migration`'s "Scope rule". Flag any file or package touched outside the
-migration's declared target field or package, even if the edit looks correct in isolation.
+migration's declared target fields or package, even if the edit looks correct in isolation.
 Blocking — scope creep, not a defect in the edit itself.
 
 ### Env var / WithX parity

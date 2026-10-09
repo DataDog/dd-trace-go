@@ -8,7 +8,7 @@
 ## Rules
 
 * `internal/config` is the single source of truth. Once a field is migrated, every read and write goes through the `internal/config.Get()` singleton; no env-var parsing, defaults, or copies of the value remain in the legacy package.
-* Migrate one field per PR. If the field depends on a config still owned by a legacy package, stop and ask the developer to migrate that dependency first.
+* Migrate dependencies first. If a field depends on a config still owned by a legacy package, stop and ask the developer to migrate that dependency first; never migrate a derived field while its base stays in the legacy package.
 * Add only what has a caller: no setter unless something writes the field at runtime, no `*DynamicConfig[T]` accessor unless a caller needs RC handling.
 * Setters have the shape `SetX(value, origin, product...)` and call `c.checkProductConflict(...)` first after acquiring the lock. Additive collection fields (feature flags, service mappings) merge across products and are not gated.
 * Getters for map/slice fields return a copy, never the internal reference.

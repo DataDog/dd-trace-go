@@ -658,16 +658,16 @@ cases:
       - internal/config/AGENTS.md
     input: |
       I want to migrate a tracer config field into internal/config. Its value is derived from another
-      field that is still owned by ddtrace/tracer, but that base field looks trivial. Should I just
-      migrate both in this PR, and what should I do before writing any code?
+      field that is still owned by ddtrace/tracer, but that base field looks trivial. Can I migrate
+      just the derived field for now, and what should I do before writing any code?
     expected_criteria:
-      - States migrations cover one field per PR and the base field must be migrated first in a
-        separate, prior PR rather than folded into this one
+      - States the derived field must not be migrated while its base is still owned by ddtrace/tracer;
+        the base field has to be migrated first, even if it looks trivial
       - Says to surface the dependency to the developer instead of silently expanding scope
       - Says to produce a migration plan (read sites, write sites, and the surface added to
         internal/config) before writing code, per the config-migration skill
     bad_signals:
-      - Recommends migrating both fields in the same PR because the base looks trivial
+      - Recommends migrating only the derived field and leaving the base in ddtrace/tracer
       - Recommends migrating the derived field first and the base later
 
   - id: dd-trace-go-internal-config-setter-and-getter-shape

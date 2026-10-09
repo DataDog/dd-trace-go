@@ -4,7 +4,7 @@ description: >
   Migrates configuration fields from legacy packages (such as ddtrace/tracer or globalconfig)
   into internal/config in the dd-trace-go repository. Use when adding a config field to
   internal/config, migrating an existing field, refactoring config-related code in dd-trace-go,
-  or producing a migration-plan PR. Covers scope-and-dependency rules (one field per migration,
+  or producing a migration-plan PR. Covers scope-and-dependency rules (dependencies first,
   no silent expansion), the no-shadow-state contract, minimalism for accessors and setters,
   tracing every runtime write to its literal source, static-config vs DynamicConfig recipes,
   the migration-plan format required before writing code, and what to remove from globalconfig
@@ -15,13 +15,13 @@ description: >
 
 Rules for migrating configuration fields into `internal/config` in the dd-trace-go repository — the things the code doesn't make obvious. For source priority, gate semantics, and the `DynamicConfig` API, read `internal/config/provider/provider.go` and `internal/config/dynamic_config.go` directly.
 
-## Scope rule: one field per migration, dependencies first
+## Scope rule: dependencies first
 
 Before starting, trace every config the target depends on transitively. If any upstream config is still owned by the legacy package, **stop and surface to the user**:
 
 > "X depends on Y, which is still owned by `ddtrace/tracer`. Migrate Y first?"
 
-Never silently expand scope. Never migrate a derived field before its base — even if the base looks trivial. The base goes in a separate prior PR.
+Never silently expand scope. Never migrate a derived field before its base — even if the base looks trivial.
 
 ## Minimalism: add only what's used
 
