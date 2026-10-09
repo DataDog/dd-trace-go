@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -55,18 +54,6 @@ var otelDDConfigs = map[string]*otelDDEnv{
 		remapper: mapPropagationStyle,
 		handsOff: false,
 	},
-	"resourceAttributes": {
-		dd:       "DD_TAGS",
-		ot:       "OTEL_RESOURCE_ATTRIBUTES",
-		remapper: mapDDTags,
-		handsOff: false,
-	},
-}
-
-var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -135,27 +122,6 @@ func getDDorOtelConfig(configName string) string {
 
 	// 4. Not found, return empty string
 	return ""
-}
-
-// mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
-func mapDDTags(ot string) (string, error) {
-	ddTags := make([]string, 0)
-	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
-		// replace otel delimiter with dd delimiter and normalize tag names
-		if ddkey, ok := ddTagsMapping[key]; ok {
-			// map reserved otel tag names to dd tag names
-			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
-		} else {
-			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)
-		}
-	})
-
-	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
-		ddTags = ddTags[:10]
-	}
-
-	return strings.Join(ddTags, ","), nil
 }
 
 // mapService maps OTEL_SERVICE_NAME to DD_SERVICE
