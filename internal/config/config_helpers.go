@@ -485,15 +485,11 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	return "http://" + net.JoinHostPort(host, otlpDefaultPort)
 }
 
-// resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
+// resolveOTLPMetricsURL uses metricsEndpoint as-is, else appends /v1/metrics to genericEndpoint.
 // Both must be empty or valid http(s) URLs.
 func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	if metricsEndpoint != "" {
-		u, _ := url.Parse(metricsEndpoint)
-		if u.Path == "" || u.Path == "/" {
-			u.Path = otlpMetricsPath
-		}
-		return u.String()
+		return metricsEndpoint
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpMetricsPath).String()

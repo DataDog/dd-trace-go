@@ -59,6 +59,24 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 	}
 }
 
+func TestSanitizeOTLPEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		raw       string
+		isGeneric bool
+		expected  string
+	}{
+		{name: "generic no path", raw: "http://collector:4318", isGeneric: true, expected: "http://collector:4318/v1/logs"},
+		{name: "generic trailing slash", raw: "http://collector:4318/", isGeneric: true, expected: "http://collector:4318/v1/logs"},
+		{name: "generic custom path", raw: "http://collector:4318/otlp", isGeneric: true, expected: "http://collector:4318/otlp/v1/logs"},
+		{name: "signal-specific path", raw: "http://collector:4318/custom/", expected: "http://collector:4318/custom/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, sanitizeOTLPEndpoint(tc.raw, tc.isGeneric))
+		})
+	}
+}
+
 func TestNewOTLPExporterHTTPConfig(t *testing.T) {
 	t.Cleanup(func() { config.CreateNew() })
 	t.Run("endpoint and headers", func(t *testing.T) {
@@ -77,7 +95,7 @@ func TestNewOTLPExporterHTTPConfig(t *testing.T) {
 		require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{{}}))
 
 		r := <-requests
-		assert.Equal(t, "/custom/v1/logs", r.URL.Path)
+		assert.Equal(t, "/custom", r.URL.Path)
 		assert.Equal(t, "secret value", r.Header.Get("api-key"))
 	})
 
