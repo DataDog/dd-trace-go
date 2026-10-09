@@ -547,6 +547,8 @@ func loadConfig() *Config {
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
 
+	// DD_TAGS sources don't share a syntax (OTEL_RESOURCE_ATTRIBUTES uses "=" and
+	// percent-encoding), so each source parses its own value into tags.
 	parsedTags, globalTagsOrigin := p.GetTagsWithOrigin()
 	internal.CleanGitMetadataTags(parsedTags)
 	var globalTags map[string]any

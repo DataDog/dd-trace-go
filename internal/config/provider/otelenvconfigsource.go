@@ -204,9 +204,11 @@ func mapPropagationStyle(ot string) (string, error) {
 	return strings.Join(supportedStyles, ","), nil
 }
 
-// getTags returns raw, OTEL_RESOURCE_ATTRIBUTES in DD_TAGS format for
-// telemetry; tags, the decoded attributes with OTel reserved names mapped to
-// DD tag names; and ok, whether OTEL_RESOURCE_ATTRIBUTES is set.
+// getTags parses OTEL_RESOURCE_ATTRIBUTES into global tags. Keys and values
+// are percent-decoded, decoded commas are replaced with "_", and OTel reserved
+// names are mapped to DD tag names, which lose to native DD tag names.
+// raw is the result in DD_TAGS format for telemetry. ok reports whether
+// OTEL_RESOURCE_ATTRIBUTES is set.
 func (o *otelEnvConfigSource) getTags() (raw string, tags map[string]string, ok bool) {
 	v := o.get("DD_TAGS")
 	if v == "" {
