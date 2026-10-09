@@ -19,6 +19,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.12.0-dev.3
@@ -140,9 +141,11 @@ require (
 	github.com/go-chi/chi v1.5.5 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-kratos/kratos/v3 v3.0.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-playground/form/v4 v4.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
@@ -331,6 +334,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 => ../../contrib/gin-gonic/gin
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 => ../../contrib/go-chi/chi.v5
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 => ../../contrib/go-chi/chi
+	github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2 => ../../contrib/go-kratos/kratos.v3
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 => ../../contrib/go-redis/redis.v7
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 => ../../contrib/go-redis/redis.v8
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../contrib/go-redis/redis

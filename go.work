@@ -38,6 +38,7 @@ use (
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
+	./contrib/go-kratos/kratos.v3
 	./contrib/gomodule/redigo
 	./contrib/gomodule/redigo/otelc
 	./contrib/google.golang.org/api

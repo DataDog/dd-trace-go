@@ -101,6 +101,9 @@ func Run(t *testing.T, tc TestCase) {
 	tr.Stop()
 
 	t.Logf("Received %d spans", agent.CountSpans())
+	if counter, ok := tc.(interface{ ExpectedSpanCount() int }); ok {
+		require.Equal(t, counter.ExpectedSpanCount(), agent.CountSpans(), "unexpected additional spans")
+	}
 	requireTraceMatch(t, agent, tc.ExpectedTraces())
 }
 

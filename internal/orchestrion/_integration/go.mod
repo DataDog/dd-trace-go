@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.92
+	github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.12.0-dev.3
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.12.0-dev.3
@@ -31,6 +32,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-chi/chi v1.5.5
 	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-kratos/kratos/v3 v3.0.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
@@ -231,6 +233,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
+	github.com/go-playground/form/v4 v4.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
@@ -245,6 +248,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -501,6 +505,8 @@ replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrio
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
+
+replace github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2 => ../../../contrib/go-kratos/kratos.v3
 
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers
 

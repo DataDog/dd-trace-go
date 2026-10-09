@@ -24,5 +24,6 @@ import (
 	// Do not remove.
 	_ "github.com/DataDog/orchestrion" // integration
 
+	_ "github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2" // integration
 	_ "github.com/DataDog/dd-trace-go/orchestrion/all/v2" // integration
 )
