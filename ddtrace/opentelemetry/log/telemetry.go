@@ -76,7 +76,7 @@ func registerTelemetry() {
 	// ===========================================
 
 	// OTEL_EXPORTER_OTLP_LOGS_TIMEOUT
-	logsTimeout := getMillisecondsConfig(envOTLPLogsTimeout, defaultOTLPLogsTimeoutMs)
+	logsTimeout := getMillisecondsConfig(envOTLPLogsTimeout, defaultOTLPTimeoutMs)
 	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
 		Name:   envOTLPLogsTimeout,
 		Value:  logsTimeout.value,
