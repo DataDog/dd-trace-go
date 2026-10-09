@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
@@ -35,6 +37,15 @@ func TestBuildResource(t *testing.T) {
 		require.NoError(t, err)
 
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "my-service")
+	})
+
+	t.Run("OTEL_SERVICE_NAME maps to service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
 	})
 
 	t.Run("DD_ENV maps to deployment.environment", func(t *testing.T) {
@@ -85,6 +96,52 @@ func TestPrecedence(t *testing.T) {
 		require.NoError(t, err)
 
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "dd-service")
+	})
+
+	t.Run("OTEL_SERVICE_NAME wins over OTEL service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
+	})
+
+	t.Run("DD_SERVICE wins over OTEL_SERVICE_NAME and OTEL service.name", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "dd-service")
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "dd-service")
+	})
+
+	// sdklog.WithResource merges resource.Environment() underneath our resource,
+	// so check the service.name that exported records actually carry.
+	t.Run("OTEL_SERVICE_NAME wins over OTEL service.name on exported records", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		exporter := newTestExporter()
+		provider := sdklog.NewLoggerProvider(
+			sdklog.WithResource(res),
+			sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)),
+		)
+		t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+		var record otellog.Record
+		record.SetBody(attribute.StringValue("test"))
+		provider.Logger("test").Emit(context.Background(), record)
+
+		records := exporter.GetRecords()
+		require.Len(t, records, 1)
+		assertResourceAttribute(t, records[0].Resource(), semconv.ServiceNameKey, "otel-service")
 	})
 
 	t.Run("DD_ENV wins over OTEL deployment.environment.name", func(t *testing.T) {
