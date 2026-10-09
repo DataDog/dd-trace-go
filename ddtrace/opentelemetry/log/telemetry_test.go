@@ -88,7 +88,7 @@ func TestRegisterTelemetry(t *testing.T) {
 			switch cfg.Name {
 			case envOTLPLogsTimeout:
 				foundLogsTimeout = true
-				assert.Equal(t, defaultOTLPTimeoutMs, cfg.Value)
+				assert.Equal(t, int(resolveExportTimeout().Milliseconds()), cfg.Value)
 				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
 			case envBLRPMaxQueueSize:
 				foundMaxQueueSize = true

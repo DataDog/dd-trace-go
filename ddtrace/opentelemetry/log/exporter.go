@@ -57,6 +57,7 @@ const (
 	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
 	defaultBLRPExportTimeout      = 30000 * time.Millisecond
 	defaultBLRPMaxExportBatchSize = 512
+	defaultOTLPLogsTimeout        = 10000 * time.Millisecond
 
 	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
 	defaultBLRPScheduleDelayMs = 1000
@@ -488,7 +489,7 @@ func parseHeaders(str string) map[string]string {
 }
 
 // resolveExportTimeout returns the export timeout from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (30s)
+// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (10s)
 func resolveExportTimeout() time.Duration {
 	// Check logs-specific timeout first
 	if timeoutStr := env.Get(envOTLPLogsTimeout); timeoutStr != "" {
@@ -502,8 +503,7 @@ func resolveExportTimeout() time.Duration {
 			return timeout
 		}
 	}
-	// Default to 30 seconds
-	return 30 * time.Second
+	return defaultOTLPLogsTimeout
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)
