@@ -2073,7 +2073,7 @@
       {
         "implementation": "A",
         "type": "int",
-        "default": "10000"
+        "default": "30000"
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [

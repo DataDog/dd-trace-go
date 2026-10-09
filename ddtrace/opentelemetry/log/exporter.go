@@ -57,11 +57,13 @@ const (
 	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
 	defaultBLRPExportTimeout      = 30000 * time.Millisecond
 	defaultBLRPMaxExportBatchSize = 512
+	defaultOTLPLogsTimeout        = 30000 * time.Millisecond
 
 	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
 	defaultBLRPScheduleDelayMs = 1000
 	defaultBLRPExportTimeoutMs = 30000
 	defaultOTLPTimeoutMs       = 10000 // 10 seconds
+	defaultOTLPLogsTimeoutMs   = 30000
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -502,8 +504,7 @@ func resolveExportTimeout() time.Duration {
 			return timeout
 		}
 	}
-	// Default to 30 seconds
-	return 30 * time.Second
+	return defaultOTLPLogsTimeout
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)
