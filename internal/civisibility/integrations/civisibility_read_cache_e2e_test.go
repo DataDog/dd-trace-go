@@ -39,10 +39,7 @@ func TestReadCacheSharesBootstrapAcrossGoTestPackages(t *testing.T) {
 	moduleDir := writeReadCacheE2EModule(t, 2)
 	homeDir := t.TempDir()
 	outputDir := t.TempDir()
-	moduleCacheDir := filepath.Join(t.TempDir(), "go-mod")
-	t.Cleanup(func() {
-		removeReadCacheE2EModuleCache(t, moduleCacheDir)
-	})
+	moduleCacheDir := readCacheE2EGoEnv(t, "GOMODCACHE")
 
 	cmd := exec.Command("go", "test", "-mod=mod", "-count=1", "-p=2", "./...")
 	cmd.Dir = moduleDir
@@ -177,6 +174,10 @@ func writeReadCacheE2EModule(t *testing.T, packageCount int) string {
 	require.FileExists(t, filepath.Join(repoRoot, "go.mod"))
 
 	moduleDir := t.TempDir()
+	goSum, err := os.ReadFile(filepath.Join(repoRoot, "go.sum"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "go.sum"), goSum, 0o600))
+
 	goMod := fmt.Sprintf(`module github.com/DataDog/dd-trace-go/v2/internal/civisibility/readcachee2e
 
 go 1.25.0
@@ -197,23 +198,15 @@ replace github.com/DataDog/dd-trace-go/v2 => %s
 	return moduleDir
 }
 
-// removeReadCacheE2EModuleCache makes Go's read-only module cache removable before test cleanup.
-func removeReadCacheE2EModuleCache(t *testing.T, moduleCacheDir string) {
+// readCacheE2EGoEnv resolves a Go environment value using the parent process environment.
+func readCacheE2EGoEnv(t *testing.T, name string) string {
 	t.Helper()
 
-	err := filepath.WalkDir(moduleCacheDir, func(path string, dirEntry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if dirEntry.IsDir() {
-			return os.Chmod(path, 0o700)
-		}
-		return os.Chmod(path, 0o600)
-	})
-	if err != nil && !os.IsNotExist(err) {
-		require.NoError(t, err)
-	}
-	require.NoError(t, os.RemoveAll(moduleCacheDir))
+	cmd := exec.Command("go", "env", name)
+	cmd.Env = os.Environ()
+	output, err := cmd.Output()
+	require.NoError(t, err, "go env %s failed", name)
+	return strings.TrimSpace(string(output))
 }
 
 // readCacheE2EPackageTemplate is the generated package test source used by the temporary module.

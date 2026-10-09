@@ -16,11 +16,12 @@
 //
 //	/path/to/dir/   anchored, applies to everything beneath it
 //	/path/to/file   anchored, exact match
+//	/path/prefix*   anchored filename prefix, including matching directories
 //	*suffix         suffix match at any depth
 //
 // Patterns outside that subset are rejected, so ownership cannot silently
 // diverge between the two consumers. In particular: gitignore wildcards
-// beyond a single leading suffix "*" ("?", "[", "]", "\") are rejected
+// beyond a single leading suffix or trailing anchored-prefix "*" are rejected
 // because GitHub interprets them but CI Visibility treats them as literal
 // characters, and "@" is rejected because CI Visibility's parser treats any
 // pattern token containing it as an owner rather than part of the path.
@@ -59,6 +60,7 @@ const (
 	kindDir    kind = iota // "/path/" applies to everything beneath the directory
 	kindFile               // "/path/file" applies to exactly one file
 	kindSuffix             // "*suffix" applies to any path with that suffix
+	kindPrefix             // "/path/prefix*" applies to names starting with the prefix
 )
 
 // rule is a single validated CODEOWNERS entry.
@@ -67,8 +69,8 @@ type rule struct {
 	pattern string
 	kind    kind
 	// match is the pattern reduced to the string compared against a path:
-	// the leading "/" is dropped for anchored patterns and the leading "*"
-	// is dropped for suffix patterns.
+	// the leading "/" is dropped for anchored patterns; the leading or
+	// trailing "*" is dropped for suffix or prefix patterns, respectively.
 	match  string
 	owners []string
 }
@@ -76,7 +78,7 @@ type rule struct {
 // matches reports whether the rule applies to the given repository-relative path.
 func (r rule) matches(path string) bool {
 	switch r.kind {
-	case kindDir:
+	case kindDir, kindPrefix:
 		return strings.HasPrefix(path, r.match)
 	case kindFile:
 		return path == r.match
@@ -236,8 +238,8 @@ func parse(path string) ([]rule, error) {
 }
 
 // unsupportedWildcards are gitignore metacharacters, beyond a single leading
-// suffix "*", that GitHub interprets but the CI Visibility matcher treats as
-// literal characters.
+// suffix or trailing anchored-prefix "*", that GitHub interprets but CI
+// Visibility treats as literal characters.
 const unsupportedWildcards = "*?[]\\"
 
 // classify validates a pattern and reduces it to its comparison form.
@@ -264,8 +266,14 @@ func classify(pattern string) (kind, string, error) {
 		return kindSuffix, suffix, nil
 
 	case strings.HasPrefix(pattern, "/"):
+		if strings.HasSuffix(pattern, "*") && !strings.HasSuffix(pattern, "/*") {
+			prefix := pattern[1 : len(pattern)-1]
+			if !strings.ContainsAny(prefix, unsupportedWildcards) {
+				return kindPrefix, prefix, nil
+			}
+		}
 		if strings.ContainsAny(pattern, unsupportedWildcards) {
-			return 0, "", errors.New(`wildcards are not supported in anchored paths; use a "/dir/" or "*suffix" pattern instead`)
+			return 0, "", errors.New(`anchored paths support only one trailing "*" after a filename prefix; use "/dir/", "/path/prefix*", or "*suffix"`)
 		}
 		match := pattern[1:]
 		if strings.HasSuffix(pattern, "/") {
