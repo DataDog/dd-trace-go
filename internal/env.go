@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -176,14 +177,15 @@ func ParseOTelResourceAttributes(str string) (map[string]string, error) {
 
 // ForEachOTelResourceAttribute runs fn on every key val pair of an
 // OTEL_RESOURCE_ATTRIBUTES value, parsed like ForEachStringTag with "=" as
-// delimiter, and percent-decodes keys and values. Pairs that fail to decode
-// are passed to fn undecoded and reported in the returned error.
+// delimiter, and percent-decodes keys and values. Pairs that fail to decode,
+// or decode to invalid UTF-8, are passed to fn undecoded and reported in the
+// returned error.
 func ForEachOTelResourceAttribute(str string, fn func(key, val string)) error {
 	var invalid []string
 	ForEachStringTag(str, OtelTagsDelimeter, func(key, val string) {
 		decodedKey, keyErr := url.PathUnescape(key)
 		decodedVal, valErr := url.PathUnescape(val)
-		if keyErr != nil || valErr != nil {
+		if keyErr != nil || valErr != nil || !utf8.ValidString(decodedKey) || !utf8.ValidString(decodedVal) {
 			invalid = append(invalid, key+OtelTagsDelimeter+val)
 			decodedKey, decodedVal = key, val
 		}

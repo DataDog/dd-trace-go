@@ -97,6 +97,10 @@ var otelConfigs = map[string]*otelDDEnv{
 	},
 }
 
+// tagDelimiterReplacer replaces decoded characters that would split a tag in
+// DD_TAGS and DogStatsD formats. The DogStatsD client already strips newlines.
+var tagDelimiterReplacer = strings.NewReplacer(",", "_", "|", "_")
+
 var ddTagsMapping = map[string]string{
 	"service.name":           "service",
 	"deployment.environment": "env",
@@ -205,9 +209,9 @@ func mapPropagationStyle(ot string) (string, error) {
 }
 
 // getTags parses OTEL_RESOURCE_ATTRIBUTES into global tags. Keys and values
-// are percent-decoded, decoded commas are replaced with "_", and OTel names in
-// ddTagsMapping are mapped to DD tag names. DD tag names set directly take
-// precedence over mapped ones.
+// are percent-decoded, decoded tag delimiters are replaced with "_", and OTel
+// names in ddTagsMapping are mapped to DD tag names. DD tag names set directly
+// take precedence over mapped ones.
 // raw is the result in DD_TAGS format for telemetry. ok reports whether
 // OTEL_RESOURCE_ATTRIBUTES is set.
 func (o *otelEnvConfigSource) getTags() (raw string, tags map[string]string, ok bool) {
@@ -217,8 +221,7 @@ func (o *otelEnvConfigSource) getTags() (raw string, tags map[string]string, ok 
 	}
 	var mapped, unmapped [][2]string
 	err := internal.ForEachOTelResourceAttribute(v, func(key, val string) {
-		// decoded commas would split the tag in DD_TAGS and DogStatsD formats
-		key, val = strings.ReplaceAll(key, ",", "_"), strings.ReplaceAll(val, ",", "_")
+		key, val = tagDelimiterReplacer.Replace(key), tagDelimiterReplacer.Replace(val)
 		if ddKey, ok := ddTagsMapping[key]; ok {
 			mapped = append(mapped, [2]string{ddKey, val})
 		} else {
