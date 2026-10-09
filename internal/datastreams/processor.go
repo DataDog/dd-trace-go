@@ -346,6 +346,35 @@ func (p *Processor) flushInput() {
 	}
 }
 
+const (
+	// drainBatchSize bounds how many payloads the reader processes per wakeup,
+	// so a long backlog can't delay flushes or shutdown.
+	drainBatchSize = 1024
+	// readerBatchDelay is how long an idle reader waits after being woken so
+	// that payloads arriving close together are drained in one pass rather
+	// than one wakeup each. Writers would need to push 10M payloads/s to fill
+	// the queue during the wait, and payloads are aggregated into 10s buckets,
+	// so the added latency is harmless. Shorter waits cost more CPU per
+	// payload at 100k payloads/s than the old 10ms poll did.
+	readerBatchDelay = time.Millisecond
+)
+
+// drainInput processes up to drainBatchSize payloads and reports whether more
+// may still be queued.
+func (p *Processor) drainInput() (more bool) {
+	for range drainBatchSize {
+		in := p.in.pop()
+		if in == nil {
+			return false
+		}
+		p.processInput(in)
+	}
+	// Re-arm the wakeup so the reader comes straight back after checking its
+	// other channels.
+	p.in.signal()
+	return true
+}
+
 func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 	p.readerState.Store(int32(readerStalledOnAgent))
 	p.sendToAgent(payloads)
@@ -353,7 +382,9 @@ func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 }
 
 func (p *Processor) run(tick <-chan time.Time) {
+	backlogged := false
 	for {
+		p.readerState.Store(int32(readerStalledOnEmptyQueue))
 		select {
 		case <-p.stop:
 			// drop in flight payloads on the input channel
@@ -362,18 +393,16 @@ func (p *Processor) run(tick <-chan time.Time) {
 		case now := <-tick:
 			p.sendToAgentStalling(p.flush(now))
 		case done := <-p.flushRequest:
+			p.readerState.Store(int32(readerProcessing))
 			p.flushInput()
 			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
-		default:
-			s := p.in.pop()
-			if s == nil {
-				p.readerState.Store(int32(readerStalledOnEmptyQueue))
-				time.Sleep(time.Millisecond * 10)
-				p.readerState.Store(int32(readerProcessing))
-				continue
+		case <-p.in.ready:
+			if !backlogged {
+				time.Sleep(readerBatchDelay)
 			}
-			p.processInput(s)
+			p.readerState.Store(int32(readerProcessing))
+			backlogged = p.drainInput()
 		}
 	}
 }
