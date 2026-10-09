@@ -21,5 +21,7 @@ import (
 
 	// Integrations.
 	_ "github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
 )

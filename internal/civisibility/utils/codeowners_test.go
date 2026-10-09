@@ -196,6 +196,65 @@ func TestMatch(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestMatchAnchoredFilenamePrefix(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		path    string
+		matches bool
+	}{
+		{"/src/ci_*", "/src/ci_new.go", true},
+		{"/src/ci_*", "/src/ci_new_test.go", true},
+		{"/src/ci_*", "/src/ci_", true},
+		{"/src/ci_*", "/src/ci_group/nested.go", true},
+		{"/ci_*", "/ci_root.go", true},
+		{"/src/ci_*", "/src/app.go", false},
+		{"/src/ci_*", "/src/ci.go", false},
+		{"/src/ci_*", "/src/CI_new.go", false},
+		{"/src/ci_*", "/src/nested/ci_new.go", false},
+		{"/src/ci_*", "/other/src/ci_new.go", false},
+		{"/src/ci_*", "/other/ci_new.go", false},
+		{"/src/*", "/src/direct.go", true},
+		{"/src/*", "/src/nested/direct.go", false},
+		{"/src/", "/src/nested/direct.go", true},
+		{"*test.go", "/src/nested/direct_test.go", true},
+		{"ci_*", "/src/ci_new.go", false},
+		{"/src/ci_**", "/src/ci_new.go", false},
+		{"/src/ci_?*", "/src/ci_new.go", false},
+		{"/src/ci_*.go", "/src/ci_new.go", false},
+	} {
+		t.Run(tc.pattern+":"+tc.path, func(t *testing.T) {
+			owners := &CodeOwners{Sections: []*Section{{Entries: []Entry{{Pattern: tc.pattern, Owners: []string{"@owner"}}}}}}
+			entry, ok := owners.Match(tc.path)
+			assert.Equal(t, tc.matches, ok)
+			if tc.matches {
+				require.NotNil(t, entry)
+				assert.Equal(t, []string{"@owner"}, entry.Owners)
+			}
+		})
+	}
+}
+
+func TestMatchAnchoredFilenamePrefixPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		owner   string
+	}{
+		{"/src/ @directory\n/src/ci_* @prefix\n/src/ci_exact.go @exact\n", "@exact"},
+		{"/src/ @directory\n/src/ci_exact.go @exact\n/src/ci_* @prefix\n", "@prefix"},
+		{"/src/ci_* @prefix\n/src/ @directory\n", "@directory"},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CODEOWNERS")
+			writeCodeOwnersFile(t, path, tc.content)
+			owners, err := NewCodeOwners(path)
+			require.NoError(t, err)
+			entry, ok := owners.Match("/src/ci_exact.go")
+			require.True(t, ok)
+			assert.Equal(t, []string{tc.owner}, entry.Owners)
+		})
+	}
+}
+
 func TestGetOwnersString(t *testing.T) {
 	entry := Entry{Owners: []string{"@owner1", "@owner2"}}
 	assert.Equal(t, "[\"@owner1\",\"@owner2\"]", entry.GetOwnersString())
