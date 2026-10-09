@@ -481,8 +481,7 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	genericOTLPEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericOTLPEndpoint)
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
