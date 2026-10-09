@@ -342,22 +342,22 @@ func findLogEntry(logs []string, pattern string) (string, bool) {
 func TestAgentURL(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"))
+	tracer, err := newTracer(WithLogger(tp), WithUDS("/var/run/datadog/apm.socket"))
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix:///var/run/datadog/apm.socket"`)
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}
-	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+	assert.Regexp(`"agent_url":"unix:///var/run/datadog/apm.socket"`, logEntry)
 }
 
 func TestAgentURLFromEnv(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
 	tracer, err := newTracer(WithLogger(tp))
 	assert.Nil(err)
@@ -365,11 +365,11 @@ func TestAgentURLFromEnv(t *testing.T) {
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix://var/run/datadog/apm.socket"`)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"unix:///var/run/datadog/apm.socket"`)
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}
-	assert.Regexp(`"agent_url":"unix://var/run/datadog/apm.socket"`, logEntry)
+	assert.Regexp(`"agent_url":"unix:///var/run/datadog/apm.socket"`, logEntry)
 }
 
 func TestInvalidAgentURL(t *testing.T) {
@@ -393,9 +393,9 @@ func TestInvalidAgentURL(t *testing.T) {
 
 func TestAgentURLConflict(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
+	t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"), withNoopInfoHTTPClient())
+	tracer, err := newTracer(WithLogger(tp), WithUDS("/var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"), withNoopInfoHTTPClient())
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
