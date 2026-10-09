@@ -800,6 +800,62 @@ func TestOTLPHeaders(t *testing.T) {
 
 }
 
+func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		key     string
+		headers func(*Config) map[string]string
+		traces  bool
+	}{
+		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPHeaders, true},
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPHeaders, true},
+		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalState()
+			t.Cleanup(resetGlobalState)
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			want := map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}
+			if tt.traces {
+				want["Content-Type"] = OTLPContentTypeHeader
+			}
+			assert.Equal(t, want, tt.headers(Get()))
+		})
+	}
+
+	t.Run("signal overrides generic", func(t *testing.T) {
+		resetGlobalState()
+		t.Cleanup(resetGlobalState)
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=kept%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=trace%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metric%20value")
+		cfg := Get()
+		assert.Equal(t, map[string]string{
+			"api-key":      "trace value",
+			"generic-only": "kept value",
+			"Content-Type": OTLPContentTypeHeader,
+		}, cfg.OTLPHeaders())
+		assert.Equal(t, map[string]string{
+			"api-key":      "metric value",
+			"generic-only": "kept value",
+		}, cfg.OTLPMetricsHeaders())
+	})
+}
+
 func TestOTLPExportMode(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetGlobalState()

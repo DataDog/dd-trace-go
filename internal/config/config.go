@@ -461,8 +461,8 @@ func loadConfig() *Config {
 	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
 		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
 	cfg.otlpHeaders = buildOTLPHeaders(mergeOTLPHeaders(
-		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
-		p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter),
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter)),
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter)),
 	))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
@@ -483,8 +483,8 @@ func loadConfig() *Config {
 		cfg.otlpEndpoint,
 	)
 	cfg.otlpMetricsHeaders = mergeOTLPHeaders(
-		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
-		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter)),
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter)),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	// The protocol is only consumed by the OTLP span metrics exporter. Values

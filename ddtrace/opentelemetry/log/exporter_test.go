@@ -235,6 +235,33 @@ func TestParseHeaders(t *testing.T) {
 	})
 }
 
+func TestResolveHeadersPercentEncodedValues(t *testing.T) {
+	for _, key := range []string{envOTLPHeaders, envOTLPLogsHeaders} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(envOTLPHeaders, "")
+			t.Setenv(envOTLPLogsHeaders, "")
+			t.Setenv(key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			assert.Equal(t, map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}, resolveHeaders())
+		})
+	}
+
+	t.Run("signal overrides generic", func(t *testing.T) {
+		t.Setenv(envOTLPHeaders, "api-key=generic%20value,generic-only=kept")
+		t.Setenv(envOTLPLogsHeaders, "api-key=logs%20value")
+		assert.Equal(t, map[string]string{"api-key": "logs value"}, resolveHeaders())
+	})
+}
+
 func TestResolveExportTimeout(t *testing.T) {
 	t.Run("defaults to 30 seconds", func(t *testing.T) {
 		timeout := resolveExportTimeout()
