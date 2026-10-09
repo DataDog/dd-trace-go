@@ -128,3 +128,71 @@ func TestParseGlobalTags(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOTLPLogsHeaders(t *testing.T) {
+	t.Run("parses single header", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key=value")
+		assert.Equal(t, map[string]string{"key": "value"}, headers)
+	})
+
+	t.Run("parses multiple headers", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key1=value1,key2=value2,key3=value3")
+		assert.Equal(t, map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+			"key3": "value3",
+		}, headers)
+	})
+
+	t.Run("trims spaces", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("  key = value  ,  key2=value2  ")
+		assert.Equal(t, map[string]string{
+			"key":  "value",
+			"key2": "value2",
+		}, headers)
+	})
+
+	t.Run("ignores invalid entries without equals", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key1=value1,invalid,key2=value2")
+		assert.Equal(t, map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		}, headers)
+	})
+
+	t.Run("handles empty string", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("")
+		assert.Empty(t, headers)
+	})
+
+	t.Run("handles value with equals sign", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key=value=with=equals")
+		assert.Equal(t, map[string]string{
+			"key": "value=with=equals",
+		}, headers)
+	})
+
+	t.Run("ignores entries with empty key", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("=value,key=value2")
+		assert.Equal(t, map[string]string{
+			"key": "value2",
+		}, headers)
+	})
+
+	t.Run("handles special characters in values", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("Authorization=Bearer token123,Content-Type=application/json")
+		assert.Equal(t, map[string]string{
+			"Authorization": "Bearer token123",
+			"Content-Type":  "application/json",
+		}, headers)
+	})
+
+	// Percent-decoding is tracked separately by OTEL-3378.
+	t.Run("keeps percent-encoded values as-is", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key=some%20value,bad=%XX")
+		assert.Equal(t, map[string]string{
+			"key": "some%20value",
+			"bad": "%XX",
+		}, headers)
+	})
+}
