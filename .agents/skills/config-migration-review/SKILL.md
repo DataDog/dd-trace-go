@@ -61,15 +61,17 @@ Flag:
 - An *additive* collection field (feature flags, service mappings) incorrectly gated as if it
   were exclusive — additive fields merge across products, they don't conflict.
 - `origin` redesigned to be variadic.
-- Telemetry reported under a made-up key instead of the env-var-derived canonical name.
+- Telemetry reported under a made-up key instead of the env-var name. Legacy names (e.g.
+  `trace_sample_rules`) are still supported, so don't require renaming an existing one.
 
 Blocking — this is a correctness/API-shape issue, not style.
 
 ### Getter copy semantics
 
 Flag a new getter for a map/slice field that returns the internal reference/pointer directly
-instead of a copy, breaking convention with existing getters — unless the field is a
-`DynamicConfig[T]` with its own safe-replace semantics.
+instead of a copy, breaking convention with existing getters. This includes `DynamicConfig[T]`
+fields: `Get()` returns the stored value as-is, so the value getter must copy it (see
+`GlobalTags`).
 
 Blocking — a shared mutable reference leaking out of `internal/config` reintroduces the shadow
 state the migration is meant to remove.
@@ -113,19 +115,19 @@ Blocking — scope creep, not a defect in the edit itself.
 
 Extends `config-migration`'s "recipes" section. Flag:
 
-- A field with a `WithX(...)` option that doesn't get an env var counterpart wired in the same
-  migration, when one is plausible.
+- A field with a `WithX(...)` option and no env var counterpart. The goal is env var support for
+  every option, so encourage wiring one in the same migration; don't require it.
 - Missing registration of a new env var in `internal/env/supported_configurations.json` and the
   dd-go telemetry config-norm-rules registry.
 
-Blocking if the env var is user-facing and silently missing; otherwise a nit to flag the gap.
+Missing counterpart: nit. Unregistered new env var: blocking.
 
 ### Hot path / loop caching
 
 References `config-migration`'s "Hot path notes". Flag a `Config`/`DynamicConfig` getter called
-as a loop's range expression, or called live on a per-span/hot path, instead of being captured
-once or added to a snapshot struct (e.g. `SpanStartSnapshot`). Blocking if genuinely hot path;
-nit if the path is cold.
+in a loop condition or body, or called live on a per-span/hot path, instead of being captured
+once or added to a snapshot struct (e.g. `SpanStartSnapshot`). A `range` expression is evaluated
+once, so it's fine. Blocking if genuinely hot path; nit if the path is cold.
 
 ## Output format
 
