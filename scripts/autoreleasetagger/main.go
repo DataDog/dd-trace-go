@@ -287,6 +287,19 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	if err != nil {
 		return fmt.Errorf("failed to find modules: %w", err)
 	}
+	// Modules under excluded directories are as unpublished as ones excluded
+	// by name: they join the exclusion list, while staying in the walk set
+	// so the dependency check classifies requirements on them as
+	// repository-internal — and drops their dependents, which could not be
+	// resolved either.
+	dirExcluded, dirExcludedPaths, err := excludedDirModules(root, excludedDirs)
+	if err != nil {
+		return fmt.Errorf("failed to collect modules under excluded directories: %w", err)
+	}
+	for path, m := range dirExcluded {
+		modules[path] = m
+	}
+	excludedModules = append(excludedModules, dirExcludedPaths...)
 	slog.Info("Found modules:", "count", len(modules))
 	moduleKeys := make([]string, 0, len(modules))
 	for k := range modules {
@@ -1042,6 +1055,49 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 	}
 
 	return filtered
+}
+
+// excludedDirModules collects the modules under the excluded directories.
+// They are not released, but their dependents' requirements name them, and
+// the dependency check must classify those requirements as
+// repository-internal to drop the dependents — otherwise a released
+// integration would carry a rewritten requirement on a deliberately
+// untagged helper that no consumer can resolve.
+func excludedDirModules(root string, excludedDirs []string) (map[string]GoMod, []string, error) {
+	found := make(map[string]GoMod)
+	var paths []string
+	for _, dir := range excludedDirs {
+		abs := dir
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, dir)
+		}
+		if _, err := os.Stat(abs); err != nil {
+			continue
+		}
+		err := filepath.WalkDir(abs, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() && entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			if entry.Name() == "go.mod" {
+				m, err := readModule(path)
+				if err != nil {
+					return fmt.Errorf("failed to read module: %w", err)
+				}
+				found[m.Module.Path] = m
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to walk excluded directory: %w", err)
+		}
+	}
+	for path := range found {
+		paths = append(paths, path)
+	}
+	return found, paths, nil
 }
 
 func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {
