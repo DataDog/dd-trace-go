@@ -22,10 +22,14 @@ type fastQueue struct {
 	elements [queueSize]atomic.Pointer[processorInput]
 	writePos atomic.Int64
 	readPos  atomic.Int64
+	// ready holds at most one pending wakeup. Writers signal it after every
+	// push, so a reader that finds the queue empty can block on it instead of
+	// sleeping.
+	ready chan struct{}
 }
 
 func newFastQueue() *fastQueue {
-	return &fastQueue{}
+	return &fastQueue{ready: make(chan struct{}, 1)}
 }
 
 func (q *fastQueue) push(p *processorInput) (dropped bool) {
@@ -34,7 +38,19 @@ func (q *fastQueue) push(p *processorInput) (dropped bool) {
 	l := nextPos - q.readPos.Load()
 	p.queuePos = nextPos - 1
 	q.elements[(nextPos-1)%queueSize].Store(p)
+	// Signal after the store: if the reader saw this slot as claimed but not
+	// yet written, this is the wakeup that brings it back.
+	q.signal()
 	return l > queueSize
+}
+
+// signal wakes the reader without blocking. When a wakeup is already pending
+// this is a lock-free check on the full channel.
+func (q *fastQueue) signal() {
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
 }
 
 func (q *fastQueue) pop() *processorInput {
@@ -54,14 +70,16 @@ func (q *fastQueue) pop() *processorInput {
 }
 
 func (q *fastQueue) poll(timeout time.Duration) *processorInput {
-	deadline := time.Now().Add(timeout)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	for {
 		if p := q.pop(); p != nil {
 			return p
 		}
-		if time.Now().After(deadline) {
-			return nil
+		select {
+		case <-q.ready:
+		case <-timer.C:
+			return q.pop()
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }

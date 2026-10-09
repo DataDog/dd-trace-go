@@ -346,6 +346,23 @@ func (p *Processor) flushInput() {
 	}
 }
 
+// drainBatchSize bounds how many payloads the reader processes per wakeup, so
+// a long backlog can't delay flushes or shutdown.
+const drainBatchSize = 1024
+
+func (p *Processor) drainInput() {
+	for range drainBatchSize {
+		in := p.in.pop()
+		if in == nil {
+			return
+		}
+		p.processInput(in)
+	}
+	// More may be queued. Re-arm the wakeup so the reader comes straight back
+	// after checking its other channels.
+	p.in.signal()
+}
+
 func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 	p.readerState.Store(int32(readerStalledOnAgent))
 	p.sendToAgent(payloads)
@@ -354,6 +371,7 @@ func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 
 func (p *Processor) run(tick <-chan time.Time) {
 	for {
+		p.readerState.Store(int32(readerStalledOnEmptyQueue))
 		select {
 		case <-p.stop:
 			// drop in flight payloads on the input channel
@@ -362,18 +380,13 @@ func (p *Processor) run(tick <-chan time.Time) {
 		case now := <-tick:
 			p.sendToAgentStalling(p.flush(now))
 		case done := <-p.flushRequest:
+			p.readerState.Store(int32(readerProcessing))
 			p.flushInput()
 			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
-		default:
-			s := p.in.pop()
-			if s == nil {
-				p.readerState.Store(int32(readerStalledOnEmptyQueue))
-				time.Sleep(time.Millisecond * 10)
-				p.readerState.Store(int32(readerProcessing))
-				continue
-			}
-			p.processInput(s)
+		case <-p.in.ready:
+			p.readerState.Store(int32(readerProcessing))
+			p.drainInput()
 		}
 	}
 }
