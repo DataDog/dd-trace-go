@@ -228,10 +228,8 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		}
 	}
 
-	// Set headers if configured
-	if headers := resolveHeaders(); len(headers) > 0 {
-		opts = append(opts, otlploghttp.WithHeaders(headers))
-	}
+	// Always set headers so the SDK does not re-read them from the environment
+	opts = append(opts, otlploghttp.WithHeaders(resolveHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -286,10 +284,8 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		}
 	}
 
-	// Set headers if configured
-	if headers := resolveHeaders(); len(headers) > 0 {
-		opts = append(opts, otlploggrpc.WithHeaders(headers))
-	}
+	// Always set headers so the SDK does not re-read them from the environment
+	opts = append(opts, otlploggrpc.WithHeaders(resolveHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -388,14 +384,11 @@ func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool
 // Format: k=v,k2=v2 (spaces are trimmed, invalid entries are ignored)
 func resolveHeaders() map[string]string {
 	// Check logs-specific headers first
-	if headersStr := env.Get(envOTLPLogsHeaders); headersStr != "" {
-		return parseHeaders(headersStr)
+	if headers := parseHeaders(env.Get(envOTLPLogsHeaders)); len(headers) > 0 {
+		return headers
 	}
 	// Fall back to general OTLP headers
-	if headersStr := env.Get(envOTLPHeaders); headersStr != "" {
-		return parseHeaders(headersStr)
-	}
-	return nil
+	return parseHeaders(env.Get(envOTLPHeaders))
 }
 
 // parseHeaders parses header string in format "k=v,k2=v2"
