@@ -513,31 +513,51 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			if _, dup := taken[f.UnsafePointer()]; dup {
 				continue
 			}
+			// The lock is taken through its concrete type, not through
+			// reflect.Value.Call: a lock method invoked by reflection runs
+			// outside the race detector's mutex bookkeeping, and a release
+			// that races a caller's own lock use reads as a data race.
 			// An RWMutex guards its fields against writers: a read lock
 			// excludes them — the updates that race a field walk — while
 			// allowing other readers, a caller holding its own read lock
 			// included. An exclusive TryLock would report contention for
 			// as long as any reader runs, and the walk would give up.
-			acquire, release := "TryLock", "Unlock"
-			if t == rwMutexPointerType {
-				acquire, release = "TryRLock", "RUnlock"
-			}
 			var locked bool
-			for range 100 {
-				if f.MethodByName(acquire).Call(nil)[0].Bool() {
-					locked = true
-					break
+			if t == rwMutexPointerType {
+				mu := (*sync.RWMutex)(f.UnsafePointer())
+				for range 100 {
+					if mu.TryRLock() {
+						locked = true
+						break
+					}
+					time.Sleep(time.Millisecond)
 				}
-				time.Sleep(time.Millisecond)
-			}
-			if !locked {
-				for _, u := range unlocks {
-					u()
+				if !locked {
+					for _, u := range unlocks {
+						u()
+					}
+					return func() {}, false
 				}
-				return func() {}, false
+				taken[f.UnsafePointer()] = struct{}{}
+				unlocks = append(unlocks, mu.RUnlock)
+			} else {
+				mu := (*sync.Mutex)(f.UnsafePointer())
+				for range 100 {
+					if mu.TryLock() {
+						locked = true
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+				if !locked {
+					for _, u := range unlocks {
+						u()
+					}
+					return func() {}, false
+				}
+				taken[f.UnsafePointer()] = struct{}{}
+				unlocks = append(unlocks, mu.Unlock)
 			}
-			taken[f.UnsafePointer()] = struct{}{}
-			unlocks = append(unlocks, func() { f.MethodByName(release).Call(nil) })
 			continue
 		}
 		if !f.CanAddr() {
@@ -555,29 +575,47 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 		if _, dup := taken[f.Addr().UnsafePointer()]; dup {
 			continue
 		}
-		// An RWMutex value guards its fields against writers: read-locked
-		// like its pointer counterpart, so a caller's own read lock does
-		// not read as contention.
-		acquire, release := "TryLock", "Unlock"
-		if t == rwMutexType {
-			acquire, release = "TryRLock", "RUnlock"
-		}
+		// Locked through its concrete type, like the pointer path above:
+		// a lock method invoked by reflection runs outside the race
+		// detector's mutex bookkeeping. An RWMutex value guards its fields
+		// against writers: read-locked like its pointer counterpart, so a
+		// caller's own read lock does not read as contention.
 		var locked bool
-		for range 100 {
-			if f.Addr().MethodByName(acquire).Call(nil)[0].Bool() {
-				locked = true
-				break
+		if t == rwMutexType {
+			mu := (*sync.RWMutex)(f.Addr().UnsafePointer())
+			for range 100 {
+				if mu.TryRLock() {
+					locked = true
+					break
+				}
+				time.Sleep(time.Millisecond)
 			}
-			time.Sleep(time.Millisecond)
-		}
-		if !locked {
-			for _, u := range unlocks {
-				u()
+			if !locked {
+				for _, u := range unlocks {
+					u()
+				}
+				return func() {}, false
 			}
-			return func() {}, false
+			taken[f.Addr().UnsafePointer()] = struct{}{}
+			unlocks = append(unlocks, mu.RUnlock)
+		} else {
+			mu := (*sync.Mutex)(f.Addr().UnsafePointer())
+			for range 100 {
+				if mu.TryLock() {
+					locked = true
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if !locked {
+				for _, u := range unlocks {
+					u()
+				}
+				return func() {}, false
+			}
+			taken[f.Addr().UnsafePointer()] = struct{}{}
+			unlocks = append(unlocks, mu.Unlock)
 		}
-		taken[f.Addr().UnsafePointer()] = struct{}{}
-		unlocks = append(unlocks, func() { f.Addr().MethodByName(release).Call(nil) })
 	}
 	return func() {
 		for _, u := range unlocks {

@@ -261,6 +261,46 @@ func concreteGoRedis(client redis.UniversalClient) bool {
 }
 
 func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
+	// The member's chain is read under its own install marker, before any
+	// other step: a concurrent wrap of the same member — direct, or through
+	// a proxy holding it — appends its hook with the package lock released
+	// and no mutex the read could take, so the read must wait out the
+	// in-flight install rather than race the append. The marker's waits are
+	// bounded and run with the package lock released, so the holder is
+	// never waited on while it needs the lock itself.
+	if k, keyed := rediswrap.HandleOf(member); keyed {
+		for {
+			state, mark := rediswrap.TryBeginHooking(k)
+			if state == rediswrap.HookBegin {
+				defer rediswrap.EndHooking(k, mark)
+				break
+			}
+			if state == rediswrap.HookSelfReentry {
+				return
+			}
+			done := mark.Done
+			timedOut := false
+			unlocked(func() {
+				select {
+				case <-done:
+				case <-time.After(installWait):
+					timedOut = true
+				}
+			})
+			if timedOut {
+				// The install outlasts the wait: it instruments the member,
+				// and this call has nothing left to add.
+				return
+			}
+			// The install finished; re-decide against the chain it left.
+			if prev, seen := datadogConfig(member); seen && prev != nil {
+				if !sameConfig(*prev, cfg.key()) {
+					warn()
+				}
+				return
+			}
+		}
+	}
 	// A busy client mutex can leave the hook chain transiently unreadable;
 	// retry briefly before falling back to the client's own identity, which
 	// a clone sharing the hook would evade.
@@ -293,52 +333,10 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 		// every hook's constructors — DialHook, ProcessHook,
 		// ProcessPipelineHook — and a custom hook may re-enter WrapClient
 		// from them: it is user-controlled code, run with the package lock
-		// released and under an in-flight marker, so a concurrent wrap of
-		// the same client waits for this one rather than racing a second
-		// hook onto the chain.
-		if k, keyed := rediswrap.HandleOf(member); keyed {
-			state, mark := rediswrap.TryBeginHooking(k)
-			switch state {
-			case rediswrap.HookSelfReentry:
-				// This goroutine's own installation is still in flight;
-				// the hook it is adding covers this call.
-				return
-			case rediswrap.HookOtherInstalling:
-				// Another wrap is adding the hook right now: wait for it —
-				// bounded, for a constructor that delegates to a goroutine
-				// synchronously waiting on this one must not deadlock —
-				// then re-examine the chain it leaves behind; the install
-				// may have failed and left no hook, in which case this
-				// call takes its turn.
-				done := mark.Done
-				timedOut := false
-				unlocked(func() {
-					select {
-					case <-done:
-					case <-time.After(installWait):
-						// The install is still in flight: it instruments
-						// the client, and this call has nothing left to do.
-						timedOut = true
-					}
-				})
-				if timedOut {
-					return
-				}
-				prev, seen = datadogConfig(member)
-				if !seen {
-					for range 3 {
-						prev, seen = datadogConfig(member)
-						if seen {
-							break
-						}
-						time.Sleep(10 * time.Millisecond)
-					}
-				}
-				continue
-			default:
-				defer rediswrap.EndHooking(k, mark)
-			}
-		}
+		// released. The in-flight marker taken at the top of this function
+		// already covers the install: a concurrent wrap of the same member
+		// waits for it there rather than racing a second hook onto the
+		// chain.
 		unlocked(func() {
 			// The weak entry registered above must not outlive a failed
 			// installation: a user hook constructor that panics —
@@ -1090,6 +1088,13 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			}
 
 		case reflect.Struct:
+			if t := f.Type(); t == reflect.TypeFor[sync.Mutex]() || t == reflect.TypeFor[sync.RWMutex]() {
+				// A mutex field is a lock, not a store: descending into it
+				// would lock its inner writer mutex — racing and deadlocking
+				// the proxy's own writers, which take that mutex as part of
+				// their protocol.
+				continue
+			}
 			if found, known := containsHook(f, hook, depth-1); found || !known {
 				return found, known
 			}
@@ -1226,6 +1231,13 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			}
 
 		case reflect.Struct:
+			if t := f.Type(); t == reflect.TypeFor[sync.Mutex]() || t == reflect.TypeFor[sync.RWMutex]() {
+				// A mutex field is a lock, not a store: descending into it
+				// would lock its inner writer mutex — racing and deadlocking
+				// the proxy's own writers, which take that mutex as part of
+				// their protocol.
+				continue
+			}
 			if found, known := containsHook(f, hook, depth-1); found || !known {
 				return found, known
 			}
