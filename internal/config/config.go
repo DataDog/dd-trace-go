@@ -547,8 +547,16 @@ func loadConfig() *Config {
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
 
-	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
-	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
+	parsedTags, globalTagsOrigin := p.GetTagsWithOrigin()
+	internal.CleanGitMetadataTags(parsedTags)
+	var globalTags map[string]any
+	if len(parsedTags) > 0 {
+		globalTags = make(map[string]any, len(parsedTags))
+		for k, v := range parsedTags {
+			globalTags[k] = v
+		}
+	}
+	cfg.globalTags = newDynamicConfig("trace_tags", globalTags, globalTagsOrigin, equalMap[string], nil)
 	for k, v := range cfg.globalTags.Get() {
 		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
 	}
