@@ -397,6 +397,39 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// same proxy: the installation it belongs to is still in flight.
 		return
 	}
+	// A value proxy has no weak handle for the registry and no walk guard
+	// either: two concurrent wraps of it would both observe, both retain,
+	// and each hand the proxy a real hook — every delegate would trace
+	// twice. Its reference-bearing fields give it a shared identity, and
+	// the installation is serialized on that. The waiter re-runs the whole
+	// decision once the in-flight install completes, so an already-hooked
+	// proxy is not handed a second hook.
+	if _, keyed := rediswrap.HandleOf(proxy); !keyed {
+		if key := rediswrap.RefKey(proxy); key != "" {
+			state, mark := rediswrap.TryBeginValueHooking(key)
+			switch state {
+			case rediswrap.HookSelfReentry:
+				return
+			case rediswrap.HookOtherInstalling:
+				done := mark.Done
+				timedOut := false
+				unlocked(func() {
+					select {
+					case <-done:
+					case <-time.After(installWait):
+						timedOut = true
+					}
+				})
+				if timedOut {
+					return
+				}
+				wrapProxyMembers(proxy, members, cfg, warn, walkIncomplete)
+				return
+			default:
+				defer rediswrap.EndValueHooking(key, mark)
+			}
+		}
+	}
 	// Every user-controlled AddHook in this function runs with the proxy
 	// marked as being installed on this goroutine; the deferred unmark also
 	// runs when one of them panics and the application recovers, so the
@@ -884,7 +917,17 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 			// hook store one level down.
 			iter := v.MapRange()
 			for iter.Next() {
-				if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+				val := iter.Value()
+				if val.Kind() == reflect.Struct && !val.CanAddr() {
+					// A value held in a map is not addressable: its
+					// unexported hook field could not be read. Copy it to
+					// an addressable location first, like the member
+					// walker does.
+					p := reflect.New(val.Type())
+					p.Elem().Set(val)
+					val = p.Elem()
+				}
+				if found, known := hookInContainer(val, hook, depth-1); found || !known {
 					return found, known
 				}
 			}
@@ -992,7 +1035,16 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 				// hook store one level down.
 				iter := f.MapRange()
 				for iter.Next() {
-					if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+					val := iter.Value()
+					if val.Kind() == reflect.Struct && !val.CanAddr() {
+						// A value held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first.
+						p := reflect.New(val.Type())
+						p.Elem().Set(val)
+						val = p.Elem()
+					}
+					if found, known := hookInContainer(val, hook, depth-1); found || !known {
 						return found, known
 					}
 				}
@@ -1109,7 +1161,16 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 				// hook store one level down.
 				iter := f.MapRange()
 				for iter.Next() {
-					if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+					val := iter.Value()
+					if val.Kind() == reflect.Struct && !val.CanAddr() {
+						// A value held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first.
+						p := reflect.New(val.Type())
+						p.Elem().Set(val)
+						val = p.Elem()
+					}
+					if found, known := hookInContainer(val, hook, depth-1); found || !known {
 						return found, known
 					}
 				}

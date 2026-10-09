@@ -12,6 +12,7 @@
 package rediswrap
 
 import (
+	"encoding/binary"
 	"reflect"
 	"runtime"
 	"sync"
@@ -411,6 +412,54 @@ func TryBeginHooking(k Handle) (HookState, *HookMark) {
 func EndHooking(k Handle, mark *HookMark) {
 	Hooking.CompareAndDelete(k, mark)
 	close(mark.Done)
+}
+
+// ValueHooking marks the value proxies whose hook installation is in
+// flight, keyed by RefKey: a value proxy has no weak handle, but two
+// concurrent wraps of it pass copies whose reference-bearing fields agree,
+// so the key is shared between them and the install is serialized on it.
+var ValueHooking sync.Map // string -> *HookMark
+
+// TryBeginValueHooking records an in-flight hook installation for the value
+// proxy keyed by key, or reports why it cannot.
+func TryBeginValueHooking(key string) (HookState, *HookMark) {
+	mark := &HookMark{Goid: Goid(), Done: make(chan struct{})}
+	for {
+		v, loaded := ValueHooking.LoadOrStore(key, mark)
+		if !loaded {
+			return HookBegin, mark
+		}
+		existing := v.(*HookMark)
+		if existing.Goid == Goid() {
+			return HookSelfReentry, existing
+		}
+		return HookOtherInstalling, existing
+	}
+}
+
+// EndValueHooking completes the installation mark recorded for key,
+// releasing every waiter.
+func EndValueHooking(key string, mark *HookMark) {
+	ValueHooking.CompareAndDelete(key, mark)
+	close(mark.Done)
+}
+
+// RefKey returns a comparable identity for a value with no weak handle:
+// its dynamic type and the addresses its reference-bearing fields hold. Two
+// copies of the same value proxy share it — their fields agree — while
+// distinct proxies holding distinct references do not. A value with no
+// references at all has no identity to share, and the key is empty.
+func RefKey(v any) string {
+	refs := RefIDs(v)
+	if len(refs) == 0 {
+		return ""
+	}
+	b := make([]byte, 0, 16+len(refs)*8)
+	b = append(b, reflect.TypeOf(v).String()...)
+	for _, r := range refs {
+		b = binary.LittleEndian.AppendUint64(b, uint64(uintptr(r)))
+	}
+	return string(b)
 }
 
 // IsMutexType reports whether t is one of the mutex types — a value or a

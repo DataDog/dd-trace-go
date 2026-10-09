@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -423,5 +424,113 @@ func TestWrapClientContendedHolderMember(t *testing.T) {
 	_ = hidden.Get(context.Background(), "foo").Err()
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
 		t.Fatalf("expected the holder member to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// mapHolderRetainProxy keeps hooks in a map of holders with an unexported
+// hook field, and fans them out to its current member.
+type mapHolderRetainProxy struct {
+	goredis.UniversalClient
+	store map[string]struct{ hook goredis.Hook }
+}
+
+func (r *mapHolderRetainProxy) AddHook(hook goredis.Hook) {
+	if r.store == nil {
+		r.store = map[string]struct{ hook goredis.Hook }{}
+	}
+	r.store[fmt.Sprintf("hook-%d", len(r.store))] = struct{ hook goredis.Hook }{hook: hook}
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *mapHolderRetainProxy) applyTo(delegate goredis.UniversalClient) {
+	for _, h := range r.store {
+		delegate.AddHook(h.hook)
+	}
+}
+
+// Hooks held in the unexported field of a struct stored in a map must be
+// found: the scan copies the map value into an addressable snapshot before
+// reading the field, so a retaining proxy keeps its real hook and delegates
+// it instruments later are traced.
+func TestWrapClientMapHolderUnexported(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &mapHolderRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// barrierValueRetainProxy's AddHook waits for another wrap's AddHook to
+// arrive before installing, so two concurrent wraps would both observe
+// before either installs.
+type barrierValueRetainProxy struct {
+	goredis.UniversalClient
+	Retained *[]goredis.Hook
+	arrived  chan struct{}
+	release  chan struct{}
+}
+
+func (r barrierValueRetainProxy) AddHook(hook goredis.Hook) {
+	select {
+	case r.arrived <- struct{}{}:
+	case <-time.After(50 * time.Millisecond):
+	}
+	select {
+	case <-r.release:
+	case <-time.After(500 * time.Millisecond):
+	}
+	*r.Retained = append(*r.Retained, hook)
+	r.UniversalClient.AddHook(hook)
+}
+
+// Two concurrent wraps of the same value-based fan-out-and-retain proxy
+// must not each hand it a real hook: the installation is serialized on the
+// proxy's reference identity, and the second wrap re-decides once the first
+// has finished.
+func TestWrapClientConcurrentValueProxy(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	store := []goredis.Hook{}
+	arrived := make(chan struct{}, 4)
+	release := make(chan struct{})
+	proxy := barrierValueRetainProxy{UniversalClient: member, Retained: &store, arrived: arrived, release: release}
+	go func() {
+		for range 2 {
+			<-arrived
+		}
+		close(release)
+	}()
+
+	var wg sync.WaitGroup
+	wg.Go(func() { WrapClient(proxy) })
+	wg.Go(func() { WrapClient(proxy) })
+	wg.Wait()
+
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after the concurrent wraps, got %d", n)
+	}
+	_ = member.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
