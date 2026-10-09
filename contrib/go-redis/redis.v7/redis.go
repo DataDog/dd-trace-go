@@ -939,6 +939,15 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 					return true, true
 				}
 			}
+		} else {
+			// A generic key — map[any]struct{} — may hold the hook behind
+			// its interface; walk the keys like values.
+			iter := v.MapRange()
+			for iter.Next() {
+				if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+					return found, known
+				}
+			}
 		}
 	case reflect.Struct:
 		return containsHook(v, hook, depth-1)
@@ -1054,6 +1063,15 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 				for iter.Next() {
 					if h, ok := iter.Key().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true, true
+					}
+				}
+			} else {
+				// A generic key — map[any]struct{} — may hold the hook
+				// behind its interface; walk the keys like values.
+				iter := f.MapRange()
+				for iter.Next() {
+					if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+						return found, known
 					}
 				}
 			}
@@ -1180,6 +1198,15 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 				for iter.Next() {
 					if h, ok := iter.Key().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true, true
+					}
+				}
+			} else {
+				// A generic key — map[any]struct{} — may hold the hook
+				// behind its interface; walk the keys like values.
+				iter := f.MapRange()
+				for iter.Next() {
+					if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+						return found, known
 					}
 				}
 			}

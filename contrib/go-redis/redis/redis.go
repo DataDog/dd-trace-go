@@ -63,8 +63,8 @@ var (
 	// goroutines never collide with it, however equal their values — two
 	// equal value commands are separate operations and each traces once.
 	// The mark is also scoped to one client chain — identified by the
-	// configuration the chain was first wrapped with, which every handle
-	// of the client shares and a WithContext clone inherits —
+	// underlying client's Options pointer, inherited with the process
+	// chain by every clone of it —
 	// so a user wrapper that retries or fails over by forwarding the same
 	// command to a second wrapped client, synchronously, still gets that
 	// client's span: the second Process call is its own Redis operation.
@@ -95,11 +95,12 @@ func newCmdKey(cmd redis.Cmder) cmdKey {
 }
 
 // tracedCmd identifies one in-flight command: the client chain it runs
-// through — the configuration the chain was first wrapped with, shared by
-// every handle of that client and inherited by their WithContext clones —
-// and the command's own identity.
+// through — identified by the underlying client's Options pointer, which
+// every handle of that client shares, a WithContext clone inherits, and a
+// raw upstream clone keeps when it is wrapped separately — and the
+// command's own identity.
 type tracedCmd struct {
-	chain *clientConfig
+	chain *redis.Options
 	key   cmdKey
 }
 
@@ -107,7 +108,7 @@ type tracedCmd struct {
 // wrapper is driving the command through chain, and returns the function
 // that retires it once the command returns. The stack is per goroutine:
 // only the wrappers of this goroutine's own call chain see it.
-func pushTraced(chain *clientConfig, key cmdKey) func() {
+func pushTraced(chain *redis.Options, key cmdKey) func() {
 	id := goid()
 	var p *[]tracedCmd
 	if v, ok := tracedStacks.Load(id); ok {
@@ -135,7 +136,7 @@ func pushTraced(chain *clientConfig, key cmdKey) func() {
 
 // tracedOuter reports whether a datadog wrapper further out on this
 // goroutine is currently driving the command through the same client chain.
-func tracedOuter(chain *clientConfig, key cmdKey) bool {
+func tracedOuter(chain *redis.Options, key cmdKey) bool {
 	v, ok := tracedStacks.Load(goid())
 	if !ok {
 		return false
@@ -432,13 +433,13 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 		}
 		return func(cmd redis.Cmder) error {
 			key := newCmdKey(cmd)
-			if tracedOuter(tc.params.config, key) {
+			if tracedOuter(tc.Client.Options(), key) {
 				// A datadog wrapper further out on this goroutine, on the
 				// same client chain, is driving this command and already
 				// started its span for it; see tracedStacks.
 				return tc.process(cmd)
 			}
-			pop := pushTraced(tc.params.config, key)
+			pop := pushTraced(tc.Client.Options(), key)
 			defer pop()
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)

@@ -216,3 +216,29 @@ func TestWrapClientForwardedCommandSecondClient(t *testing.T) {
 		t.Fatalf("expected one span per client, got %d", len(spans))
 	}
 }
+
+// Wrapping a raw upstream clone of an already-wrapped client adds a second
+// wrapper around the inherited one: the two share the chain identity — the
+// underlying client's Options pointer, inherited by upstream clones — so
+// each command still traces exactly once.
+func TestWrapClientRawCloneChainIdentity(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	raw := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { raw.Close() })
+	WrapClient(raw)
+
+	clone := raw.WithContext(context.Background())
+	t.Cleanup(func() { clone.Close() })
+	WrapClient(clone)
+
+	_ = clone.Get("foo").Err()
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span through the wrapped raw clone, got %d", len(spans))
+	}
+}

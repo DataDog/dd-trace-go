@@ -1013,6 +1013,34 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 		}
 	}
 
+	// A module whose repository-internal requirement — a module of this
+	// repository, present in the walk — is excluded by name cannot be
+	// published resolvably: phase 1 rewrites its requirement to the new
+	// release version, and the excluded dependency is never tagged, so
+	// consumers could not resolve it. Drop such dependents, and repeat:
+	// each removal can orphan the dependents of the removed module too.
+	for changed := true; changed; {
+		changed = false
+		for path, mod := range filtered {
+			for _, req := range mod.Require {
+				if req.Path == rootModulePath {
+					continue
+				}
+				if _, repoInternal := modules[req.Path]; !repoInternal {
+					continue
+				}
+				if _, published := filtered[req.Path]; !published {
+					slog.Warn("excluding module with dependents",
+						"module", req.Path, "dependent", path,
+						"reason", "the dependent requires an excluded repository module and cannot be published resolvably")
+					delete(filtered, path)
+					changed = true
+					break
+				}
+			}
+		}
+	}
+
 	return filtered
 }
 

@@ -533,3 +533,49 @@ func TestWrapClientConcurrentValueProxy(t *testing.T) {
 		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
+
+// anyKeyRetainProxy keeps hooks as the keys of a generic set.
+type anyKeyRetainProxy struct {
+	redis.UniversalClient
+	set map[any]struct{}
+}
+
+func (r *anyKeyRetainProxy) AddHook(hook redis.Hook) {
+	if r.set == nil {
+		r.set = map[any]struct{}{}
+	}
+	r.set[hook] = struct{}{}
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *anyKeyRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for hook := range r.set {
+		delegate.AddHook(hook.(redis.Hook))
+	}
+}
+
+// Hooks held behind the interface keys of a generic set — map[any]struct{} —
+// are retained like any other store: the scan walks the keys, so the real
+// hook is handed to the proxy and delegates it instruments later are
+// traced.
+func TestWrapClientAnyKeyHookSet(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &anyKeyRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
