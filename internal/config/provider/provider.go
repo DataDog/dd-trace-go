@@ -131,6 +131,13 @@ func (p *Provider) GetInt(key string, def int) int {
 	})
 }
 
+func (p *Provider) GetInt64(key string, def int64) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
+		return intVal, err == nil
+	})
+}
+
 func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
 	return get(p, key, def, func(v string) (int, bool) {
 		intVal, err := strconv.Atoi(v)

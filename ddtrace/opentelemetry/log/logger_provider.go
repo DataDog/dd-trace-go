@@ -9,6 +9,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	otellog "go.opentelemetry.io/otel/log"
@@ -62,13 +63,15 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 			return
 		}
 
-		// Create BatchLogRecordProcessor with BLRP environment variables
+		cfg := config.Get()
+
+		// Create BatchLogRecordProcessor with centralized configuration
 		processor := sdklog.NewBatchProcessor(
 			exporter,
-			sdklog.WithMaxQueueSize(resolveBLRPMaxQueueSize()),
-			sdklog.WithExportInterval(resolveBLRPScheduleDelay()),
-			sdklog.WithExportTimeout(resolveBLRPExportTimeout()),
-			sdklog.WithExportMaxBatchSize(resolveBLRPMaxExportBatchSize()),
+			sdklog.WithMaxQueueSize(cfg.BLRPMaxQueueSize()),
+			sdklog.WithExportInterval(cfg.BLRPScheduleDelay()),
+			sdklog.WithExportTimeout(cfg.BLRPExportTimeout()),
+			sdklog.WithExportMaxBatchSize(cfg.BLRPMaxExportBatchSize()),
 		)
 
 		// Create LoggerProvider with resource and processor

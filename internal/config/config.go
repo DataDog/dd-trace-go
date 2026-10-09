@@ -192,7 +192,11 @@ type Config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
-	logsOTelEnabled bool
+	logsOTelEnabled        bool
+	blrpMaxQueueSize       int
+	blrpScheduleDelay      time.Duration
+	blrpExportTimeout      time.Duration
+	blrpMaxExportBatchSize int
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -442,6 +446,10 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, func(v int) bool { return v > 0 })
+	cfg.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
+	cfg.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
+	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -1643,6 +1651,30 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	}
 	c.logsOTelEnabled = enabled
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
+}
+
+func (c *Config) BLRPMaxQueueSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpMaxQueueSize
+}
+
+func (c *Config) BLRPScheduleDelay() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpScheduleDelay
+}
+
+func (c *Config) BLRPExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpExportTimeout
+}
+
+func (c *Config) BLRPMaxExportBatchSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpMaxExportBatchSize
 }
 
 func (c *Config) OTelSemanticsEnabled() bool {
