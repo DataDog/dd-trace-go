@@ -160,6 +160,13 @@ func refIDs(v reflect.Value, depth int) []unsafe.Pointer {
 		if !v.IsNil() {
 			return refIDs(v.Elem(), depth)
 		}
+	case reflect.Map, reflect.Slice:
+		// A map or slice field is reference-bearing: the map's and the
+		// backing array's addresses differ between two proxies that nothing
+		// else distinguishes.
+		if p := v.UnsafePointer(); p != nil {
+			return []unsafe.Pointer{p}
+		}
 	case reflect.Struct:
 		if depth == 0 {
 			return nil

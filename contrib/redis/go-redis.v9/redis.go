@@ -90,10 +90,18 @@ type wrapEntry struct {
 
 var (
 	// walkWait bounds how long one WrapClient call waits for a concurrent
-	// wrap of the same client: the in-flight call instruments the client,
-	// and a nested call that synchronously waits on it must not be blocked
-	// by it, so the waiter gives up and the in-flight wrap stands.
+	// wrap's walk of the same client before it proceeds without the walk:
+	// the field reads the walk performs are what the guard serializes, and
+	// a user callback that delegates to another goroutine synchronously
+	// waiting on this one must not deadlock against it. The degraded wrap
+	// waits for the in-flight install below instead.
 	walkWait = 2 * time.Second
+	// installWait bounds how long one wrap waits for a concurrent install
+	// of the same client: the in-flight call instruments the client, and
+	// a nested call that synchronously waits on it must not be blocked by
+	// it, so past the bound the waiter returns and the in-flight wrap
+	// stands.
+	installWait = 5 * time.Second
 
 	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
 	// registry updates — hold it; AddHook does not, because it runs
@@ -158,17 +166,21 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// guard serializes the two calls for the whole wrap, AddHook included;
 	// its closer is registered after the warning defer so it releases
 	// before the user logger runs.
+	degraded := false
 	if k, ok := rediswrap.HandleOf(client); ok {
 		release, walked := rediswrap.BeginWalk(k, walkWait)
 		if !walked {
-			// Another wrap of this client is in flight and did not finish
-			// within the wait: it instruments the client — its
-			// configuration stands — and a nested call synchronously
-			// waiting on it (a user callback delegating to another
-			// goroutine) must not block it forever. Nothing is left to do.
-			return
+			// Another wrap of this client is still in flight — its
+			// user-controlled code can take arbitrarily long, and a nested
+			// call synchronously waiting on it must not deadlock. The walk
+			// is what the guard serializes; skip it and proceed degraded:
+			// the client is treated as an opaque proxy, and the wait for
+			// the in-flight install below keeps the caller from returning
+			// before that install has finished or failed.
+			degraded = true
+		} else {
+			defer release()
 		}
-		defer release()
 	}
 
 	// Resolve the concrete clients before taking the package lock: the
@@ -177,12 +189,18 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	// while calling WrapClient (to replace and instrument a delegate, say),
 	// and wrapMu-then-proxy-mutex would then deadlock against
 	// proxy-mutex-then-wrapMu.
-	targets, ok := concreteClients(client)
-	if !ok {
-		// The proxy's mutex stayed held — possibly by this very call chain,
-		// which would deadlock on any further interaction with the proxy.
-		// Do nothing; a wrap after the mutex is released works normally.
-		return
+	var targets []redis.UniversalClient
+	if degraded {
+		targets = nil
+	} else {
+		var ok bool
+		targets, ok = concreteClients(client)
+		if !ok {
+			// The proxy's mutex stayed held — possibly by this very call chain,
+			// which would deadlock on any further interaction with the proxy.
+			// Do nothing; a wrap after the mutex is released works normally.
+			return
+		}
 	}
 
 	wrapMu.Lock()
@@ -269,7 +287,7 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 				unlocked(func() {
 					select {
 					case <-done:
-					case <-time.After(walkWait):
+					case <-time.After(installWait):
 						// The install is still in flight: it instruments
 						// the client, and this call has nothing left to do.
 						timedOut = true
@@ -606,11 +624,23 @@ func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wra
 		// running it — a proxy whose AddHook re-enters WrapClient for that
 		// same proxy would otherwise wait for a channel only that very call
 		// can close. Installs started by other goroutines are still waited
-		// on, so a nested wrap does not return before a concurrent install
-		// has finished.
+		// on — bounded, like every wait a user callback can stretch: a
+		// constructor that delegates to another goroutine synchronously
+		// waiting on this one must not deadlock — so a nested wrap returns
+		// before a concurrent install only past that bound.
 		if e.done != nil && e.goid != rediswrap.Goid() {
 			done := e.done
-			unlocked(func() { <-done })
+			timedOut := false
+			unlocked(func() {
+				select {
+				case <-done:
+				case <-time.After(installWait):
+					timedOut = true
+				}
+			})
+			if timedOut {
+				return nil, false
+			}
 			// The install may have failed and dropped its marker; recheck
 			// instead of returning without a hook.
 			continue
@@ -1237,6 +1267,13 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 		var members []redis.UniversalClient
 		iter := v.MapRange()
 		for iter.Next() {
+			// A client-keyed set — map[redis.UniversalClient]struct{} —
+			// keeps its delegates in the keys; walk them like values.
+			if m, ok := findMembers(iter.Key(), depth-1); !ok {
+				return nil, false
+			} else {
+				members = append(members, m...)
+			}
 			val := iter.Value()
 			if val.Kind() == reflect.Struct && !val.CanAddr() {
 				// A value held in a map is not addressable: an unexported
