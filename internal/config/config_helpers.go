@@ -429,25 +429,6 @@ func samplingRulesBlockedByPrecedence(field string, current, incoming telemetry.
 	return true
 }
 
-// parseGlobalTags parses a DD_TAGS-style string into a tag map, dropping
-// git-metadata tags so they don't leak onto every span. Returns nil when no
-// usable tags remain.
-func parseGlobalTags(v string) map[string]any {
-	if v == "" {
-		return nil
-	}
-	parsed := internal.ParseTagString(v)
-	internal.CleanGitMetadataTags(parsed)
-	if len(parsed) == 0 {
-		return nil
-	}
-	tags := make(map[string]any, len(parsed))
-	for k, val := range parsed {
-		tags[k] = val
-	}
-	return tags
-}
-
 // reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
 func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)

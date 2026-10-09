@@ -6,7 +6,9 @@
 package internal
 
 import (
+	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -162,4 +164,34 @@ func BoolVal(val string, def bool) bool {
 // ExternalEnvironment returns the value of the DD_EXTERNAL_ENV environment variable.
 func ExternalEnvironment() string {
 	return env.Get("DD_EXTERNAL_ENV")
+}
+
+// ParseOTelResourceAttributes parses an OTEL_RESOURCE_ATTRIBUTES value into a map.
+// See ForEachOTelResourceAttribute for the format.
+func ParseOTelResourceAttributes(str string) (map[string]string, error) {
+	attrs := make(map[string]string)
+	err := ForEachOTelResourceAttribute(str, func(key, val string) { attrs[key] = val })
+	return attrs, err
+}
+
+// ForEachOTelResourceAttribute runs fn on every key val pair of an
+// OTEL_RESOURCE_ATTRIBUTES value, parsed like ForEachStringTag with "=" as
+// delimiter, and percent-decodes keys and values. Pairs that fail to decode
+// are passed to fn undecoded and reported in the returned error.
+func ForEachOTelResourceAttribute(str string, fn func(key, val string)) error {
+	var invalid []string
+	ForEachStringTag(str, OtelTagsDelimeter, func(key, val string) {
+		decodedKey, keyErr := url.PathUnescape(key)
+		decodedVal, valErr := url.PathUnescape(val)
+		if keyErr != nil || valErr != nil {
+			invalid = append(invalid, key+OtelTagsDelimeter+val)
+			fn(key, val)
+			return
+		}
+		fn(decodedKey, decodedVal)
+	})
+	if len(invalid) > 0 {
+		return fmt.Errorf("invalid percent encoding in OTEL_RESOURCE_ATTRIBUTES members %q, keeping their raw values", invalid)
+	}
+	return nil
 }

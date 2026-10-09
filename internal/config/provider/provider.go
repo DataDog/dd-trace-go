@@ -31,6 +31,12 @@ type idAwareConfigSource interface {
 	getID() string
 }
 
+// tagsConfigSource is a configSource with its own DD_TAGS syntax.
+type tagsConfigSource interface {
+	configSource
+	getTags() (raw string, tags map[string]string, ok bool)
+}
+
 // Provider resolves configuration values from an ordered list of sources.
 // Sources are listed in descending priority order: the first source wins.
 type Provider struct {
@@ -60,17 +66,29 @@ func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T 
 
 // getWithOrigin is like get but also returns the origin of the winning source.
 func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
+	return resolveWithOrigin(p, key, def, func(source configSource) (string, T, bool) {
+		v := source.get(key)
+		if v == "" {
+			return "", def, false
+		}
+		parsed, ok := parse(v)
+		return v, parsed, ok
+	})
+}
+
+// resolveWithOrigin reports source values and selects the highest-priority valid value.
+func resolveWithOrigin[T any](p *Provider, key string, def T, read func(configSource) (string, T, bool)) (T, telemetry.Origin) {
 	var final *T
 	var winningOrigin telemetry.Origin
 	for _, source := range slices.Backward(p.sources) {
-		v := source.get(key)
+		v, parsed, ok := read(source)
 		if v != "" {
 			var id string
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
 			configtelemetry.ReportWithID(key, v, source.origin(), id)
-			if parsed, ok := parse(v); ok {
+			if ok {
 				final = &parsed
 				winningOrigin = source.origin()
 			}
@@ -215,4 +233,18 @@ func parseMapString(str string, delimiter string) map[string]string {
 		result[key] = val
 	})
 	return result
+}
+
+// GetTagsWithOrigin resolves global tags using the winning source's tag syntax.
+func (p *Provider) GetTagsWithOrigin() (map[string]string, telemetry.Origin) {
+	return resolveWithOrigin(p, "DD_TAGS", map[string]string(nil), func(source configSource) (string, map[string]string, bool) {
+		if s, ok := source.(tagsConfigSource); ok {
+			return s.getTags()
+		}
+		v := source.get("DD_TAGS")
+		if v == "" {
+			return "", nil, false
+		}
+		return v, internal.ParseTagString(v), true
+	})
 }

@@ -225,7 +225,9 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, true, p.GetBool("DD_TRACE_DEBUG", false))
 		assert.Equal(t, 1.0, p.GetFloat("DD_TRACE_SAMPLE_RATE", 0))
 		assert.Equal(t, 1.0, p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0))
-		assert.Equal(t, "key1:value1,key2:value2", p.GetString("DD_TAGS", "key:value"))
+		tags, origin := p.GetTagsWithOrigin()
+		assert.Equal(t, map[string]string{"key1": "value1", "key2": "value2"}, tags)
+		assert.Equal(t, telemetry.OriginEnvVar, origin)
 	})
 	t.Run("Settings only exist in localDeclarativeConfigSource", func(t *testing.T) {
 		const localYaml = `
@@ -376,6 +378,7 @@ func TestProviderTelemetryRegistration(t *testing.T) {
 
 		source := newTestConfigSource(map[string]string{
 			"DD_SERVICE":                       "service",
+			"DD_TAGS":                          "key:value",
 			"DD_TRACE_DEBUG":                   "true",
 			"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": "100",
 			"DD_TRACE_SAMPLE_RATE":             "0.5",
@@ -386,6 +389,7 @@ func TestProviderTelemetryRegistration(t *testing.T) {
 		p := newTestProvider(source)
 
 		_ = p.GetString("DD_SERVICE", "default")
+		_, _ = p.GetTagsWithOrigin()
 		_ = p.GetBool("DD_TRACE_DEBUG", false)
 		_ = p.GetInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 		_ = p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0)
@@ -394,6 +398,7 @@ func TestProviderTelemetryRegistration(t *testing.T) {
 		_ = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "service", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TAGS", "key:value", telemetry.OriginEnvVar, telemetry.EmptyID)))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_DEBUG", "true", telemetry.OriginEnvVar, telemetry.EmptyID)))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "100", telemetry.OriginEnvVar, telemetry.EmptyID)))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_SAMPLE_RATE", "0.5", telemetry.OriginEnvVar, telemetry.EmptyID)))
@@ -538,4 +543,61 @@ apm_configuration_default:
 
 		telemetryClient.AssertExpectations(t)
 	})
+}
+
+func TestGetTagsWithOrigin(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		managed string
+		dd      string
+		otel    string
+		local   string
+		want    map[string]string
+		origin  telemetry.Origin
+	}{
+		{"managed wins", "key:managed%2Cvalue", "key:dd", "key=otel", "key:local", map[string]string{"key": "managed%2Cvalue"}, telemetry.OriginManagedStableConfig},
+		{"DD wins without decoding", "", "key:dd%2Cvalue", "key=otel", "key:local", map[string]string{"key": "dd%2Cvalue"}, telemetry.OriginEnvVar},
+		{"OTel wins, decodes and replaces commas", "", "", "key%2C1=otel%2Cvalue", "key:local", map[string]string{"key_1": "otel_value"}, telemetry.OriginEnvVar},
+		{"invalid OTel members keep valid ones", "", "", "key=otel,invalid,,", "key:local", map[string]string{"key": "otel", "invalid": ""}, telemetry.OriginEnvVar},
+		{"invalid OTel percent encoding keeps raw value", "", "", "key=raw%ZZ,other=v", "key:local", map[string]string{"key": "raw%ZZ", "other": "v"}, telemetry.OriginEnvVar},
+		{"reserved names", "", "", "service.name=svc%2Cname,deployment.environment=prod,service.version=1.0", "", map[string]string{"service": "svc_name", "env": "prod", "version": "1.0"}, telemetry.OriginEnvVar},
+		{"native tag names retain priority", "", "", "service=native,service.name=otel", "", map[string]string{"service": "native"}, telemetry.OriginEnvVar},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DD_TAGS", tt.dd)
+			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", tt.otel)
+			p := newTestProvider(
+				newTestConfigSource(map[string]string{"DD_TAGS": tt.managed}, telemetry.OriginManagedStableConfig),
+				new(envConfigSource),
+				new(otelEnvConfigSource),
+				newTestConfigSource(map[string]string{"DD_TAGS": tt.local}, telemetry.OriginLocalStableConfig),
+			)
+			got, origin := p.GetTagsWithOrigin()
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.origin, origin)
+		})
+	}
+}
+
+func TestGetTagsInvalidOTelTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "key=raw%ZZ")
+	p := newTestProvider(new(otelEnvConfigSource))
+	tags, origin := p.GetTagsWithOrigin()
+	assert.Equal(t, map[string]string{"key": "raw%ZZ"}, tags)
+	assert.Equal(t, telemetry.OriginEnvVar, origin)
+	assert.EqualValues(t, 1, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_tags", "config_opentelemetry:otel_resource_attributes"}).Get())
+}
+
+func TestGetTagsOTelTelemetryValue(t *testing.T) {
+	telemetryClient := new(telemetrytest.MockClient)
+	telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+	defer telemetry.MockClient(telemetryClient)()
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "k=v,service.name=svc")
+	p := newTestProvider(new(otelEnvConfigSource))
+	_, _ = p.GetTagsWithOrigin()
+	telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TAGS", "service:svc,k:v", telemetry.OriginEnvVar, telemetry.EmptyID)))
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
@@ -2212,4 +2213,37 @@ func TestFlaggingProviderInitTimeout(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
 		})
 	}
+}
+
+func TestParseOTelResourceAttributes(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		input string
+		want  map[string]string
+	}{
+		{"empty", "", map[string]string{}},
+		{"single attribute", "key=value", map[string]string{"key": "value"}},
+		{"multiple attributes", "key1=value1,key2=value2,key3=value3", map[string]string{"key1": "value1", "key2": "value2", "key3": "value3"}},
+		{"dots underscores and dashes", "service.name=my-service,host_name=my-host,key=value-with-dash_and_underscore.and.dot", map[string]string{"service.name": "my-service", "host_name": "my-host", "key": "value-with-dash_and_underscore.and.dot"}},
+		{"whitespace", " key = value , empty=", map[string]string{"key": "value", "empty": ""}},
+		{"decode keys and values once", "key%2C%3D=comma%2Cequals%3Dplus+percent%252C", map[string]string{"key,=": "comma,equals=plus+percent%2C"}},
+		{"encoded spaces", "key=%20value%20", map[string]string{"key": " value "}},
+		{"duplicate", "key=first,key=last", map[string]string{"key": "last"}},
+		{"member without value", "key=value,invalid", map[string]string{"key": "value", "invalid": ""}},
+		{"empty key skipped", "key=value,=invalid", map[string]string{"key": "value"}},
+		{"empty members skipped", "key=value,, ,", map[string]string{"key": "value"}},
+		{"unencoded equals in value", "key=unencoded=equals", map[string]string{"key": "unencoded=equals"}},
+		{"space separated", "key1=value1 key2=value2", map[string]string{"key1": "value1", "key2": "value2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := internal.ParseOTelResourceAttributes(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+	t.Run("invalid percent encoding keeps raw values", func(t *testing.T) {
+		got, err := internal.ParseOTelResourceAttributes("key=value,bad%ZZ=value,bad=%ZZ")
+		assert.ErrorContains(t, err, `["bad%ZZ=value" "bad=%ZZ"]`)
+		assert.Equal(t, map[string]string{"key": "value", "bad%ZZ": "value", "bad": "%ZZ"}, got)
+	})
 }

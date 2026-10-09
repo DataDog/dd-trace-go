@@ -138,20 +138,25 @@ func TestValidateSendRetries(t *testing.T) {
 	}
 }
 
-func TestParseGlobalTags(t *testing.T) {
+func TestGlobalTags(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
+		otel string
 		want map[string]any
 	}{
-		{"empty string returns nil", "", nil},
-		{"normal tag parsed", "k:v", map[string]any{"k": "v"}},
-		{"only git metadata cleaned to nil", "git.repository_url:x", nil},
-		{"git metadata stripped, normal tags kept", "k:v,git.commit.sha:abc", map[string]any{"k": "v"}},
+		{"empty string returns nil", "", "", nil},
+		{"normal tag parsed", "k:v", "", map[string]any{"k": "v"}},
+		{"only git metadata cleaned to nil", "git.repository_url:x", "", nil},
+		{"git metadata stripped, normal tags kept", "k:v,git.commit.sha:abc", "", map[string]any{"k": "v"}},
+		{"OTel git metadata stripped, reserved names mapped", "", "k=v,git.commit.sha=abc,service.name=svc", map[string]any{"k": "v", "service": "svc"}},
+		{"DD_TAGS wins over OTel", "k:dd", "k=otel,other=v", map[string]any{"k": "dd"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, parseGlobalTags(tt.in))
+			t.Setenv("DD_TAGS", tt.in)
+			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", tt.otel)
+			assert.Equal(t, tt.want, CreateNew().GlobalTags())
 		})
 	}
 }

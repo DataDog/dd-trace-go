@@ -54,9 +54,9 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// Parse OTEL_RESOURCE_ATTRIBUTES
-	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
-		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
+	otelAttrs, err := internal.ParseOTelResourceAttributes(env.Get(envOtelResourceAttributes))
+	if err != nil {
+		log.Warn("%s", err.Error())
 	}
 
 	// 1. Service name priority: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
@@ -218,14 +218,4 @@ func hostname(otelAttrs map[string]string) (string, bool) {
 
 	// No hostname could be determined
 	return "", false
-}
-
-// parseOtelResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES string into a map.
-// Format: key1=value1,key2=value2
-func parseOtelResourceAttributes(str string) map[string]string {
-	res := make(map[string]string)
-	internal.ForEachStringTag(str, internal.OtelTagsDelimeter, func(key, val string) {
-		res[key] = val
-	})
-	return res
 }
