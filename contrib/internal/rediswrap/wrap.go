@@ -450,9 +450,18 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			if _, dup := taken[f.UnsafePointer()]; dup {
 				continue
 			}
+			// An RWMutex guards its fields against writers: a read lock
+			// excludes them — the updates that race a field walk — while
+			// allowing other readers, a caller holding its own read lock
+			// included. An exclusive TryLock would report contention for
+			// as long as any reader runs, and the walk would give up.
+			acquire, release := "TryLock", "Unlock"
+			if t == rwMutexPointerType {
+				acquire, release = "TryRLock", "RUnlock"
+			}
 			var locked bool
 			for range 100 {
-				if f.MethodByName("TryLock").Call(nil)[0].Bool() {
+				if f.MethodByName(acquire).Call(nil)[0].Bool() {
 					locked = true
 					break
 				}
@@ -465,7 +474,7 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 				return func() {}, false
 			}
 			taken[f.UnsafePointer()] = struct{}{}
-			unlocks = append(unlocks, func() { f.MethodByName("Unlock").Call(nil) })
+			unlocks = append(unlocks, func() { f.MethodByName(release).Call(nil) })
 			continue
 		}
 		if !f.CanAddr() {
@@ -483,9 +492,16 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 		if _, dup := taken[f.Addr().UnsafePointer()]; dup {
 			continue
 		}
+		// An RWMutex value guards its fields against writers: read-locked
+		// like its pointer counterpart, so a caller's own read lock does
+		// not read as contention.
+		acquire, release := "TryLock", "Unlock"
+		if t == rwMutexType {
+			acquire, release = "TryRLock", "RUnlock"
+		}
 		var locked bool
 		for range 100 {
-			if f.Addr().MethodByName("TryLock").Call(nil)[0].Bool() {
+			if f.Addr().MethodByName(acquire).Call(nil)[0].Bool() {
 				locked = true
 				break
 			}
@@ -498,11 +514,7 @@ func LockStruct(s reflect.Value) (unlock func(), ok bool) {
 			return func() {}, false
 		}
 		taken[f.Addr().UnsafePointer()] = struct{}{}
-		if t == rwMutexType {
-			unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
-		} else {
-			unlocks = append(unlocks, func() { f.Addr().MethodByName("Unlock").Call(nil) })
-		}
+		unlocks = append(unlocks, func() { f.Addr().MethodByName(release).Call(nil) })
 	}
 	return func() {
 		for _, u := range unlocks {

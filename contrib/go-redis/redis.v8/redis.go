@@ -104,7 +104,7 @@ var (
 	// a nested call that synchronously waits on it must not be blocked by
 	// it, so past the bound the waiter returns and the in-flight wrap
 	// stands.
-	installWait = 5 * time.Second
+	installWait = 30 * time.Second
 
 	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
 	// registry updates — hold it; AddHook does not, because it runs
@@ -152,7 +152,14 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
+	wrap(client, cfg)
+}
 
+// wrap instruments client with the resolved cfg. It is the body of
+// WrapClient below option resolution, so an installation retried after a
+// failed concurrent one keeps the original call's configuration — user
+// callback included.
+func wrap(client redis.UniversalClient, cfg *clientConfig) {
 	// Warnings are emitted after the lock is released: a custom logger is
 	// user-controlled code — like a proxy's AddHook — and may call WrapClient
 	// again from its Log method.
@@ -418,7 +425,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		}
 	}
 
-	entry, proceed := begin(proxy, cfg.key(), warn)
+	entry, proceed := begin(proxy, cfg, cfg.key(), warn)
 	if !proceed {
 		// This proxy was observed by an earlier wrap: hooks cannot be
 		// removed, so its outcome stands.
@@ -605,7 +612,7 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 // already exists: its configuration is kept and, if the recorded install is
 // still in flight, this call waits for it to finish. The caller must hold
 // wrapMu.
-func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wrapEntry, proceed bool) {
+func begin(client redis.UniversalClient, cfg *clientConfig, key configKey, warn func()) (entry *wrapEntry, proceed bool) {
 	k, ok := rediswrap.HandleOf(client)
 	if !ok {
 		return nil, true
@@ -641,6 +648,21 @@ func begin(client redis.UniversalClient, key configKey, warn func()) (entry *wra
 				}
 			})
 			if timedOut {
+				// The install is still in flight past the bound. This call
+				// cannot wait for it — a constructor that delegates to a
+				// goroutine synchronously waiting on this one would
+				// deadlock — but a background watcher can: it lets the
+				// original install finish, and retries this wrap only if
+				// that install failed and dropped its entry.
+				go func() {
+					<-done
+					wrapMu.Lock()
+					_, kept := wrapped[k]
+					wrapMu.Unlock()
+					if !kept {
+						wrap(client, cfg)
+					}
+				}()
 				return nil, false
 			}
 			// The install may have failed and dropped its marker; recheck

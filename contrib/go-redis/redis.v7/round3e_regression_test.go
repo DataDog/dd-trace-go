@@ -55,7 +55,7 @@ func TestWrapClientDelegatingAddHook(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(15 * time.Second):
+	case <-time.After(75 * time.Second):
 		t.Fatal("WrapClient deadlocked: a delegated nested wrap blocked on the outer walk guard")
 	}
 

@@ -52,28 +52,26 @@ var (
 	// every Redis command would emit one duplicate span per extra wrapper.
 	wrapped = map[weak.Pointer[redis.Client]]*clientConfig{}
 
-	// tracedCmds marks the commands a datadog process wrapper is currently
-	// driving through a client's process chain, so the chain's own datadog
-	// wrapper does not start another span for them: a command through a
-	// traced handle would otherwise be traced once by the handle's wrapper
-	// — with the caller's context — and once more by the chain's wrapper,
-	// with the client's context. go-redis v6 process wrappers receive no
-	// context and no chain identity, so the mark is scoped by the command
-	// object alone: a user wrapper that forwards the same command object to
-	// a second wrapped client within one invocation suppresses that
-	// client's span. The key is the command's dynamic type and the
-	// interface data word — the command itself when it is pointer-shaped,
-	// a pointer to its interface copy otherwise — so a command that cannot
-	// be compared, holding a map or a slice, is deduplicated like any
-	// other, and commands of different types never collide on a shared
-	// boxing address. Two commands whose interface values are bit-identical
-	// — equal values that share the runtime's static boxing storage, or a
-	// zero-sized value — are one command as far as any value the public API
-	// exposes can tell, and deduplicate like the equal commands the
-	// original value-keyed mark always did. The hook-based integrations
-	// deduplicate by reading hook chains instead, but v6 has no hook chain
-	// to read.
-	tracedCmds sync.Map // cmdKey -> struct{}
+	// tracedStacks marks, per goroutine, the commands a datadog process
+	// wrapper further out on that goroutine is currently driving, so the
+	// chain's own datadog wrapper does not start another span for them: a
+	// command through a traced handle would otherwise be traced once by the
+	// handle's wrapper — with the caller's context — and once more by the
+	// chain's wrapper, with the client's context. A process chain is one
+	// call chain, so the wrappers of one command run on one goroutine and
+	// the mark is goroutine-scoped: concurrent commands on other
+	// goroutines never collide with it, however equal their values — two
+	// equal value commands are separate operations and each traces once.
+	// A user wrapper that forwards the same command to a second wrapped
+	// client within one invocation suppresses that client's span, as it
+	// always did. The key is the command's dynamic type and the interface
+	// data word — the command itself when it is pointer-shaped, a pointer
+	// to its interface copy otherwise — so a command that cannot be
+	// compared, holding a map or a slice, is deduplicated like any other,
+	// and commands of different types never collide on a shared boxing
+	// address. The hook-based integrations deduplicate by reading hook
+	// chains instead, but v6 has no hook chain to read.
+	tracedStacks sync.Map // goid -> *[]cmdKey
 )
 
 // cmdKey identifies a command value: its dynamic type and the interface's
@@ -90,6 +88,54 @@ type cmdKey struct {
 
 func newCmdKey(cmd redis.Cmder) cmdKey {
 	return cmdKey{typ: reflect.TypeOf(cmd), word: (*[2]unsafe.Pointer)(unsafe.Pointer(&cmd))[1]}
+}
+
+// pushTraced records that this goroutine's outermost running datadog
+// wrapper is driving the command keyed by key, and returns the function
+// that retires it once the command returns. The stack is per goroutine:
+// only the wrappers of this goroutine's own call chain see it.
+func pushTraced(key cmdKey) func() {
+	id := goid()
+	var p *[]cmdKey
+	if v, ok := tracedStacks.Load(id); ok {
+		p = v.(*[]cmdKey)
+	} else {
+		p = &[]cmdKey{}
+		tracedStacks.Store(id, p)
+	}
+	*p = append(*p, key)
+	return func() {
+		*p = (*p)[:len(*p)-1]
+	}
+}
+
+// tracedOuter reports whether a datadog wrapper further out on this
+// goroutine is currently driving the command keyed by key.
+func tracedOuter(key cmdKey) bool {
+	v, ok := tracedStacks.Load(goid())
+	if !ok {
+		return false
+	}
+	p := v.(*[]cmdKey)
+	return len(*p) > 0 && (*p)[len(*p)-1] == key
+}
+
+// goid returns the current goroutine's id.
+func goid() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	// The first line reads "goroutine 123 [running]:".
+	if len(b) < 11 || string(b[:10]) != "goroutine " {
+		return 0
+	}
+	var id uint64
+	for _, c := range b[10:] {
+		if c < '0' || c > '9' {
+			break
+		}
+		id = id*10 + uint64(c-'0')
+	}
+	return id
 }
 
 // currentProcess returns the client's current process chain, read through
@@ -362,13 +408,14 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 		}
 		return func(cmd redis.Cmder) error {
 			key := newCmdKey(cmd)
-			if _, traced := tracedCmds.Load(key); traced {
-				// A datadog wrapper further out is driving this command and
-				// already started its span for it; see tracedCmds.
+			if tracedOuter(key) {
+				// A datadog wrapper further out on this goroutine is driving
+				// this command and already started its span for it; see
+				// tracedStacks.
 				return tc.process(cmd)
 			}
-			tracedCmds.Store(key, struct{}{})
-			defer tracedCmds.Delete(key)
+			pop := pushTraced(key)
+			defer pop()
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")

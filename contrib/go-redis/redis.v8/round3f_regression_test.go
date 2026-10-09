@@ -7,9 +7,12 @@ package redis
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -147,4 +150,140 @@ func TestWrapClientWaitsOutSlowInstall(t *testing.T) {
 		t.Fatalf("expected the command to be traced once the wrap returned, got %d spans", len(spans))
 	}
 	<-done
+}
+
+// readerHeldProxy guards its fields with a value RWMutex, read-locked by
+// the caller while it wraps.
+type readerHeldProxy struct {
+	goredis.UniversalClient
+	mu sync.RWMutex
+}
+
+func (r *readerHeldProxy) AddHook(hook goredis.Hook) {
+	r.UniversalClient.AddHook(hook)
+}
+
+// A read lock held by the calling goroutine — a proxy method wrapping from
+// inside its own reader — must not read as contention: the walk takes a
+// read lock alongside it and the member is still instrumented.
+func TestWrapClientUnderHeldReadLock(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	proxy := &readerHeldProxy{UniversalClient: member}
+
+	proxy.mu.RLock()
+	defer proxy.mu.RUnlock()
+	WrapClient(proxy)
+
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected the member to be instrumented under the held read lock, got %d hooks", n)
+	}
+	_ = member.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}
+
+// ptrReaderHeldProxy guards its fields with a pointer RWMutex, read-locked
+// by the caller while it wraps.
+type ptrReaderHeldProxy struct {
+	goredis.UniversalClient
+	mu *sync.RWMutex
+}
+
+func (r *ptrReaderHeldProxy) AddHook(hook goredis.Hook) {
+	r.UniversalClient.AddHook(hook)
+}
+
+func TestWrapClientUnderHeldPtrReadLock(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	mu := &sync.RWMutex{}
+	proxy := &ptrReaderHeldProxy{UniversalClient: member, mu: mu}
+
+	mu.RLock()
+	defer mu.RUnlock()
+	WrapClient(proxy)
+
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected the member to be instrumented under the held read lock, got %d hooks", n)
+	}
+}
+
+// slowPanickingAfterBoundProxy's first AddHook outlasts the install wait
+// and then panics, so a concurrent wrap's wait times out before it can see
+// the failure: the background watcher retries the installation, and the
+// retry's AddHook succeeds.
+type slowPanickingAfterBoundProxy struct {
+	goredis.UniversalClient
+	started chan struct{}
+	once    sync.Once
+	boom    atomic.Bool
+}
+
+func (r *slowPanickingAfterBoundProxy) AddHook(hook goredis.Hook) {
+	r.once.Do(func() { close(r.started) })
+	if r.boom.CompareAndSwap(true, false) {
+		time.Sleep(33 * time.Second)
+		panic("constructor boom")
+	}
+	r.UniversalClient.AddHook(hook)
+}
+
+func TestWrapClientWatcherRetriesFailedInstall(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	started := make(chan struct{})
+	proxy := &slowPanickingAfterBoundProxy{UniversalClient: member, started: started}
+	proxy.boom.Store(true)
+
+	go func() {
+		defer func() { _ = recover() }()
+		WrapClient(proxy)
+	}()
+	<-started // the slow install is in flight, guard and entry held
+
+	// The waiter outlasts the install wait and returns; the watcher retries
+	// once the original install panics and drops its entry. The retry
+	// settles an entry for the proxy — wait for it before reading the
+	// member's chain, so the read does not race the retry's writes.
+	WrapClient(proxy)
+
+	k, _ := rediswrap.HandleOf(proxy)
+	deadline := time.After(60 * time.Second)
+	for {
+		wrapMu.Lock()
+		e, ok := wrapped[k]
+		settled := ok && e.done == nil
+		wrapMu.Unlock()
+		if settled {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the watcher never retried the failed install")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after the retry, got %d", n)
+	}
 }

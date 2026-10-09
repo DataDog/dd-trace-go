@@ -90,3 +90,68 @@ func TestWrapClientDistinctPointerShapedCmds(t *testing.T) {
 		t.Fatalf("expected one span per command, got %d", len(spans))
 	}
 }
+
+// Two distinct commands whose interface values are bit-identical — equal
+// values of the same type, processed concurrently on different goroutines —
+// are separate operations and must each trace once: the deduplication mark
+// is scoped to the goroutine of the call chain that drives one command.
+func TestWrapClientConcurrentEqualCmds(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	clientA := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { clientA.Close() })
+	clientB := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { clientB.Close() })
+
+	underlying := redis.NewStringCmd("get", "foo")
+	cmdA := boxCmdA{StringCmd: underlying}
+	cmdB := boxCmdA{StringCmd: underlying}
+
+	arrived := make(chan struct{}, 2)
+	releaseA := make(chan struct{})
+	releaseB := make(chan struct{})
+	wrapA := func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			arrived <- struct{}{}
+			<-releaseA
+			return old(cmd)
+		}
+	}
+	wrapB := func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			arrived <- struct{}{}
+			<-releaseB
+			return old(cmd)
+		}
+	}
+	clientA.WrapProcess(wrapA)
+	clientB.WrapProcess(wrapB)
+
+	cloneA := WrapClient(clientA).WithContext(context.Background())
+	cloneB := WrapClient(clientB).WithContext(context.Background())
+
+	doneA := make(chan struct{})
+	doneB := make(chan struct{})
+	go func() {
+		_ = cloneA.Process(cmdA)
+		close(doneA)
+	}()
+	<-arrived
+	go func() {
+		_ = cloneB.Process(cmdB)
+		close(doneB)
+	}()
+	<-arrived
+	close(releaseA)
+	<-doneA
+	close(releaseB)
+	<-doneB
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected one span per command, got %d", len(spans))
+	}
+}
