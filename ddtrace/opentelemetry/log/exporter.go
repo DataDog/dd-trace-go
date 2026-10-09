@@ -465,7 +465,7 @@ func resolveHeaders() map[string]string {
 }
 
 // parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed, invalid entries (no '=') are silently ignored
+// Spaces are trimmed and values are percent-decoded; invalid entries are ignored.
 func parseHeaders(str string) map[string]string {
 	headers := make(map[string]string)
 	for entry := range strings.SplitSeq(str, ",") {
@@ -479,7 +479,10 @@ func parseHeaders(str string) map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
+		val, err := url.PathUnescape(strings.TrimSpace(parts[1]))
+		if err != nil {
+			continue
+		}
 		if key != "" {
 			headers[key] = val
 		}

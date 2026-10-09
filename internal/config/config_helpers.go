@@ -385,9 +385,8 @@ func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpTracesPath).String()
 }
 
-// buildOTLPHeaders builds the OTLP headers map from the provided map.
-// It adds the Content-Type header if not present.
-func buildOTLPHeaders(headers map[string]string) map[string]string {
+// buildOTLPTraceHeaders sets the Content-Type required for OTLP trace export.
+func buildOTLPTraceHeaders(headers map[string]string) map[string]string {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
@@ -481,6 +480,20 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpMetricsPath).String()
+}
+
+// decodeOTLPHeaders decodes values after splitting header entries so escaped separators
+// stay in the value. PathUnescape preserves literal '+' characters.
+func decodeOTLPHeaders(headers map[string]string) map[string]string {
+	for key, value := range headers {
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			delete(headers, key)
+			continue
+		}
+		headers[key] = decoded
+	}
+	return headers
 }
 
 // mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
