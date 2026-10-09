@@ -49,6 +49,11 @@ func New() *Provider {
 	}
 }
 
+// NewEnvironment resolves existing environment-only consumers without enabling declarative sources.
+func NewEnvironment() *Provider {
+	return &Provider{sources: []configSource{new(envConfigSource)}}
+}
+
 // get is the core resolution helper shared by all typed getters.
 // It iterates sources in reverse priority order so that higher-priority sources
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
