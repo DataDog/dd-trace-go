@@ -61,13 +61,7 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	if ciVisibilityActiveForMockTracer() && !civisibility.IsTestMode() {
-		// If CI Visibility is enabled (and we are not in a CI Visibility testing mode), we need to use the CIVisibilityMockTracer
-		// to bypass the CI Visibility spans from the mocktracer.
-		// This supports the scenario where the mocktracer is used in a test (we need to keep reporting test spans)
-		t := newCIVisibilityMockTracer()
-		// Set the global tracer to the mock tracer without stopping the old one (inside the mock tracer)
-		internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
-		return t
+		return startCIVisibilityMockTracer()
 	}
 
 	var t tracer.Tracer = newMockTracer()
@@ -127,8 +121,12 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	// N.b.: The main reason for this call is to make TestTracerStop pass.
-	internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
+	// An old handle may outlive CI initialization or another mock. It owns its
+	// processor, but may only deactivate the global slot while it still owns it.
+	current := internal.SnapshotGlobalTracer[tracer.Tracer]()
+	if current.Tracer() == t {
+		current.Replace(&tracer.NoopTracer{})
+	}
 	t.dsmProcessor.Stop()
 }
 

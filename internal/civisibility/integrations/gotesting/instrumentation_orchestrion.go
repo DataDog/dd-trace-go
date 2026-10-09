@@ -196,7 +196,7 @@ func instrumentTestingTFuncWithSourceOptions(
 		fReflect := reflect.Indirect(reflect.ValueOf(f))
 		sourceFunc = runtime.FuncForPC(fReflect.Pointer())
 	}
-	moduleName, suiteName := utils.GetModuleAndSuiteName(sourceFunc.Entry())
+	callbackModuleName, callbackSuiteName := utils.GetModuleAndSuiteName(sourceFunc.Entry())
 	originalFunc := sourceFunc
 
 	// Avoid instrumenting twice
@@ -207,6 +207,9 @@ func instrumentTestingTFuncWithSourceOptions(
 	}
 
 	instrumentedFn := func(t *testing.T) {
+		moduleName := callbackModuleName
+		suiteName := callbackSuiteName
+
 		// Check if we have testify suite data related to this test
 		testifyData := getTestifyTest(t)
 		if testifyData != nil {
@@ -225,6 +228,10 @@ func instrumentTestingTFuncWithSourceOptions(
 			testPrivateFields = getTestPrivateFields(t)
 			if testPrivateFields != nil && testPrivateFields.parent != nil {
 				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
+			}
+			if testifyData == nil {
+				moduleName = subtestModuleName(moduleName, parentExecMeta)
+				subtestIdentity.ModuleName = moduleName
 			}
 
 			settings := integrations.GetSettings()
@@ -432,6 +439,16 @@ func instrumentTestingTFuncWithSourceOptions(
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return instrumentedFn
+}
+
+// subtestModuleName keeps subtests in the module of the test binary that owns
+// them. The callback can live in an imported production helper package, while
+// the suite continues to identify the callback's source file.
+func subtestModuleName(callbackModuleName string, parentExecMeta *testExecutionMetadata) string {
+	if parentExecMeta == nil || parentExecMeta.identity == nil || parentExecMeta.identity.ModuleName == "" {
+		return callbackModuleName
+	}
+	return parentExecMeta.identity.ModuleName
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span

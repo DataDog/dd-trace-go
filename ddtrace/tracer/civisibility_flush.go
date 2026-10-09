@@ -13,8 +13,8 @@ func installCIVisibilityFlushHandler(globalTracer Tracer) {
 	switch t := globalTracer.(type) {
 	case *tracer:
 		t.flushHandler = t.ciVisibilityFlushHandler
-	case *ciVisibilityNoopTracer:
-		installCIVisibilityFlushHandler(t.Tracer)
+	case *ciVisibilityTracerRouter:
+		installCIVisibilityFlushHandler(t.ciVisibilityTracer())
 	}
 }
 

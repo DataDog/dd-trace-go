@@ -10,10 +10,7 @@ package tracer
 func setGlobalTracerWithCIVisibility(globalTracer Tracer, ciVisibilityEnabled bool) {
 	if ciVisibilityEnabled {
 		installCIVisibilityFlushHandler(globalTracer)
-		if current, ok := getGlobalTracer().(interface{ SetCIVisibilityTracer(Tracer) bool }); ok && current.SetCIVisibilityTracer(globalTracer) {
-			return
-		}
 	}
 
-	setGlobalTracer(globalTracer)
+	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
 }

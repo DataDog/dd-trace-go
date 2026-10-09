@@ -10,13 +10,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 func TestFixtureChildProcess(t *testing.T) {
@@ -29,8 +35,62 @@ func TestFixtureChildProcess(t *testing.T) {
 	case "command-block":
 		fmt.Println("FIXTURE_CHILD_READY")
 		select {}
+	case "command-settings":
+		client := net.NewClientWithServiceName("fuzz-fixture-cache")
+		if client == nil {
+			t.Fatal("missing fixture client")
+		}
+		settings, err := client.GetSettings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("FIXTURE_TEST_MANAGEMENT=%t\n", settings.TestManagement.Enabled)
 	default:
 		t.Skip("subprocess entrypoint")
+	}
+}
+
+func TestFixtureChildReadCacheIsolation(t *testing.T) {
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var managed atomic.Bool
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/libraries/tests/services/setting" {
+			http.NotFound(w, r)
+			return
+		}
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":{"type":"ci_app_libraries_tests_settings","attributes":{"test_management":{"enabled":%t}}}}`, managed.Load())
+	}))
+	defer server.Close()
+
+	// A recycled mock address has the same read-cache key, even when the next
+	// fixture serves different directives. Both children must read fresh data.
+	cacheRoot := t.TempDir()
+	t.Setenv("HOME", filepath.Join(cacheRoot, "home"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(cacheRoot, "xdg"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(cacheRoot, "local"))
+	t.Setenv("DD_CIVISIBILITY_AGENTLESS_ENABLED", "true")
+	t.Setenv("DD_CIVISIBILITY_AGENTLESS_URL", server.URL)
+	t.Setenv("DD_API_KEY", "fixture-api-key")
+	t.Setenv("DD_GIT_REPOSITORY_URL", "https://github.com/DataDog/dd-trace-go.git")
+	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
+	t.Setenv("DD_GIT_BRANCH", "main")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=command-settings")
+	for _, enabled := range []bool{false, true} {
+		managed.Store(enabled)
+		output, err := runFixtureChild(binary, childEnv, "-test.run=^TestFixtureChildProcess$")
+		if err != nil || !strings.Contains(string(output), fmt.Sprintf("FIXTURE_TEST_MANAGEMENT=%t", enabled)) {
+			t.Fatalf("test management=%t: exit=%v; output: %s", enabled, err, output)
+		}
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("settings requests=%d, want 2", requests.Load())
 	}
 }
 
