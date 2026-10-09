@@ -656,7 +656,7 @@ func datadogHooks(client *redis.Client) int {
 	hooks := hookSlice(client)
 	n := 0
 	for i := 0; i < hooks.Len(); i++ {
-		if _, ok := hooks.Index(i).Interface().(*datadogHook); ok {
+		if _, ok := reflect.TypeAssert[*datadogHook](hooks.Index(i)); ok {
 			n++
 		}
 	}

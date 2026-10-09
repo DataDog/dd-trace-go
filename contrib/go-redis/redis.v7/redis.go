@@ -899,7 +899,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 	case reflect.Slice, reflect.Array:
 		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 			for j := 0; j < v.Len(); j++ {
-				if h, ok := v.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+				if h, ok := reflect.TypeAssert[redis.Hook](v.Index(j)); ok && hookEqual(h, hook) {
 					return true, true
 				}
 			}
@@ -920,7 +920,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 			iter := v.MapRange()
 			for iter.Next() {
-				if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+				if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
 					return true, true
 				}
 			}
@@ -947,7 +947,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if v.Type().Key() == reflect.TypeFor[redis.Hook]() {
 			iter := v.MapRange()
 			for iter.Next() {
-				if h, ok := iter.Key().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+				if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
 					return true, true
 				}
 			}
@@ -969,7 +969,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		}
 		// The interface may be the stored hook itself — hook *redis.Hook
 		// unwraps to the value the pointer holds.
-		if h, ok := v.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+		if h, ok := reflect.TypeAssert[redis.Hook](v); ok && hookEqual(h, hook) {
 			return true, true
 		}
 		// The indirection consumes the limit: a cycle alternating
@@ -1010,7 +1010,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 		}
 		switch f.Kind() {
 		case reflect.Interface:
-			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+			if h, ok := reflect.TypeAssert[redis.Hook](f); ok && hookEqual(h, hook) {
 				return true, true
 			}
 			// An interface-backed container — a slice, array, map, or struct
@@ -1028,7 +1028,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			// the unnamed slice.
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
-					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](f.Index(j)); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1047,7 +1047,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				iter := f.MapRange()
 				for iter.Next() {
-					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1073,7 +1073,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			if f.Type().Key() == reflect.TypeFor[redis.Hook]() {
 				iter := f.MapRange()
 				for iter.Next() {
-					if h, ok := iter.Key().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1145,7 +1145,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 		}
 		switch f.Kind() {
 		case reflect.Interface:
-			if h, ok := f.Interface().(redis.Hook); ok && hookEqual(h, hook) {
+			if h, ok := reflect.TypeAssert[redis.Hook](f); ok && hookEqual(h, hook) {
 				return true, true
 			}
 			// An interface-backed container — a slice, array, map, or struct
@@ -1163,7 +1163,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			// the unnamed slice.
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				for j := 0; j < f.Len(); j++ {
-					if h, ok := f.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](f.Index(j)); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1182,7 +1182,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
 				iter := f.MapRange()
 				for iter.Next() {
-					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1208,7 +1208,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			if f.Type().Key() == reflect.TypeFor[redis.Hook]() {
 				iter := f.MapRange()
 				for iter.Next() {
-					if h, ok := iter.Key().Interface().(redis.Hook); ok && hookEqual(h, hook) {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
 						return true, true
 					}
 				}
@@ -1324,7 +1324,7 @@ func datadogConfig(client redis.UniversalClient) (key *configKey, seen bool) {
 		return nil, false
 	}
 	for i := 0; i < hooks.Len(); i++ {
-		if ddh, ok := hooks.Index(i).Interface().(*datadogHook); ok {
+		if ddh, ok := reflect.TypeAssert[*datadogHook](hooks.Index(i)); ok {
 			k := ddh.params.config.key()
 			return &k, true
 		}
@@ -1464,7 +1464,7 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 		if v.IsNil() {
 			return nil, true
 		}
-		if u, ok := v.Interface().(redis.UniversalClient); ok {
+		if u, ok := reflect.TypeAssert[redis.UniversalClient](v); ok {
 			return []redis.UniversalClient{u}, true
 		}
 		return findMembers(v.Elem(), depth-1)
@@ -1512,7 +1512,7 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 		}
 		// A pointer field that is itself a client — *redis.Client — is a
 		// member, not a holder; a pointer to a holder struct descends.
-		if u, ok := v.Interface().(redis.UniversalClient); ok {
+		if u, ok := reflect.TypeAssert[redis.UniversalClient](v); ok {
 			return []redis.UniversalClient{u}, true
 		}
 		// Any other pointee may still be a holder: a pointer to a client
@@ -1626,7 +1626,7 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 				}
 				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
 			}
-			field, ok := f.Interface().(redis.UniversalClient)
+			field, ok := reflect.TypeAssert[redis.UniversalClient](f)
 			if ok {
 				walk(field, depth-1)
 				continue

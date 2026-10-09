@@ -173,7 +173,7 @@ func currentProcess(c *redis.Client) func(cmd redis.Cmder) error {
 		// Unexported field: read it through its address.
 		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
 	}
-	process, _ := v.Interface().(func(cmd redis.Cmder) error)
+	process, _ := reflect.TypeAssert[func(cmd redis.Cmder) error](v)
 	return process
 }
 
