@@ -77,7 +77,7 @@ The basic shape: private field on `Config`, initialized in `loadConfig()` via th
 
 ## Chip away during every migration
 
-- `ddtrace/tracer/telemetry.go:startTelemetry` already carries a TODO for full deletion. Its `telemetryConfigs` slice lists each field the tracer explicitly reports on startup; `configtelemetry` inside `internal/config` already reports the field automatically from the setter. **Remove the migrated field's line from that slice in the same PR.**
+- Source packages report their config to telemetry by hand (e.g. `startTelemetry` in `ddtrace/tracer` or `profiler`, `registerTelemetry` in `ddtrace/opentelemetry/log` or `ddtrace/opentelemetry/metric`); `internal/config` already reports migrated fields automatically. **Remove the migrated field's manual reporting from the source package in the same PR.**
 - `globalconfig` is targeted for full deletion, but it's a cross-package shared store: a field can only be removed once *all* packages reading or writing it have migrated. Don't add to it. When you migrate the last caller for a given field, remove that field from `globalconfig` in the same PR.
 
 ## Hot path notes

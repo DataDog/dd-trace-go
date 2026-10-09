@@ -95,8 +95,10 @@ the PR doesn't introduce new validator/helper logic there. Nit.
 
 References `config-migration`'s "Chip away" section. Flag:
 
-- The migrated field's manual reporting still present in `ddtrace/tracer/telemetry.go`'s
-  `startTelemetry`/`telemetryConfigs`, when the provider now auto-reports it.
+- The migrated field's manual reporting still present in the source package (e.g.
+  `startTelemetry` in `ddtrace/tracer` or `profiler`, `registerTelemetry` in
+  `ddtrace/opentelemetry/log` or `ddtrace/opentelemetry/metric`), when the provider now
+  auto-reports it.
 - A leftover explanatory comment on an already-established deletion pattern.
 
 Blocking (dead/duplicate telemetry) unless trivially cosmetic.
