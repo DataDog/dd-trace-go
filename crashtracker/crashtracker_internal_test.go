@@ -82,3 +82,32 @@ func TestDefaultConfigParsesDDTags(t *testing.T) {
 		t.Errorf("defaultConfig().version = %q, want %q", cfg.version, "1.2.3")
 	}
 }
+
+// TestDefaultConfigEnabledGate proves crashtracking is opt-in: it stays off
+// unless DD_CRASHTRACKING_ENABLED is true. Start is a no-op when it is off.
+func TestDefaultConfigEnabledGate(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  bool
+	}{
+		{name: "unset", set: false, want: false},
+		{name: "true", value: "true", set: true, want: true},
+		{name: "false", value: "false", set: true, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Register restoration, then unset for the unset case.
+			t.Setenv("DD_CRASHTRACKING_ENABLED", tc.value)
+			if !tc.set {
+				if err := os.Unsetenv("DD_CRASHTRACKING_ENABLED"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := defaultConfig().enabled; got != tc.want {
+				t.Errorf("defaultConfig().enabled = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

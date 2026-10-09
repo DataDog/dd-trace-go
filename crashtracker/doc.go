@@ -16,6 +16,14 @@
 // Requires runtime/debug.SetCrashOutput, added in Go 1.23; see this repository's
 // go.mod for the minimum Go version this module actually builds with.
 //
+// # Enabling
+//
+// Crashtracking is disabled by default. Start does nothing and returns nil
+// unless you set the DD_CRASHTRACKING_ENABLED environment variable to true or
+// pass the WithEnabled(true) option. This also applies to the Orchestrion
+// integration: the injected Start call does nothing unless
+// DD_CRASHTRACKING_ENABLED is true.
+//
 // # Lifecycle
 //
 // Call Start as early as possible in main, before any goroutines are created:

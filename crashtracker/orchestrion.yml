@@ -9,7 +9,8 @@ meta:
   description: |-
     Starts the Datadog crashtracker as the first statement of main(), so the
     monitor process is established before any goroutine can crash. The injected
-    start uses DD_* environment configuration; a later programmatic Start call
+    start uses DD_* environment configuration and does nothing unless
+    DD_CRASHTRACKING_ENABLED is true; a later programmatic Start call
     in main is a no-op because crashtracker keeps the first successful start.
 
     Ordering with respect to the tracer and profiler: the tracer and profiler

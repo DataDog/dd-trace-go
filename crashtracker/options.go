@@ -69,8 +69,9 @@ func WithSite(site string) Option {
 }
 
 // WithEnabled explicitly enables or disables the crashtracker, overriding the
-// DD_CRASHTRACKING_ENABLED environment gate. When disabled, Start does not spawn
-// the monitor process and returns nil.
+// DD_CRASHTRACKING_ENABLED environment gate. The crashtracker is disabled by
+// default. When disabled, Start does not spawn the monitor process and returns
+// nil.
 func WithEnabled(enabled bool) Option {
 	return func(c *config) { c.enabled = enabled }
 }

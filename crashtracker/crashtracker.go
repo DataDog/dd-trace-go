@@ -49,6 +49,10 @@ func init() {
 // runtime writes the crash dump — which would disable reporting for the most
 // common crash: an unrecovered panic. See the package doc for the full example.
 //
+// Crashtracking is disabled by default. Start does nothing unless the
+// DD_CRASHTRACKING_ENABLED environment variable is true or the WithEnabled(true)
+// option is set.
+//
 // Start is idempotent: subsequent calls after the first are no-ops.
 func Start(opts ...Option) error {
 	startOnce.Do(func() { startErr = start(opts...) })
@@ -69,7 +73,7 @@ func start(opts ...Option) error {
 }
 
 func defaultConfig() *config {
-	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
+	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", false)
 	tags := internal.ParseTagString(env.Get("DD_TAGS"))
 	return &config{
 		enabled: enabled,
