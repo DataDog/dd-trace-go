@@ -24,15 +24,29 @@ const (
 func (c *Config) loadOTLPLogsConfig(p *provider.Provider, agentHost, genericProtocol, genericEndpoint, genericHeaders string) {
 	c.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericProtocol)))
 	c.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", genericEndpoint)
-	headers := p.GetStringWithValidator("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders, func(v string) bool {
-		return len(parseOTLPLogsHeaders(v)) > 0
-	})
-	if headers != "" {
-		c.otlpLogsHeaders = parseOTLPLogsHeaders(headers)
-	}
+	c.otlpLogsHeaders = otlpLogsHeadersFromSource(p, genericHeaders)
 	genericTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds())
 	c.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", genericTimeout)) * time.Millisecond
 	c.otlpLogsAgentHost = cmp.Or(agentHost, internal.DefaultAgentHostname)
+}
+
+// otlpLogsHeadersFromSource resolves OTEL_EXPORTER_OTLP_LOGS_HEADERS, falling
+// back to genericHeaders when no source provides a usable logs value.
+func otlpLogsHeadersFromSource(p *provider.Provider, genericHeaders string) map[string]string {
+	var headers map[string]string
+	// The validator keeps the winning parsed value so headers are parsed once.
+	p.GetStringWithValidator("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders, func(v string) bool {
+		parsed := parseOTLPLogsHeaders(v)
+		if len(parsed) == 0 {
+			return false
+		}
+		headers = parsed
+		return true
+	})
+	if headers == nil && genericHeaders != "" {
+		headers = parseOTLPLogsHeaders(genericHeaders)
+	}
+	return headers
 }
 
 func parseOTLPLogsHeaders(str string) map[string]string {
