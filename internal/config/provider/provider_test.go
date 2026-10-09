@@ -558,6 +558,7 @@ func TestGetTagsWithOrigin(t *testing.T) {
 		{"managed wins", "key:managed%2Cvalue", "key:dd", "key=otel", "key:local", map[string]string{"key": "managed%2Cvalue"}, telemetry.OriginManagedStableConfig},
 		{"DD wins without decoding", "", "key:dd%2Cvalue", "key=otel", "key:local", map[string]string{"key": "dd%2Cvalue"}, telemetry.OriginEnvVar},
 		{"OTel wins, decodes and replaces commas", "", "", "key%2C1=otel%2Cvalue", "key:local", map[string]string{"key_1": "otel_value"}, telemetry.OriginEnvVar},
+		{"OTel decoded pipes replaced", "", "", "key%7C1=otel%7Cvalue", "", map[string]string{"key_1": "otel_value"}, telemetry.OriginEnvVar},
 		{"invalid OTel members keep valid ones", "", "", "key=otel,invalid,,", "key:local", map[string]string{"key": "otel", "invalid": ""}, telemetry.OriginEnvVar},
 		{"invalid OTel percent encoding keeps raw value", "", "", "key=raw%ZZ,other=v", "key:local", map[string]string{"key": "raw%ZZ", "other": "v"}, telemetry.OriginEnvVar},
 		{"reserved names", "", "", "service.name=svc%2Cname,deployment.environment=prod,service.version=1.0", "", map[string]string{"service": "svc_name", "env": "prod", "version": "1.0"}, telemetry.OriginEnvVar},

@@ -2242,8 +2242,8 @@ func TestParseOTelResourceAttributes(t *testing.T) {
 		})
 	}
 	t.Run("invalid percent encoding keeps raw values", func(t *testing.T) {
-		got, err := internal.ParseOTelResourceAttributes("key=value,bad%ZZ=value,bad=%ZZ")
-		assert.ErrorContains(t, err, `["bad%ZZ=value" "bad=%ZZ"]`)
-		assert.Equal(t, map[string]string{"key": "value", "bad%ZZ": "value", "bad": "%ZZ"}, got)
+		got, err := internal.ParseOTelResourceAttributes("key=value,bad%ZZ=value,bad=%ZZ,utf8=%FF")
+		assert.ErrorContains(t, err, `["bad%ZZ=value" "bad=%ZZ" "utf8=%FF"]`)
+		assert.Equal(t, map[string]string{"key": "value", "bad%ZZ": "value", "bad": "%ZZ", "utf8": "%FF"}, got)
 	})
 }
