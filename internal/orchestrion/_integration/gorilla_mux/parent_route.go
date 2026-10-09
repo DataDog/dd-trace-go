@@ -58,7 +58,7 @@ func (tc *TestCaseParentRoute) Run(_ context.Context, t *testing.T) {
 }
 
 func (*TestCaseParentRoute) ExpectedTraces() trace.Traces {
-	var traces trace.Traces
+	traces := make(trace.Traces, 0, 3)
 	for _, tt := range []struct {
 		method   string
 		resource string
