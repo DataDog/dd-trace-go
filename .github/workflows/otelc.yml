@@ -41,6 +41,10 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/go-chi/chi
+    contrib/go-chi/chi/otelc
+    contrib/go-chi/chi.v5
+    contrib/go-chi/chi.v5/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -49,6 +53,8 @@ env:
     otelc-autostart
     net_http
     sql
+    chi
+    chi.v5
 
 jobs:
   go-versions-matrix:
