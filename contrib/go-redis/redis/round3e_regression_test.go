@@ -181,3 +181,38 @@ func TestTracedStacksRetired(t *testing.T) {
 		t.Fatalf("expected every traced stack to be retired, got %d remaining", remaining)
 	}
 }
+
+// A user wrapper that retries or fails over by forwarding the same command
+// to a second wrapped client, synchronously: the second Process call is a
+// separate Redis operation and must emit its own span.
+func TestWrapClientForwardedCommandSecondClient(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	clientA := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { clientA.Close() })
+	clientB := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { clientB.Close() })
+
+	tcB := WrapClient(clientB)
+
+	cmd := redis.NewStringCmd("get", "foo")
+	// Fail over from A to B within one user wrapper, on one goroutine,
+	// inside A's traced chain.
+	clientA.WrapProcess(func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			_ = tcB.Process(cmd)
+			return old(cmd)
+		}
+	})
+	tcA := WrapClient(clientA)
+
+	_ = tcA.Process(cmd)
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected one span per client, got %d", len(spans))
+	}
+}

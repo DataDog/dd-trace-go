@@ -13,6 +13,7 @@ import (
 	"net"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -197,17 +198,19 @@ func wrap(client redis.UniversalClient, cfg *clientConfig) {
 	// and wrapMu-then-proxy-mutex would then deadlock against
 	// proxy-mutex-then-wrapMu.
 	var targets []redis.UniversalClient
+	incomplete := false
 	if degraded {
 		targets = nil
 	} else {
-		var ok bool
-		targets, ok = concreteClients(client)
+		var ok, inc bool
+		targets, ok, inc = concreteClients(client)
 		if !ok {
 			// The proxy's mutex stayed held — possibly by this very call chain,
 			// which would deadlock on any further interaction with the proxy.
 			// Do nothing; a wrap after the mutex is released works normally.
 			return
 		}
+		incomplete = inc
 	}
 
 	wrapMu.Lock()
@@ -217,7 +220,7 @@ func wrap(client redis.UniversalClient, cfg *clientConfig) {
 		warnings = append(warnings, "contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
 	}
 
-	if len(targets) == 1 && targets[0] == client {
+	if len(targets) == 1 && targets[0] == client || degraded && concreteGoRedis(client) {
 		// The client itself is a concrete go-redis client — or a clone of
 		// one: deduplicate and instrument it directly, against the hook it
 		// already carries — inherited by a clone, installed through a
@@ -232,13 +235,28 @@ func wrap(client redis.UniversalClient, cfg *clientConfig) {
 	// decision — it may fan out to its current members, retain hooks for
 	// delegates it creates later, or apply them lazily — so it is observed
 	// before instrumented.
-	wrapProxyMembers(client, targets, cfg, warn)
+	// A degraded wrap holds no walk guard: its member set came from
+	// nowhere, and re-walking would race the concurrent wrap it gave way
+	// to, so it does not re-walk.
+	wrapProxyMembers(client, targets, cfg, warn, incomplete && !degraded)
 }
 
 // wrapMember instruments a single concrete client, deduplicated against the
 // hook it already carries or, when its chain cannot be read, against its
 // weak identity. The caller must hold wrapMu; a concrete client's AddHook is
 // go-redis code, not user code, so it runs under the lock.
+// concreteGoRedis reports whether client is one of the concrete go-redis
+// clients: a walk that could not run would have found it as its own sole
+// member, so a degraded wrap of it takes the concrete path — whose install
+// marker the first wrap's slow constructor is already holding.
+func concreteGoRedis(client redis.UniversalClient) bool {
+	switch client.(type) {
+	case *redis.Client, *redis.ClusterClient, *redis.Ring:
+		return true
+	}
+	return false
+}
+
 func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 	// A busy client mutex can leave the hook chain transiently unreadable;
 	// retry briefly before falling back to the client's own identity, which
@@ -370,7 +388,7 @@ func membersAny(members []redis.UniversalClient) []any {
 	return out
 }
 
-func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func()) {
+func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func(), walkIncomplete bool) {
 	if rediswrap.IsInstalling(proxy, membersAny(members)) {
 		// This call is the re-entry of this goroutine's own AddHook for the
 		// same proxy: the installation it belongs to is still in flight.
@@ -595,9 +613,26 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// the proxy itself, deduplicated by its identity.
 		unlocked(func() { addHook(proxy, cfg) })
 	}
+	if walkIncomplete {
+		// The walk could not read a nested holder's members behind its
+		// lock; the probe still reached them through the proxy's fan-out.
+		// Walk again and instrument the members the first walk could not
+		// see, so they are not left with the no-op probe alone.
+		if again, okAgain, _ := concreteClients(proxy); okAgain {
+			for _, member := range again {
+				if slices.Contains(members, member) {
+					continue
+				}
+				if h := hookSlice(member); h.IsValid() && h.Len() > 0 {
+					wrapMember(member, cfg, warn)
+					members = append(members, member)
+				}
+			}
+		}
+	}
 	if entry != nil {
 		entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
-		entry.incomplete = incomplete
+		entry.incomplete = incomplete || walkIncomplete
 	}
 	completed = true
 	finishObserved(proxy, entry, true, true)
@@ -793,7 +828,7 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 				// its non-reentrant mutex. Nested structs lock themselves.
 				// Nested structs lock themselves and propagate their
 				// own unknowns.
-				return scanHooks(v, hook, 3)
+				return scanHooks(v, hook, 8)
 			}
 			unlock()
 			time.Sleep(10 * time.Millisecond)
@@ -802,7 +837,7 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 		// with the update in progress: report unknown rather than guess.
 		return false, false
 	}
-	return scanHooks(v, hook, 3)
+	return scanHooks(v, hook, 8)
 }
 
 // hookInContainer reports whether the slice, array, map, or struct value v
@@ -810,6 +845,9 @@ func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known 
 // looks at v's addressability for a lock, so callers holding a lock on v's
 // owner must pass depth such that recursion stays below the owner.
 func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known bool) {
+	if depth <= 0 {
+		return false, true
+	}
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
 		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
@@ -817,6 +855,15 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 				if h, ok := v.Index(j).Interface().(redis.Hook); ok && hookEqual(h, hook) {
 					return true, true
 				}
+			}
+			return false, true
+		}
+		// A collection of holders — []struct{ Hook redis.Hook }, []any — is
+		// a hook store one level down: recurse into the elements, so a
+		// proxy keeping its hooks in them is seen.
+		for j := 0; j < v.Len(); j++ {
+			if found, known := hookInContainer(v.Index(j), hook, depth-1); found || !known {
+				return found, known
 			}
 		}
 	case reflect.Map:
@@ -828,6 +875,15 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 			for iter.Next() {
 				if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 					return true, true
+				}
+			}
+		} else {
+			// A map of holders — or of interfaces holding them — is a hook
+			// store one level down.
+			iter := v.MapRange()
+			for iter.Next() {
+				if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+					return found, known
 				}
 			}
 		}
@@ -851,7 +907,10 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if h, ok := v.Interface().(redis.Hook); ok && hookEqual(h, hook) {
 			return true, true
 		}
-		return hookInContainer(v.Elem(), hook, depth)
+		// The indirection consumes the limit: a cycle alternating
+		// interfaces and pointers — x := &x behind an any field — would
+		// otherwise recurse forever.
+		return hookInContainer(v.Elem(), hook, depth-1)
 	case reflect.Pointer:
 		// A concrete client behind the pointer — *redis.Client — is a
 		// delegate, not proxy-owned storage: the probe the proxy's own
@@ -864,7 +923,8 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if t := v.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
 			return false, true
 		}
-		return hookInContainer(v.Elem(), hook, depth)
+		// The indirection consumes the limit, like the interface above.
+		return hookInContainer(v.Elem(), hook, depth-1)
 	}
 	return false, true
 }
@@ -890,9 +950,10 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			}
 			// An interface-backed container — a slice, array, map, or struct
 			// behind any — is a hook store like any other; scan the dynamic
-			// value.
+			// value. The indirection consumes the limit, so a cycle of
+			// interfaces and pointers cannot recurse forever.
 			if !f.IsNil() && f.CanInterface() {
-				if found, known := hookInContainer(f.Elem(), hook, depth); found || !known {
+				if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
 					return found, known
 				}
 			}
@@ -906,6 +967,13 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 						return true, true
 					}
 				}
+				continue
+			}
+			// A collection of holders is a hook store one level down.
+			for j := 0; j < f.Len(); j++ {
+				if found, known := hookInContainer(f.Index(j), hook, depth-1); found || !known {
+					return found, known
+				}
 			}
 		case reflect.Map:
 			// A map of hooks is a hook store like any slice: match by
@@ -916,6 +984,15 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 				for iter.Next() {
 					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true, true
+					}
+				}
+			} else {
+				// A map of holders — or of interfaces holding them — is a
+				// hook store one level down.
+				iter := f.MapRange()
+				for iter.Next() {
+					if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+						return found, known
 					}
 				}
 			}
@@ -991,9 +1068,10 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			}
 			// An interface-backed container — a slice, array, map, or struct
 			// behind any — is a hook store like any other; scan the dynamic
-			// value.
+			// value. The indirection consumes the limit, so a cycle of
+			// interfaces and pointers cannot recurse forever.
 			if !f.IsNil() && f.CanInterface() {
-				if found, known := hookInContainer(f.Elem(), hook, depth); found || !known {
+				if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
 					return found, known
 				}
 			}
@@ -1007,6 +1085,13 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 						return true, true
 					}
 				}
+				continue
+			}
+			// A collection of holders is a hook store one level down.
+			for j := 0; j < f.Len(); j++ {
+				if found, known := hookInContainer(f.Index(j), hook, depth-1); found || !known {
+					return found, known
+				}
 			}
 		case reflect.Map:
 			// A map of hooks is a hook store like any slice: match by
@@ -1017,6 +1102,15 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 				for iter.Next() {
 					if h, ok := iter.Value().Interface().(redis.Hook); ok && hookEqual(h, hook) {
 						return true, true
+					}
+				}
+			} else {
+				// A map of holders — or of interfaces holding them — is a
+				// hook store one level down.
+				iter := f.MapRange()
+				for iter.Next() {
+					if found, known := hookInContainer(iter.Value(), hook, depth-1); found || !known {
+						return found, known
 					}
 				}
 			}
@@ -1371,7 +1465,7 @@ func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
 // when it cannot see through the implementation, for example when the
 // delegated clients are not held in fields at all or are nested beyond the
 // search depth.
-func concreteClients(client redis.UniversalClient) (targets []redis.UniversalClient, ok bool) {
+func concreteClients(client redis.UniversalClient) (targets []redis.UniversalClient, ok bool, incomplete bool) {
 	var found []redis.UniversalClient
 	var aborted bool
 	var walk func(c redis.UniversalClient, depth int)
@@ -1447,8 +1541,14 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 			// held only skips that holder's members: the proxy itself is
 			// readable, and the observation still covers what its own
 			// fields say.
-			targets, _ := findMembers(f, depth-1)
-			for _, target := range targets {
+			holderMembers, readable := findMembers(f, depth-1)
+			if !readable {
+				// A nested holder stayed locked: its members are missing
+				// from this walk, and the observation is incomplete until a
+				// later one sees them.
+				incomplete = true
+			}
+			for _, target := range holderMembers {
 				walk(target, depth-1)
 			}
 		}
@@ -1458,9 +1558,9 @@ func concreteClients(client redis.UniversalClient) (targets []redis.UniversalCli
 	// proxy's own identity.
 	walk(client, 8)
 	if aborted {
-		return nil, false
+		return nil, false, incomplete
 	}
-	return found, true
+	return found, true, incomplete
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay

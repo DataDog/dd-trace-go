@@ -286,3 +286,141 @@ func TestWrapClientWatcherRetriesFailedInstall(t *testing.T) {
 		t.Fatalf("expected exactly 1 datadog hook after the retry, got %d", n)
 	}
 }
+
+// cyclicAnyProxy holds a self-referential value behind an any field: the
+// retention scan crosses an interface and a pointer per turn.
+type cyclicAnyProxy struct {
+	redis.UniversalClient
+	Box any
+}
+
+func (r *cyclicAnyProxy) AddHook(hook redis.Hook) {
+	r.UniversalClient.AddHook(hook)
+}
+
+// A self-referential any — x = &x — must not drive the retention scan into
+// unbounded recursion: every indirection consumes the depth limit.
+func TestWrapClientCyclicAnyScan(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	var x any
+	x = &x
+	proxy := &cyclicAnyProxy{UniversalClient: member, Box: x}
+	WrapClient(proxy)
+
+	_ = member.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}
+
+// hookBox holds a hook inside a holder, so a store of boxes is a hook
+// collection one level down.
+type hookBox struct {
+	Hook redis.Hook
+}
+
+// boxedRetainProxy fans hooks out to its current member and retains them
+// in a slice of holders.
+type boxedRetainProxy struct {
+	redis.UniversalClient
+	retained []hookBox
+}
+
+func (r *boxedRetainProxy) AddHook(hook redis.Hook) {
+	r.retained = append(r.retained, hookBox{Hook: hook})
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *boxedRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, box := range r.retained {
+		delegate.AddHook(box.Hook)
+	}
+}
+
+// A proxy that keeps hooks inside holder values — []struct{ Hook
+// redis.Hook } — retains them like any other store: the scan recurses into
+// the collection, the real hook is handed to the proxy, and delegates it
+// instruments later are traced.
+func TestWrapClientBoxedHookStore(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &boxedRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// memberHolder keeps a delegate behind its own mutex; contention on it
+// hides the member from a first walk.
+type memberHolder struct {
+	mu     sync.Mutex
+	member redis.UniversalClient
+}
+
+// contendedHolderProxy has one delegate directly and one inside a holder,
+// and its AddHook is slow enough that the holder's contention window passes
+// while the probe runs.
+type contendedHolderProxy struct {
+	redis.UniversalClient
+	holder *memberHolder
+}
+
+func (r *contendedHolderProxy) AddHook(hook redis.Hook) {
+	time.Sleep(200 * time.Millisecond)
+	r.UniversalClient.AddHook(hook)
+	r.holder.member.AddHook(hook)
+}
+
+// A member inside a holder whose mutex outlasts the walk's own retry window
+// must not be left with the no-op probe: the probe still reaches it through
+// the proxy's fan-out, and the wrap re-walks once the contention has passed
+// and instruments what the first walk could not see.
+func TestWrapClientContendedHolderMember(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	visible := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { visible.Close() })
+	hidden := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { hidden.Close() })
+	holder := &memberHolder{member: hidden}
+	proxy := &contendedHolderProxy{UniversalClient: visible, holder: holder}
+
+	// Hold the holder's mutex past the walk's lock-retry window.
+	go func() {
+		holder.mu.Lock()
+		time.Sleep(150 * time.Millisecond)
+		holder.mu.Unlock()
+	}()
+	time.Sleep(5 * time.Millisecond) // the hold is in place before the wrap
+
+	WrapClient(proxy)
+
+	_ = hidden.Get("foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the holder member to be traced exactly once, got %d spans", len(spans))
+	}
+}
