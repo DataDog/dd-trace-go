@@ -829,7 +829,7 @@ func (c *config) surfaceStatsOverride(a agentFeatures) {
 			"protocol loses the `lang` dimension. This overrides the configured "+
 			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
 			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, to restore the configured behavior.",
-			a.AgentVersion)
+			a.AgentVersion) //errtrack:ignore expected agent compatibility warning
 	case prev == 2:
 		// Report only on the way back down. Reporting the effective value
 		// unconditionally would shadow the user's own origin for

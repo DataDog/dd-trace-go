@@ -310,7 +310,7 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 			// configuration conflict rather than a tracer failure.
 			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error()) //errtrack:ignore duplicate runtime-metrics emitter is application process state
 		}
 	}
 
