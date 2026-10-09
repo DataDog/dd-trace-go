@@ -40,6 +40,7 @@ use (
 	./contrib/gofiber/fiber.v2
 	./contrib/go-kratos/kratos.v3
 	./contrib/gomodule/redigo
+	./contrib/gomodule/redigo/otelc
 	./contrib/google.golang.org/api
 	./contrib/google.golang.org/api/internal/gen_endpoints
 	./contrib/google.golang.org/grpc
