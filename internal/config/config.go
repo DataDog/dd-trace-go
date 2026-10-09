@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -197,6 +198,11 @@ type Config struct {
 	blrpScheduleDelay      time.Duration
 	blrpExportTimeout      time.Duration
 	blrpMaxExportBatchSize int
+	otlpLogsTimeout        time.Duration
+	otlpLogsProtocol       string
+	otlpLogsEndpoint       string
+	otlpLogsAgentHost      string
+	otlpLogsHeaders        map[string]string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -495,6 +501,15 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
+	genericOTLPProtocol := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
+	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericOTLPProtocol)))
+	cfg.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
+	cfg.otlpLogsHeaders = otlpLogsHeadersFromSource(p, p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""))
+	cfg.otlpLogsTimeout = time.Duration(p.GetInt64(
+		"OTEL_EXPORTER_OTLP_LOGS_TIMEOUT",
+		p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds()),
+	)) * time.Millisecond
+	cfg.otlpLogsAgentHost = cmp.Or(agentHost, internal.DefaultAgentHostname)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.
@@ -503,9 +518,9 @@ func loadConfig() *Config {
 	// the generic value never reaches the exporter when it is set; warn about
 	// it only when it is the effective protocol.
 	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
-	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	otlpProtocolFallback := genericOTLPProtocol
 	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
-		otlpProtocolFallback = "http/protobuf"
+		otlpProtocolFallback = defaultOTLPProtocol
 	}
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
 		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
@@ -1929,6 +1944,44 @@ func (c *Config) OTLPMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsProtocol
+}
+
+func (c *Config) OTLPLogsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsProtocol
+}
+
+// OTLPLogsEndpoint returns the configured logs endpoint, or an empty string
+// when the exporter should derive its endpoint from the agent configuration.
+func (c *Config) OTLPLogsEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsEndpoint
+}
+
+// OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
+func (c *Config) OTLPLogsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpLogsHeaders)
+}
+
+func (c *Config) OTLPLogsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsTimeout
+}
+
+// OTLPLogsAgentURL returns the agent URL before the exporter selects its OTLP port.
+func (c *Config) OTLPLogsAgentURL() *url.URL {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.agentURL != nil && c.agentURL.Hostname() != "" {
+		u := *c.agentURL
+		return &u
+	}
+	return &url.URL{Scheme: URLSchemeHTTP, Host: net.JoinHostPort(c.otlpLogsAgentHost, internal.DefaultTraceAgentPort)}
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

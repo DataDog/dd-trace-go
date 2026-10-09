@@ -88,6 +88,9 @@ const (
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
 
+	defaultOTLPProtocol    = "http/protobuf"
+	defaultOTLPLogsTimeout = 30 * time.Second
+
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
 
@@ -500,6 +503,41 @@ func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[strin
 	maps.Copy(merged, genericHeaders)
 	maps.Copy(merged, signalHeaders)
 	return merged
+}
+
+// otlpLogsHeadersFromSource resolves OTEL_EXPORTER_OTLP_LOGS_HEADERS, falling
+// back to genericHeaders when no source provides a usable logs value.
+func otlpLogsHeadersFromSource(p *provider.Provider, genericHeaders string) map[string]string {
+	var headers map[string]string
+	// The validator keeps the winning parsed value so headers are parsed once.
+	p.GetStringWithValidator("OTEL_EXPORTER_OTLP_LOGS_HEADERS", genericHeaders, func(v string) bool {
+		parsed := parseOTLPLogsHeaders(v)
+		if len(parsed) == 0 {
+			return false
+		}
+		headers = parsed
+		return true
+	})
+	if headers == nil && genericHeaders != "" {
+		headers = parseOTLPLogsHeaders(genericHeaders)
+	}
+	return headers
+}
+
+func parseOTLPLogsHeaders(str string) map[string]string {
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(str, ",") {
+		parts := strings.SplitN(strings.TrimSpace(entry), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if key == "" {
+			continue
+		}
+		headers[key] = strings.TrimSpace(parts[1])
+	}
+	return headers
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
