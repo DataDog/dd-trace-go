@@ -13,4 +13,5 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
+* [internal/config/AGENTS.md](./internal/config/AGENTS.md) -- for adding, migrating, or reviewing tracer configuration fields, including migrations that touch `ddtrace/tracer` or `globalconfig`
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
