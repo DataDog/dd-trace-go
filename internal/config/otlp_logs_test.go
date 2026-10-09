@@ -17,9 +17,9 @@ import (
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
-	t.Run("defaults to http/json", func(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
 		protocol := loadConfig().OTLPLogsProtocol()
-		assert.Equal(t, "http/json", protocol)
+		assert.Equal(t, "http/protobuf", protocol)
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {

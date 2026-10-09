@@ -81,12 +81,8 @@ const (
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
 
-	defaultOTLPProtocol = "http/protobuf"
-	// defaultOTLPLogsProtocol is the historical logs default. The HTTP log
-	// exporter always sends protobuf, so it only affects the encoding
-	// reported in logs export telemetry (OTEL-3376, OTEL-3377).
-	defaultOTLPLogsProtocol = "http/json"
-	defaultOTLPLogsTimeout  = 30 * time.Second
+	defaultOTLPProtocol    = "http/protobuf"
+	defaultOTLPLogsTimeout = 30 * time.Second
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
@@ -505,15 +501,6 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	maps.Copy(merged, genericHeaders)
 	maps.Copy(merged, signalHeaders)
 	return merged
-}
-
-// resolveOTLPLogsProtocolFallback returns the generic OTLP protocol when it is
-// explicitly configured, and the logs default otherwise.
-func resolveOTLPLogsProtocolFallback(genericProtocol string, genericOrigin telemetry.Origin) string {
-	if genericOrigin == telemetry.OriginDefault {
-		return defaultOTLPLogsProtocol
-	}
-	return genericProtocol
 }
 
 // otlpLogsHeadersFromSource resolves OTEL_EXPORTER_OTLP_LOGS_HEADERS, falling

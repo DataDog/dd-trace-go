@@ -26,7 +26,7 @@ const (
 	defaultOTLPHTTPPort = "4318"
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-	defaultOTLPProtocol = "http/json"
+	defaultOTLPProtocol = "http/protobuf"
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -76,11 +76,11 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // Protocol selection priority:
 // 1. OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
 // 2. OTEL_EXPORTER_OTLP_PROTOCOL
-// 3. Default: http/json
+// 3. Default: http/protobuf
 //
 // Supported protocols:
-// - "http/json": HTTP with JSON encoding (default)
-// - "http/protobuf" or "http": HTTP with protobuf encoding
+// - "http/protobuf" or "http": HTTP with protobuf encoding (default)
+// - "http/json": HTTP; payloads are still protobuf-encoded (OTEL-3377)
 // - "grpc": gRPC
 //
 // Endpoint resolution priority:
@@ -114,7 +114,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
-		encodingTag = encodingJSON
+		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {

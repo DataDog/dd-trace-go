@@ -492,11 +492,8 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
-	genericOTLPProtocol, genericOTLPProtocolOrigin := p.GetStringWithOrigin("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
-	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString(
-		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
-		resolveOTLPLogsProtocolFallback(genericOTLPProtocol, genericOTLPProtocolOrigin),
-	)))
+	genericOTLPProtocol := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
+	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", genericOTLPProtocol)))
 	cfg.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
 	cfg.otlpLogsHeaders = otlpLogsHeadersFromSource(p, p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""))
 	cfg.otlpLogsTimeout = time.Duration(p.GetInt64(
