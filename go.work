@@ -18,6 +18,7 @@ use (
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
+	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
 	./contrib/emicklei/go-restful.v3
@@ -25,7 +26,9 @@ use (
 	./contrib/gin-gonic/gin
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
+	./contrib/go-chi/chi/otelc
 	./contrib/go-chi/chi.v5
+	./contrib/go-chi/chi.v5/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
 	./contrib/go-redis/redis.v7
