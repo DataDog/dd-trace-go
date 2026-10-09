@@ -651,6 +651,59 @@ cases:
       - Does not mention SCA or any security/composition-analysis motivation for sending dependency
         information
 
+# ==== Internal Config Tests ====
+
+  - id: dd-trace-go-internal-config-migration-dependency-first
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      I want to migrate a tracer config field into internal/config. Its value is derived from another
+      field that is still owned by ddtrace/tracer, but that base field looks trivial. Should I just
+      migrate both in this PR, and what should I do before writing any code?
+    expected_criteria:
+      - States migrations cover one field per PR and the base field must be migrated first in a
+        separate, prior PR rather than folded into this one
+      - Says to surface the dependency to the developer instead of silently expanding scope
+      - Says to produce a migration plan (read sites, write sites, and the surface added to
+        internal/config) before writing code, per the config-migration skill
+    bad_signals:
+      - Recommends migrating both fields in the same PR because the base looks trivial
+      - Recommends migrating the derived field first and the base later
+
+  - id: dd-trace-go-internal-config-setter-and-getter-shape
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      I'm adding a map-valued field to internal/config that products set from their programmatic
+      APIs. What signature should the setter have, should it go through the cross-product conflict
+      gate, and can the getter just return the map so callers avoid an allocation?
+    expected_criteria:
+      - Gives the setter shape SetX(value, origin, product...) with checkProductConflict called first
+        after acquiring the lock
+      - States additive collection fields (e.g. feature flags, service mappings) merge across products
+        and are not gated, while single-source-of-truth fields are gated
+      - States the getter must return a copy of the map, not the internal reference
+    bad_signals:
+      - Says the getter can return the internal map directly
+      - Says every setter must be gated regardless of whether the field is additive
+      - Proposes making origin variadic or omitting it from the setter
+
+  - id: dd-trace-go-internal-config-migration-cleanup
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      I've moved a tracer field into internal/config with a getter and setter. The field is still
+      listed in startTelemetry in ddtrace/tracer/telemetry.go, and it also exists in globalconfig,
+      where the profiler still reads it. What should I clean up in this PR?
+    expected_criteria:
+      - Says to remove the field's entry from the telemetryConfigs slice in startTelemetry in the same
+        PR because the internal/config setter already reports it
+      - Says to keep the field in globalconfig because the profiler still reads it, and remove it only
+        when its last caller is migrated
+    bad_signals:
+      - Says to remove the field from globalconfig even though the profiler still uses it
+      - Says to keep the startTelemetry entry, or report the field from both places
+
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
 
