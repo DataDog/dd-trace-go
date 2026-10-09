@@ -179,6 +179,13 @@
 // or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
 // is 10000 slots.
 //
+// # OpenTelemetry Semantic Conventions
+//
+// DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
+// conventions, forces trace export through OTLP, and overrides
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
+// to false.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol

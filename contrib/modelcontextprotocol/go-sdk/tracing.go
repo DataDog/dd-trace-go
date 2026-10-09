@@ -51,7 +51,7 @@ func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method string, req *mcp.CallToolRequest) (mcp.Result, error) {
 	toolSpan, ctx := llmobs.StartToolSpan(ctx, req.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageModelContextProtocolGoSDK)))
 
-	var result *mcp.CallToolResult
+	var res mcp.Result
 	var err error
 
 	defer func() {
@@ -61,12 +61,11 @@ func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method st
 			instrmcp.MCPToolKindTag: "server",
 			instrmcp.MCPMethodTag:   method,
 		}))
-		finishSpanWithIO(toolSpan, method, req, result, err)
+		finishSpanWithIO(toolSpan, method, req, res, err)
 	}()
 
-	res, err := next(ctx, method, req)
-	result, ok := res.(*mcp.CallToolResult)
-	if !ok {
+	res, err = next(ctx, method, req)
+	if _, ok := res.(*mcp.CallToolResult); !ok {
 		instr.Logger().Warn("go-sdk: unexpected result type: %T", res)
 	}
 
@@ -78,7 +77,7 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	// Extract client info from params if available
 	if params := req.GetParams(); params != nil {
-		if initParams, ok := params.(*mcp.InitializeParams); ok {
+		if initParams, ok := params.(*mcp.InitializeParams); ok && initParams != nil && initParams.ClientInfo != nil {
 			clientName := initParams.ClientInfo.Name
 			clientVersion := initParams.ClientInfo.Version
 			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
@@ -152,7 +151,7 @@ func finishSpanWithIO[S textIOSpan](span S, method string, req mcp.Request, outp
 
 	if err != nil {
 		span.Finish(llmobs.WithError(err))
-	} else if toolResult, ok := output.(*mcp.CallToolResult); ok && toolResult.IsError {
+	} else if toolResult, ok := output.(*mcp.CallToolResult); ok && toolResult != nil && toolResult.IsError {
 		// Use generic error message since details are already in the output field
 		span.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
 	} else {

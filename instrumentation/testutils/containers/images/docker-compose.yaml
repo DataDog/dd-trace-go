@@ -27,6 +27,9 @@ services:
   elasticsearch8:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3@sha256:01c1732062b4a846c5ca687b0094b89bad0bfed00c6d71626db32fb8f3131a78
 
+  opensearch2:
+    image: opensearchproject/opensearch:2@sha256:e321cb03c643874c42240458a618db56bc1e4fc143b10c41bec653542bc6851b
+
   redis:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
 

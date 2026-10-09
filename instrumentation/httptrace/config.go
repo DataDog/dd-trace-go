@@ -45,12 +45,42 @@ const (
 	envServerQueryStringAllowlist = "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER"
 )
 
-// defaultQueryStringRegexp is the regexp used for query string obfuscation if [EnvQueryStringRegexp] is empty.
-var defaultQueryStringRegexp = regexp.MustCompile("(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\s|%20)*(?:=|%3D)[^&]+|(?:\"|%22)(?:\\s|%20)*(?::|%3A)(?:\\s|%20)*(?:\"|%22)(?:%2[^2]|%[^2]|[^\"%])+(?:\"|%22))|bearer(?:\\s|%20)+[a-z0-9\\._\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\w=-]|%3D)+\\.ey[I-L](?:[\\w=-]|%3D)+(?:\\.(?:[\\w.+\\/=-]|%3D|%2F|%2B)+)?|[\\-]{5}BEGIN(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY[\\-]{5}[^\\-]+[\\-]{5}END(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY|ssh-rsa(?:\\s|%20)*(?:[a-z0-9\\/\\.+]|%2F|%5C|%2B){100,}")
+// defaultQueryStringPattern is the regexp used for query string obfuscation if
+// [EnvQueryStringRegexp] is not set. Capture group 1 is the delimiter before a
+// JWT. A match is replaced by [defaultQueryStringReplacement], which keeps that
+// delimiter. All other groups are non-capturing, thus group 1 is empty for the
+// matches of the other alternatives.
+//
+// The tracer does not use this regexp to obfuscate: it uses
+// obfuscateQueryStringDefault, a state machine that gives the same result in
+// linear time. Keep the two in sync.
+const defaultQueryStringPattern = `(?i)(?:(?:"|%22)?)(?:(?:old[-_]?|new[-_]?)?p(?:ass)?w(?:or)?d(?:1|2)?|pass(?:[-_]?phrase)?|secret|(?:api[-_]?|private[-_]?|public[-_]?|access[-_]?|secret[-_]?|app(?:lication)?[-_]?)key(?:[-_]?id)?|token|consumer[-_]?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\s|%20)*(?:=|%3D)[^&]+|(?:"|%22)(?:\s|%20)*(?::|%3A)(?:\s|%20)*(?:"|%22)(?:%2[^2]|%[^2]|[^"%])+(?:"|%22))|(?:bearer(?:\s|%20)+[a-z0-9._\-]+|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|(^|[^\w%-]|%[0-9a-f]{2})ey[I-L][\w-]+(?:=|%3D)*\.ey[I-L][\w-]+(?:=|%3D)*(?:\.(?:[\w.+/=-]|%3D|%2F|%2B)+)?|-{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY-{5}[^\-]+-{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY(?:-{5})?(?:\n|%0A)?|(?:ssh-(?:rsa|dss)|ecdsa-[a-z0-9]+-[a-z0-9]+)(?:\s|%20|%09)+(?:[a-z0-9/.+]|%2F|%5C|%2B){100,}(?:=|%3D)*(?:(?:\s|%20|%09)+[a-z0-9._-]+)?)`
+
+// defaultQueryStringReplacement is the replacement template for the matches of
+// [defaultQueryStringPattern]. It keeps the JWT delimiter (group 1).
+const defaultQueryStringReplacement = "${1}<redacted>"
+
+// defaultQueryStringPatternNonCapturing is [defaultQueryStringPattern] with a
+// non-capturing JWT delimiter group. With a "replace the whole match"
+// algorithm, it gives the same result as [defaultQueryStringPattern]. When
+// [EnvQueryStringRegexp] has this value, the tracer also uses the state
+// machine.
+var defaultQueryStringPatternNonCapturing = strings.Replace(defaultQueryStringPattern, `|(^|[^\w%-]|`, `|(?:^|[^\w%-]|`, 1)
+
+// defaultQueryStringRegexp is the compiled form of [defaultQueryStringPattern].
+var defaultQueryStringRegexp = regexp.MustCompile(defaultQueryStringPattern)
+
+// isDefaultQueryStringPattern reports whether s is one of the forms of the
+// default query string obfuscation regexp.
+func isDefaultQueryStringPattern(s string) bool {
+	return s == defaultQueryStringPattern || s == defaultQueryStringPatternNonCapturing
+}
 
 type config struct {
 	queryStringRegexp                        *regexp.Regexp      // specifies the regexp to use for query string obfuscation.
 	useDefaultObfuscator                     bool                // reports whether to use the default query string obfuscator.
+	replaceJWTDelimiter                      bool                // reports whether the default obfuscator also replaces the JWT delimiter (the default regexp is set explicitly).
+	dropQueryString                          bool                // reports whether the query string must not be reported, because the configured regexp is not valid.
 	queryString                              bool                // reports whether the query string should be included in the URL span tag.
 	clientQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for client spans and skip regex obfuscation.
 	serverQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for server spans and skip regex obfuscation.
@@ -87,12 +117,27 @@ func newConfig() config {
 		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
 	}
-	if _, ok := env.Lookup(EnvQueryStringRegexp); ok {
-		c.queryStringRegexp = QueryStringRegexp()
-	} else {
-		// Use an in-code state-machine obfuscator by default instead of `defaultQueryStringRegexp`
-		// for performance reasons.
+	if s, ok := env.Lookup(EnvQueryStringRegexp); !ok {
+		// Use the in-code state-machine obfuscator instead of `defaultQueryStringRegexp`:
+		// it gives the same result in linear time.
 		c.useDefaultObfuscator = true
+	} else if isDefaultQueryStringPattern(s) {
+		// A configured regexp has its matches replaced in full, thus the JWT
+		// delimiter is also replaced. The state machine gives the same result
+		// as the regexp package, in linear time.
+		c.useDefaultObfuscator = true
+		c.replaceJWTDelimiter = true
+	} else if s != "" {
+		// An empty value disables the obfuscation.
+		if r, err := regexp.Compile(s); err == nil {
+			c.queryStringRegexp = r
+		} else {
+			// Fail closed: do not report a query string that we cannot obfuscate.
+			// Do not log the error: it contains the regexp, which can contain
+			// sensitive data.
+			log.Warn("Could not compile regexp from %s. The query string will not be reported.", EnvQueryStringRegexp)
+			c.dropQueryString = true
+		}
 	}
 	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
@@ -143,14 +188,26 @@ func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
+// QueryStringRegexp returns the regexp configured with [EnvQueryStringRegexp].
+// It returns nil when the value is empty, and the default regexp when the value
+// is not set or is not a valid regexp.
+//
+// The tracer does not use this function: it uses a linear-time state machine
+// for the default regexp, and it does not report the query string when the
+// configured regexp is not valid. When the value is not set or is not valid,
+// the returned regexp has a capture group: replace its matches with
+// "${1}<redacted>" to keep the JWT delimiter, as the tracer does.
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
-		if s == "" {
-			return nil
-		}
-		if r, err := regexp.Compile(s); err == nil {
-			return r
-		}
+	s, ok := env.Lookup(EnvQueryStringRegexp)
+	if !ok {
+		// The value is not set: use the default regexp, with no log.
+		return defaultQueryStringRegexp
+	}
+	if s == "" {
+		return nil
+	}
+	if r, err := regexp.Compile(s); err == nil {
+		return r
 	}
 	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
 	return defaultQueryStringRegexp

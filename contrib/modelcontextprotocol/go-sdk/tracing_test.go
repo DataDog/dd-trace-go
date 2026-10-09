@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -97,6 +99,70 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	require.NoError(t, err)
 	outputStr := string(outputJSON)
 	assert.Contains(t, outputStr, "serverInfo")
+}
+
+func TestIntegrationInitializeWithoutClientInfo(t *testing.T) {
+	tt := testTracer(t)
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
+	AddTracing(server)
+
+	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server { return server }, nil)
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+
+	// A raw request is needed because the go-sdk client always sends clientInfo.
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}`
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, httpServer.URL, strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(respBody))
+	assert.Contains(t, string(respBody), "serverInfo")
+
+	tracer.Flush()
+	taskSpan := tt.RequireSpan(t, "mcp.initialize")
+	assert.Contains(t, taskSpan.Tags, "mcp_method:initialize")
+	for _, tag := range taskSpan.Tags {
+		assert.False(t, strings.HasPrefix(tag, "client_name:"), "unexpected tag %q", tag)
+		assert.False(t, strings.HasPrefix(tag, "client_version:"), "unexpected tag %q", tag)
+	}
+}
+
+// typedNilParamsRequest is a mcp.Request whose params are a nil *mcp.InitializeParams.
+// The non-nil interface value holding a nil pointer still satisfies a type assertion.
+type typedNilParamsRequest struct {
+	mcp.Request
+}
+
+func (typedNilParamsRequest) GetParams() mcp.Params   { return (*mcp.InitializeParams)(nil) }
+func (typedNilParamsRequest) GetSession() mcp.Session { return nil }
+
+func TestTraceInitializeRequestNilParams(t *testing.T) {
+	tt := testTracer(t)
+
+	next := func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		return &mcp.InitializeResult{}, nil
+	}
+	req := typedNilParamsRequest{Request: &mcp.ServerRequest[*mcp.InitializeParams]{}}
+
+	require.NotPanics(t, func() {
+		_, err := tracingMiddleware(next)(context.Background(), "initialize", req)
+		require.NoError(t, err)
+	})
+
+	tracer.Flush()
+	taskSpan := tt.RequireSpan(t, "mcp.initialize")
+	assert.Contains(t, taskSpan.Tags, "mcp_method:initialize")
+	for _, tag := range taskSpan.Tags {
+		assert.False(t, strings.HasPrefix(tag, "client_name:"), "unexpected tag %q", tag)
+	}
 }
 
 func TestIntegrationToolCallSuccess(t *testing.T) {
@@ -405,6 +471,46 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	require.NoError(t, err)
 	outputStr := string(outputJSON)
 	assert.Contains(t, outputStr, "invalid input")
+}
+
+func TestToolCallNonCallToolResult(t *testing.T) {
+	tests := map[string]struct {
+		result mcp.Result
+	}{
+		"nil result":                     {result: nil},
+		"result is not a CallToolResult": {result: &mcp.InitializeResult{}},
+		"typed nil CallToolResult":       {result: (*mcp.CallToolResult)(nil)},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			tt := testTracer(t)
+
+			handler := tracingMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+				return tc.result, nil
+			})
+			// The server always sets a session on requests it dispatches.
+			req := &mcp.CallToolRequest{
+				Session: &mcp.ServerSession{},
+				Params:  &mcp.CallToolParamsRaw{Name: "nil_result_tool"},
+			}
+
+			var (
+				got mcp.Result
+				err error
+			)
+			require.NotPanics(t, func() {
+				got, err = handler(context.Background(), "tools/call", req)
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.result, got)
+
+			tracer.Flush()
+			toolSpan := tt.RequireSpan(t, "nil_result_tool")
+			assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
+			assert.NotContains(t, toolSpan.Meta, "error.message")
+		})
+	}
 }
 
 // Shared helpers

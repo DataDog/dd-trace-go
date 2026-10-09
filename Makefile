@@ -2,12 +2,16 @@ BIN   := $(shell pwd)/bin
 TOOLS := $(shell pwd)/_tools
 BIN_PATH := PATH="$(abspath $(BIN)):$$PATH"
 
+# The help pattern is matched with a string (not a /…/ regex constant) because
+# BSD awk (macOS) treats the "/" in the character class as the regex delimiter
+# and fails with "nonterminated character class". The pattern is POSIX ERE: no
+# lazy "*?" quantifiers, so it also works with mawk (Ubuntu) and gawk.
 .PHONY: help
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[A-Za-z0-9_./-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} $$0 ~ "^[A-Za-z0-9_./-]+:.*## " {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: all
 all: tools-install generate lint test ## Run complete build pipeline (tools, generate, lint, test)
@@ -146,15 +150,26 @@ apidiff: tools-install ## Run semantic API diff for ddtrace/tracer against main
 apidiff/incompatible: tools-install ## Show only breaking (incompatible) API changes for ddtrace/tracer
 	$(BIN_PATH) ./scripts/apidiff.sh --incompatible-only --exit-code github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 
+# The help files are embedded into README files by the docs target. If their
+# generation fails, the error output must never be embedded silently, so these
+# recipes capture stderr but fail the target when the command fails.
 .PHONY: tmp/make-help.txt
 tmp/make-help.txt:
 	@mkdir -p tmp
-	@make help --no-print-directory > tmp/make-help.txt 2>&1 || true
+	@make help --no-print-directory > tmp/make-help.txt 2>&1 || { \
+		echo "'make help' failed; refusing to embed its output into README files:" >&2; \
+		cat tmp/make-help.txt >&2; \
+		exit 1; \
+	}
 
 .PHONY: tmp/test-help.txt
 tmp/test-help.txt:
 	@mkdir -p tmp
-	@./scripts/test.sh --help > tmp/test-help.txt 2>&1 || true
+	@./scripts/test.sh --help > tmp/test-help.txt 2>&1 || { \
+		echo "'scripts/test.sh --help' failed; refusing to embed its output into README files:" >&2; \
+		cat tmp/test-help.txt >&2; \
+		exit 1; \
+	}
 
 .PHONY: docs
 docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update embedded documentation in README files

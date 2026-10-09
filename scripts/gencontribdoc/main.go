@@ -152,7 +152,8 @@ func findContribModules(projectRoot string) ([]contribModule, error) {
 // an internal helper module rather than a published integration.
 func isExcludedDir(dir string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(dir), "/") {
-		if part == "internal" || part == "testdata" {
+		// otelc hook modules are linked in by otelc, never imported by users.
+		if part == "internal" || part == "testdata" || part == "otelc" {
 			return true
 		}
 		if strings.HasPrefix(part, "_") || strings.HasPrefix(part, ".") {
