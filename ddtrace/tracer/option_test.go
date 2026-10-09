@@ -1394,16 +1394,15 @@ func TestStartWithLink(t *testing.T) {
 	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
-func TestOtelResourceAtttributes(t *testing.T) {
-	t.Run("max 10", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		globalTags := c.internalConfig.GlobalTags()
-		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
-		assert.Len(globalTags, 11)
-	})
+func TestOtelResourceAttributesNoLimit(t *testing.T) {
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	tags := c.internalConfig.GlobalTags()
+	for i := 1; i <= 12; i++ {
+		assert.Equal(t, fmt.Sprintf("val%d", i), tags[fmt.Sprintf("tag%d", i)])
+	}
 }
 
 func TestTagSeparators(t *testing.T) {
