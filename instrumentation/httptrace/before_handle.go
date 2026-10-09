@@ -32,8 +32,17 @@ type ServeConfig struct {
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
-	// Route is the request matched route if any, if empty, a quantization algorithm will create one using the request URL.
+	// Route is the low-cardinality route path template selected for the request, if available.
+	// A non-empty Route is recorded as http.route. Route must not contain the raw request path.
 	Route string
+	// Internal: This field exists to avoid per-request global lookups.
+	// For internal use, it must match the resolved global config DD_TRACE_OTEL_SEMANTICS_ENABLED,
+	// as this option is not configurable per-request.
+	// Library users must set it to nil and let us resolve DD_TRACE_OTEL_SEMANTICS_ENABLED internally.
+
+	// OTelSemanticsEnabled selects OpenTelemetry rather than Datadog semantic conventions.
+	// Must be left nil.
+	OTelSemanticsEnabled *bool
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.

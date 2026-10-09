@@ -302,6 +302,34 @@ func TestInferredProxySpansOTelSemantics(t *testing.T) {
 		})
 	}
 
+	t.Run("proxy header queries are excluded", func(t *testing.T) {
+		oldCfg := cfg
+		t.Cleanup(func() { cfg = oldCfg })
+		cfg.queryString = false
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req := httptest.NewRequest(http.MethodGet, "https://example.com?password=secret", nil)
+		for key, value := range inferredHeaders {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set(ProxyHeaderPath, "/test/{id}?password=secret")
+		req.Header.Set(ProxyHeaderDomain, "example.com?password=secret")
+
+		_, _, finishSpans := StartRequestSpan(req)
+		finishSpans(http.StatusOK, nil)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		gwSpan := spans[1]
+		assert.Equal(t, "HTTP /test/{id}", gwSpan.Tag(ext.ResourceName))
+		assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.HTTPRoute))
+		assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.URLPath))
+		assert.Equal(t, "example.com", gwSpan.Tag(ext.ServerAddress))
+		assert.Nil(t, gwSpan.Tag(ext.URLQuery))
+	})
+
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			mt := mocktracer.Start()

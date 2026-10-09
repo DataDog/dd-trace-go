@@ -16,8 +16,11 @@ import (
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig = httptrace.ServeConfig
 
-// TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
-// according to the specified config.
+// TraceAndServe serves h with tracing configured by cfg. Under OpenTelemetry semantics,
+// it uses cfg.Route as http.route and in the default resource name. If cfg.Route is empty,
+// it uses the route path template from r.Pattern. Callers whose router does not set r.Pattern
+// must provide cfg.Route when a route template is available. Without a route, the default
+// resource name contains only the request method. cfg.Route must not contain the raw request path.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
 	wrap.TraceAndServe(h, w, r, cfg)
 }

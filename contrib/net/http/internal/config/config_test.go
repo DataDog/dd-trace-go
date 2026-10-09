@@ -10,7 +10,30 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+func TestDefaultCapturesOTelSemantics(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "disabled", value: "false"},
+		{name: "enabled", value: "true", want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", tt.value)
+			require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+			t.Cleanup(tracer.Stop)
+
+			cfg := Default(Instrumentation)
+			assert.Equal(t, tt.want, cfg.OTelSemanticsEnabled)
+		})
+	}
+}
 
 func TestNormalizeClientRequestMethod(t *testing.T) {
 	for _, tt := range []struct {
