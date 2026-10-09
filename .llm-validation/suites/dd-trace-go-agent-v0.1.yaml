@@ -653,56 +653,45 @@ cases:
 
 # ==== Internal Config Tests ====
 
-  - id: dd-trace-go-internal-config-migration-dependency-first
+  - id: dd-trace-go-internal-config-migration-routing
     files:
       - internal/config/AGENTS.md
     input: |
-      I want to migrate a tracer config field into internal/config. Its value is derived from another
-      field that is still owned by ddtrace/tracer, but that base field looks trivial. Can I migrate
-      just the derived field for now, and what should I do before writing any code?
+      I want to migrate a config setting that is still owned by ddtrace/tracer into internal/config.
+      What should I do before I start writing code?
     expected_criteria:
-      - States the derived field must not be migrated while its base is still owned by ddtrace/tracer;
-        the base field has to be migrated first, even if it looks trivial
-      - Says to surface the dependency to the developer instead of silently expanding scope
-      - Says to produce a migration plan (read sites, write sites, and the surface added to
-        internal/config) before writing code, per the config-migration skill
+      - Says to read the config-migration skill (.agents/skills/config-migration/SKILL.md) before
+        writing any code
+      - Says to read internal/config/README.md
     bad_signals:
-      - Recommends migrating only the derived field and leaving the base in ddtrace/tracer
-      - Recommends migrating the derived field first and the base later
+      - Jumps straight into an implementation without mentioning the config-migration skill
+      - Points to the config-migration-review skill instead of config-migration
 
-  - id: dd-trace-go-internal-config-setter-and-getter-shape
+  - id: dd-trace-go-internal-config-small-edit-routing
     files:
       - internal/config/AGENTS.md
     input: |
-      I'm adding a map-valued field to internal/config that products set from their programmatic
-      APIs. What signature should the setter have, should it go through the cross-product conflict
-      gate, and can the getter just return the map so callers avoid an allocation?
+      I just need to add a one-line getter to internal/config/config.go for a field that already
+      exists. It's tiny -- can I skip reading any extra docs and just make the change?
     expected_criteria:
-      - Gives the setter shape SetX(value, origin, product...) with checkProductConflict called first
-        after acquiring the lock
-      - States additive collection fields (e.g. feature flags, service mappings) merge across products
-        and are not gated, while single-source-of-truth fields are gated
-      - States the getter must return a copy of the map, not the internal reference
+      - Says the config-migration skill (.agents/skills/config-migration/SKILL.md) must be read before
+        editing any file in internal/config, regardless of how small the change is
     bad_signals:
-      - Says the getter can return the internal map directly
-      - Says every setter must be gated regardless of whether the field is additive
-      - Proposes making origin variadic or omitting it from the setter
+      - Agrees that the change is small enough to skip reading the skill
+      - Does not mention the config-migration skill
 
-  - id: dd-trace-go-internal-config-migration-cleanup
+  - id: dd-trace-go-internal-config-review-routing
     files:
       - internal/config/AGENTS.md
     input: |
-      I've moved a tracer field into internal/config with a getter and setter. The field is still
-      listed in startTelemetry in ddtrace/tracer/telemetry.go, and it also exists in globalconfig,
-      where the profiler still reads it. What should I clean up in this PR?
+      Can you review a PR that adds a new field to internal/config/config.go and updates a WithX option
+      in ddtrace/tracer/option.go to use it? What should you read before reviewing?
     expected_criteria:
-      - Says to remove the field's entry from the telemetryConfigs slice in startTelemetry in the same
-        PR because the internal/config setter already reports it
-      - Says to keep the field in globalconfig because the profiler still reads it, and remove it only
-        when its last caller is migrated
+      - Says to read the config-migration-review skill (.agents/skills/config-migration-review/SKILL.md)
+        before reviewing the diff
     bad_signals:
-      - Says to remove the field from globalconfig even though the profiler still uses it
-      - Says to keep the startTelemetry entry, or report the field from both places
+      - Reviews without mentioning the config-migration-review skill
+      - Points only to the config-migration skill and omits config-migration-review
 
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
