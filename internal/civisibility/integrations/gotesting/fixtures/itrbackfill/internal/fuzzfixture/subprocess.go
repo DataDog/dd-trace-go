@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -347,11 +349,22 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	cacheRoot, err := os.MkdirTemp("", "dd-trace-go-fuzz-child-")
+	if err != nil {
+		return nil, fmt.Errorf("creating fixture child cache: %w", err)
+	}
+	defer os.RemoveAll(cacheRoot)
 	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Env = childEnv
+	// Distinct mock backends can reuse an address. Their settings must not
+	// survive in a shared read cache and change a later child's directives.
+	cmd.Env = append(slices.Clone(childEnv),
+		"HOME="+filepath.Join(cacheRoot, "home"),
+		"XDG_CACHE_HOME="+filepath.Join(cacheRoot, "cache"),
+		"LOCALAPPDATA="+filepath.Join(cacheRoot, "cache"),
+	)
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
-	err := runChildCommand(ctx, cmd)
+	err = runChildCommand(ctx, cmd)
 	return output.Bytes(), err
 }
 
