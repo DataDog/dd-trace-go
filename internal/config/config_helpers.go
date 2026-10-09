@@ -506,6 +506,15 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
+// resolveOTLPLogsProtocolFallback returns the generic OTLP protocol when it is
+// explicitly configured, and the logs default otherwise.
+func resolveOTLPLogsProtocolFallback(genericProtocol string, genericOrigin telemetry.Origin) string {
+	if genericOrigin == telemetry.OriginDefault {
+		return defaultOTLPLogsProtocol
+	}
+	return genericProtocol
+}
+
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
 // envVar is used in the warning message to identify which env var had the bad value.
 // The warning is only logged when warn is true.

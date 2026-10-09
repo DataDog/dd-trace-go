@@ -492,14 +492,10 @@ func loadConfig() *Config {
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	genericOTLPProtocol, genericOTLPProtocolOrigin := p.GetStringWithOrigin("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
-	logsProtocolFallback := genericOTLPProtocol
-	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
-		logsProtocolFallback = defaultOTLPLogsProtocol
-	}
 	cfg.loadOTLPLogsConfig(
 		p,
 		agentHost,
-		logsProtocolFallback,
+		resolveOTLPLogsProtocolFallback(genericOTLPProtocol, genericOTLPProtocolOrigin),
 		p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""),
 	)
