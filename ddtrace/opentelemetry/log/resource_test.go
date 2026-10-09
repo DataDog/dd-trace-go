@@ -8,7 +8,10 @@ package log
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -282,6 +285,19 @@ func TestInvalidInputs(t *testing.T) {
 		require.NoError(t, err)
 
 		assertResourceAttributeString(t, res, "custom", "a,b")
+	})
+
+	t.Run("invalid percent encoding keeps raw value and warns", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "valid=value,bad=%ZZ")
+		testLog := new(log.RecordLogger)
+		defer log.UseLogger(testLog)()
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttributeString(t, res, "valid", "value")
+		assertResourceAttributeString(t, res, "bad", "%ZZ")
+		assert.Contains(t, strings.Join(testLog.Logs(), "\n"), "invalid percent encoding")
 	})
 
 	t.Run("special characters in values preserved", func(t *testing.T) {

@@ -8,7 +8,10 @@ package metric
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,7 +109,9 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 }
 
 func TestBuildDatadogResource_OtelAttributes(t *testing.T) {
-	t.Setenv(envOtelResourceAttributes, "invalid-no-equals,valid=value,custom=a%2Cb,service.name=otel-service")
+	t.Setenv(envOtelResourceAttributes, "invalid-no-equals,valid=value,custom=a%2Cb,bad=%ZZ,service.name=otel-service")
+	testLog := new(log.RecordLogger)
+	defer log.UseLogger(testLog)()
 
 	res, err := buildDatadogResource(context.Background())
 	require.NoError(t, err)
@@ -118,7 +123,9 @@ func TestBuildDatadogResource_OtelAttributes(t *testing.T) {
 
 	assert.Equal(t, "value", attrMap["valid"])
 	assert.Equal(t, "a,b", attrMap["custom"])
+	assert.Equal(t, "%ZZ", attrMap["bad"])
 	assert.Equal(t, "otel-service", attrMap["service.name"])
+	assert.Contains(t, strings.Join(testLog.Logs(), "\n"), "invalid percent encoding")
 }
 
 // TestBuildDatadogResource_Hostname verifies hostname resolution priority:

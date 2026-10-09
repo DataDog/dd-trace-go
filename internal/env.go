@@ -185,8 +185,7 @@ func ForEachOTelResourceAttribute(str string, fn func(key, val string)) error {
 		decodedVal, valErr := url.PathUnescape(val)
 		if keyErr != nil || valErr != nil {
 			invalid = append(invalid, key+OtelTagsDelimeter+val)
-			fn(key, val)
-			return
+			decodedKey, decodedVal = key, val
 		}
 		fn(decodedKey, decodedVal)
 	})
