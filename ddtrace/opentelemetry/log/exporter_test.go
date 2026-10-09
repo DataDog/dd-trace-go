@@ -6,10 +6,14 @@
 package log
 
 import (
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
@@ -67,7 +71,9 @@ func TestHasOTLPEndpointInEnv(t *testing.T) {
 }
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
 	t.Run("defaults to localhost:4318", func(t *testing.T) {
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "localhost:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -76,6 +82,7 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 
 	t.Run("uses DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent.example.com")
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "agent.example.com:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -84,6 +91,7 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 
 	t.Run("uses DD_TRACE_AGENT_URL", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "trace-agent:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -93,31 +101,62 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 	t.Run("DD_TRACE_AGENT_URL wins over DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent-host")
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, _, _ := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "trace-agent:4318", endpoint)
 	})
 
 	t.Run("preserves https scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "https://secure-agent:8126")
+		config.CreateNew()
 		_, _, insecure := resolveOTLPEndpointHTTP()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
 
 	t.Run("handles unix socket scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+		config.CreateNew()
 		_, _, insecure := resolveOTLPEndpointHTTP()
 		assert.True(t, insecure, "unix scheme should result in insecure=true")
 	})
 
 	t.Run("handles IPv6 addresses", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://[::1]:8126")
+		config.CreateNew()
 		endpoint, _, _ := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "[::1]:4318", endpoint)
+	})
+
+	t.Run("unix socket falls back to DD_AGENT_HOST", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+		t.Setenv("DD_AGENT_HOST", "agent-host")
+		config.CreateNew()
+		endpoint, _, insecure := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "agent-host:4318", endpoint)
+		assert.True(t, insecure)
+	})
+
+	t.Run("ignores DD_TRACE_AGENT_URL with unsupported scheme", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "tcp://trace-agent:8126")
+		t.Setenv("DD_AGENT_HOST", "agent-host")
+		config.CreateNew()
+		endpoint, _, _ := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "agent-host:4318", endpoint)
+	})
+
+	t.Run("uses programmatic agent URL", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew().SetAgentURL(&url.URL{Scheme: "https", Host: "code-agent:8126"}, telemetry.OriginCode)
+		endpoint, _, insecure := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "code-agent:4318", endpoint)
+		assert.False(t, insecure)
 	})
 }
 
 func TestResolveOTLPEndpointGRPC(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
 	t.Run("defaults to localhost:4317", func(t *testing.T) {
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "localhost:4317", endpoint)
 		assert.True(t, insecure)
@@ -125,6 +164,7 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 
 	t.Run("uses DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent.example.com")
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "agent.example.com:4317", endpoint)
 		assert.True(t, insecure)
@@ -132,6 +172,7 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 
 	t.Run("uses DD_TRACE_AGENT_URL", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "trace-agent:4317", endpoint)
 		assert.True(t, insecure)
@@ -140,12 +181,14 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	t.Run("DD_TRACE_AGENT_URL wins over DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent-host")
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, _ := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "trace-agent:4317", endpoint)
 	})
 
 	t.Run("preserves https scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "https://secure-agent:8126")
+		config.CreateNew()
 		_, insecure := resolveOTLPEndpointGRPC()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
