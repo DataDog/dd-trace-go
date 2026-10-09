@@ -385,9 +385,8 @@ func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpTracesPath).String()
 }
 
-// buildOTLPHeaders builds the OTLP headers map from the provided map.
-// It adds the Content-Type header if not present.
-func buildOTLPHeaders(headers map[string]string) map[string]string {
+// buildOTLPTraceHeaders sets the Content-Type required for OTLP trace export.
+func buildOTLPTraceHeaders(headers map[string]string) map[string]string {
 	if headers == nil {
 		headers = make(map[string]string)
 	}

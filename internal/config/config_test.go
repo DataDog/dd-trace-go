@@ -711,7 +711,7 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 	})
 }
 
-func TestOTLPHeaders(t *testing.T) {
+func TestOTLPTraceHeaders(t *testing.T) {
 	t.Run("always populated with at least Content-Type", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -719,7 +719,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		require.NotNil(t, headers)
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 		assert.Len(t, headers, 1)
@@ -734,7 +734,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "secret", headers["api-key"])
 		assert.Equal(t, "value", headers["x-custom"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
@@ -749,7 +749,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "generic-key", headers["api-key"])
 		assert.Equal(t, "acme", headers["x-tenant"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
@@ -765,7 +765,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "traces-key", headers["api-key"])
 		assert.Equal(t, "acme", headers["x-tenant"])
 	})
@@ -783,7 +783,7 @@ func TestOTLPHeaders(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		// The value is still resolved and parsed for export use.
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
 
 		// But it must not be reported in configuration telemetry, and no reported
@@ -807,8 +807,8 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 		headers func(*Config) map[string]string
 		traces  bool
 	}{
-		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPHeaders, true},
-		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPHeaders, true},
+		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
 		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
 		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
 	} {
@@ -848,7 +848,7 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 			"api-key":      "trace value",
 			"generic-only": "kept value",
 			"Content-Type": OTLPContentTypeHeader,
-		}, cfg.OTLPHeaders())
+		}, cfg.OTLPTraceHeaders())
 		assert.Equal(t, map[string]string{
 			"api-key":      "metric value",
 			"generic-only": "kept value",
