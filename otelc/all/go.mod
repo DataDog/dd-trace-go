@@ -12,6 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
 )
@@ -30,6 +31,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.12.0-dev.3 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -45,6 +47,7 @@ require (
 	github.com/go-chi/chi v1.5.5 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/gomodule/redigo v1.9.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -103,3 +106,7 @@ replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 => ../../contrib/database/sql/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
+
+replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../contrib/gomodule/redigo/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo
