@@ -445,33 +445,45 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	var first *clientConfig
 	if k, ok := rediswrap.HandleOf(proxy); ok {
 		if e, ok := wrapped[k]; ok && e.done == nil {
-			// A new member that already carries the hook was covered by the
-			// proxy's own fan-out — a fan-out-and-retain proxy applies its
-			// retained hooks to the delegate it swaps in — so only a new
-			// member that is unhooked requires observing again. A dropped
-			// delegate is a changed set too: a lazy proxy without a current
-			// member must still receive hooks for the delegate it creates
-			// next.
-			reobserve := e.incomplete || len(e.memberKeys) != len(members)
-			for _, member := range members {
-				if key, ok := rediswrap.HandleOf(member); ok && rediswrap.ContainsKey(e.memberKeys, key) {
-					continue
+			if e.retainOnly {
+				// A retain-only proxy keeps its members unhooked by design,
+				// so an unhooked member — swapped in or not — is not
+				// evidence of anything. Re-observing would hand the proxy
+				// another real hook, and its retained list would later
+				// install several tracing hooks on one delegate: a span per
+				// hook per command. The observation stands as it is.
+				if !sameConfig(e.cfg, cfg.key()) {
+					warn()
 				}
-				if prev, seen := datadogConfig(member); !seen || prev == nil {
-					reobserve = true
-					break
+			} else {
+				// A new member that already carries the hook was covered by
+				// the proxy's own fan-out — a fan-out-and-retain proxy
+				// applies its retained hooks to the delegate it swaps in —
+				// so only a new member that is unhooked requires observing
+				// again. A dropped delegate is a changed set too: a lazy
+				// proxy without a current member must still receive hooks
+				// for the delegate it creates next.
+				reobserve := e.incomplete || len(e.memberKeys) != len(members)
+				for _, member := range members {
+					if key, ok := rediswrap.HandleOf(member); ok && rediswrap.ContainsKey(e.memberKeys, key) {
+						continue
+					}
+					if prev, seen := datadogConfig(member); !seen || prev == nil {
+						reobserve = true
+						break
+					}
 				}
-			}
-			if reobserve {
-				first = e.full
-				if live := e.cfgWeak.Value(); live != nil {
-					// The hooks the first wrap installed keep the first
-					// configuration — user callback included — alive; use
-					// it while they do. The sanitized copy waits behind it
-					// for the day they no longer do.
-					first = live
+				if reobserve {
+					first = e.full
+					if live := e.cfgWeak.Value(); live != nil {
+						// The hooks the first wrap installed keep the first
+						// configuration — user callback included — alive; use
+						// it while they do. The sanitized copy waits behind it
+						// for the day they no longer do.
+						first = live
+					}
+					delete(wrapped, k)
 				}
-				delete(wrapped, k)
 			}
 		}
 	}

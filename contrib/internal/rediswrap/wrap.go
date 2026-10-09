@@ -114,14 +114,28 @@ func BeginWalk(key Handle, wait time.Duration) (release func(), ok bool) {
 // taken: a value mutex of a non-addressable struct — a proxy passed by
 // value — locks nothing, because the state its fields reach through maps,
 // slices, and pointers is the original's, guarded by the original's mutex.
-// Readers must not treat such a copy's interiors as safe; its own header
-// fields are snapshots and stay readable.
+// An unexported pointer mutex on such a copy cannot even be read to be
+// taken, and counts the same. Readers must not treat such a copy's
+// interiors as safe; its own header fields are snapshots and stay
+// readable.
 func Unguarded(s reflect.Value) bool {
 	if s.Kind() != reflect.Struct || s.CanAddr() {
 		return false
 	}
 	for i := 0; i < s.NumField(); i++ {
-		if t := s.Type().Field(i).Type; t == mutexType || t == rwMutexType {
+		t := s.Type().Field(i).Type
+		if t == mutexType || t == rwMutexType {
+			return true
+		}
+		if t == mutexPointerType || t == rwMutexPointerType {
+			// A pointer mutex hangs off the field value itself: an exported
+			// one can be taken without the field's address, but an
+			// unexported one on a copy cannot even be read — LockStruct
+			// skips it, and the shared state it guards must not be
+			// descended into.
+			if s.Field(i).CanInterface() {
+				continue
+			}
 			return true
 		}
 	}
