@@ -7,10 +7,13 @@ package datastreams
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -641,4 +644,95 @@ func BenchmarkSetCheckpointProcessTags(b *testing.B) {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()
+}
+
+func BenchmarkSetCheckpointParallel(b *testing.B) {
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	p.Start()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+		}
+	})
+	p.Stop()
+}
+
+// startBenchReader runs only the reader loop, without the stats reporter, so
+// that p.stats counters are not reset mid-benchmark.
+func startBenchReader(b *testing.B) *Processor {
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	p.stop = make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		p.run(make(chan time.Time))
+		close(done)
+	}()
+	b.Cleanup(func() {
+		close(p.stop)
+		<-done
+	})
+	return p
+}
+
+// BenchmarkReaderWakeLatency measures how long an idle reader takes to pick
+// up a single payload.
+func BenchmarkReaderWakeLatency(b *testing.B) {
+	p := startBenchReader(b)
+	for b.Loop() {
+		want := p.stats.payloadsIn.Load() + 1
+		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+		for p.stats.payloadsIn.Load() < want {
+		}
+	}
+}
+
+// BenchmarkReaderSustainedRate has writers push at a fixed aggregate rate and
+// reports the percentage of payloads dropped. Each op is a 20ms window.
+func BenchmarkReaderSustainedRate(b *testing.B) {
+	const (
+		writers = 8
+		window  = 20 * time.Millisecond
+		batch   = 64
+	)
+	for _, rate := range []int{500_000, 1_000_000, 2_000_000, 4_000_000} {
+		b.Run(fmt.Sprintf("rate=%dk/s", rate/1000), func(b *testing.B) {
+			p := startBenchReader(b)
+			perWriter := float64(rate) / writers
+			var pushed int64
+			for b.Loop() {
+				var wg sync.WaitGroup
+				start := time.Now()
+				for range writers {
+					wg.Go(func() {
+						n := 0
+						for {
+							elapsed := time.Since(start)
+							if elapsed >= window {
+								break
+							}
+							// Busy-wait rather than sleep so the writer keeps to its
+							// schedule at sub-millisecond granularity.
+							if float64(n) >= perWriter*elapsed.Seconds() {
+								continue
+							}
+							for range batch {
+								p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+							}
+							n += batch
+						}
+						atomic.AddInt64(&pushed, int64(n))
+					})
+				}
+				wg.Wait()
+			}
+			b.ReportMetric(100*float64(p.stats.dropped.Load())/float64(pushed), "drop-%")
+			b.ReportMetric(float64(pushed)/float64(b.N), "pushed/op")
+		})
+	}
 }
