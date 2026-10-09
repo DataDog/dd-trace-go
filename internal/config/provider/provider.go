@@ -55,10 +55,8 @@ func New() *Provider {
 	}
 }
 
-// get is the core resolution helper shared by all typed getters.
-// It iterates sources in reverse priority order so that higher-priority sources
-// overwrite lower-priority ones, reports telemetry for every source that has a value,
-// and returns the highest-priority successfully-parsed value, or def if none parse.
+// get is the resolution helper shared by all typed getters. It parses each
+// source's string value with parse; see resolveWithOrigin for resolution.
 func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T {
 	v, _ := getWithOrigin(p, key, def, parse)
 	return v
@@ -76,7 +74,12 @@ func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T,
 	})
 }
 
-// resolveWithOrigin reports source values and selects the highest-priority valid value.
+// resolveWithOrigin is the core resolution loop. read returns a source's raw
+// value, used for telemetry, its parsed value, and whether parsing succeeded.
+// It iterates sources in reverse priority order so that higher-priority sources
+// overwrite lower-priority ones, reports telemetry for every source that has a
+// value, and returns the highest-priority successfully-parsed value, or def if
+// none parse.
 func resolveWithOrigin[T any](p *Provider, key string, def T, read func(configSource) (string, T, bool)) (T, telemetry.Origin) {
 	var final *T
 	var winningOrigin telemetry.Origin
