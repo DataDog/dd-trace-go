@@ -1171,7 +1171,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://collector:4317", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("endpoint with path is used as-is", func(t *testing.T) {
@@ -1222,7 +1222,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://metrics-specific:4318", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {

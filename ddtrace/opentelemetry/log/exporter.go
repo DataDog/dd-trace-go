@@ -170,7 +170,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	// Check if OTEL environment variables are set
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// Parse and sanitize the URL to handle trailing slashes correctly
-		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
+		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, cfg.OTLPLogsEndpointIsGeneric())
 		if sanitizedURL != "" {
 			opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
 			log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
@@ -252,33 +252,27 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	return opts
 }
 
-// sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:
-// 1. Parsing the URL
-// 2. Trimming any trailing slashes from the path
-// 3. Appending the signal-specific path (e.g., "/v1/logs")
-// 4. Returning the complete URL
-//
-// This works around issues where the OTel SDK may not handle trailing slashes correctly,
-// which can result in double slashes like http://host:4320//v1/logs
-func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
+// sanitizeOTLPEndpoint appends the signal path only to a generic OTLP base URL.
+// Signal-specific URLs retain their path, including a trailing slash.
+func sanitizeOTLPEndpoint(rawURL string, isGeneric bool) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
 		return ""
 	}
-
-	// Trim trailing slashes from the path
-	u.Path = strings.TrimRight(u.Path, "/")
-
-	// If the URL already has a path, keep it; otherwise use the signal-specific path
-	if u.Path == "" {
-		u.Path = signalPath
-	} else if !strings.HasSuffix(u.Path, signalPath) {
-		// If path doesn't already end with signal path, append it
-		u.Path = u.Path + signalPath
+	if isGeneric {
+		// Append without cleaning path segments that may be significant to the collector.
+		suffix := defaultOTLPLogsPath
+		if strings.HasSuffix(u.EscapedPath(), "/") {
+			suffix = strings.TrimPrefix(suffix, "/")
+		}
+		u.Path += suffix
+		if u.RawPath != "" {
+			u.RawPath += suffix
+		}
+		return u.String()
 	}
-
-	return u.String()
+	return rawURL
 }
 
 func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
