@@ -88,9 +88,9 @@ func TestResolveOTLPMetricsURL(t *testing.T) {
 		assert.Equal(t, "http://[::1]:4318/v1/metrics", got)
 	})
 
-	t.Run("signal endpoint appends /v1/metrics when path absent", func(t *testing.T) {
+	t.Run("signal endpoint without a path is used as-is", func(t *testing.T) {
 		got := resolveOTLPMetricsURL("http://collector:4318", agentDefault)
-		assert.Equal(t, "http://collector:4318/v1/metrics", got)
+		assert.Equal(t, "http://collector:4318", got)
 	})
 }
 
