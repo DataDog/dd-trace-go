@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -221,7 +222,16 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 func sanitizeOTLPEndpoint(rawURL string, isGeneric bool) string {
 	if isGeneric {
 		u, _ := url.Parse(rawURL)
-		return u.JoinPath(defaultOTLPLogsPath).String()
+		// Append without cleaning path segments that may be significant to the collector.
+		suffix := defaultOTLPLogsPath
+		if strings.HasSuffix(u.EscapedPath(), "/") {
+			suffix = strings.TrimPrefix(suffix, "/")
+		}
+		u.Path += suffix
+		if u.RawPath != "" {
+			u.RawPath += suffix
+		}
+		return u.String()
 	}
 	return rawURL
 }
