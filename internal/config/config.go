@@ -486,13 +486,8 @@ func loadConfig() *Config {
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
 	)
-	genericOTLPHeaders := p.GetString("OTEL_EXPORTER_OTLP_HEADERS", "")
-	metricsHeaders := make(map[string]string)
-	internal.ForEachStringTag(genericOTLPHeaders, internal.OtelTagsDelimeter, func(key, value string) {
-		metricsHeaders[key] = value
-	})
 	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
-		metricsHeaders,
+		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
@@ -501,7 +496,13 @@ func loadConfig() *Config {
 	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
 		logsProtocolFallback = "http/json"
 	}
-	cfg.loadOTLPLogsConfig(p, agentHost, logsProtocolFallback, genericOTLPEndpoint, genericOTLPHeaders)
+	cfg.loadOTLPLogsConfig(
+		p,
+		agentHost,
+		logsProtocolFallback,
+		p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""),
+	)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.
