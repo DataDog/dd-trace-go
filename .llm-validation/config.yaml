@@ -55,7 +55,7 @@ presets:
       - dd-trace-go-orchestrion-yml-structure
       - dd-trace-go-orchestrion-template-function-fields
       - dd-trace-go-internal-config-migration-routing
-      - dd-trace-go-internal-config-small-edit-routing
+      - dd-trace-go-internal-config-implicit-migration-routing
       - dd-trace-go-internal-config-review-routing
     runs: 3
   full:

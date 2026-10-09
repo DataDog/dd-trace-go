@@ -667,17 +667,20 @@ cases:
       - Jumps straight into an implementation without mentioning the config-migration skill
       - Points to the config-migration-review skill instead of config-migration
 
-  - id: dd-trace-go-internal-config-small-edit-routing
+  - id: dd-trace-go-internal-config-implicit-migration-routing
     files:
       - internal/config/AGENTS.md
     input: |
-      I just need to add a one-line getter to internal/config/config.go for a field that already
-      exists. It's tiny -- can I skip reading any extra docs and just make the change?
+      ddtrace/tracer reads an env var with env.Get and keeps the parsed value on its own config struct.
+      I want to add a getter for it in internal/config and switch the tracer to call that instead.
+      It's a small change -- can I just make it?
     expected_criteria:
+      - Recognizes this as moving a config field from ddtrace/tracer into internal/config, even though
+        the request does not say "migrate"
       - Says the config-migration skill (.agents/skills/config-migration/SKILL.md) must be read before
-        editing any file in internal/config, regardless of how small the change is
+        making the change
     bad_signals:
-      - Agrees that the change is small enough to skip reading the skill
+      - Agrees the change is small enough to make without reading the config-migration skill
       - Does not mention the config-migration skill
 
   - id: dd-trace-go-internal-config-review-routing
