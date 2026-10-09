@@ -61,24 +61,24 @@ func TestResolveHeaders(t *testing.T) {
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_HEADERS", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=some%20value,key2=value2")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=value1,key2=value2")
 		headers := loadConfig().OTLPLogsHeaders()
 		assert.Equal(t, map[string]string{
-			"key1": "some value",
+			"key1": "value1",
 			"key2": "value2",
 		}, headers)
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_LOGS_HEADERS wins over generic", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "logs=specific%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "logs=specific")
 		headers := loadConfig().OTLPLogsHeaders()
 		assert.Equal(t, map[string]string{
-			"logs": "specific value",
+			"logs": "specific",
 		}, headers)
 	})
 
-	for _, raw := range []string{"invalid", "invalid,also-invalid", "=value", "   ", "key=%XX"} {
+	for _, raw := range []string{"invalid", "invalid,also-invalid", "=value", "   "} {
 		t.Run("returns nil for unusable logs headers without generic headers for "+raw, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", raw)
@@ -86,16 +86,16 @@ func TestResolveHeaders(t *testing.T) {
 		})
 
 		t.Run("falls back to generic headers for "+raw, func(t *testing.T) {
-			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key=some%20value")
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key=value")
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", raw)
-			assert.Equal(t, map[string]string{"key": "some value"}, loadConfig().OTLPLogsHeaders())
+			assert.Equal(t, map[string]string{"key": "value"}, loadConfig().OTLPLogsHeaders())
 		})
 	}
 
 	t.Run("retains usable logs headers without merging generic headers", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "invalid,logs=specific%20value,empty=,bad=%XX")
-		assert.Equal(t, map[string]string{"logs": "specific value", "empty": ""}, loadConfig().OTLPLogsHeaders())
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "invalid,logs=specific,empty=")
+		assert.Equal(t, map[string]string{"logs": "specific", "empty": ""}, loadConfig().OTLPLogsHeaders())
 	})
 }
 
@@ -157,18 +157,13 @@ func TestParseHeaders(t *testing.T) {
 		}, headers)
 	})
 
-	t.Run("decodes values without decoding keys", func(t *testing.T) {
-		headers := parseOTLPLogsHeaders("key=%20some%20value%20,other=a+b%2Bc%2520,key%20name=a%2Cb%3Dc")
+	// Percent-decoding is tracked separately by OTEL-3378.
+	t.Run("keeps percent-encoded values as-is", func(t *testing.T) {
+		headers := parseOTLPLogsHeaders("key=some%20value,bad=%XX")
 		assert.Equal(t, map[string]string{
-			"key":        "some value",
-			"other":      "a+b+c%20",
-			"key%20name": "a,b=c",
+			"key": "some%20value",
+			"bad": "%XX",
 		}, headers)
-	})
-
-	t.Run("ignores malformed values without replacing valid duplicates", func(t *testing.T) {
-		headers := parseOTLPLogsHeaders("key=some%20value,key=%XX,truncated=%2,incomplete=%")
-		assert.Equal(t, map[string]string{"key": "some value"}, headers)
 	})
 }
 

@@ -46,11 +46,7 @@ func parseOTLPLogsHeaders(str string) map[string]string {
 		if key == "" {
 			continue
 		}
-		value, err := url.PathUnescape(parts[1])
-		if err != nil {
-			continue
-		}
-		headers[key] = strings.TrimSpace(value)
+		headers[key] = strings.TrimSpace(parts[1])
 	}
 	return headers
 }
