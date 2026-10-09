@@ -1,0 +1,24 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Orchestrion rewrites the redis.Dial, redis.DialContext and redis.DialURL call
+# sites. wrap_call cannot tell whether a call spreads its options (opts...), so
+# this hooks redis.DialContext instead, which Dial, DialTimeout, DialURL and
+# DialURLContext all reach. Two differences from rewriting call sites:
+#
+#   1. redis.DialTimeout and redis.DialURLContext are traced too.
+#   2. The contrib calls redis.DialContext itself, so it marks that call and the
+#      hook skips marked ones. See redigotrace.TraceMark.
+redigo_dial_context:
+  target: github.com/gomodule/redigo/redis
+  where:
+    func: DialContext
+  do:
+    - inject_hooks:
+        before: BeforeDialContext
+        after: AfterDialContext
+        path: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2
