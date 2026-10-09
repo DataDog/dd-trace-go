@@ -241,3 +241,19 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
 }
+
+func TestSanitizeOTLPEndpointEscapedBasePath(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		want     string
+	}{
+		{name: "escaped segment", endpoint: "http://collector/tenant%2Fblue", want: "http://collector/tenant%2Fblue/v1/logs"},
+		{name: "escaped trailing slash", endpoint: "http://collector/tenant%2F", want: "http://collector/tenant%2F/v1/logs"},
+		{name: "escaped segment with trailing slash", endpoint: "http://collector/tenant%2Fblue/", want: "http://collector/tenant%2Fblue/v1/logs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, sanitizeOTLPEndpoint(tc.endpoint, true))
+		})
+	}
+}
