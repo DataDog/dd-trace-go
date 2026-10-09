@@ -27,7 +27,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		if cfg != nil {
 			semanticCfg = *cfg
 		}
-		if semanticCfg.Route == "" {
+		if semanticCfg.Route == "" && !semanticCfg.RouteSet {
 			semanticCfg.Route = pattern.Path(r.Pattern)
 		}
 		if semanticCfg.Resource == "" {

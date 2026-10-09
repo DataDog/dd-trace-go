@@ -185,6 +185,17 @@ func TestTraceAndServeOTelSemantics(t *testing.T) {
 		assert.Equal(t, "/trace/{id}", span.Tag(ext.HTTPRoute))
 	})
 
+	t.Run("explicit no match", func(t *testing.T) {
+		span := serverSpan(t, func() {
+			r := httptest.NewRequest(http.MethodGet, "/trace/123", nil)
+			r.Pattern = "GET /parent/"
+			TraceAndServe(http.NotFoundHandler(), httptest.NewRecorder(), r, &httptrace.ServeConfig{RouteSet: true})
+		})
+		assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+		assert.Nil(t, span.Tag(ext.HTTPRoute))
+		assert.Equal(t, "404", span.Tag(ext.HTTPResponseStatusCode))
+	})
+
 	t.Run("caller resource option", func(t *testing.T) {
 		enabled := true
 		span := serverSpan(t, func() {

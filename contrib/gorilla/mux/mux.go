@@ -121,6 +121,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		QueryParams:          r.config.queryParams,
 		RouteParams:          match.Vars,
 		Route:                route,
+		RouteSet:             true,
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	})

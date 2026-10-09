@@ -687,6 +687,54 @@ func TestOTelSemantics(t *testing.T) {
 	}
 }
 
+func TestParentServeMuxRoute(t *testing.T) {
+	for _, otelEnabled := range []bool{true, false} {
+		t.Run(strconv.FormatBool(otelEnabled), func(t *testing.T) {
+			setMuxHTTPConfig(t, strconv.FormatBool(otelEnabled))
+			for _, tt := range []struct {
+				name     string
+				method   string
+				path     string
+				status   int
+				resource string
+				route    any
+				custom   bool
+			}{
+				{name: "not found", method: http.MethodGet, path: "/api/missing", status: http.StatusNotFound, resource: "GET"},
+				{name: "method not allowed", method: http.MethodPost, path: "/api/users/123", status: http.StatusMethodNotAllowed, resource: "POST"},
+				{name: "matched route", method: http.MethodGet, path: "/api/users/123", status: http.StatusOK, resource: "GET /api/users/{id}", route: "/api/users/{id}"},
+				{name: "custom resource", method: http.MethodGet, path: "/api/missing", status: http.StatusNotFound, resource: "custom-resource", custom: true},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					mt := mocktracer.Start()
+					defer mt.Stop()
+					var opts []RouterOption
+					if tt.custom {
+						opts = append(opts, WithResourceNamer(func(*Router, *http.Request) string { return tt.resource }))
+					}
+					router := NewRouter(opts...)
+					router.HandleFunc("/api/users/{id}", func(http.ResponseWriter, *http.Request) {}).Methods(http.MethodGet)
+					parent := http.NewServeMux()
+					parent.Handle("/api/", router)
+					request := httptest.NewRequest(tt.method, tt.path, nil)
+					response := httptest.NewRecorder()
+					parent.ServeHTTP(response, request)
+					require.Equal(t, tt.status, response.Code)
+					assert.Equal(t, "/api/", request.Pattern)
+					spans := mt.FinishedSpans()
+					require.Len(t, spans, 1)
+					resource := tt.resource
+					if !otelEnabled && tt.route == nil && !tt.custom {
+						resource += " unknown"
+					}
+					assert.Equal(t, resource, spans[0].Tag(ext.ResourceName))
+					assert.Equal(t, tt.route, spans[0].Tag(ext.HTTPRoute))
+				})
+			}
+		})
+	}
+}
+
 func TestSemanticModeCapturedAtRouterCreation(t *testing.T) {
 	for _, tt := range []struct {
 		name              string

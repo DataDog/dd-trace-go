@@ -35,6 +35,9 @@ type ServeConfig struct {
 	// Route is the low-cardinality route path template selected for the request, if available.
 	// A non-empty Route is recorded as http.route. Route must not contain the raw request path.
 	Route string
+	// RouteSet reports whether a router resolved Route, including an empty result when no route matched.
+	// When true, TraceAndServe does not infer an OpenTelemetry route from Request.Pattern.
+	RouteSet bool
 	// Internal: This field exists to avoid per-request global lookups.
 	// For internal use, it must match the resolved global config DD_TRACE_OTEL_SEMANTICS_ENABLED,
 	// as this option is not configurable per-request.

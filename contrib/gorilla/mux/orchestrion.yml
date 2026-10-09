@@ -138,6 +138,7 @@ aspects:
                 SpanOpts: spanOpts,
                 RouteParams: match.Vars,
                 Route: route,
+                RouteSet: true,
                 OTelSemanticsEnabled: &{{ $r }}.__dd_config.otelEnabled,
               })
               return
