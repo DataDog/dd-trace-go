@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -151,7 +150,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// Sanitize the URL to handle trailing slashes correctly
-		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
+		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, cfg.OTLPLogsEndpointIsGeneric())
 		opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
 		log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
 	} else {
@@ -216,29 +215,15 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	return opts
 }
 
-// sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:
-// 1. Parsing the URL
-// 2. Trimming any trailing slashes from the path
-// 3. Appending the signal-specific path (e.g., "/v1/logs")
-// 4. Returning the complete URL
-//
-// This works around issues where the OTel SDK may not handle trailing slashes correctly,
-// which can result in double slashes like http://host:4320//v1/logs
-func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
-	u, _ := url.Parse(rawURL)
-
-	// Trim trailing slashes from the path
-	u.Path = strings.TrimRight(u.Path, "/")
-
-	// If the URL already has a path, keep it; otherwise use the signal-specific path
-	if u.Path == "" {
-		u.Path = signalPath
-	} else if !strings.HasSuffix(u.Path, signalPath) {
-		// If path doesn't already end with signal path, append it
-		u.Path = u.Path + signalPath
+// sanitizeOTLPEndpoint appends the signal path only to a generic OTLP base URL.
+// Signal-specific URLs retain their path, including a trailing slash.
+// internal/config only returns endpoints that parse.
+func sanitizeOTLPEndpoint(rawURL string, isGeneric bool) string {
+	if isGeneric {
+		u, _ := url.Parse(rawURL)
+		return u.JoinPath(defaultOTLPLogsPath).String()
 	}
-
-	return u.String()
+	return rawURL
 }
 
 // resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
