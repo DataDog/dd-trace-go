@@ -57,6 +57,12 @@ type TestCase interface {
 	ExpectedTraces() trace.Traces
 }
 
+// TestCaseExpectedSpanCount is an optional interface for test cases that need
+// to assert the total number of spans produced during Run.
+type TestCaseExpectedSpanCount interface {
+	ExpectedSpanCount() int
+}
+
 func Run(t *testing.T, tc TestCase) {
 	t.Helper()
 	// Both tools weave the same instrumentation, so either one satisfies these
@@ -100,7 +106,11 @@ func Run(t *testing.T, tc TestCase) {
 
 	tr.Stop()
 
-	t.Logf("Received %d spans", agent.CountSpans())
+	spanCount := agent.CountSpans()
+	t.Logf("Received %d spans", spanCount)
+	if expected, ok := tc.(TestCaseExpectedSpanCount); ok {
+		require.Equal(t, expected.ExpectedSpanCount(), spanCount)
+	}
 	requireTraceMatch(t, agent, tc.ExpectedTraces())
 }
 
