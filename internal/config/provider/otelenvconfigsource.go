@@ -205,8 +205,9 @@ func mapPropagationStyle(ot string) (string, error) {
 }
 
 // getTags parses OTEL_RESOURCE_ATTRIBUTES into global tags. Keys and values
-// are percent-decoded, decoded commas are replaced with "_", and OTel reserved
-// names are mapped to DD tag names, which lose to native DD tag names.
+// are percent-decoded, decoded commas are replaced with "_", and OTel names in
+// ddTagsMapping are mapped to DD tag names. DD tag names set directly take
+// precedence over mapped ones.
 // raw is the result in DD_TAGS format for telemetry. ok reports whether
 // OTEL_RESOURCE_ATTRIBUTES is set.
 func (o *otelEnvConfigSource) getTags() (raw string, tags map[string]string, ok bool) {
@@ -214,21 +215,22 @@ func (o *otelEnvConfigSource) getTags() (raw string, tags map[string]string, ok 
 	if v == "" {
 		return "", nil, false
 	}
-	var reserved, others [][2]string
+	var mapped, unmapped [][2]string
 	err := internal.ForEachOTelResourceAttribute(v, func(key, val string) {
 		// decoded commas would split the tag in DD_TAGS and DogStatsD formats
 		key, val = strings.ReplaceAll(key, ",", "_"), strings.ReplaceAll(val, ",", "_")
 		if ddKey, ok := ddTagsMapping[key]; ok {
-			reserved = append(reserved, [2]string{ddKey, val})
+			mapped = append(mapped, [2]string{ddKey, val})
 		} else {
-			others = append(others, [2]string{key, val})
+			unmapped = append(unmapped, [2]string{key, val})
 		}
 	})
 	if err != nil {
 		reportInvalidOTelEnv("DD_TAGS", otelConfigs["DD_TAGS"].ot, err)
 	}
-	// reserved names go first so native DD tag names take precedence
-	pairs := append(reserved, others...)
+	// DD tag names take precedence over the OTel names mapped to them (service=a
+	// over service.name=b): unmapped pairs come last and overwrite mapped ones in tags
+	pairs := append(mapped, unmapped...)
 	ddTags := make([]string, 0, len(pairs))
 	tags = make(map[string]string, len(pairs))
 	for _, pair := range pairs {
