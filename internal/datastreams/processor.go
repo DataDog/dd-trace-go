@@ -346,21 +346,33 @@ func (p *Processor) flushInput() {
 	}
 }
 
-// drainBatchSize bounds how many payloads the reader processes per wakeup, so
-// a long backlog can't delay flushes or shutdown.
-const drainBatchSize = 1024
+const (
+	// drainBatchSize bounds how many payloads the reader processes per wakeup,
+	// so a long backlog can't delay flushes or shutdown.
+	drainBatchSize = 1024
+	// readerBatchDelay is how long an idle reader waits after being woken so
+	// that payloads arriving close together are drained in one pass rather
+	// than one wakeup each. Writers would need to push 10M payloads/s to fill
+	// the queue during the wait, and payloads are aggregated into 10s buckets,
+	// so the added latency is harmless. Shorter waits cost more CPU per
+	// payload at 100k payloads/s than the old 10ms poll did.
+	readerBatchDelay = time.Millisecond
+)
 
-func (p *Processor) drainInput() {
+// drainInput processes up to drainBatchSize payloads and reports whether more
+// may still be queued.
+func (p *Processor) drainInput() (more bool) {
 	for range drainBatchSize {
 		in := p.in.pop()
 		if in == nil {
-			return
+			return false
 		}
 		p.processInput(in)
 	}
-	// More may be queued. Re-arm the wakeup so the reader comes straight back
-	// after checking its other channels.
+	// Re-arm the wakeup so the reader comes straight back after checking its
+	// other channels.
 	p.in.signal()
+	return true
 }
 
 func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
@@ -370,6 +382,7 @@ func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 }
 
 func (p *Processor) run(tick <-chan time.Time) {
+	backlogged := false
 	for {
 		p.readerState.Store(int32(readerStalledOnEmptyQueue))
 		select {
@@ -385,8 +398,11 @@ func (p *Processor) run(tick <-chan time.Time) {
 			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
 		case <-p.in.ready:
+			if !backlogged {
+				time.Sleep(readerBatchDelay)
+			}
 			p.readerState.Store(int32(readerProcessing))
-			p.drainInput()
+			backlogged = p.drainInput()
 		}
 	}
 }
