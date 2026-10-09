@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -153,5 +154,30 @@ func TestWrapClientConcurrentEqualCmds(t *testing.T) {
 
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
 		t.Fatalf("expected one span per command, got %d", len(spans))
+	}
+}
+
+// Every goroutine's traced-command stack is retired with it: a service
+// running short-lived goroutines must not grow the registry without bound.
+func TestTracedStacksRetired(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	tc := WrapClient(client)
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() {
+			_ = tc.Process(redis.NewStringCmd("get", "foo"))
+		})
+	}
+	wg.Wait()
+
+	remaining := 0
+	tracedStacks.Range(func(_, _ any) bool {
+		remaining++
+		return true
+	})
+	if remaining != 0 {
+		t.Fatalf("expected every traced stack to be retired, got %d remaining", remaining)
 	}
 }

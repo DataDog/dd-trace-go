@@ -105,7 +105,18 @@ func pushTraced(key cmdKey) func() {
 	}
 	*p = append(*p, key)
 	return func() {
-		*p = (*p)[:len(*p)-1]
+		// Retire the slot with the stack: goroutine ids are reused and a
+		// retained entry would both leak its backing array — keeping the
+		// last command reachable — and outlive the goroutine it belonged
+		// to, so a service running short-lived goroutines would grow the
+		// map without bound.
+		last := len(*p) - 1
+		(*p)[last] = cmdKey{}
+		*p = (*p)[:last]
+		if last == 0 {
+			*p = nil
+			tracedStacks.Delete(id)
+		}
 	}
 }
 
