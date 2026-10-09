@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -492,13 +493,17 @@ func loadConfig() *Config {
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	genericOTLPProtocol, genericOTLPProtocolOrigin := p.GetStringWithOrigin("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
-	cfg.loadOTLPLogsConfig(
-		p,
-		agentHost,
+	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString(
+		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
 		resolveOTLPLogsProtocolFallback(genericOTLPProtocol, genericOTLPProtocolOrigin),
-		p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-		p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""),
-	)
+	)))
+	cfg.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
+	cfg.otlpLogsHeaders = otlpLogsHeadersFromSource(p, p.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""))
+	cfg.otlpLogsTimeout = time.Duration(p.GetInt64(
+		"OTEL_EXPORTER_OTLP_LOGS_TIMEOUT",
+		p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPLogsTimeout.Milliseconds()),
+	)) * time.Millisecond
+	cfg.otlpLogsAgentHost = cmp.Or(agentHost, internal.DefaultAgentHostname)
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
 	// such as "grpc" are valid for other OpenTelemetry components, so only warn
 	// about them when this exporter is going to use the value.
@@ -1909,6 +1914,44 @@ func (c *Config) OTLPMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsProtocol
+}
+
+func (c *Config) OTLPLogsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsProtocol
+}
+
+// OTLPLogsEndpoint returns the configured logs endpoint, or an empty string
+// when the exporter should derive its endpoint from the agent configuration.
+func (c *Config) OTLPLogsEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsEndpoint
+}
+
+// OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
+func (c *Config) OTLPLogsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpLogsHeaders)
+}
+
+func (c *Config) OTLPLogsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsTimeout
+}
+
+// OTLPLogsAgentURL returns the agent URL before the exporter selects its OTLP port.
+func (c *Config) OTLPLogsAgentURL() *url.URL {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.agentURL != nil && c.agentURL.Hostname() != "" {
+		u := *c.agentURL
+		return &u
+	}
+	return &url.URL{Scheme: URLSchemeHTTP, Host: net.JoinHostPort(c.otlpLogsAgentHost, internal.DefaultTraceAgentPort)}
 }
 
 func (c *Config) TraceID128BitEnabled() bool {
