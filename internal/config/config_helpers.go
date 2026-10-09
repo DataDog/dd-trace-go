@@ -81,6 +81,12 @@ const (
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
 
+	defaultOTLPProtocol = "http/protobuf"
+	// defaultOTLPLogsProtocol is the historical logs default. The HTTP log
+	// exporter always sends protobuf, so it only affects the encoding
+	// reported in logs export telemetry (OTEL-3376, OTEL-3377).
+	defaultOTLPLogsProtocol = "http/json"
+
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
 

@@ -491,10 +491,10 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
-	genericOTLPProtocol, genericOTLPProtocolOrigin := p.GetStringWithOrigin("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	genericOTLPProtocol, genericOTLPProtocolOrigin := p.GetStringWithOrigin("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
 	logsProtocolFallback := genericOTLPProtocol
 	if genericOTLPProtocolOrigin == telemetry.OriginDefault {
-		logsProtocolFallback = "http/json"
+		logsProtocolFallback = defaultOTLPLogsProtocol
 	}
 	cfg.loadOTLPLogsConfig(
 		p,
@@ -513,7 +513,7 @@ func loadConfig() *Config {
 	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
 	otlpProtocolFallback := genericOTLPProtocol
 	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
-		otlpProtocolFallback = "http/protobuf"
+		otlpProtocolFallback = defaultOTLPProtocol
 	}
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
 		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
