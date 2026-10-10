@@ -254,6 +254,7 @@ components:
       - .backpassrc.json
       - .claude/**
       - .agents/**
+      - .cursor/**
       - .llm-validation/**
       - latests.txt
       - repository.datadog.yml
