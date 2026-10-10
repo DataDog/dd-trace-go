@@ -133,6 +133,8 @@ type tracer struct {
 
 	// stopOnce ensures the tracer is stopped exactly once.
 	stopOnce sync.Once
+	// telemetryStopOnce ensures telemetry shutdown runs once across concurrent Stop calls.
+	telemetryStopOnce sync.Once
 
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
@@ -1307,12 +1309,38 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Flush telemetry before closing the log file so StopApp diagnostics still land.
+	// Interim tracer/profiler ownership handshake for the global telemetry client;
+	// to be superseded by shared client control (see TODO at newTracer, APMAPI-1771).
+	t.telemetryStopOnce.Do(func() {
+		client := t.telemetry
+		t.telemetry = nil
+		if client == nil {
+			return
+		}
+		telemetry.ProductStopped(telemetry.NamespaceTracers)
+		if telemetry.GlobalClient() != client {
+			// StartApp ignored this client because another product already owns
+			// the global one. Close the leftover so its ticker does not leak.
+			client.Close()
+			return
+		}
+		if traceprof.ProfilerEnabled() {
+			// Profiler started after us and still shares this client. Mark the
+			// tracer product stopped and flush, but leave the app running.
+			// TODO: profiler.Stop() never stops telemetry, so when the profiler is
+			// the last product to stop, app-stopped is never sent and the client's
+			// ticker goroutine lives until process exit. Follow-up: profiler.Stop()
+			// should send ProductStopped(NamespaceProfilers) and StopApp() when it
+			// owns the global client.
+			client.Flush()
+			return
+		}
+		telemetry.StopApp()
+	})
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
-	}
-	if t.telemetry != nil {
-		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
 }
