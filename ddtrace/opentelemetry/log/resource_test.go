@@ -8,7 +8,10 @@ package log
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -275,6 +278,28 @@ func TestInvalidInputs(t *testing.T) {
 		assertResourceAttributeString(t, res, "valid", "value")
 	})
 
+	t.Run("percent-encoded OTEL_RESOURCE_ATTRIBUTES decoded", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "custom=a%2Cb")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttributeString(t, res, "custom", "a,b")
+	})
+
+	t.Run("invalid percent encoding keeps raw value and warns", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "valid=value,bad=%ZZ")
+		testLog := new(log.RecordLogger)
+		defer log.UseLogger(testLog)()
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttributeString(t, res, "valid", "value")
+		assertResourceAttributeString(t, res, "bad", "%ZZ")
+		assert.Contains(t, strings.Join(testLog.Logs(), "\n"), "invalid percent encoding")
+	})
+
 	t.Run("special characters in values preserved", func(t *testing.T) {
 		t.Setenv("DD_TAGS", "special:with-dash_underscore.dot")
 
@@ -344,40 +369,6 @@ func TestComplexScenarios(t *testing.T) {
 			}
 		}
 		assert.True(t, hasKey, "key should be present in attributes")
-	})
-}
-
-func TestParseOtelResourceAttributes(t *testing.T) {
-	t.Run("empty string returns empty map", func(t *testing.T) {
-		result := parseOtelResourceAttributes("")
-		assert.Empty(t, result)
-	})
-
-	t.Run("single attribute", func(t *testing.T) {
-		result := parseOtelResourceAttributes("key=value")
-		assert.Equal(t, map[string]string{"key": "value"}, result)
-	})
-
-	t.Run("multiple attributes", func(t *testing.T) {
-		result := parseOtelResourceAttributes("key1=value1,key2=value2,key3=value3")
-		assert.Equal(t, map[string]string{
-			"key1": "value1",
-			"key2": "value2",
-			"key3": "value3",
-		}, result)
-	})
-
-	t.Run("attributes with dots and underscores", func(t *testing.T) {
-		result := parseOtelResourceAttributes("service.name=my-service,host_name=my-host")
-		assert.Equal(t, map[string]string{
-			"service.name": "my-service",
-			"host_name":    "my-host",
-		}, result)
-	})
-
-	t.Run("values with special characters", func(t *testing.T) {
-		result := parseOtelResourceAttributes("key=value-with-dash_and_underscore.and.dot")
-		assert.Equal(t, map[string]string{"key": "value-with-dash_and_underscore.and.dot"}, result)
 	})
 }
 

@@ -132,14 +132,12 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "tracecontext,b3 single header", v)
 	})
 
-	t.Run("maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS", func(t *testing.T) {
+	t.Run("preserves OTEL_RESOURCE_ATTRIBUTES for tag parsing", func(t *testing.T) {
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=my-service,deployment.environment=prod,custom.key=value")
 		source := &otelEnvConfigSource{}
 		v := source.get("DD_TAGS")
 
-		assert.Contains(t, v, "service:my-service")
-		assert.Contains(t, v, "env:prod")
-		assert.Contains(t, v, "custom.key:value")
+		assert.Equal(t, "service.name=my-service,deployment.environment=prod,custom.key=value", v)
 	})
 
 	t.Run("returns empty for unsupported key", func(t *testing.T) {

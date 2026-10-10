@@ -52,9 +52,9 @@ const (
 // - Datadog hostname takes precedence over OTEL hostname if both are present
 func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
 	// Step 1: Parse OTEL_RESOURCE_ATTRIBUTES as base layer
-	otelAttrs := make(map[string]string)
-	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
-		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
+	otelAttrs, err := internal.ParseOTelResourceAttributes(env.Get(envOtelResourceAttributes))
+	if err != nil {
+		log.Warn("%s", err.Error())
 	}
 
 	// Step 2: Parse DD_TAGS
@@ -161,15 +161,4 @@ func resolveHostname() (string, bool) {
 
 	// Could not determine hostname
 	return "", false
-}
-
-// parseOtelResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES string into a map.
-// Format: key1=value1,key2=value2
-// Invalid entries are silently ignored (best-effort parsing).
-func parseOtelResourceAttributes(str string) map[string]string {
-	res := make(map[string]string)
-	internal.ForEachStringTag(str, internal.OtelTagsDelimeter, func(key, val string) {
-		res[key] = val
-	})
-	return res
 }
