@@ -209,11 +209,5 @@ func mapDDTags(ot string) (string, error) {
 			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)
 		}
 	})
-
-	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
-		ddTags = ddTags[:10]
-	}
-
 	return strings.Join(ddTags, ","), nil
 }
