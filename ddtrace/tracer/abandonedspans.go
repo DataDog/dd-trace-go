@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 var (
@@ -151,7 +152,8 @@ func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 func (d *abandonedSpansDebugger) Start(interval time.Duration) {
 	if atomic.SwapUint32(&d.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.")
+		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.") //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("abandoned spans debugger started more than once", nil)
 		return
 	}
 	d.stop = make(chan struct{})
@@ -277,12 +279,12 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		return
 	}
 
-	log.Warn("%d abandoned spans:", spanCount)
+	log.Warn("%d abandoned spans:", spanCount) //errtrack:ignore expected abandoned-span diagnostic output
 	if truncated {
-		log.Warn("Too many abandoned spans. Truncating message.")
+		log.Warn("Too many abandoned spans. Truncating message.") //errtrack:ignore expected diagnostic output limit
 		sb.WriteString("...")
 	}
-	log.Warn("%s", sb.String())
+	log.Warn("%s", sb.String()) //errtrack:ignore expected abandoned-span diagnostic output
 }
 
 // formatAbandonedSpans takes a bucket and returns a human-readable string representing
