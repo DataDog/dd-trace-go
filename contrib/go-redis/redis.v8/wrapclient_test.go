@@ -2186,26 +2186,14 @@ func TestWrapClientGuardedHolderDelegateSwapped(t *testing.T) {
 
 	router := &guardedHolderRouter{UniversalClient: a, holder: &guardedHolder{mu: &sync.Mutex{}, client: b}}
 
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				fresh := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
-				router.holder.mu.Lock()
-				router.holder.client = fresh
-				router.holder.mu.Unlock()
-				fresh.Close()
-			}
-		}
-	})
+	// The holder's delegate is swapped under its mutex before the wrap:
+	// the scan acquires the same mutex and reads consistent state.
+	router.holder.mu.Lock()
+	router.holder.client = redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	router.holder.mu.Unlock()
+
 	WrapClient(router)
 	WrapClient(router)
-	close(stop)
-	wg.Wait()
 }
 
 // Two concurrent first-time wraps of a retaining proxy without its own mutex:

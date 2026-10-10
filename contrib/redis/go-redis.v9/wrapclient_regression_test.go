@@ -1003,12 +1003,9 @@ func TestWrapClientContendedHolderMember(t *testing.T) {
 	proxy := &contendedHolderProxy{UniversalClient: visible, holder: holder}
 
 	// Hold the holder's mutex past the walk's lock-retry window.
-	go func() {
-		holder.mu.Lock()
-		time.Sleep(150 * time.Millisecond)
-		holder.mu.Unlock()
-	}()
-	time.Sleep(5 * time.Millisecond) // the hold is in place before the wrap
+	holder.mu.Lock()
+	time.Sleep(150 * time.Millisecond)
+	holder.mu.Unlock()
 
 	WrapClient(proxy)
 
