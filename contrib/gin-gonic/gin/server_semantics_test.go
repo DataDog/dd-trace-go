@@ -156,6 +156,21 @@ func TestOTelSemantics(t *testing.T) {
 	}
 }
 
+func TestNilStatusCheck(t *testing.T) {
+	for _, mode := range []string{"false", "true"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("DD_TRACE_HTTP_SERVER_ERROR_STATUSES", "400")
+			setGinHTTPConfig(t, mode)
+
+			clientError := traceGinRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusBadRequest, WithStatusCheck(nil))
+			assert.Equal(t, "400: Bad Request", clientError.Tag(ext.ErrorMsg))
+
+			serverError := traceGinRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusInternalServerError, WithStatusCheck(nil))
+			assert.Nil(t, serverError.Tag(ext.ErrorMsg))
+		})
+	}
+}
+
 func TestOTelSemanticsStatus(t *testing.T) {
 	setGinHTTPConfig(t, "true")
 

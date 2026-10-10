@@ -95,6 +95,10 @@ func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOpt
 
 func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
 	status := c.Writer.Status()
+	if cfg.isStatusError == nil {
+		finishSpans(status, nil)
+		return
+	}
 	statusError := cfg.isStatusError(status)
 	var finishOpts []tracer.FinishOption
 	if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
