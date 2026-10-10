@@ -8,7 +8,9 @@ package redis
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
@@ -240,5 +242,69 @@ func TestWrapClientRawCloneChainIdentity(t *testing.T) {
 
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
 		t.Fatalf("expected exactly 1 command span through the wrapped raw clone, got %d", len(spans))
+	}
+}
+
+// Two independently constructed clients built from the same *redis.Options
+// are separate chains: a wrapper forwarding a command from one to the other
+// synchronously must not suppress the second operation's span, even though
+// the clients share their Options pointer.
+func TestWrapClientSharedOptionsDistinctChains(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opt := &redis.Options{Addr: "127.0.0.1:1"}
+	clientA := redis.NewClient(opt)
+	t.Cleanup(func() { clientA.Close() })
+	clientB := redis.NewClient(opt)
+	t.Cleanup(func() { clientB.Close() })
+
+	tcB := WrapClient(clientB)
+	clientA.WrapProcess(func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			_ = tcB.Process(cmd)
+			return old(cmd)
+		}
+	})
+	tcA := WrapClient(clientA)
+
+	_ = tcA.Process(redis.NewStringCmd("get", "foo"))
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected one span per client, got %d", len(spans))
+	}
+}
+
+// Successive WithContext clones must keep the tracing chain flat: a handle
+// made from a handle bases its wrapper on the predecessor's chain without
+// the predecessor's wrapper, instead of nesting one wrapper per generation.
+func TestWrapClientCloneChainStaysFlat(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	tc := WrapClient(client)
+
+	// Each tracing wrapper level resolves the goroutine id once per
+	// command; a nested chain would resolve it once per generation.
+	var calls atomic.Int64
+	orig := goid
+	goid = func() uint64 {
+		calls.Add(1)
+		return orig()
+	}
+	t.Cleanup(func() { goid = orig })
+
+	chained := tc
+	for range 5 {
+		chained = chained.WithContext(context.Background())
+	}
+	calls.Store(0)
+	_ = chained.Process(redis.NewStringCmd("get", "foo"))
+	<-time.After(50 * time.Millisecond)
+
+	if n := calls.Load(); n > 2 {
+		t.Fatalf("expected at most 2 wrapper levels (clone wrapper and first-generation wrapper), got %d goid calls per command", n)
 	}
 }

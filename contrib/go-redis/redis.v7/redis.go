@@ -302,11 +302,20 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 		}
 	}
 	// A busy client mutex can leave the hook chain transiently unreadable;
-	// retry briefly before falling back to the client's own identity, which
-	// a clone sharing the hook would evade.
+	// retry before falling back to the client's own identity, which a clone
+	// sharing the hook would evade. A concrete go-redis client gets the
+	// longer window: newer upstream versions serialize AddHook on the hook
+	// mutex, so an externally added hook — a user constructor that runs
+	// slowly — holds it, and concluding no datadog hook exists while it is
+	// held installs a second one: every command would emit duplicate spans
+	// once the external call returns.
 	var prev *configKey
 	var seen bool
-	for range 3 {
+	retries := 3
+	if concreteGoRedis(member) {
+		retries = 200
+	}
+	for range retries {
 		prev, seen = datadogConfig(member)
 		if seen {
 			break
@@ -648,7 +657,16 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			}
 			continue
 		}
-		if h := hookSlice(member); h.Len() > before[i] {
+		h := hookSlice(member)
+		if !h.IsValid() {
+			// The chain was readable at the snapshot but stayed locked
+			// through the probe: the member's fan-out state is unknown
+			// here, so the observation is incomplete and a later wrap
+			// re-observes — reading the length would panic.
+			incomplete = true
+			continue
+		}
+		if h.Len() > before[i] {
 			wrapMember(member, cfg, warn)
 			instrumented = true
 		}
@@ -954,7 +972,16 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 			// its interface; walk the keys like values.
 			iter := v.MapRange()
 			for iter.Next() {
-				if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+				hk := iter.Key()
+				if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+					// A key held in a map is not addressable: its unexported
+					// hook field could not be read. Copy it to an
+					// addressable location first, like map values.
+					p := reflect.New(hk.Type())
+					p.Elem().Set(hk)
+					hk = p.Elem()
+				}
+				if found, known := hookInContainer(hk, hook, depth-1); found || !known {
 					return found, known
 				}
 			}
@@ -1080,7 +1107,16 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 				// behind its interface; walk the keys like values.
 				iter := f.MapRange()
 				for iter.Next() {
-					if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+					hk := iter.Key()
+					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+						// A key held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first, like map values.
+						p := reflect.New(hk.Type())
+						p.Elem().Set(hk)
+						hk = p.Elem()
+					}
+					if found, known := hookInContainer(hk, hook, depth-1); found || !known {
 						return found, known
 					}
 				}
@@ -1222,7 +1258,16 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 				// behind its interface; walk the keys like values.
 				iter := f.MapRange()
 				for iter.Next() {
-					if found, known := hookInContainer(iter.Key(), hook, depth-1); found || !known {
+					hk := iter.Key()
+					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+						// A key held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first, like map values.
+						p := reflect.New(hk.Type())
+						p.Elem().Set(hk)
+						hk = p.Elem()
+					}
+					if found, known := hookInContainer(hk, hook, depth-1); found || !known {
 						return found, known
 					}
 				}
@@ -1265,6 +1310,19 @@ func hookEqual(a, b redis.Hook) bool {
 	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
 		return false
 	}
+	// A statically comparable hook type may hold non-comparable dynamic
+	// values behind interface fields — comparing those panics — so the
+	// comparison runs under a recovered panic, which only ever means "not
+	// equal".
+	return safeHookEqual(a, b)
+}
+
+func safeHookEqual(a, b redis.Hook) (eq bool) {
+	defer func() {
+		if recover() != nil {
+			eq = false
+		}
+	}()
 	return a == b
 }
 

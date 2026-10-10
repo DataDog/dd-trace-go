@@ -15,10 +15,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -296,9 +298,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	if err != nil {
 		return fmt.Errorf("failed to collect modules under excluded directories: %w", err)
 	}
-	for path, m := range dirExcluded {
-		modules[path] = m
-	}
+	maps.Copy(modules, dirExcluded)
 	excludedModules = append(excludedModules, dirExcludedPaths...)
 	slog.Info("Found modules:", "count", len(modules))
 	moduleKeys := make([]string, 0, len(modules))
@@ -315,7 +315,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	slog.Info("Root module", "module", rootModule.Module.Path)
 
 	// Filter modules to only include those that depend on the root module.
-	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
+	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules, untaggedModules)
 	slog.Info("Filtered modules:", "count", len(filteredModules))
 	filteredKeys := make([]string, 0, len(filteredModules))
 	for k := range filteredModules {
@@ -983,7 +983,7 @@ func runCommand(dir string, name string, args ...string) error {
 // requires an internal helper module (contrib/internal/...) needs that
 // helper published too, or its published version resolves to a tag that
 // does not exist.
-func filterModules(modules map[string]GoMod, rootModulePath string, excludedModules []string) map[string]GoMod {
+func filterModules(modules map[string]GoMod, rootModulePath string, excludedModules, untaggedModules []string) map[string]GoMod {
 	filtered := make(map[string]GoMod)
 
 	for path, mod := range modules {
@@ -1027,10 +1027,10 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 	}
 
 	// A module whose repository-internal requirement — a module of this
-	// repository, present in the walk — is excluded by name cannot be
-	// published resolvably: phase 1 rewrites its requirement to the new
-	// release version, and the excluded dependency is never tagged, so
-	// consumers could not resolve it. Drop such dependents, and repeat:
+	// repository, present in the walk — is excluded by name, or updated but
+	// never tagged, cannot be published resolvably: phase 1 rewrites its
+	// requirement to the new release version, and a dependency with no tag
+	// cannot be resolved by consumers. Drop such dependents, and repeat:
 	// each removal can orphan the dependents of the removed module too.
 	for changed := true; changed; {
 		changed = false
@@ -1042,10 +1042,10 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 				if _, repoInternal := modules[req.Path]; !repoInternal {
 					continue
 				}
-				if _, published := filtered[req.Path]; !published {
-					slog.Warn("excluding module with dependents",
+				if _, published := filtered[req.Path]; !published || containsPath(untaggedModules, req.Path) {
+					slog.Warn("dropping module with unresolvable dependency",
 						"module", req.Path, "dependent", path,
-						"reason", "the dependent requires an excluded repository module and cannot be published resolvably")
+						"reason", "the dependent requires a repository module that is excluded or never tagged, and cannot be published resolvably")
 					delete(filtered, path)
 					changed = true
 					break
@@ -1065,7 +1065,6 @@ func filterModules(modules map[string]GoMod, rootModulePath string, excludedModu
 // untagged helper that no consumer can resolve.
 func excludedDirModules(root string, excludedDirs []string) (map[string]GoMod, []string, error) {
 	found := make(map[string]GoMod)
-	var paths []string
 	for _, dir := range excludedDirs {
 		abs := dir
 		if !filepath.IsAbs(abs) {
@@ -1094,10 +1093,7 @@ func excludedDirModules(root string, excludedDirs []string) (map[string]GoMod, [
 			return nil, nil, fmt.Errorf("failed to walk excluded directory: %w", err)
 		}
 	}
-	for path := range found {
-		paths = append(paths, path)
-	}
-	return found, paths, nil
+	return found, slices.Collect(maps.Keys(found)), nil
 }
 
 func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {

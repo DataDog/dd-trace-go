@@ -1337,3 +1337,64 @@ func TestWrapClientRetainOnlySwapNoRehand(t *testing.T) {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
 	}
 }
+
+// slowExternalAddHook's constructors sleep, so the chain rebuild an
+// upstream AddHook triggers holds the hook mutex for the sleep's duration.
+type slowExternalAddHook struct {
+	delay time.Duration
+}
+
+func (r *slowExternalAddHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (r *slowExternalAddHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	time.Sleep(r.delay)
+	return next
+}
+
+func (r *slowExternalAddHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// A slow externally added hook holds the chain's mutex — every constructor
+// runs inside the rebuild — past the wrap's short retry window on a
+// concrete client: the wrap must wait it out and see the datadog hook that
+// is already there, not install a second one.
+func TestWrapClientExternalAddHookContention(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	WrapClient(member)
+
+	added := make(chan struct{})
+	go func() {
+		defer close(added)
+		member.AddHook(&slowExternalAddHook{delay: 600 * time.Millisecond})
+	}()
+	// The external hook's rebuild is holding the chain's mutex.
+	time.Sleep(100 * time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(member)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("WrapClient did not return within the wait window")
+	}
+	<-added
+
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after the contended wrap, got %d", n)
+	}
+	_ = member.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}

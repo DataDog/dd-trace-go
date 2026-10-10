@@ -269,8 +269,11 @@ func SameMark(pa any, ma []any, ra []unsafe.Pointer, pb any, mb []any, rb []unsa
 	if ta.Comparable() {
 		// Different comparable proxies are different, even over the same
 		// members: only a proxy that cannot be compared at all falls back
-		// to matching through its member set.
-		return pa == pb
+		// to matching through its member set. A statically comparable type
+		// may still hold non-comparable dynamic values behind interface
+		// fields — comparing those panics — so the comparison runs under a
+		// recovered panic, which only ever means "not equal".
+		return safeEqual(pa, pb)
 	}
 	if len(ma) != len(mb) {
 		return false
@@ -375,6 +378,18 @@ var (
 // contention from another goroutine is ridden out with short retries. A
 // struct without mutexes does not synchronize those fields, and reading them
 // is then no more racy than the struct's own readers.
+// safeEqual reports whether two statically comparable values are equal,
+// treating a comparison that panics on non-comparable dynamic values — a
+// map or slice behind an interface field — as inequality.
+func safeEqual(a, b any) (eq bool) {
+	defer func() {
+		if recover() != nil {
+			eq = false
+		}
+	}()
+	return a == b
+}
+
 // HookState describes the outcome of trying to become the installer of a
 // client's hook.
 type HookState uint8

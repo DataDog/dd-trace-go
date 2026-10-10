@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1372,7 +1373,7 @@ func TestExcludeModulesSkipsTagCreation(t *testing.T) {
 	}
 
 	excludedModule := "example.com/root/moduleC/v2"
-	filtered := filterModules(modules, rootMod.Module.Path, []string{excludedModule})
+	filtered := filterModules(modules, rootMod.Module.Path, []string{excludedModule}, []string{})
 
 	sorted, err := topologicalSort(buildDependencyGraph(filtered))
 	if err != nil {
@@ -1506,7 +1507,7 @@ func TestExcludeModulesDropsDependents(t *testing.T) {
 
 	// Exclude the helper: moduleA, which requires it, and moduleB, which
 	// requires moduleA, must drop with it.
-	filtered := filterModules(modules, rootMod.Module.Path, []string{helperModule})
+	filtered := filterModules(modules, rootMod.Module.Path, []string{helperModule}, []string{})
 	for _, dropped := range []string{
 		helperModule,
 		"example.com/root/moduleA/v2",
@@ -1597,9 +1598,7 @@ func TestExcludeDirsDropsDependents(t *testing.T) {
 	if _, seen := dirExcluded[helperModule]; !seen {
 		t.Fatalf("excludedDirModules must find the helper under the excluded directory; got: %v", dirExcludedPaths)
 	}
-	for path, m := range dirExcluded {
-		modules[path] = m
-	}
+	maps.Copy(modules, dirExcluded)
 	excluded := append([]string{}, dirExcludedPaths...)
 
 	rootMod, err := readModule(filepath.Join(tmpDir, "go.mod"))
@@ -1607,7 +1606,7 @@ func TestExcludeDirsDropsDependents(t *testing.T) {
 		t.Fatalf("readModule failed: %v", err)
 	}
 
-	filtered := filterModules(modules, rootMod.Module.Path, excluded)
+	filtered := filterModules(modules, rootMod.Module.Path, excluded, []string{})
 	for _, dropped := range []string{
 		helperModule,
 		"example.com/root/moduleA/v2",
@@ -1625,6 +1624,96 @@ func TestExcludeDirsDropsDependents(t *testing.T) {
 	}
 
 	tags := buildTagList(tmpDir, rootMod, filtered, sorted, version, []string{})
+	for _, dropped := range []string{
+		"contrib/internal/helper/" + version,
+		"moduleA/" + version,
+		"moduleB/" + version,
+	} {
+		for _, tag := range tags {
+			if tag == dropped {
+				t.Errorf("buildTagList must not include %q for the dropped dependent; full list: %v",
+					dropped, tags)
+			}
+		}
+	}
+}
+
+// TestUntaggedModulesDropsDependents verifies the --untagged-modules parallel
+// of the exclusion fixes: a repository helper that is updated but never
+// tagged must drop the integrations that require it, transitively — or
+// phase 1 rewrites their requirement on the helper to the new release
+// version that no tag is ever created for, unresolvable for consumers.
+func TestUntaggedModulesDropsDependents(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+
+		helperModule = "example.com/root/contrib/internal/helper/v2"
+		helperDir    = "contrib/internal/helper"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	// Create the internal helper module: a repository module with no
+	// dependency on the root.
+	if err := os.MkdirAll(filepath.Join(tmpDir, helperDir), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	helperGoMod := "module " + helperModule + "\n\ngo 1.26.0\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, helperDir, "go.mod"), []byte(helperGoMod), 0o644); err != nil {
+		t.Fatalf("write helper go.mod failed: %v", err)
+	}
+
+	// moduleA requires the helper and replaces it with the local module.
+	moduleAGoMod, err := os.ReadFile(filepath.Join(tmpDir, "moduleA", "go.mod"))
+	if err != nil {
+		t.Fatalf("read moduleA go.mod failed: %v", err)
+	}
+	newGoMod := strings.Replace(string(moduleAGoMod),
+		"require example.com/root/v2 v2.0.0",
+		"require (\n\t"+helperModule+" v2.0.0\n\texample.com/root/v2 v2.0.0\n)\n\nreplace "+helperModule+" => ../"+helperDir,
+		1)
+	if err := os.WriteFile(filepath.Join(tmpDir, "moduleA", "go.mod"), []byte(newGoMod), 0o644); err != nil {
+		t.Fatalf("write moduleA go.mod failed: %v", err)
+	}
+
+	modules, err := findModules(tmpDir, []string{})
+	if err != nil {
+		t.Fatalf("findModules failed: %v", err)
+	}
+
+	rootMod, err := readModule(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("readModule failed: %v", err)
+	}
+
+	// The helper is untagged: it stays in the set — its go.mod is updated
+	// and committed, like the default untagged test helpers — but its
+	// dependents must drop, for their requirement on it cannot resolve.
+	filtered := filterModules(modules, rootMod.Module.Path, []string{}, []string{helperModule})
+	if _, kept := filtered[helperModule]; !kept {
+		t.Errorf("filterModules must keep the untagged helper %q in the update set; filtered: %v",
+			helperModule, filtered)
+	}
+	for _, dropped := range []string{
+		"example.com/root/moduleA/v2",
+		"example.com/root/moduleB/v2",
+	} {
+		if _, kept := filtered[dropped]; kept {
+			t.Errorf("filterModules must drop %q when its dependency is untagged; filtered: %v",
+				dropped, filtered)
+		}
+	}
+
+	sorted, err := topologicalSort(buildDependencyGraph(filtered))
+	if err != nil {
+		t.Fatalf("topologicalSort failed: %v", err)
+	}
+
+	tags := buildTagList(tmpDir, rootMod, filtered, sorted, version, []string{helperModule})
 	for _, dropped := range []string{
 		"contrib/internal/helper/" + version,
 		"moduleA/" + version,
@@ -1709,7 +1798,7 @@ func TestInternalHelperModuleTagged(t *testing.T) {
 		t.Fatalf("readModule failed: %v", err)
 	}
 
-	filtered := filterModules(modules, rootMod.Module.Path, []string{})
+	filtered := filterModules(modules, rootMod.Module.Path, []string{}, []string{})
 	if _, ok := filtered[helperModule]; !ok {
 		t.Fatalf("filterModules must include the internal helper %q required by moduleA; filtered: %v",
 			helperModule, filtered)

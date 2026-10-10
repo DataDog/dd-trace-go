@@ -63,8 +63,9 @@ var (
 	// goroutines never collide with it, however equal their values — two
 	// equal value commands are separate operations and each traces once.
 	// The mark is also scoped to one client chain — identified by the
-	// underlying client's Options pointer, inherited with the process
-	// chain by every clone of it —
+	// underlying connection pool, inherited with the process chain by
+	// every clone of it, and never shared by independently constructed
+	// clients —
 	// so a user wrapper that retries or fails over by forwarding the same
 	// command to a second wrapped client, synchronously, still gets that
 	// client's span: the second Process call is its own Redis operation.
@@ -77,6 +78,28 @@ var (
 	// chains instead, but v6 has no hook chain to read.
 	tracedStacks sync.Map // goid -> *[]tracedCmd
 )
+
+// chainID returns the identity of the client chain c belongs to: the
+// underlying connection pool. A WithContext clone shares its predecessor's
+// pool — cloning copies the client, not the pool — and a raw upstream clone
+// keeps its pool when wrapped separately, so all handles of one chain share
+// the id; two independently constructed clients always dial their own pool,
+// even when built from the same *Options.
+func chainID(c *redis.Client) unsafe.Pointer {
+	v := reflect.ValueOf(c).Elem().FieldByName("connPool")
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil
+		}
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	if v.IsNil() {
+		return nil
+	}
+	pool := v.Interface()
+	// The interface's data word holds the pool itself.
+	return (*[2]unsafe.Pointer)(unsafe.Pointer(&pool))[1]
+}
 
 // cmdKey identifies a command value: its dynamic type and the interface's
 // data word, which holds the command itself when it is pointer-shaped and a
@@ -100,7 +123,7 @@ func newCmdKey(cmd redis.Cmder) cmdKey {
 // raw upstream clone keeps when it is wrapped separately — and the
 // command's own identity.
 type tracedCmd struct {
-	chain *redis.Options
+	chain unsafe.Pointer
 	key   cmdKey
 }
 
@@ -127,7 +150,7 @@ func tracedStack() (uint64, *[]tracedCmd) {
 // wrapper is driving the command through chain, and returns the function
 // that retires it once the command returns. The stack is per goroutine:
 // only the wrappers of this goroutine's own call chain see it.
-func pushTraced(id uint64, p *[]tracedCmd, chain *redis.Options, key cmdKey) func() {
+func pushTraced(id uint64, p *[]tracedCmd, chain unsafe.Pointer, key cmdKey) func() {
 	*p = append(*p, tracedCmd{chain: chain, key: key})
 	return func() {
 		// Retire the slot with the stack: goroutine ids are reused and a
@@ -147,12 +170,13 @@ func pushTraced(id uint64, p *[]tracedCmd, chain *redis.Options, key cmdKey) fun
 
 // tracedOuter reports whether a datadog wrapper further out on this
 // goroutine is currently driving the command through the same client chain.
-func tracedOuter(p *[]tracedCmd, chain *redis.Options, key cmdKey) bool {
+func tracedOuter(p *[]tracedCmd, chain unsafe.Pointer, key cmdKey) bool {
 	return len(*p) > 0 && (*p)[len(*p)-1] == tracedCmd{chain: chain, key: key}
 }
 
-// goid returns the current goroutine's id.
-func goid() uint64 {
+// goid returns the current goroutine's id. A variable so tests can count
+// its invocations: one per tracing wrapper level, per command.
+var goid = func() uint64 {
 	b := make([]byte, 64)
 	b = b[:runtime.Stack(b, false)]
 	// The first line reads "goroutine 123 [running]:".
@@ -198,6 +222,11 @@ type Client struct {
 	*redis.Client
 	*params
 
+	// base is the chain this handle's wrapper wraps, without the wrapper
+	// itself: a clone's wrapper bases itself on it, so chains stay flat
+	// across successive clones instead of nesting every predecessor's
+	// wrapper.
+	base    func(cmd redis.Cmder) error
 	process func(cmd redis.Cmder) error
 }
 
@@ -333,6 +362,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	tc := &Client{Client: c, params: params}
 	// createWrapperFromClient installs the tracing wrapper as the client's
 	// process and records the original process on tc.
+	tc.base = currentProcess(c)
 	c.WrapProcess(createWrapperFromClient(tc))
 	// The cleanup is attached to the client: when it becomes unreachable the
 	// entry goes with it, even though neither side keeps the other alive.
@@ -419,13 +449,21 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 	clone := &Client{
 		Client: c.Client.WithContext(ctx),
 		params: c.params,
-		// process is left nil so that createWrapperFromClient captures the
-		// raw clone's current process chain: wrappers added to the client
-		// after this handle was created keep running. The chain's own
-		// datadog wrapper skips its span for commands driven by the clone
-		// (see tracedCmds), so each command still traces exactly once.
 	}
-	clone.Client.WrapProcess(createWrapperFromClient(clone))
+	// The clone's wrapper bases itself on the receiver's base — the chain
+	// without the receiver's own wrapper. Basing on the raw clone's current
+	// chain instead would nest every predecessor's wrapper: a handle made
+	// from a handle would run one tracing wrapper per generation, keep every
+	// predecessor reachable through its closure, and grow without bound
+	// under client = client.WithContext(ctx) reuse.
+	base := c.base
+	if base == nil {
+		base = currentProcess(c.Client)
+	}
+	clone.base = base
+	clone.Client.WrapProcess(func(func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return createWrapperFromClient(clone)(base)
+	})
 	return clone
 }
 
@@ -440,13 +478,13 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 		return func(cmd redis.Cmder) error {
 			key := newCmdKey(cmd)
 			id, stack := tracedStack()
-			if tracedOuter(stack, tc.Client.Options(), key) {
+			if tracedOuter(stack, chainID(tc.Client), key) {
 				// A datadog wrapper further out on this goroutine, on the
 				// same client chain, is driving this command and already
 				// started its span for it; see tracedStacks.
 				return tc.process(cmd)
 			}
-			defer pushTraced(id, stack, tc.Client.Options(), key)()
+			defer pushTraced(id, stack, chainID(tc.Client), key)()
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
