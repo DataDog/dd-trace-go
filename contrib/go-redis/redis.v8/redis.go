@@ -322,7 +322,6 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	registered := false
 	for {
 		if seen && prev != nil {
 			if !sameConfig(*prev, cfg.key()) {
@@ -331,12 +330,14 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 			return
 		}
 		if !seen {
-			// The hook chain cannot be read: the weak identity is the only
-			// deduplication this client has, so its entry is kept.
-			if registerWeak(member, cfg, warn) {
-				return
-			}
-			registered = true
+			// The hook chain cannot be read — possibly held by the very
+			// constructor this call re-entered from, on upstream versions
+			// that hold the hook mutex through their constructors. Register
+			// the weak identity and defer the installation: an AddHook
+			// against the held chain would deadlock, and a later wrap once
+			// the chain is readable installs.
+			registerWeak(member, cfg, warn)
+			return
 		}
 		// The client's own AddHook rebuilds its hook chain by calling
 		// every hook's constructors — DialHook, ProcessHook,
@@ -346,26 +347,7 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 		// already covers the install: a concurrent wrap of the same member
 		// waits for it there rather than racing a second hook onto the
 		// chain.
-		unlocked(func() {
-			// The weak entry registered above must not outlive a failed
-			// installation: a user hook constructor that panics —
-			// recovered by the application — would otherwise leave the
-			// client marked as wrapped while it may carry no active hook,
-			// and every later wrap would trust the entry and never retry.
-			defer func() {
-				if r := recover(); r != nil {
-					if registered {
-						if k, ok := rediswrap.HandleOf(member); ok {
-							wrapMu.Lock()
-							delete(wrapped, k)
-							wrapMu.Unlock()
-						}
-					}
-					panic(r)
-				}
-			}()
-			addHook(member, cfg)
-		})
+		unlocked(func() { addHook(member, cfg) })
 		return
 	}
 }

@@ -450,36 +450,40 @@ func TestWrapClientDelegatingAddHook(t *testing.T) {
 	}
 }
 
-// panickingMember has no readable hook chain and an AddHook that panics.
-type panickingMember struct {
+// deferredMember has no readable hook chain and an AddHook that must never
+// be called against an unreadable chain: a constructor re-entering WrapClient
+// while the upstream AddHook holds the hook mutex would deadlock against it.
+type deferredMember struct {
 	redis.UniversalClient
+	addHooked atomic.Bool
 }
 
-func (m *panickingMember) AddHook(hook redis.Hook) {
-	panic("constructor boom")
+func (m *deferredMember) AddHook(hook redis.Hook) {
+	m.addHooked.Store(true)
 }
 
-// A panicking AddHook — recovered by the application — must not leave the
-// weak registration behind: every later wrap would trust the entry and
-// never install a hook.
-func TestWrapMemberPanicRemovesWeakEntry(t *testing.T) {
+// An unreadable chain defers the installation: the weak identity is
+// registered (a later wrap once the chain is readable installs) and the
+// member's AddHook is never invoked against a chain whose mutex may be held
+// by the very constructor this call re-entered from.
+func TestWrapMemberDefersUnreadableChain(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 
-	member := &panickingMember{}
+	member := &deferredMember{}
 	wrapMu.Lock()
-	func() {
-		defer func() { recover() }()
-		wrapMember(member, cfg, func() {})
-	}()
+	wrapMember(member, cfg, func() {})
 	wrapMu.Unlock()
 
+	if member.addHooked.Load() {
+		t.Fatal("AddHook was invoked against an unreadable chain")
+	}
 	if k, ok := rediswrap.HandleOf(member); ok {
 		wrapMu.Lock()
-		_, still := wrapped[k]
+		_, registered := wrapped[k]
 		wrapMu.Unlock()
-		if still {
-			t.Fatal("the weak entry survived the panicking AddHook")
+		if !registered {
+			t.Fatal("the weak identity was not registered for the deferred installation")
 		}
 	}
 }
@@ -1448,5 +1452,70 @@ func TestWrapClientBoxedKeyHookSet(t *testing.T) {
 	_ = later.Get(context.Background(), "foo").Err()
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
 		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}
+
+// constructorReentryHook's constructors call WrapClient on the same client:
+// on upstream versions that hold the hook mutex through their constructors,
+// the re-entrant wrap runs while that mutex is held.
+type constructorReentryHook struct {
+	client  redis.UniversalClient
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (r *constructorReentryHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (r *constructorReentryHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	r.once.Do(func() { close(r.entered) })
+	WrapClient(r.client)
+	return next
+}
+
+func (r *constructorReentryHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// A constructor that re-enters WrapClient while the upstream AddHook holds
+// the hook mutex must not deadlock: the re-entrant wrap defers (weak
+// identity registered, no AddHook against the held chain), and a later
+// wrap once the chain is readable installs.
+func TestWrapClientConstructorReentryDefers(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	hook := &constructorReentryHook{client: client, entered: make(chan struct{})}
+
+	added := make(chan struct{})
+	go func() {
+		defer close(added)
+		client.AddHook(hook) // the constructor re-enters WrapClient here
+	}()
+	<-hook.entered
+	// The re-entrant wrap waits out its full retry window before deferring:
+	// the mutex stays held until the constructor returns, which happens only
+	// when the wait expires.
+	select {
+	case <-added:
+	case <-time.After(60 * time.Second):
+		t.Fatal("AddHook deadlocked: the constructor's WrapClient re-entered AddHook against the held hook mutex")
+	}
+
+	if n := datadogHooks(client); n != 0 {
+		t.Fatalf("expected the deferred wrap to install nothing while the chain is held, got %d hooks", n)
+	}
+
+	// A later wrap, once the chain is readable, installs.
+	WrapClient(client)
+	if n := datadogHooks(client); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook after the later wrap, got %d", n)
+	}
+	_ = client.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }

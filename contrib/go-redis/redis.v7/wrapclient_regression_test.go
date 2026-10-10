@@ -381,36 +381,40 @@ func TestWrapClientDelegatingAddHook(t *testing.T) {
 	}
 }
 
-// panickingMember has no readable hook chain and an AddHook that panics.
-type panickingMember struct {
+// deferredMember has no readable hook chain and an AddHook that must never
+// be called against an unreadable chain: a constructor re-entering WrapClient
+// while the upstream AddHook holds the hook mutex would deadlock against it.
+type deferredMember struct {
 	redis.UniversalClient
+	addHooked atomic.Bool
 }
 
-func (m *panickingMember) AddHook(hook redis.Hook) {
-	panic("constructor boom")
+func (m *deferredMember) AddHook(hook redis.Hook) {
+	m.addHooked.Store(true)
 }
 
-// A panicking AddHook — recovered by the application — must not leave the
-// weak registration behind: every later wrap would trust the entry and
-// never install a hook.
-func TestWrapMemberPanicRemovesWeakEntry(t *testing.T) {
+// An unreadable chain defers the installation: the weak identity is
+// registered (a later wrap once the chain is readable installs) and the
+// member's AddHook is never invoked against a chain whose mutex may be held
+// by the very constructor this call re-entered from.
+func TestWrapMemberDefersUnreadableChain(t *testing.T) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 
-	member := &panickingMember{}
+	member := &deferredMember{}
 	wrapMu.Lock()
-	func() {
-		defer func() { recover() }()
-		wrapMember(member, cfg, func() {})
-	}()
+	wrapMember(member, cfg, func() {})
 	wrapMu.Unlock()
 
+	if member.addHooked.Load() {
+		t.Fatal("AddHook was invoked against an unreadable chain")
+	}
 	if k, ok := rediswrap.HandleOf(member); ok {
 		wrapMu.Lock()
-		_, still := wrapped[k]
+		_, registered := wrapped[k]
 		wrapMu.Unlock()
-		if still {
-			t.Fatal("the weak entry survived the panicking AddHook")
+		if !registered {
+			t.Fatal("the weak identity was not registered for the deferred installation")
 		}
 	}
 }
