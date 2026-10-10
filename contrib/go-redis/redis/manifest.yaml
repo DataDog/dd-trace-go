@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/go-redis/redis
+display_name: go-redis
+description: Instruments Redis commands and regular or transactional pipelines through the go-redis client, creating spans
+  with command details and errors.
+packages:
+- name: github.com/go-redis/redis
+category:
+- db.client
+systems:
+- redis
+creation_date: '2017-05-09'

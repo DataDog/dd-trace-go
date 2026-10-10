@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/twitchtv/twirp
+display_name: Twirp
+description: Instruments Twirp RPC client calls and server request lifecycles, propagating trace context and recording service,
+  method, status, and error details.
+packages:
+- name: github.com/twitchtv/twirp
+category:
+- rpc.client
+- rpc.server
+systems:
+- twirp
+creation_date: '2019-10-30'
