@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/Shopify/sarama
+display_name: Shopify Sarama
+description: Instruments synchronous and asynchronous Kafka message production and partition consumption, with trace context
+  propagation and optional Data Streams monitoring.
+packages:
+- name: github.com/Shopify/sarama
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- kafka
+creation_date: '2018-09-13'
