@@ -116,7 +116,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 
@@ -137,12 +137,12 @@ func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog str
 func RunSimpleSubcontext(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 	ctxOp, ok := dyngo.FindOperation[ContextOperation](ctx)
 	if !ok {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 	var err error
