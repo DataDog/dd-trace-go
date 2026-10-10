@@ -292,6 +292,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 2 # HEAD^1 is the base for the nested-modules lint step
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
@@ -334,6 +335,30 @@ jobs:
         with:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The golangci-lint steps above stop at Go workspace module boundaries.
+      # Lint only the nested modules this change touches, and report only the
+      # issues it adds: those modules still carry pre-existing findings.
+      - name: golangci-lint (nested modules)
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          base="HEAD~1"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            before="${{ github.event.before }}"
+            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
+              # The push creates the branch, so no earlier tip exists to
+              # diff against. The step lints nothing.
+              before="$GITHUB_SHA"
+            else
+              # A push can carry several commits, and HEAD~1 covers only the
+              # last commit of the range. Fetch the whole push: git
+              # merge-base cannot pass the shallow boundary of the checkout.
+              git fetch --no-tags --depth="$(( ${{ (github.event.commits || '') | length }} + 2 ))" origin "$GITHUB_SHA"
+            fi
+            base="$before"
+          fi
+          ./scripts/lint_go_modules.sh "$base" --timeout 10m
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
