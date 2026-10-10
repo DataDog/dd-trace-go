@@ -1509,13 +1509,110 @@ func TestWrapClientConstructorReentryDefers(t *testing.T) {
 		t.Fatalf("expected the deferred wrap to install nothing while the chain is held, got %d hooks", n)
 	}
 
-	// A later wrap, once the chain is readable, installs.
-	WrapClient(client)
-	if n := datadogHooks(client); n != 1 {
-		t.Fatalf("expected exactly 1 datadog hook after the later wrap, got %d", n)
+	// The background watcher retries once the external AddHook finishes: the
+	// member is instrumented without any further WrapClient call. Each poll
+	// takes the member's install marker, serializing the read against the
+	// watcher's upstream (unsynchronized) hook append.
+	deadline := time.After(30 * time.Second)
+	handle, _ := rediswrap.HandleOf(client)
+	for {
+		markBusy := false
+		var n int
+		if state, mark := rediswrap.TryBeginHooking(handle); state == rediswrap.HookBegin {
+			n = datadogHooks(client)
+			rediswrap.EndHooking(handle, mark)
+		} else {
+			markBusy = true
+		}
+		if !markBusy {
+			if n == 1 {
+				break
+			} else if n > 1 {
+				t.Fatalf("expected exactly 1 datadog hook, got %d", n)
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the background retry never installed: member has %d hooks", n)
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	_ = client.Get(context.Background(), "foo").Err()
 	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
 		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}
+
+// ptrMutexFanOutProxy fans hooks out to its member and guards its fields
+// with a pointer RWMutex. It does not retain hooks.
+type ptrMutexFanOutProxy struct {
+	redis.UniversalClient
+	mu *sync.RWMutex
+}
+
+func (r *ptrMutexFanOutProxy) AddHook(hook redis.Hook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.UniversalClient.AddHook(hook)
+}
+
+// A proxy whose pointer RWMutex is write-held while the retention scan runs
+// must not be misclassified: descending into the mutex value reads as
+// contention (unknown retention) and hands a real hook to a fan-out-only
+// proxy, adding a second datadog hook to its already wrapped member. The
+// scan skips mutex fields instead.
+func TestWrapClientPtrMutexScanSkip(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	member := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { member.Close() })
+	// Pre-wrap the member: the retention misclassification would add a
+	// second datadog hook to it.
+	WrapClient(member)
+
+	proxy := &ptrMutexFanOutProxy{UniversalClient: member, mu: &sync.RWMutex{}}
+	// Hold the pointer RWMutex in write mode while the wrap's retention scan
+	// runs: the scan acquires the read lock and its pointer branch descends
+	// into the mutex value, whose inner writer mutex the write hold keeps
+	// locked — the nested lock attempt times out and reads as unknown
+	// retention.
+	// Alternate write holds and releases: the scan's LockStruct acquires the
+	// read lock during a release window, and the writer re-holds while the
+	// scan's pointer branch descends into the mutex value — whose inner
+	// writer mutex is then locked by the writer, reading as contention.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	go func() {
+		proxy.mu.Lock()
+		close(held)
+		for range 10 {
+			time.Sleep(150 * time.Millisecond)
+			proxy.mu.Unlock()
+			time.Sleep(150 * time.Millisecond)
+			proxy.mu.Lock()
+		}
+		proxy.mu.Unlock()
+		close(release)
+	}()
+	<-held
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		WrapClient(proxy)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("WrapClient deadlocked against the held pointer mutex")
+	}
+	<-release
+
+	if n := datadogHooks(member); n != 1 {
+		t.Fatalf("expected exactly 1 datadog hook on the wrapped member, got %d", n)
 	}
 }

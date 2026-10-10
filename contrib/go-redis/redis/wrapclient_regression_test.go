@@ -344,3 +344,37 @@ func TestWrapClientNestedReissueTraces(t *testing.T) {
 		t.Fatalf("expected the outer command and its nested re-issue to trace twice, got %d spans", len(spans))
 	}
 }
+
+// A process wrapper installed on the raw client after the first WrapClient
+// must run for commands through clones created later: the first-generation
+// base is computed at WithContext time from the underlying client's current
+// process chain, not frozen at install time.
+func TestWrapClientKeepsLaterWrappersInClones(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	raw := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { raw.Close() })
+	tc := WrapClient(raw)
+
+	var laterCalls atomic.Int64
+	raw.WrapProcess(func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			laterCalls.Add(1)
+			return old(cmd)
+		}
+	})
+
+	clone := tc.WithContext(context.Background())
+	_ = clone.Get("foo").Err()
+
+	if n := laterCalls.Load(); n != 1 {
+		t.Fatalf("expected the later process wrapper to run exactly once per command, got %d", n)
+	}
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
+	}
+}

@@ -379,7 +379,10 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	tc := &Client{Client: c, params: params}
 	// createWrapperFromClient installs the tracing wrapper as the client's
 	// process and records the original process on tc.
-	tc.base = currentProcess(c)
+	// base is intentionally left nil here: WithContext computes it from the
+	// underlying client's CURRENT process chain, so user wrappers installed
+	// after this wrap are seen by clones created later. Clones inherit the
+	// computed base, keeping their chains flat across generations.
 	c.WrapProcess(createWrapperFromClient(tc))
 	// The cleanup is attached to the client: when it becomes unreachable the
 	// entry goes with it, even though neither side keeps the other alive.

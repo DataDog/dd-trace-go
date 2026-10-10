@@ -334,9 +334,27 @@ func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
 			// constructor this call re-entered from, on upstream versions
 			// that hold the hook mutex through their constructors. Register
 			// the weak identity and defer the installation: an AddHook
-			// against the held chain would deadlock, and a later wrap once
-			// the chain is readable installs.
+			// against the held chain would deadlock. A background watcher
+			// waits for the in-flight external AddHook to finish and re-runs
+			// the full member protocol, so the member does not stay untraced
+			// until an undocumented later wrap.
 			registerWeak(member, cfg, warn)
+			go func() {
+				for range 600 {
+					time.Sleep(10 * time.Millisecond)
+					if _, seen := datadogConfig(member); !seen {
+						continue
+					}
+					// The chain is readable: the external AddHook finished.
+					// Re-run the member protocol under the package lock; it
+					// re-checks the marker, the registry, and the chain, and
+					// installs only if still needed.
+					wrapMu.Lock()
+					wrapMember(member, cfg, func() {})
+					wrapMu.Unlock()
+					return
+				}
+			}()
 			return
 		}
 		// The client's own AddHook rebuilds its hook chain by calling
@@ -1009,7 +1027,7 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 		if v.IsNil() || !v.CanInterface() {
 			return false, true
 		}
-		if t := v.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+		if t := v.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
 			return false, true
 		}
 		// The indirection consumes the limit, like the interface above.
@@ -1141,7 +1159,7 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 			if f.IsNil() || !f.CanInterface() {
 				continue
 			}
-			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
 				continue
 			}
 			// Any other pointer — a struct holder, a pointer-backed
@@ -1301,7 +1319,7 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 			// A concrete client field is a delegate, not proxy-owned
 			// storage: the probe the proxy's own AddHook fanned out to it
 			// is not evidence of retention.
-			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType {
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
 				continue
 			}
 			// Any other pointer — a struct holder, a pointer-backed
