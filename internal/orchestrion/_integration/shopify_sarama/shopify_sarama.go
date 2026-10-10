@@ -27,9 +27,14 @@ const (
 )
 
 type TestCase struct {
-	server *kafka.KafkaContainer
-	cfg    *sarama.Config
-	addrs  []string
+	server    *kafka.KafkaContainer
+	cfg       *sarama.Config
+	addrs     []string
+	clusterID string
+}
+
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
@@ -42,6 +47,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.server = container
 	tc.addrs = []string{addr}
+	tc.clusterID = containers.KafkaClusterID(t, container)
 }
 
 func produceMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
@@ -50,6 +56,7 @@ func produceMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	producer, err := sarama.NewSyncProducer(addrs, cfg)
 	require.NoError(t, err, "failed to create producer")
 	defer func() { assert.NoError(t, producer.Close(), "failed to close producer") }()
+	time.Sleep(3 * time.Second)
 
 	_, _, err = producer.SendMessage(&sarama.ProducerMessage{
 		Topic:     topic,
@@ -71,6 +78,7 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	consumer, err := sarama.NewConsumer(addrs, cfg)
 	require.NoError(t, err, "failed to create consumer")
 	defer func() { assert.NoError(t, consumer.Close(), "failed to close consumer") }()
+	time.Sleep(3 * time.Second)
 
 	partitionConsumer, err := consumer.ConsumePartition(topic, partition, sarama.OffsetOldest)
 	require.NoError(t, err, "failed to create partition consumer")
@@ -92,7 +100,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	consumeMessage(t, tc.addrs, tc.cfg)
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -101,8 +109,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"service": "kafka",
 			},
 			Meta: map[string]string{
-				"span.kind": "producer",
-				"component": "Shopify/sarama",
+				"span.kind":                  "producer",
+				"component":                  "Shopify/sarama",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -112,8 +121,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"service": "kafka",
 					},
 					Meta: map[string]string{
-						"span.kind": "consumer",
-						"component": "Shopify/sarama",
+						"span.kind":                  "consumer",
+						"component":                  "Shopify/sarama",
+						"messaging.kafka.cluster_id": tc.clusterID,
 					},
 				},
 			},
