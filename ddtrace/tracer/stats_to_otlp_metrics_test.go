@@ -174,7 +174,9 @@ func TestSketchToHistogramMultipleValues(t *testing.T) {
 func TestBuildOTLPMetricsRequestNilOnEmpty(t *testing.T) {
 	cfg := internalconfig.CreateNew()
 	payload := makePayload("svc", "", "", nil)
-	assert.Nil(t, buildOTLPMetricsRequest(payload, cfg))
+	rm, err := buildOTLPMetricsRequest(payload, cfg)
+	require.NoError(t, err)
+	assert.Nil(t, rm)
 }
 
 func TestBuildOTLPMetricsRequestStructure(t *testing.T) {
@@ -189,7 +191,8 @@ func TestBuildOTLPMetricsRequestStructure(t *testing.T) {
 		TopLevelHits: 1,
 		OkSummary:    encodeSketch(t, 50e6), // 50ms
 	}
-	rm := buildOTLPMetricsRequest(makePayload("svc", "prod", "1.0", []*pb.ClientGroupedStats{gs}), cfg)
+	rm, err := buildOTLPMetricsRequest(makePayload("svc", "prod", "1.0", []*pb.ClientGroupedStats{gs}), cfg)
+	require.NoError(t, err)
 	require.NotNil(t, rm)
 	require.Len(t, rm, 1)
 
@@ -224,7 +227,8 @@ func TestBuildOTLPMetricsRequestOkAndErrorDataPoints(t *testing.T) {
 		OkSummary:    encodeSketch(t, 50e6),
 		ErrorSummary: encodeSketch(t, 100e6),
 	}
-	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	rm, err := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.NoError(t, err)
 	require.NotNil(t, rm)
 	hist := rm[0].ScopeMetrics[0].Metrics[0].GetHistogram()
 	require.Len(t, hist.DataPoints, 2)
@@ -236,7 +240,8 @@ func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
 	cfg := internalconfig.CreateNew()
 	gs1 := &pb.ClientGroupedStats{Service: "svc-a", Resource: "res-a", OkSummary: encodeSketch(t, 50e6)}
 	gs2 := &pb.ClientGroupedStats{Service: "svc-b", Resource: "res-b", OkSummary: encodeSketch(t, 100e6)}
-	rm := buildOTLPMetricsRequest(makePayload("svc-a", "", "", []*pb.ClientGroupedStats{gs1, gs2}), cfg)
+	rm, err := buildOTLPMetricsRequest(makePayload("svc-a", "", "", []*pb.ClientGroupedStats{gs1, gs2}), cfg)
+	require.NoError(t, err)
 	require.NotNil(t, rm)
 
 	sm := rm[0].ScopeMetrics
@@ -557,7 +562,8 @@ func TestDataPointCountEqualsBucketCountSum(t *testing.T) {
 		OkSummary:    encodeSketch(t, 1e6, 5e6, 50e6),
 		ErrorSummary: encodeSketch(t, 100e6, 500e6),
 	}
-	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	rm, err := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.NoError(t, err)
 	require.NotNil(t, rm)
 	for _, dp := range rm[0].ScopeMetrics[0].Metrics[0].GetHistogram().DataPoints {
 		var bucketSum uint64
@@ -589,7 +595,8 @@ func TestBuildOTLPMetricsRequestMultiBucket(t *testing.T) {
 			{Start: bucket2Start, Duration: bucketDur, Stats: []*pb.ClientGroupedStats{newGroup()}},
 		},
 	}
-	rm := buildOTLPMetricsRequest(payload, cfg)
+	rm, err := buildOTLPMetricsRequest(payload, cfg)
+	require.NoError(t, err)
 	require.NotNil(t, rm)
 	dps := rm[0].ScopeMetrics[0].Metrics[0].GetHistogram().DataPoints
 	require.Len(t, dps, 2)
