@@ -1,0 +1,14 @@
+_v: 1
+name: github.com/elastic/go-elasticsearch/v6
+display_name: go-elasticsearch v6
+description: Instruments Elasticsearch client operations through a tracing transport, recording request methods, URLs, parameters,
+  body snippets, response status, and errors.
+packages:
+- name: github.com/elastic/go-elasticsearch/v6
+- name: github.com/elastic/go-elasticsearch/v7
+- name: github.com/elastic/go-elasticsearch/v8
+category:
+- db.client
+systems:
+- elasticsearch
+creation_date: '2021-11-12'

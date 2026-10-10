@@ -1,0 +1,12 @@
+_v: 1
+name: go.mongodb.org/mongo-driver
+display_name: MongoDB Go Driver
+description: Instruments MongoDB commands issued by the MongoDB Go Driver, creating client spans with query details, database
+  and peer metadata, and errors.
+packages:
+- name: go.mongodb.org/mongo-driver
+category:
+- db.client
+systems:
+- mongodb
+creation_date: '2019-09-02'
