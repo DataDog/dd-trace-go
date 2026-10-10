@@ -308,3 +308,39 @@ func TestWrapClientCloneChainStaysFlat(t *testing.T) {
 		t.Fatalf("expected at most 2 wrapper levels (clone wrapper and first-generation wrapper), got %d goid calls per command", n)
 	}
 }
+
+// A user wrapper installed before Datadog that synchronously re-issues the
+// command it is handling — a retry — runs a nested Process through the same
+// client on the same goroutine. The nested operation is a separate Redis
+// operation and traces, even though the command value is identical: only
+// the chain's inherited wrapper skips a mark pushed by a different wrapper
+// instance.
+func TestWrapClientNestedReissueTraces(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cmd := redis.NewStringCmd("get", "foo")
+	var reissued atomic.Bool
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { client.Close() })
+	// The retry wrapper re-issues the same command object once, from
+	// inside the handling of the outer command.
+	client.WrapProcess(func(old func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return func(cmd redis.Cmder) error {
+			if reissued.CompareAndSwap(false, true) {
+				_ = client.Process(cmd)
+			}
+			return old(cmd)
+		}
+	})
+	tc := WrapClient(client)
+
+	_ = tc.Process(cmd)
+
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 2 {
+		t.Fatalf("expected the outer command and its nested re-issue to trace twice, got %d spans", len(spans))
+	}
+}

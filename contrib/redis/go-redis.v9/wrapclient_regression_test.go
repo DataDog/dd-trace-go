@@ -1398,3 +1398,55 @@ func TestWrapClientExternalAddHookContention(t *testing.T) {
 		t.Fatalf("expected exactly 1 command span, got %d", len(spans))
 	}
 }
+
+// boxedKeyRetainProxy keeps hooks in a generic set whose keys are holder
+// structs behind interfaces, with the hook in an unexported field.
+type boxedKeyRetainProxy struct {
+	redis.UniversalClient
+	set map[any]struct{}
+}
+
+type boxedHookHolder struct {
+	hook redis.Hook
+}
+
+func (r *boxedKeyRetainProxy) AddHook(hook redis.Hook) {
+	if r.set == nil {
+		r.set = map[any]struct{}{}
+	}
+	r.set[boxedHookHolder{hook: hook}] = struct{}{}
+	r.UniversalClient.AddHook(hook)
+}
+
+func (r *boxedKeyRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for k := range r.set {
+		delegate.AddHook(k.(boxedHookHolder).hook)
+	}
+}
+
+// Hooks held behind interface-boxed holder keys — map[any]struct{} whose
+// keys are holder structs with unexported hook fields — are retained like
+// any other store: the scan unwraps the key's interface, snapshots the
+// holder, and reads the field, so the real hook is handed to the proxy and
+// delegates it instruments later are traced.
+func TestWrapClientBoxedKeyHookSet(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	current := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { current.Close() })
+	proxy := &boxedKeyRetainProxy{UniversalClient: current}
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	}
+}

@@ -62,10 +62,12 @@ var (
 	// the mark is goroutine-scoped: concurrent commands on other
 	// goroutines never collide with it, however equal their values — two
 	// equal value commands are separate operations and each traces once.
-	// The mark is also scoped to one client chain — identified by the
-	// underlying connection pool, inherited with the process chain by
-	// every clone of it, and never shared by independently constructed
-	// clients —
+	// The mark is scoped to one goroutine, one client chain — identified
+	// by the underlying connection pool, inherited with the process chain
+	// by every clone of it, and never shared by independently constructed
+	// clients — and one wrapper instance: the chain's inherited wrapper
+	// skips a command its outer wrapper is already driving, while the
+	// owner's own re-entry for a nested operation traces.
 	// so a user wrapper that retries or fails over by forwarding the same
 	// command to a second wrapped client, synchronously, still gets that
 	// client's span: the second Process call is its own Redis operation.
@@ -124,6 +126,12 @@ func newCmdKey(cmd redis.Cmder) cmdKey {
 // command's own identity.
 type tracedCmd struct {
 	chain unsafe.Pointer
+	// owner identifies the wrapper instance that pushed the mark: the
+	// chain's inherited wrapper skips a mark pushed by a different
+	// instance, while the owner's own re-entry — a nested command a user
+	// wrapper issues through the same client — is a separate operation and
+	// traces.
+	owner *Client
 	key   cmdKey
 }
 
@@ -150,8 +158,8 @@ func tracedStack() (uint64, *[]tracedCmd) {
 // wrapper is driving the command through chain, and returns the function
 // that retires it once the command returns. The stack is per goroutine:
 // only the wrappers of this goroutine's own call chain see it.
-func pushTraced(id uint64, p *[]tracedCmd, chain unsafe.Pointer, key cmdKey) func() {
-	*p = append(*p, tracedCmd{chain: chain, key: key})
+func pushTraced(id uint64, p *[]tracedCmd, owner *Client, chain unsafe.Pointer, key cmdKey) func() {
+	*p = append(*p, tracedCmd{chain: chain, owner: owner, key: key})
 	return func() {
 		// Retire the slot with the stack: goroutine ids are reused and a
 		// retained entry would both leak its backing array — keeping the
@@ -170,8 +178,17 @@ func pushTraced(id uint64, p *[]tracedCmd, chain unsafe.Pointer, key cmdKey) fun
 
 // tracedOuter reports whether a datadog wrapper further out on this
 // goroutine is currently driving the command through the same client chain.
-func tracedOuter(p *[]tracedCmd, chain unsafe.Pointer, key cmdKey) bool {
-	return len(*p) > 0 && (*p)[len(*p)-1] == tracedCmd{chain: chain, key: key}
+// tracedOuter reports whether a datadog wrapper of a different instance,
+// on this goroutine and chain, is currently driving the command: the
+// inherited wrapper of the chain the owner drives skips its span, while
+// the owner's own re-entry — a nested command a user wrapper issues
+// through the same client — is a separate operation and traces.
+func tracedOuter(p *[]tracedCmd, me *Client, chain unsafe.Pointer, key cmdKey) bool {
+	if len(*p) == 0 {
+		return false
+	}
+	top := (*p)[len(*p)-1]
+	return top.chain == chain && top.key == key && top.owner != me
 }
 
 // goid returns the current goroutine's id. A variable so tests can count
@@ -478,13 +495,13 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 		return func(cmd redis.Cmder) error {
 			key := newCmdKey(cmd)
 			id, stack := tracedStack()
-			if tracedOuter(stack, chainID(tc.Client), key) {
+			if tracedOuter(stack, tc, chainID(tc.Client), key) {
 				// A datadog wrapper further out on this goroutine, on the
 				// same client chain, is driving this command and already
 				// started its span for it; see tracedStacks.
 				return tc.process(cmd)
 			}
-			defer pushTraced(id, stack, chainID(tc.Client), key)()
+			defer pushTraced(id, stack, tc, chainID(tc.Client), key)()
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")

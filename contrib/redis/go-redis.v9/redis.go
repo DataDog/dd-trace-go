@@ -578,7 +578,14 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 			finish(proxy, entry, false)
 		}
 	}()
-	probe := probeHook{cfg: cfg}
+	// The probe carries the callback-free configuration: a probe that lands
+	// on an externally rooted member — already wrapped, so this wrap
+	// installs nothing there — stays in that member's chain permanently,
+	// and a probe carrying the live configuration would keep the user
+	// callback, and everything it captures, reachable for as long as the
+	// member lives. The live configuration stays anchored by the hooks
+	// this wrap installs and by the real hook retain-only proxies keep.
+	probe := probeHook{cfg: registryConfig(cfg)}
 	unlocked(func() { proxy.AddHook(probe) })
 	// A proxy that keeps the probe in its own fields retains hooks for
 	// delegates it creates later; those delegates are traced only through a
@@ -910,6 +917,11 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 	if depth <= 0 {
 		return false, true
 	}
+	// The value may be the hook itself — a struct implementing redis.Hook
+	// stored as a set key, say — not merely a container of one.
+	if h, ok := reflect.TypeAssert[redis.Hook](v); ok {
+		return hookEqual(h, hook), true
+	}
 	switch v.Kind() {
 	case reflect.Slice, reflect.Array:
 		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
@@ -972,6 +984,10 @@ func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known 
 			iter := v.MapRange()
 			for iter.Next() {
 				hk := iter.Key()
+				if hk.Kind() == reflect.Interface && !hk.IsNil() {
+					// A generic key holds the holder behind its interface.
+					hk = hk.Elem()
+				}
 				if hk.Kind() == reflect.Struct && !hk.CanAddr() {
 					// A key held in a map is not addressable: its unexported
 					// hook field could not be read. Copy it to an
@@ -1102,11 +1118,15 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 					}
 				}
 			} else {
-				// A generic key — map[any]struct{} — may hold the hook
-				// behind its interface; walk the keys like values.
+				// DBG
 				iter := f.MapRange()
 				for iter.Next() {
 					hk := iter.Key()
+					if hk.Kind() == reflect.Interface && !hk.IsNil() {
+						// A generic key holds the holder behind its
+						// interface.
+						hk = hk.Elem()
+					}
 					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
 						// A key held in a map is not addressable: its
 						// unexported hook field could not be read. Copy it
@@ -1115,8 +1135,9 @@ func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) 
 						p.Elem().Set(hk)
 						hk = p.Elem()
 					}
-					if found, known := hookInContainer(hk, hook, depth-1); found || !known {
-						return found, known
+					res, kn := hookInContainer(hk, hook, depth-1)
+					if res || !kn {
+						return res, kn
 					}
 				}
 			}
@@ -1162,6 +1183,10 @@ var (
 func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
 	if s.Kind() != reflect.Struct || depth <= 0 {
 		return false, true
+	}
+	// The struct may itself be the hook, not merely a container of one.
+	if h, ok := reflect.TypeAssert[redis.Hook](s); ok {
+		return hookEqual(h, hook), true
 	}
 	// Each nested struct is locked as it is traversed, like the root: a
 	// synchronized hook store shared by several proxies updates its slice
@@ -1253,11 +1278,15 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 					}
 				}
 			} else {
-				// A generic key — map[any]struct{} — may hold the hook
-				// behind its interface; walk the keys like values.
+				// DBG
 				iter := f.MapRange()
 				for iter.Next() {
 					hk := iter.Key()
+					if hk.Kind() == reflect.Interface && !hk.IsNil() {
+						// A generic key holds the holder behind its
+						// interface.
+						hk = hk.Elem()
+					}
 					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
 						// A key held in a map is not addressable: its
 						// unexported hook field could not be read. Copy it
@@ -1266,8 +1295,9 @@ func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known boo
 						p.Elem().Set(hk)
 						hk = p.Elem()
 					}
-					if found, known := hookInContainer(hk, hook, depth-1); found || !known {
-						return found, known
+					res, kn := hookInContainer(hk, hook, depth-1)
+					if res || !kn {
+						return res, kn
 					}
 				}
 			}
