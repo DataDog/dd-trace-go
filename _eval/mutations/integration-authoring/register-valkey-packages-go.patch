@@ -1,0 +1,19 @@
+--- a/instrumentation/packages.go
++++ b/instrumentation/packages.go
+@@ -891,16 +891,6 @@
+ 	PackageLogSlog: {
+ 		TracedPackage: "log/slog",
+ 		IsStdLib:      true,
+-	},
+-	PackageValkeyIoValkeyGo: {
+-		TracedPackage: "github.com/valkey-io/valkey-go",
+-		EnvVarPrefix:  "VALKEY",
+-		naming: map[Component]componentNames{
+-			ComponentDefault: {
+-				useDDServiceV0:     true,
+-				buildServiceNameV0: staticName("valkey.client"),
+-			},
+-		},
+ 	},
+ 	PackageAzureAPIMCallout: {
+ 		TracedPackage: "azure/apim-callout",
