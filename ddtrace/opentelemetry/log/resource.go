@@ -39,7 +39,7 @@ const (
 // 1. Parse OTEL_RESOURCE_ATTRIBUTES into a map first (base layer)
 // 2. Overlay Datadog-derived attributes on top (overwrite conflicts):
 //   - DD_SERVICE → service.name
-//   - DD_ENV → deployment.environment
+//   - DD_ENV → deployment.environment.name
 //   - DD_VERSION → service.version
 //   - DD_TAGS → convert k:v pairs into resource attributes
 //
@@ -56,6 +56,12 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
+	if _, ok := otelAttrs["deployment.environment.name"]; !ok {
+		if value, ok := otelAttrs["deployment.environment"]; ok {
+			otelAttrs["deployment.environment.name"] = value
+		}
+	}
+	delete(otelAttrs, "deployment.environment")
 
 	// Step 2: Parse DD_TAGS
 	ddTags := make(map[string]string)

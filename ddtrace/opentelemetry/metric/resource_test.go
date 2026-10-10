@@ -105,6 +105,11 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 	assert.Equal(t, "otel-version", attrMap["service.version"])
 }
 
+func TestEnvironmentNamePrefersStableAttribute(t *testing.T) {
+	attrs := map[string]string{"deployment.environment": "legacy", "deployment.environment.name": "stable"}
+	assert.Equal(t, "stable", environmentName(nil, attrs))
+}
+
 // TestBuildDatadogResource_Hostname verifies hostname resolution priority:
 // 1. OTEL_RESOURCE_ATTRIBUTES[host.name] (always wins)
 // 2. DD_HOSTNAME (only if DD_TRACE_REPORT_HOSTNAME=true)

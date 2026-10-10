@@ -39,7 +39,8 @@ const (
 //
 // Priority order for each attribute:
 //   - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-//   - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+//   - deployment.environment.name: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+//     → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 //   - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
 //   - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
 //     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
@@ -65,7 +66,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		attrs = append(attrs, semconv.ServiceName(serviceName))
 	}
 
-	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
 	envName := environmentName(ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
@@ -99,10 +100,11 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	// 6. Add OTEL_RESOURCE_ATTRIBUTES (excluding reserved keys AND keys already set by DD_TAGS)
 	// DD_TAGS has higher priority than OTEL_RESOURCE_ATTRIBUTES for custom tags
 	excludeKeys := map[string]bool{
-		"service.name":           true,
-		"deployment.environment": true,
-		"service.version":        true,
-		"host.name":              true,
+		"service.name":                true,
+		"deployment.environment":      true,
+		"deployment.environment.name": true,
+		"service.version":             true,
+		"host.name":                   true,
 	}
 	for key, val := range otelAttrs {
 		if excludeKeys[key] {
@@ -155,7 +157,9 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 	if v, ok := ddTags["env"]; ok && v != "" {
 		return v
 	}
-	// OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+	if v, ok := otelAttrs["deployment.environment.name"]; ok && v != "" {
+		return v
+	}
 	if v, ok := otelAttrs["deployment.environment"]; ok && v != "" {
 		return v
 	}
