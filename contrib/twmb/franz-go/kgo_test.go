@@ -9,6 +9,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -467,6 +468,123 @@ func TestConsumeDSMPathway(t *testing.T) {
 
 	assert.NotEqual(t, uint64(0), want.GetHash())
 	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+func TestConsumeDSMPathwayOnRecordContext(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const (
+		topic    = "dsm-context"
+		outTopic = "dsm-context-out"
+	)
+	h := newTracingHook(WithDataStreams())
+
+	produced := &kgo.Record{
+		Topic: topic,
+		Key:   []byte("key"),
+		Value: []byte("value"),
+	}
+	h.OnProduceRecordBuffered(produced)
+
+	consumed := &kgo.Record{
+		Topic:   topic,
+		Key:     produced.Key,
+		Value:   produced.Value,
+		Headers: slices.Clone(produced.Headers),
+	}
+	h.OnFetchRecordUnbuffered(consumed, true)
+
+	got, ok := datastreams.PathwayFromContext(consumed.Context)
+	require.True(t, ok, "consume pathway should be on the record context")
+
+	fromHeaders, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		newKafkaHeadersCarrier(consumed),
+	))
+	require.True(t, ok, "consume pathway should still be in the record headers")
+	assert.NotEqual(t, uint64(0), got.GetHash())
+	assert.Equal(t, fromHeaders.GetHash(), got.GetHash())
+
+	span, ok := tracer.SpanFromContext(consumed.Context)
+	require.True(t, ok, "consume span should stay on the record context")
+	require.NotEmpty(t, h.activeSpans)
+	assert.Equal(t, h.activeSpans[len(h.activeSpans)-1].Context().SpanID(), span.Context().SpanID())
+
+	forwarded := &kgo.Record{
+		Topic:   outTopic,
+		Value:   []byte("forwarded"),
+		Context: consumed.Context,
+	}
+	h.OnProduceRecordBuffered(forwarded)
+
+	producedPathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		newKafkaHeadersCarrier(forwarded),
+	))
+	require.True(t, ok, "forwarded record should carry a produce pathway")
+
+	ctx, ok := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka",
+	)
+	require.True(t, ok)
+	ctx, ok = tracer.SetDataStreamsCheckpoint(
+		ctx,
+		"direction:in", "topic:"+topic, "type:kafka",
+	)
+	require.True(t, ok)
+	ctx, ok = tracer.SetDataStreamsCheckpoint(
+		ctx,
+		"direction:out", "topic:"+outTopic, "type:kafka",
+	)
+	require.True(t, ok)
+	want, ok := datastreams.PathwayFromContext(ctx)
+	require.True(t, ok)
+
+	rootCtx, ok := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+outTopic, "type:kafka",
+	)
+	require.True(t, ok)
+	root, ok := datastreams.PathwayFromContext(rootCtx)
+	require.True(t, ok)
+
+	assert.Equal(t, want.GetHash(), producedPathway.GetHash())
+	assert.NotEqual(t, root.GetHash(), producedPathway.GetHash())
+
+	span.Finish()
+	var consumeSpan *mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.SpanID() == span.Context().SpanID() {
+			consumeSpan = s
+			break
+		}
+	}
+	require.NotNil(t, consumeSpan)
+	assert.Equal(t, "kafka.consume", consumeSpan.OperationName())
+}
+
+func TestConsumeDSMDisabledLeavesPathwayOffContext(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	h := newTracingHook()
+	record := &kgo.Record{
+		Topic:   "dsm-disabled",
+		Value:   []byte("value"),
+		Context: context.Background(),
+	}
+	h.OnFetchRecordUnbuffered(record, true)
+
+	_, ok := datastreams.PathwayFromContext(record.Context)
+	assert.False(t, ok)
+
+	span, ok := tracer.SpanFromContext(record.Context)
+	require.True(t, ok)
+	span.Finish()
+	require.NotEmpty(t, mt.FinishedSpans())
+	assert.Equal(t, "kafka.consume", mt.FinishedSpans()[0].OperationName())
 }
 
 // topicName returns a unique topic name for the current test.
