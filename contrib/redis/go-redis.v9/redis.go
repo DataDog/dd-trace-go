@@ -11,9 +11,17 @@ import (
 	"context"
 	"math"
 	"net"
+	"reflect"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+	"unsafe"
+	"weak"
 
+	rediswrap "github.com/DataDog/dd-trace-go/contrib/internal/rediswrap/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -27,6 +35,87 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageRedisGoRedisV9)
 }
 
+// configKey is the part of a client configuration that determines the spans
+// a client produces. It excludes the error-check function: it is not
+// comparable, and keeping it out of the registry avoids retaining a user
+// closure that may capture the client.
+type configKey struct {
+	serviceName   string
+	serviceSource string
+	spanName      string
+	analyticsRate float64
+	skipRaw       bool
+}
+
+// sameConfig reports whether two configurations produce the same spans.
+// Two NaN analytics rates are equal: NaN != NaN made identical default
+// configurations compare as different and fired spurious warnings. With
+// differing error-check functions the first configuration is kept without
+// a warning.
+func sameConfig(a, b configKey) bool {
+	analytics := a.analyticsRate == b.analyticsRate ||
+		(math.IsNaN(a.analyticsRate) && math.IsNaN(b.analyticsRate))
+	return analytics &&
+		a.serviceName == b.serviceName &&
+		a.serviceSource == b.serviceSource &&
+		a.spanName == b.spanName &&
+		a.skipRaw == b.skipRaw
+}
+
+func (cfg *clientConfig) key() configKey {
+	return configKey{
+		serviceName:   cfg.serviceName,
+		serviceSource: cfg.serviceSource,
+		spanName:      cfg.spanName,
+		analyticsRate: cfg.analyticsRate,
+		skipRaw:       cfg.skipRaw,
+	}
+}
+
+// wrapEntry records one client in the weak registry: either an install in
+// flight — done is open until the hook is added — or the durable record of
+// a client whose hook chain cannot be read or of a proxy observation. It
+// holds no reference to the client and no user callback, so it cannot pin
+// the client.
+type wrapEntry struct {
+	cfg        configKey
+	full       *clientConfig              // a callback-free copy of the first proxy wrap's configuration
+	cfgWeak    weak.Pointer[clientConfig] // the first configuration itself, kept alive by the hooks it installed
+	done       chan struct{}              // non-nil while the recorded install is in flight
+	goid       uint64                     // the goroutine that started the install, for reentry
+	observed   bool                       // an observation completed for this client
+	incomplete bool                       // an observation left a member unreadable: the next wrap re-observes
+	retainOnly bool                       // the proxy retains hooks; its members stay unhooked by design
+	memberKeys []rediswrap.Handle         // the members the observation saw, weakly: a changed set, not an unhooked member, marks a swap
+}
+
+var (
+	// walkWait bounds how long one WrapClient call waits for a concurrent
+	// wrap's walk of the same client before it proceeds without the walk:
+	// the field reads the walk performs are what the guard serializes, and
+	// a user callback that delegates to another goroutine synchronously
+	// waiting on this one must not deadlock against it. The degraded wrap
+	// waits for the in-flight install below instead.
+	walkWait = 2 * time.Second
+	// installWait bounds how long one wrap waits for a concurrent install
+	// of the same client: the in-flight call instruments the client, and
+	// a nested call that synchronously waits on it must not be blocked by
+	// it, so past the bound the waiter returns and the in-flight wrap
+	// stands.
+	installWait = 30 * time.Second
+
+	// wrapMu serializes WrapClient. Decisions — hook-chain inspection and
+	// registry updates — hold it; AddHook does not, because it runs
+	// user-controlled code that may call WrapClient again and would deadlock
+	// on the lock.
+	wrapMu sync.Mutex
+	// wrapped deduplicates WrapClient calls for clients whose hook chain
+	// cannot be read and for proxies, keyed weakly. Entries are cleaned up
+	// when the client is retired, so the registry never keeps a client
+	// alive.
+	wrapped = map[weak.Pointer[byte]]*wrapEntry{}
+)
+
 type datadogHook struct {
 	*params
 }
@@ -34,13 +123,12 @@ type datadogHook struct {
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
 	config *clientConfig
-	// spanCfg holds the tags that are constant for every dial/command/
-	// pipeline traced through this client (service name, analytics rate, and
-	// the additionalTagOptions tags: component, span kind, db system, and
-	// the host/port/db or cluster addrs tags). It is built once in
-	// WrapClient and merged into each request via WithStartSpanConfig,
-	// instead of rebuilding ServiceNameWithSource and re-appending
-	// additionalTags on every call.
+	// spanCfg holds the tags that are constant for every command/pipeline
+	// traced through this client (component, span kind, db system, service
+	// name, analytics rate, and the additional host/port/db or cluster addrs
+	// tags). It is built once in WrapClient and merged into each request via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag and
+	// re-appending additionalTags on every call.
 	spanCfg *tracer.StartSpanConfig
 }
 
@@ -53,20 +141,1761 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 }
 
 // WrapClient adds a hook to the given client that traces with the default tracer under
-// the service name "redis".
+// the service name "redis". Calling it more than once on the same client, or on a
+// WithContext or WithTimeout clone of an already-wrapped client, is safe: each
+// command is traced exactly once and the configuration of the first call is kept.
 func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
+	wrap(client, cfg)
+}
 
+// wrap instruments client with the resolved cfg. It is the body of
+// WrapClient below option resolution, so an installation retried after a
+// failed concurrent one keeps the original call's configuration — user
+// callback included.
+func wrap(client redis.UniversalClient, cfg *clientConfig) {
+	// Warnings are emitted after the lock is released: a custom logger is
+	// user-controlled code — like a proxy's AddHook — and may call WrapClient
+	// again from its Log method.
+	var warnings []string
+	defer func() {
+		for _, w := range warnings {
+			instr.Logger().Warn("%s", w)
+		}
+	}()
+
+	// A concurrent first wrap of this client may be running its unlocked
+	// AddHook — user-controlled code that mutates the proxy's retained-hook
+	// fields while a field walk over those same fields would race. The walk
+	// guard serializes the two calls for the whole wrap, AddHook included;
+	// its closer is registered after the warning defer so it releases
+	// before the user logger runs.
+	degraded := false
+	if k, ok := rediswrap.HandleOf(client); ok {
+		release, walked := rediswrap.BeginWalk(k, walkWait)
+		if !walked {
+			// Another wrap of this client is still in flight — its
+			// user-controlled code can take arbitrarily long, and a nested
+			// call synchronously waiting on it must not deadlock. The walk
+			// is what the guard serializes; skip it and proceed degraded:
+			// the client is treated as an opaque proxy, and the wait for
+			// the in-flight install below keeps the caller from returning
+			// before that install has finished or failed.
+			degraded = true
+		} else {
+			defer release()
+		}
+	} else if key := rediswrap.RefKey(client); key != "" {
+		// A value proxy has no weak handle for the walk guard and the
+		// registry: two concurrent wraps of it would both walk the shared
+		// containers, both observe, and each hand the proxy a real hook.
+		// Its reference-bearing fields give it a shared identity, and the
+		// installation is serialized on that — acquired before the member
+		// walk, so the walk itself is covered. The waiter re-runs the whole
+		// decision once the in-flight install completes, so an
+		// already-hooked proxy is not handed a second hook.
+		state, mark := rediswrap.TryBeginValueHooking(key)
+		switch state {
+		case rediswrap.HookSelfReentry:
+			return
+		case rediswrap.HookOtherInstalling:
+			done := mark.Done
+			timedOut := false
+			// wrapMu is not held yet (the marker is acquired before it), so
+			// the wait is a plain select — no unlocked() needed.
+			select {
+			case <-done:
+			case <-time.After(installWait):
+				timedOut = true
+			}
+			if timedOut {
+				return
+			}
+			wrap(client, cfg)
+			return
+		default:
+			defer rediswrap.EndValueHooking(key, mark)
+		}
+	}
+
+	// Resolve the concrete clients before taking the package lock: the
+	// field walk takes each proxy's own mutex when it has one, and that
+	// mutex must not be nested inside wrapMu — a proxy may hold its mutex
+	// while calling WrapClient (to replace and instrument a delegate, say),
+	// and wrapMu-then-proxy-mutex would then deadlock against
+	// proxy-mutex-then-wrapMu.
+	var targets []redis.UniversalClient
+	incomplete := false
+	if degraded {
+		targets = nil
+	} else {
+		var ok, inc bool
+		targets, ok, inc = concreteClients(client)
+		if !ok {
+			// The proxy's mutex stayed held — possibly by this very call chain,
+			// which would deadlock on any further interaction with the proxy.
+			// Do nothing; a wrap after the mutex is released works normally.
+			return
+		}
+		incomplete = inc
+	}
+
+	wrapMu.Lock()
+	defer wrapMu.Unlock()
+
+	warn := func() {
+		warnings = append(warnings, "contrib/redis/go-redis.v9: WrapClient called more than once on the same client; keeping the first configuration")
+	}
+
+	if len(targets) == 1 && targets[0] == client || degraded && concreteGoRedis(client) {
+		// The client itself is a concrete go-redis client — or a clone of
+		// one: deduplicate and instrument it directly, against the hook it
+		// already carries — inherited by a clone, installed through a
+		// previous wrap of another decorator, or not at all. A client chain
+		// never carries two datadog hooks, which makes duplicate spans
+		// impossible.
+		wrapMember(client, cfg, warn)
+		return
+	}
+	// Any other implementation is a proxy, with one member or several or
+	// none that can be found: what its AddHook instruments is its own
+	// decision — it may fan out to its current members, retain hooks for
+	// delegates it creates later, or apply them lazily — so it is observed
+	// before instrumented.
+	// A degraded wrap holds no walk guard: its member set came from
+	// nowhere, and re-walking would race the concurrent wrap it gave way
+	// to, so it does not re-walk.
+	wrapProxyMembers(client, targets, cfg, warn, incomplete && !degraded)
+}
+
+// wrapMember instruments a single concrete client, deduplicated against the
+// hook it already carries or, when its chain cannot be read, against its
+// weak identity. The caller must hold wrapMu; a concrete client's AddHook is
+// go-redis code, not user code, so it runs under the lock.
+// concreteGoRedis reports whether client is one of the concrete go-redis
+// clients: a walk that could not run would have found it as its own sole
+// member, so a degraded wrap of it takes the concrete path — whose install
+// marker the first wrap's slow constructor is already holding.
+func concreteGoRedis(client redis.UniversalClient) bool {
+	switch client.(type) {
+	case *redis.Client, *redis.ClusterClient, *redis.Ring:
+		return true
+	}
+	return false
+}
+
+func wrapMember(member redis.UniversalClient, cfg *clientConfig, warn func()) {
+	// The member's chain is read under its own install marker, before any
+	// other step: a concurrent wrap of the same member — direct, or through
+	// a proxy holding it — appends its hook with the package lock released
+	// and no mutex the read could take, so the read must wait out the
+	// in-flight install rather than race the append. The marker's waits are
+	// bounded and run with the package lock released, so the holder is
+	// never waited on while it needs the lock itself.
+	if k, keyed := rediswrap.HandleOf(member); keyed {
+		for {
+			state, mark := rediswrap.TryBeginHooking(k)
+			if state == rediswrap.HookBegin {
+				defer rediswrap.EndHooking(k, mark)
+				break
+			}
+			if state == rediswrap.HookSelfReentry {
+				return
+			}
+			done := mark.Done
+			timedOut := false
+			unlocked(func() {
+				select {
+				case <-done:
+				case <-time.After(installWait):
+					timedOut = true
+				}
+			})
+			if timedOut {
+				// The install outlasts the wait: it instruments the member,
+				// and this call has nothing left to add.
+				return
+			}
+			// The install finished; re-decide against the chain it left.
+			if prev, seen := datadogConfig(member); seen && prev != nil {
+				if !sameConfig(*prev, cfg.key()) {
+					warn()
+				}
+				return
+			}
+		}
+	}
+	// A busy client mutex can leave the hook chain transiently unreadable;
+	// retry before falling back to the client's own identity, which a clone
+	// sharing the hook would evade. A concrete go-redis client gets the
+	// longer window: newer upstream versions serialize AddHook on the hook
+	// mutex, so an externally added hook — a user constructor that runs
+	// slowly — holds it, and concluding no datadog hook exists while it is
+	// held installs a second one: every command would emit duplicate spans
+	// once the external call returns.
+	var prev *configKey
+	var seen bool
+	retries := 3
+	if concreteGoRedis(member) {
+		retries = 200
+	}
+	for range retries {
+		prev, seen = datadogConfig(member)
+		if seen {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		if seen && prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				warn()
+			}
+			return
+		}
+		if !seen {
+			// The hook chain cannot be read — possibly held by the very
+			// constructor this call re-entered from, on upstream versions
+			// that hold the hook mutex through their constructors. Register
+			// the weak identity and defer the installation: an AddHook
+			// against the held chain would deadlock. A background watcher
+			// waits for the in-flight external AddHook to finish and re-runs
+			// the full member protocol, so the member does not stay untraced
+			// until an undocumented later wrap.
+			registerWeak(member, cfg, warn)
+			go func() {
+				for range 600 {
+					time.Sleep(10 * time.Millisecond)
+					if _, seen := datadogConfig(member); !seen {
+						continue
+					}
+					// The chain is readable: the external AddHook finished.
+					// Re-run the member protocol under the package lock; it
+					// re-checks the marker, the registry, and the chain, and
+					// installs only if still needed.
+					wrapMu.Lock()
+					wrapMember(member, cfg, func() {})
+					wrapMu.Unlock()
+					return
+				}
+			}()
+			return
+		}
+		// The client's own AddHook rebuilds its hook chain by calling
+		// every hook's constructors — DialHook, ProcessHook,
+		// ProcessPipelineHook — and a custom hook may re-enter WrapClient
+		// from them: it is user-controlled code, run with the package lock
+		// released. The in-flight marker taken at the top of this function
+		// already covers the install: a concurrent wrap of the same member
+		// waits for it there rather than racing a second hook onto the
+		// chain.
+		unlocked(func() { addHook(member, cfg) })
+		return
+	}
+}
+
+// wrapProxyMembers instruments a proxy — one delegating to a single concrete
+// client, a read/write router holding several, or a client that also keeps a
+// private one around. Which members its AddHook instruments, and whether it
+// retains hooks for delegates it creates later instead of applying them now,
+// cannot be inferred from fields, so it is observed instead: a no-op probe
+// hook is added, and the members whose chains gain it are the proxy's own
+// choice. Each of those members is then instrumented with that member's
+// endpoint tags, deduplicated against the hook it already carries, so a
+// pre-wrapped member is not hooked twice and every member is tagged with its
+// own host, port, and database. When no member gains the probe — the proxy
+// retains the hook rather than applying it — the real hook is handed to the
+// proxy's AddHook, so delegates it instruments later are traced too. The
+// observation is recorded against the proxy itself — not against the
+// members, whose hook state is each proxy's own decision — so a repeated
+// wrap of the same proxy probes once and never again, while a different
+// proxy over the same members is still observed separately. The probe stays
+// in the chains it landed on as a no-op. The caller must hold wrapMu;
+// AddHook runs with the lock released.
+
+// membersAny boxes the concrete members for the shared installation marks.
+func membersAny(members []redis.UniversalClient) []any {
+	out := make([]any, len(members))
+	for i, m := range members {
+		out[i] = m
+	}
+	return out
+}
+
+func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClient, cfg *clientConfig, warn func(), walkIncomplete bool) {
+	if rediswrap.IsInstalling(proxy, membersAny(members)) {
+		// This call is the re-entry of this goroutine's own AddHook for the
+		// same proxy: the installation it belongs to is still in flight.
+		return
+	}
+
+	// Every user-controlled AddHook in this function runs with the proxy
+	// marked as being installed on this goroutine; the deferred unmark also
+	// runs when one of them panics and the application recovers, so the
+	// marker never outlives the wrap.
+	defer rediswrap.MarkInstalling(proxy, membersAny(members))()
+	// A proxy may have replaced its delegates since its last observation.
+	// A durable entry stands while the member set is unchanged: a member the
+	// proxy deliberately leaves unhooked is part of that set, not a swapped
+	// delegate, while a changed set — a member that was not there at the
+	// observation — requires observing again, keeping the first wrap's
+	// configuration, which the documented first-configuration-wins behavior
+	// requires.
+	var first *clientConfig
+	if k, ok := rediswrap.HandleOf(proxy); ok {
+		if e, ok := wrapped[k]; ok && e.done == nil {
+			if e.retainOnly {
+				// A retain-only proxy keeps its members unhooked by design,
+				// so an unhooked member — swapped in or not — is not
+				// evidence of anything. Re-observing would hand the proxy
+				// another real hook, and its retained list would later
+				// install several tracing hooks on one delegate: a span per
+				// hook per command. The observation stands as it is.
+				if !sameConfig(e.cfg, cfg.key()) {
+					warn()
+				}
+			} else {
+				// A new member that already carries the hook was covered by
+				// the proxy's own fan-out — a fan-out-and-retain proxy
+				// applies its retained hooks to the delegate it swaps in —
+				// so only a new member that is unhooked requires observing
+				// again. A dropped delegate is a changed set too: a lazy
+				// proxy without a current member must still receive hooks
+				// for the delegate it creates next.
+				reobserve := e.incomplete || len(e.memberKeys) != len(members)
+				for _, member := range members {
+					if key, ok := rediswrap.HandleOf(member); ok && rediswrap.ContainsKey(e.memberKeys, key) {
+						continue
+					}
+					if prev, seen := datadogConfig(member); !seen || prev == nil {
+						reobserve = true
+						break
+					}
+				}
+				if reobserve {
+					first = e.full
+					if live := e.cfgWeak.Value(); live != nil {
+						// The hooks the first wrap installed keep the first
+						// configuration — user callback included — alive; use
+						// it while they do. The sanitized copy waits behind it
+						// for the day they no longer do.
+						first = live
+					}
+					delete(wrapped, k)
+				}
+			}
+		}
+	}
+
+	entry, proceed := begin(proxy, cfg, cfg.key(), warn)
+	if !proceed {
+		// This proxy was observed by an earlier wrap: hooks cannot be
+		// removed, so its outcome stands.
+		return
+	}
+	if entry != nil {
+		entry.full = registryConfig(cfg)
+		entry.cfgWeak = weak.Make(cfg)
+	}
+	if first != nil {
+		// The re-observation installs the first wrap's configuration. Its
+		// registry copy stays callback-free — the live configuration, user
+		// callback included, is reached only through the weak pointer the
+		// installed hooks keep alive.
+		if !sameConfig(first.key(), cfg.key()) {
+			warn()
+		}
+		entry.cfg = first.key()
+		entry.full = registryConfig(first)
+		entry.cfgWeak = weak.Make(first)
+		cfg = first
+	}
+	// Nothing can be learned and nothing can be added once this proxy has
+	// been observed and every member already carries the hook: repeated
+	// wraps of the same proxy cost nothing. A first wrap still probes —
+	// the members carry no proof about this proxy, and a retaining one
+	// must be detected and given the real hook, or delegates it creates
+	// later are untraced. The entry is kept, so wraps of freshly created
+	// but equivalent proxies each observe once and never again; the probes
+	// they leave on already hooked members are no-ops.
+	var hooked *configKey
+	allHooked := len(members) > 0
+	if len(members) == 0 {
+		// A proxy with no visible members — opaque or keyed — would receive
+		// another real hook on every sequential wrap, and a fan-out proxy
+		// would install all of them on its hidden delegate. A datadog hook
+		// already retained in the proxy's own fields means a previous wrap
+		// instrumented it — keep the first configuration and skip.
+		var prev *configKey
+		var scanKnown bool
+		unlocked(func() {
+			// A value proxy's unexported fields are only readable through
+			// the boxed copy the interface points at. The interface's data
+			// word IS the address of that copy — addressable via unsafe.
+			sv := reflect.ValueOf(proxy)
+			if sv.Kind() == reflect.Pointer {
+				sv = sv.Elem()
+			}
+			sv = reflect.NewAt(sv.Type(), (*[2]unsafe.Pointer)(unsafe.Pointer(&proxy))[1]).Elem()
+			prev, scanKnown = datadogRetainedConfig(sv, 8)
+		})
+		if scanKnown && prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				warn()
+			}
+			finishObserved(proxy, entry, true, true)
+			return
+		}
+	}
+	for _, member := range members {
+		prev, seen := datadogConfig(member)
+		if !seen || prev == nil {
+			allHooked = false
+			break
+		}
+		if hooked == nil {
+			k := *prev
+			hooked = &k
+		}
+	}
+	if allHooked && entry != nil && entry.observed {
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			warn()
+		}
+		return
+	}
+	if allHooked && entry == nil {
+		// A proxy with no registry entry — a value proxy, which no weak
+		// key can track — would otherwise be re-observed on every wrap and
+		// handed another real hook each time: its members would carry one
+		// datadog hook per wrap and trace every command once per hook.
+		// Their hook state is the durable identity a repeated wrap can
+		// see: all hooked means a previous wrap already fanned its hooks
+		// to them, and another would only add duplicates.
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			warn()
+		}
+		return
+	}
+
+	if allHooked {
+		if hooked != nil && !sameConfig(*hooked, cfg.key()) {
+			warn()
+		}
+	}
+	before := make([]int, len(members))
+	readable := make([]bool, len(members))
+	for i, member := range members {
+		if h := hookSlice(member); h.IsValid() {
+			before[i], readable[i] = h.Len(), true
+		}
+	}
+	// A panic in the proxy's AddHook — recovered by the application — must
+	// not leave an in-flight marker that later wraps wait on forever; the
+	// entry is dropped so the next wrap retries.
+	completed := false
+	defer func() {
+		if !completed {
+			finish(proxy, entry, false)
+		}
+	}()
+	// The probe carries the callback-free configuration: a probe that lands
+	// on an externally rooted member — already wrapped, so this wrap
+	// installs nothing there — stays in that member's chain permanently,
+	// and a probe carrying the live configuration would keep the user
+	// callback, and everything it captures, reachable for as long as the
+	// member lives. The live configuration stays anchored by the hooks
+	// this wrap installs and by the real hook retain-only proxies keep.
+	probe := probeHook{cfg: registryConfig(cfg)}
+	unlocked(func() { proxy.AddHook(probe) })
+	// A proxy that keeps the probe in its own fields retains hooks for
+	// delegates it creates later; those delegates are traced only through a
+	// real hook passed to its AddHook. The same call fans that hook out to
+	// the current members, so they must not be instrumented per member as
+	// well — every command would be traced twice. The retained hook carries
+	// no endpoint tags: the delegate it eventually lands on may have
+	// different host, port, and database options than the proxy's current
+	// members, and a missing tag is better than a wrong one.
+	// The scan takes the proxy's own mutex, so it runs with the package
+	// lock released.
+	var retained, known bool
+	unlocked(func() { retained, known = retainsHook(proxy, probe) })
+
+	if !known {
+		// The scan could not take the proxy's mutex. Missing spans are the
+		// worse evil, and an unknown scan is not evidence of absence: hand
+		// the real hook to the proxy so delegates it creates later are
+		// traced too.
+		retained = true
+	}
+	if retained {
+		// Which members this proxy's own AddHook hooks decides the entry:
+		// a retain-only proxy leaves every member unhooked — a member
+		// wrapped earlier by something else does not make it fan-out.
+		unhooked := make([]bool, len(members))
+		for i, member := range members {
+			prev, seen := datadogConfig(member)
+			unhooked[i] = !seen || prev == nil
+		}
+		unlocked(func() { addHookWithoutEndpoints(proxy, cfg) })
+		if entry != nil {
+			entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
+			// A retain-only proxy never hooks its current members; record
+			// that, so a later wrap does not mistake their missing hooks
+			// for a replaced delegate and re-hand the proxy another hook.
+			hookedAny := false
+			for i, member := range members {
+				if !unhooked[i] {
+					continue
+				}
+				if prev, seen := datadogConfig(member); seen && prev != nil {
+					hookedAny = true
+					break
+				}
+			}
+			entry.retainOnly = !hookedAny
+		}
+		completed = true
+		finishObserved(proxy, entry, true, true)
+		return
+	}
+	var instrumented, incomplete bool
+	for i, member := range members {
+		if !readable[i] {
+			// The member's hook chain was transiently unreadable at the
+			// snapshot — a busy client mutex. Retry briefly; a chain that
+			// stays unreadable leaves the member's fan-out unknown.
+			recovered := false
+			for range 3 {
+				if h := hookSlice(member); h.IsValid() {
+					// The pre-probe length is unknown, so any hook counts
+					// as growth; wrapMember is idempotent either way.
+					if h.Len() > 0 {
+						wrapMember(member, cfg, warn)
+						instrumented = true
+					}
+					recovered = true
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if !recovered {
+				incomplete = true
+			}
+			continue
+		}
+		h := hookSlice(member)
+		if !h.IsValid() {
+			// The chain was readable at the snapshot but stayed locked
+			// through the probe: the member's fan-out state is unknown
+			// here, so the observation is incomplete and a later wrap
+			// re-observes — reading the length would panic.
+			incomplete = true
+			continue
+		}
+		if h.Len() > before[i] {
+			wrapMember(member, cfg, warn)
+			instrumented = true
+		}
+	}
+	if !instrumented {
+		// AddHook reached no concrete client we can see: instrument through
+		// the proxy itself, deduplicated by its identity.
+		unlocked(func() { addHook(proxy, cfg) })
+	}
+	if walkIncomplete {
+		// The walk could not read a nested holder's members behind its
+		// lock; the probe still reached them through the proxy's fan-out.
+		// Walk again and instrument the members the first walk could not
+		// see, so they are not left with the no-op probe alone.
+		if again, okAgain, _ := concreteClients(proxy); okAgain {
+			for _, member := range again {
+				if slices.Contains(members, member) {
+					continue
+				}
+				if h := hookSlice(member); h.IsValid() && h.Len() > 0 {
+					wrapMember(member, cfg, warn)
+					members = append(members, member)
+				}
+			}
+		}
+	}
+	if entry != nil {
+		entry.memberKeys = rediswrap.MemberKeys(membersAny(members))
+		entry.incomplete = incomplete || walkIncomplete
+	}
+	completed = true
+	finishObserved(proxy, entry, true, true)
+}
+
+// begin records an install in flight for client, so that a concurrent wrap
+// of the same client waits for this one instead of installing a second
+// hook. It reports a nil entry when the client cannot be keyed — the caller
+// then installs without a marker — and reports proceed=false when an entry
+// already exists: its configuration is kept and, if the recorded install is
+// still in flight, this call waits for it to finish. The caller must hold
+// wrapMu.
+func begin(client redis.UniversalClient, cfg *clientConfig, key configKey, warn func()) (entry *wrapEntry, proceed bool) {
+	k, ok := rediswrap.HandleOf(client)
+	if !ok {
+		return nil, true
+	}
+	var warned bool
+	for {
+		e, ok := wrapped[k]
+		if !ok {
+			break
+		}
+		if !warned {
+			warned = true
+			if !sameConfig(e.cfg, key) {
+				warn()
+			}
+		}
+		// Wait for the recorded install, unless this goroutine is the one
+		// running it — a proxy whose AddHook re-enters WrapClient for that
+		// same proxy would otherwise wait for a channel only that very call
+		// can close. Installs started by other goroutines are still waited
+		// on — bounded, like every wait a user callback can stretch: a
+		// constructor that delegates to another goroutine synchronously
+		// waiting on this one must not deadlock — so a nested wrap returns
+		// before a concurrent install only past that bound.
+		if e.done != nil && e.goid != rediswrap.Goid() {
+			done := e.done
+			timedOut := false
+			unlocked(func() {
+				select {
+				case <-done:
+				case <-time.After(installWait):
+					timedOut = true
+				}
+			})
+			if timedOut {
+				// The install is still in flight past the bound. This call
+				// cannot wait for it — a constructor that delegates to a
+				// goroutine synchronously waiting on this one would
+				// deadlock — but a background watcher can: it lets the
+				// original install finish, and retries this wrap only if
+				// that install failed and dropped its entry.
+				go func() {
+					<-done
+					wrapMu.Lock()
+					_, kept := wrapped[k]
+					wrapMu.Unlock()
+					if !kept {
+						wrap(client, cfg)
+					}
+				}()
+				return nil, false
+			}
+			// The install may have failed and dropped its marker; recheck
+			// instead of returning without a hook.
+			continue
+		}
+		return nil, false
+	}
+	e := &wrapEntry{cfg: key, done: make(chan struct{}), goid: rediswrap.Goid()}
+	wrapped[k] = e
+	// One cleanup per client, not per entry: a proxy re-observed after a
+	// delegate swap deletes and recreates its entry, and every recreation
+	// would otherwise attach another cleanup to the same object.
+	rediswrap.RegisterCleanup(k.Value(), func(kk rediswrap.Handle) {
+		wrapMu.Lock()
+		delete(wrapped, kk)
+		wrapMu.Unlock()
+	}, k)
+	// The cleanup is attached to the client: when it becomes unreachable the
+	// entry goes with it, even though neither side keeps the other alive.
+	// KeepAlive closes the window in which a GC could collect a client whose
+	// last mention was the weak handle above.
+	runtime.KeepAlive(client)
+	return e, true
+}
+
+// registryConfig returns a copy of cfg that retains no user callback: the
+// registry is globally rooted, and an error-check closure may capture the
+// client itself, pinning it for the lifetime of the process. A configuration
+// replayed from the registry — a proxy re-observed after a delegate swap —
+// traces with default error handling; the alternative leaks every client
+// whose callback closes over it.
+func registryConfig(cfg *clientConfig) *clientConfig {
+	sanitized := *cfg
+	sanitized.errCheck = func(error) bool { return true }
+	return &sanitized
+}
+
+// registerWeak records cfg for the client under its weak identity and
+// reports whether the client was already registered — an already-registered
+// client keeps its first configuration and gets no second hook. The caller
+// must hold wrapMu.
+func registerWeak(client redis.UniversalClient, cfg *clientConfig, warn func()) bool {
+	k, ok := rediswrap.HandleOf(client)
+	if !ok {
+		return false
+	}
+	if e, ok := wrapped[k]; ok {
+		if !sameConfig(e.cfg, cfg.key()) {
+			warn()
+		}
+		return true
+	}
+	wrapped[k] = &wrapEntry{cfg: cfg.key()}
+	runtime.AddCleanup(k.Value(), func(kk weak.Pointer[byte]) {
+		wrapMu.Lock()
+		delete(wrapped, kk)
+		wrapMu.Unlock()
+	}, k)
+	// KeepAlive closes the window in which a GC could collect a client
+	// whose last mention was the weak handle above.
+	runtime.KeepAlive(client)
+	return false
+}
+
+// finish completes the install recorded by entry: waiters are released and,
+// unless keep is set, the marker is removed — a client with a readable hook
+// chain is deduplicated by the hook itself, so the registry stays empty for
+// it. The caller must hold wrapMu.
+func finish(client redis.UniversalClient, entry *wrapEntry, keep bool) {
+	finishObserved(client, entry, keep, false)
+}
+
+// finishObserved completes the install recorded by entry, marking the client
+// observed so a later wrap of the same object knows its outcome stands.
+func finishObserved(client redis.UniversalClient, entry *wrapEntry, keep, observed bool) {
+	if entry == nil {
+		return
+	}
+	close(entry.done)
+	entry.done = nil
+	entry.observed = entry.observed || observed
+	if !keep {
+		if k, ok := rediswrap.HandleOf(client); ok {
+			delete(wrapped, k)
+		}
+	}
+}
+
+// unlocked runs f without holding wrapMu, and holds it again once f returns.
+// AddHook runs user-controlled code, which may call WrapClient again — from
+// a proxy that lazily instruments a delegate, say — and must not deadlock on
+// the lock. The caller must hold wrapMu.
+func unlocked(f func()) {
+	wrapMu.Unlock()
+	defer wrapMu.Lock()
+	f()
+}
+
+// retainsHook reports whether the proxy kept the given hook in its own
+// fields: a proxy that retains hooks, to apply them to delegates it creates
+// later, keeps a copy of everything its AddHook is handed.
+func retainsHook(proxy redis.UniversalClient, hook redis.Hook) (retained, known bool) {
+	v := reflect.ValueOf(proxy)
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return false, true
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return false, true
+	}
+	if rediswrap.Unguarded(v) {
+		// A copy with a mutex it cannot take reaches the original's
+		// retained-hook stores through its reference fields; scanning them
+		// would race the update the original's mutex guards. Report the
+		// retention unknown rather than guess.
+		return false, false
+	}
+	if v.CanAddr() {
+		// The proxy's mutex may be held briefly by another goroutine — the
+		// scan rides contention out; a mutex held for the whole window
+		// leaves the retention unknown.
+		for range 3 {
+			unlock, ok := rediswrap.LockStruct(v)
+			if ok {
+				defer unlock()
+				// The root is locked here; scanning it must not re-acquire
+				// its non-reentrant mutex. Nested structs lock themselves.
+				// Nested structs lock themselves and propagate their
+				// own unknowns.
+				return scanHooks(v, hook, 8)
+			}
+			unlock()
+			time.Sleep(10 * time.Millisecond)
+		}
+		// Reading the retained-hook fields without the mutex would race
+		// with the update in progress: report unknown rather than guess.
+		return false, false
+	}
+	return scanHooks(v, hook, 8)
+}
+
+// hookInContainer reports whether the slice, array, map, or struct value v
+// holds the hook; nested structs are scanned with their own locks. It never
+// looks at v's addressability for a lock, so callers holding a lock on v's
+// owner must pass depth such that recursion stays below the owner.
+func hookInContainer(v reflect.Value, hook redis.Hook, depth int) (found, known bool) {
+	if depth <= 0 {
+		return false, true
+	}
+	// The value may be the hook itself — a struct implementing redis.Hook
+	// stored as a set key, say — not merely a container of one.
+	if h, ok := reflect.TypeAssert[redis.Hook](v); ok {
+		return hookEqual(h, hook), true
+	}
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+			for j := 0; j < v.Len(); j++ {
+				if h, ok := reflect.TypeAssert[redis.Hook](v.Index(j)); ok && hookEqual(h, hook) {
+					return true, true
+				}
+			}
+			return false, true
+		}
+		// A collection of holders — []struct{ Hook redis.Hook }, []any, a
+		// map of holders — is a hook store one level down: recurse into
+		// the elements, so a proxy keeping its hooks in them is seen.
+		for j := 0; j < v.Len(); j++ {
+			if found, known := hookInContainer(v.Index(j), hook, depth-1); found || !known {
+				return found, known
+			}
+		}
+	case reflect.Map:
+		// A map of hooks is a hook store like any slice: match by element
+		// (value) type, and by key type too — a hook set keeps its hooks in
+		// the keys.
+		if v.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+			iter := v.MapRange()
+			for iter.Next() {
+				if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
+					return true, true
+				}
+			}
+		} else {
+			// A map of holders — or of interfaces holding them — is a
+			// hook store one level down.
+			iter := v.MapRange()
+			for iter.Next() {
+				val := iter.Value()
+				if val.Kind() == reflect.Struct && !val.CanAddr() {
+					// A value held in a map is not addressable: its
+					// unexported hook field could not be read. Copy it to
+					// an addressable location first, like the member
+					// walker does.
+					p := reflect.New(val.Type())
+					p.Elem().Set(val)
+					val = p.Elem()
+				}
+				if found, known := hookInContainer(val, hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		}
+		if v.Type().Key() == reflect.TypeFor[redis.Hook]() {
+			iter := v.MapRange()
+			for iter.Next() {
+				if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
+					return true, true
+				}
+			}
+		} else {
+			// A generic key — map[any]struct{} — may hold the hook behind
+			// its interface; walk the keys like values.
+			iter := v.MapRange()
+			for iter.Next() {
+				hk := iter.Key()
+				if hk.Kind() == reflect.Interface && !hk.IsNil() {
+					// A generic key holds the holder behind its interface.
+					hk = hk.Elem()
+				}
+				if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+					// A key held in a map is not addressable: its unexported
+					// hook field could not be read. Copy it to an
+					// addressable location first, like map values.
+					p := reflect.New(hk.Type())
+					p.Elem().Set(hk)
+					hk = p.Elem()
+				}
+				if found, known := hookInContainer(hk, hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		}
+	case reflect.Struct:
+		return containsHook(v, hook, depth-1)
+	case reflect.Interface:
+		if v.IsNil() || !v.CanInterface() {
+			return false, true
+		}
+		// The interface may be the stored hook itself — hook *redis.Hook
+		// unwraps to the value the pointer holds.
+		if h, ok := reflect.TypeAssert[redis.Hook](v); ok && hookEqual(h, hook) {
+			return true, true
+		}
+		// The indirection consumes the limit: a cycle alternating
+		// interfaces and pointers — x := &x behind an any field — would
+		// otherwise recurse forever.
+		return hookInContainer(v.Elem(), hook, depth-1)
+	case reflect.Pointer:
+		// A concrete client behind the pointer — *redis.Client — is a
+		// delegate, not proxy-owned storage: the probe the proxy's own
+		// AddHook fanned out to the client's hook chain is not evidence of
+		// retention. Any other pointer — any(&hookStore{...}) — is scanned
+		// like the store itself.
+		if v.IsNil() || !v.CanInterface() {
+			return false, true
+		}
+		if t := v.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
+			return false, true
+		}
+		// The indirection consumes the limit, like the interface above.
+		return hookInContainer(v.Elem(), hook, depth-1)
+	}
+	return false, true
+}
+
+// scanHooks reports whether s, or a struct embedded within it, holds the
+// hook; s itself is already locked by the caller.
+func scanHooks(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
+	if s.Kind() != reflect.Struct || depth <= 0 {
+		return false, true
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if h, ok := reflect.TypeAssert[redis.Hook](f); ok && hookEqual(h, hook) {
+				return true, true
+			}
+			// An interface-backed container — a slice, array, map, or struct
+			// behind any — is a hook store like any other; scan the dynamic
+			// value. The indirection consumes the limit, so a cycle of
+			// interfaces and pointers cannot recurse forever.
+			if !f.IsNil() && f.CanInterface() {
+				if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		case reflect.Slice, reflect.Array:
+			// Match by element type: a named slice — type hookList
+			// []redis.Hook — or a fixed array is as much a hook store as
+			// the unnamed slice.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				for j := 0; j < f.Len(); j++ {
+					if h, ok := reflect.TypeAssert[redis.Hook](f.Index(j)); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+				continue
+			}
+			// A collection of holders is a hook store one level down.
+			for j := 0; j < f.Len(); j++ {
+				if found, known := hookInContainer(f.Index(j), hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		case reflect.Map:
+			// A map of hooks is a hook store like any slice: match by
+			// element (value) type, and by key type too — a hook set keeps
+			// its hooks in the keys.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			} else {
+				// A map of holders — or of interfaces holding them — is a
+				// hook store one level down.
+				iter := f.MapRange()
+				for iter.Next() {
+					val := iter.Value()
+					if val.Kind() == reflect.Struct && !val.CanAddr() {
+						// A value held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first.
+						p := reflect.New(val.Type())
+						p.Elem().Set(val)
+						val = p.Elem()
+					}
+					if found, known := hookInContainer(val, hook, depth-1); found || !known {
+						return found, known
+					}
+				}
+			}
+			if f.Type().Key() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			} else {
+				iter := f.MapRange()
+				for iter.Next() {
+					hk := iter.Key()
+					if hk.Kind() == reflect.Interface && !hk.IsNil() {
+						// A generic key holds the holder behind its
+						// interface.
+						hk = hk.Elem()
+					}
+					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+						// A key held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first, like map values.
+						p := reflect.New(hk.Type())
+						p.Elem().Set(hk)
+						hk = p.Elem()
+					}
+					res, kn := hookInContainer(hk, hook, depth-1)
+					if res || !kn {
+						return res, kn
+					}
+				}
+			}
+		case reflect.Struct:
+			if t := f.Type(); t == reflect.TypeFor[sync.Mutex]() || t == reflect.TypeFor[sync.RWMutex]() {
+				// A mutex field is a lock, not a store: descending into it
+				// would lock its inner writer mutex — racing and deadlocking
+				// the proxy's own writers, which take that mutex as part of
+				// their protocol.
+				continue
+			}
+			if found, known := containsHook(f, hook, depth-1); found || !known {
+				return found, known
+			}
+		case reflect.Pointer:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
+				continue
+			}
+			// Any other pointer — a struct holder, a pointer-backed
+			// slice or map, a single hook — is scanned like its target.
+			if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+				return found, known
+			}
+		}
+	}
+	return false, true
+}
+
+// containsHook reports whether s, or a struct embedded within it, holds the
+// hook in a field or in a hook slice, locking s as it is read. Hooks with
+// non-comparable dynamic types cannot be compared and are treated as absent.
+// The concrete client types are skipped during proxy-field scans: a delegate
+// is not proxy-owned storage.
+var (
+	redisClientType        = reflect.TypeFor[*redis.Client]()
+	redisClusterClientType = reflect.TypeFor[*redis.ClusterClient]()
+	redisRingType          = reflect.TypeFor[*redis.Ring]()
+)
+
+func containsHook(s reflect.Value, hook redis.Hook, depth int) (found, known bool) {
+	if s.Kind() != reflect.Struct || depth <= 0 {
+		return false, true
+	}
+	// The struct may itself be the hook, not merely a container of one.
+	if h, ok := reflect.TypeAssert[redis.Hook](s); ok {
+		return hookEqual(h, hook), true
+	}
+	// Each nested struct is locked as it is traversed, like the root: a
+	// synchronized hook store shared by several proxies updates its slice
+	// under its own mutex, and reading it without that races with the
+	// update. A lock that stays held leaves the scan unknown — the
+	// conservative caller then treats the proxy as retaining.
+	if s.CanAddr() {
+		unlock, ok := rediswrap.LockStruct(s)
+		defer unlock()
+		if !ok {
+			return false, false
+		}
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if h, ok := reflect.TypeAssert[redis.Hook](f); ok && hookEqual(h, hook) {
+				return true, true
+			}
+			// An interface-backed container — a slice, array, map, or struct
+			// behind any — is a hook store like any other; scan the dynamic
+			// value. The indirection consumes the limit, so a cycle of
+			// interfaces and pointers cannot recurse forever.
+			if !f.IsNil() && f.CanInterface() {
+				if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		case reflect.Slice, reflect.Array:
+			// Match by element type: a named slice — type hookList
+			// []redis.Hook — or a fixed array is as much a hook store as
+			// the unnamed slice.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				for j := 0; j < f.Len(); j++ {
+					if h, ok := reflect.TypeAssert[redis.Hook](f.Index(j)); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+				continue
+			}
+			// A collection of holders is a hook store one level down.
+			for j := 0; j < f.Len(); j++ {
+				if found, known := hookInContainer(f.Index(j), hook, depth-1); found || !known {
+					return found, known
+				}
+			}
+		case reflect.Map:
+			// A map of hooks is a hook store like any slice: match by
+			// element (value) type, and by key type too — a hook set keeps
+			// its hooks in the keys.
+			if f.Type().Elem() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Value()); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			} else {
+				// A map of holders — or of interfaces holding them — is a
+				// hook store one level down.
+				iter := f.MapRange()
+				for iter.Next() {
+					val := iter.Value()
+					if val.Kind() == reflect.Struct && !val.CanAddr() {
+						// A value held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first.
+						p := reflect.New(val.Type())
+						p.Elem().Set(val)
+						val = p.Elem()
+					}
+					if found, known := hookInContainer(val, hook, depth-1); found || !known {
+						return found, known
+					}
+				}
+			}
+			if f.Type().Key() == reflect.TypeFor[redis.Hook]() {
+				iter := f.MapRange()
+				for iter.Next() {
+					if h, ok := reflect.TypeAssert[redis.Hook](iter.Key()); ok && hookEqual(h, hook) {
+						return true, true
+					}
+				}
+			} else {
+				iter := f.MapRange()
+				for iter.Next() {
+					hk := iter.Key()
+					if hk.Kind() == reflect.Interface && !hk.IsNil() {
+						// A generic key holds the holder behind its
+						// interface.
+						hk = hk.Elem()
+					}
+					if hk.Kind() == reflect.Struct && !hk.CanAddr() {
+						// A key held in a map is not addressable: its
+						// unexported hook field could not be read. Copy it
+						// to an addressable location first, like map values.
+						p := reflect.New(hk.Type())
+						p.Elem().Set(hk)
+						hk = p.Elem()
+					}
+					res, kn := hookInContainer(hk, hook, depth-1)
+					if res || !kn {
+						return res, kn
+					}
+				}
+			}
+		case reflect.Struct:
+			if t := f.Type(); t == reflect.TypeFor[sync.Mutex]() || t == reflect.TypeFor[sync.RWMutex]() {
+				// A mutex field is a lock, not a store: descending into it
+				// would lock its inner writer mutex — racing and deadlocking
+				// the proxy's own writers, which take that mutex as part of
+				// their protocol.
+				continue
+			}
+			if found, known := containsHook(f, hook, depth-1); found || !known {
+				return found, known
+			}
+		case reflect.Pointer:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			// A concrete client field is a delegate, not proxy-owned
+			// storage: the probe the proxy's own AddHook fanned out to it
+			// is not evidence of retention.
+			if t := f.Type(); t == redisClientType || t == redisClusterClientType || t == redisRingType || rediswrap.IsMutexType(t) {
+				continue
+			}
+			// Any other pointer — a struct holder, a pointer-backed
+			// slice or map, a single hook — is scanned like its target.
+			if found, known := hookInContainer(f.Elem(), hook, depth-1); found || !known {
+				return found, known
+			}
+		}
+	}
+	return false, true
+}
+
+// hookEqual compares two hooks, guarding against non-comparable dynamic
+// types: comparing those would panic.
+func hookEqual(a, b redis.Hook) bool {
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
+		return false
+	}
+	// A statically comparable hook type may hold non-comparable dynamic
+	// values behind interface fields — comparing those panics — so the
+	// comparison runs under a recovered panic, which only ever means "not
+	// equal".
+	return safeHookEqual(a, b)
+}
+
+func safeHookEqual(a, b redis.Hook) (eq bool) {
+	defer func() {
+		if recover() != nil {
+			eq = false
+		}
+	}()
+	return a == b
+}
+
+// probeHook is the no-op hook used to observe which concrete clients a
+// proxy's AddHook instruments; see wrapProxyMembers. It carries the wrap's
+// configuration so the hook's lifetime anchors it: a proxy that retains the
+// probe keeps the configuration — the re-observation wants it with its user
+// callback — alive for exactly as long as the proxy, and one fanned out to a
+// member keeps it alive with that member's chain. Without an anchor, a wrap
+// that installs no hook of its own leaves the configuration to the next GC.
+type probeHook struct {
+	cfg *clientConfig
+}
+
+func (probeHook) DialHook(hook redis.DialHook) redis.DialHook {
+	return hook
+}
+
+func (probeHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
+	return hook
+}
+
+func (probeHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return hook
+}
+
+// addHookWithoutEndpoints installs a datadog hook carrying every mandatory
+// tag but no endpoint tags on client: for a hook a proxy retains, the
+// delegate it eventually instruments is not known at wrap time, and the
+// proxy's own endpoints may not match it.
+func addHookWithoutEndpoints(client redis.UniversalClient, cfg *clientConfig) {
+	hookParams := &params{
+		config: cfg,
+	}
+	hookParams.spanCfg = newSpanConfig(cfg, commonTagOptions())
+	client.AddHook(&datadogHook{params: hookParams})
+}
+
+// commonTagOptions returns the tags every span of this integration must
+// carry, independent of any endpoint.
+func commonTagOptions() []tracer.StartSpanOption {
+	return []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeRedis),
+		tracer.Tag(ext.Component, string(instrumentation.PackageRedisGoRedisV9)),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+	}
+}
+
+// addHook installs a datadog hook with the given configuration on client.
+func addHook(client redis.UniversalClient, cfg *clientConfig) {
 	hookParams := &params{
 		config: cfg,
 	}
 	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
-
 	client.AddHook(&datadogHook{params: hookParams})
+}
+
+// datadogConfig returns the configuration of the datadog hook the client
+// already carries, and whether the hook chain could be read at all. A
+// WithContext or WithTimeout clone of a wrapped client inherits the hook
+// slice, so this detects clones. Reading the chain makes a second hook —
+// and with it a duplicate span per command — impossible.
+func datadogConfig(client redis.UniversalClient) (key *configKey, seen bool) {
+	hooks := hookSlice(client)
+	if !hooks.IsValid() {
+		return nil, false
+	}
+	for i := 0; i < hooks.Len(); i++ {
+		if ddh, ok := reflect.TypeAssert[*datadogHook](hooks.Index(i)); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+	}
+	return nil, true
+}
+
+var (
+	redisHookSliceType = reflect.TypeFor[[]redis.Hook]()
+	datadogHookType    = reflect.TypeFor[*datadogHook]()
+)
+
+// datadogRetainedConfig returns the configuration of a datadog hook held in
+// s — a proxy's own fields — by a previous wrap that retained its real hook.
+// Used for value proxies with no visible members, whose repeated wraps would
+// otherwise each hand the proxy another real hook.
+func datadogRetainedConfig(s reflect.Value, depth int) (key *configKey, known bool) {
+	if s.Kind() == reflect.Interface && !s.IsNil() {
+		// The interface may itself hold the datadog hook.
+		if ddh, ok := reflect.TypeAssert[*datadogHook](s); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+		return datadogRetainedConfig(s.Elem(), depth)
+	}
+	switch s.Kind() {
+	case reflect.Slice, reflect.Array:
+		for j := 0; j < s.Len(); j++ {
+			if key, known := datadogRetainedConfig(s.Index(j), depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+		return nil, true
+	case reflect.Map:
+		iter := s.MapRange()
+		for iter.Next() {
+			val := iter.Value()
+			if val.Kind() == reflect.Struct && !val.CanAddr() {
+				p := reflect.New(val.Type())
+				p.Elem().Set(val)
+				val = p.Elem()
+			}
+			if key, known := datadogRetainedConfig(val, depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+		return nil, true
+	case reflect.Pointer:
+		if s.IsNil() {
+			return nil, true
+		}
+		return datadogRetainedConfig(s.Elem(), depth)
+	}
+	if s.Kind() != reflect.Struct || depth <= 0 {
+		return nil, true
+	}
+	// The struct may itself be the hook.
+	if ddh, ok := reflect.TypeAssert[*datadogHook](s); ok {
+		k := ddh.params.config.key()
+		return &k, true
+	}
+	if s.CanAddr() {
+		unlock, ok := rediswrap.LockStruct(s)
+		defer unlock()
+		if !ok {
+			return nil, false
+		}
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		if ddh, ok := reflect.TypeAssert[*datadogHook](f); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if key, known := datadogRetainedConfig(f.Elem(), depth-1); key != nil || !known {
+				return key, known
+			}
+		case reflect.Slice, reflect.Array:
+			for j := 0; j < f.Len(); j++ {
+				if key, known := datadogRetainedConfig(f.Index(j), depth-1); key != nil || !known {
+					return key, known
+				}
+			}
+		case reflect.Map:
+			iter := f.MapRange()
+			for iter.Next() {
+				val := iter.Value()
+				if val.Kind() == reflect.Struct && !val.CanAddr() {
+					p := reflect.New(val.Type())
+					p.Elem().Set(val)
+					val = p.Elem()
+				}
+				if key, known := datadogRetainedConfig(val, depth-1); key != nil || !known {
+					return key, known
+				}
+			}
+		case reflect.Struct:
+			if key, known := datadogRetainedConfig(f, depth-1); key != nil || !known {
+				return key, known
+			}
+		case reflect.Pointer:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if key, known := datadogRetainedConfig(f.Elem(), depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+	}
+	return nil, true
+}
+
+// hookSlice returns the client's hook slice, read through the unexported
+// fields it lives in, or an invalid Value when the client has no readable
+// hook slice.
+func hookSlice(client redis.UniversalClient) reflect.Value {
+	v := reflect.ValueOf(client)
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return reflect.Value{}
+	}
+	s := v.Elem()
+	// The hooks live in unexported embedded structs — v9.22 nests them
+	// behind the base-client pointer and an atomic snapshot: view the whole
+	// client through its address so its fields can be read.
+	s = reflect.NewAt(s.Type(), unsafe.Pointer(s.UnsafeAddr())).Elem()
+	return findHookSlice(s, 8)
+}
+
+// findHookSlice returns the first []redis.Hook field in s or in the structs
+// embedded within it, read under the struct's own mutex when it has one.
+func findHookSlice(s reflect.Value, depth int) reflect.Value {
+	if s.Kind() != reflect.Struct || depth <= 0 {
+		return reflect.Value{}
+	}
+	unlock, ok := rediswrap.LockStruct(s)
+	defer unlock()
+	if !ok {
+		// The struct's mutex stayed held; reading its hook slice without it
+		// would race with the update in progress. Report no readable chain —
+		// the caller falls back to the client's weak identity.
+		return reflect.Value{}
+	}
+	if s.Type().String() == "redis.hooksMixin" {
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		// A mutex field is a lock, not a holder: LockStruct has already
+		// taken it, and descending into it would re-acquire the same
+		// non-reentrant lock — self-inflicted contention.
+		if rediswrap.IsMutexType(f.Type()) {
+			continue
+		}
+		switch f.Kind() {
+		case reflect.Slice:
+			if f.Type() != redisHookSliceType {
+				continue
+			}
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			// Copy the slice while the lock is held: the returned value must
+			// not alias the live field, or the caller's later Len and Index
+			// would race with the appends a concurrent AddHook makes.
+			snapshot := reflect.MakeSlice(redisHookSliceType, f.Len(), f.Len())
+			reflect.Copy(snapshot, f)
+			return snapshot
+		case reflect.Struct:
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			// An atomic snapshot stored by value exposes its target the
+			// same way: through its Load method.
+			if m := f.Addr().MethodByName("Load"); m.IsValid() &&
+				m.Type().NumIn() == 0 && m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.Pointer {
+				target := m.Call(nil)[0]
+				if !target.IsNil() && target.Elem().Kind() == reflect.Struct {
+					if h := findHookSlice(target.Elem(), depth-1); h.IsValid() {
+						return h
+					}
+				}
+			}
+			if h := findHookSlice(f, depth-1); h.IsValid() {
+				return h
+			}
+		case reflect.Pointer:
+			if f.IsNil() {
+				continue
+			}
+			if !f.CanInterface() {
+				// Unexported field: read it through its address.
+				if !f.CanAddr() {
+					continue
+				}
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			// go-redis v9.22 and later keep the hook snapshot behind an
+			// atomic pointer: reach it through its Load method. Other
+			// pointers to structs are followed directly.
+			if m := f.MethodByName("Load"); m.IsValid() &&
+				m.Type().NumIn() == 0 && m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.Pointer {
+				target := m.Call(nil)[0]
+				if target.IsNil() || target.Elem().Kind() != reflect.Struct {
+					continue
+				}
+				if h := findHookSlice(target.Elem(), depth-1); h.IsValid() {
+					return h
+				}
+				continue
+			}
+			if f.Elem().Kind() != reflect.Struct {
+				continue
+			}
+			if h := findHookSlice(f.Elem(), depth-1); h.IsValid() {
+				return h
+			}
+		}
+	}
+	return reflect.Value{}
+}
+
+// findMembers returns the concrete clients reachable inside a container
+// value — a slice, array, map, interface, or a holder struct or pointer
+// around any of those. It reports false when a nested holder's mutex stays
+// held: the caller treats the client as unreadable rather than race with the
+// update in progress.
+func findMembers(v reflect.Value, depth int) ([]redis.UniversalClient, bool) {
+	if depth <= 0 {
+		return nil, true
+	}
+	if !v.CanInterface() {
+		// Unexported field of an addressable struct: read it through its
+		// address; a non-addressable value cannot give access to them.
+		if !v.CanAddr() {
+			return nil, true
+		}
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	switch v.Kind() {
+	case reflect.Interface:
+		if v.IsNil() {
+			return nil, true
+		}
+		if u, ok := reflect.TypeAssert[redis.UniversalClient](v); ok {
+			return []redis.UniversalClient{u}, true
+		}
+		return findMembers(v.Elem(), depth-1)
+	case reflect.Slice, reflect.Array:
+		var members []redis.UniversalClient
+		for i := 0; i < v.Len(); i++ {
+			m, ok := findMembers(v.Index(i), depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
+		}
+		return members, true
+	case reflect.Map:
+		var members []redis.UniversalClient
+		iter := v.MapRange()
+		for iter.Next() {
+			// A client-keyed set — map[redis.UniversalClient]struct{} —
+			// keeps its delegates in the keys; walk them like values.
+			if m, ok := findMembers(iter.Key(), depth-1); !ok {
+				return nil, false
+			} else {
+				members = append(members, m...)
+			}
+			val := iter.Value()
+			if val.Kind() == reflect.Struct && !val.CanAddr() {
+				// A value held in a map is not addressable: an unexported
+				// client field of a holder stored by value could not be
+				// read. Copy it to an addressable location first, so the
+				// holder reads like any other.
+				p := reflect.New(val.Type())
+				p.Elem().Set(val)
+				val = p.Elem()
+			}
+			m, ok := findMembers(val, depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
+		}
+		return members, true
+	case reflect.Pointer:
+		if v.IsNil() {
+			return nil, true
+		}
+		// A pointer field that is itself a client — *redis.Client — is a
+		// member, not a holder; a pointer to a holder struct descends.
+		if u, ok := reflect.TypeAssert[redis.UniversalClient](v); ok {
+			return []redis.UniversalClient{u}, true
+		}
+		// Any other pointee may still be a holder: a pointer to a client
+		// container — *[]redis.UniversalClient, *redis.UniversalClient —
+		// or to a struct. Descend regardless of kind; the recursive cases
+		// decide what they find.
+		return findMembers(v.Elem(), depth-1)
+	case reflect.Struct:
+		// A mutex field is not a holder — it guards the outer struct,
+		// whose lock the walk already holds — and descending into it would
+		// re-acquire the same non-reentrant lock and read as contention.
+		if t := v.Type(); t == reflect.TypeOf(sync.Mutex{}) || t == reflect.TypeOf(sync.RWMutex{}) {
+			return nil, true
+		}
+		// A copy with a mutex it cannot take is opaque below its headers:
+		// what its fields reach through maps, slices, and interiors is the
+		// original's, guarded by the original's mutex, and reading it would
+		// race the update in progress.
+		if rediswrap.Unguarded(v) {
+			return nil, true
+		}
+		// A holder struct around delegates: a field that is itself a
+		// client, or a container of them. The holder's own mutex, when it
+		// has one, guards delegate replacement; read the fields under it
+		// like the walker does, and give up on contention rather than race.
+		unlock, locked := rediswrap.LockStruct(v)
+		defer unlock()
+		if !locked {
+			return nil, false
+		}
+		var members []redis.UniversalClient
+		for i := 0; i < v.NumField(); i++ {
+			m, ok := findMembers(v.Field(i), depth-1)
+			if !ok {
+				return nil, false
+			}
+			members = append(members, m...)
+		}
+		return members, true
+	}
+	return nil, true
+}
+
+// concreteClients returns the distinct concrete go-redis clients reachable
+// from client through several levels of fields, embedded or not, exported or
+// not, by pointer or by value. A client passed directly yields itself; a
+// decorator delegating to one client yields that client; a proxy holding
+// several — a read/write router, say — yields them all. It yields nothing
+// when it cannot see through the implementation, for example when the
+// delegated clients are not held in fields at all or are nested beyond the
+// search depth.
+func concreteClients(client redis.UniversalClient) (targets []redis.UniversalClient, ok bool, incomplete bool) {
+	var found []redis.UniversalClient
+	var aborted bool
+	var walk func(c redis.UniversalClient, depth int)
+	walk = func(c redis.UniversalClient, depth int) {
+		if depth <= 0 || c == nil {
+			return
+		}
+		if v := reflect.ValueOf(c); v.Kind() == reflect.Pointer && v.IsNil() {
+			// A typed-nil concrete client is not a delegate; keep looking.
+			return
+		}
+		switch c.(type) {
+		case *redis.Client, *redis.ClusterClient, *redis.Ring:
+			for _, f := range found {
+				if f == c {
+					return
+				}
+			}
+			found = append(found, c)
+			return
+		}
+		v := reflect.ValueOf(c)
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return
+			}
+			v = v.Elem()
+		}
+		// A decorator may be passed by value as well as by pointer; its
+		// exported fields are readable either way.
+		if v.Kind() != reflect.Struct {
+			return
+		}
+		s := v
+		// The struct's own mutex, when it has one, guards its delegate
+		// fields; read them under it. A mutex that stays held may be held
+		// by this very call chain, and blocking on it would deadlock: treat
+		// the proxy as opaque instead, and let its AddHook see nothing.
+		unlock, locked := rediswrap.LockStruct(s)
+		defer unlock()
+		if !locked {
+			aborted = true
+			return
+		}
+		// A copy with a mutex it cannot take — a value proxy's copied
+		// mutex guards nothing — still has snapshot header fields: its
+		// interface and pointer fields are safe to read, while everything
+		// they reach through maps, slices, and interiors is the original's,
+		// guarded by the original's mutex. Read the headers only.
+		headersOnly := rediswrap.Unguarded(s)
+		for i := 0; i < s.NumField(); i++ {
+			f := s.Field(i)
+			if !f.CanInterface() {
+				// Unexported field of an addressable struct: read it through
+				// its address. A non-addressable value cannot give access to
+				// its unexported fields; skip them.
+				if !f.CanAddr() {
+					continue
+				}
+				f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+			}
+			field, ok := reflect.TypeAssert[redis.UniversalClient](f)
+			if ok {
+				walk(field, depth-1)
+				continue
+			}
+			if headersOnly {
+				continue
+			}
+			// A delegate may sit in a container — a slice, array, or map of
+			// clients — or behind a holder struct; walk into it so swapped
+			// members remain observable. A nested holder whose mutex stays
+			// held only skips that holder's members: the proxy itself is
+			// readable, and the observation still covers what its own
+			// fields say.
+			holderMembers, readable := findMembers(f, depth-1)
+			if !readable {
+				// A nested holder stayed locked: its members are missing
+				// from this walk, and the observation is incomplete until a
+				// later one sees them.
+				incomplete = true
+			}
+			for _, target := range holderMembers {
+				walk(target, depth-1)
+			}
+		}
+	}
+	// A proxy may nest its delegates a few levels deep; only nesting beyond
+	// this depth leaves the client undiscoverable, falling back to the
+	// proxy's own identity.
+	walk(client, 8)
+	if aborted {
+		return nil, false, incomplete
+	}
+	return found, true, incomplete
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay
@@ -122,7 +1951,7 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 	}
 	additionalTags = append(additionalTags,
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.Component, instrumentation.PackageRedisGoRedisV9),
+		tracer.Tag(ext.Component, string(instrumentation.PackageRedisGoRedisV9)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)
@@ -130,6 +1959,12 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 }
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
+	// No duplicate-hook deduplication is needed anywhere, including here:
+	// WrapClient reads the client's hook chain and installs its hook only
+	// when no datadog hook is present — inherited by a clone or not — so a
+	// client's chain never carries two. Dials additionally flow through the
+	// original client's hook chain only: a WithTimeout clone shares the
+	// original's pool, whose dialer is bound to the original.
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		// Every tag DialHook sets is static (constant for the client's
 		// lifetime), so the span can start from spanCfg alone, with no
