@@ -25,10 +25,17 @@ type TestCase struct {
 	addr string
 }
 
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_TRACE_ECHO_IGNORED_ROUTES", "GET /health")
+}
+
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Echo = echo.New()
 	tc.Echo.Logger.SetOutput(io.Discard)
 
+	tc.Echo.GET("/health", func(c echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
 	tc.Echo.GET("/ping", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"message": "pong"})
 	})
@@ -46,57 +53,75 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
-	resp, err := http.Get("http://" + tc.addr + "/ping")
+	tc.request(t, "/health", http.StatusNoContent)
+	tc.request(t, "/ping", http.StatusOK)
+}
+
+func (tc *TestCase) request(t *testing.T, path string, wantStatus int) {
+	t.Helper()
+	resp, err := http.Get("http://" + tc.addr + path)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, wantStatus, resp.StatusCode)
+}
+
+func (*TestCase) ExpectedSpanCount() int {
+	// The ignored /health route produces only HTTP client/server spans. The traced
+	// /ping route additionally produces the Echo middleware span.
+	return 5
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpURL := "http://" + tc.addr + "/ping"
 	return trace.Traces{
-		{
-			// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
-			Tags: map[string]any{
-				"name":     "http.request",
-				"resource": "GET /ping",
-				"service":  "echo.v4.test",
-				"type":     "http",
-			},
-			Meta: map[string]string{
-				"http.url":  httpURL,
-				"component": "net/http",
-				"span.kind": "client",
-			},
-			Children: trace.Traces{
-				{
-					Tags: map[string]any{
-						"name":     "http.request",
-						"resource": "GET /ping",
-						"service":  "http.router",
-						"type":     "web",
-					},
-					Meta: map[string]string{
-						"http.url":  httpURL,
-						"component": "net/http",
-						"span.kind": "server",
-					},
-					Children: trace.Traces{
-						{
-							Tags: map[string]any{
-								"name":     "http.request",
-								"service":  "echo",
-								"resource": "GET /ping",
-								"type":     "web",
-							},
-							Meta: map[string]string{
-								"http.url":  httpURL,
-								"component": "labstack/echo.v4",
-								"span.kind": "server",
-							},
-						},
-					},
+		tc.expectedTrace("/health", nil),
+		tc.expectedTrace("/ping", trace.Traces{
+			{
+				Tags: map[string]any{
+					"name":     "http.request",
+					"service":  "echo",
+					"resource": "GET /ping",
+					"type":     "web",
 				},
+				Meta: map[string]string{
+					"http.url":  "http://" + tc.addr + "/ping",
+					"component": "labstack/echo.v4",
+					"span.kind": "server",
+				},
+			},
+		}),
+	}
+}
+
+func (tc *TestCase) expectedTrace(path string, children trace.Traces) *trace.Trace {
+	httpURL := "http://" + tc.addr + path
+	resource := "GET " + path
+	return &trace.Trace{
+		// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
+		Tags: map[string]any{
+			"name":     "http.request",
+			"resource": resource,
+			"service":  "echo.v4.test",
+			"type":     "http",
+		},
+		Meta: map[string]string{
+			"http.url":  httpURL,
+			"component": "net/http",
+			"span.kind": "client",
+		},
+		Children: trace.Traces{
+			{
+				Tags: map[string]any{
+					"name":     "http.request",
+					"resource": resource,
+					"service":  "http.router",
+					"type":     "web",
+				},
+				Meta: map[string]string{
+					"http.url":  httpURL,
+					"component": "net/http",
+					"span.kind": "server",
+				},
+				Children: children,
 			},
 		},
 	}
