@@ -13,8 +13,13 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"unsafe"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -31,11 +36,214 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoRedis)
 }
 
+var (
+	// wrapMu serializes WrapClient. Upstream WrapProcess mutates the client's
+	// process chain with an unsynchronized assignment, so two concurrent
+	// first wraps could race, leave the client half-instrumented, or even
+	// strip the tracing wrapper; registration and installation must happen
+	// as one critical section.
+	wrapMu sync.Mutex
+	// wrapped records the configuration of the first WrapClient call for
+	// each client, keyed weakly by the client. The configuration holds no
+	// reference to the client, and once a wrapped client becomes
+	// unreachable a runtime cleanup drops its entry, so the registry holds
+	// at most one entry per live client. Without the registry, every
+	// WrapClient call would stack another process wrapper on the client and
+	// every Redis command would emit one duplicate span per extra wrapper.
+	wrapped = map[weak.Pointer[redis.Client]]*clientConfig{}
+
+	// tracedStacks marks, per goroutine, the commands a datadog process
+	// wrapper further out on that goroutine is currently driving, so the
+	// chain's own datadog wrapper does not start another span for them: a
+	// command through a traced handle would otherwise be traced once by the
+	// handle's wrapper — with the caller's context — and once more by the
+	// chain's wrapper, with the client's context. A process chain is one
+	// call chain, so the wrappers of one command run on one goroutine and
+	// the mark is goroutine-scoped: concurrent commands on other
+	// goroutines never collide with it, however equal their values — two
+	// equal value commands are separate operations and each traces once.
+	// The mark is scoped to one goroutine, one client chain — identified
+	// by the underlying connection pool, inherited with the process chain
+	// by every clone of it, and never shared by independently constructed
+	// clients — and one wrapper instance: the chain's inherited wrapper
+	// skips a command its outer wrapper is already driving, while the
+	// owner's own re-entry for a nested operation traces.
+	// so a user wrapper that retries or fails over by forwarding the same
+	// command to a second wrapped client, synchronously, still gets that
+	// client's span: the second Process call is its own Redis operation.
+	// The key is the command's dynamic type and the interface data word —
+	// the command itself when it is pointer-shaped, a pointer to its
+	// interface copy otherwise — so a command that cannot be compared,
+	// holding a map or a slice, is deduplicated like any other, and
+	// commands of different types never collide on a shared boxing
+	// address. The hook-based integrations deduplicate by reading hook
+	// chains instead, but v6 has no hook chain to read.
+	tracedStacks sync.Map // goid -> *[]tracedCmd
+)
+
+// chainID returns the identity of the client chain c belongs to: the
+// underlying connection pool. A WithContext clone shares its predecessor's
+// pool — cloning copies the client, not the pool — and a raw upstream clone
+// keeps its pool when wrapped separately, so all handles of one chain share
+// the id; two independently constructed clients always dial their own pool,
+// even when built from the same *Options.
+func chainID(c *redis.Client) unsafe.Pointer {
+	v := reflect.ValueOf(c).Elem().FieldByName("connPool")
+	if !v.CanInterface() {
+		if !v.CanAddr() {
+			return nil
+		}
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	if v.IsNil() {
+		return nil
+	}
+	pool := v.Interface()
+	// The interface's data word holds the pool itself.
+	return (*[2]unsafe.Pointer)(unsafe.Pointer(&pool))[1]
+}
+
+// cmdKey identifies a command value: its dynamic type and the interface's
+// data word, which holds the command itself when it is pointer-shaped and a
+// pointer to its interface copy otherwise. The two wrappers of one command
+// see the same pair, while commands of different types never collide on a
+// shared boxing address — the zero base of zero-sized values included. Two
+// commands of the same type share an address only when their values are
+// equal, which no API can tell apart.
+type cmdKey struct {
+	typ  reflect.Type
+	word unsafe.Pointer
+}
+
+func newCmdKey(cmd redis.Cmder) cmdKey {
+	return cmdKey{typ: reflect.TypeOf(cmd), word: (*[2]unsafe.Pointer)(unsafe.Pointer(&cmd))[1]}
+}
+
+// tracedCmd identifies one in-flight command: the client chain it runs
+// through — identified by the underlying client's Options pointer, which
+// every handle of that client shares, a WithContext clone inherits, and a
+// raw upstream clone keeps when it is wrapped separately — and the
+// command's own identity.
+type tracedCmd struct {
+	chain unsafe.Pointer
+	// owner identifies the wrapper instance that pushed the mark: the
+	// chain's inherited wrapper skips a mark pushed by a different
+	// instance, while the owner's own re-entry — a nested command a user
+	// wrapper issues through the same client — is a separate operation and
+	// traces.
+	owner *Client
+	key   cmdKey
+}
+
+// pushTraced records that this goroutine's outermost running datadog
+// wrapper is driving the command through chain, and returns the function
+// that retires it once the command returns. The stack is per goroutine:
+// only the wrappers of this goroutine's own call chain see it.
+// tracedStack returns this goroutine's stack of in-flight traced commands,
+// creating it when absent, and reports the goroutine id for the retiring
+// cleanup. The id is resolved once per wrapper invocation: formatting the
+// current stack costs about a microsecond, and a Redis command would
+// otherwise pay it three times — the outer check, the push, and the pop.
+func tracedStack() (uint64, *[]tracedCmd) {
+	id := goid()
+	if v, ok := tracedStacks.Load(id); ok {
+		return id, v.(*[]tracedCmd)
+	}
+	p := &[]tracedCmd{}
+	tracedStacks.Store(id, p)
+	return id, p
+}
+
+// pushTraced records that this goroutine's outermost running datadog
+// wrapper is driving the command through chain, and returns the function
+// that retires it once the command returns. The stack is per goroutine:
+// only the wrappers of this goroutine's own call chain see it.
+func pushTraced(id uint64, p *[]tracedCmd, owner *Client, chain unsafe.Pointer, key cmdKey) func() {
+	*p = append(*p, tracedCmd{chain: chain, owner: owner, key: key})
+	return func() {
+		// Retire the slot with the stack: goroutine ids are reused and a
+		// retained entry would both leak its backing array — keeping the
+		// last command reachable — and outlive the goroutine it belonged
+		// to, so a service running short-lived goroutines would grow the
+		// map without bound.
+		last := len(*p) - 1
+		(*p)[last] = tracedCmd{}
+		*p = (*p)[:last]
+		if last == 0 {
+			*p = nil
+			tracedStacks.Delete(id)
+		}
+	}
+}
+
+// tracedOuter reports whether a datadog wrapper further out on this
+// goroutine is currently driving the command through the same client chain.
+// tracedOuter reports whether a datadog wrapper of a different instance,
+// on this goroutine and chain, is currently driving the command: the
+// inherited wrapper of the chain the owner drives skips its span, while
+// the owner's own re-entry — a nested command a user wrapper issues
+// through the same client — is a separate operation and traces.
+func tracedOuter(p *[]tracedCmd, me *Client, chain unsafe.Pointer, key cmdKey) bool {
+	if len(*p) == 0 {
+		return false
+	}
+	top := (*p)[len(*p)-1]
+	return top.chain == chain && top.key == key && top.owner != me
+}
+
+// goid returns the current goroutine's id. A variable so tests can count
+// its invocations: one per tracing wrapper level, per command.
+var goid = func() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	// The first line reads "goroutine 123 [running]:".
+	if len(b) < 11 || string(b[:10]) != "goroutine " {
+		return 0
+	}
+	var id uint64
+	for _, c := range b[10:] {
+		if c < '0' || c > '9' {
+			break
+		}
+		id = id*10 + uint64(c-'0')
+	}
+	return id
+}
+
+// currentProcess returns the client's current process chain, read through
+// the unexported field it lives in, without reassigning it the way upstream
+// WrapProcess does: commands in flight read the field without locking, so a
+// re-wrap must not write it.
+func currentProcess(c *redis.Client) func(cmd redis.Cmder) error {
+	v := reflect.ValueOf(c).Elem().FieldByName("baseClient").FieldByName("process")
+	if !v.CanInterface() {
+		// Unexported field: read it through its address.
+		v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	process, _ := reflect.TypeAssert[func(cmd redis.Cmder) error](v)
+	return process
+}
+
+// sameConfig reports whether two configurations produce the same spans.
+func sameConfig(a, b *clientConfig) bool {
+	analytics := a.analyticsRate == b.analyticsRate ||
+		(math.IsNaN(a.analyticsRate) && math.IsNaN(b.analyticsRate))
+	return analytics &&
+		a.serviceName == b.serviceName &&
+		a.serviceSource == b.serviceSource &&
+		a.spanName == b.spanName
+}
+
 // Client is used to trace requests to a redis server.
 type Client struct {
 	*redis.Client
 	*params
 
+	// base is the chain this handle's wrapper wraps, without the wrapper
+	// itself: a clone's wrapper bases itself on it, so chains stay flat
+	// across successive clones instead of nesting every predecessor's
+	// wrapper.
+	base    func(cmd redis.Cmder) error
 	process func(cmd redis.Cmder) error
 }
 
@@ -109,6 +317,8 @@ func NewClient(opt *redis.Options, opts ...ClientOption) *Client {
 }
 
 // WrapClient wraps a given redis.Client with a tracer under the given service name.
+// Calling it more than once on the same client is safe: the client is
+// instrumented once and the configuration of the first call is kept.
 func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -122,6 +332,43 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		host = opt.Addr
 		port = "6379"
 	}
+
+	// Warnings are emitted after the lock is released: a custom logger is
+	// user-controlled code and may call WrapClient again from its Log method.
+	var warnDuplicate bool
+	defer func() {
+		if warnDuplicate {
+			instr.Logger().Warn("contrib/go-redis/redis: WrapClient called more than once on the same client; keeping the first configuration")
+		}
+	}()
+
+	wrapMu.Lock()
+	defer wrapMu.Unlock()
+	key := weak.Make(c)
+	if first, ok := wrapped[key]; ok {
+		// The client is already instrumented. Keep the current process chain
+		// untouched — it may also hold wrappers added by others since the
+		// first wrap — and reuse the first configuration, so commands
+		// through the returned handle and its WithContext clones trace each
+		// command exactly once with that configuration.
+		warnDuplicate = !sameConfig(first, cfg)
+		params := &params{
+			host:   host,
+			port:   port,
+			db:     opt.DB,
+			config: first,
+		}
+		params.spanCfg = newSpanConfig(host, port, opt.DB, first)
+		tc := &Client{Client: c, params: params}
+		// Capture the current process chain without touching it: upstream
+		// WrapProcess reassigns the client's process even for a no-op
+		// callback, which would race with commands in flight. The chain's
+		// own datadog wrapper skips its span for commands driven by this
+		// handle's clones (see tracedCmds).
+		tc.process = currentProcess(c)
+		return tc
+	}
+
 	params := &params{
 		host:   host,
 		port:   port,
@@ -130,7 +377,21 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	}
 	params.spanCfg = newSpanConfig(host, port, opt.DB, cfg)
 	tc := &Client{Client: c, params: params}
-	tc.Client.WrapProcess(createWrapperFromClient(tc))
+	// createWrapperFromClient installs the tracing wrapper as the client's
+	// process and records the original process on tc.
+	// base is intentionally left nil here: WithContext computes it from the
+	// underlying client's CURRENT process chain, so user wrappers installed
+	// after this wrap are seen by clones created later. Clones inherit the
+	// computed base, keeping their chains flat across generations.
+	c.WrapProcess(createWrapperFromClient(tc))
+	// The cleanup is attached to the client: when it becomes unreachable the
+	// entry goes with it, even though neither side keeps the other alive.
+	wrapped[key] = cfg
+	runtime.AddCleanup(c, func(k weak.Pointer[redis.Client]) {
+		wrapMu.Lock()
+		delete(wrapped, k)
+		wrapMu.Unlock()
+	}, key)
 	return tc
 }
 
@@ -206,11 +467,23 @@ func (c *Pipeliner) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, er
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
 	clone := &Client{
-		Client:  c.Client.WithContext(ctx),
-		params:  c.params,
-		process: c.process,
+		Client: c.Client.WithContext(ctx),
+		params: c.params,
 	}
-	clone.Client.WrapProcess(createWrapperFromClient(clone))
+	// The clone's wrapper bases itself on the receiver's base — the chain
+	// without the receiver's own wrapper. Basing on the raw clone's current
+	// chain instead would nest every predecessor's wrapper: a handle made
+	// from a handle would run one tracing wrapper per generation, keep every
+	// predecessor reachable through its closure, and grow without bound
+	// under client = client.WithContext(ctx) reuse.
+	base := c.base
+	if base == nil {
+		base = currentProcess(c.Client)
+	}
+	clone.base = base
+	clone.Client.WrapProcess(func(func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		return createWrapperFromClient(clone)(base)
+	})
 	return clone
 }
 
@@ -223,6 +496,15 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			tc.process = oldProcess
 		}
 		return func(cmd redis.Cmder) error {
+			key := newCmdKey(cmd)
+			id, stack := tracedStack()
+			if tracedOuter(stack, tc, chainID(tc.Client), key) {
+				// A datadog wrapper further out on this goroutine, on the
+				// same client chain, is driving this command and already
+				// started its span for it; see tracedStacks.
+				return tc.process(cmd)
+			}
+			defer pushTraced(id, stack, tc, chainID(tc.Client), key)()
 			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
