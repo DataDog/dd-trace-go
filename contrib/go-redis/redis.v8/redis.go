@@ -192,6 +192,37 @@ func wrap(client redis.UniversalClient, cfg *clientConfig) {
 		} else {
 			defer release()
 		}
+	} else if key := rediswrap.RefKey(client); key != "" {
+		// A value proxy has no weak handle for the walk guard and the
+		// registry: two concurrent wraps of it would both walk the shared
+		// containers, both observe, and each hand the proxy a real hook.
+		// Its reference-bearing fields give it a shared identity, and the
+		// installation is serialized on that — acquired before the member
+		// walk, so the walk itself is covered. The waiter re-runs the whole
+		// decision once the in-flight install completes, so an
+		// already-hooked proxy is not handed a second hook.
+		state, mark := rediswrap.TryBeginValueHooking(key)
+		switch state {
+		case rediswrap.HookSelfReentry:
+			return
+		case rediswrap.HookOtherInstalling:
+			done := mark.Done
+			timedOut := false
+			// wrapMu is not held yet (the marker is acquired before it), so
+			// the wait is a plain select — no unlocked() needed.
+			select {
+			case <-done:
+			case <-time.After(installWait):
+				timedOut = true
+			}
+			if timedOut {
+				return
+			}
+			wrap(client, cfg)
+			return
+		default:
+			defer rediswrap.EndValueHooking(key, mark)
+		}
 	}
 
 	// Resolve the concrete clients before taking the package lock: the
@@ -404,39 +435,6 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 		// same proxy: the installation it belongs to is still in flight.
 		return
 	}
-	// A value proxy has no weak handle for the registry and no walk guard
-	// either: two concurrent wraps of it would both observe, both retain,
-	// and each hand the proxy a real hook — every delegate would trace
-	// twice. Its reference-bearing fields give it a shared identity, and
-	// the installation is serialized on that. The waiter re-runs the whole
-	// decision once the in-flight install completes, so an already-hooked
-	// proxy is not handed a second hook.
-	if _, keyed := rediswrap.HandleOf(proxy); !keyed {
-		if key := rediswrap.RefKey(proxy); key != "" {
-			state, mark := rediswrap.TryBeginValueHooking(key)
-			switch state {
-			case rediswrap.HookSelfReentry:
-				return
-			case rediswrap.HookOtherInstalling:
-				done := mark.Done
-				timedOut := false
-				unlocked(func() {
-					select {
-					case <-done:
-					case <-time.After(installWait):
-						timedOut = true
-					}
-				})
-				if timedOut {
-					return
-				}
-				wrapProxyMembers(proxy, members, cfg, warn, walkIncomplete)
-				return
-			default:
-				defer rediswrap.EndValueHooking(key, mark)
-			}
-		}
-	}
 	// Every user-controlled AddHook in this function runs with the proxy
 	// marked as being installed on this goroutine; the deferred unmark also
 	// runs when one of them panics and the application recovers, so the
@@ -528,6 +526,23 @@ func wrapProxyMembers(proxy redis.UniversalClient, members []redis.UniversalClie
 	// they leave on already hooked members are no-ops.
 	var hooked *configKey
 	allHooked := len(members) > 0
+	if entry == nil && len(members) == 0 {
+		// An opaque value proxy with no visible members: every sequential
+		// wrap would hand it another real hook, and a fan-out proxy would
+		// install all of them on its hidden delegate. A datadog hook
+		// already retained in the proxy's own fields means a previous wrap
+		// instrumented it — keep the first configuration and skip.
+		var prev *configKey
+		var scanKnown bool
+		unlocked(func() { prev, scanKnown = datadogRetainedConfig(reflect.ValueOf(proxy), 8) })
+		if scanKnown && prev != nil {
+			if !sameConfig(*prev, cfg.key()) {
+				warn()
+			}
+			finishObserved(proxy, entry, true, true)
+			return
+		}
+	}
 	for _, member := range members {
 		prev, seen := datadogConfig(member)
 		if !seen || prev == nil {
@@ -1431,11 +1446,122 @@ func datadogConfig(client redis.UniversalClient) (key *configKey, seen bool) {
 	return nil, true
 }
 
-var redisHookSliceType = reflect.TypeFor[[]redis.Hook]()
+var (
+	redisHookSliceType = reflect.TypeFor[[]redis.Hook]()
+	datadogHookType    = reflect.TypeFor[*datadogHook]()
+)
+
+func datadogRetainedConfig(s reflect.Value, depth int) (key *configKey, known bool) {
+	if s.Kind() == reflect.Interface && !s.IsNil() {
+		// The interface may itself hold the datadog hook.
+		if ddh, ok := reflect.TypeAssert[*datadogHook](s); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+		return datadogRetainedConfig(s.Elem(), depth)
+	}
+	switch s.Kind() {
+	case reflect.Slice, reflect.Array:
+		for j := 0; j < s.Len(); j++ {
+			if key, known := datadogRetainedConfig(s.Index(j), depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+		return nil, true
+	case reflect.Map:
+		iter := s.MapRange()
+		for iter.Next() {
+			val := iter.Value()
+			if val.Kind() == reflect.Struct && !val.CanAddr() {
+				p := reflect.New(val.Type())
+				p.Elem().Set(val)
+				val = p.Elem()
+			}
+			if key, known := datadogRetainedConfig(val, depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+		return nil, true
+	case reflect.Pointer:
+		if s.IsNil() {
+			return nil, true
+		}
+		return datadogRetainedConfig(s.Elem(), depth)
+	}
+	if s.Kind() != reflect.Struct || depth <= 0 {
+		return nil, true
+	}
+	// The struct may itself be the hook.
+	if ddh, ok := reflect.TypeAssert[*datadogHook](s); ok {
+		k := ddh.params.config.key()
+		return &k, true
+	}
+	if s.CanAddr() {
+		unlock, ok := rediswrap.LockStruct(s)
+		defer unlock()
+		if !ok {
+			return nil, false
+		}
+	}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		if !f.CanInterface() {
+			if !f.CanAddr() {
+				continue
+			}
+			f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+		}
+		if ddh, ok := reflect.TypeAssert[*datadogHook](f); ok {
+			k := ddh.params.config.key()
+			return &k, true
+		}
+		switch f.Kind() {
+		case reflect.Interface:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if key, known := datadogRetainedConfig(f.Elem(), depth-1); key != nil || !known {
+				return key, known
+			}
+		case reflect.Slice, reflect.Array:
+			for j := 0; j < f.Len(); j++ {
+				if key, known := datadogRetainedConfig(f.Index(j), depth-1); key != nil || !known {
+					return key, known
+				}
+			}
+		case reflect.Map:
+			iter := f.MapRange()
+			for iter.Next() {
+				val := iter.Value()
+				if val.Kind() == reflect.Struct && !val.CanAddr() {
+					p := reflect.New(val.Type())
+					p.Elem().Set(val)
+					val = p.Elem()
+				}
+				if key, known := datadogRetainedConfig(val, depth-1); key != nil || !known {
+					return key, known
+				}
+			}
+		case reflect.Struct:
+			if key, known := datadogRetainedConfig(f, depth-1); key != nil || !known {
+				return key, known
+			}
+		case reflect.Pointer:
+			if f.IsNil() || !f.CanInterface() {
+				continue
+			}
+			if key, known := datadogRetainedConfig(f.Elem(), depth-1); key != nil || !known {
+				return key, known
+			}
+		}
+	}
+	return nil, true
+}
 
 // hookSlice returns the client's hook slice, read through the unexported
 // fields it lives in, or an invalid Value when the client has no readable
 // hook slice.
+
 func hookSlice(client redis.UniversalClient) reflect.Value {
 	v := reflect.ValueOf(client)
 	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {

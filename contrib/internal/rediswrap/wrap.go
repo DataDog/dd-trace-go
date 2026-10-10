@@ -161,8 +161,12 @@ type Mark struct {
 // pointer fields, and interfaces holding pointers — through two levels of
 // struct fields. Two values that store the same addresses share the objects
 // those fields point at.
+// walkDepth is the depth limit shared by the identity and reference
+// traversals, matching the depth the proxy walkers use.
+const walkDepth = 8
+
 func RefIDs(v any) []unsafe.Pointer {
-	return refIDs(reflect.ValueOf(v), 2)
+	return refIDs(reflect.ValueOf(v), walkDepth)
 }
 
 func refIDs(v reflect.Value, depth int) []unsafe.Pointer {
@@ -477,9 +481,11 @@ func EndValueHooking(key string, mark *HookMark) {
 // its dynamic type and the addresses its reference-bearing fields hold. Two
 // copies of the same value proxy share it — their fields agree — while
 // distinct proxies holding distinct references do not. A value with no
-// references at all has no identity to share, and the key is empty.
+// references at all has no identity to share, and the key is empty. The
+// traversal matches the member walk's depth limit; shared references deeper
+// than that are unreachable by the walkers too.
 func RefKey(v any) string {
-	refs := RefIDs(v)
+	refs := refIDs(reflect.ValueOf(v), walkDepth)
 	if len(refs) == 0 {
 		return ""
 	}

@@ -1448,10 +1448,12 @@ func TestWrapClientBoxedKeyHookSet(t *testing.T) {
 	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
 	t.Cleanup(func() { later.Close() })
 	proxy.applyTo(later)
+	t.Logf("DBG dd hooks on later: %d", datadogHooks(later))
 
 	_ = later.Get(context.Background(), "foo").Err()
-	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
-		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
+	spans := commandSpans(mt, cfg.spanName)
+	if len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans (dd hooks on later: %d)", len(spans), datadogHooks(later))
 	}
 }
 
@@ -1614,5 +1616,80 @@ func TestWrapClientPtrMutexScanSkip(t *testing.T) {
 
 	if n := datadogHooks(member); n != 1 {
 		t.Fatalf("expected exactly 1 datadog hook on the wrapped member, got %d", n)
+	}
+}
+
+func TestDbgRetainedConfig(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	hidden := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { hidden.Close() })
+	retained := []redis.Hook{}
+	proxy := opaqueRetainProxy{retained: &retained, delegate: func() redis.UniversalClient { return hidden }}
+
+	probe := probeHook{cfg: nil}
+	proxy.AddHook(probe)
+	real := &datadogHook{params: &params{config: cfg}}
+	proxy.AddHook(real)
+
+	var iface redis.UniversalClient = proxy
+	sv := reflect.ValueOf(iface)
+	if sv.Kind() == reflect.Pointer {
+		sv = sv.Elem()
+	}
+	sv = reflect.NewAt(sv.Type(), (*[2]unsafe.Pointer)(unsafe.Pointer(&iface))[1]).Elem()
+	key, known := datadogRetainedConfig(sv, 8)
+	t.Logf("DBG datadogRetainedConfig: key=%v known=%v retained_len=%d", key != nil, known, len(*proxy.retained))
+	if key == nil && known {
+		t.Fatal("the scan missed the retained datadog hook")
+	}
+}
+
+// opaqueRetainProxy keeps its hooks behind a pointer to a slice (so value
+// copies share the backing store) and its delegate behind a closure —
+// neither visible to the reflection walk.
+type opaqueRetainProxy struct {
+	redis.UniversalClient
+	retained *[]redis.Hook
+	delegate func() redis.UniversalClient
+}
+
+func (r opaqueRetainProxy) AddHook(hook redis.Hook) {
+	*r.retained = append(*r.retained, hook)
+}
+
+func (r *opaqueRetainProxy) applyTo(delegate redis.UniversalClient) {
+	for _, hook := range *r.retained {
+		delegate.AddHook(hook)
+	}
+}
+
+// An opaque value proxy with no visible members must not receive another
+// real hook on every sequential wrap: a fan-out proxy installs all retained
+// hooks on its hidden delegate, and one span per wrap would result. The
+// proxy's own retained datadog hook marks it as already instrumented.
+func TestWrapClientOpaqueValueProxyRetain(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	hidden := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { hidden.Close() })
+	retained := []redis.Hook{}
+	proxy := opaqueRetainProxy{retained: &retained, delegate: func() redis.UniversalClient { return hidden }}
+
+	WrapClient(proxy)
+	WrapClient(proxy)
+	WrapClient(proxy)
+
+	later := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	t.Cleanup(func() { later.Close() })
+	proxy.applyTo(later)
+
+	_ = later.Get(context.Background(), "foo").Err()
+	if spans := commandSpans(mt, cfg.spanName); len(spans) != 1 {
+		t.Fatalf("expected the later delegate to be traced exactly once, got %d spans", len(spans))
 	}
 }
