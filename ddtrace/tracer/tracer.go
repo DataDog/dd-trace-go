@@ -896,8 +896,18 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // defaultFlushHandler is the production flush handler. It flushes the trace
 // writer, statsd client, and stats concentrator.
 func (t *tracer) defaultFlushHandler(done chan<- struct{}) {
+	otlpWriter, _ := t.traceWriter.(*otlpTraceWriter)
+	if otlpWriter != nil {
+		// Include finished chunks even when the worker selected the flush request first.
+		for range len(t.out) {
+			t.processOutChunk(<-t.out)
+		}
+	}
 	t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 	t.traceWriter.flush()
+	if otlpWriter != nil {
+		otlpWriter.wait()
+	}
 	t.statsd.Flush()
 	if !t.config.tracingAsTransport {
 		t.stats.flushAndSend(time.Now(), withCurrentBucket)
