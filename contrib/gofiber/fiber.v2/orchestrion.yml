@@ -9,7 +9,7 @@ meta:
   description: An Express inspired web framework built on Fasthttp, the fastest HTTP engine for Go.
 
 aspects:
-  # Wrap fiber.New so every App receives the Fiber tracing middleware, and mark
+  # Wrap fiber.New so every App receives tracing and pre-handler route guards. Mark
   # the underlying fasthttp.Server as already instrumented at construction time.
   #
   # Setting DD_Instrumented here (rather than hooking a single listen method)
@@ -29,7 +29,7 @@ aspects:
           template: |-
             func() *fiber.App {
               app := {{ . }}
-              app.Use(fibertrace.Middleware())
+              fibertrace.Wrap(app)
               app.Server().DD_Instrumented = true
               return app
             }()
