@@ -12,53 +12,39 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-func TestResolveOTLPProtocol(t *testing.T) {
-	t.Run("defaults to http/protobuf", func(t *testing.T) {
-		t.Setenv(envOTLPProtocol, "")
-		t.Setenv(envOTLPLogsProtocol, "")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
-
-	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL wins over generic", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
-
-	t.Run("trims and lowercases protocol", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "  GRPC  ")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "grpc", protocol)
-	})
-
-	t.Run("supports http/protobuf", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
+func TestNewOTLPExporterProtocol(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
+	for protocol, expected := range map[string]sdklog.Exporter{
+		"":        &otlploghttp.Exporter{},
+		"grpc":    &otlploggrpc.Exporter{},
+		"unknown": &otlploghttp.Exporter{},
+	} {
+		t.Run(protocol, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", protocol)
+			config.CreateNew()
+			exporter, err := newOTLPExporter(t.Context(), nil, nil)
+			require.NoError(t, err)
+			assert.IsType(t, expected, exporter.(*telemetryExporter).Exporter)
+		})
+	}
 }
 
 func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
 	t.Setenv(envOTLPLogsProtocol, "http/json")
-	assert.Equal(t, "http/json", resolveOTLPProtocol(), "preserve the configured protocol so the exporter can warn")
+	config.CreateNew()
+	t.Cleanup(func() { config.CreateNew() })
 	logger := new(internallog.RecordLogger)
 	defer internallog.UseLogger(logger)()
 	previousLevel := internallog.GetLevel()
