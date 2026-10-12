@@ -177,6 +177,8 @@ func SetLevel(lvl Level) {
 	levelThreshold.Store(int32(lvl))
 }
 
+// DefaultLevel returns the level given to messages logged without one: the
+// current threshold. tracer.AdaptLogger documents this behavior.
 func DefaultLevel() Level {
 	return GetLevel()
 }
