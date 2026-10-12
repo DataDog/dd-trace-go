@@ -1994,24 +1994,6 @@ func (c *Config) RuntimeMetricsExportTimeout() time.Duration {
 	return c.runtimeMetricsExportTimeout
 }
 
-func (c *Config) ResolveRuntimeMetricsExportInterval(interval time.Duration) time.Duration {
-	if interval > 0 {
-		return interval
-	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.runtimeMetricsExportInterval
-}
-
-func (c *Config) ResolveRuntimeMetricsExportTimeout(timeout time.Duration) time.Duration {
-	if timeout > 0 {
-		return timeout
-	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.runtimeMetricsExportTimeout
-}
-
 func (c *Config) RuntimeMetricsTemporalityPreference() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

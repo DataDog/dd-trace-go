@@ -2428,13 +2428,13 @@ func TestRuntimeMetricsHeaders(t *testing.T) {
 
 func TestRuntimeMetricsReaderResolution(t *testing.T) {
 	for _, tc := range []struct {
-		raw                                                  string
-		interval, timeout, rejectedInterval, rejectedTimeout time.Duration
+		raw               string
+		interval, timeout time.Duration
 	}{
-		{"bad", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
-		{"-1", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
-		{"25", 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond},
-		{" 25 ", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond},
+		{"-1", 10 * time.Second, 7500 * time.Millisecond},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 10 * time.Second, 7500 * time.Millisecond},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
@@ -2442,8 +2442,6 @@ func TestRuntimeMetricsReaderResolution(t *testing.T) {
 			cfg := loadConfig()
 			assert.Equal(t, tc.interval, cfg.RuntimeMetricsExportInterval())
 			assert.Equal(t, tc.timeout, cfg.RuntimeMetricsExportTimeout())
-			assert.Equal(t, tc.rejectedInterval, cfg.ResolveRuntimeMetricsExportInterval(0))
-			assert.Equal(t, tc.rejectedTimeout, cfg.ResolveRuntimeMetricsExportTimeout(-1))
 		})
 	}
 }

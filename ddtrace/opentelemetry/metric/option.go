@@ -84,7 +84,10 @@ func WithExporter(opts ...otlpmetrichttp.Option) Option {
 // Default is 10 seconds. Nonpositive values use the environment value or default.
 func WithExportInterval(interval time.Duration) Option {
 	return optionFunc(func(c *config) {
-		c.exportInterval = internalconfig.Get().ResolveRuntimeMetricsExportInterval(interval)
+		if interval <= 0 {
+			interval = internalconfig.Get().RuntimeMetricsExportInterval()
+		}
+		c.exportInterval = interval
 	})
 }
 
@@ -92,7 +95,10 @@ func WithExportInterval(interval time.Duration) Option {
 // Default is 7.5 seconds. Nonpositive values use the environment value or default.
 func WithExportTimeout(timeout time.Duration) Option {
 	return optionFunc(func(c *config) {
-		c.exportTimeout = internalconfig.Get().ResolveRuntimeMetricsExportTimeout(timeout)
+		if timeout <= 0 {
+			timeout = internalconfig.Get().RuntimeMetricsExportTimeout()
+		}
+		c.exportTimeout = timeout
 	})
 }
 
