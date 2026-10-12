@@ -91,10 +91,12 @@ type startupInfo struct {
 	// describes. Fields tagged omitempty are omitted when the setting does not
 	// apply to an effective pipeline or has no faithful equivalent.
 	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether any OTel pipeline or semantics is effective
+	TraceOTelEnabled          bool `json:"DD_TRACE_OTEL_ENABLED"`           // Whether traces are exported over OTLP
 	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Whether the OTel metrics pipeline is active
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
 
+	OTelTracesExporter  string            `json:"OTEL_TRACES_EXPORTER,omitempty"`                // "otlp" when traces are exported over OTLP
 	OTLPTracesEndpoint  string            `json:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,omitempty"`  // Sanitized OTLP traces URL
 	OTLPTracesProtocol  string            `json:"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL,omitempty"`  // OTLP traces transport
 	OTLPTracesHeaders   map[string]string `json:"OTEL_EXPORTER_OTLP_TRACES_HEADERS,omitempty"`   // OTLP traces header names, values redacted
@@ -248,6 +250,10 @@ const redactedHeaderValue = "REDACTED"
 // is read from the environment here.
 func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	cfg := t.config.internalConfig
+	info.TraceOTelEnabled = t.otlpExportMode
+	if t.otlpExportMode {
+		info.OTelTracesExporter = "otlp"
+	}
 	info.MetricsOTelEnabled = t.config.otelRuntimeMetricsShouldBeEnabled
 	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
 	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
