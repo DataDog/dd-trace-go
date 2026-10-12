@@ -206,6 +206,7 @@ type Config struct {
 	blrpMaxExportBatchSize int
 	// OTLP logs exporter settings (OTEL_EXPORTER_OTLP_LOGS_*, falling back to OTEL_EXPORTER_OTLP_*)
 	otlpLogsProtocol string
+	otlpLogsEndpoint string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -496,6 +497,7 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
 	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
 		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
+	cfg.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", otlpGenericEndpoint)
 	otlpGenericHeaders := decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
 		otlpGenericHeaders,
@@ -1747,6 +1749,14 @@ func (c *Config) OTLPLogsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpLogsProtocol
+}
+
+// OTLPLogsEndpoint returns the configured logs endpoint, or an empty string
+// when the exporter should derive its endpoint from the agent configuration.
+func (c *Config) OTLPLogsEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsEndpoint
 }
 
 func (c *Config) OTelSemanticsEnabled() bool {
