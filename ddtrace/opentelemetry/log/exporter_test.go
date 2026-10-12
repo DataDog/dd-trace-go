@@ -41,7 +41,7 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 }
 
 func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
-	t.Setenv(envOTLPLogsProtocol, "http/json")
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
 	config.CreateNew()
 	t.Cleanup(func() { config.CreateNew() })
 	logger := new(internallog.RecordLogger)
