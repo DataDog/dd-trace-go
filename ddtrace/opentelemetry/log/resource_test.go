@@ -108,6 +108,25 @@ func TestPrecedence(t *testing.T) {
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
 	})
 
+	t.Run("whitespace-only OTEL_SERVICE_NAME falls back to OTEL service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "   ")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "resource-service")
+	})
+
+	t.Run("OTEL_SERVICE_NAME is trimmed", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", " otel-service\n")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
+	})
+
 	t.Run("DD_SERVICE wins over OTEL_SERVICE_NAME and OTEL service.name", func(t *testing.T) {
 		t.Setenv("DD_SERVICE", "dd-service")
 		t.Setenv("OTEL_SERVICE_NAME", "otel-service")

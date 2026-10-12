@@ -9,6 +9,7 @@ import (
 	"context"
 	"maps"
 	"os"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -70,8 +71,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	attrs := make(map[string]string)
 	maps.Copy(attrs, otelAttrs)
 
-	// Overlay OTEL_SERVICE_NAME → service.name
-	if otelService := env.Get(envOtelServiceName); otelService != "" {
+	// Overlay OTEL_SERVICE_NAME → service.name, trimmed like the OTel SDK's env detector.
+	if otelService := strings.TrimSpace(env.Get(envOtelServiceName)); otelService != "" {
 		attrs["service.name"] = otelService
 	}
 
