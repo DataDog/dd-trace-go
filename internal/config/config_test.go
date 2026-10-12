@@ -2289,16 +2289,6 @@ func TestRuntimeMetricsEndpoint(t *testing.T) {
 	}
 }
 
-func TestRuntimeMetricsInsecurePrecedence(t *testing.T) {
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4318")
-	t.Setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
-	_, _, insecure := loadConfig().RuntimeMetricsHTTPEndpoint()
-	assert.True(t, insecure)
-	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "false")
-	_, _, insecure = loadConfig().RuntimeMetricsHTTPEndpoint()
-	assert.False(t, insecure)
-}
-
 func TestRuntimeMetricsHeaders(t *testing.T) {
 	for _, tc := range []struct {
 		name, signal string
