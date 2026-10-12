@@ -65,7 +65,6 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 
 		cfg := config.Get()
 
-		// Create BatchLogRecordProcessor with centralized configuration
 		processor := sdklog.NewBatchProcessor(
 			exporter,
 			sdklog.WithMaxQueueSize(cfg.BLRPMaxQueueSize()),

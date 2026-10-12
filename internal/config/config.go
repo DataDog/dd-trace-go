@@ -192,7 +192,8 @@ type Config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
-	logsOTelEnabled        bool
+	logsOTelEnabled bool
+	// BatchLogRecordProcessor settings (OTEL_BLRP_*)
 	blrpMaxQueueSize       int
 	blrpScheduleDelay      time.Duration
 	blrpExportTimeout      time.Duration
