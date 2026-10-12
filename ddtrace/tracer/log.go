@@ -87,15 +87,11 @@ type startupInfo struct {
 	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
 	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
 
-	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
-	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
-	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
-
 	// Effective OpenTelemetry configuration, keyed by the configuration name it
 	// describes. Fields tagged omitempty are omitted when the setting does not
 	// apply to an effective pipeline or has no faithful equivalent.
 	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether any OTel pipeline or semantics is effective
-	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
+	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Whether the OTel metrics pipeline is active
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
 
@@ -222,9 +218,6 @@ func logStartup(t *tracer) {
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
-		OTLPTracesExportEnabled:     t.otlpExportMode,
-		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
-		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
@@ -255,7 +248,7 @@ const redactedHeaderValue = "REDACTED"
 // is read from the environment here.
 func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	cfg := t.config.internalConfig
-	info.MetricsOTelEnabled = cfg.RuntimeMetricsOtelEnabled()
+	info.MetricsOTelEnabled = t.config.otelRuntimeMetricsShouldBeEnabled
 	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
 	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
 
