@@ -199,3 +199,29 @@ func TestRuntimeMetricsTransportOptions(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{"Authorization": "Bearer configured"}, internalconfig.Get().RuntimeMetricsHeaders())
 }
+
+func TestExportIntervalAndTimeoutOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw         string
+		options           []Option
+		interval, timeout time.Duration
+	}{
+		{"options", "250", []Option{WithExportInterval(time.Hour), WithExportTimeout(time.Second)}, time.Hour, time.Second},
+		{"rejected options", "", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 10 * time.Second, 7500 * time.Millisecond},
+		{"rejected options use environment", "250", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 250 * time.Millisecond, 250 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { internalconfig.CreateNew() })
+			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
+			t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", tc.raw)
+			internalconfig.CreateNew()
+			cfg := newConfig()
+			for _, opt := range tc.options {
+				opt.apply(cfg)
+			}
+			assert.Equal(t, tc.interval, cfg.exportInterval)
+			assert.Equal(t, tc.timeout, cfg.exportTimeout)
+			assert.Equal(t, internalconfig.Get().RuntimeMetricsExportInterval(), newConfig().exportInterval)
+		})
+	}
+}
