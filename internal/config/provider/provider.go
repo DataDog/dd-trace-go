@@ -31,6 +31,12 @@ type idAwareConfigSource interface {
 	getID() string
 }
 
+// tagsConfigSource is a configSource with its own DD_TAGS syntax.
+type tagsConfigSource interface {
+	configSource
+	getTags() (raw string, tags map[string]string, ok bool)
+}
+
 // Provider resolves configuration values from an ordered list of sources.
 // Sources are listed in descending priority order: the first source wins.
 type Provider struct {
@@ -49,10 +55,8 @@ func New() *Provider {
 	}
 }
 
-// get is the core resolution helper shared by all typed getters.
-// It iterates sources in reverse priority order so that higher-priority sources
-// overwrite lower-priority ones, reports telemetry for every source that has a value,
-// and returns the highest-priority successfully-parsed value, or def if none parse.
+// get is the resolution helper shared by all typed getters. It parses each
+// source's string value with parse; see resolveWithOrigin for resolution.
 func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T {
 	v, _ := getWithOrigin(p, key, def, parse)
 	return v
@@ -60,17 +64,34 @@ func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T 
 
 // getWithOrigin is like get but also returns the origin of the winning source.
 func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
+	return resolveWithOrigin(p, key, def, func(source configSource) (string, T, bool) {
+		v := source.get(key)
+		if v == "" {
+			return "", def, false
+		}
+		parsed, ok := parse(v)
+		return v, parsed, ok
+	})
+}
+
+// resolveWithOrigin is the core resolution loop. read returns a source's raw
+// value, used for telemetry, its parsed value, and whether parsing succeeded.
+// It iterates sources in reverse priority order so that higher-priority sources
+// overwrite lower-priority ones, reports telemetry for every source that has a
+// value, and returns the highest-priority successfully-parsed value, or def if
+// none parse.
+func resolveWithOrigin[T any](p *Provider, key string, def T, read func(configSource) (string, T, bool)) (T, telemetry.Origin) {
 	var final *T
 	var winningOrigin telemetry.Origin
 	for _, source := range slices.Backward(p.sources) {
-		v := source.get(key)
+		v, parsed, ok := read(source)
 		if v != "" {
 			var id string
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
 			configtelemetry.ReportWithID(key, v, source.origin(), id)
-			if parsed, ok := parse(v); ok {
+			if ok {
 				final = &parsed
 				winningOrigin = source.origin()
 			}
@@ -215,4 +236,18 @@ func parseMapString(str string, delimiter string) map[string]string {
 		result[key] = val
 	})
 	return result
+}
+
+// GetTagsWithOrigin resolves global tags using the winning source's tag syntax.
+func (p *Provider) GetTagsWithOrigin() (map[string]string, telemetry.Origin) {
+	return resolveWithOrigin(p, "DD_TAGS", map[string]string(nil), func(source configSource) (string, map[string]string, bool) {
+		if s, ok := source.(tagsConfigSource); ok {
+			return s.getTags()
+		}
+		v := source.get("DD_TAGS")
+		if v == "" {
+			return "", nil, false
+		}
+		return v, internal.ParseTagString(v), true
+	})
 }

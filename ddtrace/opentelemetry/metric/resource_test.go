@@ -8,7 +8,10 @@ package metric
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,6 +106,26 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 	assert.Equal(t, "otel-service", attrMap["service.name"])
 	assert.Equal(t, "otel-env", attrMap["deployment.environment.name"])
 	assert.Equal(t, "otel-version", attrMap["service.version"])
+}
+
+func TestBuildDatadogResource_OtelAttributes(t *testing.T) {
+	t.Setenv(envOtelResourceAttributes, "invalid-no-equals,valid=value,custom=a%2Cb,bad=%ZZ,service.name=otel-service")
+	testLog := new(log.RecordLogger)
+	defer log.UseLogger(testLog)()
+
+	res, err := buildDatadogResource(context.Background())
+	require.NoError(t, err)
+
+	attrMap := make(map[string]string)
+	for _, attr := range res.Attributes() {
+		attrMap[string(attr.Key)] = attr.Value.AsString()
+	}
+
+	assert.Equal(t, "value", attrMap["valid"])
+	assert.Equal(t, "a,b", attrMap["custom"])
+	assert.Equal(t, "%ZZ", attrMap["bad"])
+	assert.Equal(t, "otel-service", attrMap["service.name"])
+	assert.Contains(t, strings.Join(testLog.Logs(), "\n"), "invalid percent encoding")
 }
 
 // TestBuildDatadogResource_Hostname verifies hostname resolution priority:
@@ -201,54 +224,6 @@ func TestBuildDatadogResource_Hostname(t *testing.T) {
 		// Should NOT have hostname attribute when explicitly set to false
 		assert.False(t, hasHostname, "hostname should not be present when DD_TRACE_REPORT_HOSTNAME='false'")
 	})
-}
-
-// TestParseOtelResourceAttributes verifies parsing of OTEL_RESOURCE_ATTRIBUTES
-// format (key1=value1,key2=value2) with proper handling of spaces and empty strings.
-func TestParseOtelResourceAttributes(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected map[string]string
-	}{
-		{
-			name:  "single attribute",
-			input: "key1=value1",
-			expected: map[string]string{
-				"key1": "value1",
-			},
-		},
-		{
-			name:  "multiple attributes",
-			input: "key1=value1,key2=value2,key3=value3",
-			expected: map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-				"key3": "value3",
-			},
-		},
-		{
-			name:  "with spaces",
-			input: "key1=value1, key2=value2 , key3=value3",
-			expected: map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-				"key3": "value3",
-			},
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: map[string]string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseOtelResourceAttributes(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }
 
 // TestGetHostname verifies the hostname() function's logic for determining
