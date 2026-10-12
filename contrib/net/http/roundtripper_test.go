@@ -43,6 +43,7 @@ func setOTelSemantics(t *testing.T, value string) {
 		require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", value))
 	}
 	require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+	httptrace.ResetCfg()
 	t.Cleanup(func() {
 		if wasSet {
 			require.NoError(t, os.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", oldValue))
@@ -50,6 +51,7 @@ func setOTelSemantics(t *testing.T, value string) {
 			require.NoError(t, os.Unsetenv("DD_TRACE_OTEL_SEMANTICS_ENABLED"))
 		}
 		require.NoError(t, tracer.Start(tracer.WithTraceEnabled(false)))
+		httptrace.ResetCfg()
 		tracer.Stop()
 	})
 }
