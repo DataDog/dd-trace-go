@@ -1795,6 +1795,57 @@ func TestOTLPLogsTimeout(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsConfigTelemetry(t *testing.T) {
+	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "log-key=SENTINEL_OTLP_LOGS")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		// The OTLP header variants must not be reported in configuration telemetry, and
+		// no reported configuration value may contain a header sentinel.
+		for _, cfg := range recorder.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_HEADERS", cfg.Name)
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_LOGS_HEADERS", cfg.Name)
+			if s, ok := cfg.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP",
+					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
+			}
+		}
+	})
+
+	t.Run("reports default timeouts when env vars not set", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == "OTEL_EXPORTER_OTLP_TIMEOUT" || cfg.Name == "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT" {
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			}
+		}
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()

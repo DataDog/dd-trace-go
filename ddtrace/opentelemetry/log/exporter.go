@@ -28,23 +28,8 @@ const (
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
 
-	// OTLP environment variables (logs-specific)
-	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
-	envOTLPLogsProtocol = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
-	envOTLPLogsHeaders  = "OTEL_EXPORTER_OTLP_LOGS_HEADERS"
-	envOTLPLogsTimeout  = "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"
-
-	// OTLP environment variables (generic)
-	envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	envOTLPProtocol = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
-	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
-
 	// DD environment variables for agent configuration
 	envDDAgentHost = "DD_AGENT_HOST"
-
-	// Default timeout in milliseconds (for telemetry reporting)
-	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
