@@ -536,7 +536,9 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
 	cfg.runtimeMetricsExportInterval = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_INTERVAL", int(defaultRuntimeMetricsExportInterval.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
 	cfg.runtimeMetricsExportTimeout = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_TIMEOUT", int(defaultRuntimeMetricsExportTimeout.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
-	cfg.runtimeMetricsTemporality = resolveRuntimeMetricsTemporality(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", ""))
+	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
+		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
+	})))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")

@@ -597,12 +597,17 @@ func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[str
 	return headers
 }
 
-// resolveRuntimeMetricsTemporality returns "cumulative" when requested, and "delta" otherwise.
-func resolveRuntimeMetricsTemporality(preference string) string {
-	if strings.EqualFold(strings.TrimSpace(preference), "cumulative") {
-		return "cumulative"
+// validateRuntimeMetricsTemporality returns true for the two supported temporality preferences.
+// The warning is only logged when warn is true.
+func validateRuntimeMetricsTemporality(v string, warn bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "delta", "cumulative":
+		return true
 	}
-	return "delta"
+	if warn {
+		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
+	}
+	return false
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
