@@ -139,25 +139,23 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 		return nil, err
 	}
 
-	reader := newPeriodicReader(exporter, cfg)
+	// Build metric reader with DD defaults
+	// Note: Temporality is configured via the exporter's TemporalitySelector option
+	// The default OTLP exporter uses cumulative, but we configure delta via exporter options
+	readerOpts := []metric.PeriodicReaderOption{
+		metric.WithInterval(cfg.exportInterval),
+		metric.WithTimeout(cfg.exportTimeout),
+	}
+	for _, p := range cfg.producers {
+		readerOpts = append(readerOpts, metric.WithProducer(p))
+	}
+	reader := metric.NewPeriodicReader(exporter, readerOpts...)
 
 	// Create the MeterProvider
 	return metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(reader),
 	), nil
-}
-
-func newPeriodicReader(exporter metric.Exporter, cfg *config) *metric.PeriodicReader {
-	readerOpts := make([]metric.PeriodicReaderOption, 0, 2+len(cfg.producers))
-	readerOpts = append(readerOpts,
-		metric.WithInterval(cfg.exportInterval),
-		metric.WithTimeout(cfg.exportTimeout),
-	)
-	for _, p := range cfg.producers {
-		readerOpts = append(readerOpts, metric.WithProducer(p))
-	}
-	return metric.NewPeriodicReader(exporter, readerOpts...)
 }
 
 func metricsEnabled(c *internalconfig.Config) bool {

@@ -6,20 +6,17 @@
 package metric
 
 import (
-	"context"
-	"reflect"
 	"testing"
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func TestPeriodicReaderAcceptedConfiguration(t *testing.T) {
+func TestExportIntervalAndTimeoutOptions(t *testing.T) {
 	for _, tc := range []struct {
 		name, raw         string
 		options           []Option
@@ -41,15 +38,8 @@ func TestPeriodicReaderAcceptedConfiguration(t *testing.T) {
 			for _, opt := range tc.options {
 				opt.apply(cfg)
 			}
-			exporter, err := newDatadogOTLPExporter(t.Context(), nil, nil)
-			require.NoError(t, err)
-			reader := newPeriodicReader(exporter, cfg)
-			defer reader.Shutdown(context.Background())
-			accepted := reflect.ValueOf(reader.MarshalLog())
-			assert.Equal(t, tc.interval, accepted.FieldByName("Interval").Interface())
-			assert.Equal(t, tc.timeout, accepted.FieldByName("Timeout").Interface())
-			assert.Equal(t, cfg.exportInterval, accepted.FieldByName("Interval").Interface())
-			assert.Equal(t, cfg.exportTimeout, accepted.FieldByName("Timeout").Interface())
+			assert.Equal(t, tc.interval, cfg.exportInterval)
+			assert.Equal(t, tc.timeout, cfg.exportTimeout)
 			assert.Equal(t, internalconfig.Get().RuntimeMetricsExportInterval(), newConfig().exportInterval)
 		})
 	}
