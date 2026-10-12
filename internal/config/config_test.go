@@ -1744,6 +1744,71 @@ func TestCIVisibilityAgentlessActive(t *testing.T) {
 	}
 }
 
+func TestLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		wantLevel log.Level
+		wantSet   bool
+		wantDebug bool
+	}{
+		{name: "unset", wantLevel: log.LevelInfo},
+		{name: "otel info", env: map[string]string{"OTEL_LOG_LEVEL": "info"}, wantLevel: log.LevelInfo, wantSet: true},
+		{name: "otel warn", env: map[string]string{"OTEL_LOG_LEVEL": "warn"}, wantLevel: log.LevelWarn, wantSet: true},
+		{name: "otel error", env: map[string]string{"OTEL_LOG_LEVEL": "error"}, wantLevel: log.LevelError, wantSet: true},
+		{name: "otel case-insensitive", env: map[string]string{"OTEL_LOG_LEVEL": "ErRoR"}, wantLevel: log.LevelError, wantSet: true},
+		{name: "otel debug", env: map[string]string{"OTEL_LOG_LEVEL": "debug"}, wantLevel: log.LevelDebug, wantSet: true, wantDebug: true},
+		{name: "otel empty", env: map[string]string{"OTEL_LOG_LEVEL": ""}, wantLevel: log.LevelInfo},
+		{name: "otel invalid", env: map[string]string{"OTEL_LOG_LEVEL": "not-a-log-level"}, wantLevel: log.LevelInfo},
+		{
+			name:      "dd debug wins over otel error",
+			env:       map[string]string{"DD_TRACE_DEBUG": "true", "OTEL_LOG_LEVEL": "error"},
+			wantLevel: log.LevelDebug, wantSet: true, wantDebug: true,
+		},
+		{
+			name:      "dd debug disabled hides otel debug",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "debug"},
+			wantLevel: log.LevelInfo,
+		},
+		{
+			name:      "dd debug disabled keeps otel warn",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "warn"},
+			wantLevel: log.LevelWarn, wantSet: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg := Get()
+			lvl, ok := cfg.LogLevel()
+			assert.Equal(t, tc.wantLevel, lvl)
+			assert.Equal(t, tc.wantSet, ok)
+			assert.Equal(t, tc.wantDebug, cfg.Debug())
+		})
+	}
+
+	t.Run("debug option overrides otel threshold", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_LOG_LEVEL", "error")
+
+		cfg := Get()
+		cfg.SetDebug(true, telemetry.OriginCode)
+		lvl, ok := cfg.LogLevel()
+		assert.Equal(t, log.LevelDebug, lvl)
+		assert.True(t, ok)
+
+		cfg.SetDebug(false, telemetry.OriginCode)
+		lvl, ok = cfg.LogLevel()
+		assert.Equal(t, log.LevelError, lvl)
+		assert.True(t, ok)
+	})
+}
+
 func TestAgentTimeout(t *testing.T) {
 	t.Run("default is 10s when unset", func(t *testing.T) {
 		resetGlobalState()

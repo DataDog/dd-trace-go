@@ -618,6 +618,42 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			assert.False(t, c.internalConfig.Debug())
 		})
+		t.Run("otel-env-threshold", func(t *testing.T) {
+			for _, tc := range []struct {
+				otel  string
+				want  log.Level
+				lines int
+			}{
+				{otel: "info", want: log.LevelInfo, lines: 2},
+				{otel: "warn", want: log.LevelWarn, lines: 1},
+				{otel: "error", want: log.LevelError, lines: 0},
+			} {
+				t.Run(tc.otel, func(t *testing.T) {
+					defer log.SetLevel(log.GetLevel())
+					log.SetLevel(log.LevelDebug)
+					t.Setenv("OTEL_LOG_LEVEL", tc.otel)
+					c, err := newTestConfig()
+					assert.NoError(t, err)
+					assert.False(t, c.internalConfig.Debug())
+					assert.Equal(t, tc.want, log.GetLevel())
+
+					rl := new(log.RecordLogger)
+					defer log.UseLogger(rl)()
+					log.Info("info message")
+					log.Warn("warn message")
+					assert.Len(t, rl.Logs(), tc.lines)
+				})
+			}
+		})
+		t.Run("dd-debug-overrides-otel-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.True(t, c.internalConfig.Debug())
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel

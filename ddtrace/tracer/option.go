@@ -319,8 +319,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
+	if lvl, ok := c.internalConfig.LogLevel(); ok {
+		log.SetLevel(lvl)
 	}
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {

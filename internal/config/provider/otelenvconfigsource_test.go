@@ -58,6 +58,22 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "true", v)
 	})
 
+	t.Run("maps OTEL_LOG_LEVEL above debug to DD_TRACE_DEBUG=false", func(t *testing.T) {
+		for _, level := range []string{"info", "warn", "error", "ERROR"} {
+			t.Run(level, func(t *testing.T) {
+				telemetryClient := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(telemetryClient)()
+
+				t.Setenv("OTEL_LOG_LEVEL", level)
+				source := &otelEnvConfigSource{}
+				v := source.get("DD_TRACE_DEBUG")
+
+				assert.Equal(t, "false", v)
+				assert.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"}).Get())
+			})
+		}
+	})
+
 	t.Run("returns empty for invalid OTEL_LOG_LEVEL", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()

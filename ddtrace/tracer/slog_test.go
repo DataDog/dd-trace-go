@@ -24,7 +24,7 @@ func Test_slogHandler(t *testing.T) {
 	// when previous tests pollute the global state. We leave the logger in the
 	// state we found it to not contribute to this pollution ourselves.
 	oldLevel := log.GetLevel()
-	log.SetLevel(log.LevelWarn)
+	log.SetLevel(log.LevelInfo)
 	defer log.SetLevel(oldLevel)
 
 	// Log a few messages at different levels. The debug message gets discarded
@@ -51,4 +51,25 @@ func Test_slogHandler(t *testing.T) {
 	require.Contains(t, rl.Logs()[1], "warn test foo=bar a.b.n=2")
 	require.Contains(t, rl.Logs()[2], "error test foo=bar a.b.n=3")
 	require.Contains(t, rl.Logs()[3], "info test foo=bar a.b.baz=qux a.b.c.d.n=1")
+}
+
+func Test_slogHandlerThreshold(t *testing.T) {
+	rl := &log.RecordLogger{}
+	defer log.UseLogger(rl)()
+	oldLevel := log.GetLevel()
+	log.SetLevel(log.LevelWarn)
+	defer log.SetLevel(oldLevel)
+
+	h := slogHandler{}
+	ctx := t.Context()
+	require.False(t, h.Enabled(ctx, slog.LevelDebug))
+	require.False(t, h.Enabled(ctx, slog.LevelInfo))
+	require.True(t, h.Enabled(ctx, slog.LevelWarn))
+	require.True(t, h.Enabled(ctx, slog.LevelError))
+
+	l := slog.New(h)
+	l.Info("info test")
+	l.Warn("warn test")
+	require.Len(t, rl.Logs(), 1)
+	require.Contains(t, rl.Logs()[0], "WARN: warn test")
 }
