@@ -2241,3 +2241,79 @@ func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 		assert.Equal(t, 512, size)
 	})
 }
+
+func TestRuntimeMetricsProtocol(t *testing.T) {
+	for _, tc := range []struct{ name, generic, signal, expected string }{
+		{"signal over generic", "http/protobuf", "grpc", "grpc"},
+		{"generic fallback", "grpc", "", "grpc"},
+		{"normalized", "  GRPC  ", "", "grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", tc.generic)
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsProtocol())
+		})
+	}
+}
+
+func TestRuntimeMetricsEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		env                            map[string]string
+		httpHost, httpPath, grpcTarget string
+		insecure                       bool
+	}{
+		{"default", nil, "localhost:4318", "/v1/metrics", "localhost:4317", true},
+		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true},
+		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false},
+		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
+		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true},
+		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false},
+		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true},
+		{"invalid signal", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "generic:4318", "/v1/metrics", "generic:4318", true},
+		{"both invalid", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://%", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
+		{"whitespace", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "   "}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			httpHost, httpPath, insecure := cfg.RuntimeMetricsHTTPEndpoint()
+			assert.Equal(t, tc.httpHost, httpHost)
+			assert.Equal(t, tc.httpPath, httpPath)
+			assert.Equal(t, tc.insecure, insecure)
+			grpcTarget, _ := cfg.RuntimeMetricsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, grpcTarget)
+		})
+	}
+}
+
+func TestRuntimeMetricsInsecurePrecedence(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4318")
+	t.Setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+	_, _, insecure := loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.True(t, insecure)
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "false")
+	_, _, insecure = loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.False(t, insecure)
+}
+
+func TestRuntimeMetricsHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name, signal string
+		expected     map[string]string
+	}{
+		{"generic", "", map[string]string{"Authorization": "Bearer token"}},
+		{"blank signal", "  ", map[string]string{"Authorization": "Bearer token"}},
+		{"signal replaces", "x-key=a%2Bb", map[string]string{"x-key": "a+b"}},
+		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", map[string]string{}},
+		{"mixed", "bad key=x,good=some%20value,empty=", map[string]string{"good": "some value", "empty": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20token")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsHeaders())
+		})
+	}
+}
