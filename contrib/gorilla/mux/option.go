@@ -25,6 +25,7 @@ type routerConfig struct {
 	queryParams   bool
 	headerTags    instrumentation.HeaderTags
 	isStatusError func(statusCode int) bool
+	otelEnabled   bool
 }
 
 // RouterOption describes options for the Gorilla mux integration.
@@ -56,8 +57,13 @@ func defaults(cfg *routerConfig) {
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.serviceSource = string(instrumentation.PackageGorillaMux)
-	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.otelEnabled = instr.OTelSemanticsEnabled()
+	// Leave resourceNamer nil so TraceAndServe applies default OpenTelemetry naming.
+	// WithResourceNamer can still install a custom resource namer after defaults.
+	if !cfg.otelEnabled {
+		cfg.resourceNamer = defaultResourceNamer
+	}
 }
 
 // WithIgnoreRequest holds the function to use for determining if the

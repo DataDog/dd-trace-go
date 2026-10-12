@@ -49,6 +49,14 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
+	// defaultBLRPMaxQueueSize is the default value for OTEL_BLRP_MAX_QUEUE_SIZE.
+	defaultBLRPMaxQueueSize = 2048
+	// defaultBLRPScheduleDelay is the default value for OTEL_BLRP_SCHEDULE_DELAY.
+	defaultBLRPScheduleDelay = time.Second
+	// defaultBLRPExportTimeout is the default value for OTEL_BLRP_EXPORT_TIMEOUT.
+	defaultBLRPExportTimeout = 30 * time.Second
+	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
+	defaultBLRPMaxExportBatchSize = 512
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a

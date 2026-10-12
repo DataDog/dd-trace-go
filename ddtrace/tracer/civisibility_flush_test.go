@@ -35,7 +35,8 @@ func TestCIVisibilityFlushDrainsAcceptedChunks(t *testing.T) {
 			}
 			setGlobalTracerWithCIVisibility(global, enabled)
 			if mode == "ci-mock" {
-				require.Same(t, tr, getGlobalTracer().(*ciFlushInstallationMock).Tracer)
+				installed := getGlobalTracer().(*ciFlushInstallationMock).Tracer.(*ciVisibilityTracerRouter)
+				require.Same(t, tr, installed.ciVisibilityTracer())
 			}
 
 			span := newBasicSpan("accepted")
