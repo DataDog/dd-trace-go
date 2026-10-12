@@ -46,22 +46,8 @@ const (
 	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
 	envDDAgentHost     = "DD_AGENT_HOST"
 
-	// BatchLogRecordProcessor environment variables
-	envBLRPMaxQueueSize       = "OTEL_BLRP_MAX_QUEUE_SIZE"
-	envBLRPScheduleDelay      = "OTEL_BLRP_SCHEDULE_DELAY"
-	envBLRPExportTimeout      = "OTEL_BLRP_EXPORT_TIMEOUT"
-	envBLRPMaxExportBatchSize = "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE"
-
-	// Default values for BatchLogRecordProcessor
-	defaultBLRPMaxQueueSize       = 2048
-	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
-	defaultBLRPExportTimeout      = 30000 * time.Millisecond
-	defaultBLRPMaxExportBatchSize = 512
-
-	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
-	defaultBLRPScheduleDelayMs = 1000
-	defaultBLRPExportTimeoutMs = 30000
-	defaultOTLPTimeoutMs       = 10000 // 10 seconds
+	// Default timeout in milliseconds (for telemetry reporting)
+	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -533,48 +519,4 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 		MaxInterval:     grpcRetryMaxInterval,
 		MaxElapsedTime:  grpcRetryMaxElapsedTime,
 	}
-}
-
-// resolveBLRPMaxQueueSize returns the max queue size for BatchLogRecordProcessor.
-// Default: 2048
-func resolveBLRPMaxQueueSize() int {
-	if sizeStr := env.Get(envBLRPMaxQueueSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxQueueSize
-}
-
-// resolveBLRPScheduleDelay returns the schedule delay for BatchLogRecordProcessor.
-// Default: 1000ms
-func resolveBLRPScheduleDelay() time.Duration {
-	if delayStr := env.Get(envBLRPScheduleDelay); delayStr != "" {
-		if delay, err := parseTimeout(delayStr); err == nil {
-			return delay
-		}
-	}
-	return defaultBLRPScheduleDelay
-}
-
-// resolveBLRPExportTimeout returns the export timeout for BatchLogRecordProcessor.
-// Default: 30000ms
-func resolveBLRPExportTimeout() time.Duration {
-	if timeoutStr := env.Get(envBLRPExportTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	return defaultBLRPExportTimeout
-}
-
-// resolveBLRPMaxExportBatchSize returns the max export batch size for BatchLogRecordProcessor.
-// Default: 512
-func resolveBLRPMaxExportBatchSize() int {
-	if sizeStr := env.Get(envBLRPMaxExportBatchSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxExportBatchSize
 }

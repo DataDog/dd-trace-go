@@ -2213,3 +2213,31 @@ func TestFlaggingProviderInitTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveBLRPMaxQueueSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "0")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+}
+
+func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+}
