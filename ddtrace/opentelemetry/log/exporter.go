@@ -6,7 +6,6 @@
 package log
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"net"
@@ -176,6 +175,7 @@ func newOTLPGRPCExporter(ctx context.Context, opts ...otlploggrpc.Option) (sdklo
 
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Option {
+	cfg := config.Get()
 	opts := []otlploghttp.Option{
 		// Set timeout
 		otlploghttp.WithTimeout(resolveExportTimeout()),
@@ -183,11 +183,8 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
-		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
-
+	// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
+	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// Parse and sanitize the URL to handle trailing slashes correctly
 		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
 		if sanitizedURL != "" {
@@ -224,6 +221,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 
 // buildGRPCExporterOptions constructs the OTLP gRPC exporter options with DD-specific defaults
 func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Option {
+	cfg := config.Get()
 	opts := []otlploggrpc.Option{
 		// Set timeout
 		otlploggrpc.WithTimeout(resolveExportTimeout()),
@@ -231,11 +229,8 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
-		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
-
+	// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
+	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// For gRPC, we extract host:port and insecure flag from the URL
 		u, err := url.Parse(rawEndpoint)
 		if err != nil {
@@ -276,18 +271,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	opts = append(opts, userOpts...)
 
 	return opts
-}
-
-// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables.
-// When true, we'll read and sanitize the endpoint ourselves to ensure proper URL formatting.
-func hasOTLPEndpointInEnv() bool {
-	if v := env.Get(envOTLPLogsEndpoint); v != "" {
-		return true
-	}
-	if v := env.Get(envOTLPEndpoint); v != "" {
-		return true
-	}
-	return false
 }
 
 // sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:

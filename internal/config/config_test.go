@@ -1677,6 +1677,28 @@ func TestOTLPLogsProtocol(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsEndpoint(t *testing.T) {
+	t.Run("empty when no env vars set", func(t *testing.T) {
+		assert.Empty(t, loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://custom:4318")
+		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://custom:4318")
+		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs:4318")
+		assert.Equal(t, "http://logs:4318", loadConfig().OTLPLogsEndpoint())
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
