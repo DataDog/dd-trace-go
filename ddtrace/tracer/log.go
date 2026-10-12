@@ -271,7 +271,7 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 		info.OTLPTracesEndpoint = sanitizeOTLPEndpoint(cfg.OTLPTraceURL())
 		// The OTLP trace writer only sends protobuf over HTTP.
 		info.OTLPTracesProtocol = "http/protobuf"
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		// The writer always sets Content-Type itself, overriding any configured value.
 		delete(headers, "Content-Type")
 		info.OTLPTracesHeaders = redactOTLPHeaders(headers)
