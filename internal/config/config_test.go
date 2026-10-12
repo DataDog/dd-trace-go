@@ -2433,7 +2433,8 @@ func TestRuntimeMetricsReaderResolution(t *testing.T) {
 	}{
 		{"bad", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
 		{"-1", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
-		{" 25 ", 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
@@ -2458,19 +2459,6 @@ func TestRuntimeMetricsReaderOverflow(t *testing.T) {
 		assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
 		assert.Equal(t, defaultRuntimeMetricsExportTimeout, cfg.RuntimeMetricsExportTimeout())
 	}
-}
-
-func TestRuntimeMetricsReaderTelemetryUsesInput(t *testing.T) {
-	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "0")
-	recorder := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(recorder)()
-	cfg := loadConfig()
-	for _, input := range recorder.Configuration {
-		assert.NotEqual(t, "OTEL_METRIC_EXPORT_INTERVAL", input.Name)
-	}
-	cfg.ReportRuntimeMetricsReaderConfig()
-	assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
-	telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_METRIC_EXPORT_INTERVAL", 0)
 }
 
 func TestRuntimeMetricsTemporality(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -62,8 +61,6 @@ func registerTelemetry(cfg *config) {
 		Value:  metricsTimeout.value,
 		Origin: metricsTimeout.origin,
 	})
-
-	internalconfig.Get().ReportRuntimeMetricsReaderConfig()
 
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }

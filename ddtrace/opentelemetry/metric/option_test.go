@@ -27,7 +27,8 @@ func TestExportIntervalAndTimeoutOptions(t *testing.T) {
 		{"rejected environment", "0", nil, 10 * time.Second, 7500 * time.Millisecond},
 		{"options", "250", []Option{WithExportInterval(time.Hour), WithExportTimeout(time.Second)}, time.Hour, time.Second},
 		{"rejected options", "", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 10 * time.Second, 7500 * time.Millisecond},
-		{"rejected options use environment", " 250 ", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 250 * time.Millisecond, 250 * time.Millisecond},
+		{"rejected options use environment", "250", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 250 * time.Millisecond, 250 * time.Millisecond},
+		{"untrimmed environment", " 250 ", nil, 10 * time.Second, 7500 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() { internalconfig.CreateNew() })

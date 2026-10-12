@@ -597,21 +597,6 @@ func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[str
 	return headers
 }
 
-// resolveRuntimeMetricsDuration resolves a millisecond reader setting. Nonpositive values use def.
-// It returns the duration and the input value for telemetry.
-func resolveRuntimeMetricsDuration(key, raw string, def time.Duration) (time.Duration, telemetry.Configuration) {
-	input := telemetry.Configuration{Name: key, Value: int(def.Milliseconds()), Origin: telemetry.OriginDefault}
-	duration := def
-	if milliseconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
-		input.Value = milliseconds
-		input.Origin = telemetry.OriginEnvVar
-		if milliseconds > 0 {
-			duration = time.Duration(milliseconds) * time.Millisecond
-		}
-	}
-	return duration, input
-}
-
 // resolveRuntimeMetricsTemporality returns "cumulative" when requested, and "delta" otherwise.
 func resolveRuntimeMetricsTemporality(preference string) string {
 	if strings.EqualFold(strings.TrimSpace(preference), "cumulative") {
