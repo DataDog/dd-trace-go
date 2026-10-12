@@ -388,3 +388,14 @@ func TestRedactOTLPHeaders(t *testing.T) {
 	assert.Nil(t, redactOTLPHeaders(map[string]string{}))
 	assert.Nil(t, redactOTLPHeaders(nil))
 }
+
+func TestSanitizeOTLPEndpoint(t *testing.T) {
+	for _, tc := range []struct{ endpoint, want string }{
+		{"https://user:password@collector:4318/v1/traces?token=x#frag", "https://collector:4318/v1/traces"},
+		{"https:user:password@collector/v1/traces", ""},
+		{"/v1/traces", ""},
+		{"://invalid", ""},
+	} {
+		assert.Equal(t, tc.want, sanitizeOTLPEndpoint(tc.endpoint), tc.endpoint)
+	}
+}
