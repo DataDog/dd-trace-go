@@ -30,7 +30,6 @@ const (
 	defaultOTLPHTTPPort = "4318"
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-	defaultOTLPProtocol = "http/protobuf"
 
 	// OTLP environment variables (logs-specific)
 	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
@@ -114,7 +113,7 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // 5. localhost with default port (default)
 func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpts []otlploggrpc.Option) (sdklog.Exporter, error) {
 	// Determine protocol
-	protocol := resolveOTLPProtocol()
+	protocol := config.Get().OTLPLogsProtocol()
 
 	var exporter sdklog.Exporter
 	var err error
@@ -130,7 +129,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
+		log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
@@ -145,21 +144,6 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		Exporter:  exporter,
 		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
 	}, nil
-}
-
-// resolveOTLPProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
-func resolveOTLPProtocol() string {
-	// Check logs-specific protocol first
-	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Default to HTTP with protobuf
-	return defaultOTLPProtocol
 }
 
 // newOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.

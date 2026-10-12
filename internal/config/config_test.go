@@ -1639,6 +1639,44 @@ func TestOTLPMetricsProtocol(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsProtocol(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/protobuf", protocol)
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "grpc", protocol)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/protobuf", protocol)
+	})
+
+	t.Run("trims and lowercases protocol", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "  GRPC  ")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "grpc", protocol)
+	})
+
+	t.Run("does not validate protocol", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/json", protocol)
+	})
+
+	t.Run("supports http/protobuf", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/protobuf", protocol)
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
