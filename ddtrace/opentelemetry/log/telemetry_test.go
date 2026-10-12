@@ -64,7 +64,7 @@ func TestRegisterTelemetry(t *testing.T) {
 
 		registerTelemetry()
 
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, int(resolveExportTimeout().Milliseconds()))
+		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, defaultOTLPTimeoutMs)
 		for _, cfg := range recorder.Configuration {
 			if cfg.Name == envOTLPLogsTimeout {
 				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)

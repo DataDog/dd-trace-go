@@ -1757,6 +1757,44 @@ func TestOTLPLogsHeaders(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsTimeout(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 10*time.Second, timeout)
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_TIMEOUT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 5*time.Second, timeout)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10000")
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 10*time.Second, timeout)
+	})
+
+	for _, raw := range []string{"invalid", "1000.5"} {
+		t.Run("invalid logs timeout falls back to generic: "+raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", raw)
+			assert.Equal(t, 5*time.Second, loadConfig().OTLPLogsTimeout())
+		})
+	}
+
+	t.Run("invalid generic timeout falls back to default", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "invalid")
+		assert.Equal(t, 10*time.Second, loadConfig().OTLPLogsTimeout())
+	})
+
+	t.Run("accepts zero", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "0")
+		assert.Equal(t, time.Duration(0), loadConfig().OTLPLogsTimeout())
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
