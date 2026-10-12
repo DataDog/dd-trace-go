@@ -377,6 +377,17 @@ func loadConfig() *Config {
 	}
 	p := provider.New()
 
+	// Apply the log threshold before reading anything else, so that diagnostics
+	// emitted while loading the rest of the configuration honor it.
+	// Leave the level untouched when the environment does not configure one, so
+	// that loading the configuration does not reset a level applied elsewhere.
+	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	var otelLevelSet bool
+	cfg.logLevel, otelLevelSet = otelLogLevel(p)
+	if cfg.debug || otelLevelSet {
+		log.SetLevel(cfg.LogLevel())
+	}
+
 	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
 	// All three are read through the provider so telemetry is reported for each.
 	agentURLStr := p.GetString("DD_TRACE_AGENT_URL", "")
@@ -392,13 +403,6 @@ func loadConfig() *Config {
 	}
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
-	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
-	// OTEL_LOG_LEVEL=debug already reaches debug mode through DD_TRACE_DEBUG, which
-	// keeps DD_TRACE_DEBUG precedence; only the higher levels set a threshold here.
-	cfg.logLevel = log.LevelInfo
-	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
-		cfg.logLevel = lvl
-	}
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
 	cfg.version = p.GetString("DD_VERSION", "")

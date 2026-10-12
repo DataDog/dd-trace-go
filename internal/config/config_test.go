@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"net/url"
 	"os"
 	"reflect"
@@ -421,11 +422,16 @@ func getTestValueForType(t reflect.Type) any {
 		". Add support for this type in getTestValueForType() or add your setter to specialCaseSetters.")
 }
 
+// initialLogLevel is restored by resetGlobalState, since loading the config
+// applies its log threshold globally.
+var initialLogLevel = log.GetLevel()
+
 // resetGlobalState resets all global singleton state for testing
 func resetGlobalState() {
 	mu = sync.Mutex{}
 	instance = nil
 	useFreshConfig = false
+	log.SetLevel(initialLogLevel)
 }
 
 func TestStatsAdditionalTagsExperimentalGate(t *testing.T) {
@@ -1835,8 +1841,55 @@ func TestLogLevel(t *testing.T) {
 			cfg := Get()
 			assert.Equal(t, tc.wantLevel, cfg.LogLevel())
 			assert.Equal(t, tc.wantDebug, cfg.Debug())
+			assert.Equal(t, tc.wantLevel, log.GetLevel(), "loading the config should apply its threshold")
 		})
 	}
+
+	t.Run("loading keeps an unconfigured threshold", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		log.SetLevel(log.LevelError)
+
+		Get()
+		assert.Equal(t, log.LevelError, log.GetLevel())
+	})
+
+	t.Run("load-time diagnostics honor the threshold", func(t *testing.T) {
+		for _, tc := range []struct {
+			otelLogLevel string
+			wantWarning  bool
+		}{
+			{otelLogLevel: "", wantWarning: true},
+			{otelLogLevel: "warn", wantWarning: true},
+			{otelLogLevel: "error", wantWarning: false},
+		} {
+			t.Run(cmp.Or(tc.otelLogLevel, "unset"), func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+				rl := new(log.RecordLogger)
+				defer log.UseLogger(rl)()
+				t.Setenv("OTEL_LOG_LEVEL", tc.otelLogLevel)
+				t.Setenv("OTEL_LOGS_EXPORTER", "otlp")
+
+				Get()
+				warned := slices.ContainsFunc(rl.Logs(), func(l string) bool {
+					return strings.Contains(l, "WARN: OTEL_LOGS_EXPORTER is not supported")
+				})
+				assert.Equal(t, tc.wantWarning, warned, rl.Logs())
+			})
+		}
+	})
+
+	t.Run("debug option lowers env debug mode", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_DEBUG", "true")
+
+		cfg := Get()
+		assert.Equal(t, log.LevelDebug, log.GetLevel())
+		cfg.SetDebug(false, telemetry.OriginCode)
+		assert.Equal(t, log.LevelInfo, cfg.LogLevel())
+	})
 
 	t.Run("debug option overrides otel threshold", func(t *testing.T) {
 		resetGlobalState()
