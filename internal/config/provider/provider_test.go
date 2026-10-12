@@ -539,3 +539,25 @@ apm_configuration_default:
 		telemetryClient.AssertExpectations(t)
 	})
 }
+
+func TestGetInt64(t *testing.T) {
+	const defaultValue int64 = 30000
+	const largeValue int64 = 2147483648
+	for _, tc := range []struct {
+		value    string
+		expected int64
+	}{
+		{value: "", expected: defaultValue},
+		{value: "invalid", expected: defaultValue},
+		{value: "1.5", expected: defaultValue},
+		{value: "9223372036854775808", expected: defaultValue},
+		{value: "0", expected: 0},
+		{value: "-1000", expected: -1000},
+		{value: "2147483648", expected: largeValue},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			p := newTestProvider(newTestConfigSource(map[string]string{"OTEL_BLRP_SCHEDULE_DELAY": tc.value}, telemetry.OriginEnvVar))
+			assert.Equal(t, tc.expected, p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultValue))
+		})
+	}
+}
