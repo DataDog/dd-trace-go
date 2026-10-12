@@ -248,7 +248,7 @@ func logStartup(t *tracer) {
 }
 
 // redactedHeaderValue replaces every OTLP header value in the startup log.
-const redactedHeaderValue = "<redacted>"
+const redactedHeaderValue = "REDACTED"
 
 // addOTelStartupInfo adds the effective OpenTelemetry configuration to info.
 // Every value comes from state resolved during tracer configuration; nothing
