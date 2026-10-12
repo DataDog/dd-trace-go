@@ -286,9 +286,10 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 		info.OTLPMetricsHeaders = redactOTLPHeaders(cfg.OTLPMetricsHeaders())
 	}
 
-	switch lvl := log.GetLevel(); lvl {
-	case log.LevelDebug, log.LevelInfo, log.LevelWarn, log.LevelError:
-		info.OTelLogLevel = strings.ToLower(lvl.String())
+	// The logger only filters debug messages; info and above are always emitted.
+	info.OTelLogLevel = "info"
+	if log.DebugEnabled() {
+		info.OTelLogLevel = "debug"
 	}
 	info.OTelServiceName = cfg.ServiceName()
 	if w, ok := t.traceWriter.(*otlpTraceWriter); ok && tracesOTLP {
@@ -376,10 +377,10 @@ func (t *tracer) otelTracesSampler() (name, arg string) {
 
 // sanitizeOTLPEndpoint returns endpoint without userinfo, query, or fragment so
 // credentials cannot reach the startup log. It returns "" when endpoint cannot
-// be parsed, since it then cannot be sanitized.
+// be parsed or is opaque or hostless, since it then cannot be sanitized.
 func sanitizeOTLPEndpoint(endpoint string) string {
 	u, err := url.Parse(endpoint)
-	if err != nil {
+	if err != nil || u.Opaque != "" || u.Host == "" {
 		return ""
 	}
 	u.User = nil
