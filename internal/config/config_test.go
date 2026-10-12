@@ -2431,9 +2431,9 @@ func TestRuntimeMetricsReaderResolution(t *testing.T) {
 		raw                                                  string
 		interval, timeout, rejectedInterval, rejectedTimeout time.Duration
 	}{
-		{"bad", 10 * time.Second, 7500 * time.Millisecond, time.Minute, 30 * time.Second},
-		{"-1", time.Minute, 30 * time.Second, time.Minute, 30 * time.Second},
-		{" 25 ", 25 * time.Millisecond, 25 * time.Millisecond, time.Minute, 30 * time.Second},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
+		{"-1", 10 * time.Second, 7500 * time.Millisecond, 10 * time.Second, 7500 * time.Millisecond},
+		{" 25 ", 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond, 25 * time.Millisecond},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
 			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
@@ -2469,7 +2469,7 @@ func TestRuntimeMetricsReaderTelemetryUsesInput(t *testing.T) {
 		assert.NotEqual(t, "OTEL_METRIC_EXPORT_INTERVAL", input.Name)
 	}
 	cfg.ReportRuntimeMetricsReaderConfig()
-	assert.Equal(t, time.Minute, cfg.RuntimeMetricsExportInterval())
+	assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
 	telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_METRIC_EXPORT_INTERVAL", 0)
 }
 

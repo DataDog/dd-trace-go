@@ -27,11 +27,10 @@ func TestPeriodicReaderAcceptedConfiguration(t *testing.T) {
 	}{
 		{"defaults", "", nil, 10 * time.Second, 7500 * time.Millisecond},
 		{"environment", "250", nil, 250 * time.Millisecond, 250 * time.Millisecond},
-		{"rejected environment", "0", nil, time.Minute, 30 * time.Second},
+		{"rejected environment", "0", nil, 10 * time.Second, 7500 * time.Millisecond},
 		{"options", "250", []Option{WithExportInterval(time.Hour), WithExportTimeout(time.Second)}, time.Hour, time.Second},
-		{"rejected options", "", []Option{WithExportInterval(0), WithExportTimeout(-1)}, time.Minute, 30 * time.Second},
-		{"rejected options use SDK environment", "250", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 250 * time.Millisecond, 250 * time.Millisecond},
-		{"SDK does not trim fallback", " 250 ", []Option{WithExportInterval(0), WithExportTimeout(-1)}, time.Minute, 30 * time.Second},
+		{"rejected options", "", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 10 * time.Second, 7500 * time.Millisecond},
+		{"rejected options use environment", " 250 ", []Option{WithExportInterval(0), WithExportTimeout(-1)}, 250 * time.Millisecond, 250 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() { internalconfig.CreateNew() })

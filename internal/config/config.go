@@ -260,8 +260,6 @@ type Config struct {
 	runtimeMetricsHeaders         map[string]string
 	runtimeMetricsExportInterval  time.Duration
 	runtimeMetricsExportTimeout   time.Duration
-	runtimeMetricsSDKInterval     time.Duration
-	runtimeMetricsSDKTimeout      time.Duration
 	runtimeMetricsTemporality     string
 	runtimeMetricsReaderTelemetry [2]telemetry.Configuration
 
@@ -537,8 +535,8 @@ func loadConfig() *Config {
 		cfg.agentURL,
 	)
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
-	cfg.runtimeMetricsExportInterval, cfg.runtimeMetricsSDKInterval, cfg.runtimeMetricsReaderTelemetry[0] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_INTERVAL", env.Get("OTEL_METRIC_EXPORT_INTERVAL"), defaultRuntimeMetricsExportInterval, defaultSDKMetricsExportInterval)
-	cfg.runtimeMetricsExportTimeout, cfg.runtimeMetricsSDKTimeout, cfg.runtimeMetricsReaderTelemetry[1] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_TIMEOUT", env.Get("OTEL_METRIC_EXPORT_TIMEOUT"), defaultRuntimeMetricsExportTimeout, defaultSDKMetricsExportTimeout)
+	cfg.runtimeMetricsExportInterval, cfg.runtimeMetricsReaderTelemetry[0] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_INTERVAL", env.Get("OTEL_METRIC_EXPORT_INTERVAL"), defaultRuntimeMetricsExportInterval)
+	cfg.runtimeMetricsExportTimeout, cfg.runtimeMetricsReaderTelemetry[1] = resolveRuntimeMetricsDuration("OTEL_METRIC_EXPORT_TIMEOUT", env.Get("OTEL_METRIC_EXPORT_TIMEOUT"), defaultRuntimeMetricsExportTimeout)
 	cfg.runtimeMetricsTemporality = resolveRuntimeMetricsTemporality(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", ""))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
@@ -2003,7 +2001,7 @@ func (c *Config) ResolveRuntimeMetricsExportInterval(interval time.Duration) tim
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.runtimeMetricsSDKInterval
+	return c.runtimeMetricsExportInterval
 }
 
 func (c *Config) ResolveRuntimeMetricsExportTimeout(timeout time.Duration) time.Duration {
@@ -2012,7 +2010,7 @@ func (c *Config) ResolveRuntimeMetricsExportTimeout(timeout time.Duration) time.
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.runtimeMetricsSDKTimeout
+	return c.runtimeMetricsExportTimeout
 }
 
 func (c *Config) RuntimeMetricsTemporalityPreference() string {

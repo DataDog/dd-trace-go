@@ -81,7 +81,7 @@ func WithExporter(opts ...otlpmetrichttp.Option) Option {
 }
 
 // WithExportInterval sets the interval at which metrics are exported.
-// Default is 10 seconds. Nonpositive values use the SDK environment/default fallback.
+// Default is 10 seconds. Nonpositive values use the environment value or default.
 func WithExportInterval(interval time.Duration) Option {
 	return optionFunc(func(c *config) {
 		c.exportInterval = internalconfig.Get().ResolveRuntimeMetricsExportInterval(interval)
@@ -89,7 +89,7 @@ func WithExportInterval(interval time.Duration) Option {
 }
 
 // WithExportTimeout sets the timeout for each export operation.
-// Default is 7.5 seconds. Nonpositive values use the SDK environment/default fallback.
+// Default is 7.5 seconds. Nonpositive values use the environment value or default.
 func WithExportTimeout(timeout time.Duration) Option {
 	return optionFunc(func(c *config) {
 		c.exportTimeout = internalconfig.Get().ResolveRuntimeMetricsExportTimeout(timeout)
