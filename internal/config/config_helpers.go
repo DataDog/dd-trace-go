@@ -508,7 +508,7 @@ func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[strin
 
 // resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
 // insecure flag. A signal endpoint is used as-is; a generic one gets otlpMetricsPath appended.
-func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, agentURL, agentHost string) (httpHost, httpPath, grpcTarget string, insecure bool) {
+func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOverride, agentURL, agentHost string) (httpHost, httpPath, grpcTarget string, insecure bool) {
 	httpHost = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultPort)
 	grpcTarget = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultGRPCPort)
 	httpPath = otlpMetricsPath
@@ -530,6 +530,10 @@ func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, agentURL, a
 		}
 		insecure = strings.EqualFold(u.Scheme, URLSchemeHTTP) || strings.EqualFold(u.Scheme, URLSchemeUnix)
 	}
+	// Like the OTel Go SDK, and unlike the OTel spec, an explicit setting overrides the endpoint scheme.
+	if insecureOverride != "" {
+		insecure = strings.EqualFold(insecureOverride, "true")
+	}
 	if genericEndpoint == "" && metricsEndpoint == "" {
 		host := cmp.Or(agentHost, internal.DefaultAgentHostname)
 		agentInsecure := true
@@ -539,7 +543,7 @@ func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, agentURL, a
 		}
 		httpHost = net.JoinHostPort(host, otlpDefaultPort)
 		grpcTarget = net.JoinHostPort(host, otlpDefaultGRPCPort)
-		insecure = agentInsecure
+		insecure = insecure || agentInsecure
 	}
 	httpPath = strings.TrimSpace(httpPath)
 	if httpPath == "" || httpPath == "." {
