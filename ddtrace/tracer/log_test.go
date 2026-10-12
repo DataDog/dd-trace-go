@@ -415,3 +415,11 @@ func TestAgentURLConflict(t *testing.T) {
 	}
 	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
+
+func TestRedactOTLPHeaders(t *testing.T) {
+	headers := map[string]string{"dd-api-key": "secret", "Authorization": "Bearer token"}
+	assert.Equal(t, map[string]string{"dd-api-key": "REDACTED", "Authorization": "REDACTED"}, redactOTLPHeaders(headers))
+	assert.Equal(t, "secret", headers["dd-api-key"])
+	assert.Nil(t, redactOTLPHeaders(map[string]string{}))
+	assert.Nil(t, redactOTLPHeaders(nil))
+}
