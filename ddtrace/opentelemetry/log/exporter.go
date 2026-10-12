@@ -21,7 +21,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"golang.org/x/net/http/httpguts"
 )
 
 const (
@@ -211,7 +210,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	}
 
 	// Always set headers so the SDK does not re-read them from the environment
-	opts = append(opts, otlploghttp.WithHeaders(resolveHeaders()))
+	opts = append(opts, otlploghttp.WithHeaders(cfg.OTLPLogsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -265,7 +264,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	}
 
 	// Always set headers so the SDK does not re-read them from the environment
-	opts = append(opts, otlploggrpc.WithHeaders(resolveHeaders()))
+	opts = append(opts, otlploggrpc.WithHeaders(cfg.OTLPLogsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -345,45 +344,6 @@ func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool
 	endpoint = net.JoinHostPort("localhost", port)
 	log.Debug("Using default %s endpoint: %s", name, endpoint)
 	return endpoint, true
-}
-
-// resolveHeaders returns the headers to send with OTLP requests.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_HEADERS > OTEL_EXPORTER_OTLP_HEADERS
-// Format: k=v,k2=v2 (spaces are trimmed, invalid entries are ignored)
-func resolveHeaders() map[string]string {
-	// Check logs-specific headers first
-	if headers := parseHeaders(env.Get(envOTLPLogsHeaders)); len(headers) > 0 {
-		return headers
-	}
-	// Fall back to general OTLP headers
-	return parseHeaders(env.Get(envOTLPHeaders))
-}
-
-// parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed and values are percent-decoded; invalid entries, including
-// keys that are not valid HTTP header names, are ignored.
-func parseHeaders(str string) map[string]string {
-	headers := make(map[string]string)
-	for entry := range strings.SplitSeq(str, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) != 2 {
-			// Invalid entry, skip it
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val, err := url.PathUnescape(strings.TrimSpace(parts[1]))
-		if err != nil {
-			continue
-		}
-		if httpguts.ValidHeaderFieldName(key) {
-			headers[key] = val
-		}
-	}
-	return headers
 }
 
 // resolveExportTimeout returns the export timeout from environment variables.
