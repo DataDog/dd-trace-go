@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
@@ -513,7 +515,24 @@ func decodeOTLPHeaders(headers map[string]string) map[string]string {
 	return headers
 }
 
-// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// parseOTLPLogsHeaders parses comma-separated key=value pairs. Unlike GetMap, it
+// never splits on spaces. Values are percent-decoded; entries without '=', with
+// a key that is not a valid HTTP header name, or with an invalid escape are dropped.
+func parseOTLPLogsHeaders(str string) map[string]string {
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(str, ",") {
+		key, val, ok := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		val, err := url.PathUnescape(strings.TrimSpace(val))
+		if !ok || !httpguts.ValidHeaderFieldName(key) || err != nil {
+			continue
+		}
+		headers[key] = val
+	}
+	return headers
+}
+
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
 // or of the generic headers when the signal-specific ones are empty.
 func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(signalHeaders) > 0 {

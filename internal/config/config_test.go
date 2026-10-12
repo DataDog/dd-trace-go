@@ -1647,6 +1647,64 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsHeaders(t *testing.T) {
+	t.Run("empty when no headers configured", func(t *testing.T) {
+		assert.Empty(t, loadConfig().OTLPLogsHeaders())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_HEADERS", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=value1,key2=value2")
+		headers := loadConfig().OTLPLogsHeaders()
+		assert.Equal(t, map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		}, headers)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_HEADERS wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "logs=specific")
+		headers := loadConfig().OTLPLogsHeaders()
+		assert.Equal(t, map[string]string{
+			"logs": "specific",
+		}, headers)
+	})
+
+	for name, logs := range map[string]string{
+		"no valid entry":            "invalid",
+		"only invalid header names": "bad key=value",
+	} {
+		t.Run("falls back to generic when OTEL_EXPORTER_OTLP_LOGS_HEADERS has "+name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", logs)
+			assert.Equal(t, map[string]string{"generic": "value"}, loadConfig().OTLPLogsHeaders())
+		})
+	}
+
+	for _, key := range []string{"OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_LOGS_HEADERS"} {
+		t.Run("percent-decodes "+key, func(t *testing.T) {
+			t.Setenv(key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+			assert.Equal(t, map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}, loadConfig().OTLPLogsHeaders())
+		})
+	}
+
+	t.Run("returns a copy", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "key=value")
+		cfg := loadConfig()
+		cfg.OTLPLogsHeaders()["key"] = "changed"
+		assert.Equal(t, "value", cfg.OTLPLogsHeaders()["key"])
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
