@@ -61,6 +61,8 @@ const (
 	defaultBLRPExportTimeout = 30 * time.Second
 	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
 	defaultBLRPMaxExportBatchSize = 512
+	// defaultOTLPTimeout is the default value for OTEL_EXPORTER_OTLP_TIMEOUT.
+	defaultOTLPTimeout = 10 * time.Second
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
