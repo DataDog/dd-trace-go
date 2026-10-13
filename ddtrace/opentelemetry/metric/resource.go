@@ -98,6 +98,11 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		ddCustomKeys[key] = true // Track that this key is set by DD_TAGS
 	}
 
+	// metric.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
+	if _, ok := otelAttrs["deployment.environment"]; ok {
+		attrs = append(attrs, attribute.String("deployment.environment", envName))
+	}
+
 	// 6. Add OTEL_RESOURCE_ATTRIBUTES (excluding reserved keys AND keys already set by DD_TAGS)
 	// DD_TAGS has higher priority than OTEL_RESOURCE_ATTRIBUTES for custom tags
 	excludeKeys := map[string]bool{

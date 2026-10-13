@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
@@ -108,6 +109,25 @@ func TestBuildDatadogResource_OtelFallback(t *testing.T) {
 func TestEnvironmentNamePrefersStableAttribute(t *testing.T) {
 	attrs := map[string]string{"deployment.environment": "legacy", "deployment.environment.name": "stable"}
 	assert.Equal(t, "stable", environmentName(nil, attrs))
+}
+
+func TestBuildDatadogResource_DeprecatedEnvironmentOnExport(t *testing.T) {
+	t.Setenv(envDDEnv, "dd-env")
+	t.Setenv(envDDTags, "deployment.environment:tag-env")
+	t.Setenv(envOtelResourceAttributes, "deployment.environment=legacy")
+
+	res, err := buildDatadogResource(context.Background())
+	require.NoError(t, err)
+
+	mp, reader := newTestMeterProvider(sdkmetric.WithResource(res))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	attrMap := make(map[string]string)
+	for _, attr := range collectResourceMetrics(t, reader).Resource.Attributes() {
+		attrMap[string(attr.Key)] = attr.Value.AsString()
+	}
+	assert.Equal(t, "dd-env", attrMap["deployment.environment.name"])
+	assert.Equal(t, "dd-env", attrMap["deployment.environment"])
 }
 
 // TestBuildDatadogResource_Hostname verifies hostname resolution priority:

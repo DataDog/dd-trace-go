@@ -92,10 +92,22 @@ func TestBuildResource(t *testing.T) {
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
 
-		assertResourceAttribute(t, res, semconv.DeploymentEnvironmentNameKey, "production")
-		for _, attr := range res.Attributes() {
-			assert.NotEqual(t, attribute.Key("deployment.environment"), attr.Key)
-		}
+		exported := exportedResource(t, res)
+		assertResourceAttribute(t, exported, semconv.DeploymentEnvironmentNameKey, "production")
+		assertResourceAttributeString(t, exported, "deployment.environment", "production")
+	})
+
+	t.Run("DD_ENV overrides deprecated environment on exported records", func(t *testing.T) {
+		t.Setenv("DD_ENV", "dd-env")
+		t.Setenv("DD_TAGS", "deployment.environment:tag-env")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=legacy")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		exported := exportedResource(t, res)
+		assertResourceAttribute(t, exported, semconv.DeploymentEnvironmentNameKey, "dd-env")
+		assertResourceAttributeString(t, exported, "deployment.environment", "dd-env")
 	})
 
 	t.Run("empty stable environment falls back to deprecated name", func(t *testing.T) {
@@ -168,20 +180,7 @@ func TestPrecedence(t *testing.T) {
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
 
-		exporter := newTestExporter()
-		provider := sdklog.NewLoggerProvider(
-			sdklog.WithResource(res),
-			sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)),
-		)
-		t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
-
-		var record otellog.Record
-		record.SetBody(attribute.StringValue("test"))
-		provider.Logger("test").Emit(context.Background(), record)
-
-		records := exporter.GetRecords()
-		require.Len(t, records, 1)
-		assertResourceAttribute(t, records[0].Resource(), semconv.ServiceNameKey, "otel-service")
+		assertResourceAttribute(t, exportedResource(t, res), semconv.ServiceNameKey, "otel-service")
 	})
 
 	t.Run("DD_ENV wins over OTEL deployment.environment.name", func(t *testing.T) {
@@ -479,6 +478,24 @@ func TestParseOtelResourceAttributes(t *testing.T) {
 }
 
 // Helper functions
+
+func exportedResource(t *testing.T, res *resource.Resource) *resource.Resource {
+	t.Helper()
+	exporter := newTestExporter()
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)),
+	)
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	var record otellog.Record
+	record.SetBody(attribute.StringValue("test"))
+	provider.Logger("test").Emit(context.Background(), record)
+
+	records := exporter.GetRecords()
+	require.Len(t, records, 1)
+	return records[0].Resource()
+}
 
 func assertResourceAttribute(t *testing.T, res *resource.Resource, key attribute.Key, expectedValue string) {
 	t.Helper()

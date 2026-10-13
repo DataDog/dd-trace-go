@@ -63,7 +63,6 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	if v := cmp.Or(otelAttrs["deployment.environment.name"], otelAttrs["deployment.environment"]); v != "" {
 		otelAttrs["deployment.environment.name"] = v
 	}
-	delete(otelAttrs, "deployment.environment")
 
 	// Step 2: Parse DD_TAGS
 	ddTags := make(map[string]string)
@@ -98,6 +97,11 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 
 	// Overlay DD_TAGS (all key-value pairs)
 	maps.Copy(attrs, ddTags)
+
+	// sdklog.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
+	if _, ok := otelAttrs["deployment.environment"]; ok {
+		attrs["deployment.environment"] = attrs["deployment.environment.name"]
+	}
 
 	// Step 4: Handle hostname with special rules
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
