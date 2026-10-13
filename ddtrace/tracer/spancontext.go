@@ -978,6 +978,11 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	if pTags := processtags.GlobalTags().String(); pTags != "" {
 		s.setMetaLocked(keyProcessTags, pTags)
 	}
+	// OTLP exports declare keySDKOTLPExport=true on the resource instead.
+	// otlpExportMode is set once at startup, only when the OTLP trace writer is selected.
+	if tr, ok := getGlobalTracer().(*tracer); ok && !tr.otlpExportMode {
+		s.setMetaLocked(keySDKOTLPExport, "false")
+	}
 }
 
 // updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
@@ -1013,7 +1018,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
-		if tr, ok := getGlobalTracer().(*tracer); ok {
+		if tr, ok := concreteTracerForLockedTrace(getGlobalTracer(), t, s.spanType).(*tracer); ok {
 			tr.computeOversizedSpanStats(s)
 		}
 		t.mu.Unlock()
@@ -1026,7 +1031,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 	s.finished = true
 	t.finished++
 
-	tr := getGlobalTracer()
+	tr := concreteTracerForLockedTrace(getGlobalTracer(), t, s.spanType)
 	if tr == nil {
 		t.mu.Unlock()
 		return
@@ -1036,7 +1041,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
+	if s.service != "" && tc.ServiceTag != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
 		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
 	priority := t.priority.Load()
@@ -1082,7 +1087,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+		submitChunkWithTracer(tr, &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 		return
 	}
 
@@ -1179,16 +1184,13 @@ func (t *trace) finishedOneLocked(s *Span) {
 		s.mu.Lock()
 	}
 
-	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+	submitChunkWithTracer(tr, &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
 // submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
 func submitChunkWithTracer(tr Tracer, c *chunk) {
-	switch t := tr.(type) {
-	case *tracer:
+	if t, ok := tr.(*tracer); ok {
 		t.submitChunk(c)
-	case *ciVisibilityNoopTracer:
-		submitChunkWithTracer(t.Tracer, c)
 	}
 }
 

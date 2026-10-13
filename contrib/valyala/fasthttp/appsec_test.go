@@ -461,7 +461,7 @@ func TestAppSecRequestTargets(t *testing.T) {
 		{"invalid-path-escape/query", "/%GG?x=$globals", "", "fasthttp-query-cookie"},
 		{"invalid-query-escape", "/?x=%GG$globals", "", "fasthttp-query-cookie"},
 		{"query-semicolon", "/?a=1;x=$globals", "", "fasthttp-query-cookie"},
-		{"cookie-backslash", "/", "Cookie: attack=$globals\\\r\n", "fasthttp-query-cookie"},
+		{"cookie-non-ascii", "/", "Cookie: attack=$globals\xc2\xa0\r\n", "fasthttp-query-cookie"},
 		{"cookie-count", "/", "Cookie: " + manyCookies + "\r\n", "fasthttp-query-cookie"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

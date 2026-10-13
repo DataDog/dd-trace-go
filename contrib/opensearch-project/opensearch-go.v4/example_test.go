@@ -7,6 +7,7 @@ package opensearch_test
 
 import (
 	"log"
+	"net/http"
 
 	opensearchtrace "github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
@@ -25,7 +26,7 @@ func Example() {
 		log.Fatal(err)
 		return
 	}
-	req, err := opensearchapi.ClusterHealthReq{}.GetRequest()
+	req, err := opensearchapi.ClusterHealthReq{}.GetRequest(http.MethodGet)
 	if err != nil {
 		log.Fatal(err)
 		return
