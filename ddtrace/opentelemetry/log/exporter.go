@@ -365,7 +365,7 @@ func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 // OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
 // reads those environment variables.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort)
+	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort, "OTLP logs")
 	return endpoint, defaultOTLPLogsPath, insecure
 }
 
@@ -374,7 +374,7 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 // - endpoint is the host:port (e.g., "localhost:4317")
 // - insecure indicates whether to use grpc (true) or grpcs (false)
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort)
+	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort, "OTLP gRPC logs")
 }
 
 // resolveLogsAgentEndpoint returns the tracer's agent host with the given OTLP
@@ -384,11 +384,20 @@ func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 // 1. The tracer's resolved agent URL (DD_TRACE_AGENT_URL, DD_AGENT_HOST, or a programmatic override)
 // 2. DD_AGENT_HOST, when the agent URL is a Unix socket
 // 3. localhost (default)
-func resolveLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
+func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool) {
 	if u := config.Get().RawAgentURL(); u != nil && u.Hostname() != "" {
-		return net.JoinHostPort(u.Hostname(), port), u.Scheme == "http" || u.Scheme == "unix"
+		endpoint = net.JoinHostPort(u.Hostname(), port)
+		log.Debug("Using %s endpoint from DD_TRACE_AGENT_URL: %s", name, endpoint)
+		return endpoint, u.Scheme == "http" || u.Scheme == "unix"
 	}
-	return net.JoinHostPort(cmp.Or(env.Get(envDDAgentHost), "localhost"), port), true
+	if host := env.Get(envDDAgentHost); host != "" {
+		endpoint = net.JoinHostPort(host, port)
+		log.Debug("Using %s endpoint from DD_AGENT_HOST: %s", name, endpoint)
+		return endpoint, true
+	}
+	endpoint = net.JoinHostPort("localhost", port)
+	log.Debug("Using default %s endpoint: %s", name, endpoint)
+	return endpoint, true
 }
 
 // resolveHeaders returns the headers to send with OTLP requests.
