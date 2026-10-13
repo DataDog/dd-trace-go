@@ -90,13 +90,11 @@ var (
 	warnTrackTransactionAtOnce sync.Once
 )
 
-// warnTransactionTrackingRemoved logs a single warning naming the deprecated
-// function that was called. Removing the feature silently would leave callers
-// believing they still had transaction tracking, with the only symptom being
-// absent data in the Datadog UI, so the no-op announces itself once per process.
+// warnTransactionTrackingRemoved logs a one-time warning naming the deprecated
+// function that was called.
 func warnTransactionTrackingRemoved(once *sync.Once, fn string) {
 	once.Do(func() {
-		log.Warn("datastreams: %s is a no-op and records nothing: Data Streams Monitoring transaction tracking has been removed. Remove the call; it will be deleted in v3.", fn)
+		log.Warn("datastreams: %s is a no-op and records nothing: Data Streams Monitoring transaction tracking has been removed. Remove the call.", fn)
 	})
 }
 
@@ -104,8 +102,8 @@ func warnTransactionTrackingRemoved(once *sync.Once, fn string) {
 //
 // Deprecated: Data Streams Monitoring transaction tracking has been removed.
 // This function no longer records a transaction checkpoint and no longer tags
-// the active span. It is retained only so existing callers keep compiling, and
-// will be deleted in v3. Remove calls to it.
+// the active span. It is retained only so existing callers keep compiling.
+// Remove calls to it.
 func TrackDataStreamsTransaction(_ context.Context, _, _ string) {
 	warnTransactionTrackingRemoved(&warnTrackTransactionOnce, "TrackDataStreamsTransaction")
 }
@@ -114,8 +112,8 @@ func TrackDataStreamsTransaction(_ context.Context, _, _ string) {
 //
 // Deprecated: Data Streams Monitoring transaction tracking has been removed.
 // This function no longer records a transaction checkpoint and no longer tags
-// the active span. It is retained only so existing callers keep compiling, and
-// will be deleted in v3. Remove calls to it.
+// the active span. It is retained only so existing callers keep compiling.
+// Remove calls to it.
 func TrackDataStreamsTransactionAt(_ context.Context, _, _ string, _ time.Time) {
 	warnTransactionTrackingRemoved(&warnTrackTransactionAtOnce, "TrackDataStreamsTransactionAt")
 }

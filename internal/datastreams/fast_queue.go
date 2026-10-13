@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// defaultQueueSize is the number of slots in the fastQueue ring buffer used
-// when no explicit size is configured.
 const defaultQueueSize = 10000
 
 // there are many writers, there is only 1 reader.

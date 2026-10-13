@@ -160,13 +160,13 @@ const (
 	// DSMTransactionID is the span tag key for a Data Streams transaction identifier.
 	//
 	// Deprecated: Data Streams Monitoring transaction tracking has been removed,
-	// and the tracer no longer sets this tag. It will be deleted in v3.
+	// and the tracer no longer sets this tag.
 	DSMTransactionID = "dsm.transaction.id"
 
 	// DSMTransactionCheckpoint is the span tag key for a Data Streams transaction checkpoint name.
 	//
 	// Deprecated: Data Streams Monitoring transaction tracking has been removed,
-	// and the tracer no longer sets this tag. It will be deleted in v3.
+	// and the tracer no longer sets this tag.
 	DSMTransactionCheckpoint = "dsm.transaction.checkpoint"
 )
 

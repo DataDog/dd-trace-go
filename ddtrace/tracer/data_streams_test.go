@@ -26,9 +26,6 @@ const (
 	dsmTransactionCheckpointTag = "dsm.transaction.checkpoint"
 )
 
-// TestTrackDataStreamsTransactionIsNoop verifies that the deprecated transaction
-// tracking API is safe to call and records nothing: no panic, and no transaction
-// tags on the active span.
 func TestTrackDataStreamsTransactionIsNoop(t *testing.T) {
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
@@ -72,9 +69,6 @@ func TestTrackDataStreamsTransactionIsNoop(t *testing.T) {
 	})
 }
 
-// TestTrackDataStreamsTransactionWarnsOnce verifies that the deprecated no-ops
-// announce themselves, so a caller who keeps calling them finds out rather than
-// silently losing data, and that they warn only once per process.
 func TestTrackDataStreamsTransactionWarnsOnce(t *testing.T) {
 	// Reset the package-level guards so this test does not depend on whether
 	// another test in this package called the deprecated functions first.

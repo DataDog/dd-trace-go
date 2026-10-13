@@ -287,7 +287,7 @@ func (p *Processor) time() time.Time {
 	return time.Now()
 }
 
-// ProcessorOption configures optional, rarely-changed Processor behavior.
+// ProcessorOption configures optional Processor behavior.
 type ProcessorOption func(*Processor)
 
 // WithQueueSize overrides the number of slots in the processor's input ring
@@ -450,9 +450,6 @@ func (p *Processor) run(tick <-chan time.Time) {
 	}
 }
 
-// recordDrop increments the aggregate dropped-payloads counter, plus the
-// counter for whichever reader-loop stall (approximately) coincided with
-// the drop.
 func (p *Processor) recordDrop() {
 	p.stats.dropped.Add(1)
 	switch readerState(p.readerState.Load()) {

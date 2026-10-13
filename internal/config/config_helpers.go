@@ -49,8 +49,6 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
-	// defaultDataStreamsIntakeBufferSize is the default number of slots in the Data
-	// Streams Monitoring processor's input ring buffer.
 	defaultDataStreamsIntakeBufferSize = 10000
 	// defaultBLRPMaxQueueSize is the default value for OTEL_BLRP_MAX_QUEUE_SIZE.
 	defaultBLRPMaxQueueSize = 2048
