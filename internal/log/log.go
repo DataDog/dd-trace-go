@@ -209,17 +209,11 @@ func Debug(fmt string, a ...any) {
 
 // Warn prints a warning message if the level is LevelWarn or lower.
 func Warn(fmt string, a ...any) {
-	if !Enabled(LevelWarn) {
-		return
-	}
 	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message if the level is LevelInfo or lower.
 func Info(fmt string, a ...any) {
-	if !Enabled(LevelInfo) {
-		return
-	}
 	printMsg(LevelInfo, fmt, a...)
 }
 
@@ -328,7 +322,12 @@ func flushLocked() {
 	erron = false
 }
 
+// printMsg checks the threshold itself so that Warn and Info stay small enough
+// to inline at their call sites.
 func printMsg(lvl Level, format string, a ...any) {
+	if !Enabled(lvl) {
+		return
+	}
 	var b strings.Builder
 	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
 	b.WriteString(prefixMsg)
