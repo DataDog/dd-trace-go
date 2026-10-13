@@ -51,39 +51,34 @@ func deriveRestoreSource(t *testing.T, env map[string]string) map[string]string 
 
 func TestSetupGoDeriveRestoreSource(t *testing.T) {
 	cases := []struct {
-		name          string
-		env           map[string]string
-		wantSource    string
-		wantDepMatch  string
-		wantMatchedOK bool
+		name         string
+		env          map[string]string
+		wantSource   string
+		wantDepMatch string
 	}{
 		{
-			name:          "cold miss",
-			env:           map[string]string{"MATCHED_KEY": ""},
-			wantSource:    "none",
-			wantDepMatch:  "false",
-			wantMatchedOK: true,
+			name:         "cold miss",
+			env:          map[string]string{"MATCHED_KEY": ""},
+			wantSource:   "none",
+			wantDepMatch: "false",
 		},
 		{
-			name:          "exact hit",
-			env:           map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("main")},
-			wantSource:    "exact",
-			wantDepMatch:  "true",
-			wantMatchedOK: true,
+			name:         "exact hit",
+			env:          map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("main")},
+			wantSource:   "exact",
+			wantDepMatch: "true",
 		},
 		{
-			name:          "default-branch fallback restore",
-			env:           map[string]string{"MATCHED_KEY": matchedKeyFixture("main")},
-			wantSource:    "default",
-			wantDepMatch:  "true",
-			wantMatchedOK: true,
+			name:         "default-branch fallback restore",
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("main")},
+			wantSource:   "default",
+			wantDepMatch: "true",
 		},
 		{
-			name:          "same-branch restore",
-			env:           map[string]string{"MATCHED_KEY": matchedKeyFixture("eliottness/appsec-disable-features")},
-			wantSource:    "branch",
-			wantDepMatch:  "true",
-			wantMatchedOK: true,
+			name:         "same-branch restore",
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("eliottness/appsec-disable-features")},
+			wantSource:   "branch",
+			wantDepMatch: "true",
 		},
 		{
 			name: "dependency hash differs",
@@ -91,23 +86,20 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 				"DEP_HASH":    "0000000000000000000000000000000000000000000000000000000000000000",
 				"MATCHED_KEY": matchedKeyFixture("main"),
 			},
-			wantSource:    "default",
-			wantDepMatch:  "false",
-			wantMatchedOK: true,
+			wantSource:   "default",
+			wantDepMatch: "false",
 		},
 		{
-			name:          "non-default repository branch",
-			env:           map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("develop")},
-			wantSource:    "default",
-			wantDepMatch:  "true",
-			wantMatchedOK: true,
+			name:         "non-default repository branch",
+			env:          map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("develop")},
+			wantSource:   "default",
+			wantDepMatch: "true",
 		},
 		{
-			name:          "unparseable matched key stays a branch restore",
-			env:           map[string]string{"MATCHED_KEY": "go-cache-Linux-X64-legacy-layout"},
-			wantSource:    "branch",
-			wantDepMatch:  "false",
-			wantMatchedOK: false,
+			name:         "unparseable matched key stays a branch restore",
+			env:          map[string]string{"MATCHED_KEY": "go-cache-Linux-X64-legacy-layout"},
+			wantSource:   "branch",
+			wantDepMatch: "false",
 		},
 	}
 	for _, tc := range cases {
