@@ -68,6 +68,14 @@ jobs:
           variant: |-
             {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
+          # Seed set: the multi-OS keys whose entries the 10 GB pool holds
+          # durably. Sized from the Step 0 pool snapshot (2026-10-13): no
+          # multi-OS entry existed on main, so each key was assumed at
+          # 2.5 GiB compressed; two keys fit the 6.5 GiB seed budget, a
+          # third would reach 7.5 GiB. Nightly schedules and default-branch
+          # dispatches save these keys; every other run of them, including
+          # all PR and merge-queue runs, restores only.
+          seed: ${{ contains(fromJSON('["windows-latest/1.27","macos-latest/1.27"]'), format('{0}/{1}', inputs.runs-on, inputs.go-version)) }}
 
       - name: Restore and install development tools
         id: tools

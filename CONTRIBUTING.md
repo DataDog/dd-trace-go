@@ -76,6 +76,27 @@ Our CI pipeline includes several automated checks:
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
 
+#### Go Cache Seeding Policy
+
+- The repository's shared 10 GB Actions cache pool cannot hold a per-run
+  entry for every job, so only seeding runs save Go build/module caches. A
+  seeding run is a seed-set key (the `seed` input of
+  `.github/actions/setup-go`) on the nightly schedule, or a
+  `workflow_dispatch` of `main-branch-tests.yml` on `main` — the manual
+  path re-seeds after a Go patch release changes every cache key. Every
+  other event — pull requests, the merge queue, releases, pushes —
+  restores only.
+- The seed set is bounded by a 6.5 GiB compressed budget, measured from the
+  cache API and watched by the `ci.cache.pool.*` gauges. It currently
+  covers the Windows and macOS multi-OS unit-test keys on the newest Go
+  version (see `multios-unit-tests.yml`).
+- Light jobs that compile almost nothing (the static checks, the
+  orchestrion and otelc matrix computations) run with `cache: "false"`:
+  they never read the Go caches and never write to the pool. Their
+  `cache-provider` label stays, so the observation record keeps its
+  provider dimension and a rollback is setting `cache` back to `"true"`. The tools
+  cache (`tools-cache` action) and the AppSec module cache are unaffected.
+
 #### Generate Workflow
 
 - **Code Generation**: Ensures all generated code is current and consistent
