@@ -44,7 +44,9 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
      and finish listeners both call `Run` on it, and the operation's `Finish` closes it. See
      `ProtectRoundTrip` in `instrumentation/appsec/emitter/httpsec/roundtripper.go`.
 5. For a new RASP rule type, register its `remoteconfig.ASMRASP*` capability in `enableRASP`
-   (`remoteconfig.go`).
+   (`remoteconfig.go`), behind the same availability check as its emitter. For example, LFI and CMDi
+   are registered only when `orchestrion.Enabled()`, so Remote Config never sees a capability the
+   tracer cannot provide.
 6. Update the feature table and operation stack in [README.md](./README.md).
 
 ## Conventions
@@ -71,8 +73,9 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
 
 - Non-stdlib imports in operation arg/result types. They create import cycles.
 - Discarding a `WAFManager` without `Close()`. Only `Close()` releases the native builder and cancels
-  the GC cleanup. `Reset()` only restores the default rules on a manager that will be reused, as in
-  `appsec.stop()`, which keeps the manager in case Remote Config activates AppSec again.
+  the GC cleanup. `Reset()` only restores the default rules on a manager that will be reused. That
+  happens on Remote Config deactivation: `handleASMFeatures` calls `appsec.stop()` and keeps the
+  instance in case AppSec is activated again.
 - WAF telemetry assertions without `testutils.StartTelemetryRecorder` before AppSec starts.
 
 ## Testing
@@ -87,11 +90,13 @@ DD_APPSEC_ENABLED=false go test ./internal/appsec/...
 go test -tags datadog.no_waf ./internal/appsec/...
 ```
 
-CI: `.github/workflows/appsec.yml` is path-filtered and has three test jobs:
+CI: `.github/workflows/appsec.yml` is path-filtered and has four test jobs:
 - `macos`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` x `GOEXPERIMENT` (default and `cgocheck2`).
 - `golang-linux-container`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` on Debian and Alpine images, on amd64
   and arm64. It does not run `cgocheck2`.
 - `disabled`: `DD_APPSEC_ENABLED` x `-tags datadog.no_waf` on Linux, macOS, and Windows.
+- `test-app-smoke-tests`: runs the smoke-test workflow of `DataDog/appsec-go-test-app` end to end
+  against the PR head. It is skipped on fork PRs.
 
 `internal/**` is the `core` component of `.github/ci-components.yml`, which runs every gate. GitLab
 micro benchmarks run `./internal/appsec/...`.
