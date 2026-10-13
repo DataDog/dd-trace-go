@@ -6,6 +6,7 @@
 package log
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"os"
@@ -59,10 +60,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
-	if _, ok := otelAttrs["deployment.environment.name"]; !ok {
-		if value, ok := otelAttrs["deployment.environment"]; ok {
-			otelAttrs["deployment.environment.name"] = value
-		}
+	if v := cmp.Or(otelAttrs["deployment.environment.name"], otelAttrs["deployment.environment"]); v != "" {
+		otelAttrs["deployment.environment.name"] = v
 	}
 	delete(otelAttrs, "deployment.environment")
 

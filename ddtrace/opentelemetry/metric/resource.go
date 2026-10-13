@@ -67,6 +67,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+	//    → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 	envName := environmentName(ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))

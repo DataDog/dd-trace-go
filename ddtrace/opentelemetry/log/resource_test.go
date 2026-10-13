@@ -97,6 +97,15 @@ func TestBuildResource(t *testing.T) {
 			assert.NotEqual(t, attribute.Key("deployment.environment"), attr.Key)
 		}
 	})
+
+	t.Run("empty stable environment falls back to deprecated name", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=,deployment.environment=production")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.DeploymentEnvironmentNameKey, "production")
+	})
 }
 
 func TestPrecedence(t *testing.T) {

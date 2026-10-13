@@ -1604,12 +1604,16 @@ func TestEnvConfig(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing")
-		assert := assert.New(t)
-		c, err := newTestConfig()
-		assert.NoError(err)
+		for _, key := range []string{"deployment.environment.name", "deployment.environment"} {
+			t.Run(key, func(t *testing.T) {
+				t.Setenv("OTEL_RESOURCE_ATTRIBUTES", key+"=testing")
+				assert := assert.New(t)
+				c, err := newTestConfig()
+				assert.NoError(err)
 
-		assert.Equal("testing", c.internalConfig.Env())
+				assert.Equal("testing", c.internalConfig.Env())
+			})
+		}
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
