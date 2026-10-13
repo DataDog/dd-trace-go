@@ -28,13 +28,17 @@ type featureBuilder struct {
 	new  listener.NewFeature
 	// required features are needed by every other feature and cannot be disabled.
 	required bool
+	// addresses are removed from the WAF supported addresses when the feature is disabled. They are only needed for
+	// features whose data can reach the WAF without going through their listener, such as HTTP bodies, HTTP route
+	// parameters and gRPC messages.
+	addresses []string
 }
 
 var features = []featureBuilder{
 	{name: listener.FeatureTrace, new: trace.NewAppsecSpanTransport, required: true},
 	{name: listener.FeatureWAF, new: waf.NewWAFFeature, required: true},
-	{name: listener.FeatureHTTP, new: httpsec.NewHTTPSecFeature},
-	{name: listener.FeatureGRPC, new: grpcsec.NewGRPCSecFeature},
+	{name: listener.FeatureHTTP, new: httpsec.NewHTTPSecFeature, addresses: httpsec.Addresses},
+	{name: listener.FeatureGRPC, new: grpcsec.NewGRPCSecFeature, addresses: grpcsec.Addresses},
 	{name: listener.FeatureGraphQL, new: graphqlsec.NewGraphQLSecFeature},
 	{name: listener.FeatureUser, new: usersec.NewUserSecFeature},
 	{name: listener.FeatureSQLi, new: sqlsec.NewSQLSecFeature},
@@ -43,10 +47,12 @@ var features = []featureBuilder{
 	{name: listener.FeatureSSRF, new: httpsec.NewSSRFProtectionFeature},
 }
 
-// enabledFeatures returns the constructors of the features not disabled through [config.EnvDisableFeatures]. Names
-// that do not match any feature, or that match a required feature, are logged and ignored.
-func enabledFeatures(disabled map[string]struct{}) []listener.NewFeature {
-	enabled := make([]listener.NewFeature, 0, len(features))
+// enabledFeatures returns the constructors of the features not disabled through [config.EnvDisableFeatures], along
+// with the WAF addresses of the disabled features. Names that do not match any feature, or that match a required
+// feature, are logged and ignored.
+func enabledFeatures(disabled map[string]struct{}) (enabled []listener.NewFeature, disabledAddrs config.AddressSet) {
+	enabled = make([]listener.NewFeature, 0, len(features))
+	disabledAddrs = make(config.AddressSet)
 	known := make(map[string]struct{}, len(features))
 	for _, f := range features {
 		known[f.name] = struct{}{}
@@ -60,13 +66,16 @@ func enabledFeatures(disabled map[string]struct{}) []listener.NewFeature {
 			continue
 		}
 		log.Info("appsec: feature %q disabled by %s", f.name, config.EnvDisableFeatures)
+		for _, addr := range f.addresses {
+			disabledAddrs[addr] = struct{}{}
+		}
 	}
 	for name := range disabled {
 		if _, ok := known[name]; !ok {
 			log.Warn("appsec: %s: ignoring unknown feature %q", config.EnvDisableFeatures, name)
 		}
 	}
-	return enabled
+	return enabled, disabledAddrs
 }
 
 func (a *appsec) SwapRootOperation() error {

@@ -167,9 +167,11 @@ type appsec struct {
 }
 
 func newAppSec(cfg *config.Config) *appsec {
+	builders, disabledAddrs := enabledFeatures(cfg.DisabledFeatures)
+	cfg.DisabledAddresses = disabledAddrs
 	return &appsec{
 		cfg:             cfg,
-		featureBuilders: enabledFeatures(cfg.DisabledFeatures),
+		featureBuilders: builders,
 	}
 }
 

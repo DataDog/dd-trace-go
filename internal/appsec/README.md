@@ -215,7 +215,9 @@ the `listener` package and returned by the feature's `String()` method):
 
 `DD_APPSEC_DISABLE_FEATURES` takes a comma-separated list of feature names (case-insensitive) that must not be
 started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. The `waf` and `trace` features are required by every other
-feature and cannot be disabled. Unknown names are ignored with a warning log.
+feature and cannot be disabled. Unknown names are ignored with a warning log. Because HTTP bodies, HTTP route parameters
+and gRPC messages reach the WAF context without going through the `http` and `grpc` listeners, disabling those features
+also removes their WAF addresses from the supported addresses, so the WAF never evaluates them.
 
 ### AppSec state checks
 

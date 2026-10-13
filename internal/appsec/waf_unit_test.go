@@ -248,4 +248,11 @@ func TestDisableFeatures(t *testing.T) {
 	require.Contains(t, names, listener.FeatureTrace)
 	require.Contains(t, names, listener.FeatureWAF)
 	require.Contains(t, names, listener.FeatureGraphQL)
+
+	// The addresses of the disabled features must not be evaluated by the WAF, as some of them (e.g. HTTP body, gRPC
+	// messages) reach the WAF context without going through the feature listener.
+	require.NotContains(t, a.cfg.SupportedAddresses, addresses.ServerRequestBodyAddr)
+	require.NotContains(t, a.cfg.SupportedAddresses, addresses.GRPCServerRequestMessageAddr)
+	// The client IP address is shared by HTTP and gRPC and stays supported.
+	require.Contains(t, a.cfg.SupportedAddresses, addresses.ClientIPAddr)
 }

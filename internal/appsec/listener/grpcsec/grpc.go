@@ -18,6 +18,18 @@ import (
 
 type Feature struct{}
 
+// Addresses are the WAF addresses specific to the gRPC feature. [addresses.ClientIPAddr] is not listed because it is
+// shared with the HTTP feature.
+var Addresses = []string{
+	addresses.GRPCServerMethodAddr,
+	addresses.GRPCServerRequestMessageAddr,
+	addresses.GRPCServerRequestMetadataAddr,
+	addresses.GRPCServerResponseMessageAddr,
+	addresses.GRPCServerResponseMetadataHeadersAddr,
+	addresses.GRPCServerResponseMetadataTrailersAddr,
+	addresses.GRPCServerResponseStatusCodeAddr,
+}
+
 func (*Feature) String() string {
 	return listener.FeatureGRPC
 }
@@ -25,15 +37,7 @@ func (*Feature) String() string {
 func (*Feature) Stop() {}
 
 func NewGRPCSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
-	if !config.SupportedAddresses.AnyOf(
-		addresses.ClientIPAddr,
-		addresses.GRPCServerMethodAddr,
-		addresses.GRPCServerRequestMessageAddr,
-		addresses.GRPCServerRequestMetadataAddr,
-		addresses.GRPCServerResponseMessageAddr,
-		addresses.GRPCServerResponseMetadataHeadersAddr,
-		addresses.GRPCServerResponseMetadataTrailersAddr,
-		addresses.GRPCServerResponseStatusCodeAddr) {
+	if !config.SupportedAddresses.AnyOf(addresses.ClientIPAddr) && !config.SupportedAddresses.AnyOf(Addresses...) {
 		return nil, nil
 	}
 
