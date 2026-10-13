@@ -543,6 +543,101 @@ func TestPartialFlush(t *testing.T) {
 
 }
 
+// TestOTLPExportMarkerOnChunks verifies that OTLP export omits the native export
+// marker from chunk-leading spans. Native v0.4 and v1.0 wire behavior is covered
+// by TestOTLPExportMarkerAgentPOV.
+func TestOTLPExportMarkerOnChunks(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	for _, tc := range []struct {
+		name string
+		otlp bool
+		want bool
+	}{
+		{name: "native", want: true},
+		{name: "otlp", otlp: true, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			require.NoError(t, err)
+			defer stop()
+			tracer.otlpExportMode = tc.otlp
+
+			// child0 and child1 are partially flushed as one chunk; root and
+			// child2 follow as a second chunk.
+			root := tracer.StartSpan("root")
+			for i := range 3 {
+				tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())).Finish()
+			}
+			root.Finish()
+			flush(2)
+
+			chunks := transport.Traces()
+			require.Len(t, chunks, 2)
+			for i, chunk := range chunks {
+				require.Len(t, chunk, 2)
+				v, ok := chunk[0].meta.Get(keySDKOTLPExport)
+				assert.Equal(t, tc.want, ok, "chunk %d first span", i)
+				if tc.want {
+					assert.Equal(t, "false", v)
+				}
+				assert.False(t, chunk[1].meta.Has(keySDKOTLPExport), "chunk %d second span", i)
+			}
+		})
+	}
+}
+
+// TestOTLPExportMarkerAgentPOV verifies the native export marker as the agent
+// receives it over HTTP: on the first span of each chunk for v0.4 and v1.0, and
+// additionally as a payload-level attribute of every v1.0 request.
+func TestOTLPExportMarkerAgentPOV(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	for _, protocol := range testTraceProtocols {
+		t.Run(protocol.name, func(t *testing.T) {
+			agent := startTestAgent(t)
+			tr := newAgentTracerTest(t, agent, protocol)
+			defer stopTracerTest(tr)
+
+			// child0 and child1 are partially flushed as one chunk; root and
+			// child2 follow as a second chunk.
+			root := tr.StartSpan("root")
+			for i := range 3 {
+				tr.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())).Finish()
+			}
+			root.Finish()
+			flushAgentTracerTest(t, tr, agent, 4)
+			requireProtocolRequests(t, agent.Requests(), protocol)
+
+			// Only the chunk-leading spans carry the marker: child0 leads the
+			// partially flushed chunk, root leads the final one.
+			spans := agent.Spans()
+			require.Len(t, spans, 4)
+			for _, s := range spans {
+				v, ok := s.meta.Get(keySDKOTLPExport)
+				want := s.name == "child0" || s.name == "root"
+				assert.Equal(t, want, ok, s.name)
+				if want {
+					assert.Equal(t, "false", v, s.name)
+				}
+			}
+
+			attrs := agent.PayloadAttributes()
+			if protocol.path != tracesAPIPathV1 {
+				assert.Empty(t, attrs)
+				return
+			}
+			require.Len(t, attrs, len(agent.Requests()))
+			for i, a := range attrs {
+				require.Contains(t, a, keySDKOTLPExport, "request %d", i)
+				assert.Equal(t, "false", a[keySDKOTLPExport].value, "request %d", i)
+			}
+		})
+	}
+}
+
 func TestSpanTracePushNoFinish(t *testing.T) {
 	defer setupteardown(2, 5)()
 
