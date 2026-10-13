@@ -26,13 +26,23 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
 
 ## Adding a feature
 
-1. Define the operation in `instrumentation/appsec/emitter/<domain>/`. Arg and result types use the
-   standard library only, because the instrumented package imports them.
-2. Add `listener/<domain>/` with `NewXFeature(cfg, rootOp)`. Return `nil, nil` unless
-   `cfg.SupportedAddresses.AnyOf(...)` matches, and also unless `cfg.RASP` for RASP features.
+1. Define the operation where its emitters live. If contrib or other instrumentation emits it, put it
+   in `instrumentation/appsec/emitter/<domain>/`. If only the public `appsec/` SDK emits it, put it in
+   `internal/appsec/emitter/<domain>/` (like `usersec`), so that it does not become supported API.
+   Arg and result types use the standard library only, because the instrumented package imports them.
+2. Add `listener/<domain>/` with `NewXFeature(cfg, rootOp)`. Return `nil, nil` only when the feature
+   would do nothing. A WAF-backed feature checks `cfg.SupportedAddresses.AnyOf(...)`, and RASP
+   features also check `cfg.RASP`. A feature with non-WAF behavior activates anyway:
+   `trace.NewAppsecSpanTransport` always activates, and `httpsec.NewHTTPSecFeature` falls back to
+   `HeaderExtractionFeature` when no HTTP address is supported.
 3. Append the constructor to `features` in `features.go`.
-4. In the listener, get the WAF context with `waf.ContextOperationFromParents(op)`. For a RASP or
-   one-shot evaluation, call `NewSubcontextOp()` and then `Run`, and `defer subOp.Close()`.
+4. In the listener, get the WAF context with `waf.ContextOperationFromParents(op)`.
+   - One-shot evaluation (SQLi, LFI, CMDi): the listener calls `NewSubcontextOp()` and then `Run`,
+     and defers `subOp.Close()`. See `listener/sqlsec`.
+   - Multi-stage evaluation (SSRF covers both the request and the response): the subcontext belongs
+     to the operation. The emitter creates it before starting the operation and embeds it, the start
+     and finish listeners both call `Run` on it, and the operation's `Finish` closes it. See
+     `ProtectRoundTrip` in `instrumentation/appsec/emitter/httpsec/roundtripper.go`.
 5. For a new RASP rule type, register its `remoteconfig.ASMRASP*` capability in `enableRASP`
    (`remoteconfig.go`).
 6. Update the feature table and operation stack in [README.md](./README.md).
@@ -47,15 +57,22 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
   telemetry logs, so that APM-only users never see AppSec errors.
 - Log messages are constant and prefixed `appsec:`. Errors sent to telemetry are wrapped with
   `telemetrylog.NewSafeError`.
-- An emitter with no parent operation (`dyngo.FromContext` fails) logs once at debug level and
-  returns. See `badInputContextOnce` in `emitter/sqlsec`.
+- No parent operation (`dyngo.FromContext` or `FindOperation` fails):
+  - Helper emitters that evaluate and return only an error log once at debug level and return nil.
+    Examples are `sqlsec.ProtectSQLOperation` and `httpsec.ProtectRoundTrip`.
+  - Emitters that hand an operation back to the caller still return a usable operation with a nil
+    parent, so the caller's Start/Finish pairing holds. `graphqlsec.Start{Execution,Resolve}Operation`
+    log at debug level. `usersec.StartUserLoginOperation` logs an error once, because the user called
+    the SDK explicitly.
 - The only build-tag split here is `cgo`/`!cgo` (`telemetry_*.go`). `datadog.no_waf` is a
   go-libddwaf tag that compiles the WAF out, making `Usable()` false.
 
 ## Anti-patterns
 
 - Non-stdlib imports in operation arg/result types. They create import cycles.
-- A `WAFManager` that is never closed. Call `Close`/`Reset`; GC cleanup is only a leak fallback.
+- Discarding a `WAFManager` without `Close()`. Only `Close()` releases the native builder and cancels
+  the GC cleanup. `Reset()` only restores the default rules on a manager that will be reused, as in
+  `appsec.stop()`, which keeps the manager in case Remote Config activates AppSec again.
 - WAF telemetry assertions without `testutils.StartTelemetryRecorder` before AppSec starts.
 
 ## Testing
@@ -70,9 +87,14 @@ DD_APPSEC_ENABLED=false go test ./internal/appsec/...
 go test -tags datadog.no_waf ./internal/appsec/...
 ```
 
-CI: `.github/workflows/appsec.yml` (path-filtered) runs cgo x `DD_APPSEC_ENABLED` x `cgocheck2` on
-macOS, Linux containers, and a `datadog.no_waf` job; `internal/**` is the `core` component of
-`.github/ci-components.yml` (every gate). GitLab micro benchmarks run `./internal/appsec/...`.
+CI: `.github/workflows/appsec.yml` is path-filtered and has three test jobs:
+- `macos`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` x `GOEXPERIMENT` (default and `cgocheck2`).
+- `golang-linux-container`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` on Debian and Alpine images, on amd64
+  and arm64. It does not run `cgocheck2`.
+- `disabled`: `DD_APPSEC_ENABLED` x `-tags datadog.no_waf` on Linux, macOS, and Windows.
+
+`internal/**` is the `core` component of `.github/ci-components.yml`, which runs every gate. GitLab
+micro benchmarks run `./internal/appsec/...`.
 
 ## Updating Documentation
 
