@@ -31,6 +31,10 @@ const (
 	// OTel environment variable names
 	envOtelServiceName        = "OTEL_SERVICE_NAME"
 	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// OTel resource attribute keys
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = string(semconv.DeploymentEnvironmentNameKey)
 )
 
 // buildDatadogResource creates an OpenTelemetry resource with Datadog-specific attributes.
@@ -99,18 +103,18 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// metric.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
-	if _, ok := otelAttrs["deployment.environment"]; ok {
-		attrs = append(attrs, attribute.String("deployment.environment", envName))
+	if _, ok := otelAttrs[deploymentEnvironmentKey]; ok {
+		attrs = append(attrs, attribute.String(deploymentEnvironmentKey, envName))
 	}
 
 	// 6. Add OTEL_RESOURCE_ATTRIBUTES (excluding reserved keys AND keys already set by DD_TAGS)
 	// DD_TAGS has higher priority than OTEL_RESOURCE_ATTRIBUTES for custom tags
 	excludeKeys := map[string]bool{
-		"service.name":                true,
-		"deployment.environment":      true,
-		"deployment.environment.name": true,
-		"service.version":             true,
-		"host.name":                   true,
+		"service.name":               true,
+		deploymentEnvironmentKey:     true,
+		deploymentEnvironmentNameKey: true,
+		"service.version":            true,
+		"host.name":                  true,
 	}
 	for key, val := range otelAttrs {
 		if excludeKeys[key] {
@@ -163,10 +167,10 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 	if v, ok := ddTags["env"]; ok && v != "" {
 		return v
 	}
-	if v, ok := otelAttrs["deployment.environment.name"]; ok && v != "" {
+	if v, ok := otelAttrs[deploymentEnvironmentNameKey]; ok && v != "" {
 		return v
 	}
-	if v, ok := otelAttrs["deployment.environment"]; ok && v != "" {
+	if v, ok := otelAttrs[deploymentEnvironmentKey]; ok && v != "" {
 		return v
 	}
 	return ""

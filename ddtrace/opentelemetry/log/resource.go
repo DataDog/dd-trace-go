@@ -33,6 +33,10 @@ const (
 	// OTel environment variable names
 	envOtelServiceName        = "OTEL_SERVICE_NAME"
 	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// OTel resource attribute keys
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = string(semconv.DeploymentEnvironmentNameKey)
 )
 
 // buildResource creates an OpenTelemetry resource for logs with Datadog-specific attributes.
@@ -60,8 +64,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
-	if v := cmp.Or(otelAttrs["deployment.environment.name"], otelAttrs["deployment.environment"]); v != "" {
-		otelAttrs["deployment.environment.name"] = v
+	if v := cmp.Or(otelAttrs[deploymentEnvironmentNameKey], otelAttrs[deploymentEnvironmentKey]); v != "" {
+		otelAttrs[deploymentEnvironmentNameKey] = v
 	}
 
 	// Step 2: Parse DD_TAGS
@@ -87,7 +91,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 
 	// Overlay DD_ENV → deployment.environment.name
 	if ddEnv := env.Get(envDDEnv); ddEnv != "" {
-		attrs["deployment.environment.name"] = ddEnv
+		attrs[deploymentEnvironmentNameKey] = ddEnv
 	}
 
 	// Overlay DD_VERSION → service.version
@@ -99,8 +103,8 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	maps.Copy(attrs, ddTags)
 
 	// sdklog.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
-	if _, ok := otelAttrs["deployment.environment"]; ok {
-		attrs["deployment.environment"] = attrs["deployment.environment.name"]
+	if _, ok := otelAttrs[deploymentEnvironmentKey]; ok {
+		attrs[deploymentEnvironmentKey] = attrs[deploymentEnvironmentNameKey]
 	}
 
 	// Step 4: Handle hostname with special rules
@@ -120,7 +124,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 		switch k {
 		case "service.name":
 			keyValues = append(keyValues, semconv.ServiceName(v))
-		case "deployment.environment.name":
+		case deploymentEnvironmentNameKey:
 			keyValues = append(keyValues, semconv.DeploymentEnvironmentNameKey.String(v))
 		case "service.version":
 			keyValues = append(keyValues, semconv.ServiceVersion(v))

@@ -19,6 +19,9 @@ import (
 const (
 	ddPrefix   = "config_datadog:"
 	otelPrefix = "config_opentelemetry:"
+
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = "deployment.environment.name"
 )
 
 type otelEnvConfigSource struct{}
@@ -204,10 +207,10 @@ func mapDDTags(ot string) (string, error) {
 	var stableEnv, legacyEnv string
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
 		switch key {
-		case "deployment.environment.name":
+		case deploymentEnvironmentNameKey:
 			stableEnv = val
 			return
-		case "deployment.environment":
+		case deploymentEnvironmentKey:
 			legacyEnv = val
 			return
 		}
