@@ -260,6 +260,15 @@ func TestResolveHeaders(t *testing.T) {
 			"generic": "value",
 		}, headers)
 	})
+
+	t.Run("falls back to generic when OTEL_EXPORTER_OTLP_LOGS_HEADERS has only invalid header names", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "bad key=value")
+		headers := resolveHeaders()
+		assert.Equal(t, map[string]string{
+			"generic": "value",
+		}, headers)
+	})
 }
 
 func TestParseHeaders(t *testing.T) {
@@ -307,6 +316,13 @@ func TestParseHeaders(t *testing.T) {
 
 	t.Run("ignores entries with empty key", func(t *testing.T) {
 		headers := parseHeaders("=value,key=value2")
+		assert.Equal(t, map[string]string{
+			"key": "value2",
+		}, headers)
+	})
+
+	t.Run("ignores entries with invalid header names", func(t *testing.T) {
+		headers := parseHeaders("bad key=value,bad:key=value,key=value2")
 		assert.Equal(t, map[string]string{
 			"key": "value2",
 		}, headers)

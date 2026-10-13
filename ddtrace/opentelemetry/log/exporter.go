@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"golang.org/x/net/http/httpguts"
 )
 
 const (
@@ -392,7 +393,8 @@ func resolveHeaders() map[string]string {
 }
 
 // parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed and values are percent-decoded; invalid entries are ignored.
+// Spaces are trimmed and values are percent-decoded; invalid entries, including
+// keys that are not valid HTTP header names, are ignored.
 func parseHeaders(str string) map[string]string {
 	headers := make(map[string]string)
 	for entry := range strings.SplitSeq(str, ",") {
@@ -410,7 +412,7 @@ func parseHeaders(str string) map[string]string {
 		if err != nil {
 			continue
 		}
-		if key != "" {
+		if httpguts.ValidHeaderFieldName(key) {
 			headers[key] = val
 		}
 	}
