@@ -265,6 +265,17 @@ func TestLogPropagators(t *testing.T) {
 		log := setup(t, nil)
 		assert.Regexp(substring, log)
 	})
+	t.Run("otel-propagators", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "tracecontext")
+		log := setup(t, nil)
+		assert.Contains(t, log, `"OTEL_PROPAGATORS":"tracecontext"`)
+	})
+	t.Run("otel-propagators-extract-ignored", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "tracecontext")
+		t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "ignore")
+		log := setup(t, nil)
+		assert.NotContains(t, log, `"OTEL_PROPAGATORS"`)
+	})
 	t.Run("custom-propagator", func(t *testing.T) {
 		assert := assert.New(t)
 		substring := `"propagation_style_inject":"custom","propagation_style_extract":"custom"`

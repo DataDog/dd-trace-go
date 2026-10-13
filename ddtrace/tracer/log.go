@@ -304,7 +304,8 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 
 // otelPropagators returns the OTEL_PROPAGATORS equivalent of p. It returns ""
 // when p is custom or when injection and extraction use different sequences,
-// since no single OTEL_PROPAGATORS value describes them.
+// including when extraction is ignored, since no single OTEL_PROPAGATORS value
+// describes them.
 func otelPropagators(p Propagator) string {
 	cp, ok := p.(*chainedPropagator)
 	if !ok {
@@ -318,7 +319,7 @@ func otelPropagators(p Propagator) string {
 		return ""
 	}
 	inject, extract := otelPropagatorNames(cp.injectorNames), otelPropagatorNames(cp.extractorsNames)
-	if inject != extract {
+	if inject != extract || cp.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
 		return ""
 	}
 	return inject
