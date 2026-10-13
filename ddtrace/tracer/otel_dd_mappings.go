@@ -106,13 +106,13 @@ func getDDorOtelConfig(configName string) string {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
-			log.Warn("Both %q and %q are set, using %s=%s", config.ot, config.dd, config.dd, val)
+			log.Warn("Both %q and %q are set, using %s=%s", config.ot, config.dd, config.dd, val) //errtrack:ignore conflicting user configuration
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn("%s", err.Error())
+				log.Warn("%s", err.Error()) //errtrack:ignore invalid user configuration
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
@@ -151,7 +151,10 @@ func mapDDTags(ot string) (string, error) {
 	})
 
 	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
+		log.Warn(
+			//errtrack:ignore user configuration exceeds a documented limit
+			"The following resource attributes have been dropped: %s. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10],
+		) //nolint:gocritic // Slice logging for debugging
 		ddTags = ddTags[:10]
 	}
 
@@ -191,7 +194,7 @@ func otelTraceIDRatio() string {
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
-		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%s. %s will be used", ot, v)
+		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%s. %s will be used", ot, v) //errtrack:ignore unsupported user configuration
 		ot = v
 	}
 
@@ -215,7 +218,7 @@ func mapPropagationStyle(ot string) (string, error) {
 		if _, ok := propagationMapping[otStyle]; ok {
 			supportedStyles = append(supportedStyles, propagationMapping[otStyle])
 		} else {
-			log.Warn("Invalid configuration: %q is not supported. This propagation style will be ignored.", otStyle)
+			log.Warn("Invalid configuration: %q is not supported. This propagation style will be ignored.", otStyle) //errtrack:ignore invalid user configuration
 		}
 	}
 	return strings.Join(supportedStyles, ","), nil

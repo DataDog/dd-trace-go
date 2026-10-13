@@ -680,7 +680,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	for _, f := range pbUpdate.TargetFiles {
 		path, valid := ParsePath(f.Path)
 		if !valid {
-			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path)
+			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path) //errtrack:ignore reported by ReportError below
+			telemetrylog.ReportError("remoteconfig: invalid target file path", nil)
 			continue
 		}
 
