@@ -9,6 +9,7 @@ import (
 	"context"
 	"maps"
 	"os"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -29,6 +30,7 @@ const (
 	envDDTraceReportHostname = "DD_TRACE_REPORT_HOSTNAME"
 
 	// OTel environment variable names
+	envOtelServiceName        = "OTEL_SERVICE_NAME"
 	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
 )
 
@@ -37,7 +39,8 @@ const (
 // Precedence rule (critical): Datadog settings win over OTEL_RESOURCE_ATTRIBUTES
 // Implementation:
 // 1. Parse OTEL_RESOURCE_ATTRIBUTES into a map first (base layer)
-// 2. Overlay Datadog-derived attributes on top (overwrite conflicts):
+// 2. Overlay OTEL_SERVICE_NAME → service.name (wins over OTEL_RESOURCE_ATTRIBUTES per the OTel spec)
+// 3. Overlay Datadog-derived attributes on top (overwrite conflicts):
 //   - DD_SERVICE → service.name
 //   - DD_ENV → deployment.environment
 //   - DD_VERSION → service.version
@@ -67,6 +70,11 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	// Start with OTEL attributes as base
 	attrs := make(map[string]string)
 	maps.Copy(attrs, otelAttrs)
+
+	// Overlay OTEL_SERVICE_NAME → service.name, trimmed like the OTel SDK's env detector.
+	if otelService := strings.TrimSpace(env.Get(envOtelServiceName)); otelService != "" {
+		attrs["service.name"] = otelService
+	}
 
 	// Overlay DD_SERVICE → service.name
 	if ddService := env.Get(envDDService); ddService != "" {
