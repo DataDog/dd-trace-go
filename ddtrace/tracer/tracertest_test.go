@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,6 +37,9 @@ type testAgent struct {
 	requests   []string
 	firstBytes []byte
 	headers    []http.Header
+	// payloadAttrs holds the payload-level attributes of each recorded v1.0
+	// request, which the agent reads before falling back to span meta.
+	payloadAttrs []map[string]anyValue
 	// infoBody, when set via SetInfo, overrides the default /info response —
 	// allowing a test to change what the agent advertises between polls.
 	infoBody atomic.Pointer[string]
@@ -118,6 +122,16 @@ func (a *testAgent) RequestHeaders() []http.Header {
 	return cp
 }
 
+// PayloadAttributes returns a snapshot copy of the payload-level attributes
+// of each recorded v1.0 request.
+func (a *testAgent) PayloadAttributes() []map[string]anyValue {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := make([]map[string]anyValue, len(a.payloadAttrs))
+	copy(cp, a.payloadAttrs)
+	return cp
+}
+
 // Reset clears all received spans and request records.
 func (a *testAgent) Reset() {
 	a.mu.Lock()
@@ -125,6 +139,7 @@ func (a *testAgent) Reset() {
 	a.requests = a.requests[:0]
 	a.firstBytes = a.firstBytes[:0]
 	a.headers = a.headers[:0]
+	a.payloadAttrs = a.payloadAttrs[:0]
 	a.mu.Unlock()
 }
 
@@ -143,13 +158,17 @@ func (a *testAgent) RejectV1Traces(reject bool) {
 	a.rejectV1.Store(reject)
 }
 
-func (a *testAgent) recordRequest(path string, spans []*Span, firstByte byte, header http.Header) {
+func (a *testAgent) recordRequest(path string, spans []*Span, attrs map[string]anyValue, firstByte byte, header http.Header) {
 	if len(spans) == 0 {
 		return
 	}
 	a.mu.Lock()
 	a.requests = append(a.requests, path)
 	a.spans = append(a.spans, spans...)
+	// attrs only exist for v1 fields
+	if attrs != nil {
+		a.payloadAttrs = append(a.payloadAttrs, maps.Clone(attrs))
+	}
 	a.firstBytes = append(a.firstBytes, firstByte)
 	a.headers = append(a.headers, header.Clone())
 	a.mu.Unlock()
@@ -192,7 +211,7 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans, firstByte, r.Header)
+	a.recordRequest(r.URL.Path, spans, nil, firstByte, r.Header)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
@@ -233,7 +252,7 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.recordRequest(r.URL.Path, spans, firstByte, r.Header)
+	a.recordRequest(r.URL.Path, spans, p.attributes, firstByte, r.Header)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
