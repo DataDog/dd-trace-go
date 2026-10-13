@@ -186,6 +186,26 @@
 // Errors are returned through the OpenFeature ResolutionDetail, and the default
 // value is returned when errors occur.
 //
+// # Debug Logging
+//
+// Set DD_TRACE_DEBUG=true to have the provider log, at debug level, each step
+// of its setup and every flag evaluation. This works with or without
+// tracer.Start. It covers:
+//
+//   - The selected configuration source, or that feature flagging is disabled
+//   - Each Agentless poll attempt and its outcome: the HTTP status, including
+//     304 (unchanged), or the transport error, plus any retry delay
+//   - Each configuration applied, with its flag count (and, for Agentless,
+//     the effective DD_ENV, to help spot an environment mismatch)
+//   - Initialization start and its outcome, with the failure reason
+//   - Every evaluation's flag key, value, variant, reason, allocation, and
+//     error, logged after the evaluation completes
+//
+// Credentials and the endpoint's path and query are never logged; only the
+// endpoint's scheme and host are logged. The evaluation's targeting key and
+// context attributes are never logged either. When debug logging is off, no
+// evaluation hook is registered, so it adds no per-evaluation cost.
+//
 // # Thread Safety
 //
 // The provider is fully thread-safe and can handle concurrent flag evaluations

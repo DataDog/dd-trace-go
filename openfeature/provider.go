@@ -134,18 +134,32 @@ type DatadogProvider struct {
 // attachment. If the default client is the one at fault, please call tracer.Start before
 // creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	settings := internalffe.ResolveSettings(internalconfig.Get())
+	cfg := internalconfig.Get()
+	enableDebugLogging(cfg)
+	settings := internalffe.ResolveSettings(cfg)
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
 	}
 
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
+		log.Debug("openfeature: configuration source is %s", settings.Source.String())
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
+		log.Debug("openfeature: configuration source is %s", settings.Source.String())
 		return startWithAgentless(config, settings)
 	default:
+		log.Debug("openfeature: feature flagging is disabled; flag evaluations will return their default values")
 		return &openfeature.NoopProvider{}, nil
+	}
+}
+
+// enableDebugLogging honors DD_TRACE_DEBUG for applications that create the
+// provider without calling tracer.Start, which is otherwise the only place it
+// raises the log level. It never lowers a level the tracer already set.
+func enableDebugLogging(cfg *internalconfig.Config) {
+	if cfg.Debug() && !log.DebugEnabled() {
+		log.SetLevel(log.LevelDebug)
 	}
 }
 
@@ -255,6 +269,8 @@ func newDatadogProviderWithSourceAndEVP(
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
+	} else {
+		log.Debug("openfeature: evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
@@ -265,7 +281,14 @@ func newDatadogProviderWithSourceAndEVP(
 		log.Debug("openfeature: span enrichment is disabled")
 	}
 
-	hooks := make([]openfeature.Hook, 0, 4)
+	// Registered only when debug logging is already on, so a disabled log level
+	// adds no per-evaluation hook work.
+	var debugHook *debugLoggingHook
+	if log.DebugEnabled() {
+		debugHook = newDebugLoggingHook()
+	}
+
+	hooks := make([]openfeature.Hook, 0, 5)
 	if exposureLoggingHook != nil {
 		hooks = append(hooks, exposureLoggingHook)
 	}
@@ -277,6 +300,9 @@ func newDatadogProviderWithSourceAndEVP(
 	}
 	if spanEnrichmentHook != nil {
 		hooks = append(hooks, spanEnrichmentHook)
+	}
+	if debugHook != nil {
+		hooks = append(hooks, debugHook)
 	}
 
 	p := &DatadogProvider{
@@ -323,6 +349,8 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		return p, nil
 	}
 
+	log.Debug("openfeature: starting agentless configuration source at %s (poll interval %s, request timeout %s)",
+		redactedOrigin(src.endpoint), settings.PollInterval.String(), settings.RequestTimeout.String())
 	src.start()
 	return p, nil
 }
@@ -423,7 +451,7 @@ func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error 
 // This method respects context cancellation and timeouts, allowing users
 // to cancel the initialization process if needed. A context without a
 // deadline gets DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
-func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) (err error) {
 	// The SDK's SetProviderAndWait calls this directly with context.Background(),
 	// never Init, so the timeout has to be applied here or it waits forever.
 	if _, ok := ctx.Deadline(); !ok {
@@ -431,6 +459,19 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		ctx, cancel = context.WithTimeout(ctx, internalconfig.Get().FlaggingProviderInitTimeout())
 		defer cancel()
 	}
+
+	start := time.Now()
+	if log.DebugEnabled() {
+		deadline, _ := ctx.Deadline()
+		log.Debug("openfeature: waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
+	}
+	defer func() {
+		if err != nil {
+			log.Debug("openfeature: provider failed to initialize: %s", err.Error())
+			return
+		}
+		log.Debug("openfeature: provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
+	}()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
