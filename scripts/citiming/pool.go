@@ -99,11 +99,11 @@ type poolDefaultGroup struct {
 
 // poolReport is the classified snapshot every output format renders.
 type poolReport struct {
-	collectedAt  time.Time
-	usage        cacheUsage
-	entries      []cacheEntry
-	groups       []poolGroup
-	defaultGroup []poolDefaultGroup
+	collectedAt     time.Time
+	usage           cacheUsage
+	entriesSumBytes int64
+	groups          []poolGroup
+	defaultGroup    []poolDefaultGroup
 	// oldestAccessSeconds is the age of the least recently used entry.
 	oldestAccessSeconds float64
 	// limitBytes is the storage limit when the API returned it.
@@ -270,10 +270,12 @@ func buildPoolReport(snap cacheSnapshot, at time.Time, defaultBranch string) poo
 	report := poolReport{
 		collectedAt: at,
 		usage:       snap.Usage,
-		entries:     snap.Entries,
 	}
 	if !oldestAccess.IsZero() {
 		report.oldestAccessSeconds = at.Sub(oldestAccess).Seconds()
+	}
+	for _, e := range snap.Entries {
+		report.entriesSumBytes += e.SizeInBytes
 	}
 	report.groups = make([]poolGroup, 0, len(groupSums))
 	for _, g := range groupSums {
@@ -375,7 +377,7 @@ func buildPoolPayload(r poolReport, repo string) poolPayload {
 	// listed entries can lag evictions.
 	total := r.usage.ActiveCachesSizeInBytes
 	if total == 0 {
-		total = reportEntriesSum(r)
+		total = r.entriesSumBytes
 	}
 	series = append(series, gauge(poolMetricTotal, float64(total)))
 	if r.hasLimit {
@@ -389,15 +391,6 @@ func buildPoolPayload(r poolReport, repo string) poolPayload {
 			"os.platform:"+normalizeTag(g.osPlatform)))
 	}
 	return poolPayload{Series: series}
-}
-
-// reportEntriesSum sums the listed entry sizes.
-func reportEntriesSum(r poolReport) int64 {
-	var sum int64
-	for _, e := range r.entries {
-		sum += e.SizeInBytes
-	}
-	return sum
 }
 
 // renderPoolText renders the human-readable snapshot summary.
@@ -414,7 +407,7 @@ func renderPoolText(r poolReport, repo string) string {
 	for _, g := range r.groups {
 		entries += g.entries
 	}
-	fmt.Fprintf(&b, "  listed entries: %d, summing %.2f GiB\n", entries, float64(reportEntriesSum(r))/giB)
+	fmt.Fprintf(&b, "  listed entries: %d, summing %.2f GiB\n", entries, float64(r.entriesSumBytes)/giB)
 	if r.hasLimit {
 		fmt.Fprintf(&b, "  storage limit: %.2f GiB\n", float64(r.limitBytes)/giB)
 	} else {

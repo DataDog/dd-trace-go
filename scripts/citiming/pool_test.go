@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,20 +32,8 @@ func poolEntryJSON(key, ref string, size int64, created, accessed string) string
 
 // poolCachesPage wraps entries in the list response.
 func poolCachesPage(entries ...string) string {
-	return `{"total_count":` + itoa(len(entries)) + `,"actions_caches":[` +
+	return `{"total_count":` + strconv.Itoa(len(entries)) + `,"actions_caches":[` +
 		strings.Join(entries, ",") + `]}`
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	digits := ""
-	for n > 0 {
-		digits = string(rune('0'+n%10)) + digits
-		n /= 10
-	}
-	return digits
 }
 
 func TestClassifyPoolKeyEveryKind(t *testing.T) {
