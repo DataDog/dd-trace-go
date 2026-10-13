@@ -247,7 +247,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"component": instrumentation.PackageRedisGoRedisV9,
+			"component": string(instrumentation.PackageRedisGoRedisV9),
 			"db.system": "redis",
 			"out.db":    "0",
 			"out.host":  "127.0.0.1",
@@ -274,7 +274,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"out.db":    "0",
-			"component": instrumentation.PackageRedisGoRedisV9,
+			"component": string(instrumentation.PackageRedisGoRedisV9),
 			"db.system": "redis",
 			"span.kind": "client",
 			"span.type": "redis",
@@ -298,7 +298,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"addrs":     "127.0.0.1:6379, 127.0.0.2:6379",
-			"component": instrumentation.PackageRedisGoRedisV9,
+			"component": string(instrumentation.PackageRedisGoRedisV9),
 			"db.system": "redis",
 			"span.kind": "client",
 			"span.type": "redis",
