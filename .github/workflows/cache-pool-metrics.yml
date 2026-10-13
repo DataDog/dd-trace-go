@@ -1,0 +1,95 @@
+# Hourly snapshot of the repository's shared Actions cache pool, submitted
+# as ci.cache.pool.* gauges to Datadog. The Go build-cache program uses it
+# to watch pool pressure: total bytes against the 10 GiB quota, bytes per
+# cache kind/workload/ref, the eviction horizon, and the presence and age
+# of default-branch seed entries. A snapshot in the job log doubles as
+# the record when submission is unavailable.
+name: Cache Pool Metrics
+
+on:
+  schedule:
+    # 17 past the hour: off the top of the hour, when most scheduled
+    # workflows start and the API is busiest.
+    - cron: "17 * * * *"
+  workflow_dispatch: # manually
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  pool-metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        # The pool snapshot reads the GitHub cache API and never builds Go
+        # code, so it uses the pinned installer directly with every cache
+        # disabled instead of the repository's setup-go wrapper.
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Build the pool snapshot
+        run: |
+          repo="${GITHUB_REPOSITORY}"
+          go run ./scripts/citiming pool --repo "$repo" --format text
+          go run ./scripts/citiming pool --repo "$repo" --format datadog \
+            > pool-payload.json
+          series="$(jq '.series | length' pool-payload.json)"
+          echo "Payload series: ${series}"
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go
+
+      # Best-effort like the per-job cache-metrics action: a rejected or
+      # failed submission is a warning, never a failed workflow, because
+      # the snapshot itself is already in the job log above.
+      - name: Submit pool metrics to Datadog
+        if: steps.dd-sts.outcome == 'success'
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${DD_API_KEY:-}" ]]; then
+            echo "::warning::No Datadog API key available."
+            echo "The pool snapshot stays in the job log."
+            exit 0
+          fi
+
+          temp_dir="$(mktemp -d)"
+          response="${temp_dir}/response.txt"
+          curl_exit=0
+          http_code="$(curl --silent --show-error \
+            --output "$response" \
+            --write-out '%{http_code}' \
+            --connect-timeout 3 \
+            --max-time 10 \
+            --request POST "https://api.datadoghq.com/api/v2/series" \
+            --header "DD-API-KEY: ${DD_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data-binary "@pool-payload.json")" || curl_exit=$?
+
+          if [[ "$curl_exit" -ne 0 || "$http_code" != "202" ]]; then
+            diagnostic="$(head -c 512 "$response" 2>/dev/null | tr '\r\n' '  ')"
+            diagnostic="${diagnostic//"$DD_API_KEY"/[REDACTED]}"
+            echo "::warning::Pool metric submission failed"
+            echo "curl ${curl_exit}, HTTP ${http_code:-000}"
+            if [[ -n "$diagnostic" ]]; then
+              echo "$diagnostic"
+            fi
+            exit 0
+          fi
+          echo "Submitted ${series} pool metric series."
