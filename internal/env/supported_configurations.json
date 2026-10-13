@@ -152,6 +152,13 @@
         "default": "10485760"
       }
     ],
+    "DD_APPSEC_DISABLE_FEATURES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
+      }
+    ],
     "DD_APPSEC_ENABLED": [
       {
         "implementation": "A",

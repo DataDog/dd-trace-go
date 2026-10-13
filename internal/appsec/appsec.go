@@ -156,9 +156,11 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg        *config.Config
-	features   []listener.Feature
-	featuresMu sync.Mutex
+	cfg *config.Config
+	// featureBuilders are the constructors of the features to start, i.e. the ones not disabled by the configuration.
+	featureBuilders []listener.NewFeature
+	features        []listener.Feature
+	featuresMu      sync.Mutex
 	// started is read by Enabled/RASPEnabled and written by start()/stop(), which the
 	// remote-config client invokes from its own goroutine; it must be atomic.
 	started atomic.Bool
@@ -166,7 +168,8 @@ type appsec struct {
 
 func newAppSec(cfg *config.Config) *appsec {
 	return &appsec{
-		cfg: cfg,
+		cfg:             cfg,
+		featureBuilders: enabledFeatures(cfg.DisabledFeatures),
 	}
 }
 

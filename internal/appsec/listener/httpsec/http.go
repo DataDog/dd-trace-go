@@ -27,7 +27,7 @@ type Feature struct {
 }
 
 func (*Feature) String() string {
-	return "HTTP Security"
+	return listener.FeatureHTTP
 }
 
 func (*Feature) Stop() {}
@@ -127,7 +127,7 @@ func (feature *Feature) shouldExtractShema(op *httpsec.HandlerOperation, statusC
 type HeaderExtractionFeature struct{}
 
 func (*HeaderExtractionFeature) String() string {
-	return "HTTP Header Extraction"
+	return listener.FeatureHTTP
 }
 
 func (*HeaderExtractionFeature) Stop() {}

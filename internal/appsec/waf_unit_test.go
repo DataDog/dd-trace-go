@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -220,4 +222,30 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDisableFeatures(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+	}
+
+	// Required features (waf) and unknown names are ignored.
+	t.Setenv(config.EnvDisableFeatures, "grpc, HTTP,waf,unknown")
+	Start(config.WithEnablementMode(config.ForcedOn))
+	defer Stop()
+	require.True(t, Enabled())
+
+	a := activeAppSec.Load()
+	a.featuresMu.Lock()
+	names := make([]string, 0, len(a.features))
+	for _, f := range a.features {
+		names = append(names, f.String())
+	}
+	a.featuresMu.Unlock()
+
+	require.NotContains(t, names, listener.FeatureHTTP)
+	require.NotContains(t, names, listener.FeatureGRPC)
+	require.Contains(t, names, listener.FeatureTrace)
+	require.Contains(t, names, listener.FeatureWAF)
+	require.Contains(t, names, listener.FeatureGraphQL)
 }

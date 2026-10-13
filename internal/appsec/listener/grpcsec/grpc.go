@@ -19,7 +19,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "gRPC Security"
+	return listener.FeatureGRPC
 }
 
 func (*Feature) Stop() {}

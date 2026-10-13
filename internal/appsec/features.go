@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/graphqlsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
@@ -21,24 +22,58 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-var features = []listener.NewFeature{
-	trace.NewAppsecSpanTransport,
-	waf.NewWAFFeature,
-	httpsec.NewHTTPSecFeature,
-	grpcsec.NewGRPCSecFeature,
-	graphqlsec.NewGraphQLSecFeature,
-	usersec.NewUserSecFeature,
-	sqlsec.NewSQLSecFeature,
-	ossec.NewOSSecFeature,
-	ossec.NewExecSecFeature,
-	httpsec.NewSSRFProtectionFeature,
+// featureBuilder associates a feature constructor with the name of the feature it builds.
+type featureBuilder struct {
+	name string
+	new  listener.NewFeature
+	// required features are needed by every other feature and cannot be disabled.
+	required bool
+}
+
+var features = []featureBuilder{
+	{name: listener.FeatureTrace, new: trace.NewAppsecSpanTransport, required: true},
+	{name: listener.FeatureWAF, new: waf.NewWAFFeature, required: true},
+	{name: listener.FeatureHTTP, new: httpsec.NewHTTPSecFeature},
+	{name: listener.FeatureGRPC, new: grpcsec.NewGRPCSecFeature},
+	{name: listener.FeatureGraphQL, new: graphqlsec.NewGraphQLSecFeature},
+	{name: listener.FeatureUser, new: usersec.NewUserSecFeature},
+	{name: listener.FeatureSQLi, new: sqlsec.NewSQLSecFeature},
+	{name: listener.FeatureLFI, new: ossec.NewOSSecFeature},
+	{name: listener.FeatureCMDi, new: ossec.NewExecSecFeature},
+	{name: listener.FeatureSSRF, new: httpsec.NewSSRFProtectionFeature},
+}
+
+// enabledFeatures returns the constructors of the features not disabled through [config.EnvDisableFeatures]. Names
+// that do not match any feature, or that match a required feature, are logged and ignored.
+func enabledFeatures(disabled map[string]struct{}) []listener.NewFeature {
+	enabled := make([]listener.NewFeature, 0, len(features))
+	known := make(map[string]struct{}, len(features))
+	for _, f := range features {
+		known[f.name] = struct{}{}
+		if _, ok := disabled[f.name]; !ok {
+			enabled = append(enabled, f.new)
+			continue
+		}
+		if f.required {
+			log.Warn("appsec: %s: feature %q cannot be disabled", config.EnvDisableFeatures, f.name)
+			enabled = append(enabled, f.new)
+			continue
+		}
+		log.Info("appsec: feature %q disabled by %s", f.name, config.EnvDisableFeatures)
+	}
+	for name := range disabled {
+		if _, ok := known[name]; !ok {
+			log.Warn("appsec: %s: ignoring unknown feature %q", config.EnvDisableFeatures, name)
+		}
+	}
+	return enabled
 }
 
 func (a *appsec) SwapRootOperation() error {
 	newRoot := dyngo.NewRootOperation()
-	newFeatures := make([]listener.Feature, 0, len(features))
+	newFeatures := make([]listener.Feature, 0, len(a.featureBuilders))
 	var featureErrors []error
-	for _, newFeature := range features {
+	for _, newFeature := range a.featureBuilders {
 		feature, err := newFeature(a.cfg, newRoot)
 		if err != nil {
 			featureErrors = append(featureErrors, err)

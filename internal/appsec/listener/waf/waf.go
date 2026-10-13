@@ -178,7 +178,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 }
 
 func (*Feature) String() string {
-	return "Web Application Firewall"
+	return listener.FeatureWAF
 }
 
 func (waf *Feature) Stop() {
