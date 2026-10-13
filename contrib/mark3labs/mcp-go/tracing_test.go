@@ -417,4 +417,49 @@ func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 }
 
+// JSON-RPC 2.0 allows only a string or a number as a request ID, but
+// mcp-go does not validate the ID. A client can send an object or an array.
+// The tracing hooks must not panic for these IDs.
+func TestIntegrationInitializeNonComparableID(t *testing.T) {
+	for name, id := range map[string]string{
+		"object": `{"x":1}`,
+		"array":  `[1,2]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			testTracer(t)
+
+			srv := server.NewMCPServer("test-server", "1.0.0",
+				WithMCPServerTracing(nil))
+
+			initRequest := `{"jsonrpc":"2.0","id":` + id + `,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+			var response mcp.JSONRPCMessage
+			require.NotPanics(t, func() {
+				response = srv.HandleMessage(context.Background(), []byte(initRequest))
+			})
+			assert.NotNil(t, response)
+		})
+	}
+}
+
+func TestHooksNonComparableID(t *testing.T) {
+	testTracer(t)
+
+	h := newHooks()
+	ctx := context.Background()
+	request := &mcp.InitializeRequest{}
+	for name, id := range map[string]any{
+		"object": map[string]any{"x": float64(1)},
+		"array":  []any{float64(1), float64(2)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				h.onBeforeInitialize(ctx, id, request)
+				h.onAfterInitialize(ctx, id, request, &mcp.InitializeResult{})
+				h.onError(ctx, id, mcp.MethodInitialize, request, errors.New("initialize failed"))
+			})
+		})
+	}
+}
+
 // Test helpers
