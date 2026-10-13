@@ -66,6 +66,13 @@ tags="$(jq -cn \
 # contract this series has always had, where `miss` means "not an exact
 # hit". The offline collector in scripts/citiming applies the same rule,
 # reporting an absent `restored` as unknown.
+#
+# The setup-go action also adds restore_source (exact / default / branch /
+# none, `default` marking a default-branch fallback restore) and dep_match
+# to setup_go entries that ran the cloudx provider; both become tags on
+# that entry's series only, so the seed program can split restores by
+# source and by dependency match. Entries without the fields (github-cache
+# restores, the tools entry) keep the existing tag set.
 jq -cn \
   --argjson metrics "$CACHE_METRICS" \
   --argjson timestamp "$(date +%s)" \
@@ -75,11 +82,17 @@ jq -cn \
     ["runtime.name:" + $metrics.runtime.name,
      "runtime.version:" + (if $metrics.runtime.version == ""
      then "unknown" else $metrics.runtime.version end)];
-  def count_series($name; $result):
+  def seed_tags($entry):
+    (if ($entry | has("restore_source"))
+     then ["restore_source:" + $entry.restore_source] else [] end)
+    + (if ($entry | has("dep_match"))
+       then ["dep_match:" + $entry.dep_match] else [] end);
+  def count_series($name; $result; $entry):
     {metric: "ci.step.cache.restore", type: 1, interval: 1,
      points: [{timestamp: $timestamp, value: 1}],
      tags: ($tags + runtime_tags + ["cache_name:" + $name,
-            "outcome:" + $result[0], "hit_type:" + $result[1]])};
+            "outcome:" + $result[0], "hit_type:" + $result[1]]
+            + seed_tags($entry))};
   def size_series($measurement):
     {metric: "ci.cache.disk_size_bytes", type: 3,
      points: [{timestamp: $timestamp,
@@ -105,8 +118,8 @@ jq -cn \
     else empty
     end;
   {series: ([$metrics.restores[] as $restore |
-              $restore | restore_result
-              | count_series($restore.name; .)] +
+              ($restore | restore_result) as $result
+              | count_series($restore.name; $result; $restore)] +
             [$sizes | split("\n")[] | select(length > 0) |
               split("\t") | size_series(.)])}
 '
