@@ -108,7 +108,7 @@ func Start(opts ...config.StartOption) {
 				// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 				logUnexpectedStartError(err)
 			}
-			appsec.stopRC()
+			appsec.close()
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
@@ -118,7 +118,7 @@ func Start(opts ...config.StartOption) {
 
 	if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
-		appsec.stopRC()
+		appsec.close()
 		return
 	}
 
@@ -149,10 +149,17 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if previous := activeAppSec.Load(); previous != nil {
-		previous.stopRC()
-		previous.stop()
+		previous.close()
 	}
 	activeAppSec.Store(a)
+}
+
+// close stops the remote config client and AppSec, then releases the WAF manager. The instance must not be used
+// afterward.
+func (a *appsec) close() {
+	a.stopRC()
+	a.stop()
+	a.cfg.WAFManager.Close()
 }
 
 type appsec struct {

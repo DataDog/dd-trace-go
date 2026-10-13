@@ -224,6 +224,24 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 	}
 }
 
+// TestStopClosesWAFManager checks that stopping AppSec closes its WAF manager instead of leaving it to the GC cleanup,
+// which reports a "WAFManager was leaked" warning log.
+func TestStopClosesWAFManager(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+	}
+
+	Start(config.WithEnablementMode(config.ForcedOn))
+	defer Stop()
+	require.True(t, Enabled())
+	mgr := activeAppSec.Load().cfg.WAFManager
+	require.NotEmpty(t, mgr.ConfigPaths(""))
+
+	Stop()
+	// A closed WAF manager no longer holds any configuration.
+	require.Empty(t, mgr.ConfigPaths(""))
+}
+
 func TestDisableFeatures(t *testing.T) {
 	if usable, err := libddwaf.Usable(); !usable {
 		t.Skipf("AppSec is not supported on this platform: %v", err)
