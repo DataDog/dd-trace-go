@@ -219,6 +219,15 @@ feature and cannot be disabled. Unknown names are ignored with a warning log. Be
 and gRPC messages reach the WAF context without going through the `http` and `grpc` listeners, disabling those features
 also removes their WAF addresses from the supported addresses, so the WAF never evaluates them.
 
+### gRPC message evaluation
+
+Request and response messages use `waf.RunSimpleSubcontext` to isolate each
+message's data. It removes addresses unsupported by the request's active WAF
+configuration before creating a subcontext, and returns immediately if none
+remain. Thus, streams whose responses are not inspected avoid native subcontext
+setup and teardown for each response. Configured request and response rules
+still evaluate each message in its own subcontext.
+
 ### AppSec state checks
 
 `Enabled` and `RASPEnabled` load the active AppSec instance and its started state
