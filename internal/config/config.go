@@ -88,9 +88,8 @@ type Config struct {
 	dogstatsdAddrExplicit bool
 	debug                 bool
 	// logLevel is the diagnostics threshold selected by OTEL_LOG_LEVEL when debug
-	// mode is off; logLevelSet reports whether a valid non-debug level was set.
-	logLevel    log.Level
-	logLevelSet bool
+	// mode is off. It defaults to info.
+	logLevel log.Level
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -385,7 +384,7 @@ func loadConfig() *Config {
 	// keeps DD_TRACE_DEBUG precedence; only the higher levels set a threshold here.
 	cfg.logLevel = log.LevelInfo
 	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
-		cfg.logLevel, cfg.logLevelSet = lvl, true
+		cfg.logLevel = lvl
 	}
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
@@ -790,15 +789,15 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin, product ...Prod
 	configtelemetry.Report("DD_TRACE_DEBUG", enabled, origin)
 }
 
-// LogLevel returns the threshold for tracer diagnostics and whether one was
-// configured. Debug mode takes precedence over the OTEL_LOG_LEVEL threshold.
-func (c *Config) LogLevel() (log.Level, bool) {
+// LogLevel returns the threshold for tracer diagnostics. Debug mode takes
+// precedence over the OTEL_LOG_LEVEL threshold.
+func (c *Config) LogLevel() log.Level {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.debug {
-		return log.LevelDebug, true
+		return log.LevelDebug
 	}
-	return c.logLevel, c.logLevelSet
+	return c.logLevel
 }
 
 func (c *Config) ProfilerEndpoints() bool {

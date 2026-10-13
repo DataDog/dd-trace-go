@@ -172,6 +172,15 @@
 // DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
 // to false.
 //
+// # Diagnostic Log Level
+//
+// The tracer prints its own diagnostics at the info level and above by default.
+// OTEL_LOG_LEVEL sets that threshold to debug, info, warn or error (case-insensitive);
+// lower-severity messages are not printed. Invalid values are ignored with a
+// warning. DD_TRACE_DEBUG=true or WithDebugMode(true) enables debug logs
+// regardless of OTEL_LOG_LEVEL, and DD_TRACE_DEBUG=false disables
+// OTEL_LOG_LEVEL=debug. The level is applied each time the tracer starts.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol

@@ -2170,11 +2170,10 @@ func TestPushTrace(t *testing.T) {
 
 	oldLvl := log.GetLevel()
 	defer func() { log.SetLevel(oldLvl) }()
-	log.SetLevel(log.LevelDebug)
 
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
-	tracer, err := newUnstartedTracer()
+	tracer, err := newUnstartedTracer(WithDebugMode(true))
 	assert.Nil(err)
 	defer tracer.Stop()
 	trace := []*Span{

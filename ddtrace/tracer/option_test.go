@@ -654,6 +654,25 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.True(t, c.internalConfig.Debug())
 			assert.Equal(t, log.LevelDebug, log.GetLevel())
 		})
+		t.Run("restart-restores-default-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			_, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelError, log.GetLevel())
+
+			t.Setenv("OTEL_LOG_LEVEL", "")
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+
+			_, err = newTestConfig(WithDebugMode(true))
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel
