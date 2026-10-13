@@ -87,9 +87,10 @@ type Config struct {
 	// address (via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL), so agent-reported ports must not overwrite it.
 	dogstatsdAddrExplicit bool
 	debug                 bool
-	// logLevel is the diagnostics threshold selected by OTEL_LOG_LEVEL when debug
-	// mode is off. It defaults to info.
-	logLevel log.Level
+	// logLevel is the log.Level selected by OTEL_LOG_LEVEL when debug mode is
+	// off. It defaults to info. A byte fits beside these flags without growing
+	// Config.
+	logLevel uint8
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -382,9 +383,9 @@ func loadConfig() *Config {
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	// OTEL_LOG_LEVEL=debug already reaches debug mode through DD_TRACE_DEBUG, which
 	// keeps DD_TRACE_DEBUG precedence; only the higher levels set a threshold here.
-	cfg.logLevel = log.LevelInfo
+	cfg.logLevel = uint8(log.LevelInfo)
 	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
-		cfg.logLevel = lvl
+		cfg.logLevel = uint8(lvl)
 	}
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
@@ -793,11 +794,12 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin, product ...Prod
 // precedence over the OTEL_LOG_LEVEL threshold.
 func (c *Config) LogLevel() log.Level {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.debug {
+	debug, lvl := c.debug, log.Level(c.logLevel)
+	c.mu.RUnlock()
+	if debug {
 		return log.LevelDebug
 	}
-	return c.logLevel
+	return lvl
 }
 
 func (c *Config) ProfilerEndpoints() bool {
