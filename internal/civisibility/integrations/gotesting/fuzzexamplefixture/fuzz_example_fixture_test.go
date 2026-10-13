@@ -44,7 +44,8 @@ var fixtureScenarios = []string{
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	goCommand := fixtureGoCommand()
-	goCache := filepath.Join(t.TempDir(), "gocache")
+	// Reuse the runner's build cache; fixtureEnv isolates CI Visibility state.
+	goCache := goEnv(t, "GOCACHE")
 	goModCache := goEnv(t, "GOMODCACHE")
 	for _, mode := range fixtureModes(goCommand) {
 		// Compile each mode once. Re-running go test for every scenario repeats

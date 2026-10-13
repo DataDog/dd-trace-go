@@ -53,8 +53,9 @@ type CommonConfig struct {
 
 type Config struct {
 	CommonConfig
-	FinishOpts []tracer.FinishOption
-	HeaderTags instrumentation.HeaderTags
+	FinishOpts           []tracer.FinishOption
+	OTelSemanticsEnabled bool
+	HeaderTags           instrumentation.HeaderTags
 	// Mux, if set, is used as the underlying *http.ServeMux instead of
 	// allocating a new one, so the traced ServeMux can wrap a mux that
 	// was already configured elsewhere.
@@ -83,6 +84,7 @@ func Default(instr *instrumentation.Instrumentation) *Config {
 	}
 	cfg.IgnoreRequest = func(_ *http.Request) bool { return false }
 	cfg.ResourceNamer = func(_ *http.Request) string { return "" }
+	cfg.OTelSemanticsEnabled = instr.OTelSemanticsEnabled()
 	return cfg
 }
 
