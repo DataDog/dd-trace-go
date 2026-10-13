@@ -57,8 +57,10 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
   is `RCStandby`, which waits for `ASM_FEATURES`.
 - `libddwaf.Usable()` gates start. Log an error only under `ForcedOn`. In other modes use debug or
   telemetry logs, so that APM-only users never see AppSec errors.
-- Log messages are constant and prefixed `appsec:`. Errors sent to telemetry are wrapped with
-  `telemetrylog.NewSafeError`.
+- New log messages are constant and prefixed `appsec:` (most existing call sites follow this). Errors
+  sent to telemetry are wrapped with `telemetrylog.NewSafeError`. Never reword an existing telemetry
+  log template (e.g. `"failed to build WAF handle"`) just to add the prefix: its text is the
+  deduplication key.
 - No parent operation (`dyngo.FromContext` or `FindOperation` fails):
   - Helper emitters that evaluate and return only an error log once at debug level and return nil.
     Examples are `sqlsec.ProtectSQLOperation` and `httpsec.ProtectRoundTrip`.
@@ -91,15 +93,19 @@ go test -tags datadog.no_waf ./internal/appsec/...
 ```
 
 CI: `.github/workflows/appsec.yml` is path-filtered and has four test jobs:
-- `macos`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` x `GOEXPERIMENT` (default and `cgocheck2`).
+- `macos`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` x `GOEXPERIMENT` (default and `cgocheck2`). It gates:
+  any failure fails the job.
 - `golang-linux-container`: `CGO_ENABLED` x `DD_APPSEC_ENABLED` on Debian and Alpine images, on amd64
-  and arm64. It does not run `cgocheck2`.
-- `disabled`: `DD_APPSEC_ENABLED` x `-tags datadog.no_waf` on Linux, macOS, and Windows.
+  and arm64. It does not run `cgocheck2`. Root-module failures gate, but contrib submodule failures
+  are only logged.
+- `disabled`: `DD_APPSEC_ENABLED` x `-tags datadog.no_waf` on Linux, macOS, and Windows. It does not
+  gate: failures are echoed and the step still succeeds, so read its logs. Do not rely on its status.
 - `test-app-smoke-tests`: runs the smoke-test workflow of `DataDog/appsec-go-test-app` end to end
   against the PR head. It is skipped on fork PRs.
 
-`internal/**` is the `core` component of `.github/ci-components.yml`, which runs every gate. GitLab
-micro benchmarks run `./internal/appsec/...`.
+In `.github/ci-components.yml`, non-Markdown `internal/appsec` paths fall through to `core`, which
+runs every gate. `*.md` files, including this one and `README.md`, match the earlier `docs` component
+and run only `static-docs`. GitLab micro benchmarks run `./internal/appsec/...`.
 
 ## Updating Documentation
 
