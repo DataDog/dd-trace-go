@@ -16,8 +16,9 @@
 //	// ... create spans, flush ...
 //	span := agent.RequireSpan(t, agenttest.With().Operation("http.request"))
 //
-// By design, this API does not expose span slices or iterators. Order-dependent
-// assertions are a common source of test flakiness; any future iterator must
+// By design, the Agent interface does not expose span slices or iterators.
+// Order-dependent assertions are a common source of test flakiness; any
+// interface that enumerates spans, like the optional SpanLister, must
 // randomize its traversal order.
 package agenttest
 
@@ -25,6 +26,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -93,6 +96,25 @@ type Agent interface {
 	// CountSpans returns the total number of spans collected so far.
 	CountSpans() int
 }
+
+// SpanLister is an optional interface that an Agent can implement to expose
+// every collected span. The agent returned by New implements it. A custom
+// agent passed to tracertest.Start keeps its spans private until it
+// implements SpanLister, so the Agent interface itself stays stable for
+// existing implementations.
+type SpanLister interface {
+	// Spans returns a copy of every collected span in randomized order.
+	// Randomized order exists to break order-dependent assertions, which are a
+	// common source of test flakiness. Match spans by their attributes, not by
+	// position. Each call returns a copy, so callers may mutate the span and
+	// its maps without changing the collected spans. Copying covers the span
+	// struct, the Meta, Metrics, and Tags maps, and Tags values of the JSON
+	// shapes that trace decoders produce: nested maps and slices. Tags values
+	// of any other reference type are shared with the collected span.
+	Spans() []*Span
+}
+
+var _ SpanLister = (*agent)(nil)
 
 type agent struct {
 	mu sync.Mutex
@@ -248,4 +270,83 @@ func (a *agent) CountSpans() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return len(a.spans)
+}
+
+// Spans returns a copy of every collected span in randomized order.
+// Randomized order exists to break order-dependent assertions, which are a
+// common source of test flakiness. Match spans by their attributes, not by
+// position. Each call returns a copy, so callers may mutate the span and its
+// maps without changing the collected spans. Copying covers the span struct,
+// the Meta, Metrics, and Tags maps, and Tags values of the JSON shapes that
+// trace decoders produce: nested maps and slices. Tags values of any other
+// reference type are shared with the collected span.
+func (a *agent) Spans() []*Span {
+	a.mu.Lock()
+	spans := make([]*Span, len(a.spans))
+	copy(spans, a.spans)
+	a.mu.Unlock()
+	for i, s := range spans {
+		spans[i] = cloneSpan(s)
+	}
+	rand.Shuffle(len(spans), func(i, j int) {
+		spans[i], spans[j] = spans[j], spans[i]
+	})
+	return spans
+}
+
+// cloneSpan returns a copy of s. Map and slice fields are cloned so that
+// mutating the copy never changes the collected span.
+func cloneSpan(s *Span) *Span {
+	if s == nil {
+		return nil
+	}
+	clone := &Span{
+		SpanID:    s.SpanID,
+		TraceID:   s.TraceID,
+		ParentID:  s.ParentID,
+		Service:   s.Service,
+		Operation: s.Operation,
+		Resource:  s.Resource,
+		Type:      s.Type,
+		Start:     s.Start,
+		Duration:  s.Duration,
+		Error:     s.Error,
+		Meta:      maps.Clone(s.Meta),
+		Metrics:   maps.Clone(s.Metrics),
+	}
+	if s.Tags != nil {
+		clone.Tags = make(map[string]any, len(s.Tags))
+		for k, v := range s.Tags {
+			clone.Tags[k] = cloneTagValue(v)
+		}
+	}
+	if s.Children != nil {
+		clone.Children = make([]*Span, len(s.Children))
+		for i, c := range s.Children {
+			clone.Children[i] = cloneSpan(c)
+		}
+	}
+	return clone
+}
+
+// cloneTagValue returns a copy of a Tags value. It recursively copies the
+// JSON shapes that trace decoders produce. Values of other reference types
+// are shared with the collected span.
+func cloneTagValue(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		c := make(map[string]any, len(t))
+		for k, vv := range t {
+			c[k] = cloneTagValue(vv)
+		}
+		return c
+	case []any:
+		c := make([]any, len(t))
+		for i, vv := range t {
+			c[i] = cloneTagValue(vv)
+		}
+		return c
+	default:
+		return v
+	}
 }

@@ -26,6 +26,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+const compatibleEVPProxyHeadersJSON = `"evp_proxy_allowed_headers":["DD-EVP-ORIGIN","DD-EVP-ORIGIN-VERSION"]`
+
 func TestBuildDirectEVPURL(t *testing.T) {
 	tests := map[string]struct {
 		site string
@@ -124,7 +126,7 @@ func TestAgentlessEVPRouteSelectionAndCredentials(t *testing.T) {
 			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/info" {
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = io.WriteString(w, `{"endpoints":["`+strings.Join(tt.endpoints, `","`)+`"]}`)
+					_, _ = io.WriteString(w, `{"endpoints":["`+strings.Join(tt.endpoints, `","`)+`"],`+compatibleEVPProxyHeadersJSON+`}`)
 					return
 				}
 				localPath = r.URL.Path
@@ -181,6 +183,145 @@ func TestAgentlessEVPRouteSelectionAndCredentials(t *testing.T) {
 	}
 }
 
+func TestAgentlessEVPRequiresIdentityHeaderForwarding(t *testing.T) {
+	tests := map[string]struct {
+		infoJSON  string
+		wantLocal bool
+	}{
+		"missing capability": {
+			infoJSON: `{"endpoints":["/evp_proxy/v4"]}`,
+		},
+		"null capability": {
+			infoJSON: `{"endpoints":["/evp_proxy/v4"],"evp_proxy_allowed_headers":null}`,
+		},
+		"origin only": {
+			infoJSON: `{"endpoints":["/evp_proxy/v4"],"evp_proxy_allowed_headers":["DD-EVP-ORIGIN"]}`,
+		},
+		"origin version only": {
+			infoJSON: `{"endpoints":["/evp_proxy/v4"],"evp_proxy_allowed_headers":["DD-EVP-ORIGIN-VERSION"]}`,
+		},
+		"both case insensitive": {
+			infoJSON:  `{"endpoints":["/evp_proxy/v4"],"evp_proxy_allowed_headers":["dd-evp-origin-version","dd-evp-origin"]}`,
+			wantLocal: true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var localPosts atomic.Int32
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/info" {
+					_, _ = io.WriteString(w, tt.infoJSON)
+					return
+				}
+				localPosts.Add(1)
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer agent.Close()
+
+			var directPosts atomic.Int32
+			direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				directPosts.Add(1)
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer direct.Close()
+
+			c := testAgentlessEVPClient(t, agent, direct, "api-key")
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatal(err)
+			}
+
+			if tt.wantLocal {
+				if got := localPosts.Load(); got != 1 {
+					t.Fatalf("local posts = %d, want 1", got)
+				}
+				if got := directPosts.Load(); got != 0 {
+					t.Fatalf("direct posts = %d, want 0", got)
+				}
+				return
+			}
+			if got := localPosts.Load(); got != 0 {
+				t.Fatalf("local posts = %d, want 0", got)
+			}
+			if got := directPosts.Load(); got != 1 {
+				t.Fatalf("direct posts = %d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestAgentlessEVPPreservesAgentURLPath(t *testing.T) {
+	const agentBasePath = "/agent-prefix"
+	var infoCalls atomic.Int32
+	var eventCalls atomic.Int32
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case agentBasePath + "/info":
+			infoCalls.Add(1)
+			_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"],`+compatibleEVPProxyHeadersJSON+`}`)
+		case agentBasePath + evpProxyV4Path + exposureEndpoint:
+			eventCalls.Add(1)
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer agent.Close()
+
+	c := testAgentlessEVPClient(t, agent, nil, "")
+	agentURL, err := url.Parse(agent.URL + agentBasePath + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.agentURL = agentURL
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := infoCalls.Load(); got != 1 {
+		t.Fatalf("prefixed /info calls = %d, want 1", got)
+	}
+	if got := eventCalls.Load(); got != 1 {
+		t.Fatalf("prefixed event calls = %d, want 1", got)
+	}
+}
+
+func TestAgentlessEVPStripsKnownTraceEndpointAndPreservesPrefix(t *testing.T) {
+	for _, traceEndpoint := range []string{"/v0.4/traces", "/v0.5/traces", "/v1.0/traces"} {
+		t.Run(traceEndpoint, func(t *testing.T) {
+			const agentPrefix = "/agent-prefix"
+			var infoCalls atomic.Int32
+			var eventCalls atomic.Int32
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case agentPrefix + "/info":
+					infoCalls.Add(1)
+					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"],`+compatibleEVPProxyHeadersJSON+`}`)
+				case agentPrefix + evpProxyV4Path + exposureEndpoint:
+					eventCalls.Add(1)
+					w.WriteHeader(http.StatusAccepted)
+				default:
+					t.Errorf("unexpected path %q", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer agent.Close()
+
+			t.Setenv("DD_TRACE_AGENT_URL", agent.URL+agentPrefix+traceEndpoint)
+			c := newAgentlessEVPClient(internalffe.Settings{})
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := infoCalls.Load(); got != 1 {
+				t.Fatalf("/info calls = %d, want 1", got)
+			}
+			if got := eventCalls.Load(); got != 1 {
+				t.Fatalf("event calls = %d, want 1", got)
+			}
+		})
+	}
+}
+
 func TestAgentlessEVPNoRouteRecoversAfterCooldown(t *testing.T) {
 	var ready atomic.Bool
 	var infoCalls atomic.Int32
@@ -189,7 +330,7 @@ func TestAgentlessEVPNoRouteRecoversAfterCooldown(t *testing.T) {
 		if r.URL.Path == "/info" {
 			infoCalls.Add(1)
 			if ready.Load() {
-				_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"]}`)
+				_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`)
 			} else {
 				_, _ = io.WriteString(w, `{"endpoints":[]}`)
 			}
@@ -233,7 +374,7 @@ func TestAgentlessEVPRejectedLocalRouteReplaysDirect(t *testing.T) {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/info" {
-					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"]}`)
+					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"],`+compatibleEVPProxyHeadersJSON+`}`)
 					return
 				}
 				w.WriteHeader(status)
@@ -268,7 +409,7 @@ func TestAgentlessEVPDoesNotReplayAmbiguousResponses(t *testing.T) {
 			const secret = "response-body-must-not-escape"
 			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/info" {
-					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"]}`)
+					_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`)
 					return
 				}
 				w.WriteHeader(status)
@@ -294,7 +435,60 @@ func TestAgentlessEVPDoesNotReplayAmbiguousResponses(t *testing.T) {
 			if got := directCalls.Load(); got != 0 {
 				t.Fatalf("direct calls = %d, want 0", got)
 			}
+			if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+				t.Fatalf("future post through direct route: %v", err)
+			}
+			if got := directCalls.Load(); got != 1 {
+				t.Fatalf("future direct calls = %d, want 1", got)
+			}
 		})
+	}
+}
+
+func TestAgentlessEVPNonReplayableResponseWithoutCredentialsEntersCooldown(t *testing.T) {
+	var ready atomic.Bool
+	var infoCalls atomic.Int32
+	var eventCalls atomic.Int32
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			infoCalls.Add(1)
+			_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`)
+			return
+		}
+		eventCalls.Add(1)
+		if ready.Load() {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer agent.Close()
+
+	c := testAgentlessEVPClient(t, agent, nil, "")
+	now := time.Unix(100, 0)
+	c.now = func() time.Time { return now }
+	c.cooldown = time.Minute
+
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); err == nil {
+		t.Fatal("first post returned nil, want status error")
+	}
+	ready.Store(true)
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); !errors.Is(err, errNoEVPRoute) {
+		t.Fatalf("post during cooldown error = %v, want %v", err, errNoEVPRoute)
+	}
+	if got := eventCalls.Load(); got != 1 {
+		t.Fatalf("local posts during cooldown = %d, want 1", got)
+	}
+
+	now = now.Add(time.Minute)
+	if err := c.postRaw(exposureEndpoint, "exposure", nil); err != nil {
+		t.Fatalf("post after cooldown: %v", err)
+	}
+	if got := infoCalls.Load(); got != 2 {
+		t.Fatalf("/info calls = %d, want 2", got)
+	}
+	if got := eventCalls.Load(); got != 2 {
+		t.Fatalf("local posts after recovery = %d, want 2", got)
 	}
 }
 
@@ -340,7 +534,7 @@ func TestAgentlessEVPTransportFailureChangesOnlyFutureRouting(t *testing.T) {
 	}
 	agentClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/info" {
-			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"]}`), nil
+			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`), nil
 		}
 		localPosts.Add(1)
 		return nil, errors.New("ambiguous transport failure")
@@ -388,7 +582,7 @@ func TestAgentlessEVPDefinitivePreSendFailureReplaysDirect(t *testing.T) {
 	}
 	agentClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/info" {
-			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"]}`), nil
+			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`), nil
 		}
 		return nil, syscall.ECONNREFUSED
 	})}
@@ -426,7 +620,7 @@ func TestAgentlessEVPDoesNotReplayWrittenRequest(t *testing.T) {
 	}
 	agentClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path == "/info" {
-			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"]}`), nil
+			return response(http.StatusOK, `{"endpoints":["/evp_proxy/v2"],`+compatibleEVPProxyHeadersJSON+`}`), nil
 		}
 		if trace := httptrace.ContextClientTrace(r.Context()); trace != nil && trace.WroteRequest != nil {
 			trace.WroteRequest(httptrace.WroteRequestInfo{})
@@ -524,7 +718,7 @@ func TestAgentlessEVPSerializesInitialDiscovery(t *testing.T) {
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/info" {
 			infoCalls.Add(1)
-			_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"]}`)
+			_, _ = io.WriteString(w, `{"endpoints":["/evp_proxy/v4"],`+compatibleEVPProxyHeadersJSON+`}`)
 			return
 		}
 		eventCalls.Add(1)
@@ -573,14 +767,14 @@ func TestAgentOnlyEVPClientKeepsV2Route(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer agent.Close()
-	t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
+	t.Setenv("DD_TRACE_AGENT_URL", agent.URL+"/agent-prefix/v1.0/traces")
 
 	body := []byte(`{"context":{"service":"test-service"},"flagEvaluations":[]}`)
 	c := newEVPClient()
 	if err := c.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
 		t.Fatal(err)
 	}
-	wantPath := evpProxyV2Path + flagEvalLoggingEndpoint
+	wantPath := "/agent-prefix" + evpProxyV2Path + flagEvalLoggingEndpoint
 	if gotPath != wantPath {
 		t.Fatalf("path = %q, want %q", gotPath, wantPath)
 	}

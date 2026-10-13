@@ -218,8 +218,12 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 		_, _ = stream.Recv() // to flush the spans
 
+		// The ext_proc response can unblock the client immediately before the
+		// server goroutine finishes the span.
+		require.Eventually(t, func() bool {
+			return len(mt.FinishedSpans()) == 1
+		}, time.Second, time.Millisecond)
 		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
 
 		// Check for tags
 		span := finished[0]

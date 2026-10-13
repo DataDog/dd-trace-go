@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -631,9 +632,86 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT used when traces-specific one is unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes priority over OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://general-collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("traces endpoint wins when the generic endpoint is invalid", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "grpc://general-collector:4317")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("independent OTLP export does not follow programmatic agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export follows resolved agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export keeps a user-provided generic endpoint", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+		cfg := Get()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		cfg.ResolveOTelSemanticsConfig()
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
 }
 
-func TestOTLPHeaders(t *testing.T) {
+func TestOTLPTraceHeaders(t *testing.T) {
 	t.Run("always populated with at least Content-Type", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -641,7 +719,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		require.NotNil(t, headers)
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 		assert.Len(t, headers, 1)
@@ -656,10 +734,40 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "secret", headers["api-key"])
 		assert.Equal(t, "value", headers["x-custom"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("generic OTEL_EXPORTER_OTLP_HEADERS used as fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPTraceHeaders()
+		assert.Equal(t, "generic-key", headers["api-key"])
+		assert.Equal(t, "acme", headers["x-tenant"])
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS take precedence over generic headers", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-key")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPTraceHeaders()
+		assert.Equal(t, "traces-key", headers["api-key"])
+		assert.Equal(t, "acme", headers["x-tenant"])
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
@@ -675,7 +783,7 @@ func TestOTLPHeaders(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		// The value is still resolved and parsed for export use.
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
 
 		// But it must not be reported in configuration telemetry, and no reported
@@ -690,6 +798,62 @@ func TestOTLPHeaders(t *testing.T) {
 		}
 	})
 
+}
+
+func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		key     string
+		headers func(*Config) map[string]string
+		traces  bool
+	}{
+		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalState()
+			t.Cleanup(resetGlobalState)
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			want := map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}
+			if tt.traces {
+				want["Content-Type"] = OTLPContentTypeHeader
+			}
+			assert.Equal(t, want, tt.headers(Get()))
+		})
+	}
+
+	t.Run("signal overrides generic", func(t *testing.T) {
+		resetGlobalState()
+		t.Cleanup(resetGlobalState)
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=kept%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=trace%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metric%20value")
+		cfg := Get()
+		assert.Equal(t, map[string]string{
+			"api-key":      "trace value",
+			"generic-only": "kept value",
+			"Content-Type": OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+		assert.Equal(t, map[string]string{
+			"api-key":      "metric value",
+			"generic-only": "kept value",
+		}, cfg.OTLPMetricsHeaders())
+	})
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -781,6 +945,125 @@ func TestOTLPExportMode(t *testing.T) {
 
 		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
 		assert.False(t, cfg.OTLPExportMode())
+	})
+}
+
+func TestInvalidSpanAttributeSchemaFallsBackWithoutSharedWarning(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+	const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, setting to default of v0"
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), warning)
+}
+
+func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
+	const (
+		protocolOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out"
+		schemaOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
+		peerOverrideLog     = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
+	)
+
+	t.Run("forces OTLP export", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "OTEL_TRACES_EXPORTER" && c.Value == "otlp" && c.Origin == telemetry.OriginCalculated
+		}))
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("wins over Datadog trace protocol", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+	})
+
+	t.Run("calculates conflicting schema and peer service defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+		t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == "true" && c.Origin == telemetry.OriginEnvVar
+		}))
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA" && c.Value == "v0" && c.Origin == telemetry.OriginCalculated
+		}))
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED" && c.Value == false && c.Origin == telemetry.OriginCalculated
+		}))
+	})
+
+	t.Run("schema v1 implication also calculates peer defaults false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("does not log non-conflicting defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("resolution overrides programmatic peer defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		cfg.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCode)
+		assert.True(t, cfg.PeerServiceDefaultsEnabled())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
 	})
 }
 
@@ -1704,6 +1987,61 @@ func TestLLMObsEnvVars(t *testing.T) {
 	})
 }
 
+func TestLLMObsPromptEnvVars(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		assert.Equal(t, time.Minute, cfg.LLMObsPromptsCacheTTL())
+		assert.Equal(t, 5*time.Second, cfg.LLMObsPromptsTimeout())
+		assert.False(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Empty(t, cfg.LLMObsPromptsCacheDir())
+	})
+
+	for _, test := range []struct {
+		name, ttl, ttlAlias, timeout, timeoutAlias string
+		wantTTL, wantTimeout                       time.Duration
+	}{
+		{name: "values", ttl: "1.5", timeout: "0", wantTTL: 1500 * time.Millisecond, wantTimeout: 0},
+		{name: "aliases", ttlAlias: "2", timeoutAlias: "3", wantTTL: 2 * time.Second, wantTimeout: 3 * time.Second},
+		{name: "canonical wins over alias", ttl: "4", ttlAlias: "2", timeout: "6", timeoutAlias: "3", wantTTL: 4 * time.Second, wantTimeout: 6 * time.Second},
+		{name: "nonpositive ttl disables", ttl: "-1", wantTTL: -time.Second, wantTimeout: 5 * time.Second},
+		{name: "invalid", ttl: "NaN", timeout: "-1", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "overflow", ttl: "1e100", timeout: "1e100", wantTTL: time.Minute, wantTimeout: 5 * time.Second},
+		{name: "maximum duration", ttl: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), timeout: strconv.FormatFloat(maxDurationSeconds, 'g', -1, 64), wantTTL: time.Duration(maxDurationSeconds) * time.Second, wantTimeout: time.Duration(maxDurationSeconds) * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if test.ttl != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL", test.ttl)
+			}
+			if test.ttlAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS", test.ttlAlias)
+			}
+			if test.timeout != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT", test.timeout)
+			}
+			if test.timeoutAlias != "" {
+				t.Setenv("DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS", test.timeoutAlias)
+			}
+			cfg := Get()
+			assert.Equal(t, test.wantTTL, cfg.LLMObsPromptsCacheTTL())
+			assert.Equal(t, test.wantTimeout, cfg.LLMObsPromptsTimeout())
+		})
+	}
+
+	t.Run("file cache", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_PROMPTS_CACHE_DIR", "/tmp/prompts")
+		cfg := Get()
+		assert.True(t, cfg.LLMObsPromptsFileCacheEnabled())
+		assert.Equal(t, "/tmp/prompts", cfg.LLMObsPromptsCacheDir())
+	})
+}
+
 func TestReportEffectiveStatsComputation(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()
@@ -1930,4 +2268,32 @@ func TestFlaggingProviderInitTimeout(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
 		})
 	}
+}
+
+func TestResolveBLRPMaxQueueSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "0")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+}
+
+func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
 }

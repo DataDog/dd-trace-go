@@ -47,7 +47,7 @@ func init() {
 		}
 	}
 
-	registerActionHandler("block_request", withoutConfig(NewBlockAction))
+	registerActionHandler("block_request", newConfiguredBlockAction)
 }
 
 type (
@@ -73,8 +73,19 @@ type (
 	// BlockHTTP are actions that interact with an HTTP request flow
 	BlockHTTP struct {
 		http.Handler
+
+		// reportsOutcome is true when this block is the WAF block_request whose
+		// outcome the waf.requests metric reports.
+		reportsOutcome bool
 	}
 )
+
+// ReportsBlockOutcome returns true when the outcome of this action must be
+// reported on the waf.requests metric. It is false for redirects and for
+// RASP-scope blocks, which do not change the block outcome of the request.
+func (a *BlockHTTP) ReportsBlockOutcome() bool {
+	return a != nil && a.reportsOutcome
+}
 
 func (b *blockActionParams) Decode(p map[string]any) error {
 	for k := range p {
@@ -120,6 +131,23 @@ func (a *BlockHTTP) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, &events.BlockingSecurityEvent{})
 }
 
+// CommitBlockResponse asks an integration-specific response writer to deliver the
+// block response the handler just staged, and reports whether it got through.
+// Ordinary HTTP response writers write directly and return nil.
+func CommitBlockResponse(w http.ResponseWriter) error {
+	for w != nil {
+		if committer, ok := w.(interface{ AppSecCommitBlockResponse() error }); ok {
+			return committer.AppSecCommitBlockResponse()
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return nil
+		}
+		w = unwrapper.Unwrap()
+	}
+	return nil
+}
+
 func newGRPCBlockRequestAction(status int) *BlockGRPC {
 	return &BlockGRPC{GRPCWrapper: newGRPCBlockHandler(status)}
 }
@@ -153,6 +181,20 @@ func NewBlockAction(params map[string]any) []Action {
 		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
 		newGRPCBlockRequestAction(p.GRPCStatusCode),
 	}
+}
+
+// newConfiguredBlockAction creates the actions for a "block_request" action type,
+// and marks the HTTP block as the one to report when cfg asks for it.
+func newConfiguredBlockAction(params map[string]any, cfg Config) []Action {
+	created := NewBlockAction(params)
+	if cfg.ReportBlockOutcome {
+		for _, a := range created {
+			if block, ok := a.(*BlockHTTP); ok {
+				block.reportsOutcome = true
+			}
+		}
+	}
+	return created
 }
 
 func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {

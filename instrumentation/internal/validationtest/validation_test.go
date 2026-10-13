@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2/testcases"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,6 +149,12 @@ func TestIntegrations(t *testing.T) {
 					t.Setenv(k, v)
 				}
 
+				if tc.integrationServiceName != "" {
+					componentName := ig.Name()
+					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
+					ig.WithService(tc.integrationServiceName)
+				}
+
 				// also include the testCase start options within the tracer config
 				err := tracer.Start(
 					tracer.WithAgentAddr(agentAddr),
@@ -157,13 +162,6 @@ func TestIntegrations(t *testing.T) {
 				)
 				require.NoError(t, err)
 				defer tracer.Stop()
-
-				if tc.integrationServiceName != "" {
-					componentName := ig.Name()
-					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
-					ig.WithService(tc.integrationServiceName)
-				}
-				instrumentation.ReloadConfig()
 
 				ig.Init(t)
 				ig.GenSpans(t)

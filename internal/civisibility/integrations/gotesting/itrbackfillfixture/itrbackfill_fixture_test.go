@@ -52,6 +52,10 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 }
 
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
+	if os.Getenv("GO_CMD") == "gotip" {
+		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
+	}
+
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
@@ -87,6 +91,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}, skipProfileAssert: true},
 		{name: "backfill-disabled-for-set-covermode", coverMode: "set", withProfile: true, skipProfileAssert: true},
 		{name: "no-skippable", coverMode: "count", withProfile: true},
+		{name: "production-helper-subtest-module", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "^TestProductionHelperSubtestModule$"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var profile string

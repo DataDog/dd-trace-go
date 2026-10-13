@@ -11,7 +11,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
-	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,10 +29,10 @@ import (
 // anything in a build actually woven by orchestrion, because orchestrion.Enabled()
 // is a build-time constant that plain `go test` always sees as false.
 func TestSpanPoolEnabledUnderOrchestrion(t *testing.T) {
-	if !orchestrionEnabled {
+	if !glsWoven {
 		t.Skip("pooling under a woven build is the whole subject of this test")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	t.Run("env var", func(t *testing.T) {
 		t.Setenv("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", "true")

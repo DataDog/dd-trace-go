@@ -25,8 +25,6 @@ import (
 //     OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_EXPORTER_OTLP_ENDPOINT
 //   - Logs-specific OTLP Exporter Configurations: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT,
 //     OTEL_EXPORTER_OTLP_LOGS_HEADERS, OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
-//   - BatchLogRecordProcessor Configurations: OTEL_BLRP_MAX_QUEUE_SIZE, OTEL_BLRP_SCHEDULE_DELAY,
-//     OTEL_BLRP_EXPORT_TIMEOUT, OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
 func registerTelemetry() {
 	telemetryConfigs := []telemetry.Configuration{}
 
@@ -110,42 +108,6 @@ func registerTelemetry() {
 		})
 	}
 
-	// ===========================================
-	// BatchLogRecordProcessor Configurations
-	// ===========================================
-
-	// OTEL_BLRP_MAX_QUEUE_SIZE
-	maxQueueSize := getIntConfig(envBLRPMaxQueueSize, defaultBLRPMaxQueueSize)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envBLRPMaxQueueSize,
-		Value:  maxQueueSize.value,
-		Origin: maxQueueSize.origin,
-	})
-
-	// OTEL_BLRP_SCHEDULE_DELAY
-	scheduleDelay := getMillisecondsConfig(envBLRPScheduleDelay, defaultBLRPScheduleDelayMs)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envBLRPScheduleDelay,
-		Value:  scheduleDelay.value,
-		Origin: scheduleDelay.origin,
-	})
-
-	// OTEL_BLRP_EXPORT_TIMEOUT
-	exportTimeout := getMillisecondsConfig(envBLRPExportTimeout, defaultBLRPExportTimeoutMs)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envBLRPExportTimeout,
-		Value:  exportTimeout.value,
-		Origin: exportTimeout.origin,
-	})
-
-	// OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
-	maxExportBatchSize := getIntConfig(envBLRPMaxExportBatchSize, defaultBLRPMaxExportBatchSize)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-		Name:   envBLRPMaxExportBatchSize,
-		Value:  maxExportBatchSize.value,
-		Origin: maxExportBatchSize.origin,
-	})
-
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }
 
@@ -182,32 +144,12 @@ func parseMsFromEnv(envVar string) configValue {
 	return configValue{}
 }
 
-// parseIntFromEnv attempts to parse an integer value from an environment variable.
-// Returns a zero configValue if the env var is empty or parsing fails.
-func parseIntFromEnv(envVar string) configValue {
-	if v := env.Get(envVar); v != "" {
-		if val, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return configValue{value: val, origin: telemetry.OriginEnvVar}
-		}
-	}
-	return configValue{}
-}
-
 // getMillisecondsConfig reads a milliseconds value from an environment variable,
 // falling back to the provided default. Uses cmp.Or to select the first valid config.
 func getMillisecondsConfig(envVar string, defaultMs int) configValue {
 	return cmp.Or(
 		parseMsFromEnv(envVar),
 		configValue{value: defaultMs, origin: telemetry.OriginDefault},
-	)
-}
-
-// getIntConfig reads an integer value from an environment variable,
-// falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getIntConfig(envVar string, defaultVal int) configValue {
-	return cmp.Or(
-		parseIntFromEnv(envVar),
-		configValue{value: defaultVal, origin: telemetry.OriginDefault},
 	)
 }
 

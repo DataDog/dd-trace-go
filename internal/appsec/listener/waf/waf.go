@@ -15,7 +15,6 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/DataDog/go-libddwaf/v5/timer"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
@@ -39,8 +38,9 @@ type Feature struct {
 	rulesVersion    string
 	reportRulesTags sync.Once
 
-	telemetryMetrics waf.HandleMetrics
-	stackTrace       config.StackTraceConfig
+	telemetryMetrics    waf.HandleMetrics
+	stackTrace          config.StackTraceConfig
+	blockingUnavailable bool
 
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
@@ -85,6 +85,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		supportedAddrs:      cfg.SupportedAddresses,
 		telemetryMetrics:    telemetryMetrics,
 		stackTrace:          cfg.StackTrace,
+		blockingUnavailable: cfg.BlockingUnavailable,
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
 	}
@@ -114,6 +115,9 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 	op.SetSupportedAddresses(waf.supportedAddrs)
+	if waf.blockingUnavailable {
+		op.SetBlockingUnavailable()
+	}
 	op.SetMetricsInstance(waf.telemetryMetrics.NewContextMetrics())
 
 	// Run the WAF with the given address data
@@ -124,12 +128,6 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 
 func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	op.SetStackTraceConfig(f.stackTrace)
-
-	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-		log.Debug("appsec: blocking event detected")
-		op.SetTag(blockedRequestTag, true)
-		op.SetRequestBlocked()
-	})
 
 	// Register the stacktrace if one is requested by a WAF action.
 	dyngo.OnData(op, func(action *actions.StackTraceAction) {

@@ -165,6 +165,13 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # OpenTelemetry Semantic Conventions
+//
+// DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
+// conventions, forces trace export through OTLP, and overrides
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
+// to false.
+//
 // # Trace Protocol
 //
 // Client-side stats computation is independent of the Datadog trace protocol

@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/sketches-go/ddsketch"
@@ -94,22 +95,66 @@ func newBucket(start, duration uint64) bucket {
 	}
 }
 
-func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) StatsBucket {
+type serializationErrors struct {
+	pathwayLatency error
+	edgeLatency    error
+	payloadSize    error
+}
+
+func (e *serializationErrors) merge(other serializationErrors) {
+	if e.pathwayLatency == nil {
+		e.pathwayLatency = other.pathwayLatency
+	}
+	if e.edgeLatency == nil {
+		e.edgeLatency = other.edgeLatency
+	}
+	if e.payloadSize == nil {
+		e.payloadSize = other.payloadSize
+	}
+}
+
+func (e serializationErrors) report() {
+	if e.pathwayLatency != nil {
+		telemetrylog.ReportError("can't serialize pathway latency. Ignoring", e.pathwayLatency)
+	}
+	if e.edgeLatency != nil {
+		telemetrylog.ReportError("can't serialize edge latency. Ignoring", e.edgeLatency)
+	}
+	if e.payloadSize != nil {
+		telemetrylog.ReportError("can't serialize payload size. Ignoring", e.payloadSize)
+	}
+}
+
+func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) (StatsBucket, serializationErrors) {
+	return b.exportWithMarshaler(timestampType, checkpointNameMapping, proto.Marshal)
+}
+
+func (b bucket) exportWithMarshaler(timestampType TimestampType, checkpointNameMapping []byte, marshal func(proto.Message) ([]byte, error)) (StatsBucket, serializationErrors) {
 	stats := make([]StatsPoint, 0, len(b.points))
+	var errs serializationErrors
 	for _, s := range b.points {
-		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
+		pathwayLatency, err := marshal(s.pathwayLatency.ToProto())
 		if err != nil {
 			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
+			if errs.pathwayLatency == nil {
+				errs.pathwayLatency = err
+			}
 			continue
 		}
-		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
+		edgeLatency, err := marshal(s.edgeLatency.ToProto())
 		if err != nil {
 			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
+			if errs.edgeLatency == nil {
+				errs.edgeLatency = err
+			}
 			continue
 		}
-		payloadSize, err := proto.Marshal(s.payloadSize.ToProto())
+		payloadSize, err := marshal(s.payloadSize.ToProto())
 		if err != nil {
 			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
+			if errs.payloadSize == nil {
+				errs.payloadSize = err
+			}
 			continue
 		}
 		stats = append(stats, StatsPoint{
@@ -151,7 +196,7 @@ func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte
 		}
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
-	return exported
+	return exported, errs
 }
 
 type pointType int
@@ -245,7 +290,7 @@ func (r *checkpointRegistry) getOrAssign(name string) (byte, bool) {
 		return id, true
 	}
 	if r.nextID == math.MaxUint8 {
-		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name")
+		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name") //errtrack:ignore expected capacity limit from user-provided checkpoint names
 		return 0, false
 	}
 	id := r.nextID
@@ -350,13 +395,13 @@ func (p *Processor) addToBuckets(point statsPoint, btime int64, buckets map[buck
 		b.points[point.hash] = group
 	}
 	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add pathway latency. Ignoring %v.", err.Error())
+		log.Error("failed to add pathway latency. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add edge latency. Ignoring %v.", err.Error())
+		log.Error("failed to add edge latency. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 	if err := group.payloadSize.Add(float64(point.payloadSize)); err != nil {
-		log.Error("failed to add payload size. Ignoring %v.", err.Error())
+		log.Error("failed to add payload size. Ignoring %v.", err.Error()) //errtrack:ignore per-checkpoint customer data; reporting here would be per-request
 	}
 }
 
@@ -505,7 +550,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 func (p *Processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*Processor).Start called more than once. This is likely a programming error.")
+		log.Warn("(*Processor).Start called more than once. This is likely a programming error.") //errtrack:ignore caller used the lifecycle API out of order
 		return
 	}
 	p.stop = make(chan struct{})
@@ -557,12 +602,12 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
 		if dt := p.stats.droppedTransactions.Swap(0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
-			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
+			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt) //errtrack:ignore expected capacity limit already reported by a metric
 		}
 	}
 }
 
-func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, timestampType TimestampType) StatsBucket {
+func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, timestampType TimestampType, marshal func(proto.Message) ([]byte, error)) (StatsBucket, serializationErrors) {
 	b := buckets[bk]
 	delete(buckets, bk)
 	var mapping []byte
@@ -570,12 +615,17 @@ func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, time
 		log.Debug("datastreams: flushing bucket with %d transaction bytes, %d mapping bytes", len(b.transactions), len(p.checkpoints.encodedKeys))
 		mapping = p.checkpoints.encodedKeys
 	}
-	return b.export(timestampType, mapping)
+	return b.exportWithMarshaler(timestampType, mapping, marshal)
 }
 
 func (p *Processor) flush(now time.Time) map[string]StatsPayload {
+	return p.flushWithMarshaler(now, proto.Marshal)
+}
+
+func (p *Processor) flushWithMarshaler(now time.Time, marshal func(proto.Message) ([]byte, error)) map[string]StatsPayload {
 	nowNano := now.UnixNano()
 	payloads := make(map[string]StatsPayload)
+	var errs serializationErrors
 	addBucket := func(service string, bucket StatsBucket) {
 		payload, ok := payloads[service]
 		if !ok {
@@ -600,15 +650,20 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 			// do not flush the bucket at the current time
 			continue
 		}
-		addBucket(bucketKey.serviceName, p.flushBucket(p.tsTypeCurrentBuckets, bucketKey, TimestampTypeCurrent))
+		bucket, bucketErrors := p.flushBucket(p.tsTypeCurrentBuckets, bucketKey, TimestampTypeCurrent, marshal)
+		errs.merge(bucketErrors)
+		addBucket(bucketKey.serviceName, bucket)
 	}
 	for bucketKey := range p.tsTypeOriginBuckets {
 		if bucketKey.btime > nowNano-bucketDuration.Nanoseconds() {
 			// do not flush the bucket at the current time
 			continue
 		}
-		addBucket(bucketKey.serviceName, p.flushBucket(p.tsTypeOriginBuckets, bucketKey, TimestampTypeOrigin))
+		bucket, bucketErrors := p.flushBucket(p.tsTypeOriginBuckets, bucketKey, TimestampTypeOrigin, marshal)
+		errs.merge(bucketErrors)
+		addBucket(bucketKey.serviceName, bucket)
 	}
+	errs.report()
 	return payloads
 }
 

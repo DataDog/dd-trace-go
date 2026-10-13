@@ -47,6 +47,8 @@ type (
 		stackTrace config.StackTraceConfig
 		// metrics the place that manages reporting for the current execution
 		metrics *ContextMetrics
+		// blockingUnavailable is true when the active integration cannot enforce blocks.
+		blockingUnavailable atomic.Bool
 		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
 		requestBlocked bool
 		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
@@ -72,11 +74,24 @@ type (
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
+// The WAF emits API Security response schema derivatives under this tag prefix.
+const responseSchemaDerivativePrefix = "_dd.appsec.s.res."
+
+type blockingUnavailableContextKey struct{}
+
+// ContextWithBlockingUnavailable marks ctx as belonging to an integration that cannot enforce blocks.
+func ContextWithBlockingUnavailable(ctx context.Context) context.Context {
+	return context.WithValue(ctx, blockingUnavailableContextKey{}, true)
+}
+
 func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextOperation, context.Context) {
 	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx, span)
 	op := &ContextOperation{
 		Operation:                 dyngo.NewOperation(entrySpanOp),
 		ServiceEntrySpanOperation: entrySpanOp,
+	}
+	if unavailable, _ := ctx.Value(blockingUnavailableContextKey{}).(bool); unavailable {
+		op.blockingUnavailable.Store(true)
 	}
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
@@ -123,10 +138,21 @@ func (op *ContextOperation) GetMetricsInstance() *ContextMetrics {
 	return op.metrics
 }
 
+// SetBlockingUnavailable records that the active integration cannot enforce blocks.
+func (op *ContextOperation) SetBlockingUnavailable() {
+	op.blockingUnavailable.Store(true)
+}
+
+// BlockingUnavailable reports whether the active integration can enforce blocks.
+func (op *ContextOperation) BlockingUnavailable() bool {
+	return op.blockingUnavailable.Load()
+}
+
 func (op *ContextOperation) SetRequestBlocked() {
 	op.mu.Lock()
-	defer op.mu.Unlock()
 	op.requestBlocked = true
+	op.mu.Unlock()
+	op.SetTag("appsec.blocked", true)
 }
 
 // AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
@@ -177,11 +203,6 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	}
 
 	for k, v := range derivatives {
-		// If the request has been blocked, we don't want to report any derivatives representing the response schema.
-		if op.requestBlocked && strings.HasPrefix(k, "_dd.appsec.s.res.") {
-			continue
-		}
-
 		// First-write-wins, intentionally: ephemeral subcontexts (e.g. per-hop downstream
 		// evaluation of a redirect chain) don't share the WAF's in-context attribute dedup, so
 		// without this guard the last hop would overwrite the first. Keeping the first value makes
@@ -197,7 +218,15 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 func (op *ContextOperation) Derivatives() map[string]any {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	return maps.Clone(op.derivatives)
+	derivatives := maps.Clone(op.derivatives)
+	if op.requestBlocked {
+		// Blocking responses contain a fixed SDK payload, not application data.
+		// Filter at read time because a block can happen after schema collection.
+		maps.DeleteFunc(derivatives, func(key string, _ any) bool {
+			return strings.HasPrefix(key, responseSchemaDerivativePrefix)
+		})
+	}
+	return derivatives
 }
 
 func (op *ContextOperation) Events() []any {
