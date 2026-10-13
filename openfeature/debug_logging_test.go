@@ -408,6 +408,26 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 		assert.Empty(t, logger.all())
 	})
 
+	t.Run("logs the selected remote_config source", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		// Attach to a simulated tracer subscription so no Agent is needed.
+		internalffe.ResetForTest()
+		internalffe.SetSubscribedForTest(true)
+		t.Cleanup(internalffe.ResetForTest)
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
+
+		p, err := NewDatadogProvider(ProviderConfig{})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = p.(*DatadogProvider).ShutdownWithContext(ctx)
+		})
+
+		logger.assertContains(t, "openfeature: configuration source is remote_config")
+		logger.assertContains(t, "openfeature: starting remote_config configuration source (Agent Remote Configuration)")
+	})
+
 	t.Run("logs the selected agentless source", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		backend := newFakeUFCBackend(t)
