@@ -30,6 +30,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_APM_TRACING_ENABLED":                                                  {},
 	"DD_APPSEC_AGENTIC_ONBOARDING":                                            {},
 	"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":                                       {},
+	"DD_APPSEC_DISABLE_FEATURES":                                              {},
 	"DD_APPSEC_ENABLED":                                                       {},
 	"DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML":                                    {},
 	"DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON":                                    {},

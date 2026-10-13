@@ -412,6 +412,10 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 `DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
 
+#### Disabling AppSec features
+
+`DD_APPSEC_DISABLE_FEATURES` takes a comma-separated, case-insensitive list of AppSec feature names that are not started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. Accepted names are `http`, `grpc`, `graphql`, `user`, `sqli`, `lfi`, `cmdi`, and `ssrf`. Disabling `http` or `grpc` also stops the WAF from evaluating their request and response data, including HTTP bodies and gRPC messages. The `waf` and `trace` features are required and cannot be disabled; they, and unknown names, are ignored with a warning. See [internal/appsec/README.md](./internal/appsec/README.md) for the feature list.
+
 #### Adding new environment variables using configinverter
 
 The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
