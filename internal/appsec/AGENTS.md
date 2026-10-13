@@ -36,10 +36,16 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
    `trace.NewAppsecSpanTransport` always activates, and `httpsec.NewHTTPSecFeature` falls back to
    `HeaderExtractionFeature` when no HTTP address is supported.
 3. Append the constructor to `features` in `features.go`.
-4. In the listener, get the WAF context with `waf.ContextOperationFromParents(op)`.
-   - One-shot evaluation (SQLi, LFI, CMDi): the listener calls `NewSubcontextOp()` and then `Run`,
-     and defers `subOp.Close()`. See `listener/sqlsec`.
-   - Multi-stage evaluation (SSRF covers both the request and the response): the subcontext belongs
+4. Pick the lifetime of the WAF data:
+   - Persistent request data (headers, body, response): run it on the request context, through
+     `ContextOperation.Run` in a listener (`listener/httpsec`, `listener/grpcsec`) or through
+     `waf.RunSimple` in an emitter (`httpsec` body monitors). Later WAF runs on the same request see
+     it.
+   - One-shot ephemeral data (SQLi, LFI, CMDi): get the context with
+     `waf.ContextOperationFromParents(op)`, call `NewSubcontextOp()` and then `Run`, and defer
+     `subOp.Close()`. See `listener/sqlsec`. Emitter-side helpers use `waf.RunSimpleSubcontext`, as the
+     `grpcsec` message monitors do.
+   - Multi-stage ephemeral data (SSRF covers both the request and the response): the subcontext belongs
      to the operation. The emitter creates it before starting the operation and embeds it, the start
      and finish listeners both call `Run` on it, and the operation's `Finish` closes it. See
      `ProtectRoundTrip` in `instrumentation/appsec/emitter/httpsec/roundtripper.go`.
@@ -61,13 +67,16 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
   sent to telemetry are wrapped with `telemetrylog.NewSafeError`. Never reword an existing telemetry
   log template (e.g. `"failed to build WAF handle"`) just to add the prefix: its text is the
   deduplication key.
-- No parent operation (`dyngo.FromContext` or `FindOperation` fails):
-  - Helper emitters that evaluate and return only an error log once at debug level and return nil.
-    Examples are `sqlsec.ProtectSQLOperation` and `httpsec.ProtectRoundTrip`.
-  - Emitters that hand an operation back to the caller still return a usable operation with a nil
-    parent, so the caller's Start/Finish pairing holds. `graphqlsec.Start{Execution,Resolve}Operation`
-    log at debug level. `usersec.StartUserLoginOperation` logs an error once, because the user called
-    the SDK explicitly.
+- No request-scoped parent (`dyngo.FromContext` or `FindOperation` fails): there is no single rule,
+  so match the emitter's neighbors.
+  - `sqlsec.ProtectSQLOperation` and `httpsec.ProtectRoundTrip` log once at debug level and return
+    nil.
+  - `waf.RunSimple` and `RunSimpleSubcontext` (the `httpsec` body monitors and `grpcsec` message
+    monitors) call `log.Error` on every call and return nil.
+  - Emitters that return an operation (`graphqlsec.Start{Execution,Resolve}Operation`,
+    `usersec.StartUserLoginOperation`) still return a usable one, so the caller's Start/Finish
+    pairing holds. `dyngo.NewOperation(nil)` parents it to the global root, so root-level listeners
+    still see its events. GraphQL logs at debug level, and usersec logs an error once.
 - The only build-tag split here is `cgo`/`!cgo` (`telemetry_*.go`). `datadog.no_waf` is a
   go-libddwaf tag that compiles the WAF out, making `Usable()` false.
 
@@ -84,6 +93,8 @@ WAF, keeps WAF rules in sync with Remote Config, and swaps listeners atomically 
 
 - `instrumentation/testutils.StartAppSec(t)` forces `ForcedOn` and skips when the WAF is unusable.
 - Rule fixtures are `testdata/*.json`. Select one with `t.Setenv("DD_APPSEC_RULES", "testdata/...")`.
+  The path is read relative to the test's package directory, so nested packages use their own
+  `testdata/` (e.g. `listener/httpsec/testdata`) or a relative path to the shared fixtures.
 
 ```bash
 go test -race ./internal/appsec/... ./instrumentation/appsec/... ./appsec/...
@@ -105,7 +116,9 @@ CI: `.github/workflows/appsec.yml` is path-filtered and has four test jobs:
 
 In `.github/ci-components.yml`, non-Markdown `internal/appsec` paths fall through to `core`, which
 runs every gate. `*.md` files, including this one and `README.md`, match the earlier `docs` component
-and run only `static-docs`. GitLab micro benchmarks run `./internal/appsec/...`.
+(only `static-docs` among component gates). The `appsec.yml` path filter (`internal/appsec/**`)
+selects jobs independently, so Markdown changes here still run its four test jobs. GitLab micro
+benchmarks run `./internal/appsec/...`.
 
 ## Updating Documentation
 
