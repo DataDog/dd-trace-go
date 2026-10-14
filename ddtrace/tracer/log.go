@@ -301,9 +301,9 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 }
 
 // otelPropagators returns the OTEL_PROPAGATORS equivalent of p. It returns ""
-// when p is custom or when injection and extraction use different sequences,
-// including when extraction is ignored, since no single OTEL_PROPAGATORS value
-// describes them.
+// when p or one of its propagators is custom, or when injection and extraction
+// use different sequences, including when extraction is ignored, since no
+// single OTEL_PROPAGATORS value describes them.
 func otelPropagators(p Propagator) string {
 	cp, ok := p.(*chainedPropagator)
 	if !ok {
@@ -312,31 +312,23 @@ func otelPropagators(p Propagator) string {
 	if len(cp.injectors) == 0 && len(cp.extractors) == 0 {
 		return "none"
 	}
-	// Explicitly provided propagators have no names.
-	if cp.injectorNames == "" || cp.extractorsNames == "" {
-		return ""
-	}
-	inject, extract := otelPropagatorNames(cp.injectorNames), otelPropagatorNames(cp.extractorsNames)
-	if inject != extract || cp.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
+	inject, extract := otelPropagatorNames(cp.injectors), otelPropagatorNames(cp.extractors)
+	if inject == "" || inject != extract || cp.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
 		return ""
 	}
 	return inject
 }
 
-// otelPropagatorNames maps the tracer's propagator names to OTel names. The
-// tracer's "b3" is the multi-header format, which OTel calls "b3multi"; OTel's
-// "b3" is the single-header format.
-func otelPropagatorNames(names string) string {
-	parts := strings.Split(names, ",")
-	for i, name := range parts {
-		switch name {
-		case "b3":
-			parts[i] = "b3multi"
-		case "b3 single header":
-			parts[i] = "b3"
+// otelPropagatorNames returns the comma-separated OTel names of propagators,
+// or "" when one of them has no OTel name.
+func otelPropagatorNames(propagators []Propagator) string {
+	names := make([]string, len(propagators))
+	for i, p := range propagators {
+		if names[i] = getPropagatorName(p); names[i] == "" {
+			return ""
 		}
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(names, ",")
 }
 
 // otelTracesSampler returns the OTel sampler equivalent to the tracer's

@@ -285,6 +285,26 @@ func TestLogPropagators(t *testing.T) {
 	})
 }
 
+func TestOTelPropagators(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    Propagator
+		want string
+	}{
+		{"b3", NewPropagator(&PropagatorConfig{InjectStyle: "b3", ExtractStyle: "b3"}), "b3multi"},
+		{"b3multi", NewPropagator(&PropagatorConfig{InjectStyle: "b3multi", ExtractStyle: "b3multi"}), "b3multi"},
+		{"b3 single header", NewPropagator(&PropagatorConfig{InjectStyle: "b3 single header", ExtractStyle: "b3 single header"}), "b3"},
+		{"default", NewPropagator(nil), "datadog,tracecontext,baggage"},
+		{"none", NewPropagator(&PropagatorConfig{InjectStyle: "none", ExtractStyle: "none"}), "none"},
+		{"different", NewPropagator(&PropagatorConfig{InjectStyle: "b3multi", ExtractStyle: "tracecontext"}), ""},
+		{"extract ignored", NewPropagator(&PropagatorConfig{BehaviorExtract: propagationBehaviorExtractIgnore}), ""},
+		{"explicit custom", NewPropagator(nil, &prop{}), ""},
+		{"custom", &prop{}, ""},
+	} {
+		assert.Equal(t, tc.want, otelPropagators(tc.p), tc.name)
+	}
+}
+
 type prop struct{}
 
 func (p *prop) Inject(_ *SpanContext, _ any) (e error) {
