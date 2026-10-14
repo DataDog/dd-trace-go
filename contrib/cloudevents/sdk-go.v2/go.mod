@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.2
 	github.com/cloudevents/sdk-go/v2 v2.16.2
 )
 
