@@ -13,7 +13,7 @@ import (
 
 func parseIgnoredRoutes(value string) map[string]struct{} {
 	ignoredRoutes := make(map[string]struct{})
-	for _, route := range strings.Split(value, ",") {
+	for route := range strings.SplitSeq(value, ",") {
 		fields := strings.Fields(route)
 		if len(fields) != 2 {
 			if strings.TrimSpace(route) != "" {
