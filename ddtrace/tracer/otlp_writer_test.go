@@ -183,6 +183,30 @@ func TestOTLPWriterFlush(t *testing.T) {
 	assert.Equal(t, 2, len(rs[0].ScopeSpans[0].Spans))
 }
 
+func TestOTLPWriterSignalHeadersReplaceGeneric(t *testing.T) {
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
+
+	cfg, err := newTestConfig(func(c *config) {
+		c.ddTransport = &simpleTransport{}
+	})
+	require.NoError(t, err)
+	w := newOTLPTraceWriter(cfg)
+	w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
+	w.flush()
+	w.wait()
+
+	assert.Equal(t, "signal", gotHeaders.Get("Authorization"))
+	assert.Empty(t, gotHeaders.Values("X-Generic"))
+}
+
 func TestOTLPWriterFlushClearsSpans(t *testing.T) {
 	srv := newTestOTLPServer()
 	defer srv.Close()
