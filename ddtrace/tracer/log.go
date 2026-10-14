@@ -91,7 +91,7 @@ type startupInfo struct {
 	// describes. Fields tagged omitempty are omitted when the setting does not
 	// apply to an effective pipeline or has no faithful equivalent.
 	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether any OTel pipeline or semantics is effective
-	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Whether the OTel metrics pipeline is active
+	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
 
