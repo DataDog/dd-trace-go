@@ -89,6 +89,48 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_traces_exporter"}).Get())
 	})
 
+	t.Run("maps OTEL_SDK_DISABLED=true to DD_TRACE_ENABLED=false", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+		assert.Equal(t, "false", v)
+	})
+
+	t.Run("OTEL_SDK_DISABLED=false does not set DD_TRACE_ENABLED", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "false")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+		assert.Equal(t, "", v)
+	})
+
+	t.Run("OTEL_SDK_DISABLED=true takes precedence over OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+		assert.Equal(t, "false", v)
+	})
+
+	t.Run("OTEL_SDK_DISABLED=false falls through to OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "false")
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+		assert.Equal(t, "false", v)
+	})
+
+	t.Run("returns empty for invalid OTEL_SDK_DISABLED", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SDK_DISABLED", "maybe")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+
+		assert.Equal(t, "", v)
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}).Get())
+	})
+
 	t.Run("maps OTEL_METRICS_EXPORTER=none to DD_RUNTIME_METRICS_ENABLED=false", func(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		source := &otelEnvConfigSource{}

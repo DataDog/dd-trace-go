@@ -320,6 +320,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_METRIC_EXPORT_TIMEOUT":                                              {},
 	"OTEL_PROPAGATORS":                                                        {},
 	"OTEL_RESOURCE_ATTRIBUTES":                                                {},
+	"OTEL_SDK_DISABLED":                                                       {},
 	"OTEL_SERVICE_NAME":                                                       {},
 	"OTEL_TRACES_EXPORTER":                                                    {},
 	"OTEL_TRACES_SAMPLER":                                                     {},

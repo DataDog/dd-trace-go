@@ -8,6 +8,7 @@ package provider
 import (
 	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -28,10 +29,15 @@ type otelEnvConfigSource struct{}
 
 func (o *otelEnvConfigSource) get(key string) string {
 	ddKey := normalizeKey(key)
-	entry := otelConfigs[ddKey]
-	if entry == nil {
-		return ""
+	for _, entry := range otelConfigs[ddKey] {
+		if val := entry.resolve(ddKey); val != "" {
+			return val
+		}
 	}
+	return ""
+}
+
+func (entry *otelDDEnv) resolve(ddKey string) string {
 	otVal := env.Get(entry.ot)
 	if otVal == "" {
 		return ""
@@ -60,39 +66,45 @@ type otelDDEnv struct {
 	remapper func(string) (string, error)
 }
 
-var otelConfigs = map[string]*otelDDEnv{
-	"DD_SERVICE": {
+// otelConfigs maps each DD key to the OTEL env vars that can set it. When several
+// OTEL vars map to the same key, they are evaluated in order and the first
+// non-empty mapped value wins.
+var otelConfigs = map[string][]*otelDDEnv{
+	"DD_SERVICE": {{
 		ot:       "OTEL_SERVICE_NAME",
 		remapper: mapService,
-	},
-	"DD_RUNTIME_METRICS_ENABLED": {
+	}},
+	"DD_RUNTIME_METRICS_ENABLED": {{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
-	},
-	"DD_METRICS_OTEL_ENABLED": {
+	}},
+	"DD_METRICS_OTEL_ENABLED": {{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapOtelMetrics,
-	},
-	"DD_TRACE_DEBUG": {
+	}},
+	"DD_TRACE_DEBUG": {{
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
-	},
-	"DD_TRACE_ENABLED": {
+	}},
+	"DD_TRACE_ENABLED": {{
+		ot:       "OTEL_SDK_DISABLED",
+		remapper: mapSDKDisabled,
+	}, {
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
-	},
-	"DD_TRACE_SAMPLE_RATE": {
+	}},
+	"DD_TRACE_SAMPLE_RATE": {{
 		ot:       "OTEL_TRACES_SAMPLER",
 		remapper: mapSampleRate,
-	},
-	"DD_TRACE_PROPAGATION_STYLE": {
+	}},
+	"DD_TRACE_PROPAGATION_STYLE": {{
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
-	},
-	"DD_TAGS": {
+	}},
+	"DD_TAGS": {{
 		ot:       "OTEL_RESOURCE_ATTRIBUTES",
 		remapper: mapDDTags,
-	},
+	}},
 }
 
 var ddTagsMapping = map[string]string{
@@ -157,6 +169,19 @@ func mapEnabled(ot string) (string, error) {
 	default:
 		return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 	}
+}
+
+// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED. OTEL_SDK_DISABLED=false
+// yields no value so that other OTEL mappings for DD_TRACE_ENABLED still apply.
+func mapSDKDisabled(ot string) (string, error) {
+	disabled, err := strconv.ParseBool(strings.TrimSpace(ot))
+	if err != nil {
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_SDK_DISABLED=%v", ot)
+	}
+	if disabled {
+		return "false", nil
+	}
+	return "", nil
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"
