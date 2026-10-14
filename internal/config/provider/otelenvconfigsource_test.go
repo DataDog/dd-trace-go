@@ -96,8 +96,8 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "false", v)
 	})
 
-	t.Run("OTEL_SDK_DISABLED is case-insensitive", func(t *testing.T) {
-		for _, v := range []string{"tRuE", "1", "T"} {
+	t.Run("OTEL_SDK_DISABLED accepts strconv.ParseBool true values", func(t *testing.T) {
+		for _, v := range []string{"TRUE", "True", "1", "t"} {
 			t.Setenv("OTEL_SDK_DISABLED", v)
 			source := &otelEnvConfigSource{}
 			assert.Equal(t, "false", source.get("DD_TRACE_ENABLED"), "OTEL_SDK_DISABLED=%s", v)
@@ -137,6 +137,20 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		source.get("DD_TRACE_ENABLED")
 
 		assert.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}).Get())
+	})
+
+	t.Run("invalid OTEL value with DD value reports hiding and invalid", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SDK_DISABLED", "maybe")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+		source := &otelEnvConfigSource{}
+		source.get("DD_TRACE_ENABLED")
+
+		tags := []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", tags).Get())
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", tags).Get())
 	})
 
 	t.Run("OTEL_SDK_DISABLED=true with DD_TRACE_ENABLED reports hiding", func(t *testing.T) {

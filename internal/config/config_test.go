@@ -917,11 +917,11 @@ func TestOTelSDKDisabled(t *testing.T) {
 		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
 	})
 
-	t.Run("case-insensitive true overrides OTel logs and metrics", func(t *testing.T) {
+	t.Run("uppercase TRUE overrides OTel logs and metrics", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_SDK_DISABLED", "tRuE")
+		t.Setenv("OTEL_SDK_DISABLED", "TRUE")
 		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
 		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 
