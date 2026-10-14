@@ -497,18 +497,12 @@ func loadConfig() *Config {
 		cfg.otlpExportMode = false
 		cfg.traceProtocolOverridesOTLP = true
 	}
-	otlpGenericEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, otlpGenericEndpoint)
-	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
-	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
-		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
-	cfg.otlpLogsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", otlpGenericEndpoint)
-	otlpGenericHeaders := decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter))
-	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
-		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter)),
-	))
+	traces := otlpSignal{name: "TRACES", validEndpoint: isOTLPHTTPURL, warn: cfg.otlpExportMode}
+	tracesEndpoint, genericEndpoint := traces.endpoints(p)
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
+	cfg.otlpTraceURL = resolveOTLPTraceURL(tracesEndpoint, cfg.otlpEndpoint)
+	cfg.otlpTraceURLDerivedFromAgent = tracesEndpoint == "" && genericEndpoint == ""
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(traces.headers(p))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -523,37 +517,17 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
-		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
-		cfg.otlpEndpoint,
-	)
-	cfg.otlpMetricsHeaders = resolveOTLPHeaders(
-		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter)),
-	)
-	cfg.otlpLogsHeaders = resolveOTLPHeaders(
-		parseOTLPLogsHeaders(p.GetString("OTEL_EXPORTER_OTLP_HEADERS", "")),
-		parseOTLPLogsHeaders(p.GetString("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "")),
-	)
-	otlpTimeout := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
-	cfg.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", otlpTimeout)) * time.Millisecond
-	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
-	// The protocol is only consumed by the OTLP span metrics exporter. Values
-	// such as "grpc" are valid for other OpenTelemetry components, so only warn
-	// about them when this exporter is going to use the value.
-	warnOTLPProtocol := cfg.OTLPSpanMetricsEnabled()
-	// The signal-specific protocol takes precedence over the generic one, so
-	// the generic value never reaches the exporter when it is set; warn about
-	// it only when it is the effective protocol.
-	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
-	otlpGenericProtocol := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
-	otlpProtocolFallback := otlpGenericProtocol
-	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
-		otlpProtocolFallback = "http/protobuf"
+	metrics := otlpSignal{
+		name:          "METRICS",
+		validEndpoint: isOTLPHTTPURL,
+		protocols:     []string{"http/protobuf", "http/json"},
+		warn:          cfg.OTLPSpanMetricsEnabled(),
 	}
-	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
-		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
-	})
+	metricsEndpoint, genericEndpoint := metrics.endpoints(p)
+	cfg.otlpMetricsURL = resolveOTLPMetricsURL(metricsEndpoint, resolveOTLPEndpoint(cfg.agentURL, genericEndpoint))
+	cfg.otlpMetricsHeaders = metrics.headers(p)
+	cfg.otlpMetricsProtocol = metrics.protocol(p)
+	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	envP := provider.NewEnvironment()
 	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
 	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
@@ -568,8 +542,17 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
 		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
 	})))
-	// Logs accept protocols the metrics exporter rejects (e.g. grpc), so they use the unvalidated generic value.
-	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", otlpGenericProtocol)))
+	logs := otlpSignal{
+		name:          "LOGS",
+		validEndpoint: isURL,
+		protocols:     []string{"http/protobuf", "http", "grpc"},
+		warn:          cfg.logsOTelEnabled,
+	}
+	logsEndpoint, genericEndpoint := logs.endpoints(p)
+	cfg.otlpLogsEndpoint = cmp.Or(logsEndpoint, genericEndpoint)
+	cfg.otlpLogsHeaders = logs.headers(p)
+	cfg.otlpLogsProtocol = logs.protocol(p)
+	cfg.otlpLogsTimeout = logs.timeout(p)
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1775,8 +1758,8 @@ func (c *Config) BLRPMaxExportBatchSize() int {
 }
 
 // OTLPLogsProtocol returns the lowercased OTLP logs protocol from
-// OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, then OTEL_EXPORTER_OTLP_PROTOCOL. The value is
-// not validated; it defaults to "http/protobuf".
+// OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, then OTEL_EXPORTER_OTLP_PROTOCOL, skipping
+// unsupported values. It is always "http/protobuf" (default), "http" or "grpc".
 func (c *Config) OTLPLogsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
