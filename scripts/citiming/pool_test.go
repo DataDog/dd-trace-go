@@ -99,6 +99,16 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 			key: "datadog-ci-cli-linux-x64", kind: "datadog_ci", workload: poolNA, osX: "unknown",
 		},
 		{
+			// system-tests.yml caches the npm-installed datadog-ci CLI.
+			key: "npm-datadog-ci-Linux-v1", kind: "datadog_ci", workload: poolNA, osX: "unknown",
+		},
+		{
+			// build-metrics.yml saves its own module cache under this
+			// prefix; it must not inflate the AppSec gauges.
+			key:  "go-pkg-mod-build-metrics-60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380",
+			kind: "other", workload: poolNA, osX: "unknown",
+		},
+		{
 			key: "gitdb-67680905-5440838bca4e3081ddebbac1ec98a4244e4ec695", kind: "gitdb", workload: poolNA, osX: "unknown",
 		},
 		{
@@ -444,5 +454,33 @@ func TestFmtPoolAge(t *testing.T) {
 		if got := fmtPoolAge(c.seconds); got != c.want {
 			t.Errorf("fmtPoolAge(%f) = %q, want %q", c.seconds, got, c.want)
 		}
+	}
+}
+
+func TestPoolOmitsEvictionHorizonWhenNoAccessFound(t *testing.T) {
+	at := mustTime(t, "2026-10-13T12:00:00Z")
+	entries := []string{
+		poolEntryJSON("go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-"+
+			"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744",
+			"refs/heads/main", giB, "2026-10-13T06:00:00Z", ""),
+	}
+	fake := &fakeClient{
+		repo:          "DataDog/dd-trace-go",
+		defaultBranch: "main",
+		cachesJSON:    poolCachesPage(entries...),
+	}
+	snap, err := collectCacheSnapshot(fake, "2026-10-13T12:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := buildPoolReport(snap, at, "main")
+	payload := buildPoolPayload(report, "DataDog/dd-trace-go")
+	for _, s := range payload.Series {
+		if s.Metric == poolMetricOldest {
+			t.Error("eviction horizon emitted although no entry carries an access timestamp")
+		}
+	}
+	if text := renderPoolText(report, "DataDog/dd-trace-go"); !strings.Contains(text, "oldest last access: n/a") {
+		t.Errorf("text report does not mark the missing horizon:\n%s", text)
 	}
 }
