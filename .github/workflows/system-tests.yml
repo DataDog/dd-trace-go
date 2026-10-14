@@ -156,6 +156,10 @@ jobs:
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
+    # Without this the job inherits GitHub's 360-minute default, so a hung
+    # scenario holds the merge queue for hours. A healthy scenario takes under
+    # 16 minutes (p99 about 12).
+    timeout-minutes: 30
     needs:
       - changes
       - warm-repo-cache
