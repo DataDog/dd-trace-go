@@ -515,10 +515,6 @@ func (p *Processor) flushInput() {
 }
 
 const (
-	// minPollInterval and maxPollInterval bound how long the reader sleeps
-	// when the queue is empty. The sleep starts at minPollInterval, doubles
-	// on each consecutive empty poll up to maxPollInterval, and resets as
-	// soon as a payload is read.
 	minPollInterval = 100 * time.Microsecond
 	maxPollInterval = 5 * time.Millisecond
 )
