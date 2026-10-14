@@ -1663,18 +1663,6 @@ func TestOTLPLogsProtocol(t *testing.T) {
 		protocol := loadConfig().OTLPLogsProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
-
-	t.Run("does not validate protocol", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-		protocol := loadConfig().OTLPLogsProtocol()
-		assert.Equal(t, "http/json", protocol)
-	})
-
-	t.Run("supports http/protobuf", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
-		protocol := loadConfig().OTLPLogsProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
-	})
 }
 
 func TestOTLPLogsEndpoint(t *testing.T) {
@@ -1721,6 +1709,41 @@ func TestOTLPLogsHeaders(t *testing.T) {
 			"logs": "specific",
 		}, headers)
 	})
+
+	for name, tc := range map[string]struct {
+		raw      string
+		expected map[string]string
+	}{
+		"trims spaces": {
+			"  key = value  ,  key2=value2  ",
+			map[string]string{"key": "value", "key2": "value2"},
+		},
+		"ignores entries without equals": {
+			"key1=value1,invalid,key2=value2",
+			map[string]string{"key1": "value1", "key2": "value2"},
+		},
+		"keeps equals signs in values": {
+			"key=value=with=equals",
+			map[string]string{"key": "value=with=equals"},
+		},
+		"ignores entries with empty key": {
+			"=value,key=value2",
+			map[string]string{"key": "value2"},
+		},
+		"ignores entries with invalid header names": {
+			"bad key=value,bad:key=value,key=value2",
+			map[string]string{"key": "value2"},
+		},
+		"keeps spaces inside values": {
+			"Authorization=Bearer token123,Content-Type=application/json",
+			map[string]string{"Authorization": "Bearer token123", "Content-Type": "application/json"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", tc.raw)
+			assert.Equal(t, tc.expected, loadConfig().OTLPLogsHeaders())
+		})
+	}
 
 	for name, logs := range map[string]string{
 		"no valid entry":            "invalid",

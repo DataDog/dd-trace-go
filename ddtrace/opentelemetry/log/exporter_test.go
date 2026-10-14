@@ -6,10 +6,12 @@
 package log
 
 import (
-	"context"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -25,52 +27,91 @@ import (
 
 func TestNewOTLPExporterProtocol(t *testing.T) {
 	t.Cleanup(func() { config.CreateNew() })
-	for protocol, expected := range map[string]sdklog.Exporter{
-		"":        &otlploghttp.Exporter{},
-		"grpc":    &otlploggrpc.Exporter{},
-		"unknown": &otlploghttp.Exporter{},
+	for protocol, expected := range map[string]struct {
+		exporter sdklog.Exporter
+		tags     string
+	}{
+		"":              {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
+		"http/protobuf": {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
+		"grpc":          {&otlploggrpc.Exporter{}, "encoding:protobuf,protocol:grpc"},
+		"http/json":     {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 	} {
 		t.Run(protocol, func(t *testing.T) {
+			recorder := &telemetrytest.RecordClient{}
+			defer telemetry.MockClient(recorder)()
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", protocol)
 			config.CreateNew()
+
 			exporter, err := newOTLPExporter(t.Context(), nil, nil)
 			require.NoError(t, err)
-			assert.IsType(t, expected, exporter.(*telemetryExporter).Exporter)
+			te := exporter.(*telemetryExporter)
+			assert.IsType(t, expected.exporter, te.Exporter)
+
+			te.telemetry.RecordLogRecords(1)
+			assert.Contains(t, recorder.Metrics, telemetrytest.MetricKey{
+				Namespace: telemetry.NamespaceTracers,
+				Name:      "otel.log_records",
+				Tags:      expected.tags,
+				Kind:      "count",
+			})
 		})
 	}
 }
 
-func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
-	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-	config.CreateNew()
+func TestNewOTLPExporterWarnsOnJSON(t *testing.T) {
 	t.Cleanup(func() { config.CreateNew() })
 	logger := new(internallog.RecordLogger)
 	defer internallog.UseLogger(logger)()
-	previousLevel := internallog.GetLevel()
-	internallog.SetLevel(internallog.LevelWarn)
-	defer internallog.SetLevel(previousLevel)
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+	config.CreateNew()
 
-	recorder := &telemetrytest.RecordClient{}
-	defer telemetry.MockClient(recorder)()
-
-	ctx := context.Background()
-	exporter, err := newOTLPExporter(ctx, nil, nil)
+	exporter, err := newOTLPExporter(t.Context(), nil, nil)
 	require.NoError(t, err)
-	defer exporter.Shutdown(ctx)
-
-	wrapped := exporter.(*telemetryExporter)
-	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
+	defer exporter.Shutdown(t.Context())
 	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
+}
 
-	wrapped.telemetry.RecordLogRecords(1)
-	key := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceTracers,
-		Name:      "otel.log_records",
-		Tags:      "encoding:protobuf,protocol:http",
-		Kind:      "count",
-	}
-	require.Contains(t, recorder.Metrics, key)
-	assert.Equal(t, float64(1), recorder.Metrics[key].Get())
+func TestNewOTLPExporterHTTPConfig(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
+	t.Run("endpoint and headers", func(t *testing.T) {
+		requests := make(chan *http.Request, 1)
+		srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			requests <- r
+		}))
+		defer srv.Close()
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", srv.URL+"/custom")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "api-key=secret%20value")
+		config.CreateNew()
+
+		exporter, err := newOTLPExporter(t.Context(), nil, nil)
+		require.NoError(t, err)
+		defer exporter.Shutdown(t.Context())
+		require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{{}}))
+
+		r := <-requests
+		assert.Equal(t, "/custom/v1/logs", r.URL.Path)
+		assert.Equal(t, "secret value", r.Header.Get("api-key"))
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		release := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			<-release
+		}))
+		defer srv.Close()
+		defer close(release)
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", srv.URL)
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "50")
+		config.CreateNew()
+
+		noRetry := []otlploghttp.Option{otlploghttp.WithRetry(otlploghttp.RetryConfig{Enabled: false})}
+		exporter, err := newOTLPExporter(t.Context(), noRetry, nil)
+		require.NoError(t, err)
+		defer exporter.Shutdown(t.Context())
+		start := time.Now()
+		assert.Error(t, exporter.Export(t.Context(), []sdklog.Record{{}}))
+		assert.Less(t, time.Since(start), 5*time.Second)
+	})
 }
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
