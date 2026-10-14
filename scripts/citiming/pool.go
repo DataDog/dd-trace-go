@@ -104,8 +104,12 @@ type poolReport struct {
 	entriesSumBytes int64
 	groups          []poolGroup
 	defaultGroup    []poolDefaultGroup
-	// oldestAccessSeconds is the age of the least recently used entry.
+	// oldestAccessSeconds is the age of the least recently used entry;
+	// zero with hasOldestAccess false when no entry carries an access
+	// timestamp, in which case the horizon gauge is omitted instead of
+	// reporting a misleading 0.
 	oldestAccessSeconds float64
+	hasOldestAccess     bool
 	// limitBytes is the storage limit when the API returned it.
 	limitBytes int64
 	hasLimit   bool
@@ -169,9 +173,14 @@ func classifyPoolKey(key string) (kind, workload, osPlatform string) {
 			os = poolOS(m[1])
 		}
 		return "tools", poolNA, os
+	// build-metrics.yml saves its own module cache under a
+	// go-pkg-mod-build-metrics- prefix; it is not the AppSec module cache.
+	case strings.HasPrefix(key, "go-pkg-mod-build-metrics-"):
+		return "other", poolNA, "unknown"
 	case strings.HasPrefix(key, "go-pkg-mod-"):
 		return "appsec_modules", poolNA, "unknown"
-	case strings.HasPrefix(key, "datadog-ci"):
+	// system-tests.yml caches the npm-installed datadog-ci CLI.
+	case strings.HasPrefix(key, "npm-datadog-ci"), strings.HasPrefix(key, "datadog-ci"):
 		return "datadog_ci", poolNA, "unknown"
 	case strings.HasPrefix(key, "gitdb"):
 		return "gitdb", poolNA, "unknown"
@@ -273,6 +282,7 @@ func buildPoolReport(snap cacheSnapshot, at time.Time, defaultBranch string) poo
 	}
 	if !oldestAccess.IsZero() {
 		report.oldestAccessSeconds = at.Sub(oldestAccess).Seconds()
+		report.hasOldestAccess = true
 	}
 	for _, e := range snap.Entries {
 		report.entriesSumBytes += e.SizeInBytes
@@ -383,7 +393,9 @@ func buildPoolPayload(r poolReport, repo string) poolPayload {
 	if r.hasLimit {
 		series = append(series, gauge(poolMetricLimit, float64(r.limitBytes)))
 	}
-	series = append(series, gauge(poolMetricOldest, r.oldestAccessSeconds))
+	if r.hasOldestAccess {
+		series = append(series, gauge(poolMetricOldest, r.oldestAccessSeconds))
+	}
 	for _, g := range r.defaultGroup {
 		series = append(series, gauge(poolMetricDefaultAge, g.ageSeconds,
 			"cache_kind:"+normalizeTag(g.kind),
@@ -413,7 +425,11 @@ func renderPoolText(r poolReport, repo string) string {
 	} else {
 		fmt.Fprintf(&b, "  storage limit: unavailable (%s)\n", limitNote)
 	}
-	fmt.Fprintf(&b, "  oldest last access: %s\n", fmtPoolAge(r.oldestAccessSeconds))
+	oldest := "n/a"
+	if r.hasOldestAccess {
+		oldest = fmtPoolAge(r.oldestAccessSeconds)
+	}
+	fmt.Fprintf(&b, "  oldest last access: %s\n", oldest)
 	if len(r.defaultGroup) == 0 {
 		b.WriteString("  default-branch entries: none\n")
 	} else {
@@ -458,11 +474,14 @@ func cmdPool(args []string) error {
 	}
 
 	c := &ghClient{repo: *repo}
-	at := timeNow().UTC()
-	snap, err := collectCacheSnapshot(c, at.Format("2006-01-02T15:04:05Z"))
+	snap, err := collectCacheSnapshot(c, nowUTC())
 	if err != nil {
 		return err
 	}
+	// Stamp the report AFTER collection: an entry created while the
+	// snapshot paged through the API would otherwise carry a negative
+	// age in the gauges.
+	at := timeNow().UTC()
 	defaultBranch, err := fetchDefaultBranch(c)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ! default branch unavailable (%v); classifying refs against main\n", err)
