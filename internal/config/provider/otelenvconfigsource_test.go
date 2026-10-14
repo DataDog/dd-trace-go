@@ -96,6 +96,14 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "false", v)
 	})
 
+	t.Run("OTEL_SDK_DISABLED is case-insensitive", func(t *testing.T) {
+		for _, v := range []string{"tRuE", "1", "T"} {
+			t.Setenv("OTEL_SDK_DISABLED", v)
+			source := &otelEnvConfigSource{}
+			assert.Equal(t, "false", source.get("DD_TRACE_ENABLED"), "OTEL_SDK_DISABLED=%s", v)
+		}
+	})
+
 	t.Run("OTEL_SDK_DISABLED=false does not set DD_TRACE_ENABLED", func(t *testing.T) {
 		t.Setenv("OTEL_SDK_DISABLED", "false")
 		source := &otelEnvConfigSource{}

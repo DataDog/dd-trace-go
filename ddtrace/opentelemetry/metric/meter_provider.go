@@ -164,7 +164,7 @@ func metricsEnabled(c *internalconfig.Config) bool {
 	if c != nil {
 		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
-	if disabled, _ := strconv.ParseBool(strings.TrimSpace(env.Get(envOtelSDKDisabled))); disabled {
+	if disabled, _ := strconv.ParseBool(strings.ToLower(strings.TrimSpace(env.Get(envOtelSDKDisabled)))); disabled {
 		return false
 	}
 	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
