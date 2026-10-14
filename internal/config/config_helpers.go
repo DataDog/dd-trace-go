@@ -504,15 +504,16 @@ func decodeOTLPHeaders(headers map[string]string) map[string]string {
 	return headers
 }
 
-// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
-func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
-		return nil
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// or of the generic headers when the signal-specific ones are empty.
+func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(signalHeaders) > 0 {
+		return maps.Clone(signalHeaders)
 	}
-	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
-	maps.Copy(merged, genericHeaders)
-	maps.Copy(merged, signalHeaders)
-	return merged
+	if len(genericHeaders) > 0 {
+		return maps.Clone(genericHeaders)
+	}
+	return nil
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
