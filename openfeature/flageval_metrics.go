@@ -17,7 +17,6 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 
 	ddmetric "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry/metric"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -93,7 +92,7 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 		return nil, &flagEvalMeterProviderError{err: err}
 	}
 	if _, ok := mp.(noop.MeterProvider); ok {
-		log.Debug(onboardingLogPrefix + "evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
+		logOnboarding("evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
 	}
 
 	meter := mp.Meter(meterName)

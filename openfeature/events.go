@@ -5,11 +5,7 @@
 
 package openfeature
 
-import (
-	"github.com/open-feature/go-sdk/openfeature"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
-)
+import "github.com/open-feature/go-sdk/openfeature"
 
 var _ openfeature.EventHandler = (*DatadogProvider)(nil)
 
@@ -35,9 +31,9 @@ const (
 func (c readinessChange) logDebug() {
 	switch c {
 	case readinessStale:
-		log.Debug(onboardingLogPrefix + "provider is stale: configuration is unavailable; evaluations return their default values until configuration arrives")
+		logOnboarding("provider is stale: configuration is unavailable; evaluations return their default values until configuration arrives")
 	case readinessRecovered:
-		log.Debug(onboardingLogPrefix + "provider recovered: configuration received, provider is ready")
+		logOnboarding("provider recovered: configuration received, provider is ready")
 	}
 }
 

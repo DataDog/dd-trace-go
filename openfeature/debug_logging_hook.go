@@ -25,6 +25,17 @@ const onboardingLogPrefix = "openfeature: [dd_ffe_onboarding] "
 // a large string or JSON flag cannot flood the customer's log.
 const maxDebugValueLen = 256
 
+// logOnboarding contains logger panics at the individual call so initialization,
+// polling, and teardown continue. Recovering in the caller would skip its
+// remaining work. Do not log the panic through the same failing logger.
+func logOnboarding(format string, args ...any) {
+	if !log.DebugEnabled() {
+		return
+	}
+	defer recoverDebugLogging()
+	log.Debug(onboardingLogPrefix+format, args...)
+}
+
 // debugLoggingHook logs the outcome of every flag evaluation under
 // DD_TRACE_DEBUG, so a customer can see why an evaluation returned what it
 // did. It uses the Finally stage, like flagEvalMetricsHook, so errored and
@@ -56,7 +67,7 @@ func (h *debugLoggingHook) Finally(
 	if id, ok := details.FlagMetadata[metadataSplitSerialIDKey].(uint32); ok {
 		serialID = strconv.FormatUint(uint64(id), 10)
 	}
-	log.Debug(onboardingLogPrefix+"evaluated %q: type=%s, value=%s, variant=%q, reason=%s, allocation=%q, serial_id=%s, error_code=%s, error_message=%q",
+	logOnboarding("evaluated %q: type=%s, value=%s, variant=%q, reason=%s, allocation=%q, serial_id=%s, error_code=%s, error_message=%q",
 		hookContext.FlagKey(),
 		details.FlagType.String(),
 		formatDebugValue(details.Value),
@@ -82,13 +93,12 @@ func (h *debugLoggingHook) Error(
 	if !log.DebugEnabled() || err == nil {
 		return
 	}
-	log.Debug(onboardingLogPrefix+"evaluation of %q failed: %s", hookContext.FlagKey(), err.Error())
+	logOnboarding("evaluation of %q failed: %s", hookContext.FlagKey(), err.Error())
 }
 
-// recoverDebugLogging keeps a diagnostic failure, including a panicking
-// application logger, from affecting the evaluation: the OpenFeature SDK does
-// not recover panics from hooks. It logs nothing, since the logger may be
-// what panicked.
+// recoverDebugLogging contains diagnostic failures in logOnboarding and in
+// evaluation hooks, where formatting can also panic. The OpenFeature SDK does
+// not recover hook panics. It logs nothing, since the logger may be what panicked.
 func recoverDebugLogging() {
 	_ = recover()
 }

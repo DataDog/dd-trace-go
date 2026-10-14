@@ -809,3 +809,125 @@ func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
 		h.Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
 	})
 }
+
+// Fail only the new diagnostics to distinguish them from existing logging.
+type panickingOnboardingLogger struct {
+	capturingLogger
+}
+
+func (l *panickingOnboardingLogger) Log(msg string) {
+	l.capturingLogger.Log(msg)
+	if strings.Contains(msg, onboardingLogPrefix) {
+		panic("onboarding logger failure")
+	}
+}
+
+func withPanickingOnboardingLogger(t *testing.T) *panickingOnboardingLogger {
+	t.Helper()
+	withLogLevel(t, log.LevelDebug)
+	l := &panickingOnboardingLogger{}
+	undo := log.UseLogger(l)
+	t.Cleanup(undo)
+	return l
+}
+
+func TestInitWithContext_ContainsLoggerPanics(t *testing.T) {
+	for _, name := range []string{"success", "delivery error", "canceled", "timeout"} {
+		t.Run(name, func(t *testing.T) {
+			logger := withPanickingOnboardingLogger(t)
+			p := &DatadogProvider{}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			var wantMessage string
+			switch name {
+			case "success":
+				p.configuration = createTestConfig()
+			case "delivery error":
+				p.deliveryErr = errors.New("delivery unavailable")
+				wantMessage = "no feature-flag delivery source could be started: delivery unavailable"
+			case "canceled":
+				cancel()
+				wantMessage = "initialization was canceled before configuration arrived"
+			case "timeout":
+				wantMessage = "initialization timed out before configuration arrived"
+			}
+
+			var err error
+			require.NotPanics(t, func() { err = p.InitWithContext(ctx, of.EvaluationContext{}) })
+			if wantMessage == "" {
+				require.NoError(t, err)
+				logger.assertContains(t, "provider initialized successfully")
+			} else {
+				var initErr *of.ProviderInitError
+				require.ErrorAs(t, err, &initErr)
+				assert.Equal(t, of.ProviderNotReadyCode, initErr.ErrorCode)
+				assert.Equal(t, wantMessage, initErr.Message)
+				logger.assertContains(t, "provider failed to initialize")
+			}
+		})
+	}
+}
+
+func TestAgentlessLifecycle_ContainsLoggerPanics(t *testing.T) {
+	logger := withPanickingOnboardingLogger(t)
+	backend := newFakeUFCBackend(t)
+	var p *DatadogProvider
+	require.NotPanics(t, func() {
+		var err error
+		p, err = startWithAgentless(ProviderConfig{}, internalffe.Settings{
+			AgentlessBaseURL: backend.server.URL,
+			PollInterval:     time.Hour,
+			RequestTimeout:   time.Second,
+		})
+		require.NoError(t, err)
+	})
+	t.Cleanup(func() { p.Shutdown() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.InitWithContext(ctx, of.EvaluationContext{}))
+	config := p.getConfiguration()
+	require.NotNil(t, config)
+	require.NotPanics(t, func() {
+		p.updateConfiguration(nil)
+		p.updateConfiguration(config)
+	})
+	logger.assertContains(t, "provider is stale")
+	logger.assertContains(t, "provider recovered")
+
+	require.NotPanics(t, func() { require.NoError(t, p.ShutdownWithContext(ctx)) })
+	select {
+	case <-p.agentless.doneCh:
+	default:
+		t.Fatal("shutdown did not stop the poller")
+	}
+	p.exposureWriter.mu.Lock()
+	stopped := p.exposureWriter.stopped
+	p.exposureWriter.mu.Unlock()
+	assert.True(t, stopped, "shutdown must stop the exposure writer")
+	assert.True(t, p.flagEvalLoggingWriter.stopped.Load(), "shutdown must stop the evaluation writer")
+	logger.assertContains(t, "provider shutting down")
+	logger.assertContains(t, "provider shut down")
+}
+
+func TestAgentlessPoll_ContainsLoggerPanics(t *testing.T) {
+	logger := withPanickingOnboardingLogger(t)
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("server_error", "valid", "not_modified")
+	src := newDebugAgentlessSource(t, backend.server.URL)
+	applied := 0
+	src.apply = func(*universalFlagsConfiguration) { applied++ }
+
+	require.NotPanics(t, src.poll)
+	assert.Equal(t, 1, applied)
+	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
+	logger.assertContains(t, "poll retrying in")
+	logger.assertContains(t, "applied successfully")
+
+	require.NotPanics(t, src.poll)
+	assert.Equal(t, 1, applied, "an unchanged response must not reapply configuration")
+	requests, _, etag, _ := backend.status()
+	assert.Equal(t, 3, requests)
+	assert.Equal(t, fakeUFCBackendETag, etag)
+	logger.assertContains(t, "HTTP 304 (unchanged)")
+}

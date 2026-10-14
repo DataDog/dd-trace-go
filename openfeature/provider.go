@@ -143,13 +143,13 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
-		log.Debug(onboardingLogPrefix+"configuration source is %s", settings.Source.String())
+		logOnboarding("configuration source is %s", settings.Source.String())
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
-		log.Debug(onboardingLogPrefix+"configuration source is %s", settings.Source.String())
+		logOnboarding("configuration source is %s", settings.Source.String())
 		return startWithAgentless(config, settings)
 	default:
-		log.Debug(onboardingLogPrefix + "feature flagging is disabled; flag evaluations will return their default values")
+		logOnboarding("feature flagging is disabled; flag evaluations will return their default values")
 		return &openfeature.NoopProvider{}, nil
 	}
 }
@@ -270,7 +270,7 @@ func newDatadogProviderWithSourceAndEVP(
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	} else {
-		log.Debug(onboardingLogPrefix + "evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
+		logOnboarding("evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
@@ -349,7 +349,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		return p, nil
 	}
 
-	log.Debug(onboardingLogPrefix+"starting agentless configuration source at %s (poll interval %s, request timeout %s)",
+	logOnboarding("starting agentless configuration source at %s (poll interval %s, request timeout %s)",
 		redactedOrigin(src.endpoint), settings.PollInterval.String(), settings.RequestTimeout.String())
 	src.start()
 	return p, nil
@@ -471,14 +471,14 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	start := time.Now()
 	if log.DebugEnabled() {
 		deadline, _ := ctx.Deadline()
-		log.Debug(onboardingLogPrefix+"waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
+		logOnboarding("waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
 	}
 	defer func() {
 		if err != nil {
-			log.Debug(onboardingLogPrefix+"provider failed to initialize: %s", err.Error())
+			logOnboarding("provider failed to initialize: %s", err.Error())
 			return
 		}
-		log.Debug(onboardingLogPrefix+"provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
+		logOnboarding("provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
 	}()
 
 	p.mu.Lock()
@@ -573,7 +573,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	p.mu.Unlock()
 	// Logged after p.mu is released: an application logger may evaluate a
 	// flag, which needs p.mu.
-	log.Debug(onboardingLogPrefix + "provider shutting down")
+	logOnboarding("provider shutting down")
 
 	done := make(chan error, 1)
 	go func() {
@@ -612,10 +612,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	// Wait for completion or context cancellation
 	select {
 	case <-ctx.Done():
-		log.Debug(onboardingLogPrefix+"provider shutdown did not finish before the context expired: %s", ctx.Err().Error())
+		logOnboarding("provider shutdown did not finish before the context expired: %s", ctx.Err().Error())
 		return ctx.Err()
 	case err := <-done:
-		log.Debug(onboardingLogPrefix + "provider shut down")
+		logOnboarding("provider shut down")
 		return err
 	}
 }
