@@ -252,7 +252,7 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	if t.otlpExportMode {
 		info.OTelTracesExporter = "otlp"
 	}
-	info.MetricsOTelEnabled = t.config.otelRuntimeMetricsShouldBeEnabled
+	info.MetricsOTelEnabled = cfg.RuntimeMetricsOtelEnabled()
 	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
 	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
 
