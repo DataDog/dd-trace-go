@@ -123,6 +123,9 @@ func spanCacheKey(id any) (any, bool) {
 func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.InitializeRequest) {
 	key, ok := spanCacheKey(id)
 	if !ok {
+		// The client controls the ID value, so log only its type. The logger
+		// aggregates errors, so a client cannot fill the logs.
+		instr.Logger().Error("mcp-go: skipping initialize span: unsupported JSON-RPC request ID type %T", id)
 		return
 	}
 	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))

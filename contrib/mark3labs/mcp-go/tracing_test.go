@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -443,7 +445,8 @@ func TestIntegrationInitializeNonComparableID(t *testing.T) {
 }
 
 func TestHooksNonComparableID(t *testing.T) {
-	testTracer(t)
+	logger := &recordLogger{}
+	testTracer(t, tracer.WithLogger(logger))
 
 	h := newHooks()
 	ctx := context.Background()
@@ -460,6 +463,31 @@ func TestHooksNonComparableID(t *testing.T) {
 			})
 		})
 	}
+
+	// The logger aggregates errors. tracer.Stop flushes them.
+	tracer.Stop()
+	logs := logger.String()
+	assert.Contains(t, logs, "mcp-go: skipping initialize span: unsupported JSON-RPC request ID type")
+	// The client controls the ID value, so the log must not contain it.
+	assert.NotContains(t, logs, "x:1")
+	assert.NotContains(t, logs, "[1 2]")
+}
+
+type recordLogger struct {
+	mu   sync.Mutex
+	logs []string
+}
+
+func (l *recordLogger) Log(msg string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, msg)
+}
+
+func (l *recordLogger) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.logs, "\n")
 }
 
 // Test helpers
