@@ -55,6 +55,13 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 			kind: "go_build", workload: "multi-os", osX: "windows",
 		},
 		{
+			// Prerelease versions carry one hyphen cluster; the branch
+			// must still parse after it.
+			key: "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.28.0-rc.1-main-" +
+				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744",
+			kind: "go_build", workload: "multi-os", osX: "windows",
+		},
+		{
 			key: "go-cache-macOS-ARM64-ddtg-cx1-unit-contrib-92572337d046055a-1.27.2-" +
 				"brian.marks/otel-deployment-environment-name-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253726",
