@@ -6,6 +6,7 @@
 package provider
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -18,6 +19,9 @@ import (
 const (
 	ddPrefix   = "config_datadog:"
 	otelPrefix = "config_opentelemetry:"
+
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = "deployment.environment.name"
 )
 
 type otelEnvConfigSource struct{}
@@ -92,9 +96,8 @@ var otelConfigs = map[string]*otelDDEnv{
 }
 
 var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+	"service.name":    "service",
+	"service.version": "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -201,7 +204,16 @@ func mapPropagationStyle(ot string) (string, error) {
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
 	ddTags := make([]string, 0)
+	var stableEnv, legacyEnv string
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		switch key {
+		case deploymentEnvironmentNameKey:
+			stableEnv = val
+			return
+		case deploymentEnvironmentKey:
+			legacyEnv = val
+			return
+		}
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
@@ -209,11 +221,8 @@ func mapDDTags(ot string) (string, error) {
 			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)
 		}
 	})
-
-	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
-		ddTags = ddTags[:10]
+	if env := cmp.Or(stableEnv, legacyEnv); env != "" {
+		ddTags = append([]string{"env" + internal.DDTagsDelimiter + env}, ddTags...)
 	}
-
 	return strings.Join(ddTags, ","), nil
 }

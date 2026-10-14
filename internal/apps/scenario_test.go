@@ -7,6 +7,7 @@ package apps
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -125,6 +127,62 @@ func TestScenario(t *testing.T) {
 				wc.HitEndpoints(t, process, s.endpoints...)
 			})
 		}
+	})
+
+	// crashtracker deliberately crashes the app on /crash rather than
+	// serving a load pattern, so it cannot reuse wc.HitEndpoints (which
+	// asserts every request succeeds) or process.Stop (which asserts a
+	// clean SIGINT exit): there is nothing left to gracefully stop once the
+	// process has already crashed.
+	t.Run("crashtracker", func(t *testing.T) {
+		t.Run("panic", func(t *testing.T) {
+			lc := newLaunchConfig(t)
+			process := lc.Launch(t)
+
+			// Bounded so a connection that never completes (the server side of
+			// the crash race, or a network-level hang) can't itself stall the
+			// nightly job; the crash is still triggered even if this request
+			// times out; see the comment below.
+			client := http.Client{Timeout: 10 * time.Second}
+			// The handler panics in a goroutine after writing its own
+			// response, so this request races the crash: it can complete
+			// normally or fail with a connection reset depending on which
+			// side of that race wins. Both outcomes mean the crash was
+			// triggered, so only the process's own exit status below is
+			// asserted on, not this request's result.
+			resp, err := client.Get("http://" + process.HostPort + "/crash")
+			if err == nil {
+				resp.Body.Close()
+			}
+
+			// Worst case for the monitor's own upload attempt is 3 retries at a
+			// 10s client timeout each plus backoff (see crashtracker/upload.go's
+			// uploadAttempts/uploadRetryBackoff), ~31.5s; 45s leaves margin
+			// without leaving this open-ended if something regresses into an
+			// actual hang -- the previous unbounded receive could otherwise
+			// block until the surrounding go test's own timeout.
+			const exitWait = 45 * time.Second
+			select {
+			case err := <-process.wait:
+				require.Error(t, err, "expected the app to exit non-zero after crashing")
+			case <-time.After(exitWait):
+				process.proc.Process.Kill()
+				t.Fatalf("app did not exit within %s of the crash request; output so far:\n%s", exitWait, process.Tail())
+			}
+
+			// process.wait only fires once every holder of the app's stderr fd
+			// has closed it -- including the detached crashtracker monitor
+			// (see crashtracker/monitor.go's spawnMonitor), which inherits that
+			// fd and keeps it open until its own upload attempt finishes. So by
+			// the time we get here, the monitor has already logged its outcome
+			// into process.Tail(); assert on that directly rather than just on
+			// the app having crashed, which the deliberate panic guarantees
+			// regardless of whether the monitor ever started or its upload
+			// succeeded.
+			tail := process.Tail()
+			require.Contains(t, tail, "crashtracker: upload succeeded",
+				"crash report was not confirmed delivered; captured output:\n%s", tail)
+		})
 	})
 }
 
@@ -277,8 +335,11 @@ func (a *launchConfig) Launch(t *testing.T) (p process) {
 			break
 		}
 	}
-	// Keep draining r to avoid blocking the app
-	go io.Copy(io.Discard, r)
+	// Keep draining r to avoid blocking the app; also capture a bounded
+	// tail so scenarios that crash the app on purpose (see the crashtracker
+	// subtest) can inspect what it logged after this point.
+	p.tail = &tailBuffer{}
+	go io.Copy(io.MultiWriter(io.Discard, p.tail), r)
 
 	// Check startup succeeded
 	require.True(t, listening, "app failed to start")
@@ -291,12 +352,52 @@ type process struct {
 	HostPort string
 	wait     chan error
 	proc     *exec.Cmd
+	tail     *tailBuffer
 }
 
 func (ti *process) Stop(t *testing.T) {
 	// Shutdown app
 	ti.proc.Process.Signal(os.Interrupt)
 	require.NoError(t, <-ti.wait)
+}
+
+// Tail returns the app's output captured since Launch finished waiting for
+// startup. Safe to call while the app is still running.
+func (ti *process) Tail() string {
+	return ti.tail.String()
+}
+
+// tailBufferCap bounds tailBuffer's memory use; scenarios only need enough to
+// find a short marker line, not the app's full output.
+const tailBufferCap = 64 * 1024
+
+// tailBuffer is an io.Writer that keeps up to tailBufferCap bytes and
+// silently drops the rest, reporting the full input length as written either
+// way so it never turns into a write error for callers (in particular
+// io.MultiWriter, which would otherwise abort every other writer sharing the
+// copy) once the cap is reached.
+type tailBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if remaining := tailBufferCap - b.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		b.buf.Write(p)
+	}
+	return n, nil
+}
+
+func (b *tailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func parseEnv[T any](t *testing.T, name string, dst *T, fallback T) {
