@@ -420,6 +420,41 @@ func TestRedactOTLPHeaders(t *testing.T) {
 	assert.Nil(t, redactOTLPHeaders(nil))
 }
 
+func TestOTelTracesSampler(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		env      map[string]string
+		opts     []StartOption
+		wantName string
+		wantArg  string
+	}{
+		{name: "custom sampler", opts: []StartOption{WithSampler(NewAllSampler())}, wantName: "datadog_custom_sampler"},
+		{name: "sampler rate below 1", opts: []StartOption{WithSamplerRate(0.5)}, wantName: "datadog_sampler_rate"},
+		{name: "global rate 0", env: map[string]string{"DD_TRACE_SAMPLE_RATE": "0"}, wantName: "parentbased_always_off"},
+		{name: "global rate 1", env: map[string]string{"DD_TRACE_SAMPLE_RATE": "1"}, wantName: "parentbased_always_on"},
+		{name: "global rate between", env: map[string]string{"DD_TRACE_SAMPLE_RATE": "0.25"}, wantName: "parentbased_traceidratio", wantArg: "0.25"},
+		{
+			name:     "rules",
+			env:      map[string]string{"DD_TRACE_SAMPLE_RATE": "0.25", "DD_TRACE_SAMPLING_RULES": `[{"service": "some.service", "sample_rate": 0.5}]`},
+			wantName: "datadog_custom_rules",
+		},
+		{name: "otlp default", env: map[string]string{"OTEL_TRACES_EXPORTER": "otlp"}, wantName: "parentbased_always_on"},
+		{name: "agent rates", wantName: "datadog_agent_rates"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			tr, err := newUnstartedTracer(append(tc.opts, withNoopInfoHTTPClient())...)
+			require.NoError(t, err)
+			defer tr.Stop()
+			name, arg := tr.otelTracesSampler()
+			assert.Equal(t, tc.wantName, name)
+			assert.Equal(t, tc.wantArg, arg)
+		})
+	}
+}
+
 func TestSanitizeOTLPEndpoint(t *testing.T) {
 	for _, tc := range []struct{ endpoint, want string }{
 		{"https://user:password@collector:4318/v1/traces?token=x#frag", "https://collector:4318/v1/traces"},
