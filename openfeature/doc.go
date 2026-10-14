@@ -196,16 +196,27 @@
 //   - The selected configuration source, or that feature flagging is disabled
 //   - Each Agentless poll attempt and its outcome: the HTTP status, including
 //     304 (unchanged), or the transport error, plus any retry delay
-//   - Each configuration applied, with its flag count (and, for Agentless,
-//     the effective DD_ENV, to help spot an environment mismatch)
+//   - Each configuration applied, with its flag count, how many flags were
+//     rejected as invalid, and its createdAt (and, for Agentless, the
+//     effective DD_ENV and ETag)
 //   - Initialization start and its outcome, with the failure reason
+//   - Lifecycle changes: recovery after a failed initialization, configuration
+//     becoming unavailable, and shutdown
 //   - Every evaluation's flag key, value, variant, reason, allocation, and
-//     error, logged after the evaluation completes
+//     error, including failures such as evaluating before the provider is
+//     ready or an application hook returning an error
 //
 // Credentials and the endpoint's path and query are never logged; only the
-// endpoint's scheme and host are logged. The evaluation's targeting key and
-// context attributes are never logged either. When debug logging is off, no
-// evaluation hook is registered, so it adds no per-evaluation cost.
+// endpoint's scheme and host are logged. Onboarding lines never include the
+// evaluation's targeting key or context attributes, but an error returned by
+// an application hook is logged with its message as is: if your hook puts
+// targeting data in an error message, it appears in the debug log. The
+// exposure tracking debug line, which is not an onboarding line, includes the
+// targeting key. Scalar flag values are logged directly and other values as
+// JSON, truncated to 256 bytes. A value that cannot be encoded, including a
+// default value whose MarshalJSON method fails or panics, is logged as
+// <unserializable> without affecting the evaluation. When debug logging is
+// off, no evaluation hook is registered, so it adds no per-evaluation cost.
 //
 // # Thread Safety
 //

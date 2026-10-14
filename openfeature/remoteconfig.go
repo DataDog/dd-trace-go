@@ -97,7 +97,10 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	// Update the provider with the new configuration
 	provider.updateConfiguration(&config)
-	log.Debug(onboardingLogPrefix+"remote_config configuration %q applied successfully (%d flag(s))", path, len(config.Flags))
+	if log.DebugEnabled() {
+		log.Debug(onboardingLogPrefix+"remote_config configuration %q applied successfully (%d flag(s), %d rejected, created_at=%s)",
+			path, len(config.Flags), len(config.invalidFlags), formatCreatedAt(config.CreatedAt))
+	}
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,

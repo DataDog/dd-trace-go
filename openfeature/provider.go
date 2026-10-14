@@ -373,12 +373,20 @@ func (p *DatadogProvider) tryRegisterAgentless(src *agentlessSource) bool {
 // called by the Remote Config callback or the Agentless poller when a new
 // configuration is received.
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
+	// Logged after p.mu is released: an application logger may evaluate a
+	// flag, which needs p.mu.
+	p.setConfiguration(config).logDebug()
+}
+
+// setConfiguration stores config under p.mu and returns the readiness change
+// for updateConfiguration to log.
+func (p *DatadogProvider) setConfiguration(config *universalFlagsConfiguration) readinessChange {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.shutdownCalled {
 		// A poll or RC callback already in flight must not resurrect
 		// configuration after Shutdown.
-		return
+		return readinessUnchanged
 	}
 	p.configuration = config
 	// Wake every waiter blocked on the current generation, then start a fresh
@@ -404,7 +412,7 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 		}
 		p.writersStarted = true
 	}
-	p.emitFirstOrChangeEvent(config)
+	return p.emitFirstOrChangeEvent(config)
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -563,6 +571,9 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	}
 	p.configChange = make(chan struct{})
 	p.mu.Unlock()
+	// Logged after p.mu is released: an application logger may evaluate a
+	// flag, which needs p.mu.
+	log.Debug(onboardingLogPrefix + "provider shutting down")
 
 	done := make(chan error, 1)
 	go func() {
@@ -601,8 +612,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	// Wait for completion or context cancellation
 	select {
 	case <-ctx.Done():
+		log.Debug(onboardingLogPrefix+"provider shutdown did not finish before the context expired: %s", ctx.Err().Error())
 		return ctx.Err()
 	case err := <-done:
+		log.Debug(onboardingLogPrefix + "provider shut down")
 		return err
 	}
 }

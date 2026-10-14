@@ -333,14 +333,19 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		return pollOutcomeStop, 0
 	}
 
+	etag := strings.TrimSpace(resp.Header.Get("ETag"))
 	s.apply(config)
-	s.setETag(strings.TrimSpace(resp.Header.Get("ETag")))
+	s.setETag(etag)
 	if log.DebugEnabled() {
 		env := s.env
 		if env == "" {
 			env = "unset"
 		}
-		log.Debug(onboardingLogPrefix+"agentless configuration applied successfully (%d flag(s), env=%s)", len(config.Flags), env)
+		if etag == "" {
+			etag = "none"
+		}
+		log.Debug(onboardingLogPrefix+"agentless configuration applied successfully (%d flag(s), %d rejected, env=%s, created_at=%s, etag=%s)",
+			len(config.Flags), len(config.invalidFlags), env, formatCreatedAt(config.CreatedAt), etag)
 	}
 	return pollOutcomeSuccess, 0
 }
