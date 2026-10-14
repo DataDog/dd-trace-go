@@ -173,6 +173,19 @@ func TestDebugLoggingHook_Registration(t *testing.T) {
 	})
 }
 
+func registerDebugLoggingProvider(t *testing.T, domain string, p *DatadogProvider) {
+	t.Helper()
+	t.Cleanup(func() {
+		// Replacing a provider only waits for the replacement's initialization.
+		// Finish the old provider's teardown before restoring the global logger.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		assert.NoError(t, p.ShutdownWithContext(ctx))
+		assert.NoError(t, of.SetNamedProviderAndWait(domain, of.NoopProvider{}))
+	})
+	require.NoError(t, of.SetNamedProviderAndWait(domain, p))
+}
+
 // TestDebugLoggingHook_EndToEnd checks that the OpenFeature SDK actually runs
 // the hook for a real evaluation, not just that it is registered.
 func TestDebugLoggingHook_EndToEnd(t *testing.T) {
@@ -182,8 +195,7 @@ func TestDebugLoggingHook_EndToEnd(t *testing.T) {
 	p.updateConfiguration(createTestConfig())
 
 	const domain = "debug-logging-hook-e2e"
-	require.NoError(t, of.SetNamedProviderAndWait(domain, p))
-	t.Cleanup(func() { _ = of.SetNamedProviderAndWait(domain, of.NoopProvider{}) })
+	registerDebugLoggingProvider(t, domain, p)
 
 	client := of.NewClient(domain)
 	value, err := client.BooleanValue(context.Background(), "bool-flag", false, of.NewEvaluationContext("user-1", map[string]any{"country": "US"}))
@@ -459,26 +471,6 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 	})
 }
 
-func TestFlagEvalMetrics_DebugLogsWhenDisabled(t *testing.T) {
-	logger := withLogLevel(t, log.LevelDebug)
-
-	m, err := newFlagEvalMetrics()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = m.shutdown(context.Background()) })
-
-	logger.assertContains(t, "openfeature: evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
-}
-
-func TestFlagEvalCounts_DebugLogsWhenDisabled(t *testing.T) {
-	logger := withLogLevel(t, log.LevelDebug)
-	t.Setenv(flagEvalCountsEnabledEnvVar, "false")
-
-	p := newDatadogProvider(ProviderConfig{})
-
-	assert.Nil(t, p.flagEvalLoggingHook)
-	logger.assertContains(t, "openfeature: evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
-}
-
 func TestRemoteConfig_DebugLogs(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 	p := newDatadogProvider(ProviderConfig{})
@@ -516,8 +508,7 @@ func TestDebugLoggingHook_ContainsMarshalerPanics(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
 	p.updateConfiguration(createTestConfig())
 	const domain = "debug-logging-hook-panic"
-	require.NoError(t, of.SetNamedProviderAndWait(domain, p))
-	t.Cleanup(func() { _ = of.SetNamedProviderAndWait(domain, of.NoopProvider{}) })
+	registerDebugLoggingProvider(t, domain, p)
 
 	client := of.NewClient(domain)
 	var value any
@@ -576,7 +567,7 @@ func TestDebugLogging_NeverLogsTargetingData(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
 	p.updateConfiguration(createTestConfig())
 	const domain = "debug-logging-targeting-data"
-	require.NoError(t, of.SetNamedProviderAndWait(domain, p))
+	registerDebugLoggingProvider(t, domain, p)
 
 	client := of.NewClient(domain)
 	evalCtx := of.NewEvaluationContext(subject, map[string]any{"country": "US", "email": attrValue})
@@ -587,8 +578,9 @@ func TestDebugLogging_NeverLogsTargetingData(t *testing.T) {
 	_, _ = client.BooleanValue(context.Background(), "does-not-exist", false, evalCtx)
 
 	// Shutting down flushes the exposure and evaluation writers, so their logs are included.
-	require.NoError(t, of.SetNamedProviderAndWait(domain, of.NoopProvider{}))
-	require.Eventually(t, func() bool { return logger.countContaining("provider shut down") > 0 }, 5*time.Second, time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.ShutdownWithContext(ctx))
 
 	logger.assertContains(t, "recorded exposure event for flag \"bool-flag\"")
 	logger.assertContains(t, `evaluated "bool-flag"`)
@@ -820,8 +812,6 @@ func isOnboardingLog(msg string) bool {
 	return slices.ContainsFunc([]string{
 		"configuration source is ",
 		"feature flagging is disabled;",
-		"evaluation counts disabled;",
-		"evaluation metrics disabled;",
 		"starting agentless configuration source ",
 		"starting remote_config configuration source ",
 		"waiting for provider initialization",

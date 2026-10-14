@@ -206,6 +206,9 @@
 //     error, including failures such as evaluating before the provider is
 //     ready or an application hook returning an error
 //
+// Initialization-failure diagnostics are local logs and do not report errors to
+// telemetry.
+//
 // Credentials and the endpoint's path and query are never logged; only the
 // endpoint's scheme and host are logged. Onboarding lines never include the
 // evaluation's targeting key or context attributes, but an error returned by

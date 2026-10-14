@@ -14,7 +14,6 @@ import (
 	of "github.com/open-feature/go-sdk/openfeature"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
 
 	ddmetric "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry/metric"
 )
@@ -90,9 +89,6 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 	)
 	if err != nil {
 		return nil, &flagEvalMeterProviderError{err: err}
-	}
-	if _, ok := mp.(noop.MeterProvider); ok {
-		logOnboarding("evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
 	}
 
 	meter := mp.Meter(meterName)

@@ -269,8 +269,6 @@ func newDatadogProviderWithSourceAndEVP(
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
-	} else {
-		logOnboarding("evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
@@ -475,6 +473,7 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	}
 	defer func() {
 		if err != nil {
+			// Routine initialization failures stay in local logs, without telemetry.
 			logOnboarding("provider failed to initialize: %s", err.Error())
 			return
 		}
