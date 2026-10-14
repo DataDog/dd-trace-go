@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
@@ -54,19 +56,34 @@ func TestResolveOTLPProtocol(t *testing.T) {
 
 func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
 	t.Setenv(envOTLPLogsProtocol, "http/json")
+	assert.Equal(t, "http/json", resolveOTLPProtocol(), "preserve the configured protocol so the exporter can warn")
 	logger := new(internallog.RecordLogger)
 	defer internallog.UseLogger(logger)()
 	previousLevel := internallog.GetLevel()
 	internallog.SetLevel(internallog.LevelWarn)
 	defer internallog.SetLevel(previousLevel)
 
+	recorder := &telemetrytest.RecordClient{}
+	defer telemetry.MockClient(recorder)()
+
 	ctx := context.Background()
 	exporter, err := newOTLPExporter(ctx, nil, nil)
 	require.NoError(t, err)
 	defer exporter.Shutdown(ctx)
 
-	assert.IsType(t, new(otlploghttp.Exporter), exporter.(*telemetryExporter).Exporter)
+	wrapped := exporter.(*telemetryExporter)
+	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
 	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
+
+	wrapped.telemetry.RecordLogRecords(1)
+	key := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceTracers,
+		Name:      "otel.log_records",
+		Tags:      "encoding:protobuf,protocol:http",
+		Kind:      "count",
+	}
+	require.Contains(t, recorder.Metrics, key)
+	assert.Equal(t, float64(1), recorder.Metrics[key].Get())
 }
 
 func TestHasOTLPEndpointInEnv(t *testing.T) {
