@@ -75,21 +75,15 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
-// Protocol selection priority:
-// 1. OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
-// 2. OTEL_EXPORTER_OTLP_PROTOCOL
-// 3. Default: http/protobuf
-//
-// Supported protocols:
+// The protocol comes from config.OTLPLogsProtocol. Supported protocols:
 // - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
 // Endpoint resolution priority:
-// 1. OTEL_EXPORTER_OTLP_LOGS_ENDPOINT (highest priority)
-// 2. OTEL_EXPORTER_OTLP_ENDPOINT
-// 3. DD_TRACE_AGENT_URL hostname with appropriate port
-// 4. DD_AGENT_HOST with appropriate port
-// 5. localhost with default port (default)
+// 1. config.OTLPLogsEndpoint (highest priority)
+// 2. DD_TRACE_AGENT_URL hostname with appropriate port
+// 3. DD_AGENT_HOST with appropriate port
+// 4. localhost with default port (default)
 func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpts []otlploggrpc.Option) (sdklog.Exporter, error) {
 	// Determine protocol
 	protocol := config.Get().OTLPLogsProtocol()
@@ -163,7 +157,6 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// Parse and sanitize the URL to handle trailing slashes correctly
 		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
@@ -209,7 +202,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// For gRPC, we extract host:port and insecure flag from the URL
 		u, err := url.Parse(rawEndpoint)
