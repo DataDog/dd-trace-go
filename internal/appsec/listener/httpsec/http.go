@@ -21,30 +21,34 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
+// Addresses are the WAF addresses specific to the HTTP feature. [addresses.ClientIPAddr] is not listed because it is
+// shared with the gRPC feature.
+var Addresses = []string{
+	addresses.ServerRequestMethodAddr,
+	addresses.ServerRequestRawURIAddr,
+	addresses.ServerRequestHeadersNoCookiesAddr,
+	addresses.ServerRequestCookiesAddr,
+	addresses.ServerRequestQueryAddr,
+	addresses.ServerRequestPathParamsAddr,
+	addresses.ServerRequestBodyAddr,
+	addresses.ServerResponseBodyAddr,
+	addresses.ServerResponseStatusAddr,
+	addresses.ServerResponseHeadersNoCookiesAddr,
+}
+
 type Feature struct {
 	APISec                        config.APISecConfig
 	ForceKeepWhenGeneratingSchema bool
 }
 
 func (*Feature) String() string {
-	return "HTTP Security"
+	return listener.FeatureHTTP
 }
 
 func (*Feature) Stop() {}
 
 func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
-	if !config.SupportedAddresses.AnyOf(addresses.ServerRequestMethodAddr,
-		addresses.ServerRequestRawURIAddr,
-		addresses.ServerRequestHeadersNoCookiesAddr,
-		addresses.ServerRequestCookiesAddr,
-		addresses.ServerRequestQueryAddr,
-		addresses.ServerRequestPathParamsAddr,
-		addresses.ServerRequestBodyAddr,
-		addresses.ServerResponseBodyAddr,
-		addresses.ServerResponseStatusAddr,
-		addresses.ServerResponseHeadersNoCookiesAddr,
-		addresses.ClientIPAddr,
-	) {
+	if !config.SupportedAddresses.AnyOf(addresses.ClientIPAddr) && !config.SupportedAddresses.AnyOf(Addresses...) {
 		// We extract headers even when the security features are not enabled...
 		feature := &HeaderExtractionFeature{}
 		dyngo.On(rootOp, feature.OnRequest)
@@ -127,7 +131,7 @@ func (feature *Feature) shouldExtractShema(op *httpsec.HandlerOperation, statusC
 type HeaderExtractionFeature struct{}
 
 func (*HeaderExtractionFeature) String() string {
-	return "HTTP Header Extraction"
+	return listener.FeatureHTTP
 }
 
 func (*HeaderExtractionFeature) Stop() {}

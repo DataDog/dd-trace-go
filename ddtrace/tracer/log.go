@@ -78,11 +78,12 @@ type startupInfo struct {
 	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 	Orchestrion                 orchestrionConfig            `json:"orchestrion"`                    // Orchestrion (auto-instrumentation) configuration.
 	FeatureFlags                []string                     `json:"feature_flags"`
-	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
-	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
-	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
-	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
-	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
+	PropagationStyleInject      string                       `json:"propagation_style_inject"`     // Propagation style for inject
+	PropagationStyleExtract     string                       `json:"propagation_style_extract"`    // Propagation style for extract
+	PropagationBehaviorExtract  string                       `json:"propagation_behavior_extract"` // Propagation behavior for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`         // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`            // Destination of statsd payloads
+	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`         // Whether Data Streams is enabled
 
 	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
 	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
@@ -136,17 +137,20 @@ func logStartup(t *tracer) {
 		orchCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
 	}
 
-	var injectorNames, extractorNames string
+	var injectorNames, extractorNames, extractBehavior string
 	switch v := t.config.propagator.(type) {
 	case *chainedPropagator:
 		injectorNames = v.injectorNames
 		extractorNames = v.extractorsNames
+		extractBehavior = v.propagationBehaviorExtract
 	case nil:
 		injectorNames = ""
 		extractorNames = ""
+		extractBehavior = ""
 	default:
 		injectorNames = "custom"
 		extractorNames = "custom"
+		extractBehavior = "custom"
 	}
 	af := t.config.agent.load()
 	proto := t.config.effectiveTraceProtocol()
@@ -194,6 +198,7 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		PropagationBehaviorExtract:  extractBehavior,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),

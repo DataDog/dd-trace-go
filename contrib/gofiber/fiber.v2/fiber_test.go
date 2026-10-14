@@ -272,7 +272,7 @@ func TestPropagation(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate any, opts ...Option) {
 		router := fiber.New()
 		router.Use(Middleware(opts...))
 		router.Get("/user/:id", func(c *fiber.Ctx) error {
