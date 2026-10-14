@@ -530,17 +530,19 @@ func decodeOTLPHeaders(headers map[string]string) map[string]string {
 // never splits on spaces. Values are percent-decoded; entries without '=', with
 // a key that is not a valid HTTP header name, or with an invalid escape are dropped.
 func parseOTLPLogsHeaders(str string) map[string]string {
+	if str == "" {
+		return nil
+	}
 	headers := make(map[string]string)
 	for entry := range strings.SplitSeq(str, ",") {
 		key, val, ok := strings.Cut(entry, "=")
 		key = strings.TrimSpace(key)
-		val, err := url.PathUnescape(strings.TrimSpace(val))
-		if !ok || !httpguts.ValidHeaderFieldName(key) || err != nil {
+		if !ok || !httpguts.ValidHeaderFieldName(key) {
 			continue
 		}
-		headers[key] = val
+		headers[key] = strings.TrimSpace(val)
 	}
-	return headers
+	return decodeOTLPHeaders(headers)
 }
 
 // resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
