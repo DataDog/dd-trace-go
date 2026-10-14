@@ -190,7 +190,8 @@
 //
 // Set DD_TRACE_DEBUG=true to have the provider log, at debug level, each step
 // of its setup and every flag evaluation. This works with or without
-// tracer.Start. It covers:
+// tracer.Start. Every such line starts with "openfeature: [dd_ffe_onboarding]",
+// so they can be filtered from other tracer output. It covers:
 //
 //   - The selected configuration source, or that feature flagging is disabled
 //   - Each Agentless poll attempt and its outcome: the HTTP status, including

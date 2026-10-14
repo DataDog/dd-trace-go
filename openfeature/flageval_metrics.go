@@ -93,7 +93,7 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 		return nil, &flagEvalMeterProviderError{err: err}
 	}
 	if _, ok := mp.(noop.MeterProvider); ok {
-		log.Debug("openfeature: evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
+		log.Debug(onboardingLogPrefix + "evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
 	}
 
 	meter := mp.Meter(meterName)

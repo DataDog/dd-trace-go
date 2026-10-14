@@ -176,13 +176,13 @@ func (s *agentlessSource) run() {
 // times with backoff before giving up until the next tick.
 func (s *agentlessSource) poll() {
 	for attempt := 1; attempt <= maxPollAttempts; attempt++ {
-		log.Debug("openfeature: agentless configuration poll attempt %d/%d", attempt, maxPollAttempts)
+		log.Debug(onboardingLogPrefix+"agentless configuration poll attempt %d/%d", attempt, maxPollAttempts)
 		outcome, retryAfter := s.pollOnce(attempt)
 		if outcome != pollOutcomeRetryable {
 			return
 		}
 		if attempt == maxPollAttempts {
-			log.Debug("openfeature: agentless configuration poll failed after %d attempts; keeping the last known configuration until the next poll", maxPollAttempts)
+			log.Debug(onboardingLogPrefix+"agentless configuration poll failed after %d attempts; keeping the last known configuration until the next poll", maxPollAttempts)
 			return
 		}
 
@@ -190,7 +190,7 @@ func (s *agentlessSource) poll() {
 		// longer than our own jittered backoff, rather than intensifying
 		// throttling across a fleet by ignoring it.
 		delay := max(s.retryDelay(attempt), retryAfter)
-		log.Debug("openfeature: agentless configuration poll retrying in %s", delay.Round(time.Millisecond).String())
+		log.Debug(onboardingLogPrefix+"agentless configuration poll retrying in %s", delay.Round(time.Millisecond).String())
 		select {
 		case <-time.After(delay):
 		case <-s.stopCh:
@@ -267,7 +267,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		default:
 		}
 		// Unlike the warning below, this fires on every failure, not just the first.
-		log.Debug("openfeature: agentless configuration poll attempt %d/%d failed: %s", attempt, maxPollAttempts, sanitizeTransportError(err))
+		log.Debug(onboardingLogPrefix+"agentless configuration poll attempt %d/%d failed: %s", attempt, maxPollAttempts, sanitizeTransportError(err))
 		if s.warnOnce("http-transport") {
 			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err)) //errtrack:ignore remote request failure
 		}
@@ -276,9 +276,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		log.Debug("openfeature: agentless configuration poll attempt %d/%d returned HTTP 304 (unchanged)", attempt, maxPollAttempts)
+		log.Debug(onboardingLogPrefix+"agentless configuration poll attempt %d/%d returned HTTP 304 (unchanged)", attempt, maxPollAttempts)
 	} else {
-		log.Debug("openfeature: agentless configuration poll attempt %d/%d returned HTTP %d", attempt, maxPollAttempts, resp.StatusCode)
+		log.Debug(onboardingLogPrefix+"agentless configuration poll attempt %d/%d returned HTTP %d", attempt, maxPollAttempts, resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -340,7 +340,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		if env == "" {
 			env = "unset"
 		}
-		log.Debug("openfeature: agentless configuration applied successfully (%d flag(s), env=%s)", len(config.Flags), env)
+		log.Debug(onboardingLogPrefix+"agentless configuration applied successfully (%d flag(s), env=%s)", len(config.Flags), env)
 	}
 	return pollOutcomeSuccess, 0
 }

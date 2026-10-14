@@ -22,7 +22,7 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	log.Debug("openfeature: starting remote_config configuration source (Agent Remote Configuration)")
+	log.Debug(onboardingLogPrefix + "starting remote_config configuration source (Agent Remote Configuration)")
 	provider := newDatadogProviderWithSourceAndEVP(
 		config,
 		internalffe.SourceRemoteConfig,
@@ -64,7 +64,7 @@ func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[stri
 func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc.ApplyStatus {
 	// Handle configuration deletion (nil data means the config was removed)
 	if data == nil {
-		log.Debug("openfeature: remote_config configuration %q removed", path)
+		log.Debug(onboardingLogPrefix+"remote_config configuration %q removed", path)
 		// For now, we treat deletion as clearing the configuration
 		// In a multi-config scenario, we might track configs per path
 		provider.updateConfiguration(nil)
@@ -74,7 +74,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote_config configuration %q received", path)
+	log.Debug(onboardingLogPrefix+"remote_config configuration %q received", path)
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -97,7 +97,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	// Update the provider with the new configuration
 	provider.updateConfiguration(&config)
-	log.Debug("openfeature: remote_config configuration %q applied successfully (%d flag(s))", path, len(config.Flags))
+	log.Debug(onboardingLogPrefix+"remote_config configuration %q applied successfully (%d flag(s))", path, len(config.Flags))
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,

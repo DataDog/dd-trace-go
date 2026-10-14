@@ -143,13 +143,13 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
-		log.Debug("openfeature: configuration source is %s", settings.Source.String())
+		log.Debug(onboardingLogPrefix+"configuration source is %s", settings.Source.String())
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
-		log.Debug("openfeature: configuration source is %s", settings.Source.String())
+		log.Debug(onboardingLogPrefix+"configuration source is %s", settings.Source.String())
 		return startWithAgentless(config, settings)
 	default:
-		log.Debug("openfeature: feature flagging is disabled; flag evaluations will return their default values")
+		log.Debug(onboardingLogPrefix + "feature flagging is disabled; flag evaluations will return their default values")
 		return &openfeature.NoopProvider{}, nil
 	}
 }
@@ -270,7 +270,7 @@ func newDatadogProviderWithSourceAndEVP(
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	} else {
-		log.Debug("openfeature: evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
+		log.Debug(onboardingLogPrefix + "evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
@@ -349,7 +349,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		return p, nil
 	}
 
-	log.Debug("openfeature: starting agentless configuration source at %s (poll interval %s, request timeout %s)",
+	log.Debug(onboardingLogPrefix+"starting agentless configuration source at %s (poll interval %s, request timeout %s)",
 		redactedOrigin(src.endpoint), settings.PollInterval.String(), settings.RequestTimeout.String())
 	src.start()
 	return p, nil
@@ -463,14 +463,14 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	start := time.Now()
 	if log.DebugEnabled() {
 		deadline, _ := ctx.Deadline()
-		log.Debug("openfeature: waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
+		log.Debug(onboardingLogPrefix+"waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
 	}
 	defer func() {
 		if err != nil {
-			log.Debug("openfeature: provider failed to initialize: %s", err.Error())
+			log.Debug(onboardingLogPrefix+"provider failed to initialize: %s", err.Error())
 			return
 		}
-		log.Debug("openfeature: provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
+		log.Debug(onboardingLogPrefix+"provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
 	}()
 
 	p.mu.Lock()
