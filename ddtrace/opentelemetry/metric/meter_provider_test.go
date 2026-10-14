@@ -113,6 +113,15 @@ func TestMetricsEnabled(t *testing.T) {
 	defer Shutdown(ctx, mp)
 }
 
+// TestMetricsDisabledByOtelSDKDisabled verifies that OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true.
+func TestMetricsDisabledByOtelSDKDisabled(t *testing.T) {
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_SDK_DISABLED", "true")
+	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
+	require.NoError(t, err)
+	assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_SDK_DISABLED=true")
+}
+
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
 // with both gRPC and HTTP exporters and instruments work correctly.
 func TestMeterProviderExporterProtocols(t *testing.T) {

@@ -876,6 +876,64 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 	})
 }
 
+func TestOTelSDKDisabled(t *testing.T) {
+	t.Run("disables tracing", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.TracingEnabled())
+	})
+
+	t.Run("explicit DD_TRACE_ENABLED takes precedence", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.TracingEnabled())
+	})
+
+	t.Run("overrides DD_LOGS_OTEL_ENABLED and DD_METRICS_OTEL_ENABLED", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.LogsOTelEnabled())
+		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
+	})
+
+	t.Run("false leaves OTel logs and metrics enabled", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "false")
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.TracingEnabled())
+		assert.True(t, cfg.LogsOTelEnabled())
+		assert.True(t, cfg.RuntimeMetricsOtelEnabled())
+	})
+}
+
 func TestOTLPExportMode(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetGlobalState()

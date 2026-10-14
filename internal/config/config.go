@@ -451,6 +451,18 @@ func loadConfig() *Config {
 	cfg.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
 	cfg.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
+	// OTEL_SDK_DISABLED disables every OTel SDK signal, so unlike other OTEL_*
+	// mappings it overrides explicit DD opt-ins for the OTel logs and metrics pipelines.
+	if p.GetBool("OTEL_SDK_DISABLED", false) {
+		if cfg.logsOTelEnabled {
+			log.Warn("OTEL_SDK_DISABLED=true overrides DD_LOGS_OTEL_ENABLED=true, OTel logs are disabled")
+			cfg.SetLogsOTelEnabled(false, telemetry.OriginCalculated)
+		}
+		if cfg.runtimeMetricsOtel {
+			log.Warn("OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true, OTel metrics are disabled")
+			cfg.SetRuntimeMetricsOtelEnabled(false, telemetry.OriginCalculated)
+		}
+	}
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
