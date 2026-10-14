@@ -96,10 +96,10 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
+	case "http/protobuf", "http":
+		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 	default:
-		if protocol != "http/protobuf" && protocol != "http" {
-			log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
-		}
+		log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 	}
 

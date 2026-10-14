@@ -44,6 +44,7 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 
 			exporter, err := newOTLPExporter(t.Context(), nil, nil)
 			require.NoError(t, err)
+			defer exporter.Shutdown(t.Context())
 			te := exporter.(*telemetryExporter)
 			assert.IsType(t, expected.exporter, te.Exporter)
 
