@@ -1377,7 +1377,7 @@
     "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "true"
       }
     ],
@@ -1608,7 +1608,7 @@
     "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "true"
       }
     ],
@@ -1867,7 +1867,7 @@
     "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "true"
       }
     ],
@@ -1902,7 +1902,7 @@
     "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",
-        "type": "bool",
+        "type": "boolean",
         "default": "true"
       }
     ],
