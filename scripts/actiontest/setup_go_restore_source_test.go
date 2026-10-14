@@ -35,6 +35,7 @@ func deriveRestoreSource(t *testing.T, env map[string]string) map[string]string 
 		"MATCHED_KEY":    "",
 		"DEP_HASH":       depHashFixture,
 		"DEFAULT_BRANCH": "main",
+		"CURRENT_BRANCH": "feature",
 	}
 	maps.Copy(base, env)
 	written, out, err := runSetupGoStep(t, setupGoStep(t, "Derive restore source"), base)
@@ -100,6 +101,25 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			env:          map[string]string{"MATCHED_KEY": "go-cache-Linux-X64-legacy-layout"},
 			wantSource:   "branch",
 			wantDepMatch: "false",
+		},
+		{
+			// A nightly run on main restoring its own earlier entry is a
+			// same-branch restore, not a fallback.
+			name:         "same-branch restore on the default branch",
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("main"), "CURRENT_BRANCH": "main"},
+			wantSource:   "branch",
+			wantDepMatch: "true",
+		},
+		{
+			// Go prerelease versions carry one hyphen cluster in the key;
+			// the branch must still parse after it.
+			name: "prerelease Go version",
+			env: map[string]string{
+				"MATCHED_KEY": "go-cache-macOS-ARM64-ddtg-cx1-multi-os-314198ec86eada43-1.28.0-rc.1-" +
+					"main-" + depHashFixture + "-38402253744",
+			},
+			wantSource:   "default",
+			wantDepMatch: "true",
 		},
 	}
 	for _, tc := range cases {
