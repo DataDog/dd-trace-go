@@ -223,6 +223,30 @@ func (i *Instrumentation) OTelSemanticsEnabled() bool {
 	return internalconfig.Get().OTelSemanticsEnabled()
 }
 
+// KinesisInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// Kinesis records.
+func (i *Instrumentation) KinesisInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().KinesisInjectDatadogAttributeEnabled()
+}
+
+// EventBridgeInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// EventBridge event details.
+func (i *Instrumentation) EventBridgeInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().EventBridgeInjectDatadogAttributeEnabled()
+}
+
+// SQSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SQS
+// message attributes.
+func (i *Instrumentation) SQSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SQSInjectDatadogAttributeEnabled()
+}
+
+// SNSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SNS
+// message attributes.
+func (i *Instrumentation) SNSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SNSInjectDatadogAttributeEnabled()
+}
+
 func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
 }
