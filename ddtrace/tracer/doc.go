@@ -174,10 +174,10 @@
 //
 // # Disabling the OpenTelemetry SDK
 //
-// OTEL_SDK_DISABLED=true (case-insensitive) disables tracing, unless
-// DD_TRACE_ENABLED is set explicitly, and takes precedence over
-// OTEL_TRACES_EXPORTER. It also disables OTel logs and metrics, even when
-// DD_LOGS_OTEL_ENABLED or DD_METRICS_OTEL_ENABLED is set to true.
+// OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set
+// explicitly, and takes precedence over OTEL_TRACES_EXPORTER. It also disables
+// OTel logs and metrics, even when DD_LOGS_OTEL_ENABLED or
+// DD_METRICS_OTEL_ENABLED is set to true.
 //
 // # Trace Protocol
 //

@@ -8,6 +8,7 @@ package provider
 import (
 	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -171,18 +172,17 @@ func mapEnabled(ot string) (string, error) {
 	}
 }
 
-// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED, following the OTel
-// boolean grammar: only a case-insensitive "true" disables. OTEL_SDK_DISABLED=false
+// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED. OTEL_SDK_DISABLED=false
 // yields no value so that other OTEL mappings for DD_TRACE_ENABLED still apply.
 func mapSDKDisabled(ot string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(ot)) {
-	case "true":
-		return "false", nil
-	case "false":
-		return "", nil
-	default:
+	disabled, err := strconv.ParseBool(strings.TrimSpace(ot))
+	if err != nil {
 		return "", fmt.Errorf("the following configuration is not supported: OTEL_SDK_DISABLED=%v", ot)
 	}
+	if disabled {
+		return "false", nil
+	}
+	return "", nil
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"

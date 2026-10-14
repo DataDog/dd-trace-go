@@ -917,23 +917,6 @@ func TestOTelSDKDisabled(t *testing.T) {
 		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
 	})
 
-	t.Run("only case-insensitive true disables OTel logs and metrics", func(t *testing.T) {
-		for _, v := range []string{"TRUE", "1"} {
-			resetGlobalState()
-			t.Setenv("OTEL_SDK_DISABLED", v)
-			t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
-			t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-
-			cfg := Get()
-			require.NotNil(t, cfg)
-
-			want := v != "TRUE"
-			assert.Equal(t, want, cfg.LogsOTelEnabled(), "OTEL_SDK_DISABLED=%s", v)
-			assert.Equal(t, want, cfg.RuntimeMetricsOtelEnabled(), "OTEL_SDK_DISABLED=%s", v)
-		}
-		resetGlobalState()
-	})
-
 	t.Run("false leaves OTel logs and metrics enabled", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
