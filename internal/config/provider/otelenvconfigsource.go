@@ -8,7 +8,6 @@ package provider
 import (
 	"cmp"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -42,17 +41,18 @@ func (entry *otelDDEnv) resolve(ddKey string) string {
 	if otVal == "" {
 		return ""
 	}
-	if ddVal := env.Get(ddKey); ddVal != "" {
-		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal)
-		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
-		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
-	}
 	val, err := entry.remapper(otVal)
 	if err != nil {
 		log.Warn("%s", err.Error())
 		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
 		telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 		return ""
+	}
+	// Only report a conflict when the OTEL value actually maps to a DD value.
+	if ddVal := env.Get(ddKey); ddVal != "" && val != "" {
+		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, ddKey, ddVal)
+		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
+		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 	}
 	return val
 }
@@ -171,17 +171,18 @@ func mapEnabled(ot string) (string, error) {
 	}
 }
 
-// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED. OTEL_SDK_DISABLED=false
+// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED, following the OTel
+// boolean grammar: only a case-insensitive "true" disables. OTEL_SDK_DISABLED=false
 // yields no value so that other OTEL mappings for DD_TRACE_ENABLED still apply.
 func mapSDKDisabled(ot string) (string, error) {
-	disabled, err := strconv.ParseBool(strings.TrimSpace(ot))
-	if err != nil {
+	switch strings.ToLower(strings.TrimSpace(ot)) {
+	case "true":
+		return "false", nil
+	case "false":
+		return "", nil
+	default:
 		return "", fmt.Errorf("the following configuration is not supported: OTEL_SDK_DISABLED=%v", ot)
 	}
-	if disabled {
-		return "false", nil
-	}
-	return "", nil
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"

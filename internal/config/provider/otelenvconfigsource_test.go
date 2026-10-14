@@ -119,6 +119,49 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		assert.Equal(t, "false", v)
 	})
 
+	t.Run("OTEL_SDK_DISABLED is case-insensitive", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "tRuE")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+		assert.Equal(t, "false", v)
+	})
+
+	t.Run("OTEL_SDK_DISABLED=1 is invalid", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SDK_DISABLED", "1")
+		source := &otelEnvConfigSource{}
+		v := source.get("DD_TRACE_ENABLED")
+
+		assert.Equal(t, "", v)
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}).Get())
+	})
+
+	t.Run("OTEL_SDK_DISABLED=false with DD_TRACE_ENABLED does not report hiding", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SDK_DISABLED", "false")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+		source := &otelEnvConfigSource{}
+		source.get("DD_TRACE_ENABLED")
+
+		assert.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}).Get())
+	})
+
+	t.Run("OTEL_SDK_DISABLED=true with DD_TRACE_ENABLED reports hiding", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+		source := &otelEnvConfigSource{}
+		source.get("DD_TRACE_ENABLED")
+
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_trace_enabled", "config_opentelemetry:otel_sdk_disabled"}).Get())
+	})
+
 	t.Run("returns empty for invalid OTEL_SDK_DISABLED", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
