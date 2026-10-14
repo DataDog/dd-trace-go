@@ -16,11 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// onboardingLogPrefix starts every debug line that helps a customer diagnose
-// feature-flag setup and evaluation. The [dd_ffe_onboarding] tag is shared
-// across SDKs so a single parser can extract these lines; keep it stable.
-const onboardingLogPrefix = "openfeature: [dd_ffe_onboarding] "
-
 // maxDebugValueLen bounds how much of a flag value one debug line carries, so
 // a large string or JSON flag cannot flood the customer's log.
 const maxDebugValueLen = 256
@@ -33,7 +28,7 @@ func logOnboarding(format string, args ...any) {
 		return
 	}
 	defer recoverDebugLogging()
-	log.Debug(onboardingLogPrefix+format, args...)
+	log.Debug("openfeature: "+format, args...)
 }
 
 // debugLoggingHook logs the outcome of every flag evaluation under

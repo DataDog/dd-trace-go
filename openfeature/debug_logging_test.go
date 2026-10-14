@@ -82,7 +82,7 @@ func TestDebugLoggingHook_Finally(t *testing.T) {
 
 	require.Len(t, logger.all(), 1)
 	msg := logger.all()[0]
-	assert.Contains(t, msg, `openfeature: [dd_ffe_onboarding] evaluated "my-flag": type=bool`)
+	assert.Contains(t, msg, `openfeature: evaluated "my-flag": type=bool`)
 	assert.Contains(t, msg, "value=true")
 	assert.Contains(t, msg, `variant="on"`)
 	assert.Contains(t, msg, "reason=TARGETING_MATCH")
@@ -218,9 +218,9 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll attempt 1/3")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll attempt 1/3 returned HTTP 200")
-		logger.assertContains(t, `openfeature: [dd_ffe_onboarding] agentless configuration applied successfully (0 flag(s), 0 rejected, env=staging, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
+		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3")
+		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 200")
+		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, env=staging, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
 	})
 
 	t.Run("applied configuration without DD_ENV", func(t *testing.T) {
@@ -230,7 +230,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {}).poll()
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration applied successfully (0 flag(s), 0 rejected, env=unset, ")
+		logger.assertContains(t, "openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, env=unset, ")
 	})
 
 	t.Run("unchanged configuration", func(t *testing.T) {
@@ -240,7 +240,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll attempt 1/3 returned HTTP 304 (unchanged)")
+		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 304 (unchanged)")
 		assert.Zero(t, logger.countContaining("applied successfully"))
 	})
 
@@ -252,13 +252,13 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
 		for _, attempt := range []string{"1/3", "2/3", "3/3"} {
-			logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll attempt "+attempt+" returned HTTP 500")
+			logger.assertContains(t, "openfeature: agentless configuration poll attempt "+attempt+" returned HTTP 500")
 		}
 		// Every attempt is logged at debug, while the warning stays deduplicated.
 		assert.Equal(t, 3, logger.countContaining("returned HTTP 500"))
 		assert.Equal(t, 1, logger.countContaining("received retryable status 500"))
-		assert.Equal(t, 2, logger.countContaining("openfeature: [dd_ffe_onboarding] agentless configuration poll retrying in"))
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll failed after 3 attempts; keeping the last known configuration until the next poll")
+		assert.Equal(t, 2, logger.countContaining("openfeature: agentless configuration poll retrying in"))
+		logger.assertContains(t, "openfeature: agentless configuration poll failed after 3 attempts; keeping the last known configuration until the next poll")
 	})
 
 	t.Run("authentication failure", func(t *testing.T) {
@@ -280,7 +280,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 		newDebugAgentlessSource(t, srv.URL).poll()
 
 		for _, attempt := range []string{"1/3", "2/3", "3/3"} {
-			logger.assertContains(t, "openfeature: [dd_ffe_onboarding] agentless configuration poll attempt "+attempt+" failed: ")
+			logger.assertContains(t, "openfeature: agentless configuration poll attempt "+attempt+" failed: ")
 		}
 		assert.Equal(t, 1, logger.countContaining("openfeature: agentless: request failed:"), "the warning stays deduplicated")
 	})
@@ -331,7 +331,7 @@ func TestAgentlessDebugLogs_NeverContainEndpointSecrets(t *testing.T) {
 		require.NoError(t, p.ShutdownWithContext(ctx))
 		cancel()
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] starting agentless configuration source at http://"+u.Host+" (poll interval 1h0m0s, request timeout 2s)")
+		logger.assertContains(t, "openfeature: starting agentless configuration source at http://"+u.Host+" (poll interval 1h0m0s, request timeout 2s)")
 	}
 
 	srv := httptest.NewServer(http.NotFoundHandler())
@@ -358,8 +358,8 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 		defer cancel()
 		require.NoError(t, p.InitWithContext(ctx, of.EvaluationContext{}))
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] waiting for provider initialization... (timeout ")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider initialized successfully in ")
+		logger.assertContains(t, "openfeature: waiting for provider initialization... (timeout ")
+		logger.assertContains(t, "openfeature: provider initialized successfully in ")
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -370,7 +370,7 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 		defer cancel()
 		require.Error(t, p.InitWithContext(ctx, of.EvaluationContext{}))
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider failed to initialize: ")
+		logger.assertContains(t, "openfeature: provider failed to initialize: ")
 		logger.assertContains(t, "initialization timed out before configuration arrived")
 		assert.Zero(t, logger.countContaining("initialized successfully"))
 	})
@@ -387,7 +387,7 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 
 		// The root cause is logged as soon as it is discovered, then summarized by Init.
 		logger.assertContains(t, "openfeature: failed to start agentless configuration source: agentless: no API key configured for the managed endpoint")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider failed to initialize: ")
+		logger.assertContains(t, "openfeature: provider failed to initialize: ")
 		logger.assertContains(t, "no API key configured")
 	})
 }
@@ -405,7 +405,7 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.True(t, log.DebugEnabled())
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] feature flagging is disabled; flag evaluations will return their default values")
+		logger.assertContains(t, "openfeature: feature flagging is disabled; flag evaluations will return their default values")
 	})
 
 	t.Run("without DD_TRACE_DEBUG the level is left alone", func(t *testing.T) {
@@ -435,8 +435,8 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 			_ = p.(*DatadogProvider).ShutdownWithContext(ctx)
 		})
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] configuration source is remote_config")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] starting remote_config configuration source (Agent Remote Configuration)")
+		logger.assertContains(t, "openfeature: configuration source is remote_config")
+		logger.assertContains(t, "openfeature: starting remote_config configuration source (Agent Remote Configuration)")
 	})
 
 	t.Run("logs the selected agentless source", func(t *testing.T) {
@@ -454,8 +454,8 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 			_ = p.(*DatadogProvider).ShutdownWithContext(ctx)
 		})
 
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] configuration source is agentless")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] starting agentless configuration source at "+backend.server.URL)
+		logger.assertContains(t, "openfeature: configuration source is agentless")
+		logger.assertContains(t, "openfeature: starting agentless configuration source at "+backend.server.URL)
 	})
 }
 
@@ -466,7 +466,7 @@ func TestFlagEvalMetrics_DebugLogsWhenDisabled(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = m.shutdown(context.Background()) })
 
-	logger.assertContains(t, "openfeature: [dd_ffe_onboarding] evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
+	logger.assertContains(t, "openfeature: evaluation metrics disabled; set DD_METRICS_OTEL_ENABLED=true to enable")
 }
 
 func TestFlagEvalCounts_DebugLogsWhenDisabled(t *testing.T) {
@@ -476,7 +476,7 @@ func TestFlagEvalCounts_DebugLogsWhenDisabled(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
 
 	assert.Nil(t, p.flagEvalLoggingHook)
-	logger.assertContains(t, "openfeature: [dd_ffe_onboarding] evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
+	logger.assertContains(t, "openfeature: evaluation counts disabled; set DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true to enable")
 }
 
 func TestRemoteConfig_DebugLogs(t *testing.T) {
@@ -490,9 +490,9 @@ func TestRemoteConfig_DebugLogs(t *testing.T) {
 	processConfigUpdate(p, path, data)
 	processConfigUpdate(p, path, nil)
 
-	logger.assertContains(t, `openfeature: [dd_ffe_onboarding] remote_config configuration "`+path+`" received`)
-	logger.assertContains(t, `openfeature: [dd_ffe_onboarding] remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
-	logger.assertContains(t, `openfeature: [dd_ffe_onboarding] remote_config configuration "`+path+`" removed`)
+	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" received`)
+	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
+	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" removed`)
 }
 
 // panickingValue panics from every method a formatter could call, standing in
@@ -559,7 +559,7 @@ func TestDebugLoggingHook_LogsNotReadyEvaluations(t *testing.T) {
 	_, err := client.BooleanValue(context.Background(), "early-flag", false, of.NewEvaluationContext("user-1", nil))
 	require.Error(t, err)
 
-	logger.assertContains(t, `openfeature: [dd_ffe_onboarding] evaluation of "early-flag" failed: PROVIDER_NOT_READY`)
+	logger.assertContains(t, `openfeature: evaluation of "early-flag" failed: PROVIDER_NOT_READY`)
 }
 
 // TestDebugLogging_NeverLogsTargetingData checks the complete log stream of
@@ -594,7 +594,7 @@ func TestDebugLogging_NeverLogsTargetingData(t *testing.T) {
 	logger.assertContains(t, `evaluated "bool-flag"`)
 	for _, msg := range logger.all() {
 		assert.NotContains(t, msg, attrValue, "context attributes must never be logged")
-		if strings.Contains(msg, onboardingLogPrefix) {
+		if isOnboardingLog(msg) {
 			assert.NotContains(t, msg, subject, "onboarding lines must never carry the targeting key")
 		}
 	}
@@ -657,16 +657,16 @@ func TestLifecycle_DebugLogs(t *testing.T) {
 		require.Error(t, p.InitWithContext(ctx, of.EvaluationContext{}))
 
 		p.updateConfiguration(createTestConfig())
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider recovered: configuration received, provider is ready")
+		logger.assertContains(t, "openfeature: provider recovered: configuration received, provider is ready")
 
 		p.updateConfiguration(nil)
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider is stale: configuration is unavailable")
+		logger.assertContains(t, "openfeature: provider is stale: configuration is unavailable")
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		require.NoError(t, p.ShutdownWithContext(shutdownCtx))
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider shutting down")
-		logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider shut down")
+		logger.assertContains(t, "openfeature: provider shutting down")
+		logger.assertContains(t, "openfeature: provider shut down")
 	})
 }
 
@@ -726,7 +726,7 @@ func TestShutdown_DebugLogsWhenContextExpires(t *testing.T) {
 	p.mu.RUnlock() // let the stalled teardown finish
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	logger.assertContains(t, "openfeature: [dd_ffe_onboarding] provider shutdown did not finish before the context expired: context deadline exceeded")
+	logger.assertContains(t, "openfeature: provider shutdown did not finish before the context expired: context deadline exceeded")
 }
 
 // lockProbingLogger records, for each message, whether p.mu was free when it
@@ -810,6 +810,29 @@ func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
 	})
 }
 
+// The onboarding diagnostics share the package prefix with older logs, so
+// identify them by message rather than failing unrelated writer diagnostics.
+func isOnboardingLog(msg string) bool {
+	_, message, ok := strings.Cut(msg, "openfeature: ")
+	if !ok {
+		return false
+	}
+	return slices.ContainsFunc([]string{
+		"configuration source is ",
+		"feature flagging is disabled;",
+		"evaluation counts disabled;",
+		"evaluation metrics disabled;",
+		"starting agentless configuration source ",
+		"starting remote_config configuration source ",
+		"waiting for provider initialization",
+		"provider ",
+		"agentless configuration ",
+		"remote_config configuration ",
+		"evaluated ",
+		"evaluation of ",
+	}, func(prefix string) bool { return strings.HasPrefix(message, prefix) })
+}
+
 // Fail only the new diagnostics to distinguish them from existing logging.
 type panickingOnboardingLogger struct {
 	capturingLogger
@@ -817,7 +840,7 @@ type panickingOnboardingLogger struct {
 
 func (l *panickingOnboardingLogger) Log(msg string) {
 	l.capturingLogger.Log(msg)
-	if strings.Contains(msg, onboardingLogPrefix) {
+	if isOnboardingLog(msg) {
 		panic("onboarding logger failure")
 	}
 }
