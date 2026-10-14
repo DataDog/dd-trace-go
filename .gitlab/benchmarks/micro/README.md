@@ -65,6 +65,18 @@ wait for send completion. An in-memory HTTP transport excludes socket I/O
 and collector scheduling from the measurement. Real HTTP behavior remains
 covered by the OTLP writer and transport tests.
 
+Stability validation on Neoverse-V2 covers ten pipelines at
+[`8113ac9242`](https://github.com/DataDog/dd-trace-go/commit/8113ac924209872252943c7fa425a355f8636abb).
+Each pipeline supplies ten repetitions. The
+[collector report](https://gitlab.ddbuild.io/DataDog/benchmarking-platform-tools/-/jobs/2136764411)
+records zero significant-impact false positives across 45 pipeline pairs for
+execution time, allocated memory, and allocations. The scan uses a 2% impact
+threshold and a 5% false-positive rate limit.
+
+Do not compare these timings with `BenchmarkOTLPTraceWriterFlush`, which
+included socket I/O. The benchmark names represent different measurement
+boundaries.
+
 # How to mark a benchmark as known flaky
 
 If a benchmark is known to produce unstable results and shouldn't fail the
@@ -75,8 +87,8 @@ that the regex does not exclude similarly named scenarios. Include the
 tracking ticket in a comment.
 
 ```yaml
-# Quarantined: APMSP-4060
-FLAKY_BENCHMARKS_REGEX: "^(BenchmarkOTLPTraceWriterFlushInMemory|BenchmarkXxx)$"
+# Quarantined: <tracking-ticket>
+FLAKY_BENCHMARKS_REGEX: "^(BenchmarkXxx|BenchmarkYyy)$"
 ```
 
 The benchmark will still run and its results will be reported, but
