@@ -56,16 +56,27 @@ New benchmarks
    that don't exist on the baseline branch are automatically skipped from
    baseline comparison on the first run.
 
+# OTLP flush benchmark
+
+`BenchmarkOTLPTraceWriterFlushInMemory` measures a fixed one-span workload.
+The benchmark includes span conversion, protobuf serialization, asynchronous
+send dispatch, HTTP request construction, request body consumption, and the
+wait for send completion. An in-memory HTTP transport excludes socket I/O
+and collector scheduling from the measurement. Real HTTP behavior remains
+covered by the OTLP writer and transport tests.
+
 # How to mark a benchmark as known flaky
 
 If a benchmark is known to produce unstable results and shouldn't fail the
 PR performance gate, add its name to the `FLAKY_BENCHMARKS_REGEX` variable
 in `gitlab-ci.yml`. The value is a regular expression matched against
-benchmark names; use `|` to separate multiple entries.
+benchmark names; use `|` to separate multiple entries. Anchor the names so
+that the regex does not exclude similarly named scenarios. Include the
+tracking ticket in a comment.
 
 ```yaml
-# Known flaky benchmarks
-FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush|BenchmarkXxx"
+# Quarantined: APMSP-4060
+FLAKY_BENCHMARKS_REGEX: "^(BenchmarkOTLPTraceWriterFlushInMemory|BenchmarkXxx)$"
 ```
 
 The benchmark will still run and its results will be reported, but
