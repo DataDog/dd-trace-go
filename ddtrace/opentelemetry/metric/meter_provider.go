@@ -7,7 +7,6 @@ package metric
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -27,7 +26,6 @@ const (
 	// Environment variables for controlling metrics behavior
 	envDDMetricsOtelEnabled = "DD_METRICS_OTEL_ENABLED"
 	envOtelMetricsExporter  = "OTEL_METRICS_EXPORTER"
-	envOtelSDKDisabled      = "OTEL_SDK_DISABLED"
 )
 
 // installedProvider is the MeterProvider we installed as the OTel global.
@@ -164,7 +162,7 @@ func metricsEnabled(c *internalconfig.Config) bool {
 	if c != nil {
 		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
-	if disabled, _ := strconv.ParseBool(strings.ToLower(strings.TrimSpace(env.Get(envOtelSDKDisabled)))); disabled {
+	if internalconfig.Get().OTelSDKDisabled() {
 		return false
 	}
 	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {

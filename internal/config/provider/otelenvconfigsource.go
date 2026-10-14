@@ -172,10 +172,15 @@ func mapEnabled(ot string) (string, error) {
 	}
 }
 
+// ParseOTelSDKDisabled parses an OTEL_SDK_DISABLED value, case-insensitively.
+func ParseOTelSDKDisabled(v string) (bool, error) {
+	return strconv.ParseBool(strings.ToLower(strings.TrimSpace(v)))
+}
+
 // mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED. OTEL_SDK_DISABLED=false
 // yields no value so that other OTEL mappings for DD_TRACE_ENABLED still apply.
 func mapSDKDisabled(ot string) (string, error) {
-	disabled, err := strconv.ParseBool(strings.ToLower(strings.TrimSpace(ot)))
+	disabled, err := ParseOTelSDKDisabled(ot)
 	if err != nil {
 		return "", fmt.Errorf("the following configuration is not supported: OTEL_SDK_DISABLED=%v", ot)
 	}

@@ -928,6 +928,7 @@ func TestOTelSDKDisabled(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
+		assert.True(t, cfg.OTelSDKDisabled())
 		assert.False(t, cfg.TracingEnabled())
 		assert.False(t, cfg.LogsOTelEnabled())
 		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
@@ -944,6 +945,7 @@ func TestOTelSDKDisabled(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
+		assert.False(t, cfg.OTelSDKDisabled())
 		assert.True(t, cfg.TracingEnabled())
 		assert.True(t, cfg.LogsOTelEnabled())
 		assert.True(t, cfg.RuntimeMetricsOtelEnabled())

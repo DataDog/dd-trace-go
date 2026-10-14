@@ -193,6 +193,8 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// otelSDKDisabled is set by OTEL_SDK_DISABLED and disables every OTel SDK signal.
+	otelSDKDisabled bool
 	// BatchLogRecordProcessor settings (OTEL_BLRP_*)
 	blrpMaxQueueSize       int
 	blrpScheduleDelay      time.Duration
@@ -453,7 +455,8 @@ func loadConfig() *Config {
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	// OTEL_SDK_DISABLED disables every OTel SDK signal, so unlike other OTEL_*
 	// mappings it overrides explicit DD opt-ins for the OTel logs and metrics pipelines.
-	if disabled, _ := strconv.ParseBool(strings.ToLower(strings.TrimSpace(p.GetString("OTEL_SDK_DISABLED", "")))); disabled {
+	cfg.otelSDKDisabled, _ = provider.ParseOTelSDKDisabled(p.GetString("OTEL_SDK_DISABLED", ""))
+	if cfg.otelSDKDisabled {
 		if cfg.logsOTelEnabled {
 			log.Warn("OTEL_SDK_DISABLED=true overrides DD_LOGS_OTEL_ENABLED=true, OTel logs are disabled")
 			cfg.SetLogsOTelEnabled(false, telemetry.OriginCalculated)
@@ -1655,6 +1658,13 @@ func (c *Config) LogsOTelEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.logsOTelEnabled
+}
+
+// OTelSDKDisabled reports whether OTEL_SDK_DISABLED=true is set.
+func (c *Config) OTelSDKDisabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSDKDisabled
 }
 
 func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {

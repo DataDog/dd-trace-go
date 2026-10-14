@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // TestMeterProviderInstruments verifies that various OTel instrument types
@@ -115,8 +117,11 @@ func TestMetricsEnabled(t *testing.T) {
 
 // TestMetricsDisabledByOtelSDKDisabled verifies that OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true.
 func TestMetricsDisabledByOtelSDKDisabled(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	setMetricsExportEnv(t)
 	t.Setenv("OTEL_SDK_DISABLED", "true")
+	internalconfig.CreateNew()
 	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_SDK_DISABLED=true")
