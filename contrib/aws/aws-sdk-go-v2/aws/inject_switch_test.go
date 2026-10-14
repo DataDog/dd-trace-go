@@ -7,6 +7,7 @@ package aws
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -92,11 +93,23 @@ func reloadTracerConfig(t *testing.T) {
 	tracer.Stop()
 }
 
-// setInjectEnv sets an environment variable and reloads the global configuration. The reload
-// cleanup is registered first so that it runs after t.Setenv has restored the variable.
+// clearInjectEnv unsets the four injection switches so that a value inherited from the environment
+// of the test process cannot change the result, then reloads the global configuration after the
+// original environment is restored.
+func clearInjectEnv(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { reloadTracerConfig(t) }) // Runs after t.Setenv has restored the variables.
+	for _, tc := range injectCases() {
+		t.Setenv(tc.env, "") // Restores the original value at the end of the test.
+		require.NoError(t, os.Unsetenv(tc.env))
+	}
+}
+
+// setInjectEnv unsets all the injection switches, sets one of them and reloads the global
+// configuration.
 func setInjectEnv(t *testing.T, key, value string) {
 	t.Helper()
-	t.Cleanup(func() { reloadTracerConfig(t) })
+	clearInjectEnv(t)
 	t.Setenv(key, value)
 	reloadTracerConfig(t)
 }
@@ -122,6 +135,7 @@ func newInjectTestConfig(t *testing.T) aws.Config {
 func TestInjectionEnabledByDefault(t *testing.T) {
 	for _, tc := range injectCases() {
 		t.Run(tc.service, func(t *testing.T) {
+			clearInjectEnv(t)
 			reloadTracerConfig(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
