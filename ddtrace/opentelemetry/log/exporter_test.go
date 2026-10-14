@@ -6,20 +6,28 @@
 package log
 
 import (
+	"context"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
-	t.Run("defaults to http/json", func(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		t.Setenv(envOTLPProtocol, "")
+		t.Setenv(envOTLPLogsProtocol, "")
 		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
+		assert.Equal(t, "http/protobuf", protocol)
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
@@ -41,17 +49,43 @@ func TestResolveOTLPProtocol(t *testing.T) {
 		assert.Equal(t, "grpc", protocol)
 	})
 
-	t.Run("supports http/json", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
-	})
-
 	t.Run("supports http/protobuf", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
 		protocol := resolveOTLPProtocol()
 		assert.Equal(t, "http/protobuf", protocol)
 	})
+}
+
+func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
+	t.Setenv(envOTLPLogsProtocol, "http/json")
+	assert.Equal(t, "http/json", resolveOTLPProtocol(), "preserve the configured protocol so the exporter can warn")
+	logger := new(internallog.RecordLogger)
+	defer internallog.UseLogger(logger)()
+	previousLevel := internallog.GetLevel()
+	internallog.SetLevel(internallog.LevelWarn)
+	defer internallog.SetLevel(previousLevel)
+
+	recorder := &telemetrytest.RecordClient{}
+	defer telemetry.MockClient(recorder)()
+
+	ctx := context.Background()
+	exporter, err := newOTLPExporter(ctx, nil, nil)
+	require.NoError(t, err)
+	defer exporter.Shutdown(ctx)
+
+	wrapped := exporter.(*telemetryExporter)
+	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
+	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
+
+	wrapped.telemetry.RecordLogRecords(1)
+	key := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceTracers,
+		Name:      "otel.log_records",
+		Tags:      "encoding:protobuf,protocol:http",
+		Kind:      "count",
+	}
+	require.Contains(t, recorder.Metrics, key)
+	assert.Equal(t, float64(1), recorder.Metrics[key].Get())
 }
 
 func TestHasOTLPEndpointInEnv(t *testing.T) {
