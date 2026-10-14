@@ -90,22 +90,17 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 
 	var exporter sdklog.Exporter
 	var err error
-	var protocolTag, encodingTag string
+	protocolTag := protocolHTTP
 
 	switch protocol {
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
-		encodingTag = encodingProtobuf
-	case "http/protobuf", "http":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
+		if protocol != "http/protobuf" && protocol != "http" {
+			log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
+		}
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {
@@ -115,7 +110,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	// Wrap the exporter with telemetry tracking
 	return &telemetryExporter{
 		Exporter:  exporter,
-		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
+		telemetry: NewLogsExportTelemetry(protocolTag, encodingProtobuf),
 	}, nil
 }
 
