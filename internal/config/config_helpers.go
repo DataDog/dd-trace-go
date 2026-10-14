@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/http/httpguts"
-
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
@@ -528,12 +526,27 @@ func parseOTLPLogsHeaders(str string) map[string]string {
 	for entry := range strings.SplitSeq(str, ",") {
 		key, val, ok := strings.Cut(entry, "=")
 		key = strings.TrimSpace(key)
-		if !ok || !httpguts.ValidHeaderFieldName(key) {
+		if !ok || !validHeaderFieldName(key) {
 			continue
 		}
 		headers[key] = strings.TrimSpace(val)
 	}
 	return decodeOTLPHeaders(headers)
+}
+
+// validHeaderFieldName reports whether s is a non-empty RFC 7230 token. It
+// matches httpguts.ValidHeaderFieldName without pulling golang.org/x/net/idna
+// and golang.org/x/text into every tracer binary.
+func validHeaderFieldName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !internal.IsHTTPTokenChar(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
