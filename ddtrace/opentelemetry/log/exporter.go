@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -28,7 +29,7 @@ const (
 	defaultOTLPHTTPPort = "4318"
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-	defaultOTLPProtocol = "http/json"
+	defaultOTLPProtocol = "http/protobuf"
 
 	// OTLP environment variables (logs-specific)
 	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
@@ -43,8 +44,10 @@ const (
 	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
 
 	// DD environment variables for agent configuration
-	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
-	envDDAgentHost     = "DD_AGENT_HOST"
+	envDDAgentHost = "DD_AGENT_HOST"
+
+	// Default timeout for the OTLP logs exporter
+	defaultOTLPLogsTimeout = 10000 * time.Millisecond
 
 	// Default timeout in milliseconds (for telemetry reporting)
 	defaultOTLPTimeoutMs = 10000 // 10 seconds
@@ -68,7 +71,6 @@ const (
 	// Protocol and encoding constants for telemetry tagging
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
-	encodingJSON     = "json"
 	encodingProtobuf = "protobuf"
 )
 
@@ -97,11 +99,10 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // Protocol selection priority:
 // 1. OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
 // 2. OTEL_EXPORTER_OTLP_PROTOCOL
-// 3. Default: http/json
+// 3. Default: http/protobuf
 //
 // Supported protocols:
-// - "http/json": HTTP with JSON encoding (default)
-// - "http/protobuf" or "http": HTTP with protobuf encoding
+// - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
 // Endpoint resolution priority:
@@ -123,10 +124,6 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
 		encodingTag = encodingProtobuf
-	case "http/json":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingJSON
 	case "http/protobuf", "http":
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
@@ -135,7 +132,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
-		encodingTag = encodingJSON
+		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {
@@ -150,7 +147,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 }
 
 // resolveOTLPProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/json"
+// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
 func resolveOTLPProtocol() string {
 	// Check logs-specific protocol first
 	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
@@ -160,7 +157,7 @@ func resolveOTLPProtocol() string {
 	if protocol := env.Get(envOTLPProtocol); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
-	// Default to HTTP with JSON
+	// Default to HTTP with protobuf
 	return defaultOTLPProtocol
 }
 
@@ -347,92 +344,43 @@ func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 // - path is the URL path (e.g., "/v1/logs")
 // - insecure indicates whether to use http (true) or https (false)
 //
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4318
-// 2. DD_AGENT_HOST:4318
-// 3. localhost:4318 (default)
-//
 // Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
 // OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
 // reads those environment variables.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	path = defaultOTLPLogsPath
-	insecure = true // default to http
-
-	// Check DD_TRACE_AGENT_URL
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4318
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPHTTPPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPHTTPPort)
-		insecure = true
-		log.Debug("Using OTLP logs endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
-	}
-
-	// Default to localhost:4318
-	endpoint = "localhost:4318"
-	insecure = true
-	log.Debug("Using default OTLP logs endpoint: %s", endpoint)
-	return
+	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort, "OTLP logs")
+	return endpoint, defaultOTLPLogsPath, insecure
 }
 
 // resolveOTLPEndpointGRPC determines the OTLP gRPC endpoint from DD agent configuration.
 // Returns (endpoint, insecure) where:
 // - endpoint is the host:port (e.g., "localhost:4317")
 // - insecure indicates whether to use grpc (true) or grpcs (false)
+func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
+	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort, "OTLP gRPC logs")
+}
+
+// resolveLogsAgentEndpoint returns the tracer's agent host with the given OTLP
+// port, and whether to connect without TLS.
 //
 // Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4317
-// 2. DD_AGENT_HOST:4317
-// 3. localhost:4317 (default)
-func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	insecure = true // default to grpc (not grpcs)
-
-	// Check DD_TRACE_AGENT_URL
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for logs: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4317 for gRPC
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPGRPCPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP gRPC logs endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
+// 1. The tracer's resolved agent URL (DD_TRACE_AGENT_URL, DD_AGENT_HOST, or a programmatic override)
+// 2. DD_AGENT_HOST, when the agent URL is a Unix socket
+// 3. localhost (default)
+func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool) {
+	if u := config.Get().RawAgentURL(); u != nil && u.Hostname() != "" {
+		endpoint = net.JoinHostPort(u.Hostname(), port)
+		log.Debug("Using %s endpoint from DD_TRACE_AGENT_URL: %s", name, endpoint)
+		return endpoint, u.Scheme == "http" || u.Scheme == "unix"
 	}
-
-	// Check DD_AGENT_HOST
 	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPGRPCPort)
-		log.Debug("Using OTLP gRPC logs endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
+		endpoint = net.JoinHostPort(host, port)
+		log.Debug("Using %s endpoint from DD_AGENT_HOST: %s", name, endpoint)
+		return endpoint, true
 	}
-
-	// Default to localhost:4317
-	endpoint = net.JoinHostPort("localhost", defaultOTLPGRPCPort)
-	log.Debug("Using default OTLP gRPC logs endpoint: %s", endpoint)
-	return
+	endpoint = net.JoinHostPort("localhost", port)
+	log.Debug("Using default %s endpoint: %s", name, endpoint)
+	return endpoint, true
 }
 
 // resolveHeaders returns the headers to send with OTLP requests.
@@ -477,7 +425,7 @@ func parseHeaders(str string) map[string]string {
 }
 
 // resolveExportTimeout returns the export timeout from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (30s)
+// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (10s)
 func resolveExportTimeout() time.Duration {
 	// Check logs-specific timeout first
 	if timeoutStr := env.Get(envOTLPLogsTimeout); timeoutStr != "" {
@@ -491,8 +439,7 @@ func resolveExportTimeout() time.Duration {
 			return timeout
 		}
 	}
-	// Default to 30 seconds
-	return 30 * time.Second
+	return defaultOTLPLogsTimeout
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)
