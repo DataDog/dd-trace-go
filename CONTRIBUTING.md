@@ -92,6 +92,12 @@ Our CI pipeline includes several automated checks:
 
 - **DORA Metrics**: Generates and publishes DORA metrics whenever a release tag is created to report the time, SHAs, and other tags for each release. This workflow cannot be manually triggered unless it fails the first time.
 
+#### System Tests Workflow
+
+- **Pinned reference**: `system-tests.yml` and `parametric-tests.yml` check out [DataDog/system-tests](https://github.com/DataDog/system-tests) at a fixed commit (`SYSTEM_TESTS_REF`) rather than tracking its default branch, so results stay reproducible across runs.
+- **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
+- **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
+
 ### Which checks run on a pull request
 
 Most workflows only run when a change could plausibly affect them. Two mechanisms
@@ -200,6 +206,7 @@ To keep them in agreement, entries are restricted to the subset on which both be
 | --- | --- |
 | `/path/to/dir/` | Anchored at the repository root, applies to everything beneath the directory. The trailing slash is required. |
 | `/path/to/file.go` | Anchored at the repository root, matches exactly one file. |
+| `/path/to/prefix*` | Anchored filename prefix. Matches files and directories whose names start with `prefix` in that directory, including contents of matching directories. Only one trailing `*` after a nonempty filename prefix is supported. |
 | `*suffix` | Matches any path ending in `suffix`, at any depth. Only one leading `*` is supported, and the suffix may not contain `/`. |
 
 Later entries take precedence over earlier ones. There is no catch-all `*` entry: every path is owned explicitly, so **a new top-level directory or root-level file needs a new entry**. `make lint/misc` fails otherwise.
@@ -404,6 +411,10 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 #### Code coverage report flags
 
 `DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
+
+#### Disabling AppSec features
+
+`DD_APPSEC_DISABLE_FEATURES` takes a comma-separated, case-insensitive list of AppSec feature names that are not started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. Accepted names are `http`, `grpc`, `graphql`, `user`, `sqli`, `lfi`, `cmdi`, and `ssrf`. Disabling `http` or `grpc` also stops the WAF from evaluating their request and response data, including HTTP bodies and gRPC messages. The `waf` and `trace` features are required and cannot be disabled; they, and unknown names, are ignored with a warning. See [internal/appsec/README.md](./internal/appsec/README.md) for the feature list.
 
 #### Adding new environment variables using configinverter
 

@@ -165,6 +165,11 @@ type Config struct {
 	RC *remoteconfig.ClientConfig
 	// RASP determines whether RASP features are enabled or not.
 	RASP bool
+	// DisabledFeatures is the set of feature names that must not be started, read from [EnvDisableFeatures].
+	DisabledFeatures map[string]struct{}
+	// DisabledAddresses are the WAF addresses of the disabled features, removed from [Config.SupportedAddresses] so
+	// that the WAF never evaluates them. It is set by the appsec package from [Config.DisabledFeatures].
+	DisabledAddresses AddressSet
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
 	// MetaStructAvailable is true if meta struct is supported by the trace agent.
@@ -233,6 +238,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		APISec:              NewAPISecConfig(c.APISecOptions...),
 		StackTrace:          NewStackTraceConfig(),
 		RASP:                RASPEnabled(),
+		DisabledFeatures:    DisabledFeaturesFromEnv(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,

@@ -98,8 +98,13 @@ type (
 	testingMInstrumentationClaim struct {
 		tests                map[string]func(*testing.T)
 		benchmarks           map[string]func(*testing.B)
+		fuzzTargets          map[string]func(*testing.F)
+		fuzzEvents           *fuzzEventQueue
+		examples             map[string]func()
 		testDescriptors      *[]testing.InternalTest
 		benchmarkDescriptors *[]testing.InternalBenchmark
+		fuzzDescriptors      *[]testing.InternalFuzzTarget
+		exampleDescriptors   *[]testing.InternalExample
 		retired              bool
 		stickyExitCode       int
 		deferredFailure      bool
@@ -285,6 +290,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 		return instrumentProcessRetryChild(m, cfg)
 	}
+	if testingFuzzWorkerActive() {
+		// The coordinator owns the native fuzz event. Mutation workers must run
+		// the standard library workload without creating their own CI session.
+		return true, identityTestingMFinalizer
+	}
 	claim, disposition := claimTestingMInstrumentation(m)
 	switch disposition {
 	case testingMClaimActiveConflict:
@@ -312,6 +322,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if targets := getInternalFuzzTargetArray(m); targets != nil && len(*targets) > 0 {
+		claim.fuzzEvents = &fuzzEventQueue{}
+		if !integrations.TryPushCiVisibilityPreCloseAction(claim.fuzzEvents.finish) {
+			log.Debug("instrumentTestingM: fuzz event shutdown registration rejected; keeping immediate reporting")
+			claim.fuzzEvents = nil
+		}
+	}
 	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
 	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
@@ -373,6 +390,8 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	// Instrument the internal tests for CI visibility.
 	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
+	ddm.instrumentInternalFuzzTargets(getInternalFuzzTargetArray(m), claim)
+	ddm.instrumentInternalExamples(getInternalExampleArray(m), claim)
 
 	// Instrument the internal benchmarks for CI visibility.
 	for _, v := range os.Args {
@@ -403,6 +422,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			recordTestingMDeferredDisposition(claim, summary)
 		}
 		markEFDSessionFaultyIfNeeded(wrapperOpts.efdFaultySessionGuard)
+		if claim.fuzzEvents != nil {
+			if abnormalExit {
+				claim.fuzzEvents.finish()
+			} else {
+				claim.fuzzEvents.finishAfterNativeRun()
+			}
+		}
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
@@ -909,6 +935,8 @@ func restoreTestingMWorkloads(m *testing.M, claim *testingMInstrumentationClaim)
 	}
 	restoreTestingMTests(claim.testDescriptors, claim.tests)
 	restoreTestingMBenchmarks(claim.benchmarkDescriptors, claim.benchmarks)
+	restoreTestingMFuzzTargets(claim.fuzzDescriptors, claim.fuzzTargets)
+	restoreTestingMExamples(claim.exampleDescriptors, claim.examples)
 }
 
 func retireTestingMInstrumentation(m *testing.M, claim *testingMInstrumentationClaim) {
@@ -945,6 +973,28 @@ func restoreTestingMBenchmarks(benchmarks *[]testing.InternalBenchmark, original
 	for idx := range *benchmarks {
 		if original, ok := originals[(*benchmarks)[idx].Name]; ok {
 			(*benchmarks)[idx].F = original
+		}
+	}
+}
+
+func restoreTestingMFuzzTargets(fuzzTargets *[]testing.InternalFuzzTarget, originals map[string]func(*testing.F)) {
+	if fuzzTargets == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *fuzzTargets {
+		if original, ok := originals[(*fuzzTargets)[idx].Name]; ok {
+			(*fuzzTargets)[idx].Fn = original
+		}
+	}
+}
+
+func restoreTestingMExamples(examples *[]testing.InternalExample, originals map[string]func()) {
+	if examples == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *examples {
+		if original, ok := originals[(*examples)[idx].Name]; ok {
+			(*examples)[idx].F = original
 		}
 	}
 }

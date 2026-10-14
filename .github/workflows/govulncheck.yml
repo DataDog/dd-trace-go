@@ -78,11 +78,19 @@ jobs:
           # action re-runs actions/checkout with default credentials and the
           # event ref, which can diverge from inputs.ref on workflow_call.
           repo-checkout: false
+      - name: Deduplicate identical SARIF stacks
+        # govulncheck can emit duplicate stacks, violating SARIF's uniqueItems constraint.
+        # Remove only identical stacks; keep all findings and distinct call stacks.
+        # Upstream: https://github.com/golang/go/issues/81953
+        if: always() && hashFiles('govulncheck.sarif') != ''
+        run: |-
+          jq '(.runs[].results[] | select(.stacks != null) | .stacks) |= unique' \
+            govulncheck.sarif > govulncheck-deduplicated.sarif
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
-          sarif_file: govulncheck.sarif
+          sarif_file: govulncheck-deduplicated.sarif
           category: govulncheck
       - name: Run govulncheck (OpenVEX)
         if: always()

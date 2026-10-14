@@ -91,6 +91,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}, skipProfileAssert: true},
 		{name: "backfill-disabled-for-set-covermode", coverMode: "set", withProfile: true, skipProfileAssert: true},
 		{name: "no-skippable", coverMode: "count", withProfile: true},
+		{name: "production-helper-subtest-module", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "^TestProductionHelperSubtestModule$"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var profile string

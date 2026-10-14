@@ -46,22 +46,11 @@ const (
 	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
 	envDDAgentHost     = "DD_AGENT_HOST"
 
-	// BatchLogRecordProcessor environment variables
-	envBLRPMaxQueueSize       = "OTEL_BLRP_MAX_QUEUE_SIZE"
-	envBLRPScheduleDelay      = "OTEL_BLRP_SCHEDULE_DELAY"
-	envBLRPExportTimeout      = "OTEL_BLRP_EXPORT_TIMEOUT"
-	envBLRPMaxExportBatchSize = "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE"
+	// Default timeout for the OTLP logs exporter
+	defaultOTLPLogsTimeout = 10000 * time.Millisecond
 
-	// Default values for BatchLogRecordProcessor
-	defaultBLRPMaxQueueSize       = 2048
-	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
-	defaultBLRPExportTimeout      = 30000 * time.Millisecond
-	defaultBLRPMaxExportBatchSize = 512
-
-	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
-	defaultBLRPScheduleDelayMs = 1000
-	defaultBLRPExportTimeoutMs = 30000
-	defaultOTLPTimeoutMs       = 10000 // 10 seconds
+	// Default timeout in milliseconds (for telemetry reporting)
+	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -465,7 +454,7 @@ func resolveHeaders() map[string]string {
 }
 
 // parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed, invalid entries (no '=') are silently ignored
+// Spaces are trimmed and values are percent-decoded; invalid entries are ignored.
 func parseHeaders(str string) map[string]string {
 	headers := make(map[string]string)
 	for entry := range strings.SplitSeq(str, ",") {
@@ -479,7 +468,10 @@ func parseHeaders(str string) map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
+		val, err := url.PathUnescape(strings.TrimSpace(parts[1]))
+		if err != nil {
+			continue
+		}
 		if key != "" {
 			headers[key] = val
 		}
@@ -488,7 +480,7 @@ func parseHeaders(str string) map[string]string {
 }
 
 // resolveExportTimeout returns the export timeout from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (30s)
+// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (10s)
 func resolveExportTimeout() time.Duration {
 	// Check logs-specific timeout first
 	if timeoutStr := env.Get(envOTLPLogsTimeout); timeoutStr != "" {
@@ -502,8 +494,7 @@ func resolveExportTimeout() time.Duration {
 			return timeout
 		}
 	}
-	// Default to 30 seconds
-	return 30 * time.Second
+	return defaultOTLPLogsTimeout
 }
 
 // parseTimeout parses timeout string (milliseconds as integer)
@@ -533,48 +524,4 @@ func grpcRetryConfig() otlploggrpc.RetryConfig {
 		MaxInterval:     grpcRetryMaxInterval,
 		MaxElapsedTime:  grpcRetryMaxElapsedTime,
 	}
-}
-
-// resolveBLRPMaxQueueSize returns the max queue size for BatchLogRecordProcessor.
-// Default: 2048
-func resolveBLRPMaxQueueSize() int {
-	if sizeStr := env.Get(envBLRPMaxQueueSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxQueueSize
-}
-
-// resolveBLRPScheduleDelay returns the schedule delay for BatchLogRecordProcessor.
-// Default: 1000ms
-func resolveBLRPScheduleDelay() time.Duration {
-	if delayStr := env.Get(envBLRPScheduleDelay); delayStr != "" {
-		if delay, err := parseTimeout(delayStr); err == nil {
-			return delay
-		}
-	}
-	return defaultBLRPScheduleDelay
-}
-
-// resolveBLRPExportTimeout returns the export timeout for BatchLogRecordProcessor.
-// Default: 30000ms
-func resolveBLRPExportTimeout() time.Duration {
-	if timeoutStr := env.Get(envBLRPExportTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	return defaultBLRPExportTimeout
-}
-
-// resolveBLRPMaxExportBatchSize returns the max export batch size for BatchLogRecordProcessor.
-// Default: 512
-func resolveBLRPMaxExportBatchSize() int {
-	if sizeStr := env.Get(envBLRPMaxExportBatchSize); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size
-		}
-	}
-	return defaultBLRPMaxExportBatchSize
 }

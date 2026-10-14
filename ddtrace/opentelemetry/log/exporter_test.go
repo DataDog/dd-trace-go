@@ -235,10 +235,37 @@ func TestParseHeaders(t *testing.T) {
 	})
 }
 
+func TestResolveHeadersPercentEncodedValues(t *testing.T) {
+	for _, key := range []string{envOTLPHeaders, envOTLPLogsHeaders} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(envOTLPHeaders, "")
+			t.Setenv(envOTLPLogsHeaders, "")
+			t.Setenv(key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			assert.Equal(t, map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}, resolveHeaders())
+		})
+	}
+
+	t.Run("signal overrides generic", func(t *testing.T) {
+		t.Setenv(envOTLPHeaders, "api-key=generic%20value,generic-only=kept")
+		t.Setenv(envOTLPLogsHeaders, "api-key=logs%20value")
+		assert.Equal(t, map[string]string{"api-key": "logs value"}, resolveHeaders())
+	})
+}
+
 func TestResolveExportTimeout(t *testing.T) {
-	t.Run("defaults to 30 seconds", func(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
+		assert.Equal(t, 10*time.Second, timeout)
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_TIMEOUT", func(t *testing.T) {
@@ -249,15 +276,15 @@ func TestResolveExportTimeout(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT wins over generic", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 10*time.Second, timeout)
+		assert.Equal(t, 8*time.Second, timeout)
 	})
 
 	t.Run("falls back to default on invalid value", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "invalid")
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
+		assert.Equal(t, 10*time.Second, timeout)
 	})
 }
 
@@ -282,105 +309,5 @@ func TestParseTimeout(t *testing.T) {
 	t.Run("returns error for float", func(t *testing.T) {
 		_, err := parseTimeout("1000.5")
 		assert.Error(t, err)
-	})
-}
-
-func TestResolveBLRPMaxQueueSize(t *testing.T) {
-	t.Run("defaults to 2048", func(t *testing.T) {
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("uses OTEL_BLRP_MAX_QUEUE_SIZE", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "4096")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 4096, size)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "invalid")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("falls back to default on zero", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "0")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-
-	t.Run("falls back to default on negative", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
-		size := resolveBLRPMaxQueueSize()
-		assert.Equal(t, 2048, size)
-	})
-}
-
-func TestResolveBLRPScheduleDelay(t *testing.T) {
-	t.Run("defaults to 1000ms", func(t *testing.T) {
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 1000*time.Millisecond, delay)
-	})
-
-	t.Run("uses OTEL_BLRP_SCHEDULE_DELAY", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "500")
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 500*time.Millisecond, delay)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "invalid")
-		delay := resolveBLRPScheduleDelay()
-		assert.Equal(t, 1000*time.Millisecond, delay)
-	})
-}
-
-func TestResolveBLRPExportTimeout(t *testing.T) {
-	t.Run("defaults to 30000ms", func(t *testing.T) {
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 30000*time.Millisecond, timeout)
-	})
-
-	t.Run("uses OTEL_BLRP_EXPORT_TIMEOUT", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "15000")
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 15000*time.Millisecond, timeout)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "invalid")
-		timeout := resolveBLRPExportTimeout()
-		assert.Equal(t, 30000*time.Millisecond, timeout)
-	})
-}
-
-func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
-	t.Run("defaults to 512", func(t *testing.T) {
-		size := resolveBLRPMaxExportBatchSize()
-		assert.Equal(t, 512, size)
-	})
-
-	t.Run("uses OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "1024")
-		size := resolveBLRPMaxExportBatchSize()
-		assert.Equal(t, 1024, size)
-	})
-
-	t.Run("falls back to default on invalid value", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "invalid")
-		size := resolveBLRPMaxExportBatchSize()
-		assert.Equal(t, 512, size)
-	})
-
-	t.Run("falls back to default on zero", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
-		size := resolveBLRPMaxExportBatchSize()
-		assert.Equal(t, 512, size)
-	})
-
-	t.Run("falls back to default on negative", func(t *testing.T) {
-		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
-		size := resolveBLRPMaxExportBatchSize()
-		assert.Equal(t, 512, size)
 	})
 }

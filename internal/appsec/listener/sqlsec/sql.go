@@ -17,7 +17,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "SQLi Protection"
+	return listener.FeatureSQLi
 }
 
 func (*Feature) Stop() {}

@@ -12,18 +12,20 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	serviceSource string
-	analyticsRate float64
-	headerTags    instrumentation.HeaderTags
+	serviceName          string
+	serviceSource        string
+	analyticsRate        float64
+	headerTags           instrumentation.HeaderTags
+	otelSemanticsEnabled bool
 }
 
 func newConfig() *config {
 	return &config{
-		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
-		serviceSource: string(instrumentation.PackageEmickleiGoRestfulV3),
-		analyticsRate: instr.AnalyticsRate(true),
-		headerTags:    instr.HTTPHeadersAsTags(),
+		serviceName:          instr.ServiceName(instrumentation.ComponentServer, nil),
+		serviceSource:        string(instrumentation.PackageEmickleiGoRestfulV3),
+		analyticsRate:        instr.AnalyticsRate(true),
+		headerTags:           instr.HTTPHeadersAsTags(),
+		otelSemanticsEnabled: instr.OTelSemanticsEnabled(),
 	}
 }
 
