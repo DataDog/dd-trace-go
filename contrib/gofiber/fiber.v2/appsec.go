@@ -276,6 +276,13 @@ func (w *responseWriter) Status() int {
 // After a block response is delivered, the response is committed too. httpsec
 // then reports a later block as failed, because the client gets the first
 // block response (for example, a redirect) and not the later one.
+//
+// The reverse order is a residual risk. When TimeoutError* runs after httpsec
+// delivers a block, fasthttp sends the timeout response instead of the live
+// response. The client then never receives the block, although httpsec
+// reported the block as applied. Middleware above tracing can call
+// TimeoutError* after c.Next() returns, and the fasthttp timeout timer can
+// fire before the send. fasthttp offers no way to clear the timeout response.
 func (w *responseWriter) Committed() bool {
 	return w.blockDone || w.fctx.LastTimeoutErrorResponse() != nil
 }

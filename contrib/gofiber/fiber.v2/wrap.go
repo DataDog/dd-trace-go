@@ -16,6 +16,11 @@ import (
 
 // Both keys and values are weak: an option may itself refer to the app. The
 // registry must not keep apps alive after their servers and handlers are gone.
+//
+// The value stays alive only because the middleware that Wrap installs holds
+// it. Repeat Wrap calls therefore always find a live config. If that changes,
+// a repeat call does not find the config. It then finds the middleware that
+// the first call registered, and it panics as a late setup.
 var wrappedApps sync.Map // map[weak.Pointer[fiber.App]]weak.Pointer[config]
 
 type wrappedRequestKey struct{}
@@ -61,6 +66,8 @@ func Wrap(app *fiber.App, opts ...Option) *fiber.App {
 	wrappedApps.Store(key, weak.Make(cfg))
 	runtime.AddCleanup(app, func(key weak.Pointer[fiber.App]) { wrappedApps.Delete(key) }, key)
 
+	// The app holds this handler, and the handler holds cfg. This keeps the
+	// weak config value in wrappedApps alive as long as the app is alive.
 	handler := middleware(cfg)
 	app.Use(func(c *fiber.Ctx) error {
 		if c.Locals(wrappedRequestKey{}) != nil {

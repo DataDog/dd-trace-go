@@ -212,6 +212,46 @@ func TestAppSecBlockAfterApplicationTimeout(t *testing.T) {
 	requireBlockOutcome(t, recordedMetrics(recorder.Metrics), false)
 }
 
+// TestAppSecApplicationTimeoutAfterBlock pins a residual risk. A response rule
+// blocks, and httpsec delivers the block into the live response. Then
+// middleware above tracing calls TimeoutErrorWithCode after c.Next() returns.
+// fasthttp sends the timeout response, so the client never receives the block,
+// although httpsec reported the block as applied. fasthttp offers no way to
+// clear the timeout response.
+func TestAppSecApplicationTimeoutAfterBlock(t *testing.T) {
+	startAppSecCommitRules(t)
+	recorder := testutils.StartTelemetryRecorder(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := fiber.New()
+	router.Use(func(c *fiber.Ctx) error {
+		err := c.Next()
+		c.Context().TimeoutErrorWithCode("application timeout", http.StatusGatewayTimeout)
+		return err
+	})
+	router.Use(Middleware())
+	router.Get("/", func(c *fiber.Ctx) error {
+		c.Set("X-Block", "attack")
+		return c.SendString("handler response")
+	})
+
+	res, err := router.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	require.Equal(t, http.StatusGatewayTimeout, res.StatusCode, "fasthttp sends the timeout response, not the block")
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, "application timeout", string(body))
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Contains(t, spans[0].Tag("_dd.appsec.json"), "fiber-response-header")
+	require.Equal(t, "403", spans[0].Tag("http.status_code"))
+	require.Equal(t, "true", spans[0].Tag("appsec.blocked"), "httpsec reports the block as applied")
+	requireBlockOutcome(t, recordedMetrics(recorder.Metrics), true)
+}
+
 // recordedMetrics returns the name and the tags of each metric that has a
 // value. The telemetry recorder type is internal to dd-trace-go/v2, so this
 // function accepts its metrics map through type inference.

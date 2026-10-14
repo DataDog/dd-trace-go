@@ -510,21 +510,46 @@ func TestAppSecLateBlocking(t *testing.T) {
 }
 
 func TestAppSecUnrecoveredPanic(t *testing.T) {
-	testutils.StartAppSec(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	router := Wrap(fiber.New())
-	router.Use(func(*fiber.Ctx) error { panic("handler panic") })
-	var fctx fasthttp.RequestCtx
-	fctx.Request.Header.SetMethod("GET")
-	fctx.Request.SetRequestURI("/../../../secret.txt")
-	// Call on this goroutine so the test can catch the unchanged panic value.
-	require.PanicsWithValue(t, "handler panic", func() { router.Handler()(&fctx) })
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	event, ok := spans[0].Tag("_dd.appsec.json").(string)
-	require.True(t, ok, "the WAF operation must finish even when the handler panics")
-	require.Contains(t, event, "crs-930-110")
+	for _, tc := range []struct {
+		name, rules, rule, address string
+		blocked                    bool
+	}{
+		{"request-rule", "", "crs-930-110", "server.request.uri.raw", false},
+		// On a panic, the deferred finish still reports the response. The
+		// response status is then fasthttp's default 200. A response-status
+		// rule blocks, and httpsec reports the block as applied, although the
+		// panic stops the server and the client receives nothing. This case
+		// pins that known limitation.
+		{"response-status-block", "testdata/unrecovered-panic-blocking.json", "fiber-block-unrecovered-panic", "server.response.status", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.rules != "" {
+				t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+				t.Setenv("DD_APPSEC_RULES", tc.rules)
+			}
+			testutils.StartAppSec(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			router := Wrap(fiber.New())
+			router.Use(func(*fiber.Ctx) error { panic("handler panic") })
+			var fctx fasthttp.RequestCtx
+			fctx.Request.Header.SetMethod("GET")
+			fctx.Request.SetRequestURI("/../../../secret.txt")
+			// Call on this goroutine so the test can catch the unchanged panic value.
+			require.PanicsWithValue(t, "handler panic", func() { router.Handler()(&fctx) })
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			event, ok := spans[0].Tag("_dd.appsec.json").(string)
+			require.True(t, ok, "the WAF operation must finish even when the handler panics")
+			require.Contains(t, event, tc.rule)
+			require.Contains(t, event, tc.address)
+			if tc.blocked {
+				require.Equal(t, "true", spans[0].Tag("appsec.blocked"))
+			} else {
+				require.Nil(t, spans[0].Tag("appsec.blocked"))
+			}
+		})
+	}
 }
 
 func TestAppSecKeepAliveAfterBlock(t *testing.T) {

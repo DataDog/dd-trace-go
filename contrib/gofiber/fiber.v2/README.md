@@ -69,13 +69,21 @@ With AppSec enabled:
 
 - The middleware renders returned errors through the error handler of the Fiber
   app, before it reports the response to the WAF. The error handler runs one
-  time, only when necessary.
+  time, only when necessary. Fiber selects the error handler as it does without
+  tracing: a mounted app that sets its own `ErrorHandler` renders its errors.
 - The original error is recorded on the span. If AppSec blocks the response,
   the block is recorded instead.
 - A pending block has priority over the error handler. It replaces the body and
   headers that the error handler sets.
 - Earlier middleware receives `nil` from `c.Next()` for these handled errors.
   Put error logging or counting in the configured error handler.
+
+**Timeouts set after tracing returns hide a block.** If code calls
+`TimeoutError*` on the fasthttp context after AppSec delivers a block (for
+example, middleware registered before tracing calls it after `c.Next()`),
+fasthttp sends the timeout response, not the block. The span and the AppSec
+telemetry still report the block as applied. fasthttp cannot clear a timeout
+response.
 
 With AppSec disabled, error propagation does not change. Fiber renders returned
 errors after tracing returns. Thus, the span status can show the response before
@@ -93,7 +101,9 @@ handling.** It runs too late: AppSec cannot inspect its final response, or
 prevent it from replacing a pending block.
 
 Tracing does not install or replace recovery. Panics that are not recovered
-still propagate. Custom recovery callbacks stay under the control of the
+still propagate. For such a panic, AppSec still reports the response to the
+WAF. If a response rule blocks, the span reports the block as applied, but the
+client receives no response. Custom recovery callbacks stay under the control of the
 application.
 
 ## Testing

@@ -298,6 +298,11 @@ func TestWrapRepeatedSetup(t *testing.T) {
 	app.Get("/params/:value", func(c *fiber.Ctx) error { return c.SendString("allowed") })
 	handlers := app.HandlersCount()
 	routes := len(app.GetRoutes())
+	// The registry holds the config weakly. A garbage collection between the
+	// calls must not drop it while the app is alive, or the next call panics
+	// as a late setup.
+	runtime.GC()
+	runtime.GC()
 	Wrap(app, WithService("custom"))
 	Wrap(app)
 	require.Equal(t, handlers, app.HandlersCount())
@@ -309,6 +314,57 @@ func TestWrapRepeatedSetup(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	require.Equal(t, "custom", spans[0].Tag("service.name"))
+}
+
+// TestWrapMountedErrorHandler mounts a child app that returns an error. Only
+// the child app, or the parent and the child apps, set an ErrorHandler. As in
+// Fiber's own error path, the child's ErrorHandler must render the response.
+func TestWrapMountedErrorHandler(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		for _, parentHandler := range []bool{false, true} {
+			t.Run(fmt.Sprintf("appsec=%t/parent-handler=%t", enabled, parentHandler), func(t *testing.T) {
+				if enabled {
+					startWrapAppSec(t)
+				}
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				var parentCalls, childCalls atomic.Int32
+				var parentConfig fiber.Config
+				if parentHandler {
+					parentConfig.ErrorHandler = func(c *fiber.Ctx, _ error) error {
+						parentCalls.Add(1)
+						return c.Status(http.StatusTeapot).SendString("parent error")
+					}
+				}
+				app := Wrap(fiber.New(parentConfig))
+				child := Wrap(fiber.New(fiber.Config{ErrorHandler: func(c *fiber.Ctx, _ error) error {
+					childCalls.Add(1)
+					c.Set("X-Error-Handler", "child")
+					return c.Status(http.StatusConflict).SendString("child error")
+				}}))
+				child.Get("/error", func(*fiber.Ctx) error { return fiber.ErrBadRequest })
+				app.Mount("/child", child)
+
+				res, err := app.Test(httptest.NewRequest("GET", "/child/error", nil))
+				require.NoError(t, err)
+				body, err := io.ReadAll(res.Body)
+				require.NoError(t, res.Body.Close())
+				require.NoError(t, err)
+				require.Equal(t, http.StatusConflict, res.StatusCode)
+				require.Equal(t, "child", res.Header.Get("X-Error-Handler"))
+				require.Equal(t, "child error", string(body))
+				require.Equal(t, int32(1), childCalls.Load(), "the child ErrorHandler must render once")
+				require.Zero(t, parentCalls.Load(), "the parent ErrorHandler must not run")
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1, "mounted apps must not add another span")
+				require.Equal(t, fiber.ErrBadRequest.Error(), spans[0].Tag("error.message"))
+				if enabled {
+					// AppSec renders the error before the WAF inspects the response.
+					require.Equal(t, "409", spans[0].Tag("http.status_code"))
+				}
+			})
+		}
+	}
 }
 
 func TestWrapRejectsLateSetup(t *testing.T) {
