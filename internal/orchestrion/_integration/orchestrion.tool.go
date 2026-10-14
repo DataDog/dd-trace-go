@@ -26,4 +26,8 @@ import (
 
 	_ "github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2" // integration
 	_ "github.com/DataDog/dd-trace-go/orchestrion/all/v2" // integration
+
+	// crashtracker is not part of orchestrion/all. It is opt-in, so it needs
+	// an explicit import.
+	_ "github.com/DataDog/dd-trace-go/v2/crashtracker" // integration
 )

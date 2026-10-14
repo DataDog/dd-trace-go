@@ -30,6 +30,7 @@ type config struct {
 	headerTags        instrumentation.HeaderTags
 	errCheck          func(error) bool
 	tags              map[string]interface{}
+	otelEnabled       bool
 }
 
 // Option describes options for the Echo.v4 integration.
@@ -58,6 +59,7 @@ func defaults(cfg *config) {
 	}
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.tags = make(map[string]interface{})
+	cfg.otelEnabled = instr.OTelSemanticsEnabled()
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
 		if errors.As(err, &echoErr) {

@@ -168,20 +168,20 @@ func startInferredProxySpan(requestProxyContext *proxyContext, request *http.Req
 				if originalMethod != "" {
 					cfg.Tags[ext.HTTPRequestMethodOriginal] = originalMethod
 				}
-				cfg.Tags[ext.ResourceName] = ServerSpanName(requestProxyContext.method, requestProxyContext.path)
+				cfg.Tags[ext.ResourceName] = ServerSpanName(requestProxyContext.method, path)
 				if _, ok := cfg.Tags[ext.URLPath]; !ok {
-					path := requestProxyContext.path
-					if path == "" {
-						path = "/"
+					urlPath := path
+					if urlPath == "" {
+						urlPath = "/"
 					}
-					cfg.Tags[ext.URLPath] = path
+					cfg.Tags[ext.URLPath] = urlPath
 				}
 				delete(cfg.Tags, ext.ServerPort)
-				if requestProxyContext.domainName != "" {
-					cfg.Tags[ext.ServerAddress] = requestProxyContext.domainName
+				if domainName != "" {
+					cfg.Tags[ext.ServerAddress] = domainName
 				}
-				if requestProxyContext.path != "" {
-					cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
+				if path != "" {
+					cfg.Tags[ext.HTTPRoute] = path
 				}
 			} else {
 				cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
