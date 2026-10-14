@@ -55,8 +55,8 @@
 # provider's `cache-matched-key` output: `restored` ("true" when the module
 # cache was non-empty after the provider ran, kept as a cross-check of the
 # matched key), `cache_matched_key`, `restore_source` (exact / default /
-# branch / none — `default` marks a default-branch fallback restore, the
-# signal the seed program measures), and `dep_match` ("true" when the
+# branch / none — `default` marks a default-branch fallback restore from
+# a different branch, the signal the seed program measures), and `dep_match` ("true" when the
 # matched entry was keyed with this job's `hashFiles('**/go.*')` digest,
 # i.e. the same dependency set). The action exposes `cache-matched-key` and
 # `restore-source` as outputs for callers.
@@ -217,6 +217,9 @@ runs:
         MATCHED_KEY: ${{ steps.cloudx.outputs.cache-matched-key }}
         DEP_HASH: ${{ hashFiles('**/go.*') }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        # The branch this run is on (the PR source branch for pull
+        # requests), to tell a same-branch restore from a fallback.
+        CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
       run: |
         set -euo pipefail
 
@@ -226,7 +229,9 @@ runs:
         # go-cache-<os>-<arch>-ddtg-cx1-<family>-<digest16>-<go>-<branch>-
         # <dep-hash>-<run_id>. The branch may contain dashes and slashes, so
         # the fixed-length hex segments and the run ID anchor the split.
-        key_re='^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx1-(.*)-([0-9a-f]{16})-([0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$'
+        # The Go version segment allows one prerelease cluster
+        # (1.28.0-rc.1); a longer hyphen tail belongs to the branch.
+        key_re='^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx1-(.*)-([0-9a-f]{16})-([0-9.]+[0-9A-Za-z.]*-[0-9A-Za-z.]+|[0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$'
         if [[ "$CACHE_HIT" == "true" ]]; then
           source="exact"
         elif [[ -n "$MATCHED_KEY" ]]; then
@@ -235,7 +240,10 @@ runs:
         if [[ -n "$MATCHED_KEY" && "$MATCHED_KEY" =~ $key_re ]]; then
           branch="${BASH_REMATCH[6]}"
           saved_dep_hash="${BASH_REMATCH[7]}"
-          if [[ "$branch" == "$DEFAULT_BRANCH" && "$source" != "exact" ]]; then
+          # A fallback is a restore of the default branch's entry from a
+          # DIFFERENT branch: a run already on the default branch that
+          # restores its own earlier entry is a same-branch restore.
+          if [[ "$branch" == "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" && "$source" != "exact" ]]; then
             source="default"
           fi
           if [[ "$saved_dep_hash" == "$DEP_HASH" ]]; then
