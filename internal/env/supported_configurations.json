@@ -2199,9 +2199,9 @@
     ],
     "OTEL_SDK_DISABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
-        "default": "false"
+        "default": null
       }
     ],
     "OTEL_SERVICE_NAME": [
