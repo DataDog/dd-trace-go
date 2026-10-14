@@ -412,6 +412,10 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 `DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
 
+#### Disabling AppSec features
+
+`DD_APPSEC_DISABLE_FEATURES` takes a comma-separated, case-insensitive list of AppSec feature names that are not started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. Accepted names are `http`, `grpc`, `graphql`, `user`, `sqli`, `lfi`, `cmdi`, and `ssrf`. Disabling `http` or `grpc` also stops the WAF from evaluating their request and response data, including HTTP bodies and gRPC messages. The `waf` and `trace` features are required and cannot be disabled; they, and unknown names, are ignored with a warning. See [internal/appsec/README.md](./internal/appsec/README.md) for the feature list.
+
 #### Adding new environment variables using configinverter
 
 The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
@@ -499,8 +503,8 @@ A few things to keep in mind:
   `scripts`, and `tools`).
 - Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
   entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
-- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
-  group is measured and tracked but does not gate the PR.
+- Every benchmark group must appear in the `pr-performance-gates` job's `needs` list, so the gate waits for all
+  result uploads. When adding a group, update that list; `go test ./scripts/ciselect/` checks this requirement.
 - A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
   starts gating it from the next PR onward.
 

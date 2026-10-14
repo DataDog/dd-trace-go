@@ -11,8 +11,7 @@ meta:
 aspects:
   - id: NewClient
     join-point:
-      one-of:
-        - function-call: github.com/opensearch-project/opensearch-go/v4.NewClient
+      function-call: github.com/opensearch-project/opensearch-go/v4.NewClient
     advice:
       - wrap-expression:
           imports:
