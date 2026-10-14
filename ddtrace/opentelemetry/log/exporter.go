@@ -75,7 +75,7 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
-// The protocol comes from config.OTLPLogsProtocol. Supported protocols:
+// The protocol comes from config.OTLPLogsProtocol, which only returns supported protocols:
 // - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
@@ -96,10 +96,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
-	case "http/protobuf", "http":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to http/protobuf", protocol)
+	default: // "http/protobuf" or "http"; config only returns supported protocols
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 	}
 
@@ -153,21 +150,10 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	}
 
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// Parse and sanitize the URL to handle trailing slashes correctly
+		// Sanitize the URL to handle trailing slashes correctly
 		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
-		if sanitizedURL != "" {
-			opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
-			log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
-		} else {
-			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint)
-			endpoint, path, insecure := resolveOTLPEndpointHTTP()
-			opts = append(opts, otlploghttp.WithEndpoint(endpoint))
-			opts = append(opts, otlploghttp.WithURLPath(path))
-			if insecure {
-				opts = append(opts, otlploghttp.WithInsecure())
-			}
-		}
+		opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
+		log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
@@ -198,30 +184,21 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	}
 
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// For gRPC, we extract host:port and insecure flag from the URL
-		u, err := url.Parse(rawEndpoint)
-		if err != nil {
-			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error())
-			endpoint, insecure := resolveOTLPEndpointGRPC()
-			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-			if insecure {
-				opts = append(opts, otlploggrpc.WithInsecure())
-			}
-		} else {
-			endpoint := u.Host
-			if endpoint == "" {
-				endpoint = u.Path // Handle URLs without scheme
-			}
-			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-			if u.Scheme == "http" || u.Scheme == "grpc" {
-				opts = append(opts, otlploggrpc.WithInsecure())
-			}
-			// ruleguard: Forbidden: (internal log) format verbs %v, %+v, or %#v prevents controlled data exposure.
-			// Use specific format verbs like %s, %d, %q and sanitize data before logging. (gocritic)
-			//nolint:gocritic // TODO: Fix the warning above and remove the nolint.
-			log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
+		// For gRPC, we extract host:port and insecure flag from the URL.
+		// internal/config only returns endpoints that parse.
+		u, _ := url.Parse(rawEndpoint)
+		endpoint := u.Host
+		if endpoint == "" {
+			endpoint = u.Path // Handle URLs without scheme
 		}
+		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+		if u.Scheme == "http" || u.Scheme == "grpc" {
+			opts = append(opts, otlploggrpc.WithInsecure())
+		}
+		// ruleguard: Forbidden: (internal log) format verbs %v, %+v, or %#v prevents controlled data exposure.
+		// Use specific format verbs like %s, %d, %q and sanitize data before logging. (gocritic)
+		//nolint:gocritic // TODO: Fix the warning above and remove the nolint.
+		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
 	} else {
 		// Use DD agent configuration as default
 		endpoint, insecure := resolveOTLPEndpointGRPC()
@@ -248,12 +225,10 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 //
 // This works around issues where the OTel SDK may not handle trailing slashes correctly,
 // which can result in double slashes like http://host:4320//v1/logs
+//
+// internal/config only returns endpoints that parse.
 func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
-		return ""
-	}
+	u, _ := url.Parse(rawURL)
 
 	// Trim trailing slashes from the path
 	u.Path = strings.TrimRight(u.Path, "/")

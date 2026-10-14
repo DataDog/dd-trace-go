@@ -7,7 +7,6 @@ package config
 
 import (
 	"cmp"
-	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -501,37 +500,116 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// decodeOTLPHeaders decodes values after splitting header entries so escaped separators
-// stay in the value. PathUnescape preserves literal '+' characters.
-func decodeOTLPHeaders(headers map[string]string) map[string]string {
-	for key, value := range headers {
-		decoded, err := url.PathUnescape(value)
-		if err != nil {
-			delete(headers, key)
-			continue
-		}
-		headers[key] = decoded
-	}
-	return headers
+// otlpSignal reads the settings of one OTLP exporter from
+// OTEL_EXPORTER_OTLP_<name>_<setting>, falling back to OTEL_EXPORTER_OTLP_<setting>.
+type otlpSignal struct {
+	name string
+	// validEndpoint reports whether the signal's exporter can use an endpoint.
+	validEndpoint func(string) bool
+	// protocols lists the protocols the signal's exporter supports, default first.
+	protocols []string
+	// warn enables warnings about unusable values. Set it only when the signal's
+	// exporter is enabled: other OpenTelemetry components may accept values this
+	// exporter rejects (e.g. grpc for span metrics).
+	warn bool
 }
 
-// parseOTLPLogsHeaders parses comma-separated key=value pairs. Unlike GetMap, it
-// never splits on spaces. Values are percent-decoded; entries without '=', with
-// a key that is not a valid HTTP header name, or with an invalid escape are dropped.
-func parseOTLPLogsHeaders(str string) map[string]string {
-	if str == "" {
-		return nil
+// lookup returns the usable signal-specific and generic values of setting. The
+// signal-specific value is empty when unset or unusable; the generic one is def.
+// Every source is validated, so an unusable value from a higher-priority source
+// never hides a usable one from a lower-priority source.
+func (s otlpSignal) lookup(p *provider.Provider, setting, def string, valid func(string) bool) (specific, generic string) {
+	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
+	genericKey := "OTEL_EXPORTER_OTLP_" + setting
+	specific = p.GetStringWithValidator(specificKey, "", s.validator(specificKey, valid, s.warn))
+	// The generic value only matters, and is only worth a warning, when the
+	// signal-specific one is not used.
+	generic = p.GetStringWithValidator(genericKey, def, s.validator(genericKey, valid, s.warn && specific == ""))
+	return specific, generic
+}
+
+// get returns the usable signal-specific value of setting, else the generic one, else def.
+func (s otlpSignal) get(p *provider.Provider, setting, def string, valid func(string) bool) string {
+	specific, generic := s.lookup(p, setting, def, valid)
+	return cmp.Or(specific, generic)
+}
+
+func (s otlpSignal) validator(key string, valid func(string) bool, warn bool) func(string) bool {
+	return func(v string) bool {
+		if valid(v) {
+			return true
+		}
+		// The value is not logged: headers and endpoints may carry credentials.
+		if warn {
+			log.Warn("Unsupported %s value; falling back to default.", key)
+		}
+		return false
 	}
-	headers := make(map[string]string)
+}
+
+// endpoints returns the usable signal-specific and generic endpoints; either may be empty.
+func (s otlpSignal) endpoints(p *provider.Provider) (specific, generic string) {
+	return s.lookup(p, "ENDPOINT", "", s.validEndpoint)
+}
+
+func (s otlpSignal) headers(p *provider.Provider) map[string]string {
+	return parseOTLPHeaders(s.get(p, "HEADERS", "", func(v string) bool { return len(parseOTLPHeaders(v)) > 0 }))
+}
+
+// protocol returns the lowercased protocol, always one of s.protocols.
+func (s otlpSignal) protocol(p *provider.Provider) string {
+	return normalizeOTLPProtocol(s.get(p, "PROTOCOL", s.protocols[0], func(v string) bool {
+		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
+	}))
+}
+
+// timeout returns the export timeout, configured in milliseconds. GetInt64
+// already skips values that do not parse, source by source.
+func (s otlpSignal) timeout(p *provider.Provider) time.Duration {
+	generic := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+	return time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_"+s.name+"_TIMEOUT", generic)) * time.Millisecond
+}
+
+func normalizeOTLPProtocol(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
+// isOTLPHTTPURL reports whether v is an http or https URL.
+func isOTLPHTTPURL(v string) bool {
+	u, err := url.Parse(v)
+	return err == nil && (u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeHTTPS)
+}
+
+// isURL reports whether v parses as a URL. The logs exporter does not require
+// http or https because its gRPC transport also takes grpc:// endpoints.
+func isURL(v string) bool {
+	_, err := url.Parse(v)
+	return err == nil
+}
+
+// parseOTLPHeaders parses comma-separated key=value pairs, never splitting on
+// spaces. Values are percent-decoded; entries without '=', with a key that is
+// not a valid HTTP header name, or with an invalid escape are dropped. Each
+// entry is decoded before it is stored so an invalid duplicate cannot erase an
+// earlier valid value for the same key. It returns nil when no header is usable.
+func parseOTLPHeaders(str string) map[string]string {
+	var headers map[string]string
 	for entry := range strings.SplitSeq(str, ",") {
 		key, val, ok := strings.Cut(entry, "=")
 		key = strings.TrimSpace(key)
 		if !ok || !validHeaderFieldName(key) {
 			continue
 		}
-		headers[key] = strings.TrimSpace(val)
+		decoded, err := url.PathUnescape(strings.TrimSpace(val))
+		if err != nil {
+			continue
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers[key] = decoded
 	}
-	return decodeOTLPHeaders(headers)
+	return headers
 }
 
 // validHeaderFieldName reports whether s is a non-empty RFC 7230 token. It
@@ -547,18 +625,6 @@ func validHeaderFieldName(s string) bool {
 		}
 	}
 	return true
-}
-
-// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
-// or of the generic headers when the signal-specific ones are empty.
-func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(signalHeaders) > 0 {
-		return maps.Clone(signalHeaders)
-	}
-	if len(genericHeaders) > 0 {
-		return maps.Clone(genericHeaders)
-	}
-	return nil
 }
 
 // resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
@@ -642,19 +708,6 @@ func validateRuntimeMetricsTemporality(v string, warn bool) bool {
 	}
 	if warn {
 		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
-	}
-	return false
-}
-
-// validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
-// envVar is used in the warning message to identify which env var had the bad value.
-// The warning is only logged when warn is true.
-func validateOTLPProtocol(v, envVar string, warn bool) bool {
-	if v == "http/json" || v == "http/protobuf" {
-		return true
-	}
-	if warn {
-		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
 	}
 	return false
 }

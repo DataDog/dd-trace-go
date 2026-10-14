@@ -965,6 +965,33 @@ func TestOTelSDKDisabled(t *testing.T) {
 	})
 }
 
+func TestOTLPHeadersParsedTheSameForEverySignal(t *testing.T) {
+	signals := map[string]func(*Config) map[string]string{
+		"TRACES": func(c *Config) map[string]string {
+			h := c.OTLPTraceHeaders()
+			delete(h, "Content-Type")
+			return h
+		},
+		"METRICS": (*Config).OTLPMetricsHeaders,
+		"LOGS":    (*Config).OTLPLogsHeaders,
+	}
+	for name, tc := range map[string]struct {
+		raw  string
+		want map[string]string
+	}{
+		"keeps spaces inside a single value":                {"Authorization=Bearer abc", map[string]string{"Authorization": "Bearer abc"}},
+		"drops entries without '=' or with an invalid name": {"key=value,invalid,bad key=v", map[string]string{"key": "value"}},
+		"invalid duplicate does not erase a valid value":    {"api-key=valid,api-key=bad%GG", map[string]string{"api-key": "valid"}},
+	} {
+		for signal, headers := range signals {
+			t.Run(name+"/"+signal, func(t *testing.T) {
+				t.Setenv("OTEL_EXPORTER_OTLP_"+signal+"_HEADERS", tc.raw)
+				assert.Equal(t, tc.want, headers(loadConfig()))
+			})
+		}
+	}
+}
+
 func TestOTLPExportMode(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetGlobalState()
@@ -1611,6 +1638,16 @@ func TestOTLPLogsProtocol(t *testing.T) {
 		protocol := loadConfig().OTLPLogsProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
+
+	t.Run("unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL falls back to generic", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+		assert.Equal(t, "grpc", loadConfig().OTLPLogsProtocol())
+		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL value")
+	})
 }
 
 func TestOTLPLogsEndpoint(t *testing.T) {
@@ -1632,6 +1669,12 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs:4318")
 		assert.Equal(t, "http://logs:4318", loadConfig().OTLPLogsEndpoint())
+	})
+
+	t.Run("unparsable OTEL_EXPORTER_OTLP_LOGS_ENDPOINT falls back to generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "::bad")
+		assert.Equal(t, "http://generic:4318", loadConfig().OTLPLogsEndpoint())
 	})
 }
 
@@ -1696,6 +1739,7 @@ func TestOTLPLogsHeaders(t *testing.T) {
 	for name, logs := range map[string]string{
 		"no valid entry":            "invalid",
 		"only invalid header names": "bad key=value",
+		"only invalid escapes":      "key=bad%GG",
 	} {
 		t.Run("falls back to generic when OTEL_EXPORTER_OTLP_LOGS_HEADERS has "+name, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")

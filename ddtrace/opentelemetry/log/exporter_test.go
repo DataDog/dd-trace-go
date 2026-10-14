@@ -9,12 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
-	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -57,19 +55,6 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestNewOTLPExporterWarnsOnJSON(t *testing.T) {
-	t.Cleanup(func() { config.CreateNew() })
-	logger := new(internallog.RecordLogger)
-	defer internallog.UseLogger(logger)()
-	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-	config.CreateNew()
-
-	exporter, err := newOTLPExporter(t.Context(), nil, nil)
-	require.NoError(t, err)
-	defer exporter.Shutdown(t.Context())
-	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
 }
 
 func TestNewOTLPExporterHTTPConfig(t *testing.T) {
