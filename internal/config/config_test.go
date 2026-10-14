@@ -2267,6 +2267,8 @@ func TestRuntimeMetricsEndpoint(t *testing.T) {
 		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true},
 		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false},
 		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
+		{"unsupported agent URL scheme", map[string]string{"DD_TRACE_AGENT_URL": "tcp://agent:8126", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
+		{"unix agent URL", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "host"}, "localhost:4318", "/v1/metrics", "localhost:4317", true},
 		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true},
 		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false},
 		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true},

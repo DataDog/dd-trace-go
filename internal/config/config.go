@@ -527,8 +527,7 @@ func loadConfig() *Config {
 		envP.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		envP.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cmp.Or(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "")), strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_INSECURE", ""))),
-		env.Get("DD_TRACE_AGENT_URL"),
-		env.Get("DD_AGENT_HOST"),
+		cfg.agentURL,
 	)
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
