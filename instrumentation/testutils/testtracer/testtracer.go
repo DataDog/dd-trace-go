@@ -144,8 +144,9 @@ type TestTracer struct {
 // inspects the spans the application sends. The tracer stops automatically
 // when the test ends.
 //
-// Deprecated: use tracertest.Bootstrap. For LLMObs tests, pass the tracer
-// option that llmobstest.New returns to Bootstrap.
+// Deprecated: use tracertest.Bootstrap. For LLMObs tests, create the
+// collector with llmobstest.New, pass coll.TracerOption() to Bootstrap, and
+// keep the collector to read the spans and metrics.
 func Start(t testing.TB, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
@@ -215,12 +216,13 @@ func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 	}
 }
 
-// WithAgentInfoResponse has no effect. The inspectable tracer fixes the agent
-// /info response, and the LLMObs collector bypasses the agent capability gate
-// that the old mock served through this option. The option exists so existing
-// test code compiles.
+// WithAgentInfoResponse has no effect. The LLMObs collector bypasses the agent
+// capability gate that the old mock served through this option. The option
+// exists so existing test code compiles.
 //
-// Deprecated: no replacement exists.
+// Deprecated: to control the agent /info response, create the agent with
+// tracertest.StartAgent, call agent.SetInfoEndpoints, and start the tracer
+// with tracertest.Start.
 func WithAgentInfoResponse(AgentInfo) Option {
 	return func(*config) {}
 }
@@ -237,11 +239,12 @@ func WithRequestDelay(delay time.Duration) Option {
 }
 
 // WithMockResponses has no effect. The inspectable tracer owns its in-process
-// transports, so the wrapper cannot intercept requests. Tests that depend on
-// mock responses must migrate to ddtrace/x/tracertest or ddtrace/x/llmobstest.
-// The option exists so existing test code compiles.
+// transports, so the wrapper cannot intercept requests. The option exists so
+// existing test code compiles.
 //
-// Deprecated: no replacement exists.
+// Deprecated: to mock LLMObs dataset, project, or experiment endpoints,
+// register a handler with llmobstest.Collector.HandleFunc. No replacement
+// exists for APM endpoints.
 func WithMockResponses(MockResponseFunc) Option {
 	return func(*config) {}
 }
@@ -280,8 +283,10 @@ func (tt *TestTracer) Stop() {}
 // piles up flush goroutines. The cleanup that Start registered waits for an
 // in-flight flush before the tracer stops.
 //
-// Deprecated: no replacement exists. Flush the tracer, then assert on the
-// captured spans.
+// Deprecated: no replacement exists. Flush the tracer with tracer.Flush, then
+// assert on the captured spans. Flush sends only the spans that have already
+// finished, so synchronize with the goroutine that produces a span before you
+// flush, or keep a retry loop like this one around the flush and the check.
 func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
