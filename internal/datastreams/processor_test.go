@@ -1154,3 +1154,45 @@ func BenchmarkReaderSustainedRate(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkReaderBurstAfterIdle leaves the reader idle for 50ms, then has
+// writers push at 2M payloads/s for 20ms, and reports the percentage of
+// payloads dropped.
+func BenchmarkReaderBurstAfterIdle(b *testing.B) {
+	const (
+		writers = 8
+		idle    = 50 * time.Millisecond
+		window  = 20 * time.Millisecond
+		batch   = 64
+		rate    = 2_000_000
+	)
+	p := startBenchReader(b)
+	perWriter := float64(rate) / writers
+	var pushed int64
+	for b.Loop() {
+		time.Sleep(idle)
+		var wg sync.WaitGroup
+		start := time.Now()
+		for range writers {
+			wg.Go(func() {
+				n := 0
+				for {
+					elapsed := time.Since(start)
+					if elapsed >= window {
+						break
+					}
+					if float64(n) >= perWriter*elapsed.Seconds() {
+						continue
+					}
+					for range batch {
+						p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+					}
+					n += batch
+				}
+				atomic.AddInt64(&pushed, int64(n))
+			})
+		}
+		wg.Wait()
+	}
+	b.ReportMetric(100*float64(p.stats.dropped.Load())/float64(pushed), "drop-%")
+}
