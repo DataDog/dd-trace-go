@@ -342,7 +342,15 @@ jobs:
       - name: golangci-lint (nested modules)
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          export PATH="${{ github.workspace }}/bin:${PATH}"
+          # The reviewdog steps install golangci-lint from
+          # GOLANGCI_LINT_VERSION. This step runs the binary that _tools
+          # builds for the tools cache. When the two versions drift, the
+          # root module and the nested modules disagree about what a
+          # finding is. Check the versions, so drift fails the job.
+          if [[ "$(golangci-lint version)" != *"version ${GOLANGCI_LINT_VERSION#v} built"* ]]; then
+            echo "::error::golangci-lint in bin/ is $(golangci-lint version | head -n1); the workflow expects ${GOLANGCI_LINT_VERSION}. Sync _tools/go.mod with GOLANGCI_LINT_VERSION."
+            exit 1
+          fi
           base="HEAD~1"
           if [[ "${{ github.event_name }}" == "push" ]]; then
             before="${{ github.event.before }}"
@@ -354,7 +362,7 @@ jobs:
               # A push can carry several commits, and HEAD~1 covers only the
               # last commit of the range. Fetch the whole push: git
               # merge-base cannot pass the shallow boundary of the checkout.
-              git fetch --no-tags --depth="$(( ${{ (github.event.commits || '') | length }} + 2 ))" origin "$GITHUB_SHA"
+              git fetch --no-tags --depth="$(( $(jq '.commits | length' "$GITHUB_EVENT_PATH") + 2 ))" origin "$GITHUB_SHA"
             fi
             base="$before"
           fi

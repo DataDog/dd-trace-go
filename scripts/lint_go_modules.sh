@@ -16,6 +16,10 @@ set -euo pipefail
 #   - Formatters are not run: the check-format job already runs
 #     `golangci-lint fmt` on every Go file of the repository.
 #
+# This script lints every module in go.work unless the list below names it.
+# An omitted entry fails loudly when the module has findings. A stale entry
+# silently stops the lint. Update the list when a module moves or changes
+# purpose.
 # Excluded modules:
 #   - the root module and internal/orchestrion/_integration: the lint job and
 #     scripts/lint.sh lint them with their own golangci-lint calls.
