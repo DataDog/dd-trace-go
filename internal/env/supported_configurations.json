@@ -1374,6 +1374,13 @@
         "default": "true"
       }
     ],
+    "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
       {
         "implementation": "B",
@@ -1596,6 +1603,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "true"
       }
     ],
     "DD_TRACE_LEVELDB_ANALYTICS_ENABLED": [
@@ -1850,6 +1864,13 @@
         "default": "0"
       }
     ],
+    "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
@@ -1876,6 +1897,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "true"
       }
     ],
     "DD_TRACE_STARTUP_LOGS": [
