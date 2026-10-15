@@ -41,6 +41,10 @@ Two rungs, both run from `internal/orchestrion/_integration`:
 - **Compile + inject:** `otelc go build ./<name>/...`.
 - **Span parity:** `otelc go test ./<name>/...` against the same suite under `orchestrion go test`.
 
+When one package named on the command line imports another, both define the hook module's
+`OtelGetStackImpl` and the link fails with `duplicated definition of symbol`. Name one package per
+`otelc go test` invocation then, as CI does.
+
 Rules with `target: main` fire in neither rung: under `go test` the package under test compiles as
 `-p <import path>`. Check those by building a binary and running it, as
 `_integration/otelc-autostart` does.
@@ -95,9 +99,8 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
      package's directory tree and stops at nested modules, so `otelc/all` must name this module
      directly.
-   - Do not add the file-level `version:` key yet. It only exists on otelc main, and a file
-     carrying it fails to parse on every released version, so there is nothing valid to declare
-     while `OTELC_VERSION` is a main commit. otelc warns about its absence into
+   - Do not add the file-level `version:` key. It rejects pseudo-versions, and `OTELC_VERSION` is
+     a `main` commit, so there is nothing valid to declare. otelc warns about its absence into
      `.otelc-build/debug.log` only.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
      application's own main package, so a rule-carrying package under `internal/` builds here and
@@ -142,6 +145,21 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 - Reuse the contrib. Functional and performance parity with minimal new code.
 - Definition-side double-firing: a hooked constructor that internally calls another hooked
   constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
+- Check every definition-side hook for double instrumentation through the contrib. Orchestrion never
+  weaves contrib aspects into dd-trace-go itself, but otelc does, so a hook on a library constructor
+  fires again when the contrib's own wrapper calls it, and a client built with the contrib gets
+  traced twice. Guard it in the contrib, or use `wrap_call` with the contrib excluded from `target:`.
+- Give every `inject_hooks` rule its own before/after names. otelc emits a hook's `//go:linkname`
+  stub once per rule and file, so two rules sharing a hook in one package fail with `redeclared in
+  this block`. Delegate to a shared helper instead.
+- A hook cannot declare `...any` for a variadic parameter. otelc does not substitute `interface{}`
+  for a variadic element, so the stub keeps the target's type and the hook reads a garbage slice
+  with a green build. If the element is a func type the hook cannot name, declare `_ ...func()` and
+  never read it. Every func value is one pointer, so the layouts match.
+- Use the same alias for an import path in every rule that can touch the same file. Once one rule
+  adds the import, a rule expecting a different alias fails the build with `import alias mismatch`.
+- Every hook call allocates: the trampoline builds a `HookContext` holding pointers to the
+  parameters, and it escapes. On a hot path in our own code, prefer `inject_code`.
 - On a generic target function, otelc replaces `GetParam`, `SetParam`, `GetReturnVal` and
   `SetReturnVal` with panicking stubs, so a hook that only reads an argument fails too. Reach the
   values another way, or use `inject_code`, which has no such limit.

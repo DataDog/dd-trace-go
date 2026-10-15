@@ -36,15 +36,16 @@ than rendered docs where possible.
 - Worked examples:
   [instrumentation/](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/instrumentation)
 
-These links point at `main`. CI builds with the version pinned as `OTELC_VERSION` in
-`.github/workflows/otelc.yml`, so check anything that reads as new against that commit. The pin is a
-`main` commit rather than a release, so it can trail upstream `main`, and a fix can be merged and
-documented before it reaches us.
+These links point at `main`. `OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on
+upstream `main`, never a release, so check otelc behaviour against latest upstream `main` and ignore
+tags. The pin can trail `main`. When a port needs something that landed after it, bump
+`OTELC_VERSION` to the latest `main` commit and re-pin `go.opentelemetry.io/otelc/pkg` to match
+(see Cautions in `SKILL.md`).
 
-`docs/` is not shipped in the module zip, so the links above are the only copy. The rule and hook
-behaviour itself is readable offline under
-`$(go env GOMODCACHE)/go.opentelemetry.io/otelc@<OTELC_VERSION>/tool/internal/`, which is the
-fastest way to settle what the pinned version actually does.
+`docs/` is not shipped in the module zip, so the links above are the only copy. To settle what the
+tool actually does, read `tool/internal/` in a clone of upstream at the latest `main` commit. The
+copy under `$(go env GOMODCACHE)/go.opentelemetry.io/otelc@<OTELC_VERSION>/` shows the pin, which
+can be older.
 
 ## In this repo
 

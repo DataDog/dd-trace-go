@@ -11,7 +11,7 @@ in `references.md`.
 | `append-args` | `wrap_call` with `append_args`, plus `variadic_type` when the matched call spreads a slice |
 | `replace-function` | before-hook: `SetSkipCall(true)` + call the drop-in the aspect points to + `SetReturnVal`; guard re-entrancy if the drop-in calls the target again |
 | `prepend-statements` in a `function-body` | `inject_hooks` before/after hook, or `inject_code` when the code must run in-package |
-| `add-struct-field` | `add_struct_fields`, exported if a hook must read it |
+| `add-struct-field` | `add_struct_fields`. A hook cannot read the new field (see below) |
 | `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
 | `inject-declarations` (`go:linkname` to the contrib) | usually nothing: otelc links external hooks through its own trampoline. Only needed if in-package `inject_code` must reference a contrib symbol |
@@ -22,8 +22,9 @@ in `references.md`.
 | Orchestrion join point | otelc |
 |---|---|
 | `function-body` over `function` (`name`, `receiver`) | `where: {func:, recv:}` |
-| `function` with `signature` / `signature-contains` | `where:` sub-filters `signature`, `signature_contains`, `result`, `last_result`, `param` |
+| `function` with `signature` / `signature-contains` | `where:` sub-filters `signature`, `signature_contains`, `result`, `last_result`, `param`, read by `inject_hooks` only. Other rule kinds drop them silently |
 | `function-call` | `where: {function_call: "import/path.Func"}` |
+| `function-call` on a method | `where: {method_call: "import/path.*Type.Method"}`, without `*` for a value receiver. Never matches a call through an interface-typed receiver |
 | `struct-definition` | `where: {struct:}` |
 | `struct-literal` | `where: {struct_literal: "import/path.TypeName"}`, matching literals written in the `target:` package |
 | `declaration-of`, `value-declaration` | `where: {identifier:, kind: var\|const}` |
@@ -57,9 +58,11 @@ Only workable when the target is our own code.
 
 ## Reaching state the aspect read in-package
 
-Hooks are external. They can read and write exported fields, including ones added by
-`add_struct_fields`, but not the library's unexported fields. If the aspect read an unexported
-field, either wrap a public accessor's return value or use `inject_code` for that piece.
+Hooks are external and compile against the unmodified library. They can read and write the
+library's exported fields, but not its unexported ones, and not fields added by
+`add_struct_fields`, which do not exist in the package the hook compiles against. For either, wrap a
+public accessor's return value, or read the field in-package with `inject_code`
+(`transport_round_trip_tracer_internal` in `contrib/net/http/otelc/otelc.yaml`).
 
 ## Reuse rule
 

@@ -1,18 +1,17 @@
 # Orchestrion constructs otelc cannot reproduce
 
 Stop-and-flag cases: no otelc equivalent and no workaround. Anything with a workaround belongs in
-`pattern-mapping.md`. Verified by running the `OTELC_VERSION` pinned in
-`.github/workflows/otelc.yml`; re-check the sources in `references.md`, since capabilities land over
-time, and upstream `main` is normally ahead of the pin.
+`pattern-mapping.md`. Checked against latest upstream `main`, which `OTELC_VERSION` in
+`.github/workflows/otelc.yml` tracks. Capabilities land often, so re-check the sources in
+`references.md` before calling something a gap.
 
 Every gap here is already known and tracked. Report it as a known gap, not a new finding.
 
-## 1. Method call at a call site
+## 1. Reading a call's receiver at a call site
 
-`wrap_call`'s `function_call` parses as `import/path.FunctionName` and rejects anything else, so it
-matches only a callee qualified by a package alias (`net/http.Get`). There is no receiver selector,
-and `http.DefaultClient.Do(...)` does not match either. Hooking the method definition
-(`inject_hooks` with `func` + `recv`) works; a specific call site does not.
+`wrap_call` templates have no variable for the receiver of the matched call. `{{ . }}` is the whole
+call, and `{{ .Receiver }}` is the receiver of the *enclosing* method. An aspect that reads or
+rewrites the receiver expression (`logger` in `logger.Info(...)`) cannot be reproduced.
 
 ## 2. New declaration in a `main` package (`inject-declarations`)
 
@@ -55,27 +54,45 @@ Orchestrion's `function` join point offers `result-implements`, `final-result-im
 `FuncReturnOfType` match a syntactic type name, so a custom type that merely implements
 `context.Context` is not matched.
 
+## 6. Ordering between rules on the same function
+
+Orchestrion orders advice on one join point by namespace and `order:`
+(`crashtracker/orchestrion.yml` and `instrumentation/errortrace/orchestrion.yml` both set
+`order: 100`). otelc has no ordering key. Modifiers in one `do:` sequence run in declaration order,
+and the order across separate rules is not defined (upstream #583). Stop when an aspect sets
+`order:`, or when two rules land on the same function and the result depends on which runs first.
+
+## 7. Function literals and nested functions
+
+`func:` matches a top-level function or method by exact name, and nothing matches a function
+literal. An aspect whose `function-body` join point reaches closures has no equivalent. Directive
+rules also see only top-level functions, so a directive on a function literal is not expanded.
+
 ## Partly implemented, easy to misread
 
-- **`where.file.has_directive`** works, but only for a directive sitting above the `package` clause.
-  The same directive on a `var` or `func` declaration, or floating between declarations, is not
-  found, and the rule then matches nothing while still reporting success. It is absent from
-  `docs/rules.md`, so treat the behaviour above as the specification.
+- **Selectors a rule kind does not read are dropped without an error.** Each rule kind decodes only
+  its own fields and ignores unknown keys. Only `inject_hooks` reads `signature`,
+  `signature_contains`, `result`, `last_result` and `param`. On `inject_code` the rule loads,
+  ignores them, and matches every function with that name.
+- **`where.file.has_directive`** works only for a directive in the file's leading comments, above
+  the `package` clause. On a `var` or `func` declaration, or between declarations, it is not found,
+  and the rule then matches nothing while still reporting success.
 - **`assign_value` on `kind: func` or `kind: type`** is rejected when the rule loads: `kind "func"
   has no supported advice; use var or const to replace or wrap a value`. Loud, not silent. Only
   `var` and `const` carry `replace:` and `wrap:`.
-- **`target: test_main`** does not exist and is not documented. `where.file.is_test` is the only
-  handle on test builds, and file rules ignore it (gap 2).
+- **`target: test_main`** is reserved in `docs/rules.md` but not supported. `where.file.is_test` is
+  the only handle on test builds, and file rules ignore it (gap 2).
 
 ## Closed since this doc was written
 
-Each is now in `pattern-mapping.md`, and each was re-confirmed against the pinned version.
+Each is now in `pattern-mapping.md`, and each was re-confirmed against latest upstream `main`.
 
 - **Composite-literal match.** `where: {struct_literal:}` with the `set_fields` modifier sets
   fields on `T{...}` literals written in the target package.
 - **Reading the caller's context at a call site.** `wrap_call` templates expose
-  `.FuncArgumentOfType` and `.CallArgument`, so an in-scope `context.Context` can be threaded into a
-  call that has none. `.FuncReturnOfType` is not available to `wrap_call` at the pinned version,
-  only to `inject_code` and `expand_directive`.
+  `.FuncArgumentOfType`, `.FuncReturnOfType` and `.CallArgument`, so an in-scope
+  `context.Context` can be threaded into a call that has none.
 - **Directive arguments.** `expand_directive` templates read `.DirectiveArgs` and
   `.DirectiveArg <key>`.
+- **Method call at a call site.** `where: {method_call: "import/path.*Type.Method"}` with
+  `wrap_call`. It never matches a call made through an interface-typed receiver.
