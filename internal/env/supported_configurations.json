@@ -1360,6 +1360,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_ECHO_IGNORED_ROUTES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
+      }
+    ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -2071,9 +2078,9 @@
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
       {
-        "implementation": "B",
+        "implementation": "D",
         "type": "string",
-        "default": "http/json"
+        "default": "http/protobuf"
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT": [
