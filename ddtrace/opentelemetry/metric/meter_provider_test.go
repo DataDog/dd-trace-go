@@ -18,8 +18,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // TestMeterProviderInstruments verifies that various OTel instrument types
