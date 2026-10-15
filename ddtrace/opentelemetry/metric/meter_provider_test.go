@@ -80,8 +80,12 @@ func setMetricsExportEnv(t *testing.T) {
 }
 
 func TestInstallGlobalWithMetricsExport(t *testing.T) {
+	// installGlobal reads the global config, which an earlier test may have cached
+	// with metrics disabled. Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	setMetricsExportEnv(t)
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	internalconfig.CreateNew()
 	defer otel.SetMeterProvider(noop.NewMeterProvider())
 
 	require.NoError(t, installGlobal())
