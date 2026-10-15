@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
@@ -99,10 +100,13 @@ type startupInfo struct {
 	OTelTracesExporter  string            `json:"OTEL_TRACES_EXPORTER,omitempty"`                // "otlp" when traces are exported over OTLP
 	OTLPTracesEndpoint  string            `json:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,omitempty"`  // Sanitized OTLP traces URL
 	OTLPTracesProtocol  string            `json:"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL,omitempty"`  // OTLP traces transport
-	OTLPTracesHeaders   map[string]string `json:"OTEL_EXPORTER_OTLP_TRACES_HEADERS,omitempty"`   // OTLP traces header names, values redacted
-	OTLPMetricsEndpoint string            `json:"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,omitempty"` // Sanitized OTLP span metrics URL
-	OTLPMetricsProtocol string            `json:"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL,omitempty"` // OTLP span metrics transport
-	OTLPMetricsHeaders  map[string]string `json:"OTEL_EXPORTER_OTLP_METRICS_HEADERS,omitempty"`  // OTLP span metrics header names, values redacted
+	OTLPTracesHeaders   map[string]string `json:"OTEL_EXPORTER_OTLP_TRACES_HEADERS,omitzero"`    // OTLP traces header names, values redacted
+	OTLPMetricsEndpoint string            `json:"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,omitempty"` // Sanitized OTLP metrics URL
+	OTLPMetricsProtocol string            `json:"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL,omitempty"` // OTLP metrics transport
+	OTLPMetricsHeaders  map[string]string `json:"OTEL_EXPORTER_OTLP_METRICS_HEADERS,omitzero"`   // OTLP metrics header names, values redacted
+
+	OTelMetricExportInterval         int64  `json:"OTEL_METRIC_EXPORT_INTERVAL,omitempty"`                       // MeterProvider export interval, in milliseconds
+	OTLPMetricsTemporalityPreference string `json:"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE,omitempty"` // MeterProvider temporality preference
 
 	OTelLogLevel           string            `json:"OTEL_LOG_LEVEL,omitempty"`           // Minimum level of the tracer logger
 	OTelServiceName        string            `json:"OTEL_SERVICE_NAME,omitempty"`        // Finalized service name
@@ -279,14 +283,26 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 		delete(headers, "Content-Type")
 		info.OTLPTracesHeaders = redactOTLPHeaders(headers)
 	}
-	// The span metrics exporter is the only OTLP metrics exporter whose settings
-	// the tracer resolves. The OTel MeterProvider resolves its own endpoint,
-	// protocol, and headers, which can differ, so report nothing when it is
-	// also active rather than describe only one of the two exporters.
-	if spanMetricsOTLP && !metricsOTLP {
-		info.OTLPMetricsEndpoint = sanitizeOTLPEndpoint(cfg.OTLPMetricsURL())
-		info.OTLPMetricsProtocol = cfg.OTLPMetricsProtocol()
-		info.OTLPMetricsHeaders = redactOTLPHeaders(cfg.OTLPMetricsHeaders())
+	// The OTel MeterProvider and the span metrics exporter resolve their
+	// transport separately, so a setting is reported only when every effective
+	// metrics exporter uses the same value.
+	var metricsExporters []otlpExporterInfo
+	if metricsOTLP {
+		metricsExporters = append(metricsExporters, runtimeMetricsExporterInfo(cfg))
+	}
+	if spanMetricsOTLP {
+		metricsExporters = append(metricsExporters, otlpExporterInfo{
+			endpoint: sanitizeOTLPEndpoint(cfg.OTLPMetricsURL()),
+			protocol: cfg.OTLPMetricsProtocol(),
+			headers:  cfg.OTLPMetricsHeaders(),
+		})
+	}
+	info.OTLPMetricsEndpoint, info.OTLPMetricsProtocol, info.OTLPMetricsHeaders = commonOTLPExporterInfo(metricsExporters)
+	// Only the MeterProvider reads these: span metrics are always delta and
+	// flushed on the stats interval.
+	if metricsOTLP {
+		info.OTelMetricExportInterval = cfg.RuntimeMetricsExportInterval().Milliseconds()
+		info.OTLPMetricsTemporalityPreference = cfg.RuntimeMetricsTemporalityPreference()
 	}
 
 	// The logger only filters debug messages; info and above are always emitted.
@@ -387,13 +403,69 @@ func sanitizeOTLPEndpoint(endpoint string) string {
 	return u.String()
 }
 
-// redactOTLPHeaders returns headers with every value redacted.
-func redactOTLPHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return nil
+// otlpExporterInfo is the transport of an OTLP exporter, with the endpoint
+// sanitized and the header values not yet redacted.
+type otlpExporterInfo struct {
+	endpoint string
+	protocol string
+	headers  map[string]string
+}
+
+// commonOTLPExporterInfo returns the transport settings shared by every
+// exporter, leaving a setting empty, or nil for headers, when the exporters
+// disagree on it.
+func commonOTLPExporterInfo(exporters []otlpExporterInfo) (endpoint, protocol string, headers map[string]string) {
+	if len(exporters) == 0 {
+		return "", "", nil
 	}
-	redacted := maps.Clone(headers)
-	for k := range redacted {
+	endpoint, protocol, headers = exporters[0].endpoint, exporters[0].protocol, exporters[0].headers
+	sameHeaders := true
+	for _, e := range exporters[1:] {
+		if e.endpoint != endpoint {
+			endpoint = ""
+		}
+		if e.protocol != protocol {
+			protocol = ""
+		}
+		sameHeaders = sameHeaders && maps.Equal(e.headers, headers)
+	}
+	if !sameHeaders {
+		return endpoint, protocol, nil
+	}
+	return endpoint, protocol, redactOTLPHeaders(headers)
+}
+
+// runtimeMetricsExporterInfo returns the transport of the OTel MeterProvider
+// exporter, built the way ddtrace/opentelemetry/metric builds it, including
+// its http/protobuf fallback for unsupported protocols.
+func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
+	scheme := func(insecure bool) string {
+		if insecure {
+			return "http"
+		}
+		return "https"
+	}
+	if cfg.RuntimeMetricsProtocol() == "grpc" {
+		target, insecure := cfg.RuntimeMetricsGRPCEndpoint()
+		return otlpExporterInfo{
+			endpoint: sanitizeOTLPEndpoint(scheme(insecure) + "://" + target),
+			protocol: "grpc",
+			headers:  cfg.RuntimeMetricsHeaders(),
+		}
+	}
+	host, path, insecure := cfg.RuntimeMetricsHTTPEndpoint()
+	return otlpExporterInfo{
+		endpoint: sanitizeOTLPEndpoint((&url.URL{Scheme: scheme(insecure), Host: host, Path: path}).String()),
+		protocol: "http/protobuf",
+		headers:  cfg.RuntimeMetricsHeaders(),
+	}
+}
+
+// redactOTLPHeaders returns headers with every value redacted. It never
+// returns nil, so an effective exporter without headers is logged as {}.
+func redactOTLPHeaders(headers map[string]string) map[string]string {
+	redacted := make(map[string]string, len(headers))
+	for k := range headers {
 		redacted[k] = redactedHeaderValue
 	}
 	return redacted
