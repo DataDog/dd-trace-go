@@ -321,10 +321,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.internalConfig.Debug() {
 		log.SetLevel(log.LevelDebug)
-	} else if log.DebugEnabled() {
-		// Another product or an earlier tracer may have enabled debug logging.
-		// Honor the resolved setting, including WithDebugMode(false).
-		log.SetLevel(log.LevelWarn)
 	}
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {

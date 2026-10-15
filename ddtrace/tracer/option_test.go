@@ -2738,29 +2738,3 @@ func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
 	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
 	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
 }
-
-func TestDebugLogLevelResolvedOptions(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		initial log.Level
-		enabled bool
-		want    log.Level
-	}{
-		{"enable", log.LevelWarn, true, log.LevelDebug},
-		{"disable existing debug", log.LevelDebug, false, log.LevelWarn},
-		{"preserve info", log.LevelInfo, false, log.LevelInfo},
-		{"preserve warn", log.LevelWarn, false, log.LevelWarn},
-		{"preserve error", log.LevelError, false, log.LevelError},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_DEBUG", "true")
-			previous := log.GetLevel()
-			t.Cleanup(func() { log.SetLevel(previous) })
-			log.SetLevel(tc.initial)
-			cfg, err := newTestConfig(WithDebugMode(tc.enabled))
-			require.NoError(t, err)
-			assert.Equal(t, tc.enabled, cfg.internalConfig.Debug())
-			assert.Equal(t, tc.want, log.GetLevel())
-		})
-	}
-}

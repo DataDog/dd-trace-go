@@ -952,7 +952,7 @@ func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
 		envDebug, tracerDebug, tracerFirst, wantHook, wantDebug, wantEvaluationLog bool
 	}{
 		{name: "provider_then_enable", tracerDebug: true, wantHook: true, wantDebug: true, wantEvaluationLog: true},
-		{name: "provider_then_disable", envDebug: true, wantHook: true},
+		{name: "provider_then_debug_disabled", wantHook: true},
 		{name: "tracer_disable_then_provider", envDebug: true, tracerFirst: true, wantHook: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
