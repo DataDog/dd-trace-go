@@ -409,9 +409,6 @@ func resolveOTLPSignalURL(signalEndpoint, genericEndpoint, signalPath string, pr
 		signalPath = strings.TrimPrefix(signalPath, "/")
 	}
 	u.Path += signalPath
-	if u.RawPath != "" {
-		u.RawPath += signalPath
-	}
 	return u.String()
 }
 
