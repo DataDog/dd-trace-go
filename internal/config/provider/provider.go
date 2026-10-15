@@ -49,6 +49,11 @@ func New() *Provider {
 	}
 }
 
+// NewEnvironment resolves existing environment-only consumers without enabling declarative sources.
+func NewEnvironment() *Provider {
+	return &Provider{sources: []configSource{new(envConfigSource)}}
+}
+
 // get is the core resolution helper shared by all typed getters.
 // It iterates sources in reverse priority order so that higher-priority sources
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
@@ -127,6 +132,13 @@ func (p *Provider) GetBoolWithOrigin(key string, def bool) (bool, telemetry.Orig
 func (p *Provider) GetInt(key string, def int) int {
 	return get(p, key, def, func(v string) (int, bool) {
 		intVal, err := strconv.Atoi(v)
+		return intVal, err == nil
+	})
+}
+
+func (p *Provider) GetInt64(key string, def int64) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
 		return intVal, err == nil
 	})
 }

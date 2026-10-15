@@ -341,6 +341,48 @@ func TestApplyEarlyFlakeDetectionEnabledEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestApplyFlakyRetryEnabledEnvironmentOverride(t *testing.T) {
+	key := constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable
+	previous, previouslySet := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if previouslySet {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+
+	tests := []struct {
+		name          string
+		remoteEnabled bool
+		override      string
+		overrideSet   bool
+		want          bool
+	}{
+		{name: "unset preserves disabled remote setting", want: false},
+		{name: "unset preserves enabled remote setting", remoteEnabled: true, want: true},
+		{name: "true enables disabled remote setting", override: "true", overrideSet: true, want: true},
+		{name: "false disables enabled remote setting", remoteEnabled: true, override: "false", overrideSet: true, want: false},
+		{name: "invalid preserves remote setting", remoteEnabled: true, override: "invalid", overrideSet: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.overrideSet {
+				t.Setenv(key, tt.override)
+			}
+			settings := civisibilitynet.SettingsResponseData{FlakyTestRetriesEnabled: tt.remoteEnabled}
+
+			applyFlakyRetryEnabledEnvironmentOverride(&settings)
+
+			assert.Equal(t, tt.want, settings.FlakyTestRetriesEnabled)
+		})
+	}
+}
+
 func writeSettingsManifestCache(t *testing.T, requireGit bool, impactedTestsEnabled bool, testsSkipping bool) string {
 	t.Helper()
 

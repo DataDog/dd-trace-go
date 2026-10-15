@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -27,6 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
 
@@ -192,11 +194,19 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// BatchLogRecordProcessor settings (OTEL_BLRP_*)
+	blrpMaxQueueSize       int
+	blrpScheduleDelay      time.Duration
+	blrpExportTimeout      time.Duration
+	blrpMaxExportBatchSize int
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
 	// Only meaningful when otlpExportMode is false.
 	traceProtocol float64
+	// traceProtocolOverridesOTLP reports whether DD_TRACE_AGENT_PROTOCOL_VERSION
+	// explicitly disabled OTLP export during configuration loading.
+	traceProtocolOverridesOTLP bool
 	// effectiveTraceProtocolBits is the last value reported via
 	// ReportEffectiveTraceProtocol, stored as float64 bits so repeated reports
 	// of the same value can be deduplicated without inflating config-telemetry
@@ -218,14 +228,18 @@ type Config struct {
 	otlpExportMetricsMode bool
 	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL; always non-empty.
 	otlpEndpoint string
-	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
-	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
+	// otelSemanticsEnabled enables OpenTelemetry semantic conventions and
+	// their required global configuration overrides. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
 	otelSemanticsEnabled bool
-	// otlpTraceURL is the OTLP collector endpoint for traces
+	// otlpTraceURL is the OTLP collector endpoint for traces.
 	otlpTraceURL string
-	// otlpHeaders holds the resolved OTLP trace headers from
-	// OTEL_EXPORTER_OTLP_TRACES_HEADERS plus Content-Type: application/x-protobuf.
-	otlpHeaders map[string]string
+	// otlpTraceURLDerivedFromAgent reports whether otlpTraceURL should follow
+	// programmatic changes to agentURL.
+	otlpTraceURLDerivedFromAgent bool
+	// otlpTraceHeaders holds the resolved OTLP trace headers from
+	// OTEL_EXPORTER_OTLP_TRACES_HEADERS, or OTEL_EXPORTER_OTLP_HEADERS when the former is empty,
+	// plus Content-Type: application/x-protobuf.
+	otlpTraceHeaders map[string]string
 	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
 	otlpSpanMetricsEnabled *bool
 	// otlpMetricsURL is the resolved OTLP metrics endpoint (e.g. http://host:4318/v1/metrics).
@@ -236,6 +250,15 @@ type Config struct {
 	otlpMetricsFlushInterval time.Duration
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
 	otlpMetricsProtocol string
+
+	// OTel runtime metrics exporter transport settings, resolved from the environment only.
+	runtimeMetricsProtocol     string
+	runtimeMetricsHTTPEndpoint string
+	runtimeMetricsHTTPPath     string
+	runtimeMetricsGRPCEndpoint string
+	runtimeMetricsInsecure     bool
+	runtimeMetricsHeaders      map[string]string
+
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -303,7 +326,11 @@ type Config struct {
 	// llmObsProjectName is the project name for LLM Observability
 	llmObsProjectName string
 	// llmObsAgentlessEnabled controls if LLM Observability is enabled in agentless mode
-	llmObsAgentlessEnabled *bool
+	llmObsAgentlessEnabled        *bool
+	llmObsPromptsCacheTTL         time.Duration
+	llmObsPromptsFileCacheEnabled bool
+	llmObsPromptsCacheDir         string
+	llmObsPromptsTimeout          time.Duration
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -430,8 +457,11 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
-	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
+	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, func(v int) bool { return v > 0 })
+	cfg.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
+	cfg.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
+	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
+	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -441,9 +471,19 @@ func loadConfig() *Config {
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
 		cfg.otlpExportMode = false
+		cfg.traceProtocolOverridesOTLP = true
 	}
-	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
-	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
+	otlpGenericEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, otlpGenericEndpoint)
+	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
+	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
+		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
+	otlpGenericHeaders := decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter))
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
+		otlpGenericHeaders,
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter)),
+	))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -458,23 +498,39 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
 	)
-	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
-		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
-		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
+	cfg.otlpMetricsHeaders = resolveOTLPHeaders(
+		otlpGenericHeaders,
+		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter)),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
+	// The protocol is only consumed by the OTLP span metrics exporter. Values
+	// such as "grpc" are valid for other OpenTelemetry components, so only warn
+	// about them when this exporter is going to use the value.
+	warnOTLPProtocol := cfg.OTLPSpanMetricsEnabled()
+	// The signal-specific protocol takes precedence over the generic one, so
+	// the generic value never reaches the exporter when it is set; warn about
+	// it only when it is the effective protocol.
+	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
 	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
-	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL") {
+	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
 		otlpProtocolFallback = "http/protobuf"
 	}
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
-		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
+		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
 	})
+	envP := provider.NewEnvironment()
+	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
+	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
+		envP.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		envP.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+		cmp.Or(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "")), strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_INSECURE", ""))),
+		cfg.agentURL,
+	)
+	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -482,6 +538,14 @@ func loadConfig() *Config {
 	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
 	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.llmObsPromptsCacheTTL = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_CACHE_TTL", 60, func(value float64) bool {
+		return !math.IsNaN(value) && !math.IsInf(value, 0) && (value <= 0 || value <= maxDurationSeconds)
+	}) * float64(time.Second))
+	cfg.llmObsPromptsFileCacheEnabled = p.GetBool("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", false)
+	cfg.llmObsPromptsCacheDir = p.GetString("DD_LLMOBS_PROMPTS_CACHE_DIR", "")
+	cfg.llmObsPromptsTimeout = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_TIMEOUT", 5, func(value float64) bool {
+		return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0) && value <= maxDurationSeconds
+	}) * float64(time.Second))
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
 	legacyFlaggingProviderEnabled, legacyFlaggingProviderOrigin := p.GetBoolWithOrigin("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
 	cfg.experimentalFlaggingProviderEnabled = legacyFlaggingProviderEnabled
@@ -536,6 +600,7 @@ func loadConfig() *Config {
 	if cfg.spanAttributeSchemaVersion >= 1 {
 		cfg.peerServiceDefaultsEnabled = true
 	}
+	cfg.applyOTelSemanticsOverrides()
 
 	cfg.maxTagsHeaderLen = resolveMaxTagsHeaderLen(p.GetInt("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", DefaultMaxTagsHeaderLen))
 
@@ -1609,6 +1674,30 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
+func (c *Config) BLRPMaxQueueSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpMaxQueueSize
+}
+
+func (c *Config) BLRPScheduleDelay() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpScheduleDelay
+}
+
+func (c *Config) BLRPExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpExportTimeout
+}
+
+func (c *Config) BLRPMaxExportBatchSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.blrpMaxExportBatchSize
+}
+
 func (c *Config) OTelSemanticsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1625,6 +1714,60 @@ func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, 
 	}
 	c.otelSemanticsEnabled = enabled
 	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
+	c.applyOTelSemanticsOverrides()
+}
+
+// ResolveOTelSemanticsConfig recomputes configuration values that depend on
+// other values set at different stages of configuration.
+func (c *Config) ResolveOTelSemanticsConfig() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.otelSemanticsEnabled {
+		return
+	}
+	if c.otlpTraceURLDerivedFromAgent {
+		c.otlpTraceURL = resolveOTLPTraceURL("", resolveOTLPEndpoint(c.agentURL, ""))
+	}
+	c.disableAutomaticPeerService()
+}
+
+// TODO: Consider a mechanism for declaring rules and dependencies between
+// settings. provider.Provider resolves configuration sources independently for
+// each key, but modes such as OTel semantics require specific effective values
+// across several settings. tracer.StartOption values can change their inputs
+// after loadConfig returns. A resolver could apply declared rules in loadConfig
+// and again after all tracer.StartOption values have been applied, centralizing
+// conflict warnings and telemetry reported with telemetry.OriginCalculated.
+
+// applyOTelSemanticsOverrides applies settings required by OpenTelemetry
+// semantic conventions after their raw values have been resolved.
+// The caller must hold c.mu after configuration initialization.
+func (c *Config) applyOTelSemanticsOverrides() {
+	if !c.otelSemanticsEnabled {
+		return
+	}
+	if c.traceProtocolOverridesOTLP && !c.otlpExportMode {
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out")
+	}
+	c.otlpExportMode = true
+	configtelemetry.Report("OTEL_TRACES_EXPORTER", "otlp", telemetry.OriginCalculated)
+	if c.spanAttributeSchemaVersion != 0 {
+		c.spanAttributeSchemaVersion = 0
+		telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0")
+		configtelemetry.Report("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0", telemetry.OriginCalculated)
+	}
+	c.disableAutomaticPeerService()
+}
+
+// disableAutomaticPeerService disables automatic peer.service calculation as required by OTel semantics.
+// The caller must hold c.mu after configuration initialization.
+func (c *Config) disableAutomaticPeerService() {
+	if !c.peerServiceDefaultsEnabled {
+		return
+	}
+	c.peerServiceDefaultsEnabled = false
+	telemetrylog.Warn("Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false")
+	configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false, telemetry.OriginCalculated)
 }
 
 // RequestedTraceProtocol returns the Datadog trace protocol version to use for
@@ -1730,6 +1873,10 @@ func (c *Config) SetOTLPExportMode(v bool, origin telemetry.Origin, product ...P
 	if c.checkProductConflict("OTEL_TRACES_EXPORTER", origin, v, product...) {
 		return
 	}
+	if c.otelSemanticsEnabled && !v {
+		configtelemetry.Report("OTEL_TRACES_EXPORTER", "otlp", telemetry.OriginCalculated)
+		return
+	}
 	c.otlpExportMode = v
 	configtelemetry.Report("OTEL_TRACES_EXPORTER", v, origin)
 }
@@ -1750,12 +1897,12 @@ func (c *Config) SetOTLPExportMetricsMode(v bool, origin telemetry.Origin, produ
 	configtelemetry.Report("OTEL_METRICS_EXPORTER", v, origin)
 }
 
-// OTLPHeaders returns a copy of the OTLP headers map. If no headers are set, returns nil.
+// OTLPTraceHeaders returns a copy of the resolved OTLP trace headers, including Content-Type.
 // Safe to return the full map because it is not called in hot paths.
-func (c *Config) OTLPHeaders() map[string]string {
+func (c *Config) OTLPTraceHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return maps.Clone(c.otlpHeaders)
+	return maps.Clone(c.otlpTraceHeaders)
 }
 
 // OTLPSpanMetricsEnabled reports whether span metrics export is active; auto-enables when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
@@ -1803,6 +1950,30 @@ func (c *Config) OTLPMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsProtocol
+}
+
+func (c *Config) RuntimeMetricsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsProtocol
+}
+
+func (c *Config) RuntimeMetricsHTTPEndpoint() (endpoint, path string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsHTTPEndpoint, c.runtimeMetricsHTTPPath, c.runtimeMetricsInsecure
+}
+
+func (c *Config) RuntimeMetricsGRPCEndpoint() (endpoint string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsGRPCEndpoint, c.runtimeMetricsInsecure
+}
+
+func (c *Config) RuntimeMetricsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.runtimeMetricsHeaders)
 }
 
 func (c *Config) TraceID128BitEnabled() bool {
@@ -1926,6 +2097,30 @@ func (c *Config) AppKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.appKey
+}
+
+func (c *Config) LLMObsPromptsCacheTTL() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsCacheTTL
+}
+
+func (c *Config) LLMObsPromptsFileCacheEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsFileCacheEnabled
+}
+
+func (c *Config) LLMObsPromptsCacheDir() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsCacheDir
+}
+
+func (c *Config) LLMObsPromptsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsPromptsTimeout
 }
 
 func (c *Config) CIVisibilityAgentlessURL() string {

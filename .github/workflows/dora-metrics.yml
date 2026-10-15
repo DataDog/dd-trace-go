@@ -1,0 +1,76 @@
+name: Publish DORA metrics
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish-dora-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
+        with:
+          policy: dd-trace-go-app-key
+    
+
+      - name: Publish deployment event
+        if: steps.dd-sts.outcome == 'success'
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
+          GIT_TAG: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          VERSION="${GIT_TAG#v}"
+
+          # Derive the deployment id and timestamps from the release itself, not
+          # the run clock.
+          # Create a canonically formattted UUID based on the git tag and commit SHA.
+          DEPLOYMENT_ID=$(printf '%s' "dd-trace-go/${GIT_TAG}" | sha256sum | awk '{print $1}' | cut -c1-32 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+          STARTED=$(($(date +%s) * 1000)) # started_at represents this pipeline's run-clock time (aka when the release tag was created)
+          FINISHED=$((STARTED + 1000)) # finished_at must differ from started_at or the API returns 400
+
+          # This workflow should only be re-run if the first run failed, but IF for some reason the first run succeeded
+          # and we re-run anyways, we should not publish the event twice.
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -H "DD-API-KEY: ${DD_API_KEY}" \
+            -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" \
+            "https://api.datadoghq.com/api/v2/dora/deployments/${DEPLOYMENT_ID}")
+          if [ "$status" = "200" ]; then
+            echo "Deployment ${DEPLOYMENT_ID} already exists."
+            exit 0
+          fi
+
+          curl --fail --silent --show-error --retry 3 --retry-delay 5 -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -H "DD-API-KEY: ${DD_API_KEY}" \
+            -d @- << EOF
+          {
+            "data": {
+              "attributes": {
+                "id": "$DEPLOYMENT_ID",
+                "service": "dd-trace-go",
+                "started_at": $STARTED,
+                "finished_at": $FINISHED,
+                "git": {
+                  "commit_sha": "$GIT_SHA",
+                  "repository_url": "https://github.com/DataDog/dd-trace-go"
+                },
+                "env": "prod",
+                "team": "apm-go",
+                "version": "$VERSION",
+                "custom_tags": [ "department:engineering", "app_type:sdk" ]
+              }
+            }
+          }
+          EOF

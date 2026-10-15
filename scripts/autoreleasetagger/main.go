@@ -91,8 +91,15 @@ var (
 	defaultUntaggedModules = []string{
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
 	}
-	defaultExcludedModules = []string{}
-	defaultExcludedDirs    = []string{
+	// defaultExcludedModules lists modules skipped entirely: no go.mod update and
+	// no tag. Unlike defaultUntaggedModules, these are not dd-trace-go modules.
+	defaultExcludedModules = []string{
+		// Build fixture. It requires the root module, and tags are derived from
+		// the directory rather than the module path, so without this it would be
+		// tagged internal/apps/otelc-external-app on every release.
+		"example.com/otelcexternalapp",
+	}
+	defaultExcludedDirs = []string{
 		"_tools",
 		".claude",
 		".github",
@@ -990,6 +997,16 @@ func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {
 		if entry.IsDir() && (containsPath(excludedDirs, path) || entry.Name() == ".git") {
 			slog.Debug("Skipping directory", "path", path)
 			return filepath.SkipDir
+		}
+
+		// A .git entry below the root marks a separate checkout — a nested git
+		// worktree (gitlink file) or a submodule. Its modules are not part of this
+		// release, and rewriting their go.mod mutates someone else's branch.
+		if entry.IsDir() && path != root {
+			if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+				slog.Debug("Skipping nested checkout", "path", path)
+				return filepath.SkipDir
+			}
 		}
 
 		if entry.Name() == "go.mod" {

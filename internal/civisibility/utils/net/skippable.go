@@ -64,7 +64,7 @@ type (
 		Name                    string             `json:"name"`
 		Parameters              string             `json:"parameters"`
 		Configurations          testConfigurations `json:"configurations"`
-		MissingLineCodeCoverage bool               `json:"_missing_line_code_coverage"`
+		MissingLineCodeCoverage bool               `json:"_is_missing_line_code_coverage"`
 	}
 
 	// SkippableTestsResponse stores the skippable-tests response plus backend

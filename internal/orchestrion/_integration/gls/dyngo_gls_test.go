@@ -39,8 +39,8 @@ func newDyngoOp(parent dyngo.Operation) dyngoOp {
 // pops, and a double FinishOperation does not over-pop the parent (the
 // orchestrion#782 shape for AppSec operations).
 func TestDyngoGLSPopOnFinish(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
 
 	outer := newDyngoOp(nil)
@@ -73,8 +73,8 @@ func TestDyngoGLSPopOnFinish(t *testing.T) {
 // which silently disables AppSec on every un-instrumented call site (the WAF
 // never sees the operation, nothing is blocked). See orchestrion#782.
 func TestDyngoFromContextNilUsesGLS(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
 
 	op := newDyngoOp(nil)
@@ -93,8 +93,8 @@ func TestDyngoFromContextNilUsesGLS(t *testing.T) {
 // on a goroutine other than the one that registered it does not pop the
 // finishing goroutine's GLS stack.
 func TestDyngoGLSCrossGoroutineNoCorruption(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
 
 	opA := newDyngoOp(nil)

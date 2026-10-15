@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/glsleak"
 
-	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,10 +47,10 @@ import (
 // may legitimately have recycled the object by then. Pooled coexistence is covered
 // by the live-inject TestGLSNoHeapLeakWithSpanPool in the gls-leak package.
 func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test finishes the
 	// span before handing it to the worker, which is a deliberate use-after-Finish
@@ -112,10 +111,10 @@ func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 // so is not run under the experimental span pool; TestGLSNoHeapLeakWithSpanPool
 // covers the pooled, live-inject path.
 func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test finishes the
 	// span before handing it to the worker, which is a deliberate use-after-Finish
@@ -139,10 +138,10 @@ func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 // finished. The next inbound request (fresh context, no upstream headers, so the
 // GLS is its only parent source) must not adopt it and must start its own trace.
 func TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
 	// *tracer.Span past its Finish and reads it afterwards, which is what the
@@ -196,10 +195,10 @@ func TestSpanGLSNoTraceMergeAfterCrossGoroutineFinish(t *testing.T) {
 // subtest goroutines, which is what leaves the entry on their stacks already
 // finished. Each subtest runs on its own goroutine and so gets its own GLS stack.
 func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
 	// *tracer.Span past its Finish and reads it afterwards, which is what the
@@ -278,10 +277,10 @@ func TestSpanGLSFinishedParentOnlyHonoredViaExplicitContext(t *testing.T) {
 // This runs on a single goroutine, which is what net/http gives a keep-alive
 // connection when it serves requests sequentially.
 func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
 	// *tracer.Span past its Finish and reads it afterwards, which is what the
@@ -339,10 +338,10 @@ func TestSpanGLSSequentialRequestsStayIndependent(t *testing.T) {
 // next request finds an empty stack. This runs on a single goroutine, which is
 // what net/http gives a keep-alive connection serving requests sequentially.
 func TestSpanGLSLiveSurvivorDoesNotParentNextRequest(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
+	require.True(t, glsWoven)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test keeps a
 	// *tracer.Span past its Finish and reads it afterwards, which is what the
@@ -389,8 +388,8 @@ func TestSpanGLSLiveSurvivorDoesNotParentNextRequest(t *testing.T) {
 // specific span — so this guards the LIFO-finish + double-finish cases, not
 // arbitrary out-of-order finishes.
 func TestSpanGLSDoubleFinishSameGoroutine(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
 
 	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))

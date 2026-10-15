@@ -148,7 +148,7 @@ func ldd() (bool, error) {
 
 	var selfOutput limitedBuffer
 	cmd = exec.Command("ldd", "/proc/self/exe")
-	cmd.Stdout = &output
+	cmd.Stdout = &selfOutput
 	cmd.Stderr = io.Discard
 
 	selfErr := cmd.Run()

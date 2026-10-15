@@ -120,7 +120,9 @@ func (b *RunAddressDataBuilder) WithClientIP(ip netip.Addr) *RunAddressDataBuild
 	if !ip.IsValid() {
 		return b
 	}
-	b.setPersistent(ClientIPAddr, ip.String())
+	// Unmap IPv4-in-IPv6 so an attacker-supplied header value like "::ffff:1.2.3.4" is reported to
+	// the http.client_ip address in canonical form ("1.2.3.4") and cannot bypass IP-based WAF rules.
+	b.setPersistent(ClientIPAddr, ip.Unmap().String())
 	return b
 }
 

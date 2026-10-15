@@ -1405,6 +1405,52 @@ func TestExcludeModulesSkipsTagCreation(t *testing.T) {
 	}
 }
 
+// TestNestedCheckoutIgnored verifies that a directory containing a .git entry
+// below the root (a nested git worktree checkout or a submodule) is skipped
+// entirely, so its go.mod is never discovered or rewritten.
+func TestNestedCheckoutIgnored(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	// Simulate a nested git worktree/submodule checkout containing its own
+	// module, with no replace directive back to root — the shape that made the
+	// real failure loud (go mod tidy tries to resolve the release tag from the
+	// proxy) rather than silent.
+	nestedDir := filepath.Join(tmpDir, "nested-checkout")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested checkout dir: %v", err)
+	}
+	nestedGoMod := "module example.com/nested/v2\n\ngo 1.26.0\n\nrequire example.com/root/v2 v2.0.0\n"
+	nestedGoModPath := filepath.Join(nestedDir, "go.mod")
+	if err := os.WriteFile(nestedGoModPath, []byte(nestedGoMod), 0o644); err != nil {
+		t.Fatalf("failed to write nested go.mod: %v", err)
+	}
+	// A .git file (not directory) marks this as a separate checkout, matching
+	// the gitlink shape of a real linked git worktree.
+	if err := os.WriteFile(filepath.Join(nestedDir, ".git"), []byte("gitdir: /elsewhere/.git/worktrees/nested\n"), 0o644); err != nil {
+		t.Fatalf("failed to write nested .git file: %v", err)
+	}
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed: %v", err)
+	}
+
+	got, err := os.ReadFile(nestedGoModPath)
+	if err != nil {
+		t.Fatalf("failed to read nested go.mod after run: %v", err)
+	}
+	if string(got) != nestedGoMod {
+		t.Errorf("nested go.mod was modified:\ngot:\n%s\nwant:\n%s", got, nestedGoMod)
+	}
+}
+
 // assertJSONErrorCode parses the JSON on stderr and asserts the "error" field
 // matches the expected code.
 func assertJSONErrorCode(t *testing.T, stderrOut, wantCode string) {

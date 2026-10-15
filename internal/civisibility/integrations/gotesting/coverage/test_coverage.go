@@ -104,6 +104,10 @@ var _ TestCoverage = (*testCoverage)(nil)
 var (
 	coverageStateMu locking.Mutex
 
+	// Go's coverage emitter mutates process-global state even for separate profiles.
+	// Snapshot callers already hold coverageStateMu, so it needs a separate lock.
+	runtimeCoverageMu locking.Mutex
+
 	// mode is the coverage mode.
 	mode string
 	// tearDown is the function to write the coverage counters to the file.
@@ -151,7 +155,8 @@ func InitializeCoverage(m *testing.M, uploadEnabled bool) {
 	tMode, tDown, _ := testDep.InitRuntimeCoverage()
 	mode = tMode
 	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
-		// writing the coverage counters to the file
+		runtimeCoverageMu.Lock()
+		defer runtimeCoverageMu.Unlock()
 		return tDown(coverprofile, gocoverdir)
 	}
 	coverageUploadEnabled = uploadEnabled

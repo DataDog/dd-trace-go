@@ -1,6 +1,6 @@
 variables:
-  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/1997785719
-  TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-134225199
+  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/2043583431
+  TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-137170464
 
 unit-of-work:
   stage: test-apps
