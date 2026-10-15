@@ -4,13 +4,13 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
-	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
-	./contrib/azure/apim-callout
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go
+	./contrib/azure/apim-callout
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
@@ -26,9 +26,9 @@ use (
 	./contrib/gin-gonic/gin
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
-	./contrib/go-chi/chi/otelc
 	./contrib/go-chi/chi.v5
 	./contrib/go-chi/chi.v5/otelc
+	./contrib/go-chi/chi/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
 	./contrib/go-redis/redis.v7
@@ -50,6 +50,7 @@ use (
 	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
+	./contrib/internal/rediswrap
 	./contrib/jackc/pgx.v5
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
@@ -64,16 +65,16 @@ use (
 	./contrib/net/http
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
-	./contrib/redis/go-redis.v9
 	./contrib/opensearch-project/opensearch-go.v4
+	./contrib/redis/go-redis.v9
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
-	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
+	./contrib/twmb/franz-go
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
