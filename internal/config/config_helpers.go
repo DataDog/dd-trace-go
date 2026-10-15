@@ -6,11 +6,13 @@
 package config
 
 import (
+	"cmp"
 	"maps"
 	"math"
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -87,6 +89,8 @@ const (
 	otlpTracesPath  = "/v1/traces"
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
+	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
+	otlpDefaultGRPCPort = "4317"
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
@@ -514,6 +518,78 @@ func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[str
 		return maps.Clone(genericHeaders)
 	}
 	return nil
+}
+
+// resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
+// insecure flag. A signal endpoint is used as-is; a generic one gets otlpMetricsPath appended.
+func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOverride string, agentURL *url.URL) (httpHost, httpPath, grpcTarget string, insecure bool) {
+	httpHost = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultPort)
+	grpcTarget = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultGRPCPort)
+	httpPath = otlpMetricsPath
+	for i, raw := range []string{genericEndpoint, metricsEndpoint} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		httpHost = u.Host
+		grpcTarget = path.Join(u.Host, u.Path)
+		httpPath = path.Join(u.Path, otlpMetricsPath)
+		isSignalEndpoint := i == 1
+		if isSignalEndpoint {
+			httpPath = cmp.Or(u.Path, "/")
+		}
+		insecure = strings.EqualFold(u.Scheme, URLSchemeHTTP) || strings.EqualFold(u.Scheme, URLSchemeUnix)
+	}
+	// Like the OTel Go SDK, and unlike the OTel spec, an explicit setting overrides the endpoint scheme.
+	if insecureOverride != "" {
+		insecure = strings.EqualFold(insecureOverride, "true")
+	}
+	if genericEndpoint == "" && metricsEndpoint == "" {
+		host := internal.DefaultAgentHostname
+		agentInsecure := true
+		if agentURL != nil {
+			host = cmp.Or(agentURL.Hostname(), host)
+			agentInsecure = agentURL.Scheme != URLSchemeHTTPS
+		}
+		httpHost = net.JoinHostPort(host, otlpDefaultPort)
+		grpcTarget = net.JoinHostPort(host, otlpDefaultGRPCPort)
+		insecure = insecure || agentInsecure
+	}
+	httpPath = strings.TrimSpace(httpPath)
+	if httpPath == "" || httpPath == "." {
+		httpPath = otlpMetricsPath
+	} else if !path.IsAbs(httpPath) {
+		httpPath = "/" + httpPath
+	}
+	return httpHost, httpPath, grpcTarget, insecure
+}
+
+// resolveRuntimeMetricsHeaders parses the signal headers when set, otherwise the generic ones.
+// Entries with an invalid header name or value encoding are dropped.
+func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[string]string {
+	raw := cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders))
+	if raw == "" {
+		return nil
+	}
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(raw, ",") {
+		key, value, found := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !found || key == "" || strings.ContainsFunc(key, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
+		}) {
+			continue
+		}
+		value, err := url.PathUnescape(value)
+		if err == nil {
+			headers[key] = strings.TrimSpace(value)
+		}
+	}
+	return headers
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.

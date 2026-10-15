@@ -1360,6 +1360,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_ECHO_IGNORED_ROUTES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
+      }
+    ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -2054,6 +2061,13 @@
         "sensitive": true
       }
     ],
+    "OTEL_EXPORTER_OTLP_INSECURE": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
       {
         "implementation": "A",
@@ -2096,6 +2110,13 @@
         "type": "string",
         "default": null,
         "sensitive": true
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [

@@ -6,6 +6,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -251,6 +252,15 @@ type Config struct {
 	otlpMetricsFlushInterval time.Duration
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
 	otlpMetricsProtocol string
+
+	// OTel runtime metrics exporter transport settings, resolved from the environment only.
+	runtimeMetricsProtocol     string
+	runtimeMetricsHTTPEndpoint string
+	runtimeMetricsHTTPPath     string
+	runtimeMetricsGRPCEndpoint string
+	runtimeMetricsInsecure     bool
+	runtimeMetricsHeaders      map[string]string
+
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -515,6 +525,15 @@ func loadConfig() *Config {
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
 		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
 	})
+	envP := provider.NewEnvironment()
+	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
+	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
+		envP.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		envP.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+		cmp.Or(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "")), strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_INSECURE", ""))),
+		cfg.agentURL,
+	)
+	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1941,6 +1960,30 @@ func (c *Config) OTLPMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsProtocol
+}
+
+func (c *Config) RuntimeMetricsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsProtocol
+}
+
+func (c *Config) RuntimeMetricsHTTPEndpoint() (endpoint, path string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsHTTPEndpoint, c.runtimeMetricsHTTPPath, c.runtimeMetricsInsecure
+}
+
+func (c *Config) RuntimeMetricsGRPCEndpoint() (endpoint string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsGRPCEndpoint, c.runtimeMetricsInsecure
+}
+
+func (c *Config) RuntimeMetricsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.runtimeMetricsHeaders)
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

@@ -37,6 +37,8 @@ env:
   # builds.
   OTELC_MODULES: >-
     otelc/all
+    contrib/99designs/gqlgen
+    contrib/99designs/gqlgen/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -47,6 +49,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
+    contrib/google.golang.org/grpc
+    contrib/google.golang.org/grpc/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -58,6 +62,8 @@ env:
     chi
     chi.v5
     redigo
+    grpc
+    99designs.gqlgen
 
 jobs:
   go-versions-matrix:

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -75,7 +77,9 @@ func TestForceFlush(t *testing.T) {
 
 func setMetricsExportEnv(t *testing.T) {
 	t.Helper()
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	internalconfig.CreateNew()
 
 }
 
@@ -163,6 +167,7 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 		t.Run(protocol, func(t *testing.T) {
 			setMetricsExportEnv(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
+			internalconfig.CreateNew()
 
 			mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 			require.NoError(t, err)
