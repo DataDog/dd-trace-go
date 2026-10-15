@@ -251,13 +251,16 @@ type Config struct {
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
 	otlpMetricsProtocol string
 
-	// OTel runtime metrics exporter transport settings, resolved from the environment only.
-	runtimeMetricsProtocol     string
-	runtimeMetricsHTTPEndpoint string
-	runtimeMetricsHTTPPath     string
-	runtimeMetricsGRPCEndpoint string
-	runtimeMetricsInsecure     bool
-	runtimeMetricsHeaders      map[string]string
+	// OTel runtime metrics exporter and reader settings, resolved from the environment only.
+	runtimeMetricsProtocol       string
+	runtimeMetricsHTTPEndpoint   string
+	runtimeMetricsHTTPPath       string
+	runtimeMetricsGRPCEndpoint   string
+	runtimeMetricsInsecure       bool
+	runtimeMetricsHeaders        map[string]string
+	runtimeMetricsExportInterval time.Duration
+	runtimeMetricsExportTimeout  time.Duration
+	runtimeMetricsTemporality    string
 
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
@@ -531,6 +534,11 @@ func loadConfig() *Config {
 		cfg.agentURL,
 	)
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
+	cfg.runtimeMetricsExportInterval = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_INTERVAL", int(defaultRuntimeMetricsExportInterval.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
+	cfg.runtimeMetricsExportTimeout = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_TIMEOUT", int(defaultRuntimeMetricsExportTimeout.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
+	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
+		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
+	})))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1974,6 +1982,24 @@ func (c *Config) RuntimeMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.runtimeMetricsHeaders)
+}
+
+func (c *Config) RuntimeMetricsExportInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportInterval
+}
+
+func (c *Config) RuntimeMetricsExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportTimeout
+}
+
+func (c *Config) RuntimeMetricsTemporalityPreference() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsTemporality
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

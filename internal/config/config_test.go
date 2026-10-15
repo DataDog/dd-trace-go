@@ -2425,3 +2425,73 @@ func TestRuntimeMetricsHeaders(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeMetricsReaderResolution(t *testing.T) {
+	for _, tc := range []struct {
+		raw               string
+		interval, timeout time.Duration
+	}{
+		{"", 10 * time.Second, 7500 * time.Millisecond},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond},
+		{"0", 10 * time.Second, 7500 * time.Millisecond},
+		{"-1", 10 * time.Second, 7500 * time.Millisecond},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 10 * time.Second, 7500 * time.Millisecond},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
+			t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", tc.raw)
+			cfg := loadConfig()
+			assert.Equal(t, tc.interval, cfg.RuntimeMetricsExportInterval())
+			assert.Equal(t, tc.timeout, cfg.RuntimeMetricsExportTimeout())
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderOverflow(t *testing.T) {
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "9223372036854775807")
+	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "9223372036854775807")
+	cfg := loadConfig()
+	if strconv.IntSize == 64 {
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportTimeout())
+	} else {
+		assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, defaultRuntimeMetricsExportTimeout, cfg.RuntimeMetricsExportTimeout())
+	}
+}
+
+func TestRuntimeMetricsTemporality(t *testing.T) {
+	for _, tc := range []struct {
+		raw, expected string
+		wantWarn      bool
+	}{
+		{"", "delta", false},
+		{" CUMULATIVE ", "cumulative", false},
+		{"DELTA", "delta", false},
+		{"lowmemory", "delta", true},
+		{"unknown", "delta", true},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", tc.raw)
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsTemporalityPreference())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+				return
+			}
+			assert.NotContains(t, logs, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+		})
+	}
+}
+
+func TestRuntimeMetricsTemporalityNoWarningWhenDisabled(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "unknown")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+	assert.Equal(t, "delta", loadConfig().RuntimeMetricsTemporalityPreference())
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+}

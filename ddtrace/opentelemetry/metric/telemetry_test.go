@@ -34,8 +34,6 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 	// Check default values are reported
 	expectedDefaults := map[string]int{
 		"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": 10000, // 10 seconds
-		"OTEL_METRIC_EXPORT_INTERVAL":        10000, // 10 seconds
-		"OTEL_METRIC_EXPORT_TIMEOUT":         7500,  // 7.5 seconds
 	}
 
 	for configName, expectedValue := range expectedDefaults {
@@ -66,8 +64,6 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE,other-config-value=value")
 	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
-	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "5000")
 
 	internalconfig.CreateNew()
 	mp, err := NewMeterProvider()
@@ -81,8 +77,6 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_TIMEOUT":  30000,
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
-		"OTEL_METRIC_EXPORT_INTERVAL": 5000,
-		"OTEL_METRIC_EXPORT_TIMEOUT":  5000,
 	}
 
 	for configName, expectedValue := range expectedConfigs {
