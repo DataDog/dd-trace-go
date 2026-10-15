@@ -461,8 +461,8 @@ func loadConfig() *Config {
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, func(v int) bool { return v > 0 })
-	cfg.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
-	cfg.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
+	cfg.blrpScheduleDelay = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
+	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {

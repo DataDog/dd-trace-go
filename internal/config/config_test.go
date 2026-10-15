@@ -2334,6 +2334,42 @@ func TestResolveBLRPMaxQueueSize(t *testing.T) {
 	})
 }
 
+func TestResolveBLRPScheduleDelay(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: time.Second},
+		{value: "invalid", expected: time.Second},
+		{value: "0", expected: time.Second},
+		{value: "-100", expected: time.Second},
+		{value: "500", expected: 500 * time.Millisecond},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPScheduleDelay())
+		})
+	}
+}
+
+func TestResolveBLRPExportTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: 30 * time.Second},
+		{value: "invalid", expected: 30 * time.Second},
+		{value: "0", expected: 30 * time.Second},
+		{value: "-100", expected: 30 * time.Second},
+		{value: "15000", expected: 15 * time.Second},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPExportTimeout())
+		})
+	}
+}
+
 func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 	t.Run("falls back to default on zero", func(t *testing.T) {
 		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
