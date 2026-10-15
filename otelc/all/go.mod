@@ -110,3 +110,11 @@ replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../contrib/gomodule/redigo/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo
+
+require (
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.12.0-rc.2
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.12.0-rc.2 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
+)
