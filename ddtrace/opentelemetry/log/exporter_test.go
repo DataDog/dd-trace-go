@@ -6,16 +6,28 @@
 package log
 
 import (
+	"context"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestResolveOTLPProtocol(t *testing.T) {
-	t.Run("defaults to http/json", func(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		t.Setenv(envOTLPProtocol, "")
+		t.Setenv(envOTLPLogsProtocol, "")
 		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
+		assert.Equal(t, "http/protobuf", protocol)
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
@@ -37,17 +49,43 @@ func TestResolveOTLPProtocol(t *testing.T) {
 		assert.Equal(t, "grpc", protocol)
 	})
 
-	t.Run("supports http/json", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-		protocol := resolveOTLPProtocol()
-		assert.Equal(t, "http/json", protocol)
-	})
-
 	t.Run("supports http/protobuf", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
 		protocol := resolveOTLPProtocol()
 		assert.Equal(t, "http/protobuf", protocol)
 	})
+}
+
+func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
+	t.Setenv(envOTLPLogsProtocol, "http/json")
+	assert.Equal(t, "http/json", resolveOTLPProtocol(), "preserve the configured protocol so the exporter can warn")
+	logger := new(internallog.RecordLogger)
+	defer internallog.UseLogger(logger)()
+	previousLevel := internallog.GetLevel()
+	internallog.SetLevel(internallog.LevelWarn)
+	defer internallog.SetLevel(previousLevel)
+
+	recorder := &telemetrytest.RecordClient{}
+	defer telemetry.MockClient(recorder)()
+
+	ctx := context.Background()
+	exporter, err := newOTLPExporter(ctx, nil, nil)
+	require.NoError(t, err)
+	defer exporter.Shutdown(ctx)
+
+	wrapped := exporter.(*telemetryExporter)
+	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
+	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
+
+	wrapped.telemetry.RecordLogRecords(1)
+	key := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceTracers,
+		Name:      "otel.log_records",
+		Tags:      "encoding:protobuf,protocol:http",
+		Kind:      "count",
+	}
+	require.Contains(t, recorder.Metrics, key)
+	assert.Equal(t, float64(1), recorder.Metrics[key].Get())
 }
 
 func TestHasOTLPEndpointInEnv(t *testing.T) {
@@ -67,7 +105,9 @@ func TestHasOTLPEndpointInEnv(t *testing.T) {
 }
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
 	t.Run("defaults to localhost:4318", func(t *testing.T) {
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "localhost:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -76,6 +116,7 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 
 	t.Run("uses DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent.example.com")
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "agent.example.com:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -84,6 +125,7 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 
 	t.Run("uses DD_TRACE_AGENT_URL", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "trace-agent:4318", endpoint)
 		assert.Equal(t, "/v1/logs", path)
@@ -93,31 +135,62 @@ func TestResolveOTLPEndpointHTTP(t *testing.T) {
 	t.Run("DD_TRACE_AGENT_URL wins over DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent-host")
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, _, _ := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "trace-agent:4318", endpoint)
 	})
 
 	t.Run("preserves https scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "https://secure-agent:8126")
+		config.CreateNew()
 		_, _, insecure := resolveOTLPEndpointHTTP()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
 
 	t.Run("handles unix socket scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+		config.CreateNew()
 		_, _, insecure := resolveOTLPEndpointHTTP()
 		assert.True(t, insecure, "unix scheme should result in insecure=true")
 	})
 
 	t.Run("handles IPv6 addresses", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://[::1]:8126")
+		config.CreateNew()
 		endpoint, _, _ := resolveOTLPEndpointHTTP()
 		assert.Equal(t, "[::1]:4318", endpoint)
+	})
+
+	t.Run("unix socket falls back to DD_AGENT_HOST", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+		t.Setenv("DD_AGENT_HOST", "agent-host")
+		config.CreateNew()
+		endpoint, _, insecure := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "agent-host:4318", endpoint)
+		assert.True(t, insecure)
+	})
+
+	t.Run("ignores DD_TRACE_AGENT_URL with unsupported scheme", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "tcp://trace-agent:8126")
+		t.Setenv("DD_AGENT_HOST", "agent-host")
+		config.CreateNew()
+		endpoint, _, _ := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "agent-host:4318", endpoint)
+	})
+
+	t.Run("uses programmatic agent URL", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew().SetAgentURL(&url.URL{Scheme: "https", Host: "code-agent:8126"}, telemetry.OriginCode)
+		endpoint, _, insecure := resolveOTLPEndpointHTTP()
+		assert.Equal(t, "code-agent:4318", endpoint)
+		assert.False(t, insecure)
 	})
 }
 
 func TestResolveOTLPEndpointGRPC(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
 	t.Run("defaults to localhost:4317", func(t *testing.T) {
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "localhost:4317", endpoint)
 		assert.True(t, insecure)
@@ -125,6 +198,7 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 
 	t.Run("uses DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent.example.com")
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "agent.example.com:4317", endpoint)
 		assert.True(t, insecure)
@@ -132,6 +206,7 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 
 	t.Run("uses DD_TRACE_AGENT_URL", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "trace-agent:4317", endpoint)
 		assert.True(t, insecure)
@@ -140,12 +215,14 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	t.Run("DD_TRACE_AGENT_URL wins over DD_AGENT_HOST", func(t *testing.T) {
 		t.Setenv("DD_AGENT_HOST", "agent-host")
 		t.Setenv("DD_TRACE_AGENT_URL", "http://trace-agent:8126")
+		config.CreateNew()
 		endpoint, _ := resolveOTLPEndpointGRPC()
 		assert.Equal(t, "trace-agent:4317", endpoint)
 	})
 
 	t.Run("preserves https scheme", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "https://secure-agent:8126")
+		config.CreateNew()
 		_, insecure := resolveOTLPEndpointGRPC()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
@@ -235,10 +312,37 @@ func TestParseHeaders(t *testing.T) {
 	})
 }
 
+func TestResolveHeadersPercentEncodedValues(t *testing.T) {
+	for _, key := range []string{envOTLPHeaders, envOTLPLogsHeaders} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(envOTLPHeaders, "")
+			t.Setenv(envOTLPLogsHeaders, "")
+			t.Setenv(key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			assert.Equal(t, map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}, resolveHeaders())
+		})
+	}
+
+	t.Run("signal overrides generic", func(t *testing.T) {
+		t.Setenv(envOTLPHeaders, "api-key=generic%20value,generic-only=kept")
+		t.Setenv(envOTLPLogsHeaders, "api-key=logs%20value")
+		assert.Equal(t, map[string]string{"api-key": "logs value"}, resolveHeaders())
+	})
+}
+
 func TestResolveExportTimeout(t *testing.T) {
-	t.Run("defaults to 30 seconds", func(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
+		assert.Equal(t, 10*time.Second, timeout)
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_TIMEOUT", func(t *testing.T) {
@@ -249,15 +353,15 @@ func TestResolveExportTimeout(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT wins over generic", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 10*time.Second, timeout)
+		assert.Equal(t, 8*time.Second, timeout)
 	})
 
 	t.Run("falls back to default on invalid value", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "invalid")
 		timeout := resolveExportTimeout()
-		assert.Equal(t, 30*time.Second, timeout)
+		assert.Equal(t, 10*time.Second, timeout)
 	})
 }
 

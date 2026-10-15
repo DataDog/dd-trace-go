@@ -711,7 +711,7 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 	})
 }
 
-func TestOTLPHeaders(t *testing.T) {
+func TestOTLPTraceHeaders(t *testing.T) {
 	t.Run("always populated with at least Content-Type", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -719,7 +719,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		require.NotNil(t, headers)
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 		assert.Len(t, headers, 1)
@@ -734,7 +734,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "secret", headers["api-key"])
 		assert.Equal(t, "value", headers["x-custom"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
@@ -749,25 +749,47 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "generic-key", headers["api-key"])
 		assert.Equal(t, "acme", headers["x-tenant"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 	})
 
-	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS take precedence over generic headers", func(t *testing.T) {
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS replace generic headers", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
-		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-key")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
-		assert.Equal(t, "traces-key", headers["api-key"])
-		assert.Equal(t, "acme", headers["x-tenant"])
+		assert.Equal(t, map[string]string{
+			"authorization": "signal",
+			"Content-Type":  OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+	})
+
+	t.Run("generic headers used when OTEL_EXPORTER_OTLP_TRACES_HEADERS has no usable entry", func(t *testing.T) {
+		for _, tracesHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(tracesHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", tracesHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+					"Content-Type":  OTLPContentTypeHeader,
+				}, cfg.OTLPTraceHeaders())
+			})
+		}
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
@@ -783,7 +805,7 @@ func TestOTLPHeaders(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		// The value is still resolved and parsed for export use.
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
 
 		// But it must not be reported in configuration telemetry, and no reported
@@ -798,6 +820,60 @@ func TestOTLPHeaders(t *testing.T) {
 		}
 	})
 
+}
+
+func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		key     string
+		headers func(*Config) map[string]string
+		traces  bool
+	}{
+		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalState()
+			t.Cleanup(resetGlobalState)
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+
+			want := map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}
+			if tt.traces {
+				want["Content-Type"] = OTLPContentTypeHeader
+			}
+			assert.Equal(t, want, tt.headers(Get()))
+		})
+	}
+
+	t.Run("signal replaces generic", func(t *testing.T) {
+		resetGlobalState()
+		t.Cleanup(resetGlobalState)
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=dropped%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=trace%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metric%20value")
+		cfg := Get()
+		assert.Equal(t, map[string]string{
+			"api-key":      "trace value",
+			"Content-Type": OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+		assert.Equal(t, map[string]string{
+			"api-key": "metric value",
+		}, cfg.OTLPMetricsHeaders())
+	})
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -1273,19 +1349,49 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
 	})
 
-	t.Run("signal-specific headers take precedence over generic", func(t *testing.T) {
+	t.Run("signal-specific headers replace generic headers", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=shared")
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metrics-key")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "authorization=signal")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		h := cfg.OTLPMetricsHeaders()
-		assert.Equal(t, "metrics-key", h["api-key"])
-		assert.Equal(t, "shared", h["x-tenant"])
+		assert.Equal(t, map[string]string{"authorization": "signal"}, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("generic headers used when signal-specific headers have no usable entry", func(t *testing.T) {
+		for _, metricsHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(metricsHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", metricsHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+				}, cfg.OTLPMetricsHeaders())
+			})
+		}
+	})
+
+	t.Run("not affected by trace headers sharing the generic fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=generic")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, map[string]string{"authorization": "generic"}, cfg.OTLPMetricsHeaders())
 	})
 }
 

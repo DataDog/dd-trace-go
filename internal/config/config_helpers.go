@@ -397,9 +397,8 @@ func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpTracesPath).String()
 }
 
-// buildOTLPHeaders builds the OTLP headers map from the provided map.
-// It adds the Content-Type header if not present.
-func buildOTLPHeaders(headers map[string]string) map[string]string {
+// buildOTLPTraceHeaders sets the Content-Type required for OTLP trace export.
+func buildOTLPTraceHeaders(headers map[string]string) map[string]string {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
@@ -495,15 +494,30 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
-func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
-		return nil
+// decodeOTLPHeaders decodes values after splitting header entries so escaped separators
+// stay in the value. PathUnescape preserves literal '+' characters.
+func decodeOTLPHeaders(headers map[string]string) map[string]string {
+	for key, value := range headers {
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			delete(headers, key)
+			continue
+		}
+		headers[key] = decoded
 	}
-	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
-	maps.Copy(merged, genericHeaders)
-	maps.Copy(merged, signalHeaders)
-	return merged
+	return headers
+}
+
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// or of the generic headers when the signal-specific ones are empty.
+func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(signalHeaders) > 0 {
+		return maps.Clone(signalHeaders)
+	}
+	if len(genericHeaders) > 0 {
+		return maps.Clone(genericHeaders)
+	}
+	return nil
 }
 
 // resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and

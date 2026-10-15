@@ -66,6 +66,12 @@ jobs:
           PATTERN: '(system-tests.yml@)(\S+)(\s+# Automated:.*)'
           REF: ${{ steps.system-test-ref.outputs.commit }}
 
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/system-tests.yml"
+          PATTERN: '(\s+ref:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
       - run: git diff --color=always
 
       - name: Get GitHub Token via dd-octo-sts
