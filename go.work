@@ -4,6 +4,7 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/99designs/gqlgen/otelc
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
@@ -43,6 +44,7 @@ use (
 	./contrib/google.golang.org/api
 	./contrib/google.golang.org/api/internal/gen_endpoints
 	./contrib/google.golang.org/grpc
+	./contrib/google.golang.org/grpc/otelc
 	./contrib/gorilla/mux
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
