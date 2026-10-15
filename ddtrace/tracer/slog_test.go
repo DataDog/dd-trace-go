@@ -73,3 +73,21 @@ func Test_slogHandlerThreshold(t *testing.T) {
 	require.Len(t, rl.Logs(), 1)
 	require.Contains(t, rl.Logs()[0], "WARN: warn test")
 }
+
+func Test_slogHandlerCustomLevels(t *testing.T) {
+	rl := &log.RecordLogger{}
+	defer log.UseLogger(rl)()
+	oldLevel := log.GetLevel()
+	log.SetLevel(log.LevelInfo)
+	defer log.SetLevel(oldLevel)
+
+	l := slog.New(slogHandler{})
+	ctx := t.Context()
+	l.Log(ctx, slog.LevelInfo+1, "between info and warn")
+	l.Log(ctx, slog.LevelError+4, "above error")
+	log.Flush() // needed to get the error log flushed
+
+	require.Len(t, rl.Logs(), 2)
+	require.Contains(t, rl.Logs()[0], "WARN: between info and warn")
+	require.Contains(t, rl.Logs()[1], "ERROR: above error")
+}

@@ -67,14 +67,15 @@ func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
 	})
 
 	extra := strings.Join(parts, " ")
-	switch r.Level {
-	case slog.LevelDebug:
+	// Match the ranges in Enabled, so custom levels are not dropped.
+	switch {
+	case r.Level <= slog.LevelDebug:
 		log.Debug("%s %s", r.Message, extra)
-	case slog.LevelInfo:
+	case r.Level <= slog.LevelInfo:
 		log.Info("%s %s", r.Message, extra)
-	case slog.LevelWarn:
+	case r.Level <= slog.LevelWarn:
 		log.Warn("%s %s", r.Message, extra)
-	case slog.LevelError:
+	default:
 		log.Error("%s %s", r.Message, extra)
 	}
 	return nil
