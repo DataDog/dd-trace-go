@@ -7,11 +7,13 @@ package tracer
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -107,6 +109,15 @@ type startupInfo struct {
 
 	OTelMetricExportInterval         int64  `json:"OTEL_METRIC_EXPORT_INTERVAL,omitempty"`                       // MeterProvider export interval, in milliseconds
 	OTLPMetricsTemporalityPreference string `json:"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE,omitempty"` // MeterProvider temporality preference
+
+	OTelLogsExporter       string            `json:"OTEL_LOGS_EXPORTER,omitempty"`               // "otlp", the only logs exporter, when DD_LOGS_OTEL_ENABLED is set
+	OTLPLogsEndpoint       string            `json:"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,omitempty"` // Sanitized OTLP logs URL
+	OTLPLogsProtocol       string            `json:"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL,omitempty"` // OTLP logs transport
+	OTLPLogsHeaders        map[string]string `json:"OTEL_EXPORTER_OTLP_LOGS_HEADERS,omitzero"`   // OTLP logs header names, values redacted
+	BLRPScheduleDelay      int64             `json:"OTEL_BLRP_SCHEDULE_DELAY,omitempty"`         // Logs batch processor export interval, in milliseconds
+	BLRPExportTimeout      int64             `json:"OTEL_BLRP_EXPORT_TIMEOUT,omitempty"`         // Logs batch processor export timeout, in milliseconds
+	BLRPMaxQueueSize       int               `json:"OTEL_BLRP_MAX_QUEUE_SIZE,omitempty"`         // Logs batch processor queue size
+	BLRPMaxExportBatchSize int               `json:"OTEL_BLRP_MAX_EXPORT_BATCH_SIZE,omitempty"`  // Logs batch processor export batch size
 
 	OTelLogLevel           string            `json:"OTEL_LOG_LEVEL,omitempty"`           // Minimum level of the tracer logger
 	OTelServiceName        string            `json:"OTEL_SERVICE_NAME,omitempty"`        // Finalized service name
@@ -304,6 +315,18 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 		info.OTelMetricExportInterval = cfg.RuntimeMetricsExportInterval().Milliseconds()
 		info.OTLPMetricsTemporalityPreference = cfg.RuntimeMetricsTemporalityPreference()
 	}
+	// The tracer does not start the OTel logs pipeline: these describe the
+	// configuration ddtrace/opentelemetry/log uses once started.
+	if cfg.LogsOTelEnabled() {
+		info.OTelLogsExporter = "otlp"
+		info.OTLPLogsEndpoint, info.OTLPLogsProtocol = otlpLogsEndpoint(cfg)
+		info.OTLPLogsHeaders = redactOTLPHeaders(cfg.OTLPLogsHeaders())
+		info.BLRPScheduleDelay = cfg.BLRPScheduleDelay().Milliseconds()
+		info.BLRPExportTimeout = cfg.BLRPExportTimeout().Milliseconds()
+		info.BLRPMaxQueueSize = cfg.BLRPMaxQueueSize()
+		// The batch processor caps the export batch size at the queue size.
+		info.BLRPMaxExportBatchSize = min(cfg.BLRPMaxExportBatchSize(), info.BLRPMaxQueueSize)
+	}
 
 	// The logger only filters debug messages; info and above are always emitted.
 	info.OTelLogLevel = "info"
@@ -459,6 +482,49 @@ func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 		protocol: "http/protobuf",
 		headers:  cfg.RuntimeMetricsHeaders(),
 	}
+}
+
+// otlpLogsEndpoint returns the sanitized endpoint and the protocol of the OTLP
+// logs exporter, resolved the way ddtrace/opentelemetry/log resolves them. The
+// endpoint is "" when the exporter would derive it from DD_AGENT_HOST because
+// the agent URL has no host, as with a Unix socket.
+func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
+	grpc := cfg.OTLPLogsProtocol() == "grpc"
+	protocol, port, path := "http/protobuf", "4318", "/v1/logs"
+	if grpc {
+		protocol, port, path = "grpc", "4317", ""
+	}
+	raw := cfg.OTLPLogsEndpoint()
+	if raw == "" {
+		agent := cfg.RawAgentURL()
+		if agent == nil || agent.Hostname() == "" {
+			return "", protocol
+		}
+		scheme := "https"
+		if agent.Scheme == "http" || agent.Scheme == "unix" {
+			scheme = "http"
+		}
+		u := url.URL{Scheme: scheme, Host: net.JoinHostPort(agent.Hostname(), port), Path: path}
+		return u.String(), protocol
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", protocol
+	}
+	if grpc {
+		// The gRPC exporter only uses the host, and the scheme for security.
+		scheme := "https"
+		if u.Scheme == "http" || u.Scheme == "grpc" {
+			scheme = "http"
+		}
+		return sanitizeOTLPEndpoint(scheme + "://" + cmp.Or(u.Host, u.Path)), protocol
+	}
+	// The HTTP exporter appends /v1/logs unless the path already ends with it.
+	u.Path = strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(u.Path, path) {
+		u.Path += path
+	}
+	return sanitizeOTLPEndpoint(u.String()), protocol
 }
 
 // redactOTLPHeaders returns headers with every value redacted. It never

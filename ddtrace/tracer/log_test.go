@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"testing"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -26,6 +27,8 @@ const otelStartupFieldsRegexp = `(,"(?:OTEL_ENABLED|DD_METRICS_OTEL_ENABLED|DD_L
 	`OTEL_TRACES_EXPORTER|OTEL_EXPORTER_OTLP_TRACES_ENDPOINT|OTEL_EXPORTER_OTLP_TRACES_PROTOCOL|OTEL_EXPORTER_OTLP_TRACES_HEADERS|` +
 	`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT|OTEL_EXPORTER_OTLP_METRICS_PROTOCOL|OTEL_EXPORTER_OTLP_METRICS_HEADERS|` +
 	`OTEL_METRIC_EXPORT_INTERVAL|OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE|` +
+	`OTEL_LOGS_EXPORTER|OTEL_EXPORTER_OTLP_LOGS_ENDPOINT|OTEL_EXPORTER_OTLP_LOGS_PROTOCOL|OTEL_EXPORTER_OTLP_LOGS_HEADERS|` +
+	`OTEL_BLRP_SCHEDULE_DELAY|OTEL_BLRP_EXPORT_TIMEOUT|OTEL_BLRP_MAX_QUEUE_SIZE|OTEL_BLRP_MAX_EXPORT_BATCH_SIZE|` +
 	`OTEL_LOG_LEVEL|OTEL_SERVICE_NAME|OTEL_RESOURCE_ATTRIBUTES|OTEL_PROPAGATORS|OTEL_TRACES_SAMPLER|OTEL_TRACES_SAMPLER_ARG)":` +
 	`(?:"[^"]*"|true|false|[0-9]+|\{[^}]*\}))*`
 
@@ -326,6 +329,30 @@ func TestCommonOTLPExporterInfo(t *testing.T) {
 		assert.Equal(t, tc.endpoint, endpoint, tc.name)
 		assert.Equal(t, tc.protocol, protocol, tc.name)
 		assert.Equal(t, tc.headers, headers, tc.name)
+	}
+}
+
+func TestOTLPLogsEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		env                map[string]string
+		endpoint, protocol string
+	}{
+		{"agent", map[string]string{"DD_AGENT_HOST": "agent"}, "http://agent:4318/v1/logs", "http/protobuf"},
+		{"agent grpc", map[string]string{"DD_AGENT_HOST": "agent", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"}, "http://agent:4317", "grpc"},
+		{"generic", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/"}, "http://collector:4318/v1/logs", "http/protobuf"},
+		{"signal", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://u:p@collector/v1/logs?k=v"}, "https://collector/v1/logs", "http/protobuf"},
+		{"signal grpc", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
+		{"unix agent", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket"}, "", "http/protobuf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			endpoint, protocol := otlpLogsEndpoint(internalconfig.CreateNew())
+			assert.Equal(t, tc.endpoint, endpoint)
+			assert.Equal(t, tc.protocol, protocol)
+		})
 	}
 }
 
