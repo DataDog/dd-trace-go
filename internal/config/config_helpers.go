@@ -529,8 +529,6 @@ func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	return false
 }
 
-// resolveOTLPMetricsFlushInterval parses _DD_TRACE_STATS_INTERVAL (milliseconds).
-// The variable is internal and intended for tests only; in production it returns the default 10 s.
 // resolveOTelSignalEnabled returns whether an OTel SDK signal is enabled.
 // OTEL_SDK_DISABLED disables every OTel SDK signal, so unlike other OTEL_*
 // mappings it overrides an explicit DD opt-in.
@@ -543,6 +541,8 @@ func resolveOTelSignalEnabled(key string, enabled, sdkDisabled bool) bool {
 	return false
 }
 
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_STATS_INTERVAL (milliseconds).
+// The variable is internal and intended for tests only; in production it returns the default 10 s.
 func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	if raw == "" {
 		return OTLPMetricsFlushInterval

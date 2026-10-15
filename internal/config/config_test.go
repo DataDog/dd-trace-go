@@ -950,6 +950,19 @@ func TestOTelSDKDisabled(t *testing.T) {
 		assert.True(t, cfg.LogsOTelEnabled())
 		assert.True(t, cfg.RuntimeMetricsOtelEnabled())
 	})
+
+	t.Run("invalid value falls back to false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "maybe")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTelSDKDisabled())
+		assert.True(t, cfg.TracingEnabled())
+	})
 }
 
 func TestOTLPExportMode(t *testing.T) {

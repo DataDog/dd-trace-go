@@ -131,6 +131,29 @@ func TestMetricsDisabledByOtelSDKDisabled(t *testing.T) {
 	assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_SDK_DISABLED=true")
 }
 
+// TestInstallGlobalSkippedWhenOtelSDKDisabled verifies that installGlobal installs nothing
+// when OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true.
+func TestInstallGlobalSkippedWhenOtelSDKDisabled(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() {
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		internalconfig.CreateNew()
+	})
+	// Start from a clean state so installGlobal doesn't return early because a
+	// provider is already installed.
+	installedProvider = nil
+	otel.SetMeterProvider(noop.NewMeterProvider())
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_SDK_DISABLED", "true")
+	internalconfig.CreateNew()
+
+	require.NoError(t, installGlobal())
+	assert.Nil(t, installedProvider)
+	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+	assert.False(t, ok, "no SDK MeterProvider should be installed when OTEL_SDK_DISABLED=true")
+}
+
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
 // with both gRPC and HTTP exporters and instruments work correctly.
 func TestMeterProviderExporterProtocols(t *testing.T) {
