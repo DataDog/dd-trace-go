@@ -103,6 +103,7 @@ jobs:
           sparse-checkout: |-
             /app/go/**
             /tracing-libs/go/**
+            /scripts/go-retry.sh
           sparse-checkout-cone-mode: false
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -194,6 +195,13 @@ jobs:
           set -euo pipefail
           source "${GITHUB_WORKSPACE}/dd-trace-go/.github/workflows/apps/go-retry.sh"
           bench="${GITHUB_WORKSPACE}/benchmarks"
+          # build.sh calls `go-retry` from PATH. The fibonacci Dockerfile
+          # installs scripts/go-retry.sh as /usr/local/bin/go-retry, and this
+          # step does the same.
+          retry_bin="${RUNNER_TEMP}/go-retry-bin"
+          install -D -m 0755 \
+            "${bench}/scripts/go-retry.sh" "${retry_bin}/go-retry"
+          export PATH="${retry_bin}:${PATH}"
           work="${RUNNER_TEMP}/fibonacci"
           mkdir -p "${work}"
           cd "${work}"
