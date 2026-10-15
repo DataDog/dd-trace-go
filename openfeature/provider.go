@@ -135,7 +135,6 @@ type DatadogProvider struct {
 // creating the provider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	cfg := internalconfig.Get()
-	enableDebugLogging(cfg)
 	settings := internalffe.ResolveSettings(cfg)
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
@@ -151,15 +150,6 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	default:
 		logOnboarding("feature flagging is disabled; flag evaluations will return their default values")
 		return &openfeature.NoopProvider{}, nil
-	}
-}
-
-// enableDebugLogging honors DD_TRACE_DEBUG for applications that create the
-// provider without calling tracer.Start, which is otherwise the only place it
-// raises the log level. It never lowers a level the tracer already set.
-func enableDebugLogging(cfg *internalconfig.Config) {
-	if cfg.Debug() && !log.DebugEnabled() {
-		log.SetLevel(log.LevelDebug)
 	}
 }
 

@@ -409,7 +409,7 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
 
-	t.Run("DD_TRACE_DEBUG enables debug logging without tracer.Start", func(t *testing.T) {
+	t.Run("DD_TRACE_DEBUG does not change the shared log level during provider construction", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelWarn)
 		t.Setenv("DD_TRACE_DEBUG", "true")
 		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "offline")
@@ -417,12 +417,13 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 		_, err := NewDatadogProvider(ProviderConfig{})
 		require.NoError(t, err)
 
-		assert.True(t, log.DebugEnabled())
-		logger.assertContains(t, "openfeature: feature flagging is disabled; flag evaluations will return their default values")
+		assert.False(t, log.DebugEnabled())
+		assert.Empty(t, logger.all())
 	})
 
 	t.Run("without DD_TRACE_DEBUG the level is left alone", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelWarn)
+		t.Setenv("DD_TRACE_DEBUG", "false")
 		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "offline")
 
 		_, err := NewDatadogProvider(ProviderConfig{})
