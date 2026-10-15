@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -208,14 +210,14 @@ func TestEvaluationTelemetryOptOutConfigurationSnapshot(t *testing.T) {
 	for _, code := range []bool{false, true} {
 		for _, initial := range []bool{false, true} {
 			t.Run(fmt.Sprintf("code=%t/initial=%t", code, initial), func(t *testing.T) {
-				t.Setenv(key, fmt.Sprintf("%t", initial))
+				t.Setenv(key, strconv.FormatBool(initial))
 				option := new(initial)
 				config := ProviderConfig{}
 				if code {
 					config.EnableEvaluationTelemetryOptOutParameter = option
 				}
 				h := newOptOutHarness(t, config)
-				t.Setenv(key, fmt.Sprintf("%t", !initial))
+				t.Setenv(key, strconv.FormatBool(!initial))
 				*option = !initial
 				internalconfig.CreateNew()
 				h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
@@ -255,9 +257,7 @@ func TestEvaluationTelemetryOptOutStrictBoolean(t *testing.T) {
 				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 				h.provider.configuration.ObserveFullEvaluationData = full
 				attrs := map[string]any{"test": "context"}
-				for key, value := range tc.attrs {
-					attrs[key] = value
-				}
+				maps.Copy(attrs, tc.attrs)
 				h.evaluate(t, "subject", attrs)
 				h.assertCounts(t, tc.want, 1, 1)
 				if tc.want > 0 {
