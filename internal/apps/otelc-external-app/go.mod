@@ -123,3 +123,12 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 )
+
+require (
+	github.com/99designs/gqlgen v0.17.92 // indirect
+	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.12.0-rc.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.12.0-rc.2 // indirect
+	github.com/sosodev/duration v1.4.0 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.35 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+)

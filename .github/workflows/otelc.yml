@@ -37,6 +37,8 @@ env:
   # builds.
   OTELC_MODULES: >-
     otelc/all
+    contrib/99designs/gqlgen
+    contrib/99designs/gqlgen/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -61,6 +63,7 @@ env:
     chi.v5
     redigo
     grpc
+    99designs.gqlgen
 
 jobs:
   go-versions-matrix:
