@@ -22,7 +22,7 @@ import (
 // Run explicitly until upstream provides evaluation-local hook isolation:
 // go test -tags openfeature_multiprovider_regression -run TestEvaluationTelemetryOptOutMultiProviderNestedRegression -v ./openfeature
 func TestEvaluationTelemetryOptOutMultiProviderNestedRegression(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	hook := optOutTestHook{after: func(_ context.Context, hc of.HookContext) error {
 		if hc.EvaluationContext().TargetingKey() == "outer" {
 			h.evaluate(t, "inner", map[string]any{optOutTestParameter: false})

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
@@ -136,10 +138,96 @@ func (h *optOutHarness) assertCounts(t *testing.T, evaluations, exposures, spans
 }
 
 func TestEvaluationTelemetryOptOut(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	details := h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
 	assert.Equal(t, of.StaticReason, details.Reason)
 	h.assertCounts(t, 0, 1, 1)
+}
+
+func TestEvaluationTelemetryOptOutEnvironment(t *testing.T) {
+	const key = "DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED"
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+	for _, env := range []struct {
+		name  string
+		value *string
+	}{
+		{"unset", nil},
+		{"empty", new("")},
+		{"true", new("true")},
+		{"false", new("false")},
+		{"invalid", new("invalid")},
+	} {
+		for _, option := range []struct {
+			name  string
+			value *bool
+		}{
+			{"inherit", nil},
+			{"enable", new(true)},
+			{"disable", new(false)},
+		} {
+			t.Run(env.name+"/"+option.name, func(t *testing.T) {
+				t.Setenv(key, "")
+				if env.value == nil {
+					require.NoError(t, os.Unsetenv(key))
+				} else {
+					t.Setenv(key, *env.value)
+				}
+				enabled := env.value != nil && *env.value == "true"
+				if option.value != nil {
+					enabled = *option.value
+				}
+				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: option.value})
+				optedOut := h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
+				allowed := h.evaluate(t, "allowed", map[string]any{optOutTestParameter: false})
+				h.evaluate(t, "missing", nil)
+				h.evaluate(t, "string", map[string]any{optOutTestParameter: "true"})
+				assert.Equal(t, optedOut.Value, allowed.Value)
+				assert.Equal(t, optedOut.Variant, allowed.Variant)
+				assert.Equal(t, optedOut.Reason, allowed.Reason)
+				want := 4
+				if enabled {
+					want = 3
+				}
+				h.assertCounts(t, want, 4, 4)
+			})
+		}
+	}
+}
+
+func TestEvaluationTelemetryOptOutConfigurationSnapshot(t *testing.T) {
+	const key = "DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED"
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+	for _, code := range []bool{false, true} {
+		for _, initial := range []bool{false, true} {
+			t.Run(fmt.Sprintf("code=%t/initial=%t", code, initial), func(t *testing.T) {
+				t.Setenv(key, fmt.Sprintf("%t", initial))
+				option := new(initial)
+				config := ProviderConfig{}
+				if code {
+					config.EnableEvaluationTelemetryOptOutParameter = option
+				}
+				h := newOptOutHarness(t, config)
+				t.Setenv(key, fmt.Sprintf("%t", !initial))
+				*option = !initial
+				internalconfig.CreateNew()
+				h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
+				h.evaluate(t, "allowed", nil)
+				want := 2
+				if initial {
+					want = 1
+				}
+				h.assertCounts(t, want, 2, 2)
+			})
+		}
+	}
 }
 
 func TestEvaluationTelemetryOptOutStrictBoolean(t *testing.T) {
@@ -164,7 +252,7 @@ func TestEvaluationTelemetryOptOutStrictBoolean(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		for _, tc := range tests {
 			t.Run(fmt.Sprintf("full=%t/%s", full, tc.name), func(t *testing.T) {
-				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 				h.provider.configuration.ObserveFullEvaluationData = full
 				attrs := map[string]any{"test": "context"}
 				for key, value := range tc.attrs {
@@ -190,13 +278,13 @@ func TestEvaluationTelemetryOptOutStrictBoolean(t *testing.T) {
 func TestEvaluationTelemetryOptOutDisabledByDefault(t *testing.T) {
 	config := ProviderConfig{}
 	h := newOptOutHarness(t, config)
-	config.EnableEvaluationTelemetryOptOutParameter = true
+	config.EnableEvaluationTelemetryOptOutParameter = new(true)
 	h.evaluate(t, "subject", map[string]any{optOutTestParameter: true})
 	h.assertCounts(t, 1, 1, 1)
 }
 
 func TestEvaluationTelemetryOptOutPreservesQueuedDataAndDeduplication(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	first := h.evaluate(t, "subject", nil)
 	second := h.evaluate(t, "subject", map[string]any{optOutTestParameter: true})
 	third := h.evaluate(t, "subject", map[string]any{optOutTestParameter: false})
@@ -242,7 +330,7 @@ func (h optOutTestHook) Finally(_ context.Context, hc of.HookContext, _ of.Inter
 }
 
 func TestEvaluationTelemetryOptOutContextPrecedence(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	of.SetEvaluationContext(of.NewEvaluationContext("", map[string]any{optOutTestParameter: true}))
 	t.Cleanup(func() { of.SetEvaluationContext(of.EvaluationContext{}) })
 	h.evaluate(t, "global", nil)
@@ -262,7 +350,7 @@ func TestEvaluationTelemetryOptOutContextPrecedence(t *testing.T) {
 func TestEvaluationTelemetryOptOutBeforeHooks(t *testing.T) {
 	for _, partial := range []bool{false, true} {
 		t.Run(fmt.Sprintf("partial=%t", partial), func(t *testing.T) {
-			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 			var after, finally int
 			h.client.AddHooks(optOutTestHook{
 				before: func(_ context.Context, _ of.HookContext) (*of.EvaluationContext, error) {
@@ -296,7 +384,7 @@ func TestEvaluationTelemetryOptOutBeforeHooks(t *testing.T) {
 func TestEvaluationTelemetryOptOutHookErrors(t *testing.T) {
 	for _, stage := range []string{"before", "after"} {
 		t.Run(stage, func(t *testing.T) {
-			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 			var errorCalls, finallyCalls int
 			hook := optOutTestHook{
 				onError: func(hc of.HookContext) {
@@ -332,7 +420,7 @@ func TestEvaluationTelemetryOptOutHookErrors(t *testing.T) {
 func TestEvaluationTelemetryOptOutNested(t *testing.T) {
 	for _, outerOptOut := range []bool{false, true} {
 		t.Run(fmt.Sprintf("outer=%t", outerOptOut), func(t *testing.T) {
-			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 			h.client.AddHooks(optOutTestHook{after: func(_ context.Context, hc of.HookContext) error {
 				if hc.EvaluationContext().TargetingKey() == "outer" {
 					h.evaluate(t, "inner", map[string]any{optOutTestParameter: !outerOptOut})
@@ -346,7 +434,7 @@ func TestEvaluationTelemetryOptOutNested(t *testing.T) {
 }
 
 func TestEvaluationTelemetryOptOutConcurrent(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	const count = 100
 	var entered, finished sync.WaitGroup
 	entered.Add(count)
@@ -382,7 +470,7 @@ func TestEvaluationTelemetryOptOutConcurrent(t *testing.T) {
 }
 
 func TestEvaluationTelemetryOptOutMultiProvider(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	p, err := multi.NewProvider(multi.StrategyFirstMatch, multi.WithProvider("datadog", h.provider))
 	require.NoError(t, err)
 	t.Cleanup(p.Shutdown)
@@ -395,7 +483,7 @@ func TestEvaluationTelemetryOptOutMultiProvider(t *testing.T) {
 
 func checkOptOutTypedEvaluation[T any](t *testing.T, kind valueType, value, fallback T, evaluate func(*of.Client, context.Context, string, T, of.EvaluationContext, ...of.Option) (of.GenericEvaluationDetails[T], error)) {
 	t.Helper()
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	flag := h.provider.configuration.Flags["experiment"]
 	flag.VariationType = kind
 	flag.Variations["on"].Value = value
@@ -435,7 +523,7 @@ func TestEvaluationTelemetryOptOutErrorsAndDefaults(t *testing.T) {
 	for _, name := range []string{"missing flag", "wrong type", "missing configuration", "cancelled context", "disabled flag", "no allocation"} {
 		for _, optedOut := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/optOut=%t", name, optedOut), func(t *testing.T) {
-				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+				h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 				span := tracer.StartSpan("default-evaluation")
 				ctx := tracer.ContextWithSpan(context.Background(), span)
 				key := "experiment"
@@ -482,7 +570,7 @@ func TestEvaluationTelemetryOptOutErrorsAndDefaults(t *testing.T) {
 func TestEvaluationTelemetryOptOutCallerMutation(t *testing.T) {
 	for _, initial := range []bool{false, true} {
 		t.Run(fmt.Sprintf("initial=%t", initial), func(t *testing.T) {
-			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
+			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 			attrs := map[string]any{optOutTestParameter: initial}
 			ec := of.NewEvaluationContext("subject", attrs)
 			h.client.AddHooks(optOutTestHook{after: func(context.Context, of.HookContext) error {
@@ -504,8 +592,14 @@ func TestEvaluationTelemetryOptOutCallerMutation(t *testing.T) {
 }
 
 func TestEvaluationTelemetryOptOutIndependentProviders(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: true})
-	second := newDatadogProviderWithSourceAndEVP(ProviderConfig{}, internalffe.SourceAgentless, h.provider.exposureWriter.evp)
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+	t.Setenv("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", "true")
+	h := newOptOutHarness(t, ProviderConfig{})
+	second := newDatadogProviderWithSourceAndEVP(ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(false)}, internalffe.SourceAgentless, h.provider.exposureWriter.evp)
 	t.Cleanup(second.Shutdown)
 	second.configuration = h.provider.configuration
 	second.flagEvalMetricsHook.metrics = h.provider.flagEvalMetricsHook.metrics

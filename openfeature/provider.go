@@ -56,8 +56,10 @@ type ProviderConfig struct {
 	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
 	// suppresses evaluation events, evaluation metrics, and automatic span
 	// enrichment. Flag results and experiment exposures are unchanged.
-	// Default: false.
-	EnableEvaluationTelemetryOptOutParameter bool
+	// Nil uses DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED,
+	// which defaults to false. A non-nil value overrides the environment setting.
+	// The provider copies the value at construction.
+	EnableEvaluationTelemetryOptOutParameter *bool
 
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
@@ -240,6 +242,11 @@ func newDatadogProviderWithSourceAndEVP(
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
+	telemetryOptOutEnabled := internalconfig.Get().FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled()
+	if config.EnableEvaluationTelemetryOptOutParameter != nil {
+		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
+	}
+
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
 
@@ -277,13 +284,13 @@ func newDatadogProviderWithSourceAndEVP(
 		hooks = append(hooks, exposureLoggingHook)
 	}
 	if evalMetricsHook != nil {
-		hooks = append(hooks, withEvaluationTelemetryOptOut(evalMetricsHook, config.EnableEvaluationTelemetryOptOutParameter))
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalMetricsHook, telemetryOptOutEnabled))
 	}
 	if evalLoggingHook != nil {
-		hooks = append(hooks, withEvaluationTelemetryOptOut(evalLoggingHook, config.EnableEvaluationTelemetryOptOutParameter))
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalLoggingHook, telemetryOptOutEnabled))
 	}
 	if spanEnrichmentHook != nil {
-		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, config.EnableEvaluationTelemetryOptOutParameter))
+		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, telemetryOptOutEnabled))
 	}
 
 	p := &DatadogProvider{
