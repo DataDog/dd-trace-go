@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -149,11 +148,9 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// Sanitize the URL to handle trailing slashes correctly
-		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, cfg.OTLPLogsEndpointIsGeneric())
-		opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
-		log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
+	if endpointURL := cfg.OTLPLogsHTTPURL(); endpointURL != "" {
+		opts = append(opts, otlploghttp.WithEndpointURL(endpointURL))
+		log.Debug("Using resolved OTLP logs endpoint: %s", endpointURL)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
@@ -214,26 +211,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	opts = append(opts, userOpts...)
 
 	return opts
-}
-
-// sanitizeOTLPEndpoint appends the signal path only to a generic OTLP base URL.
-// Signal-specific URLs retain their path, including a trailing slash.
-// internal/config only returns endpoints that parse.
-func sanitizeOTLPEndpoint(rawURL string, isGeneric bool) string {
-	if isGeneric {
-		u, _ := url.Parse(rawURL)
-		// Append without cleaning path segments that may be significant to the collector.
-		suffix := defaultOTLPLogsPath
-		if strings.HasSuffix(u.EscapedPath(), "/") {
-			suffix = strings.TrimPrefix(suffix, "/")
-		}
-		u.Path += suffix
-		if u.RawPath != "" {
-			u.RawPath += suffix
-		}
-		return u.String()
-	}
-	return rawURL
 }
 
 // resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.

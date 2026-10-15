@@ -98,6 +98,7 @@ const (
 	// OTLP standard traces path and default collector port.
 	otlpTracesPath  = "/v1/traces"
 	otlpMetricsPath = "/v1/metrics"
+	otlpLogsPath    = "/v1/logs"
 	otlpDefaultPort = "4318"
 	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
 	otlpDefaultGRPCPort = "4317"
@@ -383,16 +384,26 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// resolveOTLPTraceURL resolves the OTLP traces endpoint. tracesEndpoint takes
-// precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
-// genericEndpoint, which must already be resolved (see resolveOTLPEndpoint).
-// Both must be empty or valid http(s) URLs.
-func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
-	if tracesEndpoint != "" {
-		return tracesEndpoint
+// resolveOTLPSignalURL uses a signal-specific endpoint as-is, or appends the
+// signal path to the generic endpoint. Both endpoints must already be validated.
+// preservePath keeps the logs exporter's existing handling of generic path segments;
+// traces and span metrics use JoinPath to clean them.
+func resolveOTLPSignalURL(signalEndpoint, genericEndpoint, signalPath string, preservePath bool) string {
+	if signalEndpoint != "" {
+		return signalEndpoint
 	}
-	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	return u.JoinPath(otlpTracesPath).String()
+	u, _ := url.Parse(genericEndpoint)
+	if !preservePath {
+		return u.JoinPath(signalPath).String()
+	}
+	if strings.HasSuffix(u.EscapedPath(), "/") {
+		signalPath = strings.TrimPrefix(signalPath, "/")
+	}
+	u.Path += signalPath
+	if u.RawPath != "" {
+		u.RawPath += signalPath
+	}
+	return u.String()
 }
 
 // buildOTLPTraceHeaders sets the Content-Type required for OTLP trace export.
@@ -474,16 +485,6 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 		}
 	}
 	return "http://" + net.JoinHostPort(host, otlpDefaultPort)
-}
-
-// resolveOTLPMetricsURL uses metricsEndpoint as-is, else appends /v1/metrics to genericEndpoint.
-// Both must be empty or valid http(s) URLs.
-func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
-	if metricsEndpoint != "" {
-		return metricsEndpoint
-	}
-	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	return u.JoinPath(otlpMetricsPath).String()
 }
 
 // getOTLPGenericValues returns every configured value of key, ordered from lowest
