@@ -25,8 +25,9 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 const otelStartupFieldsRegexp = `(,"(?:OTEL_ENABLED|DD_METRICS_OTEL_ENABLED|DD_LOGS_OTEL_ENABLED|DD_TRACE_OTEL_SEMANTICS_ENABLED|` +
 	`OTEL_TRACES_EXPORTER|OTEL_EXPORTER_OTLP_TRACES_ENDPOINT|OTEL_EXPORTER_OTLP_TRACES_PROTOCOL|OTEL_EXPORTER_OTLP_TRACES_HEADERS|` +
 	`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT|OTEL_EXPORTER_OTLP_METRICS_PROTOCOL|OTEL_EXPORTER_OTLP_METRICS_HEADERS|` +
+	`OTEL_METRIC_EXPORT_INTERVAL|OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE|` +
 	`OTEL_LOG_LEVEL|OTEL_SERVICE_NAME|OTEL_RESOURCE_ATTRIBUTES|OTEL_PROPAGATORS|OTEL_TRACES_SAMPLER|OTEL_TRACES_SAMPLER_ARG)":` +
-	`(?:"[^"]*"|true|false|\{[^}]*\}))*`
+	`(?:"[^"]*"|true|false|[0-9]+|\{[^}]*\}))*`
 
 // commonLogIgnore is a list of strings that are commonly ignored by tests
 // involving the output of the logger.
@@ -305,6 +306,29 @@ func TestOTelPropagators(t *testing.T) {
 	}
 }
 
+func TestCommonOTLPExporterInfo(t *testing.T) {
+	a := otlpExporterInfo{"http://agent:4318/v1/metrics", "http/protobuf", map[string]string{"api-key": "a"}}
+	b := otlpExporterInfo{"http://agent:4317", "grpc", map[string]string{"api-key": "b"}}
+	for _, tc := range []struct {
+		name               string
+		exporters          []otlpExporterInfo
+		endpoint, protocol string
+		headers            map[string]string
+	}{
+		{"none", nil, "", "", nil},
+		{"no headers", []otlpExporterInfo{{endpoint: a.endpoint}, {endpoint: a.endpoint}}, a.endpoint, "", map[string]string{}},
+		{"one", []otlpExporterInfo{a}, a.endpoint, a.protocol, map[string]string{"api-key": redactedHeaderValue}},
+		{"same", []otlpExporterInfo{a, a}, a.endpoint, a.protocol, map[string]string{"api-key": redactedHeaderValue}},
+		// Header values are compared before redaction.
+		{"different", []otlpExporterInfo{a, b}, "", "", nil},
+	} {
+		endpoint, protocol, headers := commonOTLPExporterInfo(tc.exporters)
+		assert.Equal(t, tc.endpoint, endpoint, tc.name)
+		assert.Equal(t, tc.protocol, protocol, tc.name)
+		assert.Equal(t, tc.headers, headers, tc.name)
+	}
+}
+
 type prop struct{}
 
 func (p *prop) Inject(_ *SpanContext, _ any) (e error) {
@@ -416,8 +440,7 @@ func TestRedactOTLPHeaders(t *testing.T) {
 	headers := map[string]string{"dd-api-key": "secret", "Authorization": "Bearer token"}
 	assert.Equal(t, map[string]string{"dd-api-key": "REDACTED", "Authorization": "REDACTED"}, redactOTLPHeaders(headers))
 	assert.Equal(t, "secret", headers["dd-api-key"])
-	assert.Nil(t, redactOTLPHeaders(map[string]string{}))
-	assert.Nil(t, redactOTLPHeaders(nil))
+	assert.Equal(t, map[string]string{}, redactOTLPHeaders(nil))
 }
 
 func TestOTelTracesSampler(t *testing.T) {
