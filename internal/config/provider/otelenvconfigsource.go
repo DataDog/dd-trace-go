@@ -8,6 +8,7 @@ package provider
 import (
 	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -37,7 +38,7 @@ func (o *otelEnvConfigSource) get(key string) string {
 		return ""
 	}
 	if ddVal := env.Get(ddKey); ddVal != "" {
-		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal)
+		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, ddKey, ddVal)
 		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
 		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 	}
@@ -139,12 +140,14 @@ func mapOtelMetrics(ot string) (string, error) {
 	return "", nil
 }
 
-// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
+// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG. Levels above debug disable
+// debug mode; the threshold they select is resolved separately by the config.
 func mapLogLevel(ot string) (string, error) {
-	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
-		return "true", nil
+	lvl, ok := log.ParseLevel(ot)
+	if !ok {
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
+	return strconv.FormatBool(lvl == log.LevelDebug), nil
 }
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
