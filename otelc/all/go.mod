@@ -18,6 +18,13 @@ require (
 )
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
+)
+
+require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.82.0 // indirect
@@ -32,6 +39,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -110,3 +118,9 @@ replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../contrib/gomodule/redigo/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo
+
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 => ../../contrib/google.golang.org/grpc/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../contrib/google.golang.org/grpc
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc

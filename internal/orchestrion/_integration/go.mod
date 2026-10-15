@@ -83,6 +83,8 @@ require (
 	k8s.io/client-go v0.35.1
 )
 
+require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev // indirect
+
 require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.18.2 // indirect
@@ -91,6 +93,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.1 // indirect
@@ -524,3 +527,7 @@ replace github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 => ../..
 replace github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 => ../../../contrib/gomodule/redigo/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../../contrib/opensearch-project/opensearch-go.v4
+
+replace example.com/grpcdep => ./internal/grpcdep
+
+replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 => ../../../contrib/google.golang.org/grpc/otelc
