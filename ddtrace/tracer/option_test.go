@@ -461,7 +461,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 60, len(cfg.integrations))
+		assert.Equal(t, 61, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -1394,16 +1394,15 @@ func TestStartWithLink(t *testing.T) {
 	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
-func TestOtelResourceAtttributes(t *testing.T) {
-	t.Run("max 10", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		globalTags := c.internalConfig.GlobalTags()
-		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
-		assert.Len(globalTags, 11)
-	})
+func TestOtelResourceAttributes(t *testing.T) {
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	tags := c.internalConfig.GlobalTags()
+	for i := 1; i <= 12; i++ {
+		assert.Equal(t, fmt.Sprintf("val%d", i), tags[fmt.Sprintf("tag%d", i)])
+	}
 }
 
 func TestTagSeparators(t *testing.T) {
@@ -1605,12 +1604,16 @@ func TestEnvConfig(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing")
-		assert := assert.New(t)
-		c, err := newTestConfig()
-		assert.NoError(err)
+		for _, key := range []string{"deployment.environment.name", "deployment.environment"} {
+			t.Run(key, func(t *testing.T) {
+				t.Setenv("OTEL_RESOURCE_ATTRIBUTES", key+"=testing")
+				assert := assert.New(t)
+				c, err := newTestConfig()
+				assert.NoError(err)
 
-		assert.Equal("testing", c.internalConfig.Env())
+				assert.Equal("testing", c.internalConfig.Env())
+			})
+		}
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1628,7 +1631,7 @@ func TestEnvConfig(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.Env(), "")
 
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal("testing0", c.internalConfig.Env())

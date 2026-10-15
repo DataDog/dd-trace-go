@@ -6,12 +6,13 @@
 package config
 
 import (
-	"fmt"
+	"cmp"
 	"maps"
 	"math"
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,6 +51,14 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
+	// defaultBLRPMaxQueueSize is the default value for OTEL_BLRP_MAX_QUEUE_SIZE.
+	defaultBLRPMaxQueueSize = 2048
+	// defaultBLRPScheduleDelay is the default value for OTEL_BLRP_SCHEDULE_DELAY.
+	defaultBLRPScheduleDelay = time.Second
+	// defaultBLRPExportTimeout is the default value for OTEL_BLRP_EXPORT_TIMEOUT.
+	defaultBLRPExportTimeout = 30 * time.Second
+	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
+	defaultBLRPMaxExportBatchSize = 512
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
@@ -80,6 +89,8 @@ const (
 	otlpTracesPath  = "/v1/traces"
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
+	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
+	otlpDefaultGRPCPort = "4317"
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
@@ -372,27 +383,22 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
-// else derives a default from agentURL host + port 4318 + /v1/traces.
-// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
-func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
-	if otlpTracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
-			return otlpTracesEndpoint
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
+// precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
+// genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
+// since it is used when tracesEndpoint is unset or invalid.
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
+	if tracesEndpoint != "" {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
+			return tracesEndpoint
 		}
 	}
-	host := internal.DefaultAgentHostname
-	if rawAgentURL != nil {
-		if h := rawAgentURL.Hostname(); h != "" {
-			host = h
-		}
-	}
-	return fmt.Sprintf("http://%s%s", net.JoinHostPort(host, otlpDefaultPort), otlpTracesPath)
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	return u.JoinPath(otlpTracesPath).String()
 }
 
-// buildOTLPHeaders builds the OTLP headers map from the provided map.
-// It adds the Content-Type header if not present.
-func buildOTLPHeaders(headers map[string]string) map[string]string {
+// buildOTLPTraceHeaders sets the Content-Type required for OTLP trace export.
+func buildOTLPTraceHeaders(headers map[string]string) map[string]string {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
@@ -485,19 +491,105 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 		}
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
-	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
-	return u.String()
+	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
-func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
+// decodeOTLPHeaders decodes values after splitting header entries so escaped separators
+// stay in the value. PathUnescape preserves literal '+' characters.
+func decodeOTLPHeaders(headers map[string]string) map[string]string {
+	for key, value := range headers {
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			delete(headers, key)
+			continue
+		}
+		headers[key] = decoded
+	}
+	return headers
+}
+
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// or of the generic headers when the signal-specific ones are empty.
+func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(signalHeaders) > 0 {
+		return maps.Clone(signalHeaders)
+	}
+	if len(genericHeaders) > 0 {
+		return maps.Clone(genericHeaders)
+	}
+	return nil
+}
+
+// resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
+// insecure flag. A signal endpoint is used as-is; a generic one gets otlpMetricsPath appended.
+func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOverride string, agentURL *url.URL) (httpHost, httpPath, grpcTarget string, insecure bool) {
+	httpHost = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultPort)
+	grpcTarget = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultGRPCPort)
+	httpPath = otlpMetricsPath
+	for i, raw := range []string{genericEndpoint, metricsEndpoint} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		httpHost = u.Host
+		grpcTarget = path.Join(u.Host, u.Path)
+		httpPath = path.Join(u.Path, otlpMetricsPath)
+		isSignalEndpoint := i == 1
+		if isSignalEndpoint {
+			httpPath = cmp.Or(u.Path, "/")
+		}
+		insecure = strings.EqualFold(u.Scheme, URLSchemeHTTP) || strings.EqualFold(u.Scheme, URLSchemeUnix)
+	}
+	// Like the OTel Go SDK, and unlike the OTel spec, an explicit setting overrides the endpoint scheme.
+	if insecureOverride != "" {
+		insecure = strings.EqualFold(insecureOverride, "true")
+	}
+	if genericEndpoint == "" && metricsEndpoint == "" {
+		host := internal.DefaultAgentHostname
+		agentInsecure := true
+		if agentURL != nil {
+			host = cmp.Or(agentURL.Hostname(), host)
+			agentInsecure = agentURL.Scheme != URLSchemeHTTPS
+		}
+		httpHost = net.JoinHostPort(host, otlpDefaultPort)
+		grpcTarget = net.JoinHostPort(host, otlpDefaultGRPCPort)
+		insecure = insecure || agentInsecure
+	}
+	httpPath = strings.TrimSpace(httpPath)
+	if httpPath == "" || httpPath == "." {
+		httpPath = otlpMetricsPath
+	} else if !path.IsAbs(httpPath) {
+		httpPath = "/" + httpPath
+	}
+	return httpHost, httpPath, grpcTarget, insecure
+}
+
+// resolveRuntimeMetricsHeaders parses the signal headers when set, otherwise the generic ones.
+// Entries with an invalid header name or value encoding are dropped.
+func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[string]string {
+	raw := cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders))
+	if raw == "" {
 		return nil
 	}
-	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
-	maps.Copy(merged, genericHeaders)
-	maps.Copy(merged, signalHeaders)
-	return merged
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(raw, ",") {
+		key, value, found := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !found || key == "" || strings.ContainsFunc(key, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
+		}) {
+			continue
+		}
+		value, err := url.PathUnescape(value)
+		if err == nil {
+			headers[key] = strings.TrimSpace(value)
+		}
+	}
+	return headers
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.

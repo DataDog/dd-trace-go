@@ -8,12 +8,10 @@ package metric
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
-	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -23,23 +21,7 @@ import (
 )
 
 const (
-	// Default OTLP HTTP endpoint for Datadog
-	defaultOTLPEndpoint = "http://localhost:4318"
-	defaultOTLPPath     = "/v1/metrics"
-	defaultOTLPPort     = "4318"
 	defaultOTLPProtocol = "http/protobuf"
-
-	// OTLP environment variables
-	envOTLPEndpoint           = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	envOTLPMetricsEndpoint    = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
-	envOTLPProtocol           = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOTLPMetricsProtocol    = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
-	envOTLPMetricsTemporality = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
-
-	// DD environment variables for agent configuration
-	envDDTraceAgentURL  = "DD_TRACE_AGENT_URL"
-	envDDAgentHost      = "DD_AGENT_HOST"
-	envDDTraceAgentPort = "DD_TRACE_AGENT_PORT"
 
 	// Telemetry tag values for protocol and encoding
 	protocolHTTP     = "http"
@@ -82,7 +64,7 @@ func (e *telemetryExporter) Export(ctx context.Context, rm *metricdata.ResourceM
 // 5. localhost with default port (default)
 func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Option, grpcOpts []otlpmetricgrpc.Option) (metric.Exporter, error) {
 	// Determine protocol
-	protocol := otlpProtocol()
+	protocol := internalconfig.Get().RuntimeMetricsProtocol()
 
 	var exporter metric.Exporter
 	var err error
@@ -115,21 +97,6 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 	}, nil
 }
 
-// otlpProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
-func otlpProtocol() string {
-	// Check metrics-specific protocol first
-	if protocol := env.Get(envOTLPMetricsProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Default to HTTP with protobuf
-	return defaultOTLPProtocol
-}
-
 // newDatadogOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.
 func newDatadogOTLPHTTPExporter(ctx context.Context, opts ...otlpmetrichttp.Option) (metric.Exporter, error) {
 	// Build exporter options with DD defaults
@@ -160,24 +127,22 @@ func newDatadogOTLPGRPCExporter(ctx context.Context, opts ...otlpmetricgrpc.Opti
 
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichttp.Option {
-	opts := []otlpmetrichttp.Option{
+	opts := make([]otlpmetrichttp.Option, 0, 5+len(userOpts))
+	opts = append(opts,
 		// Set retry configuration
 		otlpmetrichttp.WithRetry(datadogRetryConfig()),
 		// Set timeout
-		otlpmetrichttp.WithTimeout(30 * time.Second),
+		otlpmetrichttp.WithTimeout(30*time.Second),
 		// Set delta temporality as default (Datadog preference)
 		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelector()),
-	}
+	)
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
-		endpoint, path, insecure := resolveOTLPEndpointHTTP()
-		opts = append(opts, otlpmetrichttp.WithEndpoint(endpoint))
-		opts = append(opts, otlpmetrichttp.WithURLPath(path))
-		if insecure {
-			opts = append(opts, otlpmetrichttp.WithInsecure())
-		}
+	endpoint, path, insecure := internalconfig.Get().RuntimeMetricsHTTPEndpoint()
+	scheme := "https"
+	if insecure {
+		scheme = "http"
 	}
+	opts = append(opts, otlpmetrichttp.WithEndpointURL((&url.URL{Scheme: scheme, Host: endpoint, Path: path}).String()), otlpmetrichttp.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -196,119 +161,20 @@ func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrp
 		otlpmetricgrpc.WithRetry(datadogGRPCRetryConfig()),
 	}
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
-		endpoint, insecure := resolveOTLPEndpointGRPC()
-		opts = append(opts, otlpmetricgrpc.WithEndpoint(endpoint))
-		if insecure {
-			opts = append(opts, otlpmetricgrpc.WithInsecure())
-		}
+	endpoint, insecure := internalconfig.Get().RuntimeMetricsGRPCEndpoint()
+	scheme := "https"
+	if insecure {
+		scheme = "http"
+	}
+	opts = append(opts, otlpmetricgrpc.WithEndpointURL(scheme+"://"+endpoint), otlpmetricgrpc.WithEndpoint(endpoint), otlpmetricgrpc.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
+	if insecure {
+		opts = append(opts, otlpmetricgrpc.WithInsecure())
 	}
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
 
 	return opts
-}
-
-// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables
-func hasOTLPEndpointInEnv() bool {
-	if v := env.Get(envOTLPMetricsEndpoint); v != "" {
-		return true
-	}
-	if v := env.Get(envOTLPEndpoint); v != "" {
-		return true
-	}
-	return false
-}
-
-// resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
-// Returns (endpoint, path, insecure) where:
-// - endpoint is the host:port (e.g., "localhost:4318")
-// - path is the URL path (e.g., "/v1/metrics")
-// - insecure indicates whether to use http (true) or https (false)
-//
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4318
-// 2. DD_AGENT_HOST:4318
-// 3. localhost:4318 (default)
-func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	path = defaultOTLPPath
-	insecure = true // default to http
-
-	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4318
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultOTLPPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP metrics endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultOTLPPort)
-		insecure = true
-		return
-	}
-
-	// Default to localhost:4318
-	endpoint = "localhost:4318"
-	insecure = true
-	return
-}
-
-// resolveOTLPEndpointGRPC determines the OTLP gRPC endpoint from DD agent configuration.
-// Returns (endpoint, insecure) where:
-// - endpoint is the host:port (e.g., "localhost:4317")
-// - insecure indicates whether to use grpc (true) or grpcs (false)
-//
-// Priority order:
-// 1. DD_TRACE_AGENT_URL with port changed to 4317
-// 2. DD_AGENT_HOST:4317
-// 3. localhost:4317 (default)
-func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	insecure = true // default to grpc (not grpcs)
-	const defaultGRPCPort = "4317"
-
-	// Check DD_TRACE_AGENT_URL first
-	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL for metrics: %s, using default", err.Error())
-		} else {
-			// Extract hostname from the agent URL and use port 4317 for gRPC
-			hostname := u.Hostname()
-			if hostname != "" {
-				endpoint = net.JoinHostPort(hostname, defaultGRPCPort)
-				// Preserve the scheme from DD_TRACE_AGENT_URL
-				insecure = (u.Scheme == "http" || u.Scheme == "unix")
-				log.Debug("Using OTLP gRPC metrics endpoint from DD_TRACE_AGENT_URL: %s", endpoint)
-				return
-			}
-		}
-	}
-
-	// Check DD_AGENT_HOST
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, defaultGRPCPort)
-		log.Debug("Using OTLP gRPC metrics endpoint from DD_AGENT_HOST: %s", endpoint)
-		return
-	}
-
-	// Default to localhost:4317
-	endpoint = net.JoinHostPort("localhost", defaultGRPCPort)
-	log.Debug("Using default OTLP gRPC metrics endpoint: %s", endpoint)
-	return
 }
 
 // datadogGRPCRetryConfig returns the retry configuration for OTLP gRPC exporter.
