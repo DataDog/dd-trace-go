@@ -396,10 +396,7 @@ func resolveOTLPSignalURL(signalEndpoint, genericEndpoint, signalPath string, pr
 	if !preservePath {
 		return u.JoinPath(signalPath).String()
 	}
-	if strings.HasSuffix(u.Path, "/") {
-		signalPath = strings.TrimPrefix(signalPath, "/")
-	}
-	u.Path += signalPath
+	u.Path = strings.TrimRight(u.Path, "/") + signalPath
 	return u.String()
 }
 
