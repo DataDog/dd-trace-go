@@ -279,13 +279,6 @@ func newDatadogProviderWithSourceAndEVP(
 		log.Debug("openfeature: span enrichment is disabled")
 	}
 
-	// Registered only when debug logging is already on, so a disabled log level
-	// adds no per-evaluation hook work.
-	var debugHook *debugLoggingHook
-	if log.DebugEnabled() {
-		debugHook = newDebugLoggingHook()
-	}
-
 	hooks := make([]openfeature.Hook, 0, 5)
 	if exposureLoggingHook != nil {
 		hooks = append(hooks, exposureLoggingHook)
@@ -299,9 +292,9 @@ func newDatadogProviderWithSourceAndEVP(
 	if spanEnrichmentHook != nil {
 		hooks = append(hooks, spanEnrichmentHook)
 	}
-	if debugHook != nil {
-		hooks = append(hooks, debugHook)
-	}
+	// The tracer may enable debug logging after the provider is constructed.
+	// The hook checks the current level before formatting evaluation details.
+	hooks = append(hooks, newDebugLoggingHook())
 
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
@@ -796,7 +789,7 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the provider's hooks, built once during Init.
+// Hooks returns the provider's hooks, built once during construction.
 // Returns p.hooks directly to avoid per-evaluation allocations.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
 	return p.hooks

@@ -190,7 +190,10 @@
 //
 // Set DD_TRACE_DEBUG=true to have the provider log, at debug level, each step
 // of its setup and every flag evaluation. This works with or without
-// tracer.Start. Every such line starts with "openfeature:",
+// tracer.Start. Starting the tracer with WithDebugMode(true) also enables
+// evaluation logs for providers that already exist; WithDebugMode(false)
+// disables debug logging even when DD_TRACE_DEBUG=true.
+// Every such line starts with "openfeature:",
 // so they can be filtered from other tracer output. It covers:
 //
 //   - The selected configuration source, or that feature flagging is disabled
@@ -219,7 +222,7 @@
 // JSON, truncated to 256 bytes. A value that cannot be encoded, including a
 // default value whose MarshalJSON method fails or panics, is logged as
 // <unserializable> without affecting the evaluation. When debug logging is
-// off, no evaluation hook is registered, so it adds no per-evaluation cost.
+// off, the hook returns before formatting evaluation details.
 //
 // # Thread Safety
 //

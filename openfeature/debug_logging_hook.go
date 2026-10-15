@@ -53,7 +53,7 @@ func (h *debugLoggingHook) Finally(
 	_ of.HookHints,
 ) {
 	defer recoverDebugLogging()
-	// The level can be lowered after the hook was registered at construction.
+	// The log level can change after provider construction.
 	if !log.DebugEnabled() {
 		return
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
@@ -167,9 +168,9 @@ func TestDebugLoggingHook_Registration(t *testing.T) {
 		assert.True(t, hasDebugLoggingHook(newDatadogProvider(ProviderConfig{}).Hooks()))
 	})
 
-	t.Run("not registered when debug logging is disabled", func(t *testing.T) {
+	t.Run("registered when debug logging is disabled", func(t *testing.T) {
 		withLogLevel(t, log.LevelWarn)
-		assert.False(t, hasDebugLoggingHook(newDatadogProvider(ProviderConfig{}).Hooks()))
+		assert.True(t, hasDebugLoggingHook(newDatadogProvider(ProviderConfig{}).Hooks()))
 	})
 }
 
@@ -943,4 +944,66 @@ func TestAgentlessPoll_ContainsLoggerPanics(t *testing.T) {
 	assert.Equal(t, 3, requests)
 	assert.Equal(t, fakeUFCBackendETag, etag)
 	logger.assertContains(t, "HTTP 304 (unchanged)")
+}
+
+func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name                                                                       string
+		envDebug, tracerDebug, tracerFirst, wantHook, wantDebug, wantEvaluationLog bool
+	}{
+		{name: "provider_then_enable", tracerDebug: true, wantHook: true, wantDebug: true, wantEvaluationLog: true},
+		{name: "provider_then_disable", envDebug: true, wantHook: true},
+		{name: "tracer_disable_then_provider", envDebug: true, tracerFirst: true, wantHook: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := withLogLevel(t, log.LevelWarn)
+			t.Setenv("DD_TRACE_DEBUG", strconv.FormatBool(tc.envDebug))
+			t.Setenv("DD_API_KEY", "")
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+			t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+			t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
+			t.Setenv("DD_APPSEC_ENABLED", "false")
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"endpoints":[]}`))
+			}))
+			defer agent.Close()
+			t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
+			backend := newFakeUFCBackend(t)
+			backend.setResponses("valid")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", backend.server.URL)
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", "3600")
+			internalconfig.CreateNew()
+			startTracer := func() {
+				require.NoError(t, tracer.Start(tracer.WithDebugMode(tc.tracerDebug), tracer.WithLogStartup(false), tracer.WithHTTPClient(agent.Client())))
+			}
+			if tc.tracerFirst {
+				startTracer()
+			}
+			defer tracer.Stop()
+			provider, err := NewDatadogProvider(ProviderConfig{})
+			require.NoError(t, err)
+			p := provider.(*DatadogProvider)
+			defer p.Shutdown()
+			api := isolated.NewAPI()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			require.NoError(t, api.SetProviderAndWait(ctx, p))
+			defer api.Shutdown(context.Background())
+			if !tc.tracerFirst {
+				startTracer()
+			}
+			value, err := api.NewClient().BooleanValue(context.Background(), "review-order-missing-flag", false, of.NewTargetlessEvaluationContext(nil))
+			require.Error(t, err)
+			require.False(t, value)
+			hasHook := hasDebugLoggingHook(p.Hooks())
+			evaluationLogged := logger.countContaining(`evaluated "review-order-missing-flag"`) > 0
+			require.Equal(t, tc.wantHook, hasHook)
+			require.Equal(t, tc.wantDebug, log.DebugEnabled())
+			require.Equal(t, tc.wantEvaluationLog, evaluationLogged)
+			require.Equal(t, tc.tracerDebug, internalconfig.Get().Debug())
+		})
+	}
 }
