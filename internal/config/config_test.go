@@ -755,19 +755,41 @@ func TestOTLPTraceHeaders(t *testing.T) {
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 	})
 
-	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS take precedence over generic headers", func(t *testing.T) {
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS replace generic headers", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
-		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-key")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPTraceHeaders()
-		assert.Equal(t, "traces-key", headers["api-key"])
-		assert.Equal(t, "acme", headers["x-tenant"])
+		assert.Equal(t, map[string]string{
+			"authorization": "signal",
+			"Content-Type":  OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+	})
+
+	t.Run("generic headers used when OTEL_EXPORTER_OTLP_TRACES_HEADERS has no usable entry", func(t *testing.T) {
+		for _, tracesHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(tracesHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", tracesHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+					"Content-Type":  OTLPContentTypeHeader,
+				}, cfg.OTLPTraceHeaders())
+			})
+		}
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
@@ -837,21 +859,19 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 		})
 	}
 
-	t.Run("signal overrides generic", func(t *testing.T) {
+	t.Run("signal replaces generic", func(t *testing.T) {
 		resetGlobalState()
 		t.Cleanup(resetGlobalState)
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=kept%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=dropped%20value")
 		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=trace%20value")
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metric%20value")
 		cfg := Get()
 		assert.Equal(t, map[string]string{
 			"api-key":      "trace value",
-			"generic-only": "kept value",
 			"Content-Type": OTLPContentTypeHeader,
 		}, cfg.OTLPTraceHeaders())
 		assert.Equal(t, map[string]string{
-			"api-key":      "metric value",
-			"generic-only": "kept value",
+			"api-key": "metric value",
 		}, cfg.OTLPMetricsHeaders())
 	})
 }
@@ -1329,19 +1349,49 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
 	})
 
-	t.Run("signal-specific headers take precedence over generic", func(t *testing.T) {
+	t.Run("signal-specific headers replace generic headers", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=shared")
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metrics-key")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "authorization=signal")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		h := cfg.OTLPMetricsHeaders()
-		assert.Equal(t, "metrics-key", h["api-key"])
-		assert.Equal(t, "shared", h["x-tenant"])
+		assert.Equal(t, map[string]string{"authorization": "signal"}, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("generic headers used when signal-specific headers have no usable entry", func(t *testing.T) {
+		for _, metricsHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(metricsHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", metricsHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+				}, cfg.OTLPMetricsHeaders())
+			})
+		}
+	})
+
+	t.Run("not affected by trace headers sharing the generic fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=generic")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, map[string]string{"authorization": "generic"}, cfg.OTLPMetricsHeaders())
 	})
 }
 
@@ -2332,4 +2382,82 @@ func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 		size := loadConfig().BLRPMaxExportBatchSize()
 		assert.Equal(t, 512, size)
 	})
+}
+
+func TestRuntimeMetricsProtocol(t *testing.T) {
+	for _, tc := range []struct{ name, generic, signal, expected string }{
+		{"signal over generic", "http/protobuf", "grpc", "grpc"},
+		{"generic fallback", "grpc", "", "grpc"},
+		{"normalized", "  GRPC  ", "", "grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", tc.generic)
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsProtocol())
+		})
+	}
+}
+
+func TestRuntimeMetricsEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		env                            map[string]string
+		httpHost, httpPath, grpcTarget string
+		insecure                       bool
+	}{
+		{"default", nil, "localhost:4318", "/v1/metrics", "localhost:4317", true},
+		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true},
+		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false},
+		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
+		{"unsupported agent URL scheme", map[string]string{"DD_TRACE_AGENT_URL": "tcp://agent:8126", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
+		{"unix agent URL", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "host"}, "localhost:4318", "/v1/metrics", "localhost:4317", true},
+		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true},
+		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false},
+		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true},
+		{"invalid signal", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "generic:4318", "/v1/metrics", "generic:4318", true},
+		{"both invalid", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://%", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
+		{"whitespace", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "   "}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			httpHost, httpPath, insecure := cfg.RuntimeMetricsHTTPEndpoint()
+			assert.Equal(t, tc.httpHost, httpHost)
+			assert.Equal(t, tc.httpPath, httpPath)
+			assert.Equal(t, tc.insecure, insecure)
+			grpcTarget, _ := cfg.RuntimeMetricsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, grpcTarget)
+		})
+	}
+}
+
+func TestRuntimeMetricsInsecurePrecedence(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4318")
+	t.Setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+	_, _, insecure := loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.True(t, insecure)
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "false")
+	_, _, insecure = loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.False(t, insecure)
+}
+
+func TestRuntimeMetricsHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name, signal string
+		expected     map[string]string
+	}{
+		{"generic", "", map[string]string{"Authorization": "Bearer token"}},
+		{"blank signal", "  ", map[string]string{"Authorization": "Bearer token"}},
+		{"signal replaces", "x-key=a%2Bb", map[string]string{"x-key": "a+b"}},
+		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", map[string]string{}},
+		{"mixed", "bad key=x,good=some%20value,empty=", map[string]string{"good": "some value", "empty": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20token")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsHeaders())
+		})
+	}
 }
