@@ -1757,18 +1757,14 @@ func (c *Config) BLRPMaxExportBatchSize() int {
 	return c.blrpMaxExportBatchSize
 }
 
-// OTLPLogsProtocol returns the lowercased OTLP logs protocol from
-// OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, then OTEL_EXPORTER_OTLP_PROTOCOL, skipping
-// unsupported values. It is always "http/protobuf" (default), "http" or "grpc".
+// OTLPLogsProtocol returns "http/protobuf" (default), "http" or "grpc".
 func (c *Config) OTLPLogsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpLogsProtocol
 }
 
-// OTLPLogsEndpoint returns OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, then
-// OTEL_EXPORTER_OTLP_ENDPOINT, or an empty string when the exporter should derive
-// its endpoint from the agent configuration.
+// OTLPLogsEndpoint returns an endpoint that parses as a URL, or "" to use the agent.
 func (c *Config) OTLPLogsEndpoint() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

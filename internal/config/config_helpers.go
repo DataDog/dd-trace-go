@@ -523,10 +523,8 @@ type otlpSignal struct {
 	warn bool
 }
 
-// lookup returns the usable signal-specific and generic values of setting. The
-// signal-specific value is empty when unset or unusable; the generic one is def.
-// Every source is validated, so an unusable value from a higher-priority source
-// never hides a usable one from a lower-priority source.
+// lookup returns the usable signal-specific and generic values of setting. Every
+// source is validated so an unusable value never hides a lower-priority usable one.
 func (s otlpSignal) lookup(p *provider.Provider, setting, def string, valid func(string) bool) (specific, generic string) {
 	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
 	genericKey := "OTEL_EXPORTER_OTLP_" + setting
@@ -572,8 +570,7 @@ func (s otlpSignal) protocol(p *provider.Provider) string {
 	}))
 }
 
-// timeout returns the export timeout, configured in milliseconds. GetInt64
-// already skips values that do not parse, source by source.
+// timeout returns the export timeout, configured in milliseconds.
 func (s otlpSignal) timeout(p *provider.Provider) time.Duration {
 	generic := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
 	return time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_"+s.name+"_TIMEOUT", generic)) * time.Millisecond
@@ -596,11 +593,8 @@ func isURL(v string) bool {
 	return err == nil
 }
 
-// parseOTLPHeaders parses comma-separated key=value pairs, never splitting on
-// spaces. Values are percent-decoded; entries without '=', with a key that is
-// not a valid HTTP header name, or with an invalid escape are dropped. Each
-// entry is decoded before it is stored so an invalid duplicate cannot erase an
-// earlier valid value for the same key. It returns nil when no header is usable.
+// parseOTLPHeaders parses comma-separated key=value pairs with percent-decoded
+// values, dropping invalid entries without erasing an earlier valid duplicate.
 func parseOTLPHeaders(str string) map[string]string {
 	var headers map[string]string
 	for entry := range strings.SplitSeq(str, ",") {

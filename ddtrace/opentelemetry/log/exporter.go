@@ -96,7 +96,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
-	default: // "http/protobuf" or "http"; config only returns supported protocols
+	default:
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 	}
 
@@ -184,8 +184,7 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	}
 
 	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// For gRPC, we extract host:port and insecure flag from the URL.
-		// internal/config only returns endpoints that parse.
+		// For gRPC, we extract host:port and insecure flag from the URL
 		u, _ := url.Parse(rawEndpoint)
 		endpoint := u.Host
 		if endpoint == "" {
@@ -225,8 +224,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 //
 // This works around issues where the OTel SDK may not handle trailing slashes correctly,
 // which can result in double slashes like http://host:4320//v1/logs
-//
-// internal/config only returns endpoints that parse.
 func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
 	u, _ := url.Parse(rawURL)
 
