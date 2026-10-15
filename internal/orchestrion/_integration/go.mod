@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
-	connectrpc.com/connect v1.20.0
+	connectrpc.com/connect v1.21.1
 	github.com/99designs/gqlgen v0.17.92
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev
