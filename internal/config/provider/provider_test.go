@@ -316,7 +316,7 @@ apm_configuration_default:
 
 		t.Setenv("OTEL_SERVICE_NAME", "otel_service")
 		t.Setenv("OTEL_LOG_LEVEL", "debug")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=otel_env,service.version=0.5.0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=otel_env,service.version=0.5.0")
 		t.Setenv("OTEL_TRACES_SAMPLER", "traceidratio")
 		t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.8")
 
