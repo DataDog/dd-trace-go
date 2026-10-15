@@ -174,12 +174,17 @@
 //
 // # Diagnostic Log Level
 //
-// The tracer prints its own diagnostics at the info level and above by default.
-// OTEL_LOG_LEVEL sets that threshold to debug, info, warn or error (case-insensitive);
+// The tracer, the profiler, and other components of this module share one
+// diagnostic logger. The tracer prints its own diagnostics at the info level
+// and above by default. OTEL_LOG_LEVEL sets that threshold to debug, info, warn
+// or error (case-insensitive, and surrounding whitespace is ignored), and
 // lower-severity messages are not printed. Invalid values are ignored with a
 // warning. DD_TRACE_DEBUG=true or WithDebugMode(true) enables debug logs
 // regardless of OTEL_LOG_LEVEL, and DD_TRACE_DEBUG=false disables
-// OTEL_LOG_LEVEL=debug. The level is applied each time the tracer starts.
+// OTEL_LOG_LEVEL=debug. The tracer applies the level each time it starts, and
+// the threshold filters every component that logs through the shared logger.
+// At the error threshold, the profiler still prints its errors and hides its
+// info and warning messages.
 //
 // # Trace Protocol
 //

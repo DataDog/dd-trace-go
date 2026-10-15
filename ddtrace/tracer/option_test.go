@@ -627,6 +627,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 				{otel: "info", want: log.LevelInfo, lines: 2},
 				{otel: "warn", want: log.LevelWarn, lines: 1},
 				{otel: "error", want: log.LevelError, lines: 0},
+				{otel: "invalid", want: log.LevelInfo, lines: 2},
 			} {
 				t.Run(tc.otel, func(t *testing.T) {
 					defer log.SetLevel(log.GetLevel())
