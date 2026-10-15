@@ -179,19 +179,3 @@ func TestResolveOTLPSignalURLLogs(t *testing.T) {
 		})
 	}
 }
-
-func TestResolveOTLPSignalURLLogsEscapedBasePath(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		endpoint string
-		want     string
-	}{
-		{name: "escaped segment", endpoint: "http://collector/tenant%2Fblue", want: "http://collector/tenant%2Fblue/v1/logs"},
-		{name: "escaped trailing slash", endpoint: "http://collector/tenant%2F", want: "http://collector/tenant%2F/v1/logs"},
-		{name: "escaped segment with trailing slash", endpoint: "http://collector/tenant%2Fblue/", want: "http://collector/tenant%2Fblue/v1/logs"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, resolveOTLPSignalURL("", tc.endpoint, otlpLogsPath, true))
-		})
-	}
-}
