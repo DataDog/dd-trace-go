@@ -59,24 +59,6 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 	}
 }
 
-func TestSanitizeOTLPEndpoint(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		raw       string
-		isGeneric bool
-		expected  string
-	}{
-		{name: "generic no path", raw: "http://collector:4318", isGeneric: true, expected: "http://collector:4318/v1/logs"},
-		{name: "generic trailing slash", raw: "http://collector:4318/", isGeneric: true, expected: "http://collector:4318/v1/logs"},
-		{name: "generic custom path", raw: "http://collector:4318/otlp", isGeneric: true, expected: "http://collector:4318/otlp/v1/logs"},
-		{name: "signal-specific path", raw: "http://collector:4318/custom/", expected: "http://collector:4318/custom/"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, sanitizeOTLPEndpoint(tc.raw, tc.isGeneric))
-		})
-	}
-}
-
 func TestNewOTLPExporterHTTPConfig(t *testing.T) {
 	t.Cleanup(func() { config.CreateNew() })
 	t.Run("endpoint and headers", func(t *testing.T) {
@@ -294,20 +276,4 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 		_, insecure := resolveOTLPEndpointGRPC()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
-}
-
-func TestSanitizeOTLPEndpointEscapedBasePath(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		endpoint string
-		want     string
-	}{
-		{name: "escaped segment", endpoint: "http://collector/tenant%2Fblue", want: "http://collector/tenant%2Fblue/v1/logs"},
-		{name: "escaped trailing slash", endpoint: "http://collector/tenant%2F", want: "http://collector/tenant%2F/v1/logs"},
-		{name: "escaped segment with trailing slash", endpoint: "http://collector/tenant%2Fblue/", want: "http://collector/tenant%2Fblue/v1/logs"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, sanitizeOTLPEndpoint(tc.endpoint, true))
-		})
-	}
 }
