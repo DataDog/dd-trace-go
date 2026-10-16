@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/hashicorp/vault/api
+display_name: Vault
+description: Instruments Vault API client HTTP requests with tracing and context propagation, recording request methods, paths,
+  namespaces, response status, and errors.
+packages:
+- name: github.com/hashicorp/vault/api
+category:
+- http.client
+systems: []
+creation_date: '2019-10-15'
