@@ -1,0 +1,13 @@
+_v: 1
+name: net/http
+display_name: net/http
+description: Instruments net/http clients and servers with trace propagation, optional client timing tags and request protection,
+  and optional inferred AWS API Gateway and Google Cloud Pub/Sub push-consumer spans.
+packages: []
+category:
+- http.client
+- http.server
+- messaging.consumer
+systems:
+- gcp.pubsub
+creation_date: '2017-08-17'
