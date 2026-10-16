@@ -85,8 +85,9 @@ func newHighCardinalitySpanList(n int) spanList {
 		list[i].start = fixedTime
 		list[i].service = "service." + itoa[i%5+1]
 		list[i].resource = "resource." + itoa[i%5+1]
-		for i := range 50 {
-			list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
+		for j := range 50 {
+			is, js := strconv.Itoa(i), strconv.Itoa(j)
+			list[i].SetTag("tag."+is+"."+js, "value."+is+"."+js)
 		}
 	}
 	return list
