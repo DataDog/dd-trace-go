@@ -269,6 +269,80 @@ func TestNewClient(t *testing.T) {
 			wantServiceName: "global-service",
 		},
 		{
+			name: "Test Dedicate client Do and Close",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				dc, cancel := client.Dedicate()
+				defer cancel()
+				require.NoError(t, dc.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+				dc.Close()
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test Dedicated client DoMulti",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				err := client.Dedicated(func(d rueidis.DedicatedClient) error {
+					resp := d.DoMulti(ctx, client.B().Set().Key("test_key").Value("test_value").Build(), client.B().Get().Key("test_key").Build())
+					require.Len(t, resp, 2)
+					return nil
+				})
+				require.NoError(t, err)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET\nGET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.RedisRawCommand))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test Dedicated client Receive with timeout",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				dc, cancel := client.Dedicate()
+				defer cancel()
+				ctxWithTimeout, cancelTimeout := context.WithTimeout(ctx, time.Millisecond)
+				require.EqualError(t,
+					context.DeadlineExceeded,
+					dc.Receive(ctxWithTimeout, client.B().Subscribe().Channel("test_channel").Build(), func(_ rueidis.PubSubMessage) {}).Error(),
+				)
+				cancelTimeout()
+				dc.Close()
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SUBSCRIBE test_channel", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
+		{
 			name: "Test SET command with canceled context and custom error check",
 			opts: []Option{
 				WithErrorCheck(func(err error) bool {
@@ -354,4 +428,43 @@ func TestNewClient(t *testing.T) {
 		})
 	}
 
+}
+
+// TestDedicatedClientUsesDedicatedConnection is a regression test for
+// https://github.com/DataDog/dd-trace-go/issues/5602. The traced dedicatedClient
+// embeds the traced shared client, so Do, DoMulti, Receive and Close used to be
+// promoted from it and sent to the shared pipeline connection instead of the
+// dedicated connection.
+func TestDedicatedClientUsesDedicatedConnection(t *testing.T) {
+	client, err := NewClient(rueidis.ClientOption{
+		InitAddress:  redisAddrs,
+		DisableCache: true,
+	}, WithRawCommand(true))
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
+
+	dc, cancel := client.Dedicate()
+	defer cancel()
+
+	// The dedicated client's commands are sent to the dedicated connection and traced.
+	require.NoError(t, dc.Do(ctx, client.B().Set().Key("dedicated_key").Value("dedicated_value").Build()).Error())
+
+	// Closing the dedicated connection releases only that connection; the shared
+	// client must remain usable. Before the fix, Close was promoted from the
+	// shared client and closed it entirely.
+	dc.Close()
+	require.NoError(t, client.Do(ctx, client.B().Ping().Build()).Error(),
+		"closing the dedicated client must not close the shared client")
+
+	// Once released, the dedicated connection must reject further commands with
+	// ErrDedicatedClientRecycled. Before the fix these commands were promoted to
+	// the shared client and never reached the dedicated connection.
+	require.ErrorIs(t, dc.Do(ctx, client.B().Ping().Build()).Error(), rueidis.ErrDedicatedClientRecycled,
+		"dedicated Do must target the dedicated connection")
+	require.ErrorIs(t, dc.DoMulti(ctx, client.B().Ping().Build())[0].Error(), rueidis.ErrDedicatedClientRecycled,
+		"dedicated DoMulti must target the dedicated connection")
+	require.ErrorIs(t, dc.Receive(ctx, client.B().Subscribe().Channel("ch").Build(), func(rueidis.PubSubMessage) {}), rueidis.ErrDedicatedClientRecycled,
+		"dedicated Receive must target the dedicated connection")
 }
