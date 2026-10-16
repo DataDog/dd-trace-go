@@ -176,6 +176,14 @@ func validateSendRetries(retries int) bool {
 	return true
 }
 
+func validateDataStreamsIntakeBufferSize(size int) bool {
+	if size <= 0 {
+		log.Warn("datastreams: ignoring non-positive intake buffer size %d", size)
+		return false
+	}
+	return true
+}
+
 func capAdditionalTagKeys(tags []string) []string {
 	if len(tags) == 0 {
 		return nil

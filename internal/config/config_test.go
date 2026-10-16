@@ -562,7 +562,7 @@ func TestDataStreamsIntakeBufferSize(t *testing.T) {
 			assert.Equal(t, tc.want, cfg.DataStreamsIntakeBufferSize())
 			logs := strings.Join(tp.Logs(), "\n")
 			if tc.wantWarn {
-				assert.Contains(t, logs, "ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value")
+				assert.Contains(t, logs, "datastreams: ignoring non-positive intake buffer size")
 				return
 			}
 			assert.Empty(t, logs)
@@ -584,7 +584,7 @@ func TestSetDataStreamsIntakeBufferSize(t *testing.T) {
 
 	cfg.SetDataStreamsIntakeBufferSize(0, telemetry.OriginCode)
 	assert.Equal(t, 500, cfg.DataStreamsIntakeBufferSize())
-	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value")
+	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "datastreams: ignoring non-positive intake buffer size")
 }
 
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {

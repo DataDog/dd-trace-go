@@ -162,7 +162,6 @@ type Config struct {
 	dataStreamsMonitoringEnabled bool
 	// dataStreamsIntakeBufferSize is the number of slots in the Data Streams
 	// Monitoring processor's input ring buffer.
-	// Configured via DD_DATA_STREAMS_INTAKE_BUFFER_SIZE.
 	dataStreamsIntakeBufferSize int
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
@@ -467,11 +466,7 @@ func loadConfig() *Config {
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.dataStreamsIntakeBufferSize = p.GetInt("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", defaultDataStreamsIntakeBufferSize)
-	if cfg.dataStreamsIntakeBufferSize <= 0 {
-		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value %d, using default %d", cfg.dataStreamsIntakeBufferSize, defaultDataStreamsIntakeBufferSize)
-		cfg.dataStreamsIntakeBufferSize = defaultDataStreamsIntakeBufferSize
-	}
+	cfg.dataStreamsIntakeBufferSize = p.GetIntWithValidator("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", defaultDataStreamsIntakeBufferSize, validateDataStreamsIntakeBufferSize)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
@@ -941,12 +936,11 @@ func (c *Config) DataStreamsIntakeBufferSize() int {
 }
 
 func (c *Config) SetDataStreamsIntakeBufferSize(size int, origin telemetry.Origin, product ...Product) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if size <= 0 {
-		log.Warn("ignoring DD_DATA_STREAMS_INTAKE_BUFFER_SIZE: non-positive value %d", size)
+	if !validateDataStreamsIntakeBufferSize(size) {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.checkProductConflict("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", origin, size, product...) {
 		return
 	}
