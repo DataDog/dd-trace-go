@@ -498,6 +498,11 @@ func loadConfig() *Config {
 	otlpGenericEndpoints := []string{p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL)}
 	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
 	otlpGenericProtocols := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_PROTOCOL")
+	for _, v := range otlpGenericProtocols {
+		if v != "" && !supportsOTLPProtocol(otlpMetricsProtocols)(v) && !supportsOTLPProtocol(otlpLogsProtocols)(v) {
+			log.Warn("Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value; falling back to default.")
+		}
+	}
 	tracesEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, cfg.otlpExportMode)
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
 	cfg.otlpTraceURL = resolveOTLPSignalURL(tracesEndpoint, cfg.otlpEndpoint, otlpTracesPath, false)
