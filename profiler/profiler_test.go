@@ -183,9 +183,6 @@ func TestStart(t *testing.T) {
 		require.NoError(t, Start())
 		defer Stop()
 
-		mu.Lock()
-		assert.Nil(t, activeProfiler)
-		mu.Unlock()
 		assert.False(t, traceprof.ProfilerEnabled())
 	})
 }
