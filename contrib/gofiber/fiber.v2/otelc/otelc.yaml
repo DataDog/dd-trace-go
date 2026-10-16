@@ -1,0 +1,27 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Like orchestrion, the rule rewrites call sites in every package of the build,
+# dependencies included, except the fiber contrib. The contrib's own tests
+# create apps, and wrapping those would import the contrib into itself.
+#
+# The orchestrion aspect also sets app.Server().DD_Instrumented, a field the
+# fasthttp aspects add so they skip Fiber's server. fasthttp has no otelc rules
+# yet, so there is no fasthttp span to suppress and the field does not exist.
+
+new_app:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gofiber/**"
+  where:
+    function_call: github.com/gofiber/fiber/v2.New
+  do:
+    - wrap_call:
+        replace: |-
+          fibertrace.Wrap({{ . }})
+  imports:
+    fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
