@@ -197,6 +197,8 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// otelSDKDisabled is set by OTEL_SDK_DISABLED and disables every OTel SDK signal.
+	otelSDKDisabled bool
 	// BatchLogRecordProcessor settings (OTEL_BLRP_*)
 	blrpMaxQueueSize       int
 	blrpScheduleDelay      time.Duration
@@ -408,7 +410,8 @@ func loadConfig() *Config {
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.runtimeMetricsOtel = p.GetBool("DD_METRICS_OTEL_ENABLED", false)
+	cfg.otelSDKDisabled = p.GetBool("OTEL_SDK_DISABLED", false)
+	cfg.runtimeMetricsOtel = resolveOTelSignalEnabled("DD_METRICS_OTEL_ENABLED", p.GetBool("DD_METRICS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -468,7 +471,7 @@ func loadConfig() *Config {
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
-	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.logsOTelEnabled = resolveOTelSignalEnabled("DD_LOGS_OTEL_ENABLED", p.GetBool("DD_LOGS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
 	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, func(v int) bool { return v > 0 })
 	cfg.blrpScheduleDelay = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
@@ -1690,6 +1693,13 @@ func (c *Config) LogsOTelEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.logsOTelEnabled
+}
+
+// OTelSDKDisabled reports whether OTEL_SDK_DISABLED=true is set.
+func (c *Config) OTelSDKDisabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSDKDisabled
 }
 
 func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
