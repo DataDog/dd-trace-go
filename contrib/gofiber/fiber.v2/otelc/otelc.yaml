@@ -9,9 +9,10 @@
 # dependencies included, except the fiber contrib. The contrib's own tests
 # create apps, and wrapping those would import the contrib into itself.
 #
-# The orchestrion aspect also sets app.Server().DD_Instrumented, a field the
-# fasthttp aspects add so they skip Fiber's server. fasthttp has no otelc rules
-# yet, so there is no fasthttp span to suppress and the field does not exist.
+# Like orchestrion, the rule also sets app.Server().DD_Instrumented, a field
+# the fasthttp rules add so they skip Fiber's server. Without it, each request
+# gets a fasthttp span on top of the fiber one. The fasthttp rules must be part
+# of the build, which otelc/all ensures.
 
 new_app:
   target:
@@ -22,6 +23,10 @@ new_app:
   do:
     - wrap_call:
         replace: |-
-          fibertrace.Wrap({{ . }})
+          func(app *__dd_fiber.App) *__dd_fiber.App {
+            app.Server().DD_Instrumented = true
+            return app
+          }(fibertrace.Wrap({{ . }}))
   imports:
+    __dd_fiber: github.com/gofiber/fiber/v2
     fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
