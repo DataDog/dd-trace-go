@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -17,11 +18,13 @@ import (
 // TestTelemetryDefaultConfigurations verifies that default configuration values
 // are reported to telemetry when no environment variables are set.
 func TestTelemetryDefaultConfigurations(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
 
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 
+	internalconfig.CreateNew()
 	mp, err := NewMeterProvider()
 	if err != nil {
 		t.Fatalf("unexpected error creating MeterProvider: %v", err)
@@ -31,8 +34,6 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 	// Check default values are reported
 	expectedDefaults := map[string]int{
 		"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": 10000, // 10 seconds
-		"OTEL_METRIC_EXPORT_INTERVAL":        10000, // 10 seconds
-		"OTEL_METRIC_EXPORT_TIMEOUT":         7500,  // 7.5 seconds
 	}
 
 	for configName, expectedValue := range expectedDefaults {
@@ -53,6 +54,7 @@ func TestTelemetryDefaultConfigurations(t *testing.T) {
 // configurations are reported to telemetry when set via environment variables, and that
 // OTEL_EXPORTER_OTLP_HEADERS is not reported in configuration telemetry.
 func TestTelemetryExporterConfigurations(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
 
@@ -62,9 +64,8 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE,other-config-value=value")
 	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
-	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "5000")
 
+	internalconfig.CreateNew()
 	mp, err := NewMeterProvider()
 	if err != nil {
 		t.Fatalf("unexpected error creating MeterProvider: %v", err)
@@ -76,8 +77,6 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_TIMEOUT":  30000,
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
-		"OTEL_METRIC_EXPORT_INTERVAL": 5000,
-		"OTEL_METRIC_EXPORT_TIMEOUT":  5000,
 	}
 
 	for configName, expectedValue := range expectedConfigs {
@@ -110,6 +109,7 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 // environment variables, and that OTEL_EXPORTER_OTLP_METRICS_HEADERS is not reported in
 // configuration telemetry.
 func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	recorder := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(recorder)()
 
@@ -120,6 +120,7 @@ func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
 	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://localhost:4325")
 
+	internalconfig.CreateNew()
 	mp, err := NewMeterProvider()
 	if err != nil {
 		t.Fatalf("unexpected error creating MeterProvider: %v", err)

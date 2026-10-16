@@ -62,6 +62,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/cloudevents/sdk-go/v2":               {"CloudEvents SDK v2", false},
 	"github.com/confluentinc/confluent-kafka-go":     {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2":  {"Kafka (confluent) v2", false},
+	"connectrpc.com/connect":                         {"Connect RPC", false},
 	"database/sql":                                   {"SQL", false},
 	"github.com/dimfeld/httptreemux/v5":              {"HTTP Treemux", false},
 	"github.com/elastic/go-elasticsearch/v6":         {"Elasticsearch v6", false},
@@ -319,9 +320,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
-	}
+	// Always apply the level, so that restarting without one restores the default.
+	log.SetLevel(c.internalConfig.LogLevel())
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
 		// Increase timeout up to 45 seconds (same as other tracers in CIVis mode)

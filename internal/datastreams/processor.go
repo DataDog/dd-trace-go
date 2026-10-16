@@ -415,6 +415,11 @@ func (p *Processor) flushInput() {
 	}
 }
 
+const (
+	minPollInterval = 100 * time.Microsecond
+	maxPollInterval = 5 * time.Millisecond
+)
+
 // sendToAgentStalling wraps sendToAgent, marking the reader as stalled on
 // the agent call for the duration of the (synchronous) HTTP request, since
 // the queue isn't drained while it's in flight.
@@ -425,6 +430,7 @@ func (p *Processor) sendToAgentStalling(payloads map[string]StatsPayload) {
 }
 
 func (p *Processor) run(tick <-chan time.Time) {
+	pollInterval := minPollInterval
 	for {
 		select {
 		case <-p.stop:
@@ -441,10 +447,12 @@ func (p *Processor) run(tick <-chan time.Time) {
 			s := p.in.pop()
 			if s == nil {
 				p.readerState.Store(int32(readerStalledOnEmptyQueue))
-				time.Sleep(time.Millisecond * 10)
+				time.Sleep(pollInterval)
 				p.readerState.Store(int32(readerProcessing))
+				pollInterval = min(2*pollInterval, maxPollInterval)
 				continue
 			}
+			pollInterval = minPollInterval
 			p.processInput(s)
 		}
 	}

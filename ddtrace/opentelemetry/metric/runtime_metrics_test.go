@@ -19,9 +19,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func newTestMeterProvider() (*sdkmetric.MeterProvider, *sdkmetric.ManualReader) {
+func newTestMeterProvider(opts ...sdkmetric.Option) (*sdkmetric.MeterProvider, *sdkmetric.ManualReader) {
 	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	mp := sdkmetric.NewMeterProvider(append([]sdkmetric.Option{sdkmetric.WithReader(reader)}, opts...)...)
 	return mp, reader
 }
 

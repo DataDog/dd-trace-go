@@ -6,11 +6,13 @@
 package config
 
 import (
+	"cmp"
 	"maps"
 	"math"
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,6 +90,13 @@ const (
 	otlpTracesPath  = "/v1/traces"
 	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
+	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
+	otlpDefaultGRPCPort = "4317"
+
+	// defaultRuntimeMetricsExportInterval is the default value for OTEL_METRIC_EXPORT_INTERVAL.
+	defaultRuntimeMetricsExportInterval = 10 * time.Second
+	// defaultRuntimeMetricsExportTimeout is the default value for OTEL_METRIC_EXPORT_TIMEOUT.
+	defaultRuntimeMetricsExportTimeout = 7500 * time.Millisecond
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
@@ -505,15 +514,101 @@ func decodeOTLPHeaders(headers map[string]string) map[string]string {
 	return headers
 }
 
-// mergeOTLPHeaders merges generic and signal-specific OTLP headers (traces, metrics); signal headers take precedence.
-func mergeOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// or of the generic headers when the signal-specific ones are empty.
+func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(signalHeaders) > 0 {
+		return maps.Clone(signalHeaders)
+	}
+	if len(genericHeaders) > 0 {
+		return maps.Clone(genericHeaders)
+	}
+	return nil
+}
+
+// resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
+// insecure flag. A signal endpoint is used as-is; a generic one gets otlpMetricsPath appended.
+func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOverride string, agentURL *url.URL) (httpHost, httpPath, grpcTarget string, insecure bool) {
+	httpHost = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultPort)
+	grpcTarget = net.JoinHostPort(internal.DefaultAgentHostname, otlpDefaultGRPCPort)
+	httpPath = otlpMetricsPath
+	for i, raw := range []string{genericEndpoint, metricsEndpoint} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		httpHost = u.Host
+		grpcTarget = path.Join(u.Host, u.Path)
+		httpPath = path.Join(u.Path, otlpMetricsPath)
+		isSignalEndpoint := i == 1
+		if isSignalEndpoint {
+			httpPath = cmp.Or(u.Path, "/")
+		}
+		insecure = strings.EqualFold(u.Scheme, URLSchemeHTTP) || strings.EqualFold(u.Scheme, URLSchemeUnix)
+	}
+	// Like the OTel Go SDK, and unlike the OTel spec, an explicit setting overrides the endpoint scheme.
+	if insecureOverride != "" {
+		insecure = strings.EqualFold(insecureOverride, "true")
+	}
+	if genericEndpoint == "" && metricsEndpoint == "" {
+		host := internal.DefaultAgentHostname
+		agentInsecure := true
+		if agentURL != nil {
+			host = cmp.Or(agentURL.Hostname(), host)
+			agentInsecure = agentURL.Scheme != URLSchemeHTTPS
+		}
+		httpHost = net.JoinHostPort(host, otlpDefaultPort)
+		grpcTarget = net.JoinHostPort(host, otlpDefaultGRPCPort)
+		insecure = insecure || agentInsecure
+	}
+	httpPath = strings.TrimSpace(httpPath)
+	if httpPath == "" || httpPath == "." {
+		httpPath = otlpMetricsPath
+	} else if !path.IsAbs(httpPath) {
+		httpPath = "/" + httpPath
+	}
+	return httpHost, httpPath, grpcTarget, insecure
+}
+
+// resolveRuntimeMetricsHeaders parses the signal headers when set, otherwise the generic ones.
+// Entries with an invalid header name or value encoding are dropped.
+func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[string]string {
+	raw := cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders))
+	if raw == "" {
 		return nil
 	}
-	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
-	maps.Copy(merged, genericHeaders)
-	maps.Copy(merged, signalHeaders)
-	return merged
+	headers := make(map[string]string)
+	for entry := range strings.SplitSeq(raw, ",") {
+		key, value, found := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !found || key == "" || strings.ContainsFunc(key, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
+		}) {
+			continue
+		}
+		value, err := url.PathUnescape(value)
+		if err == nil {
+			headers[key] = strings.TrimSpace(value)
+		}
+	}
+	return headers
+}
+
+// validateRuntimeMetricsTemporality returns true for the two supported temporality preferences.
+// The warning is only logged when warn is true.
+func validateRuntimeMetricsTemporality(v string, warn bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "delta", "cumulative":
+		return true
+	}
+	if warn {
+		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
+	}
+	return false
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
@@ -526,6 +621,18 @@ func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if warn {
 		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
 	}
+	return false
+}
+
+// resolveOTelSignalEnabled returns whether an OTel SDK signal is enabled.
+// OTEL_SDK_DISABLED disables every OTel SDK signal, so unlike other OTEL_*
+// mappings it overrides an explicit DD opt-in.
+func resolveOTelSignalEnabled(key string, enabled, sdkDisabled bool) bool {
+	if !enabled || !sdkDisabled {
+		return enabled
+	}
+	log.Warn("OTEL_SDK_DISABLED=true overrides %s=true", key)
+	configtelemetry.Report(key, false, telemetry.OriginCalculated)
 	return false
 }
 

@@ -152,6 +152,13 @@
         "default": "10485760"
       }
     ],
+    "DD_APPSEC_DISABLE_FEATURES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_APPSEC_ENABLED": [
       {
         "implementation": "A",
@@ -1318,6 +1325,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_CONNECT_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1358,6 +1372,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_TRACE_ECHO_IGNORED_ROUTES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
       }
     ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
@@ -2054,6 +2075,13 @@
         "sensitive": true
       }
     ],
+    "OTEL_EXPORTER_OTLP_INSECURE": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
       {
         "implementation": "A",
@@ -2071,9 +2099,9 @@
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
       {
-        "implementation": "B",
+        "implementation": "D",
         "type": "string",
-        "default": "http/json"
+        "default": "http/protobuf"
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT": [
@@ -2096,6 +2124,13 @@
         "type": "string",
         "default": null,
         "sensitive": true
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -2195,6 +2230,13 @@
         "implementation": "B",
         "type": "string",
         "default": ""
+      }
+    ],
+    "OTEL_SDK_DISABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": null
       }
     ],
     "OTEL_SERVICE_NAME": [

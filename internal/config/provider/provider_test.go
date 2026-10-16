@@ -316,7 +316,7 @@ apm_configuration_default:
 
 		t.Setenv("OTEL_SERVICE_NAME", "otel_service")
 		t.Setenv("OTEL_LOG_LEVEL", "debug")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=otel_env,service.version=0.5.0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=otel_env,service.version=0.5.0")
 		t.Setenv("OTEL_TRACES_SAMPLER", "traceidratio")
 		t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.8")
 
@@ -558,6 +558,26 @@ func TestGetInt64(t *testing.T) {
 		t.Run(tc.value, func(t *testing.T) {
 			p := newTestProvider(newTestConfigSource(map[string]string{"OTEL_BLRP_SCHEDULE_DELAY": tc.value}, telemetry.OriginEnvVar))
 			assert.Equal(t, tc.expected, p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultValue))
+		})
+	}
+}
+
+func TestGetInt64WithValidator(t *testing.T) {
+	const defaultValue int64 = 1000
+	isPositive := func(v int64) bool { return v > 0 }
+	for _, tc := range []struct {
+		value    string
+		expected int64
+	}{
+		{value: "", expected: defaultValue},
+		{value: "invalid", expected: defaultValue},
+		{value: "0", expected: defaultValue},
+		{value: "-1000", expected: defaultValue},
+		{value: "500", expected: 500},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			p := newTestProvider(newTestConfigSource(map[string]string{"OTEL_BLRP_SCHEDULE_DELAY": tc.value}, telemetry.OriginEnvVar))
+			assert.Equal(t, tc.expected, p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultValue, isPositive))
 		})
 	}
 }

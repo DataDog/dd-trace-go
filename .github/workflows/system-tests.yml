@@ -156,6 +156,10 @@ jobs:
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
+    # Without this the job inherits GitHub's 360-minute default, so a hung
+    # scenario holds the merge queue for hours. A healthy scenario takes under
+    # 16 minutes (p99 about 12).
+    timeout-minutes: 30
     needs:
       - changes
       - warm-repo-cache
@@ -480,6 +484,7 @@ jobs:
       _system_tests_dev_mode: true
       push_to_test_optimization: true
       desired_execution_time: 300
+      ref: 73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests
