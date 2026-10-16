@@ -833,6 +833,10 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
 		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
 		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"generic logs", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"logs", "OTEL_EXPORTER_OTLP_LOGS_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"generic runtime metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).RuntimeMetricsHeaders, false},
+		{"runtime metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).RuntimeMetricsHeaders, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			resetGlobalState()
@@ -840,17 +844,19 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
-			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%,surrounding= \t%0A%20secret%20%0A\t ")
 
 			want := map[string]string{
-				"api-key":   "hello world,value=1",
-				"percent":   "%",
-				"lowercase": ",=",
-				"plus":      "a+b+c",
-				"once":      "%20",
-				"empty":     "",
-				"plain":     "unchanged",
-				"x%2Dkey":   "value",
+				"api-key":     "hello world,value=1",
+				"percent":     "%",
+				"lowercase":   ",=",
+				"plus":        "a+b+c",
+				"once":        "%20",
+				"empty":       "",
+				"plain":       "unchanged",
+				"x%2Dkey":     "value",
+				"surrounding": "\n secret \n",
 			}
 			if tt.traces {
 				want["Content-Type"] = OTLPContentTypeHeader
@@ -990,6 +996,16 @@ func TestOTLPHeadersParsedTheSameForEverySignal(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestOTLPGenericHeadersNotSharedBetweenSignals(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic")
+
+	cfg := loadConfig()
+
+	assert.Equal(t, map[string]string{"api-key": "generic", "Content-Type": OTLPContentTypeHeader}, cfg.OTLPTraceHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPMetricsHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPLogsHeaders())
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -1857,6 +1873,27 @@ func TestOTLPLogsConfigTelemetry(t *testing.T) {
 			if cfg.Name == "OTEL_EXPORTER_OTLP_TIMEOUT" || cfg.Name == "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT" {
 				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
 			}
+		}
+	})
+
+	t.Run("reports each generic setting once for all signals", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+
+		loadConfig()
+
+		for _, key := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL"} {
+			var reports int
+			for _, cfg := range recorder.Configuration {
+				if cfg.Name == key && cfg.Origin == telemetry.OriginEnvVar {
+					reports++
+				}
+			}
+			// Once for the OTLP signals, once for the environment-only runtime metrics reader.
+			assert.Equal(t, 2, reports, key)
 		}
 	})
 }
@@ -2872,7 +2909,7 @@ func TestRuntimeMetricsHeaders(t *testing.T) {
 		{"generic", "", map[string]string{"Authorization": "Bearer token"}},
 		{"blank signal", "  ", map[string]string{"Authorization": "Bearer token"}},
 		{"signal replaces", "x-key=a%2Bb", map[string]string{"x-key": "a+b"}},
-		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", map[string]string{}},
+		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", nil},
 		{"mixed", "bad key=x,good=some%20value,empty=", map[string]string{"good": "some value", "empty": ""}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

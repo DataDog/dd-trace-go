@@ -7,6 +7,7 @@ package config
 
 import (
 	"cmp"
+	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -28,6 +29,12 @@ import (
 // DefaultSocketDSDPath is the UDS socket path probed during DogStatsD
 // auto-discovery. Exported as a var only for test overrides.
 var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
+
+// The OTLP protocols each exporter supports, default first.
+var (
+	otlpMetricsProtocols = []string{defaultOTLPProtocol, "http/json"}
+	otlpLogsProtocols    = []string{defaultOTLPProtocol, "http", "grpc"}
+)
 
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
@@ -58,6 +65,8 @@ const (
 	defaultBLRPExportTimeout = 30 * time.Second
 	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
 	defaultBLRPMaxExportBatchSize = 512
+	// defaultOTLPProtocol is the default value for OTEL_EXPORTER_OTLP_PROTOCOL.
+	defaultOTLPProtocol = "http/protobuf"
 	// defaultOTLPTimeout is the default value for OTEL_EXPORTER_OTLP_TIMEOUT.
 	defaultOTLPTimeout = 10 * time.Second
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
@@ -500,10 +509,31 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
+// otlpGeneric holds the OTEL_EXPORTER_OTLP_<setting> values every signal falls
+// back to, read once so their telemetry is reported once.
+type otlpGeneric struct {
+	endpoint, protocol string
+	headers            map[string]string
+}
+
+// readOTLPGeneric skips only the values no signal can use; each signal still
+// validates the result against its own exporter.
+func readOTLPGeneric(p *provider.Provider) otlpGeneric {
+	return otlpGeneric{
+		endpoint: p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL),
+		headers:  p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders),
+		protocol: p.GetStringWithValidator("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol, func(v string) bool {
+			v = normalizeOTLPProtocol(v)
+			return slices.Contains(otlpMetricsProtocols, v) || slices.Contains(otlpLogsProtocols, v)
+		}),
+	}
+}
+
 // otlpSignal reads the settings of one OTLP exporter from
 // OTEL_EXPORTER_OTLP_<name>_<setting>, falling back to OTEL_EXPORTER_OTLP_<setting>.
 type otlpSignal struct {
-	name string
+	name    string
+	generic otlpGeneric
 	// validEndpoint reports whether the signal's exporter can use an endpoint.
 	validEndpoint func(string) bool
 	// protocols lists the protocols the signal's exporter supports, default first.
@@ -514,22 +544,25 @@ type otlpSignal struct {
 	warn bool
 }
 
-// lookup returns the usable signal-specific and generic values of setting. Every
-// source is validated so an unusable value never hides a lower-priority usable one.
-func (s otlpSignal) lookup(p *provider.Provider, setting, def string, valid func(string) bool) (specific, generic string) {
+// lookup returns the usable signal-specific value of setting and the usable
+// generic one, else def. Every source is validated so an unusable value never
+// hides a lower-priority usable one.
+func (s otlpSignal) lookup(p *provider.Provider, setting, generic, def string, valid func(string) bool) (string, string) {
 	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
 	genericKey := "OTEL_EXPORTER_OTLP_" + setting
-	specific = p.GetStringWithValidator(specificKey, "", s.validator(specificKey, valid, s.warn))
+	specific := p.GetStringWithValidator(specificKey, "", s.validator(specificKey, valid, s.warn))
 	// The generic value only matters, and is only worth a warning, when the
 	// signal-specific one is not used.
-	generic = p.GetStringWithValidator(genericKey, def, s.validator(genericKey, valid, s.warn && specific == ""))
+	if generic == "" || !s.validator(genericKey, valid, s.warn && specific == "")(generic) {
+		return specific, def
+	}
 	return specific, generic
 }
 
 // get returns the usable signal-specific value of setting, else the generic one, else def.
-func (s otlpSignal) get(p *provider.Provider, setting, def string, valid func(string) bool) string {
-	specific, generic := s.lookup(p, setting, def, valid)
-	return cmp.Or(specific, generic)
+func (s otlpSignal) get(p *provider.Provider, setting, generic, def string, valid func(string) bool) string {
+	specific, fallback := s.lookup(p, setting, generic, def, valid)
+	return cmp.Or(specific, fallback)
 }
 
 func (s otlpSignal) validator(key string, valid func(string) bool, warn bool) func(string) bool {
@@ -547,16 +580,21 @@ func (s otlpSignal) validator(key string, valid func(string) bool, warn bool) fu
 
 // endpoints returns the usable signal-specific and generic endpoints; either may be empty.
 func (s otlpSignal) endpoints(p *provider.Provider) (specific, generic string) {
-	return s.lookup(p, "ENDPOINT", "", s.validEndpoint)
+	return s.lookup(p, "ENDPOINT", s.generic.endpoint, "", s.validEndpoint)
 }
 
+// headers returns the signal-specific headers, else a copy of the generic ones.
 func (s otlpSignal) headers(p *provider.Provider) map[string]string {
-	return parseOTLPHeaders(s.get(p, "HEADERS", "", func(v string) bool { return len(parseOTLPHeaders(v)) > 0 }))
+	if headers := p.GetMapWithParser("OTEL_EXPORTER_OTLP_"+s.name+"_HEADERS", nil, parseOTLPHeaders); len(headers) > 0 {
+		return headers
+	}
+	// Every signal shares the generic map, and callers may modify theirs.
+	return maps.Clone(s.generic.headers)
 }
 
 // protocol returns the lowercased protocol, always one of s.protocols.
 func (s otlpSignal) protocol(p *provider.Provider) string {
-	return normalizeOTLPProtocol(s.get(p, "PROTOCOL", s.protocols[0], func(v string) bool {
+	return normalizeOTLPProtocol(s.get(p, "PROTOCOL", s.generic.protocol, s.protocols[0], func(v string) bool {
 		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
 	}))
 }
@@ -672,25 +710,7 @@ func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOve
 // resolveRuntimeMetricsHeaders parses the signal headers when set, otherwise the generic ones.
 // Entries with an invalid header name or value encoding are dropped.
 func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[string]string {
-	raw := cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders))
-	if raw == "" {
-		return nil
-	}
-	headers := make(map[string]string)
-	for entry := range strings.SplitSeq(raw, ",") {
-		key, value, found := strings.Cut(entry, "=")
-		key = strings.TrimSpace(key)
-		if !found || key == "" || strings.ContainsFunc(key, func(r rune) bool {
-			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
-		}) {
-			continue
-		}
-		value, err := url.PathUnescape(value)
-		if err == nil {
-			headers[key] = strings.TrimSpace(value)
-		}
-	}
-	return headers
+	return parseOTLPHeaders(cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders)))
 }
 
 // validateRuntimeMetricsTemporality returns true for the two supported temporality preferences.

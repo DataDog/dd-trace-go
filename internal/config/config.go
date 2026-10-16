@@ -493,7 +493,8 @@ func loadConfig() *Config {
 		cfg.otlpExportMode = false
 		cfg.traceProtocolOverridesOTLP = true
 	}
-	traces := otlpSignal{name: "TRACES", validEndpoint: isOTLPHTTPURL, warn: cfg.otlpExportMode}
+	otlpGeneric := readOTLPGeneric(p)
+	traces := otlpSignal{name: "TRACES", generic: otlpGeneric, validEndpoint: isOTLPHTTPURL, warn: cfg.otlpExportMode}
 	tracesEndpoint, genericEndpoint := traces.endpoints(p)
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
 	cfg.otlpTraceURL = resolveOTLPTraceURL(tracesEndpoint, cfg.otlpEndpoint)
@@ -515,8 +516,9 @@ func loadConfig() *Config {
 	}
 	metrics := otlpSignal{
 		name:          "METRICS",
+		generic:       otlpGeneric,
 		validEndpoint: isOTLPHTTPURL,
-		protocols:     []string{"http/protobuf", "http/json"},
+		protocols:     otlpMetricsProtocols,
 		warn:          cfg.OTLPSpanMetricsEnabled(),
 	}
 	metricsEndpoint, genericEndpoint := metrics.endpoints(p)
@@ -540,8 +542,9 @@ func loadConfig() *Config {
 	})))
 	logs := otlpSignal{
 		name:          "LOGS",
+		generic:       otlpGeneric,
 		validEndpoint: isURL,
-		protocols:     []string{"http/protobuf", "http", "grpc"},
+		protocols:     otlpLogsProtocols,
 		warn:          cfg.logsOTelEnabled,
 	}
 	logsEndpoint, genericEndpoint := logs.endpoints(p)
