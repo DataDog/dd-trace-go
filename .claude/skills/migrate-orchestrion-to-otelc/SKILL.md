@@ -8,14 +8,10 @@ description: >-
 
 # Migrate an integration from Orchestrion to otelc
 
-Reproduce what the integration's `orchestrion.yml` does, with otelc rules and hooks that call the
-existing contrib entrypoints. Do not reimplement tracing, and do not introduce mechanisms the
-`orchestrion.yml` does not use.
-
-**Scope:** work only in the current branch/worktree and the sources in `references.md`. The
-foundation those sources describe is on `main`, so branch from `main` and everything you need is
-present. Do not inspect, borrow from, or depend on other branches, PRs, or worktrees, even if they
-contain otelc work.
+Reproduce the behaviour of the integration's `orchestrion.yml` with otelc rules and hooks that call
+the existing contrib entrypoints (`WrapClient`, `Middleware`, `Open`, ...). Do not reimplement
+tracing. You do not have to mirror each aspect one to one: when otelc has its own way to get the
+same behaviour, prefer it.
 
 ## Success criterion
 
@@ -33,34 +29,69 @@ For each behaviour difference you think you found, in this order:
    wrong.
 3. Run it under otelc. A difference argued from the call graph and never run is a guess.
 
-Put each test at the lowest level that can still fail. A `contrib/<name>` unit test with
-`mocktracer` covers most migrations; use `_integration` only when the assertion needs a woven build.
-Check that each test fails when you break what it guards.
+Instrumentation can only be tested in an otelc or orchestrion build, so tests for it go in
+`_integration/<name>/`. A `contrib/<name>` unit test with `mocktracer` only covers contrib code the
+port adds or changes, such as state exported for the hooks. Check that each test fails when you
+break what it guards.
 
-Two rungs, both run from `internal/orchestrion/_integration`:
-- **Compile + inject:** `otelc go build ./<name>/...`.
-- **Span parity:** `otelc go test ./<name>/...` against the same suite under `orchestrion go test`.
+## Validation
 
-Rules with `target: main` fire in neither rung: under `go test` the package under test compiles as
-`-p <import path>`. Check those by building a binary and running it, as
-`_integration/otelc-autostart` does.
+Run from `internal/orchestrion/_integration`:
 
-Before believing a green run, scan for **skipped** tests and check `matched.json` (see Cautions).
-`harness.Run` fails loudly on an unwoven build, but the GLS and foundation suites skip themselves.
+1. `otelc go test ./<name>/...`, and the same suite with `orchestrion go test`. Test one package per
+   invocation, as CI does: naming two packages where one imports the other fails the link with
+   `duplicated definition of symbol ... OtelGetStackImpl`, an open otelc bug
+   (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1361).
+2. Check what otelc did. A passing suite does not prove the rules are right: it matches spans by
+   subset, so it misses extra spans and double wrapping.
+   - `.otelc-build/matched.json` lists every rule that matched, by package and file. Each of your
+     rules should appear against the packages you expected, and nowhere else. `[]` means matching
+     ran and matched nothing, `null` means it never got that far.
+   - `.otelc-build/debug/<pkg>/` holds every file otelc rewrote, with slashes and dots in the
+     package path turned into underscores (`net/http` becomes `debug/net_http/`). Read each
+     injection and check it is the code you meant.
+
+Before believing a green run, scan for **skipped** tests and check for a silent failure (see
+"Green runs with nothing instrumented"). `harness.Run` fails loudly on an unwoven build, but the GLS
+and foundation suites skip themselves.
 
 Before believing a red one, check who owns the missing spans. A suite often asserts spans produced
-by another contrib, so it cannot reach parity until that one is migrated too; grep the expected
-trace for `"component"` values that are not yours. That is a sequencing problem, not a gap, and the
-integration is not blocked. Say so, and do not open a PR until the suite is actually green.
+by another contrib; grep the expected trace for `"component"` values that are not yours. That is a
+sequencing problem, not a gap, and the integration is not blocked. Say so, and do not open a PR
+until the suite is green.
+
+### Package main and dependency modules
+
+The harness suites never build a `package main`, and only exercise call sites inside the
+`_integration` module. Add a test for each case your rules reach:
+
+- **Package main**, when a `target:` includes `main` or `**`. Under `go test` the package under
+  test compiles as `-p <import path>`, so these rules never fire there. Add
+  `_integration/<name>/mainapp/`, a `package main` that calls the library and returns normally so
+  the injected `defer tracer.Stop()` flushes. Add a `main_test.go` that runs it with
+  `maintest.Run(t, "./<name>/mainapp")` and asserts spans with `agent.RequireSpan`
+  (`chi/main_test.go`). For a call-site rule, also call the library under an import alias
+  (`chi/mainapp/alias.go`).
+- **Dependency modules**, when a call-site rule targets `**`. Such a rule exists to also rewrite
+  call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
+  belongs to `_integration`, the module being built, so a rule that never reaches a dependency
+  passes them anyway. Add a small module under `_integration/internal/<lib>dep/` (module path
+  `example.com/<lib>dep`) that calls the library, `require` and `replace` it in
+  `_integration/go.mod`, and add a `TestCaseDependency` that calls it (`chi/dependency.go`). It has
+  to be a separate module, not a package of `_integration`, to count as a dependency.
+
+`maintest` builds the app with otelc and runs it against `maintest.Agent`, the harness test agent
+served on a local port so that another process can report to it. It skips when `otelc` is not on
+`PATH`. To compare against a plain `go build`, or to count the requests that reach the agent, use
+`maintest.Build`, `NewAgent` and `Exec` directly (`otelc-autostart/autostart_test.go`).
 
 ## Build enough context first
 
 From the sources in `references.md`, learn:
 - Orchestrion: the full set of join points and advice, and what advice templates can read (the `.`
   accessors).
-- otelc: the eight rule kinds (`inject_hooks`, `inject_code`, `add_struct_fields`, `wrap_call`,
-  `add_file`, `assign_value`, `expand_directive`, `set_fields`), the `where` and `where.file`
-  selectors, glob and `$root` targets, and `version` ranges.
+- otelc: every rule kind, the `where` and `where.file` selectors, the target forms and `version`
+  ranges, from `docs/rules.md`.
 
 Orchestrion renders Go code templates into the matched AST node. otelc calls external hook functions
 through a trampoline and `//go:linkname`, and can also inject raw code in-package (`inject_code`).
@@ -71,59 +102,48 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 1. List every aspect in `contrib/<name>/orchestrion.yml` as (join point, advice, contrib function it
    calls).
 2. Map each aspect with `pattern-mapping.md`, taking exact syntax from `references.md`.
-3. Check the whole list from step 1 against `feature-gaps.md`, not just the first aspect that trips
-   a gap. Report every gap together, and invent no workarounds.
-4. Author `contrib/<name>/otelc/` as **its own Go module**, holding the rules and the before/after
-   hooks. Separate module because the hooks import `go.opentelemetry.io/otelc/pkg/hook`, which
-   otherwise lands in the `go.mod` of everyone importing the contrib. A hook package sharing a
-   module with the code it instruments also breaks `otelc go test ./...`: the generated
-   `otelc.runtime.go` self-imports, and once two packages in the module carry that file the link
-   fails on a duplicated `OtelGetStackImpl` symbol.
+3. Check the whole list against `feature-gaps.md`, not just the first aspect that trips a gap.
+   Report every gap together instead of hacking around it.
+4. Author `contrib/<name>/otelc/` as **its own Go module**, holding the rules and the hooks. The
+   hooks import `go.opentelemetry.io/otelc/pkg/hook`, which would otherwise land in the `go.mod` of
+   everyone importing the contrib.
    - Module path MUST be `github.com/DataDog/dd-trace-go/contrib/<name>/otelc/v2`, version suffix
      last, like every other module in the repo.
-   - The package needs at least one Go file, and that file must import the contrib the rules name
-     in their `imports:` map. Two separate failures, so a rules-only module needs both:
-     - No Go file at all and otelc stops with `package <path> is not part of a module`. A bare
-       package clause is enough to clear this; the file name does not matter (`doc.go`, `otelc.go`).
-     - A Go file that never mentions the contrib leaves nothing in the module's own source
-       requiring it, so `go mod tidy` drops the requirement while `make fix-modules` keeps the
-       replace directive, and otelc's toolexec fails with "replaced but not required". Blank-import
-       it (`_ "github.com/DataDog/dd-trace-go/contrib/<name>/v2"`) to hold it in place.
-
-     A module with hooks gets the second for free, since the hooks import the contrib to call it.
-   - Rule files live in this directory, not next to `orchestrion.yml`, named `otelc.yaml`,
-     `otelc.yml` or `*.otelc.yaml`. Each rule's `path:` is this package. otelc walks a named
-     package's directory tree and stops at nested modules, so `otelc/all` must name this module
-     directly.
-   - Do not add the file-level `version:` key yet. It only exists on otelc main, and a file
-     carrying it fails to parse on every released version, so there is nothing valid to declare
-     while `OTELC_VERSION` is a main commit. otelc warns about its absence into
-     `.otelc-build/debug.log` only.
+   - The package needs at least one Go file, and that file must import the contrib. With no Go file,
+     otelc stops with `package <path> is not part of a module`. Without the import, `go mod tidy`
+     drops the requirement while `make fix-modules` keeps the replace directive, and otelc fails
+     with "replaced but not required". A rules-only module blank-imports the contrib
+     (`_ "github.com/DataDog/dd-trace-go/contrib/<name>/v2"`); a module with hooks already imports
+     it.
+   - Rule files live in this directory, named `otelc.yaml` or `*.otelc.yaml` (`.yml` works too).
+     Each rule's `path:` is this package.
+   - Do not add the file-level `version:` key. It rejects pseudo-versions, and `OTELC_VERSION` is
+     a `main` commit, so there is nothing valid to declare.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
-     application's own main package, so a rule-carrying package under `internal/` builds here and
-     fails for every real user. `scripts/build_otelc_external_app.sh` guards this; a rule's
-     `target:` may still be internal, since targets are rewritten rather than imported.
+     application's main package, so a rule-carrying package under `internal/` fails for every real
+     user. `scripts/build_otelc_external_app.sh` guards this. A rule's `target:` may still be
+     internal.
    - State the hooks and the contrib both need is exported from the **contrib package**. The hook
      module cannot reach `contrib/<name>/v2/internal/...`.
    - Keep the hook layer thin. It is the only code that needs otelc to compile; everything else goes
      in normal sub-packages and stays unit-testable.
-5. Blank-import `contrib/<name>/otelc` from `otelc/all`, the way `orchestrion/all` lists
-   integrations, `go mod tidy` that module, and add the new module to `go.work` (`make fix-modules`
-   does not touch the workspace). Applications import `otelc/all`, so nothing else needs editing.
-6. Validate both rungs, and diff the otelc spans against the orchestrion ones.
-7. From the repository root, in a shell **without** `GOWORK=off` (some generators need the
-   workspace, others set `GOWORK=off` for themselves):
-   - `make fix-modules`, repeatedly until it stops changing files. It snapshots the module graph
-     once at start, so a brand new module needs two or three passes; the first often fails with
-     `unknown revision 000000000000`. Replace directives do not propagate from dependency modules,
-     and CI fails on an inconsistent module graph.
-   - `make lint`. It reaches the root module and `internal/orchestrion/_integration` (the latter
-     with `--disable=gocritic`) and nothing else, and CI lints the same two. Lint the contrib
-     modules yourself: `golangci-lint run ./...` inside `contrib/<name>`, and again inside
-     `contrib/<name>/otelc`.
-   - `make generate`, and commit what it changes. A new contrib dependency updates
-     `internal/stacktrace/contribs_generated.go`. Run `otelc cleanup` first: a stale `.otelc-build`
-     makes it fail with "expected exactly 1 package, got 0".
+5. Wire the module in:
+   - Blank-import it from `otelc/all`, the way `orchestrion/all` lists integrations, and
+     `go mod tidy` that module. otelc stops at nested modules, so `otelc/all` must name this module
+     directly. Applications import `otelc/all`, so nothing else needs editing.
+   - Add it to `go.work` (`make fix-modules` does not touch the workspace).
+   - Add the contrib and its `otelc` module to `OTELC_MODULES` in `.github/workflows/otelc.yml`,
+     which CI tidies before running otelc. Every module otelc reads needs a current `go.mod`.
+6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
+   otelc spans against the orchestrion ones.
+7. From the repository root, in a shell **without** `GOWORK=off`:
+   - `make fix-modules`, repeatedly until it stops changing files. A brand new module needs two or
+     three passes; the first often fails with `unknown revision 000000000000`.
+   - `make lint`, which covers only the root module and `internal/orchestrion/_integration`. Also
+     run `golangci-lint run ./...` inside `contrib/<name>` and `contrib/<name>/otelc`.
+   - `otelc cleanup`, then `make generate`, and commit what it changes (a new contrib dependency
+     updates `internal/stacktrace/contribs_generated.go`). A stale `.otelc-build` makes it fail with
+     "expected exactly 1 package, got 0".
 8. Keep the PR description short. "Add otelc support for `<name>`" is usually the whole thing. Add a
    note only for an unmigrated aspect, a feature gap, an aspect reproduced by other means with the
    same observable behaviour, or tests added to pin down behaviour the migration relies on.
@@ -132,71 +152,81 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      always fail for the same reason.
    - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
      otelc reads has a stale `go.mod`, usually because CI builds a merge commit with a newer `main`.
-     Merge `origin/main`, `go mod tidy` the module the error names, and add the new hook module to
-     the tidy loop in `.github/workflows/otelc.yml`. Every module otelc reads needs a current
-     `go.mod`, including one a rule's `path:` points at, not only modules owning a tool file.
+     Merge `origin/main` and `go mod tidy` the module the error names.
    - Any other failure: fix and push if the cause is obvious, otherwise stop and agree on the fix.
 
 ## Cautions
 
-- Reuse the contrib. Functional and performance parity with minimal new code.
-- Definition-side double-firing: a hooked constructor that internally calls another hooked
-  constructor fires both. Hook only the inner funnel, or add a re-entrancy guard.
-- On a generic target function, otelc replaces `GetParam`, `SetParam`, `GetReturnVal` and
-  `SetReturnVal` with panicking stubs, so a hook that only reads an argument fails too. Reach the
-  values another way, or use `inject_code`, which has no such limit.
-- `SetReturnVal` also panics in a before-only hook, because `returnVals` is allocated only for an
-  after trampoline. Pair before and after hooks and pass the value through `SetData`/`GetData`.
-- A hook that panics is swallowed by otelc's generated `recover()`: green build, green tests, no
-  instrumentation. It prints `failed to exec Before hook <name>` to stderr and nothing more, so
-  assume this whenever spans go missing without an error.
-- `inject_hooks` gives no init-ordering guarantee. The trampoline links through
-  `//go:linkname` and creates no import edge, so hooking a function that other packages call from
-  their own `init()` can run the hook before the hook module's own `init()`. The contrib may not
-  be initialized either, and the resulting panic is swallowed (see above). Queue those calls in
-  package variables with no initializer, which are usable before `init()`, and replay them from
-  the hook module's `init()`, which runs after the contrib's because it imports it
-  (`contrib/database/sql/otelc/hooks.go`).
-- A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
-  library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
-- `target: $root` never matches `package main`, whose compile-time import path is the literal
-  string `main`. A call-site rule that must fire there lists both: `target: [$root, main]`.
-- Hook modules must pin `go.opentelemetry.io/otelc/pkg` to the same commit as `OTELC_VERSION`, not
-  to whatever is current. There is no submodule tag, so plain `go mod tidy` drifts them onto HEAD.
-  Both pseudo-versions carry that commit, so read the hash out of `OTELC_VERSION` and resolve it:
-  `go list -m go.opentelemetry.io/otelc/pkg@<hash>`. After changing it, tidy the hook module and
-  `otelc/all`, or the next build fails with "updates to go.mod needed" for a module otelc reads.
+### Hooks
+
 - Upstream limits hook imports to the target library, OpenTelemetry and the standard library, and
   expects hooks to honour `OTEL_GO_ENABLED_INSTRUMENTATIONS` / `OTEL_GO_DISABLED_INSTRUMENTATIONS`.
   Ours import the contrib and follow dd's own configuration instead; say so in the PR.
-- Keep comments short: what is not obvious from the code, and nothing else.
-- Do not copy rule syntax or API signatures into these docs. Re-read `references.md`.
+- A hooked constructor that calls another hooked constructor fires both. Hook only the inner
+  funnel, or add a re-entrancy guard.
+- Orchestrion weaves an aspect into dd-trace-go's own packages, contribs included, only when the
+  aspect sets `tracer-internal: true`, so its call-site aspects skip the contrib's own calls. otelc
+  has no such rule, and a definition-side hook fires for every caller. A hook on a library
+  constructor fires again when the contrib's wrapper calls it, so a client built with the contrib
+  is traced twice. A `wrap_call` rule with the contrib excluded from `target:` avoids this, as
+  orchestrion's call-site aspects do. For a definition-side hook, prefer a runtime guard: the
+  contrib marks a value the hook can read, such as the context
+  (`contrib/gomodule/redigo/otelc/hook.go`). It skips only this hook and follows the context into
+  new goroutines. When there is no such value, put `//otelc:ignore` above the contrib's call. It
+  skips every hook on that goroutine for the whole statement, other integrations' too, and does
+  not reach goroutines the call starts.
+- Give every `inject_hooks` rule its own before/after names. otelc emits a hook's `//go:linkname`
+  stub once per rule and file, so two rules sharing a hook in one package fail with `redeclared in
+  this block`. Delegate to a shared helper instead.
+- Do not declare `...any` for a variadic parameter. otelc keeps the target's element type in the
+  stub, so the hook reads a garbage slice with a green build. If the element is a func type the
+  hook cannot name, declare `_ ...func()` and never read it (every func value is one pointer).
+- On a generic target function, `GetParam`, `SetParam`, `GetReturnVal` and `SetReturnVal` are
+  panicking stubs, so even a hook that only reads an argument fails. Use `inject_code` instead
+  (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1280).
+- `SetReturnVal` panics in a before-only hook, because only the after trampoline allocates
+  `returnVals`. Pair before and after hooks and pass the value through `SetData`/`GetData`.
+- `inject_hooks` gives no init-ordering guarantee. The trampoline creates no import edge, so a
+  function that other packages call from their own `init()` can run the hook before the hook
+  module and the contrib are initialized. Queue those calls in package variables with no
+  initializer and replay them from the hook module's `init()`
+  (`contrib/database/sql/otelc/hooks.go`).
+- Every hook call allocates: the trampoline builds a `HookContext` holding pointers to the
+  parameters, and it escapes. On a hot path in our own code, prefer `inject_code`.
 
-One otelc defect still leaves a green run with nothing instrumented:
+### Rules
 
-- **A package whose only Go files are `_test.go` is skipped.** otelc logs `skipping package without
-  Go files`, silently falls back to its embedded default rules, and writes `matched.json` as `null`.
-  When it is the package under test the whole build loses instrumentation, including rules targeting
-  other modules. Give it a `doc.go`.
+- A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
+  library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
+- `target: $root` never matches `package main`, whose compile-time import path is the literal
+  string `main`. Only a `main` entry reaches it, so a rule for the root module and its main package
+  lists both (`target: [$root, main]`). It also needs a main app test (see "Package main and
+  dependency modules").
 
-`otelc go test -json` used to fail the same way, forwarding `-json` into the `go <verb> -a -x -n`
-dry run otelc parses for its build plan and leaving `matched.json` as `[]` on an otherwise green
-run. Fixed in open-telemetry/opentelemetry-go-compile-instrumentation#1345, which the pinned version
-includes, so `-json` is safe. `.github/workflows/otelc.yml` still converts `-v` output with `go tool
-test2json` from when it was not.
+### The otelc pin
 
-Read `.otelc-build/matched.json` to tell instrumented from not: `[]` means matching ran and matched
-nothing, `null` means it never got that far (the skipped-package case above).
-`.otelc-build/debug/<pkg>/` holds the post-instrumentation source, with every slash and dot in the
-package path turned into an underscore (`net/http` becomes `debug/net_http/`,
-`example.com/app` becomes `debug/example_com_app/`). otelc's troubleshooting doc in `references.md`
-covers `--debug`, `--stats` and `otelc cleanup`.
+- Hook modules pin `go.opentelemetry.io/otelc/pkg` to the commit in `OTELC_VERSION`. There is no
+  submodule tag
+  (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/984), so
+  plain `go mod tidy` drifts them onto HEAD. Resolve the hash from
+  `OTELC_VERSION` with `go list -m go.opentelemetry.io/otelc/pkg@<hash>`, then tidy the hook module
+  and `otelc/all`, or the next build fails with "updates to go.mod needed".
 
-`.otelc-build/` is already gitignored here. Every build writes one next to the module it ran in, so
-if you validate from outside this repo, ignore it there before committing anything.
+### Green runs with nothing instrumented
+
+- A hook that panics is swallowed by otelc's generated `recover()`. Build and tests stay green, and
+  the only sign is a `failed to exec Before hook <name>` line on stderr. Suspect this whenever
+  spans go missing without an error.
+- A package whose only Go files are `_test.go` is skipped. otelc logs `skipping package without Go
+  files` and falls back to its embedded default rules, so the whole build loses instrumentation
+  and `matched.json` is `null`. Give it a `doc.go`.
+- `.otelc-build/` is gitignored here. If you validate from outside this repo, ignore it there too.
+  otelc's troubleshooting doc covers `--debug`, `--stats` and `otelc cleanup`.
 
 ## Supporting docs
 
-- `pattern-mapping.md` — Orchestrion aspect patterns to the otelc rule that reproduces them.
-- `feature-gaps.md` — Orchestrion constructs otelc cannot reproduce (stop-and-flag cases).
-- `references.md` — sources of truth for Orchestrion and otelc.
+Do not copy rule syntax or API signatures into these docs; link the source in `references.md`.
+
+- `pattern-mapping.md`: Orchestrion aspect patterns to the otelc rule that reproduces them.
+- `feature-gaps.md`: Orchestrion constructs otelc cannot reproduce (stop-and-flag cases).
+- `references.md`: sources of truth for Orchestrion and otelc.
