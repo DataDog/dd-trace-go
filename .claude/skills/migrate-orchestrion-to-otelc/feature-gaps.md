@@ -20,7 +20,8 @@ Orchestrion injects `func init() { tracer.Start() }` this way. otelc's only equi
 There the copied file gets a bare `package` clause and the build fails with `syntax error:
 unexpected keyword func, expected name`. `where: {file: {is_test: false}}` does not suppress it,
 because `where` is ignored for file rules. Both halves are open upstream
-(open-telemetry/opentelemetry-go-compile-instrumentation#1347 and #1348).
+(https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1347 and
+https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1348).
 
 For statements at the top of an existing function use `inject_code` on `func main`, which does not
 match test-main builds (`ddtrace/tracer/otelc.yaml`). For a new declaration, stop.
@@ -39,30 +40,26 @@ Two further limits inside `where.file`:
 - Leaf predicates do not conjoin implicitly. Two of them fail with "where.file has multiple active
   predicates"; write an explicit `all-of` instead.
 
-A target list with `not:` entries replaces the common `not: {import-path: <the library>}`:
-`target: ["**", not: "<the library>/**"]`.
+Excluding packages is not this gap: a `target:` list with `not:` entries does it
+(`target: ["**", not: "<the library>/**"]`).
 
-## 4. Excluding one call site from a definition-side hook
-
-Orchestrion honours `//orchestrion:ignore` on a call. `inject_hooks` hooks the definition, so it
-fires for every caller and no selector excludes one.
-
-## 5. Matching by interface implementation
+## 4. Matching by interface implementation
 
 Orchestrion's `function` join point offers `result-implements`, `final-result-implements` and
 `argument-implements`. otelc selectors name concrete symbols only. `FuncArgumentOfType` and
 `FuncReturnOfType` match a syntactic type name, so a custom type that merely implements
 `context.Context` is not matched.
 
-## 6. Ordering between rules on the same function
+## 5. Ordering between rules on the same function
 
 Orchestrion orders advice on one join point by namespace and `order:`
 (`crashtracker/orchestrion.yml` and `instrumentation/errortrace/orchestrion.yml` both set
 `order: 100`). otelc has no ordering key. Modifiers in one `do:` sequence run in declaration order,
-and the order across separate rules is not defined (upstream #583). Stop when an aspect sets
+and the order across separate rules is not defined
+(https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/583). Stop when an aspect sets
 `order:`, or when two rules land on the same function and the result depends on which runs first.
 
-## 7. Function literals and nested functions
+## 6. Function literals and nested functions
 
 `func:` matches a top-level function or method by exact name, and nothing matches a function
 literal. An aspect whose `function-body` join point reaches closures has no equivalent. Directive
@@ -82,17 +79,3 @@ rules also see only top-level functions, so a directive on a function literal is
   `var` and `const` carry `replace:` and `wrap:`.
 - **`target: test_main`** is reserved in `docs/rules.md` but not supported. `where.file.is_test` is
   the only handle on test builds, and file rules ignore it (gap 2).
-
-## Closed since this doc was written
-
-Each is now in `pattern-mapping.md`, and each was re-confirmed against latest upstream `main`.
-
-- **Composite-literal match.** `where: {struct_literal:}` with the `set_fields` modifier sets
-  fields on `T{...}` literals written in the target package.
-- **Reading the caller's context at a call site.** `wrap_call` templates expose
-  `.FuncArgumentOfType`, `.FuncReturnOfType` and `.CallArgument`, so an in-scope
-  `context.Context` can be threaded into a call that has none.
-- **Directive arguments.** `expand_directive` templates read `.DirectiveArgs` and
-  `.DirectiveArg <key>`.
-- **Method call at a call site.** `where: {method_call: "import/path.*Type.Method"}` with
-  `wrap_call`. It never matches a call made through an interface-typed receiver.

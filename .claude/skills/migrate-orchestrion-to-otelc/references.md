@@ -36,38 +36,33 @@ than rendered docs where possible.
 - Worked examples:
   [instrumentation/](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/instrumentation)
 
-These links point at `main`. `OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on
-upstream `main`, never a release, so check otelc behaviour against latest upstream `main` and ignore
-tags. The pin can trail `main`. When a port needs something that landed after it, bump
-`OTELC_VERSION` to the latest `main` commit and re-pin `go.opentelemetry.io/otelc/pkg` to match
-(see Cautions in `SKILL.md`).
+`OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on upstream `main`, never a release.
+Check otelc behaviour against latest upstream `main` and ignore tags. When a port needs something
+newer than the pin, bump `OTELC_VERSION` to the latest `main` commit and re-pin
+`go.opentelemetry.io/otelc/pkg` to match (see "The otelc pin" in `SKILL.md`).
 
-`docs/` is not shipped in the module zip, so the links above are the only copy. To settle what the
-tool actually does, read `tool/internal/` in a clone of upstream at the latest `main` commit. The
-copy under `$(go env GOMODCACHE)/go.opentelemetry.io/otelc@<OTELC_VERSION>/` shows the pin, which
-can be older.
+`docs/` is not in the module zip, so the links above are the only copy. To settle what the tool
+does, read `tool/internal/` in a clone of upstream at latest `main`. The module cache copy under
+`go.opentelemetry.io/otelc@<OTELC_VERSION>/` shows the pin, which can be older.
 
 ## In this repo
 
-The otelc foundation, merged to `main` in #5117. Closer to what you are doing than the upstream
-examples, because these rules target our own code and the hooks call dd-trace-go.
+Closer to what you are doing than the upstream examples, because these rules target our own code
+and the hooks call dd-trace-go.
 
-- `ddtrace/tracer/otelc.yaml` — every core rule in one file: build-mode flag (`assign_value`), the
-  GLS storage woven into `runtime` (`add_struct_fields` + `add_file` + `inject_code`, including
-  `//go:linkname`), the span GLS lifecycle, and the tracer lifecycle with why it cannot use
-  `add_file`. Also the worked example of resolving every injected identifier through `.FuncArgument`
-  and `.Receiver` rather than naming it. Worth reading before writing your own rules; a rule carries
+- `ddtrace/tracer/otelc.yaml`: every core rule in one file. The build-mode flag (`assign_value`),
+  the GLS storage woven into `runtime` (`add_struct_fields` + `add_file` + `inject_code`), the span
+  GLS lifecycle, and the tracer lifecycle with why it cannot use `add_file`. Also the worked example
+  of resolving every injected identifier through `.FuncArgument` and `.Receiver`. A rule carries
   its own `target:`, so one file can rewrite several packages.
-- `instrumentation/appsec/dyngo/gls.otelc.yaml` — the same rules against a package whose targets are
-  all plain functions, so every identifier resolves through `.FuncArgument`.
+- `instrumentation/appsec/dyngo/gls.otelc.yaml`: the same rules against plain functions, so every
+  identifier resolves through `.FuncArgument`.
+- `contrib/*/otelc/`: integrations already ported. `contrib/net/http/otelc` combines hooks,
+  `inject_code`, `wrap_call`, `add_struct_fields` and `set_fields`.
 - `otelc/all/otel.instrumentation.go` and
-  `internal/orchestrion/_integration/otel.instrumentation.go` — rule discovery. An application
-  names `otelc/all` in the tool file at its own module root; otelc reads the tool file at that
-  module's root and recurses into its imports, which is how rules reach packages an application
-  cannot import itself.
-- `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh` — the guard that a
-  package your rules are read from is importable by a real user. Rules must not live under
-  `internal/`, because otelc blank-imports that package into the application's own main package. A
-  rule's `target:` may still be internal.
-- `.github/workflows/otelc.yml` — how the suites run in CI, which modules get tidied, and the
-  pinned otelc version.
+  `internal/orchestrion/_integration/otel.instrumentation.go`: rule discovery. An application names
+  `otelc/all` in the tool file at its module root, and otelc recurses into its imports, which is how
+  rules reach packages the application does not import itself.
+- `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh`: the guard that the
+  packages your rules are read from are importable by a real user.
+- `.github/workflows/otelc.yml`: how the suites run in CI, `OTELC_MODULES`, and `OTELC_VERSION`.
