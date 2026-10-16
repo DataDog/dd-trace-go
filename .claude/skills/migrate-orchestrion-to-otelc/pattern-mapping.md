@@ -39,6 +39,9 @@ in `references.md`.
 statement holding a call. otelc does not read the orchestrion directive, so a fixture that uses it
 needs both. The `docs/configuration.md` section on source directives lists the limits.
 
+`tracer-internal: true` needs no equivalent. otelc weaves dd-trace-go's own packages like any
+other, so name them in `target:`.
+
 `version: <start>,<end>` binds a rule to a range of the target library. Orchestrion has no
 equivalent, so use it only when the hook depends on that range.
 

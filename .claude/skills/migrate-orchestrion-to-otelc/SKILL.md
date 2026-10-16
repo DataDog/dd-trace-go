@@ -164,10 +164,17 @@ Prefer hooks; inject raw code only when it must run inside the target package.
   Ours import the contrib and follow dd's own configuration instead; say so in the PR.
 - A hooked constructor that calls another hooked constructor fires both. Hook only the inner
   funnel, or add a re-entrancy guard.
-- otelc also hooks dd-trace-go's own calls, which orchestrion never did. A hook on a library
+- Orchestrion weaves an aspect into dd-trace-go's own packages, contribs included, only when the
+  aspect sets `tracer-internal: true`, so its call-site aspects skip the contrib's own calls. otelc
+  has no such rule, and a definition-side hook fires for every caller. A hook on a library
   constructor fires again when the contrib's wrapper calls it, so a client built with the contrib
-  is traced twice. Check every definition-side hook for this. Put `//otelc:ignore` above the
-  contrib's own call, or use `wrap_call` with the contrib excluded from `target:`.
+  is traced twice. A `wrap_call` rule with the contrib excluded from `target:` avoids this, as
+  orchestrion's call-site aspects do. For a definition-side hook, prefer a runtime guard: the
+  contrib marks a value the hook can read, such as the context
+  (`contrib/gomodule/redigo/otelc/hook.go`). It skips only this hook and follows the context into
+  new goroutines. When there is no such value, put `//otelc:ignore` above the contrib's call. It
+  skips every hook on that goroutine for the whole statement, other integrations' too, and does
+  not reach goroutines the call starts.
 - Give every `inject_hooks` rule its own before/after names. otelc emits a hook's `//go:linkname`
   stub once per rule and file, so two rules sharing a hook in one package fail with `redeclared in
   this block`. Delegate to a shared helper instead.
