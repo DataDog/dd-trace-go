@@ -540,16 +540,16 @@ type otlpSignal struct {
 func (s otlpSignal) lookup(p *provider.Provider, setting, generic, def string, valid func(string) bool) (string, string) {
 	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
 	genericKey := "OTEL_EXPORTER_OTLP_" + setting
-	specific := p.GetStringWithValidator(specificKey, "", s.validator(specificKey, valid, s.warn))
+	specific := p.GetStringWithValidator(specificKey, "", otlpValidator(specificKey, valid, s.warn))
 	// The generic value only matters, and is only worth a warning, when the
 	// signal-specific one is not used.
-	if generic == "" || !s.validator(genericKey, valid, s.warn && specific == "")(generic) {
+	if generic == "" || !otlpValidator(genericKey, valid, s.warn && specific == "")(generic) {
 		return specific, def
 	}
 	return specific, generic
 }
 
-func (s otlpSignal) validator(key string, valid func(string) bool, warn bool) func(string) bool {
+func otlpValidator(key string, valid func(string) bool, warn bool) func(string) bool {
 	return func(v string) bool {
 		if valid(v) {
 			return true
@@ -629,9 +629,7 @@ func parseOTLPHeaders(str string) map[string]string {
 	return headers
 }
 
-// validHeaderFieldName reports whether s is a non-empty RFC 7230 token. It
-// matches httpguts.ValidHeaderFieldName without pulling golang.org/x/net/idna
-// and golang.org/x/text into every tracer binary.
+// validHeaderFieldName reports whether s is a non-empty HTTP header field name.
 func validHeaderFieldName(s string) bool {
 	if s == "" {
 		return false
