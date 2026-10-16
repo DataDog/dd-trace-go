@@ -833,6 +833,10 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
 		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
 		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"generic logs", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"logs", "OTEL_EXPORTER_OTLP_LOGS_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"generic runtime metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).RuntimeMetricsHeaders, false},
+		{"runtime metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).RuntimeMetricsHeaders, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			resetGlobalState()
@@ -840,17 +844,19 @@ func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
-			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%,surrounding= \t%0A%20secret%20%0A\t ")
 
 			want := map[string]string{
-				"api-key":   "hello world,value=1",
-				"percent":   "%",
-				"lowercase": ",=",
-				"plus":      "a+b+c",
-				"once":      "%20",
-				"empty":     "",
-				"plain":     "unchanged",
-				"x%2Dkey":   "value",
+				"api-key":     "hello world,value=1",
+				"percent":     "%",
+				"lowercase":   ",=",
+				"plus":        "a+b+c",
+				"once":        "%20",
+				"empty":       "",
+				"plain":       "unchanged",
+				"x%2Dkey":     "value",
+				"surrounding": "\n secret \n",
 			}
 			if tt.traces {
 				want["Content-Type"] = OTLPContentTypeHeader
@@ -963,6 +969,43 @@ func TestOTelSDKDisabled(t *testing.T) {
 		assert.False(t, cfg.OTelSDKDisabled())
 		assert.True(t, cfg.TracingEnabled())
 	})
+}
+
+func TestOTLPHeadersParsedTheSameForEverySignal(t *testing.T) {
+	signals := map[string]func(*Config) map[string]string{
+		"TRACES": func(c *Config) map[string]string {
+			h := c.OTLPTraceHeaders()
+			delete(h, "Content-Type")
+			return h
+		},
+		"METRICS": (*Config).OTLPMetricsHeaders,
+		"LOGS":    (*Config).OTLPLogsHeaders,
+	}
+	for name, tc := range map[string]struct {
+		raw  string
+		want map[string]string
+	}{
+		"keeps spaces inside a single value":                {"Authorization=Bearer abc", map[string]string{"Authorization": "Bearer abc"}},
+		"drops entries without '=' or with an invalid name": {"key=value,invalid,bad key=v", map[string]string{"key": "value"}},
+		"invalid duplicate does not erase a valid value":    {"api-key=valid,api-key=bad%GG", map[string]string{"api-key": "valid"}},
+	} {
+		for signal, headers := range signals {
+			t.Run(name+"/"+signal, func(t *testing.T) {
+				t.Setenv("OTEL_EXPORTER_OTLP_"+signal+"_HEADERS", tc.raw)
+				assert.Equal(t, tc.want, headers(loadConfig()))
+			})
+		}
+	}
+}
+
+func TestOTLPGenericHeadersNotSharedBetweenSignals(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic")
+
+	cfg := loadConfig()
+
+	assert.Equal(t, map[string]string{"api-key": "generic", "Content-Type": OTLPContentTypeHeader}, cfg.OTLPTraceHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPMetricsHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPLogsHeaders())
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -1798,10 +1841,6 @@ func TestOTLPLogsHeaders(t *testing.T) {
 		"keeps spaces inside values": {
 			"Authorization=Bearer token123,Content-Type=application/json",
 			map[string]string{"Authorization": "Bearer token123", "Content-Type": "application/json"},
-		},
-		"invalid duplicate does not erase a valid value": {
-			"api-key=valid,api-key=bad%GG",
-			map[string]string{"api-key": "valid"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -2967,7 +3006,7 @@ func TestRuntimeMetricsHeaders(t *testing.T) {
 		{"generic", "", map[string]string{"Authorization": "Bearer token"}},
 		{"blank signal", "  ", map[string]string{"Authorization": "Bearer token"}},
 		{"signal replaces", "x-key=a%2Bb", map[string]string{"x-key": "a+b"}},
-		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", map[string]string{}},
+		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", nil},
 		{"mixed", "bad key=x,good=some%20value,empty=", map[string]string{"good": "some value", "empty": ""}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
