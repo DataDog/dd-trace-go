@@ -12,10 +12,13 @@ aspects:
   # Client Instrumentation
   - id: Client
     join-point:
-      one-of:
-        - function-call: google.golang.org/grpc.Dial
-        - function-call: google.golang.org/grpc.DialContext
-        - function-call: google.golang.org/grpc.NewClient
+      all-of:
+        - not:
+            import-path: github.com/go-kratos/kratos/v3/transport/grpc
+        - one-of:
+            - function-call: google.golang.org/grpc.Dial
+            - function-call: google.golang.org/grpc.DialContext
+            - function-call: google.golang.org/grpc.NewClient
     advice:
       - append-args:
           type: google.golang.org/grpc.DialOption
@@ -30,7 +33,10 @@ aspects:
   # Server Instrumentation
   - id: Server
     join-point:
-      function-call: google.golang.org/grpc.NewServer
+      all-of:
+        - not:
+            import-path: github.com/go-kratos/kratos/v3/transport/grpc
+        - function-call: google.golang.org/grpc.NewServer
     advice:
       - append-args:
           type: google.golang.org/grpc.ServerOption

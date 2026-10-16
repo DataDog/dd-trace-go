@@ -65,28 +65,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
-	// we cannot track the configuration in newConfig because it's called during init() and the telemetry client
-	// is not initialized yet
-	reportTelemetryConfigOnce.Do(func() {
-		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
-		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
-	})
-
-	var inferredProxySpan *tracer.Span
 	otelSemanticsEnabled := cfg.otelSemanticsEnabled
-
-	if cfg.inferredProxyServicesEnabled {
-		inferredProxySpanCreated := false
-
-		if created, ok := r.Context().Value(inferredSpanCreatedCtxKey{}).(bool); ok {
-			inferredProxySpanCreated = created
-		}
-
-		if !inferredProxySpanCreated {
-			inferredProxySpan = startInferredSpanFromRequest(r, ipTags, otelSemanticsEnabled)
-		}
-	}
-
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	if extractErr == nil && parentCtx != nil {
 		items := make(map[string]string)
@@ -96,6 +75,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 		})
 		r = r.WithContext(baggage.SetAll(r.Context(), items))
 	}
+	inferredProxySpan, requestContext := startInferredSpanFromContext(r.Context(), r, ipTags, otelSemanticsEnabled)
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
@@ -129,20 +109,17 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
-			parentCtx.ForeachBaggageItem(func(k, v string) bool {
-				if cfg.tagBaggageKey(k) {
-					ssCfg.Tags["baggage."+k] = v
-				}
-				return true
-			})
+			if parentCtx != nil {
+				parentCtx.ForeachBaggageItem(func(k, v string) bool {
+					if cfg.tagBaggageKey(k) {
+						ssCfg.Tags["baggage."+k] = v
+					}
+					return true
+				})
+			}
 
 		})
 	nopts = append(nopts, opts...)
-
-	requestContext := r.Context()
-	if inferredProxySpan != nil {
-		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
-	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
@@ -151,6 +128,41 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 			finishRequestSpan(inferredProxySpan, status, errorFn, otelSemanticsEnabled, opts...)
 		}
 	}
+}
+
+// StartInferredSpanFromRequest starts an inferred proxy or Pub/Sub span when
+// configured request headers describe one. The returned context prevents
+// nested HTTP instrumentation from creating a duplicate inferred span. The
+// caller is responsible for finishing a non-nil span.
+func StartInferredSpanFromRequest(ctx context.Context, r *http.Request) (*tracer.Span, context.Context) {
+	var ipTags map[string]string
+	if cfg.traceClientIP {
+		_, clientIP := clientip.Resolve(r.Header, true, r.RemoteAddr)
+		ipTags = clientip.TagsFor(r.RemoteAddr, clientIP)
+	}
+	return startInferredSpanFromContext(ctx, r, ipTags, cfg.otelSemanticsEnabled)
+}
+
+func startInferredSpanFromContext(ctx context.Context, r *http.Request, ipTags map[string]string, otelSemanticsEnabled bool) (*tracer.Span, context.Context) {
+	// This cannot be tracked in newConfig because it runs during init, before
+	// the telemetry client is initialized. Keep it in this shared entry point
+	// so integrations that create inferred spans directly also report it.
+	reportTelemetryConfigOnce.Do(func() {
+		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
+	})
+
+	if !cfg.inferredProxyServicesEnabled {
+		return nil, ctx
+	}
+	if created, _ := ctx.Value(inferredSpanCreatedCtxKey{}).(bool); created {
+		return nil, ctx
+	}
+	span := startInferredSpanFromRequest(r, ipTags, otelSemanticsEnabled)
+	if span == nil {
+		return nil, ctx
+	}
+	return span, context.WithValue(ctx, inferredSpanCreatedCtxKey{}, true)
 }
 
 // FinishRequestSpan finishes an HTTP request span. When DD_TRACE_OTEL_SEMANTICS_ENABLED is true, it sets
@@ -396,23 +408,37 @@ func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
 func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderTags) tracer.StartSpanOption {
-	var tags []struct {
-		key string
-		val string
+	return func(cfg *tracer.StartSpanConfig) {
+		SetHeaderTagsFromRequest(cfg.Tags, req, headerTags)
 	}
+}
 
+// SetHeaderTagsFromRequest adds configured HTTP request header tags to tags.
+func SetHeaderTagsFromRequest(tags map[string]any, req *http.Request, headerTags instrumentation.HeaderTags) {
 	headerTags.Iter(func(header, tag string) {
-		if vs, ok := req.Header[header]; ok {
-			tags = append(tags, struct {
-				key string
-				val string
-			}{tag, strings.TrimSpace(strings.Join(vs, ","))})
+		if values, ok := req.Header[header]; ok {
+			tags[tag] = strings.TrimSpace(strings.Join(values, ","))
 		}
 	})
+}
 
-	return func(cfg *tracer.StartSpanConfig) {
-		for _, t := range tags {
-			cfg.Tags[t.key] = t.val
+// SetClientIPTagsFromRequest adds the standard HTTP client and network client
+// IP tags to tags when client IP collection is enabled.
+func SetClientIPTagsFromRequest(tags map[string]any, req *http.Request) {
+	if !cfg.traceClientIP {
+		return
+	}
+	_, clientIP := clientip.Resolve(req.Header, true, req.RemoteAddr)
+	for key, value := range clientip.TagsFor(req.RemoteAddr, clientIP) {
+		tags[key] = value
+	}
+}
+
+// SetBaggageTags adds configured baggage items to tags.
+func SetBaggageTags(tags map[string]any, items map[string]string) {
+	for key, value := range items {
+		if cfg.tagBaggageKey(key) {
+			tags["baggage."+key] = value
 		}
 	}
 }

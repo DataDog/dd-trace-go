@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/clientip"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -211,6 +214,46 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	for expectedTag, expectedTagVal := range expectedHeaderTags {
 		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
 	}
+}
+
+func TestSetHeaderTagsFromRequest(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("header1", "val1")
+	r.Header.Add("header1", " val2 ")
+	r.Header.Set("ignored", "value")
+
+	ht := internal.NewLockMap(normalizer.HeaderTagSlice([]string{"header1:tag1", "missing:tag2"}))
+	tags := map[string]any{"existing": "value"}
+	SetHeaderTagsFromRequest(tags, r, ht)
+
+	assert.Equal(t, map[string]any{
+		"existing": "value",
+		"tag1":     "val1, val2",
+	}, tags)
+}
+
+func TestStartInferredSpanFromRequestReportsTelemetry(t *testing.T) {
+	previousCfg := cfg
+	reportTelemetryConfigOnce = sync.Once{}
+	t.Cleanup(func() {
+		cfg = previousCfg
+		reportTelemetryConfigOnce = sync.Once{}
+	})
+
+	recorder := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(recorder)()
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	span, ctx := StartInferredSpanFromRequest(req.Context(), req)
+	assert.Nil(t, span)
+	assert.Equal(t, req.Context(), ctx)
+	require.Len(t, recorder.Configuration, 1)
+	assert.Equal(t, "inferred_proxy_services_enabled", recorder.Configuration[0].Name)
+	assert.Equal(t, cfg.inferredProxyServicesEnabled, recorder.Configuration[0].Value)
+	assert.Equal(t, telemetry.OriginEnvVar, recorder.Configuration[0].Origin)
+
+	StartInferredSpanFromRequest(req.Context(), req)
+	assert.Len(t, recorder.Configuration, 1)
 }
 
 func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
@@ -470,6 +513,36 @@ func TestTraceClientIPFlag(t *testing.T) {
 			mt.Reset()
 		})
 	}
+}
+
+func TestSetClientIPTagsFromRequest(t *testing.T) {
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
+	t.Setenv(envTraceClientIPEnabled, "true")
+	cfg = newConfig()
+
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	tags := map[string]any{"existing": "value"}
+	SetClientIPTagsFromRequest(tags, req)
+
+	assert.Equal(t, "value", tags["existing"])
+	assert.Equal(t, "203.0.113.10", tags[ext.HTTPClientIP])
+	assert.Equal(t, "10.0.0.1", tags[ext.NetworkClientIP])
+}
+
+func TestSetBaggageTags(t *testing.T) {
+	tags := map[string]any{"existing": "value"}
+	SetBaggageTags(tags, map[string]string{
+		"user.id": "1234",
+		"ignored": "value",
+	})
+
+	assert.Equal(t, map[string]any{
+		"existing":        "value",
+		"baggage.user.id": "1234",
+	}, tags)
 }
 
 func TestURLTag(t *testing.T) {
