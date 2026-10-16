@@ -191,11 +191,11 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 			endpoint = u.Path // Handle URLs without scheme
 		}
 		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-		if u.Scheme == "https" {
-			opts = append(opts, otlploggrpc.WithEndpointURL(rawEndpoint))
-		} else if u.Scheme == "http" || u.Scheme == "grpc" {
+		insecure := u.Scheme == "http" || u.Scheme == "grpc"
+		if insecure {
 			opts = append(opts, otlploggrpc.WithInsecure())
+		} else if u.Scheme == "https" {
+			opts = append(opts, otlploggrpc.WithEndpointURL(rawEndpoint))
 		}
 		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %t)", endpoint, insecure)
 	} else {
