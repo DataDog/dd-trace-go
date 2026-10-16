@@ -961,7 +961,7 @@ func runScripts(dryRun bool, root string) error {
 			return fmt.Errorf("failed to stat %s: %w", script, err)
 		}
 		slog.Info("Running script", "script", script)
-		if err := runCommand(root, "bash", script); err != nil {
+		if err := runCommand(root, "bash", "-e", script); err != nil {
 			return fmt.Errorf("failed to run %s: %w", script, err)
 		}
 	}
