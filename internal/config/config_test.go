@@ -633,6 +633,22 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
 
+	for _, invalid := range []string{"grpc://collector:4317", "collector:4318/v1/traces"} {
+		t.Run("invalid endpoints fall back to the agent host/"+invalid, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("DD_AGENT_HOST", "custom-agent")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", invalid)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", invalid)
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+
+			assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+		})
+	}
+
 	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT used when traces-specific one is unset", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
