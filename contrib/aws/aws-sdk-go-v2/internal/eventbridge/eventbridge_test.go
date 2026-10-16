@@ -62,7 +62,7 @@ func TestEnrichOperation(t *testing.T) {
 		require.True(t, ok)
 	}
 
-	EnrichOperation(spanCtx, span, input, "PutEvents")
+	NewEnricher(true).EnrichOperation(spanCtx, span, input, "PutEvents")
 
 	require.Len(t, params.Entries, 2)
 
@@ -252,4 +252,26 @@ func TestEventBridgeEdgeTags(t *testing.T) {
 		[]string{"direction:out", "type:eventbridge", "topic:order.created", "exchange:orders-bus"},
 		eventBridgeEdgeTags(entry),
 	)
+}
+
+// BenchmarkEnrichOperation measures one PutEvents enrichment with the injection on and off.
+func BenchmarkEnrichOperation(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "bench")
+	defer span.Finish()
+
+	for _, tc := range []struct {
+		name   string
+		inject bool
+	}{{"on", true}, {"off", false}} {
+		b.Run(tc.name, func(b *testing.B) {
+			e := NewEnricher(tc.inject)
+			b.ReportAllocs()
+			for b.Loop() {
+				in := middleware.InitializeInput{Parameters: &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{{EventBusName: aws.String("bench-bus"), Source: aws.String("bench"), DetailType: aws.String("bench"), Detail: aws.String(`{"message":"hello"}`)}}}}
+				e.EnrichOperation(ctx, span, in, "PutEvents")
+			}
+		})
+	}
 }

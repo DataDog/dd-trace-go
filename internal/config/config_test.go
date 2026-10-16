@@ -2678,3 +2678,39 @@ func TestRuntimeMetricsTemporalityNoWarningWhenDisabled(t *testing.T) {
 	assert.Equal(t, "delta", loadConfig().RuntimeMetricsTemporalityPreference())
 	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
 }
+
+func TestInjectDatadogAttributeEnabled(t *testing.T) {
+	services := []struct {
+		name    string
+		env     string
+		enabled func(*Config) bool
+	}{
+		{"kinesis", "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).KinesisInjectDatadogAttributeEnabled},
+		{"eventbridge", "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).EventBridgeInjectDatadogAttributeEnabled},
+		{"sqs", "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SQSInjectDatadogAttributeEnabled},
+		{"sns", "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SNSInjectDatadogAttributeEnabled},
+	}
+
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		for _, s := range services {
+			assert.True(t, s.enabled(cfg), s.name)
+		}
+	})
+
+	for _, disabled := range services {
+		t.Run("only "+disabled.name+" disabled", func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			t.Setenv(disabled.env, "false")
+
+			cfg := Get()
+			for _, s := range services {
+				assert.Equal(t, s.name != disabled.name, s.enabled(cfg), s.name)
+			}
+		})
+	}
+}
