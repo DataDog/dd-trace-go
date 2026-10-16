@@ -383,6 +383,10 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 				return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
 			}
 		}
+
+		if err := runScripts(dryRun, root); err != nil {
+			return err
+		}
 	}
 
 	// Phase 2: one single commit for all mutations.
@@ -937,6 +941,31 @@ func syncDependencies(dryRun bool, mod GoMod) error {
 	}
 
 	return runCommand(mod.dir, "go", "mod", "tidy")
+}
+
+// runScripts runs fix_modules.sh and generate.sh from the root directory.
+func runScripts(dryRun bool, root string) error {
+	if dryRun {
+		slog.Debug("Skipping fix_modules.sh and generate.sh in dry-run mode")
+		return nil
+	}
+	for _, script := range []string{"scripts/fix_modules.sh", "scripts/generate.sh"} {
+		// Skip a script that is not present in this checkout. A real release
+		// checkout always carries both scripts; the skip keeps the tool usable
+		// against a --root that lacks them (for example in tests).
+		if _, err := os.Stat(filepath.Join(root, script)); err != nil {
+			if os.IsNotExist(err) {
+				slog.Warn("Script not found; skipping", "script", script)
+				continue
+			}
+			return fmt.Errorf("failed to stat %s: %w", script, err)
+		}
+		slog.Info("Running script", "script", script)
+		if err := runCommand(root, "bash", script); err != nil {
+			return fmt.Errorf("failed to run %s: %w", script, err)
+		}
+	}
+	return nil
 }
 
 // runCommandWithOutput runs a command in the specified directory and returns any output.
