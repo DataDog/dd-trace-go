@@ -52,6 +52,15 @@ func init() {
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
+	// EnableEvaluationTelemetryOptOutParameter enables the per-evaluation
+	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
+	// suppresses evaluation events, evaluation metrics, and automatic span
+	// enrichment. Flag results and experiment exposures are unchanged.
+	// Nil uses DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED,
+	// which defaults to false. A non-nil value overrides the environment setting.
+	// The provider copies the value at construction.
+	EnableEvaluationTelemetryOptOutParameter *bool
+
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
@@ -233,6 +242,11 @@ func newDatadogProviderWithSourceAndEVP(
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
+	telemetryOptOutEnabled := internalconfig.Get().FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled()
+	if config.EnableEvaluationTelemetryOptOutParameter != nil {
+		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
+	}
+
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
 
@@ -270,13 +284,13 @@ func newDatadogProviderWithSourceAndEVP(
 		hooks = append(hooks, exposureLoggingHook)
 	}
 	if evalMetricsHook != nil {
-		hooks = append(hooks, evalMetricsHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalMetricsHook, telemetryOptOutEnabled))
 	}
 	if evalLoggingHook != nil {
-		hooks = append(hooks, evalLoggingHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalLoggingHook, telemetryOptOutEnabled))
 	}
 	if spanEnrichmentHook != nil {
-		hooks = append(hooks, spanEnrichmentHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, telemetryOptOutEnabled))
 	}
 
 	p := &DatadogProvider{

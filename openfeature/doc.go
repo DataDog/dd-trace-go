@@ -83,6 +83,33 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry Opt-Out
+//
+// Applications can enable a per-evaluation telemetry opt-out parameter:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EnableEvaluationTelemetryOptOutParameter: new(true),
+//	})
+//	// Handle err and register provider with OpenFeature before evaluating flags.
+//	evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+//	    "dd_evaluation_telemetry_opt_out": true,
+//	})
+//	value, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//
+// Alternatively, set DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED=true
+// before SDK initialization and leave EnableEvaluationTelemetryOptOutParameter nil.
+// An explicit new(true) or new(false) option overrides the environment setting.
+// Activation defaults to false. The provider copies the resolved value at construction.
+// When enabled, only boolean true in the final merged context suppresses new
+// evaluation events, evaluation metrics, and automatic flag span enrichment.
+// Missing values, false, null, strings, and numbers preserve existing behavior.
+// Flag values, experiment exposures, exposure deduplication, application hooks,
+// and previously queued telemetry are unchanged.
+//
+// OpenFeature Go SDK v1.18.0's experimental multi.Provider shares hook context
+// between evaluations. Nested or concurrent evaluations through that provider
+// cannot safely use this parameter until upstream fixes context isolation.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:
@@ -231,6 +258,11 @@
 //     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
 //
 // # Environment Variables
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
+//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
+//     parameter. This setting does not globally disable evaluation telemetry.
+//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_FEATURE_FLAGS_ENABLED: Stable kill switch, default "true". Set to "false"
 //     to disable the provider entirely: NewDatadogProvider() returns a NoopProvider
