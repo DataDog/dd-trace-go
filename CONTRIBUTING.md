@@ -98,6 +98,10 @@ Our CI pipeline includes several automated checks:
 - **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
 - **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
 
+#### Cache Pool Metrics Workflow
+
+- **Pool telemetry**: `cache-pool-metrics.yml` runs hourly and on manual dispatch. It snapshots the repository's shared Actions cache pool through the cache API (`scripts/citiming pool`) and submits `ci.cache.pool.*` gauges to Datadog: pool size and entry count per cache kind, workload, OS and ref type, total and (when readable) limit bytes, the eviction horizon, and the presence and age of default-branch seed entries. Submission is best-effort; the text snapshot stays in the job log as the record. See [scripts/README.md](./scripts/README.md) for the gauge definitions.
+
 ### Which checks run on a pull request
 
 Most workflows only run when a change could plausibly affect them. Two mechanisms
@@ -425,7 +429,7 @@ go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Auto-detection via tests
@@ -447,7 +451,7 @@ go run ./scripts/configinverter/main.go generate
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Handling related CI failures
@@ -483,7 +487,7 @@ make fix-modules
 make generate
 ```
 
-This is neccessary because dd-trace-go is a multi-module repository.
+This is necessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 

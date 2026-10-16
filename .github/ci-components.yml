@@ -95,6 +95,7 @@ workflow-gates:
   apidiff-check.yml: []
   appsec.yml: []
   build-metrics.yml: []
+  cache-pool-metrics.yml: []
   code_freeze_check.yml: []
   code_freeze_end.yml: []
   code_freeze_start.yml: []
