@@ -587,6 +587,19 @@ func TestSetDataStreamsIntakeBufferSize(t *testing.T) {
 	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "datastreams: ignoring non-positive intake buffer size")
 }
 
+func TestSetDataStreamsIntakeBufferSizeProductConflict(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	cfg := Get()
+	cfg.SetDataStreamsIntakeBufferSize(500, OriginCode, ProductDataStreams)
+	cfg.SetDataStreamsIntakeBufferSize(700, OriginCode, ProductTracer)
+	assert.Equal(t, 500, cfg.DataStreamsIntakeBufferSize(), "first-in-wins: tracer should be rejected")
+
+	cfg.SetDataStreamsIntakeBufferSize(800, OriginCode, ProductDataStreams)
+	assert.Equal(t, 800, cfg.DataStreamsIntakeBufferSize(), "same product should be allowed to update")
+}
+
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()

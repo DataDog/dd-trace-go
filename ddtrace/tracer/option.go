@@ -1339,7 +1339,7 @@ func WithStatsComputation(enabled bool) StartOption {
 // values are ignored.
 func WithDataStreamsIntakeBufferSize(size int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode, internalconfig.ProductDataStreams)
 	}
 }
 
