@@ -662,6 +662,113 @@ func TestStartSpan(t *testing.T) {
 
 }
 
+func TestLLMObsBaggagePropagation(t *testing.T) {
+	// captureHeaders runs genSpans against a server that records the propagation
+	// headers of the inbound request, and returns (baggage, x-datadog-tags).
+	captureHeaders := func(t *testing.T, ll *llmobs.LLMObs, srvFn func(ll *llmobs.LLMObs) http.HandlerFunc, genSpans func(srv *httptest.Server, cl *http.Client)) (string, string) {
+		t.Helper()
+		var baggage, tags string
+		inner := srvFn(ll)
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			baggage = req.Header.Get("Baggage")
+			tags = req.Header.Get("X-Datadog-Tags")
+			inner(w, req)
+		})
+		srv, cl := testClientServer(t, h)
+		genSpans(srv, cl)
+		tracer.Flush()
+		return baggage, tags
+	}
+	okHandler := func(_ *llmobs.LLMObs) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
+	}
+	doGet := func(t *testing.T, ctx context.Context, srv *httptest.Server, cl *http.Client) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+		resp, err := cl.Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+	}
+
+	t.Run("llmobs-context-is-mirrored-into-baggage", func(t *testing.T) {
+		_, _, ll := testTracer(t)
+
+		var wantTraceID, wantSpanID string
+		baggage, tags := captureHeaders(t, ll, okHandler, func(srv *httptest.Server, cl *http.Client) {
+			span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "root", llmobs.StartSpanConfig{})
+			defer span.Finish(llmobs.FinishSpanConfig{})
+			wantTraceID, wantSpanID = span.TraceID(), span.SpanID()
+			doGet(t, ctx, srv, cl)
+		})
+
+		assert.Contains(t, baggage, "llmobs.parent_id="+wantSpanID)
+		assert.Contains(t, baggage, "llmobs.trace_id="+wantTraceID)
+		assert.Contains(t, baggage, "llmobs.ml_app=")
+
+		// Additive: the legacy tag carrier must be untouched by this change.
+		assert.Contains(t, tags, "_dd.p.llmobs_parent_id="+wantSpanID)
+		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+wantTraceID)
+	})
+
+	t.Run("session-id-is-carried-when-set", func(t *testing.T) {
+		_, _, ll := testTracer(t)
+
+		baggage, _ := captureHeaders(t, ll, okHandler, func(srv *httptest.Server, cl *http.Client) {
+			span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "root", llmobs.StartSpanConfig{SessionID: "sess-1"})
+			defer span.Finish(llmobs.FinishSpanConfig{})
+			doGet(t, ctx, srv, cl)
+		})
+
+		assert.Contains(t, baggage, "llmobs.session_id=sess-1")
+	})
+
+	t.Run("stale-session-id-does-not-leak-to-a-later-sibling", func(t *testing.T) {
+		// Baggage is trace-scoped. A sibling that publishes session_id must not leave
+		// it behind for a later session-less sibling to carry downstream. This is the
+		// property that requires write-or-remove rather than write-if-present.
+		_, _, ll := testTracer(t)
+
+		baggage, tags := captureHeaders(t, ll, okHandler, func(srv *httptest.Server, cl *http.Client) {
+			root, ctxRoot := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "root", llmobs.StartSpanConfig{})
+			defer root.Finish(llmobs.FinishSpanConfig{})
+
+			// Sibling with a session publishes llmobs.session_id onto the trace.
+			sessioned, ctxSess := ll.StartSpan(ctxRoot, llmobs.SpanKindWorkflow, "sessioned", llmobs.StartSpanConfig{SessionID: "sess-1"})
+			apmChild, _ := tracer.StartSpanFromContext(ctxSess, "apm.child")
+			apmChild.Finish()
+			sessioned.Finish(llmobs.FinishSpanConfig{})
+
+			// Session-less sibling makes the outbound request.
+			_, ctxPlain := ll.StartSpan(ctxRoot, llmobs.SpanKindWorkflow, "plain", llmobs.StartSpanConfig{})
+			doGet(t, ctxPlain, srv, cl)
+		})
+
+		assert.NotContains(t, baggage, "llmobs.session_id", "stale session must be removed from baggage, not left behind")
+		assert.NotContains(t, tags, "_dd.p.llmobs_sid", "tag carrier already had this behaviour; it must not regress")
+	})
+
+	t.Run("agent-name-survives-in-baggage-when-dropped-from-tags", func(t *testing.T) {
+		// The tag copy drops an oversized agent name to stay inside the 512-byte
+		// x-datadog-tags budget. Baggage has its own, far larger budget, so it carries
+		// the name independently rather than inheriting that decision.
+		_, _, ll := testTracer(t)
+
+		longName := strings.Repeat("a", 400)
+		var wantAgentSpanID string
+		baggage, tags := captureHeaders(t, ll, okHandler, func(srv *httptest.Server, cl *http.Client) {
+			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, longName, llmobs.StartSpanConfig{})
+			defer agent.Finish(llmobs.FinishSpanConfig{})
+			wantAgentSpanID = agent.SpanID()
+			doGet(t, ctx, srv, cl)
+		})
+
+		assert.NotContains(t, tags, "_dd.p.llmobs_pagent_name=", "oversized name must still be dropped from the tag carrier")
+		assert.Contains(t, baggage, "llmobs.parent_agent_span_id="+wantAgentSpanID)
+		assert.Contains(t, baggage, "llmobs.parent_agent_name="+longName, "baggage has its own budget and must keep the full name")
+	})
+}
+
 func TestCollectorSpanFieldCompatibility(t *testing.T) {
 	var duration int64 = 123
 	var status string = "ok"
