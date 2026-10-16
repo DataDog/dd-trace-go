@@ -54,7 +54,10 @@ type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
 	// apiKey is sent as DD-API-KEY; empty unless endpoint is the managed one.
-	apiKey         string
+	apiKey string
+	// env is the effective DD_ENV, logged so a customer can spot an
+	// environment mismatch between the SDK and their flag configuration.
+	env            string
 	pollInterval   time.Duration
 	requestTimeout time.Duration
 	httpClient     *http.Client
@@ -86,6 +89,7 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	s := &agentlessSource{
 		endpoint:       endpoint.url,
 		apiKey:         apiKey,
+		env:            settings.Env,
 		pollInterval:   settings.PollInterval,
 		requestTimeout: settings.RequestTimeout,
 		// We build our own transport rather than use http.DefaultTransport so
@@ -172,11 +176,13 @@ func (s *agentlessSource) run() {
 // times with backoff before giving up until the next tick.
 func (s *agentlessSource) poll() {
 	for attempt := 1; attempt <= maxPollAttempts; attempt++ {
-		outcome, retryAfter := s.pollOnce()
+		logOnboarding("agentless configuration poll attempt %d/%d", attempt, maxPollAttempts)
+		outcome, retryAfter := s.pollOnce(attempt)
 		if outcome != pollOutcomeRetryable {
 			return
 		}
 		if attempt == maxPollAttempts {
+			logOnboarding("agentless configuration poll failed after %d attempts; keeping the last known configuration until the next poll", maxPollAttempts)
 			return
 		}
 
@@ -184,6 +190,7 @@ func (s *agentlessSource) poll() {
 		// longer than our own jittered backoff, rather than intensifying
 		// throttling across a fleet by ignoring it.
 		delay := max(s.retryDelay(attempt), retryAfter)
+		logOnboarding("agentless configuration poll retrying in %s", delay.Round(time.Millisecond).String())
 		select {
 		case <-time.After(delay):
 		case <-s.stopCh:
@@ -217,7 +224,8 @@ func reportMalformedAgentlessConfiguration(err error) {
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
 }
 
-func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
+// attempt is only used to number debug log lines.
+func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
 	defer cancel()
 
@@ -258,12 +266,20 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 			return pollOutcomeStop, 0
 		default:
 		}
+		// Unlike the warning below, this fires on every failure, not just the first.
+		logOnboarding("agentless configuration poll attempt %d/%d failed: %s", attempt, maxPollAttempts, sanitizeTransportError(err))
 		if s.warnOnce("http-transport") {
 			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err)) //errtrack:ignore remote request failure
 		}
 		return pollOutcomeRetryable, 0
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified {
+		logOnboarding("agentless configuration poll attempt %d/%d returned HTTP 304 (unchanged)", attempt, maxPollAttempts)
+	} else {
+		logOnboarding("agentless configuration poll attempt %d/%d returned HTTP %d", attempt, maxPollAttempts, resp.StatusCode)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		// Never decode a non-200 body; drain a bounded prefix so the
@@ -317,8 +333,20 @@ func (s *agentlessSource) pollOnce() (pollOutcome, time.Duration) {
 		return pollOutcomeStop, 0
 	}
 
+	etag := strings.TrimSpace(resp.Header.Get("ETag"))
 	s.apply(config)
-	s.setETag(strings.TrimSpace(resp.Header.Get("ETag")))
+	s.setETag(etag)
+	if log.DebugEnabled() {
+		env := s.env
+		if env == "" {
+			env = "unset"
+		}
+		if etag == "" {
+			etag = "none"
+		}
+		logOnboarding("agentless configuration applied successfully (%d flag(s), %d rejected, env=%s, created_at=%s, etag=%s)",
+			len(config.Flags), len(config.invalidFlags), env, formatCreatedAt(config.CreatedAt), etag)
+	}
 	return pollOutcomeSuccess, 0
 }
 
@@ -397,6 +425,17 @@ func retryAfterDuration(header http.Header) time.Duration {
 		}
 	}
 	return 0
+}
+
+// redactedOrigin returns only the scheme and host of endpoint, so it can be
+// logged: a custom endpoint may embed credentials in its userinfo, path, or
+// query.
+func redactedOrigin(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return "<invalid URL>"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // sanitizeTransportError strips the request URL out of a transport error
