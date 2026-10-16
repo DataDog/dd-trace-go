@@ -366,3 +366,8 @@ replace (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
+
+require (
+	connectrpc.com/connect v1.16.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.12.0-rc.2
+)

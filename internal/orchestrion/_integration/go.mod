@@ -538,3 +538,8 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+require (
+	connectrpc.com/connect v1.21.1
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.12.0-rc.2 // indirect
+)
