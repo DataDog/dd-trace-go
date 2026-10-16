@@ -80,6 +80,9 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
+	// agentHost is DD_AGENT_HOST, which the OTLP logs exporter falls back to
+	// when agentURL has no host.
+	agentHost string
 	// dogstatsdAddr is the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -395,6 +398,7 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	cfg.agentHost = agentHost
 
 	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
@@ -1780,6 +1784,38 @@ func (c *Config) OTLPLogsHTTPURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpLogsHTTPURL
+}
+
+// OTLPLogsAgentHTTPEndpoint returns the host:port, path, and insecure flag the
+// HTTP logs exporter uses when OTLPLogsHTTPURL is empty.
+func (c *Config) OTLPLogsAgentHTTPEndpoint() (endpoint, path string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	endpoint, insecure = c.otlpLogsAgentEndpoint(otlpDefaultPort)
+	return endpoint, otlpLogsPath, insecure
+}
+
+// OTLPLogsGRPCEndpoint returns the gRPC logs exporter target and insecure flag.
+// The target is only the host of OTLPLogsEndpoint, or the agent host when the
+// endpoint is empty.
+func (c *Config) OTLPLogsGRPCEndpoint() (target string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.otlpLogsEndpoint == "" {
+		return c.otlpLogsAgentEndpoint(otlpDefaultGRPCPort)
+	}
+	// otlpLogsEndpoint is validated to parse as a URL.
+	u, _ := url.Parse(c.otlpLogsEndpoint)
+	return cmp.Or(u.Host, u.Path), u.Scheme == URLSchemeHTTP || u.Scheme == "grpc"
+}
+
+// otlpLogsAgentEndpoint returns the agent host with the given port: the agent
+// URL host, then DD_AGENT_HOST, then localhost. c.mu must be held.
+func (c *Config) otlpLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
+	if u := c.agentURL; u != nil && u.Hostname() != "" {
+		return net.JoinHostPort(u.Hostname(), port), u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeUnix
+	}
+	return net.JoinHostPort(cmp.Or(c.agentHost, internal.DefaultAgentHostname), port), true
 }
 
 // OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
