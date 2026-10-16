@@ -1,0 +1,27 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# The import name differs from the echo v4 rule, so a file that uses both
+# echo versions does not get two imports under the same name.
+#
+# Like orchestrion, the rule rewrites call sites in every package of the build,
+# dependencies included, except echo and the echo contribs. Wrapping a call
+# inside echo would import the contrib into echo, and the contrib's own tests
+# create instances they wrap themselves.
+
+echo_v5_new:
+  target:
+    - "**"
+    - not: "github.com/labstack/echo/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/labstack/**"
+  where:
+    function_call: github.com/labstack/echo/v5.New
+  do:
+    - wrap_call:
+        replace: echov5trace.Wrap({{ . }})
+  imports:
+    echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2

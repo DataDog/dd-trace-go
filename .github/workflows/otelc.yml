@@ -32,7 +32,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20261005130301-0399637fded6' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261015110818-d3d72efe9f25' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
@@ -51,6 +51,10 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/labstack/echo.v4
+    contrib/labstack/echo.v4/otelc
+    contrib/labstack/echo.v5
+    contrib/labstack/echo.v5/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -64,6 +68,8 @@ env:
     redigo
     grpc
     99designs.gqlgen
+    echo.v4
+    echo.v5
 
 jobs:
   go-versions-matrix:
