@@ -43,7 +43,7 @@ runs:
       shell: bash
       run: |
         base="https://github.com/DataDog/datadog-ci/releases/latest/download"
-        curl -L --fail "${base}/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" \
+        curl -L --fail --retry 5 --retry-delay 2 --retry-connrefused "${base}/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" \
           --output datadog-ci
         chmod +x datadog-ci
 
