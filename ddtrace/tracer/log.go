@@ -487,7 +487,10 @@ func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 // otlpLogsEndpoint returns the sanitized endpoint and the protocol of the OTLP
 // logs exporter, resolved the way ddtrace/opentelemetry/log resolves them. The
 // endpoint is "" when the exporter would derive it from DD_AGENT_HOST because
-// the agent URL has no host, as with a Unix socket.
+// the agent URL has no host, as with a Unix socket. The scheme ignores
+// OTEL_EXPORTER_OTLP_LOGS_INSECURE and OTEL_EXPORTER_OTLP_INSECURE: the tracer
+// does not support them for logs, but the SDK applies them to an https agent URL
+// and to a gRPC endpoint without a scheme.
 func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 	grpc := cfg.OTLPLogsProtocol() == "grpc"
 	protocol, port, path := "http/protobuf", "4318", "/v1/logs"
