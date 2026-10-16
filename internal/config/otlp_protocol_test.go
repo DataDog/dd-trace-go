@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestOTLPInvalidGenericProtocolWarning(t *testing.T) {
 			for _, overridden := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/enabled=%t/overridden=%t", tc.name, enabled, overridden), func(t *testing.T) {
 					t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "typo")
-					t.Setenv(tc.enabled, fmt.Sprint(enabled))
+					t.Setenv(tc.enabled, strconv.FormatBool(enabled))
 					t.Setenv(tc.specific, "")
 					if overridden {
 						t.Setenv(tc.specific, tc.protocol)
