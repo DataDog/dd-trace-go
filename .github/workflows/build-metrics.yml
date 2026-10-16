@@ -220,11 +220,7 @@ jobs:
         if: matrix.mode == 'standard' && steps.gsa-cache.outputs.cache-hit != 'true'
         run: |
           url="https://github.com/Zxilly/go-size-analyzer/releases/download/v${GSA_VERSION}/go-size-analyzer_${GSA_VERSION}_linux_amd64.tar.gz"
-          curl -L --fail "$url" -o gsa.tar.gz || {
-            echo "Download failed, retrying in 5s..."
-            sleep 5
-            curl -L --fail "$url" -o gsa.tar.gz
-          }
+          curl --location --fail --retry 5 --retry-delay 5 --retry-all-errors "$url" -o gsa.tar.gz
           tar -xzf gsa.tar.gz gsa
           chmod +x gsa
 
