@@ -353,7 +353,7 @@ func TestSetCheckpointDoesNotMutateEdgeTags(t *testing.T) {
 		return &Processor{
 			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         newFastQueue(),
+			in:         newFastQueue(defaultQueueSize),
 			service:    "service-1",
 			env:        "env",
 			timeSource: time.Now,
