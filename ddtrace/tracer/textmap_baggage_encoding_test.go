@@ -84,6 +84,9 @@ func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
 
 	ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
 	ctx.setBaggageItem("key with space", "Amélie DF 28")
+	ctx.setBaggageItem("key+plus", "val+plus")
+	ctx.setBaggageItem("key%2fpercent", "val%2Fpercent")
+	ctx.setBaggageItem("key with + and space", "val with + and space")
 
 	out := TextMapCarrier{}
 	require.NoError(t, tr.Inject(ctx, out))
@@ -97,6 +100,9 @@ func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
 		return true
 	})
 	assert.Equal(t, "Amélie DF 28", got["key with space"])
+	assert.Equal(t, "val+plus", got["key+plus"])
+	assert.Equal(t, "val%2Fpercent", got["key%2fpercent"])
+	assert.Equal(t, "val with + and space", got["key with + and space"])
 }
 
 // TestBaggageControlCharsNotInjectedRawFromDirectContext isolates the
@@ -118,4 +124,33 @@ func TestBaggageControlCharsNotInjectedRawFromDirectContext(t *testing.T) {
 	injected := DefaultBaggageHeaderPrefix + "k"
 	assert.False(t, hasControlByte(out[injected]),
 		"%s must not carry a raw control byte, got %q", injected, out[injected])
+}
+
+// TestBaggageHeaderRoundTripsPlusAndPercent verifies that the W3C baggage
+// header preserves literal plus signs and percent escapes across injection and extraction.
+func TestBaggageHeaderRoundTripsPlusAndPercent(t *testing.T) {
+	t.Setenv(envPropagationStyle, "baggage")
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
+	ctx.setBaggageItem("key+plus", "val+plus")
+	ctx.setBaggageItem("key%2Fpercent", "val%2Fpercent")
+	ctx.setBaggageItem("key with + and space", "val with + and space")
+
+	out := TextMapCarrier{}
+	require.NoError(t, tr.Inject(ctx, out))
+
+	sctx, err := tr.Extract(out)
+	require.NoError(t, err)
+
+	got := map[string]string{}
+	sctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Equal(t, "val+plus", got["key+plus"])
+	assert.Equal(t, "val%2Fpercent", got["key%2Fpercent"])
+	assert.Equal(t, "val with + and space", got["key with + and space"])
 }
