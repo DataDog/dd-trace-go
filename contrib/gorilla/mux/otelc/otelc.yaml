@@ -1,0 +1,44 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Like orchestrion, the rules rewrite mux.Router itself, so every router is
+# traced, subrouters and routers built in dependencies included. The tracing
+# code runs inside github.com/gorilla/mux, because it keeps per-router state in
+# a field added to Router, and a hook compiles against the unmodified Router
+# and cannot read that field.
+
+# Aspect Router.__dd_config, inject-declarations part.
+router_declarations:
+  target: github.com/gorilla/mux
+  do:
+    - add_file:
+        file: router.go
+        path: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2
+
+# Aspect Router.__dd_config, add-struct-field part.
+router_config_field:
+  target: github.com/gorilla/mux
+  where:
+    struct: Router
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_config
+            type: __dd_routerConfig
+
+# Aspect Router.ServeHTTP.
+router_serve_http:
+  target: github.com/gorilla/mux
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_code:
+        raw: |-
+          if {{ .Receiver }}.__dd_serveHTTP({{ .FuncArgument 0 }}, {{ .FuncArgument 1 }}) {
+            return
+          }
