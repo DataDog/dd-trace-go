@@ -1,0 +1,57 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Everything runs inside httprouter itself, as in orchestrion: a hook compiles
+# against the unmodified Router and cannot read the injected __dd_config field.
+# The injected code compiles under httprouter's go directive (go 1.7), so it
+# calls the non generic tracing.BeforeHandleRouter.
+
+# Aspect Router.__dd_config, the struct field.
+router_config_field:
+  target: github.com/julienschmidt/httprouter
+  where:
+    struct: Router
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: __dd_config
+            type: "*__dd_httprouter_tracing.Config"
+  imports:
+    __dd_httprouter_tracing: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing
+
+# Aspect Router.__dd_config, the declarations: the Router and Param wrappers
+# and __dd_init, copied from router_decls.go.
+router_decls:
+  target: github.com/julienschmidt/httprouter
+  do:
+    - add_file:
+        file: router_decls.go
+        path: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
+
+# Aspect Router.ServeHTTP.
+router_serve_http:
+  target: github.com/julienschmidt/httprouter
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $r := .Receiver -}}
+          {{- $w := .FuncArgument 0 -}}
+          {{- $req := .FuncArgument 1 -}}
+          __dd_init({{ $r }})
+
+          __dd_tw, __dd_treq, __dd_afterHandle, __dd_handled := __dd_httprouter_tracing.BeforeHandleRouter({{ $r }}.__dd_config, __dd_wRouter{ {{- $r -}} }, {{ $w }}, {{ $req }})
+          {{ $w }} = __dd_tw
+          {{ $req }} = __dd_treq
+          defer __dd_afterHandle()
+          if __dd_handled {
+          	return
+          }
+  imports:
+    __dd_httprouter_tracing: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing

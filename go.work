@@ -56,6 +56,7 @@ use (
 	./contrib/jackc/pgx.v5
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
+	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
