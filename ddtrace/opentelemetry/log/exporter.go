@@ -191,13 +191,11 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 			endpoint = u.Path // Handle URLs without scheme
 		}
 		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-		if u.Scheme == "http" || u.Scheme == "grpc" {
+		insecure := u.Scheme == "http" || u.Scheme == "grpc"
+		if insecure {
 			opts = append(opts, otlploggrpc.WithInsecure())
 		}
-		// ruleguard: Forbidden: (internal log) format verbs %v, %+v, or %#v prevents controlled data exposure.
-		// Use specific format verbs like %s, %d, %q and sanitize data before logging. (gocritic)
-		//nolint:gocritic // TODO: Fix the warning above and remove the nolint.
-		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
+		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %t)", endpoint, insecure)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, insecure := resolveOTLPEndpointGRPC()

@@ -30,16 +30,6 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		assert.Equal(t, "https://traces-collector:4318/v1/traces", got)
 	})
 
-	t.Run("unsupported scheme falls back to generic endpoint", func(t *testing.T) {
-		got := resolveOTLPTraceURL("grpc://traces-collector:4317", agentDefault)
-		assert.Equal(t, "http://myhost:4318/v1/traces", got)
-	})
-
-	t.Run("missing scheme falls back to generic endpoint", func(t *testing.T) {
-		got := resolveOTLPTraceURL("traces-collector:4318/v1/traces", agentDefault)
-		assert.Equal(t, "http://myhost:4318/v1/traces", got)
-	})
-
 	t.Run("unset uses generic endpoint", func(t *testing.T) {
 		got := resolveOTLPTraceURL("", agentDefault)
 		assert.Equal(t, "http://myhost:4318/v1/traces", got)
@@ -83,11 +73,6 @@ func TestResolveOTLPEndpoint(t *testing.T) {
 	t.Run("custom endpoint returned as-is", func(t *testing.T) {
 		got := resolveOTLPEndpoint(httpAgent, "http://custom:4317")
 		assert.Equal(t, "http://custom:4317", got)
-	})
-
-	t.Run("unsupported scheme falls back to default", func(t *testing.T) {
-		got := resolveOTLPEndpoint(httpAgent, "grpc://custom:4317")
-		assert.Equal(t, "http://myhost:4318", got)
 	})
 
 	t.Run("nil agent URL uses the default hostname", func(t *testing.T) {

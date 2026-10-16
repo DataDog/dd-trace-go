@@ -392,30 +392,13 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
-// Logs a warning and returns (nil, false) on failure.
-func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		log.Warn("Failed to parse %s %q: %s. Falling back to default.", envVar, rawURL, err.Error())
-		return nil, false
-	}
-	if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-		log.Warn("Unsupported scheme %q in %s %q. Must be %s or %s. Falling back to default.", u.Scheme, envVar, rawURL, URLSchemeHTTP, URLSchemeHTTPS)
-		return nil, false
-	}
-	return u, true
-}
-
-// resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. tracesEndpoint takes
 // precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
-// genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
-// since it is used when tracesEndpoint is unset or invalid.
+// genericEndpoint, which must already be resolved (see resolveOTLPEndpoint).
+// Both must be empty or valid http(s) URLs.
 func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	if tracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
-			return tracesEndpoint
-		}
+		return tracesEndpoint
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpTracesPath).String()
@@ -488,12 +471,10 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
-// resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
+// resolveOTLPEndpoint returns endpoint, an empty or valid http(s) URL, defaulting to http://<agent-host>:4318.
 func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	if endpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint); ok {
-			return endpoint
-		}
+		return endpoint
 	}
 	host := internal.DefaultAgentHostname
 	if rawAgentURL != nil {
@@ -505,14 +486,14 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 }
 
 // resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
+// Both must be empty or valid http(s) URLs.
 func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	if metricsEndpoint != "" {
-		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint); ok {
-			if u.Path == "" || u.Path == "/" {
-				u.Path = otlpMetricsPath
-			}
-			return u.String()
+		u, _ := url.Parse(metricsEndpoint)
+		if u.Path == "" || u.Path == "/" {
+			u.Path = otlpMetricsPath
 		}
+		return u.String()
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpMetricsPath).String()
@@ -568,12 +549,6 @@ func (s otlpSignal) lookup(p *provider.Provider, setting, generic, def string, v
 	return specific, generic
 }
 
-// get returns the usable signal-specific value of setting, else the generic one, else def.
-func (s otlpSignal) get(p *provider.Provider, setting, generic, def string, valid func(string) bool) string {
-	specific, fallback := s.lookup(p, setting, generic, def, valid)
-	return cmp.Or(specific, fallback)
-}
-
 func (s otlpSignal) validator(key string, valid func(string) bool, warn bool) func(string) bool {
 	return func(v string) bool {
 		if valid(v) {
@@ -603,9 +578,10 @@ func (s otlpSignal) headers(p *provider.Provider) map[string]string {
 
 // protocol returns the lowercased protocol, always one of s.protocols.
 func (s otlpSignal) protocol(p *provider.Provider) string {
-	return normalizeOTLPProtocol(s.get(p, "PROTOCOL", s.generic.protocol, s.protocols[0], func(v string) bool {
+	specific, generic := s.lookup(p, "PROTOCOL", s.generic.protocol, s.protocols[0], func(v string) bool {
 		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
-	}))
+	})
+	return normalizeOTLPProtocol(cmp.Or(specific, generic))
 }
 
 // timeout returns the export timeout, configured in milliseconds.
