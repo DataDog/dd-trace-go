@@ -502,21 +502,23 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 // otlpGeneric holds the OTEL_EXPORTER_OTLP_<setting> values every signal falls
 // back to, read once so their telemetry is reported once.
 type otlpGeneric struct {
-	endpoint, protocol string
-	headers            map[string]string
+	endpoint string
+	headers  map[string]string
+	// Protocol candidates are ordered from lowest to highest source priority.
+	protocols []string
 }
 
-// readOTLPGeneric skips only the values no signal can use; each signal still
-// validates the result against its own exporter.
+// readOTLPGeneric retains protocol candidates for each signal to validate.
 func readOTLPGeneric(p *provider.Provider) otlpGeneric {
-	return otlpGeneric{
+	generic := otlpGeneric{
 		endpoint: p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL),
 		headers:  p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders),
-		protocol: p.GetStringWithValidator("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol, func(v string) bool {
-			v = normalizeOTLPProtocol(v)
-			return slices.Contains(otlpMetricsProtocols, v) || slices.Contains(otlpLogsProtocols, v)
-		}),
 	}
+	p.GetStringWithValidator("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol, func(v string) bool {
+		generic.protocols = append(generic.protocols, v)
+		return true
+	})
+	return generic
 }
 
 // otlpSignal reads the settings of one OTLP exporter from
@@ -537,16 +539,19 @@ type otlpSignal struct {
 // lookup returns the usable signal-specific value of setting and the usable
 // generic one, else def. Every source is validated so an unusable value never
 // hides a lower-priority usable one.
-func (s otlpSignal) lookup(p *provider.Provider, setting, generic, def string, valid func(string) bool) (string, string) {
+func (s otlpSignal) lookup(p *provider.Provider, setting string, generic []string, def string, valid func(string) bool) (string, string) {
 	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
 	genericKey := "OTEL_EXPORTER_OTLP_" + setting
 	specific := p.GetStringWithValidator(specificKey, "", otlpValidator(specificKey, valid, s.warn))
 	// The generic value only matters, and is only worth a warning, when the
 	// signal-specific one is not used.
-	if generic == "" || !otlpValidator(genericKey, valid, s.warn && specific == "")(generic) {
-		return specific, def
+	fallback := def
+	for _, v := range generic {
+		if v != "" && otlpValidator(genericKey, valid, s.warn && specific == "")(v) {
+			fallback = v
+		}
 	}
-	return specific, generic
+	return specific, fallback
 }
 
 func otlpValidator(key string, valid func(string) bool, warn bool) func(string) bool {
@@ -564,7 +569,7 @@ func otlpValidator(key string, valid func(string) bool, warn bool) func(string) 
 
 // endpoints returns the usable signal-specific and generic endpoints; either may be empty.
 func (s otlpSignal) endpoints(p *provider.Provider) (specific, generic string) {
-	return s.lookup(p, "ENDPOINT", s.generic.endpoint, "", s.validEndpoint)
+	return s.lookup(p, "ENDPOINT", []string{s.generic.endpoint}, "", s.validEndpoint)
 }
 
 // headers returns the signal-specific headers, else a copy of the generic ones.
@@ -578,7 +583,7 @@ func (s otlpSignal) headers(p *provider.Provider) map[string]string {
 
 // protocol returns the lowercased protocol, always one of s.protocols.
 func (s otlpSignal) protocol(p *provider.Provider) string {
-	specific, generic := s.lookup(p, "PROTOCOL", s.generic.protocol, s.protocols[0], func(v string) bool {
+	specific, generic := s.lookup(p, "PROTOCOL", s.generic.protocols, s.protocols[0], func(v string) bool {
 		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
 	})
 	return normalizeOTLPProtocol(cmp.Or(specific, generic))
