@@ -1720,6 +1720,42 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsTransportEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		env          map[string]string
+		grpcTarget   string
+		grpcInsecure bool
+		httpEndpoint string
+		httpInsecure bool
+	}{
+		{name: "default", grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "agent host", env: map[string]string{"DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "https agent", env: map[string]string{"DD_TRACE_AGENT_URL": "https://agent:8126"}, grpcTarget: "agent:4317", httpEndpoint: "agent:4318"},
+		{name: "unix agent", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket"}, grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "unix agent with host", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "http endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4317/ignored"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "grpc endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "grpc://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "https endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "other scheme endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "endpoint without scheme", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "//collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			target, insecure := cfg.OTLPLogsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, target)
+			assert.Equal(t, tc.grpcInsecure, insecure)
+			endpoint, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
+			assert.Equal(t, tc.httpEndpoint, endpoint)
+			assert.Equal(t, "/v1/logs", path)
+			assert.Equal(t, tc.httpInsecure, insecure)
+		})
+	}
+}
+
 func TestOTLPLogsHeaders(t *testing.T) {
 	t.Run("empty when no headers configured", func(t *testing.T) {
 		assert.Empty(t, loadConfig().OTLPLogsHeaders())
