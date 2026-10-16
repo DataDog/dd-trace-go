@@ -77,6 +77,14 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		opt.apply(cfg)
 	}
 	instr.Logger().Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
+	wrapped := newPartitionConsumer(pc, cfg)
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+	}
+	return wrapped
+}
+
+func newPartitionConsumer(pc sarama.PartitionConsumer, cfg *config) *partitionConsumer {
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -131,15 +139,11 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		}
 		close(wrapped.messages)
 	}()
-	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
-	}
 	return wrapped
 }
 
 type consumer struct {
 	sarama.Consumer
-	opts       []Option
 	cfg        *config
 	closeAsync []func()
 }
@@ -151,7 +155,7 @@ func (c *consumer) ConsumePartition(topic string, partition int32, offset int64)
 	if err != nil {
 		return pc, err
 	}
-	return WrapPartitionConsumer(pc, c.opts...), nil
+	return newPartitionConsumer(pc, c.cfg), nil
 }
 
 // Close shuts down the consumer and cancels any in-flight async jobs.
@@ -173,7 +177,6 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	}
 	wrapped := &consumer{
 		Consumer: c,
-		opts:     opts,
 		cfg:      cfg,
 	}
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
