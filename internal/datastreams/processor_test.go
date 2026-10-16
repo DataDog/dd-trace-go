@@ -7,6 +7,7 @@ package datastreams
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -346,6 +347,45 @@ func TestSetCheckpoint(t *testing.T) {
 	assert.Equal(t, hash1, statsPt2.parentHash)
 
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
+}
+
+func TestSetCheckpointServiceOverride(t *testing.T) {
+	edgeTags := []string{"direction:in", "topic:topic1", "type:kafka"}
+	checkpoint := func(p *Processor, service string) (statsPoint, uint64) {
+		pathway, _ := PathwayFromContext(p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{ServiceOverride: service}, edgeTags...))
+		return p.in.pop().point, pathway.GetHash()
+	}
+	newProcessor := func() *Processor {
+		return &Processor{
+			hashCache:  newHashCache(),
+			stopped:    1,
+			in:         newFastQueue(defaultQueueSize),
+			service:    "service-1",
+			env:        "env",
+			timeSource: time.Now,
+		}
+	}
+	processTags := processtags.GlobalTags().Slice()
+	containerTagsHash := processtags.ContainerTagsHash()
+	defaultHash := pathwayHash(nodeHash("service-1", "env", edgeTags, processTags, containerTagsHash), 0)
+	overrideHash := pathwayHash(nodeHash("service-2", "env", edgeTags, processTags, containerTagsHash), 0)
+	require.NotEqual(t, defaultHash, overrideHash)
+
+	for _, order := range [][]string{{"", "service-2"}, {"service-2", ""}} {
+		t.Run(fmt.Sprintf("%q then %q", order[0], order[1]), func(t *testing.T) {
+			p := newProcessor()
+			for _, override := range order {
+				wantService, wantHash := "service-1", defaultHash
+				if override != "" {
+					wantService, wantHash = override, overrideHash
+				}
+				pt, propagated := checkpoint(p, override)
+				assert.Equal(t, wantService, pt.serviceName)
+				assert.Equal(t, wantHash, pt.hash, "stats point hash for service %s", wantService)
+				assert.Equal(t, wantHash, propagated, "propagated pathway hash for service %s", wantService)
+			}
+		})
+	}
 }
 
 func TestSetCheckpointProcessTags(t *testing.T) {
