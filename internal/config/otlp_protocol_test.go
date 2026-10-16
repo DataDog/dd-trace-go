@@ -34,12 +34,10 @@ func TestOTLPGenericProtocolSourceFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "")
 			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "")
-			generic := otlpGeneric{protocols: []string{tc.lower, tc.higher}}
-			logs := otlpSignal{name: "LOGS", generic: generic, protocols: otlpLogsProtocols}
-			metrics := otlpSignal{name: "METRICS", generic: generic, protocols: otlpMetricsProtocols}
+			generic := []string{tc.lower, tc.higher}
 			p := provider.NewEnvironment()
-			assert.Equal(t, tc.logs, logs.protocol(p))
-			assert.Equal(t, tc.metrics, metrics.protocol(p))
+			assert.Equal(t, tc.logs, resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", generic, supportsOTLPProtocol(otlpLogsProtocols), false)))
+			assert.Equal(t, tc.metrics, resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", generic, supportsOTLPProtocol(otlpMetricsProtocols), false)))
 		})
 	}
 }

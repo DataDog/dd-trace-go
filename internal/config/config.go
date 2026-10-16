@@ -497,13 +497,14 @@ func loadConfig() *Config {
 		cfg.otlpExportMode = false
 		cfg.traceProtocolOverridesOTLP = true
 	}
-	otlpGeneric := readOTLPGeneric(p)
-	traces := otlpSignal{name: "TRACES", generic: otlpGeneric, validEndpoint: isOTLPHTTPURL, warn: cfg.otlpExportMode}
-	tracesEndpoint, genericEndpoint := traces.endpoints(p)
+	otlpGenericEndpoints := []string{p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL)}
+	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
+	otlpGenericProtocols := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_PROTOCOL")
+	tracesEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, cfg.otlpExportMode)
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
 	cfg.otlpTraceURL = resolveOTLPTraceURL(tracesEndpoint, cfg.otlpEndpoint)
 	cfg.otlpTraceURLDerivedFromAgent = tracesEndpoint == "" && genericEndpoint == ""
-	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(traces.headers(p))
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders)))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -518,17 +519,12 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	metrics := otlpSignal{
-		name:          "METRICS",
-		generic:       otlpGeneric,
-		validEndpoint: isOTLPHTTPURL,
-		protocols:     otlpMetricsProtocols,
-		warn:          cfg.OTLPSpanMetricsEnabled(),
-	}
-	metricsEndpoint, genericEndpoint := metrics.endpoints(p)
+	// Only warn about OTLP metrics values the span metrics exporter is going to use.
+	warnOTLPMetrics := cfg.OTLPSpanMetricsEnabled()
+	metricsEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, warnOTLPMetrics)
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(metricsEndpoint, resolveOTLPEndpoint(cfg.agentURL, genericEndpoint))
-	cfg.otlpMetricsHeaders = metrics.headers(p)
-	cfg.otlpMetricsProtocol = metrics.protocol(p)
+	cfg.otlpMetricsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpMetricsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpMetricsProtocols), warnOTLPMetrics))
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	envP := provider.NewEnvironment()
 	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
@@ -544,18 +540,10 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
 		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
 	})))
-	logs := otlpSignal{
-		name:          "LOGS",
-		generic:       otlpGeneric,
-		validEndpoint: isURL,
-		protocols:     otlpLogsProtocols,
-		warn:          cfg.logsOTelEnabled,
-	}
-	logsEndpoint, genericEndpoint := logs.endpoints(p)
-	cfg.otlpLogsEndpoint = cmp.Or(logsEndpoint, genericEndpoint)
-	cfg.otlpLogsHeaders = logs.headers(p)
-	cfg.otlpLogsProtocol = logs.protocol(p)
-	cfg.otlpLogsTimeout = logs.timeout(p)
+	cfg.otlpLogsEndpoint = cmp.Or(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isURL, cfg.logsOTelEnabled))
+	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpLogsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpLogsProtocols), cfg.logsOTelEnabled))
+	cfg.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds()))) * time.Millisecond
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")

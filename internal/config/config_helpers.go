@@ -499,61 +499,35 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// otlpGeneric holds the OTEL_EXPORTER_OTLP_<setting> values every signal falls
-// back to, read once so their telemetry is reported once.
-type otlpGeneric struct {
-	endpoint string
-	headers  map[string]string
-	// Protocol candidates are ordered from lowest to highest source priority.
-	protocols []string
-}
-
-// readOTLPGeneric retains protocol candidates for each signal to validate.
-func readOTLPGeneric(p *provider.Provider) otlpGeneric {
-	generic := otlpGeneric{
-		endpoint: p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL),
-		headers:  p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders),
-	}
-	p.GetStringWithValidator("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol, func(v string) bool {
-		generic.protocols = append(generic.protocols, v)
+// getOTLPGenericValues returns every configured value of key, ordered from lowest
+// to highest source priority, so each signal can pick the last one it supports.
+func getOTLPGenericValues(p *provider.Provider, key string) []string {
+	var values []string
+	p.GetStringWithValidator(key, "", func(v string) bool {
+		values = append(values, v)
 		return true
 	})
-	return generic
+	return values
 }
 
-// otlpSignal reads the settings of one OTLP exporter from
-// OTEL_EXPORTER_OTLP_<name>_<setting>, falling back to OTEL_EXPORTER_OTLP_<setting>.
-type otlpSignal struct {
-	name    string
-	generic otlpGeneric
-	// validEndpoint reports whether the signal's exporter can use an endpoint.
-	validEndpoint func(string) bool
-	// protocols lists the protocols the signal's exporter supports, default first.
-	protocols []string
-	// warn enables warnings about unusable values. Set it only when the signal's
-	// exporter is enabled: other OpenTelemetry components may accept values this
-	// exporter rejects (e.g. grpc for span metrics).
-	warn bool
-}
-
-// lookup returns the usable signal-specific value of setting and the usable
-// generic one, else def. Every source is validated so an unusable value never
-// hides a lower-priority usable one.
-func (s otlpSignal) lookup(p *provider.Provider, setting string, generic []string, def string, valid func(string) bool) (string, string) {
-	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
-	genericKey := "OTEL_EXPORTER_OTLP_" + setting
-	specific := p.GetStringWithValidator(specificKey, "", otlpValidator(specificKey, valid, s.warn))
-	// The generic value only matters, and is only worth a warning, when the
-	// signal-specific one is not used.
-	fallback := def
-	for _, v := range generic {
-		if v != "" && otlpValidator(genericKey, valid, s.warn && specific == "")(v) {
-			fallback = v
+// resolveOTLPSetting returns the usable value of the signal-specific key and the
+// last usable genericValues entry, read from genericKey; either may be empty.
+// Every source is validated so an unusable value never hides a lower-priority one.
+func resolveOTLPSetting(p *provider.Provider, key, genericKey string, genericValues []string, valid func(string) bool, warn bool) (specific, generic string) {
+	specific = p.GetStringWithValidator(key, "", otlpValidator(key, valid, warn))
+	// The generic value is only worth a warning when the signal-specific one is not used.
+	validGeneric := otlpValidator(genericKey, valid, warn && specific == "")
+	for _, v := range genericValues {
+		if v != "" && validGeneric(v) {
+			generic = v
 		}
 	}
-	return specific, fallback
+	return specific, generic
 }
 
+// otlpValidator wraps valid to warn about unusable values of key. Set warn only when
+// the exporter is enabled: other OpenTelemetry components may accept values this
+// exporter rejects (e.g. grpc for span metrics).
 func otlpValidator(key string, valid func(string) bool, warn bool) func(string) bool {
 	return func(v string) bool {
 		if valid(v) {
@@ -567,32 +541,25 @@ func otlpValidator(key string, valid func(string) bool, warn bool) func(string) 
 	}
 }
 
-// endpoints returns the usable signal-specific and generic endpoints; either may be empty.
-func (s otlpSignal) endpoints(p *provider.Provider) (specific, generic string) {
-	return s.lookup(p, "ENDPOINT", []string{s.generic.endpoint}, "", s.validEndpoint)
-}
-
-// headers returns the signal-specific headers, else a copy of the generic ones.
-func (s otlpSignal) headers(p *provider.Provider) map[string]string {
-	if headers := p.GetMapWithParser("OTEL_EXPORTER_OTLP_"+s.name+"_HEADERS", nil, parseOTLPHeaders); len(headers) > 0 {
-		return headers
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers,
+// or of the generic headers when the signal-specific ones are empty.
+func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(signalHeaders) > 0 {
+		return maps.Clone(signalHeaders)
 	}
-	// Every signal shares the generic map, and callers may modify theirs.
-	return maps.Clone(s.generic.headers)
+	return maps.Clone(genericHeaders)
 }
 
-// protocol returns the lowercased protocol, always one of s.protocols.
-func (s otlpSignal) protocol(p *provider.Provider) string {
-	specific, generic := s.lookup(p, "PROTOCOL", s.generic.protocols, s.protocols[0], func(v string) bool {
-		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
-	})
-	return normalizeOTLPProtocol(cmp.Or(specific, generic))
+// resolveOTLPProtocol returns the lowercased signal-specific protocol, else the generic one, else the default.
+func resolveOTLPProtocol(specific, generic string) string {
+	return normalizeOTLPProtocol(cmp.Or(specific, generic, defaultOTLPProtocol))
 }
 
-// timeout returns the export timeout, configured in milliseconds.
-func (s otlpSignal) timeout(p *provider.Provider) time.Duration {
-	generic := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
-	return time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_"+s.name+"_TIMEOUT", generic)) * time.Millisecond
+// supportsOTLPProtocol returns a validator accepting the given protocols, case-insensitively.
+func supportsOTLPProtocol(protocols []string) func(string) bool {
+	return func(v string) bool {
+		return slices.Contains(protocols, normalizeOTLPProtocol(v))
+	}
 }
 
 func normalizeOTLPProtocol(v string) string {
