@@ -512,12 +512,17 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		return "", protocol
 	}
 	if grpc {
-		// The gRPC exporter only uses the host, and the scheme for security.
-		scheme := "https"
-		if u.Scheme == "http" || u.Scheme == "grpc" {
-			scheme = "http"
+		// The gRPC exporter only uses the host. The SDK enables TLS for https,
+		// and by default when there is no scheme.
+		host := cmp.Or(u.Host, u.Path)
+		if host == "" {
+			return "", protocol
 		}
-		return sanitizeOTLPEndpoint(scheme + "://" + cmp.Or(u.Host, u.Path)), protocol
+		scheme := "http"
+		if u.Scheme == "https" || u.Scheme == "" {
+			scheme = "https"
+		}
+		return sanitizeOTLPEndpoint(scheme + "://" + host), protocol
 	}
 	return sanitizeOTLPEndpoint(cfg.OTLPLogsHTTPURL()), protocol
 }
