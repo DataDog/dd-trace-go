@@ -379,27 +379,31 @@ func formatDogstatsdAddr(u *url.URL) string {
 }
 
 // parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
-// Logs a warning and returns (nil, false) on failure.
-func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
+// Returns (nil, false) on failure, logging a warning when warn is true.
+func parseAndValidateOTLPURL(envVar, rawURL string, warn bool) (*url.URL, bool) {
 	u, err := url.Parse(rawURL)
-	if err != nil {
-		log.Warn("Failed to parse %s %q: %s. Falling back to default.", envVar, rawURL, err.Error())
-		return nil, false
+	if err == nil && (u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeHTTPS) {
+		return u, true
 	}
-	if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-		log.Warn("Unsupported scheme %q in %s %q. Must be %s or %s. Falling back to default.", u.Scheme, envVar, rawURL, URLSchemeHTTP, URLSchemeHTTPS)
-		return nil, false
+	warnUnsupportedOTLPValue(envVar, warn)
+	return nil, false
+}
+
+// warnUnsupportedOTLPValue logs that key has an unusable value when warn is true.
+// The value is not logged: headers and endpoints may carry credentials.
+func warnUnsupportedOTLPValue(key string, warn bool) {
+	if warn {
+		log.Warn("Unsupported %s value; falling back to default.", key)
 	}
-	return u, true
 }
 
 // resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
 // precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
 // genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
 // since it is used when tracesEndpoint is unset or invalid.
-func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string, warn bool) string {
 	if tracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint); ok {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint, warn); ok {
 			return tracesEndpoint
 		}
 	}
@@ -475,9 +479,9 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 }
 
 // resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
-func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
+func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string, warn bool) string {
 	if endpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint); ok {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint, warn); ok {
 			return endpoint
 		}
 	}
@@ -491,9 +495,9 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 }
 
 // resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
-func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
+func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string, warn bool) string {
 	if metricsEndpoint != "" {
-		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint); ok {
+		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint, warn); ok {
 			if u.Path == "" || u.Path == "/" {
 				u.Path = otlpMetricsPath
 			}
@@ -522,7 +526,7 @@ func resolveOTLPLogsURLs(endpoint string, warn bool) (httpURL, grpcURL string) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		if warn {
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", endpoint)
+			log.Warn("Unsupported OTLP logs endpoint; falling back to DD agent configuration.")
 		}
 		return "", ""
 	}
@@ -659,9 +663,7 @@ func validateOTLPProtocol(v, envVar string, warn bool) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	if warn {
-		log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
-	}
+	warnUnsupportedOTLPValue(envVar, warn)
 	return false
 }
 

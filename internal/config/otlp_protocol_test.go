@@ -18,6 +18,71 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+func TestOTLPEndpointWarnings(t *testing.T) {
+	const secretEndpoint = "grpc://user:SECRET@collector:4317"
+	for _, tc := range []struct {
+		name, key, enabledKey, enabledValue string
+	}{
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_TRACES_EXPORTER", "otlp"},
+		{"span metrics", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_TRACES_SPAN_METRICS_ENABLED", "true"},
+		{"generic with traces", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_TRACES_EXPORTER", "otlp"},
+		{"generic with span metrics", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_TRACES_SPAN_METRICS_ENABLED", "true"},
+	} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/enabled=%t", tc.name, enabled), func(t *testing.T) {
+				t.Setenv(tc.key, secretEndpoint)
+				if enabled {
+					t.Setenv(tc.enabledKey, tc.enabledValue)
+				}
+				tp := new(log.RecordLogger)
+				defer log.UseLogger(tp)()
+
+				loadConfig()
+
+				logs := strings.Join(tp.Logs(), "\n")
+				assert.NotContains(t, logs, "SECRET")
+				if enabled {
+					assert.Contains(t, logs, "Unsupported "+tc.key+" value")
+				} else {
+					assert.NotContains(t, logs, "Unsupported "+tc.key+" value")
+				}
+			})
+		}
+	}
+}
+
+func TestOTLPWarningsWithOTelSemantics(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "grpc://collector:4317")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "grpc://collector:4317")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := loadConfig()
+
+	require.True(t, cfg.OTLPExportMode())
+	require.True(t, cfg.OTLPSpanMetricsEnabled())
+	logs := strings.Join(tp.Logs(), "\n")
+	for _, key := range []string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"} {
+		assert.Contains(t, logs, "Unsupported "+key+" value")
+	}
+}
+
+func TestOTLPProtocolWarningOmitsValue(t *testing.T) {
+	t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "SECRET")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	loadConfig()
+
+	logs := strings.Join(tp.Logs(), "\n")
+	assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_METRICS_PROTOCOL value")
+	assert.NotContains(t, logs, "SECRET")
+}
+
 func TestOTLPMetricsProtocolWarning(t *testing.T) {
 	const unsupported = "Unsupported OTEL_EXPORTER_OTLP"
 	for _, tc := range []struct {
