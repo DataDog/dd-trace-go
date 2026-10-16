@@ -98,7 +98,7 @@ runs:
         fi
 
         curl_exit=0
-        http_code="$(curl --silent --show-error \
+        http_code="$(curl --silent --show-error --retry 5 --retry-delay 2 --retry-connrefused \
           --output "$response_file" \
           --write-out '%{http_code}' \
           --connect-timeout 3 \
