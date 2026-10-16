@@ -155,3 +155,20 @@ func TestParseGlobalTags(t *testing.T) {
 		})
 	}
 }
+
+func TestValidHeaderFieldName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"X-Api-Key":                   true,
+		"!#$%&'*+-.^_`|~0123456789Az": true,
+		"":                            false,
+		"bad key":                     false,
+		"bad:key":                     false,
+		"bad\tkey":                    false,
+		`bad"key`:                     false,
+		"bad(key)":                    false,
+		"bad\x7fkey":                  false,
+		"ключ":                        false,
+	} {
+		assert.Equal(t, want, validHeaderFieldName(name), "%q", name)
+	}
+}
