@@ -703,6 +703,13 @@
         "default": null
       }
     ],
+    "DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "5000"
+      }
+    ],
     "DD_INSTRUMENTATION_INSTALL_ID": [
       {
         "implementation": "A",

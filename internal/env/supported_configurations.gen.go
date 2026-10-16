@@ -108,6 +108,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_HAPROXY_SPOA_HOST":                                                    {},
 	"DD_HAPROXY_SPOA_PORT":                                                    {},
 	"DD_HOSTNAME":                                                             {},
+	"DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE":                                    {},
 	"DD_INSTRUMENTATION_INSTALL_ID":                                           {},
 	"DD_INSTRUMENTATION_INSTALL_TIME":                                         {},
 	"DD_INSTRUMENTATION_INSTALL_TYPE":                                         {},
