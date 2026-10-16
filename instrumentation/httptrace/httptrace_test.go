@@ -1497,58 +1497,79 @@ func adversarialQueryStrings(n int) map[string]string {
 }
 
 // TestObfuscateAdversarialScaling checks that obfuscateQueryStringDefault runs
-// in linear time on adversarial inputs: when the input size doubles, the time
-// must not quadruple.
+// in linear time on adversarial inputs. A linear algorithm has the same time
+// per byte for each input size. A quadratic algorithm has a time per byte that
+// grows with the input size.
+//
+// The test compares a small input with an input that is 16 times larger. The
+// time ratio is about 16 for linear code and about 256 for quadratic code. The
+// limit is 64, thus the test accepts a noise factor of 4 in both directions.
+// The test runs the two sizes in alternating batches and keeps the fastest
+// batch of each size. A slow period of the machine affects both sizes, and a
+// short interruption affects only a batch that the test discards.
 func TestObfuscateAdversarialScaling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing test")
 	}
-	const n = 64 << 10
-	small, large := adversarialQueryStrings(n), adversarialQueryStrings(2*n)
-	// measure returns the best time per call of a few batches, to reduce the
-	// noise. Each batch runs for at least minBatch, thus fast inputs are also
-	// measured precisely.
-	const minBatch = 2 * time.Millisecond
-	measure := func(s string) time.Duration {
-		calls := 1
-		for {
+	const (
+		smallSize = 4 << 10
+		largeSize = 64 << 10
+		// maxRatio is the limit of the time ratio between the large and the
+		// small input. It is the geometric mean of the linear ratio
+		// (largeSize/smallSize) and the quadratic ratio
+		// ((largeSize/smallSize)^2).
+		maxRatio = 64.0
+		// minBatch is the minimum duration of a batch. A long batch makes the
+		// fast inputs precise.
+		minBatch = time.Millisecond
+		rounds   = 9
+		attempts = 3
+	)
+	small, large := adversarialQueryStrings(smallSize), adversarialQueryStrings(largeSize)
+	// batchSize returns the number of calls that take at least minBatch.
+	batchSize := func(s string) int {
+		for calls := 1; ; calls *= 2 {
 			start := time.Now()
 			for range calls {
 				obfuscateQueryStringDefault(s)
 			}
 			if time.Since(start) >= minBatch {
-				break
-			}
-			calls *= 2
-		}
-		best := time.Duration(math.MaxInt64)
-		for range 5 {
-			start := time.Now()
-			for range calls {
-				obfuscateQueryStringDefault(s)
-			}
-			if d := time.Since(start) / time.Duration(calls); d < best {
-				best = d
+				return calls
 			}
 		}
-		return best
+	}
+	// batch returns the time per call of one batch.
+	batch := func(s string, calls int) time.Duration {
+		start := time.Now()
+		for range calls {
+			obfuscateQueryStringDefault(s)
+		}
+		return time.Since(start) / time.Duration(calls)
 	}
 	for name, s := range small {
 		t.Run(name, func(t *testing.T) {
-			// The result must be the same as the regexp result.
+			l := large[name]
+			// The result must be the same as the regexp result. The regexp is
+			// slow on the adversarial inputs, thus the test checks only the
+			// small input.
 			require.Equal(t, obfuscateWithDefaultRegexp(s), obfuscateQueryStringDefault(s))
+			sCalls, lCalls := batchSize(s), batchSize(l)
 			// A noisy machine can slow down one measurement. Linear code passes
-			// at least one of the attempts; quadratic code (ratio of about 4)
-			// fails all of them.
+			// at least one of the attempts; quadratic code fails all of them.
 			var ratio float64
 			var ds, dl time.Duration
-			for range 3 {
-				ds, dl = measure(s), measure(large[name])
-				if ratio = float64(dl) / float64(max(ds, 1)); ratio < 3.0 {
+			for range attempts {
+				ds, dl = time.Duration(math.MaxInt64), time.Duration(math.MaxInt64)
+				for range rounds {
+					ds = min(ds, batch(s, sCalls))
+					dl = min(dl, batch(l, lCalls))
+				}
+				if ratio = float64(dl) / float64(max(ds, 1)); ratio < maxRatio {
 					return
 				}
 			}
-			t.Errorf("doubling the input size multiplies the time by %.1f (small: %v, large: %v)", ratio, ds, dl)
+			t.Errorf("multiplying the input size by %d multiplies the time by %.1f, the limit is %.0f (small: %v, large: %v)",
+				largeSize/smallSize, ratio, maxRatio, ds, dl)
 		})
 	}
 }
