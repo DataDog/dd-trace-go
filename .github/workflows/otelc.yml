@@ -47,6 +47,8 @@ env:
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
     contrib/go-chi/chi.v5/otelc
+    contrib/gofiber/fiber.v2
+    contrib/gofiber/fiber.v2/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -63,6 +65,7 @@ env:
     sql
     chi
     chi.v5
+    fiber.v2
     redigo
     grpc
     99designs.gqlgen

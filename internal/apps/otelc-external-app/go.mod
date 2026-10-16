@@ -29,6 +29,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev // indirect
@@ -45,11 +47,13 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/go-chi/chi v1.5.5 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/gofiber/fiber/v2 v2.52.13 // indirect
 	github.com/gomodule/redigo v1.9.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
@@ -58,6 +62,9 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/minio/simdjson-go v0.4.5 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
@@ -146,3 +153,7 @@ require github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../../contrib/valyala/fasthttp/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../../contrib/valyala/fasthttp
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../../../contrib/gofiber/fiber.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../contrib/gofiber/fiber.v2

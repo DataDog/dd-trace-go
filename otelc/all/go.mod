@@ -12,6 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
@@ -20,8 +21,14 @@ require (
 require (
 	github.com/99designs/gqlgen v0.17.92 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/gofiber/fiber/v2 v2.52.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
@@ -144,3 +151,7 @@ require github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../contrib/valyala/fasthttp/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../contrib/valyala/fasthttp
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../../contrib/gofiber/fiber.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../contrib/gofiber/fiber.v2
