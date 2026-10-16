@@ -226,6 +226,12 @@ and save result classification, PR feedback time including the all-green
 delay, and the exact accepted check-name exclusions) live in the doc
 comment of `scripts/citiming/main.go` and are the report contract.
 
+Only seeding runs save Go build/module caches: a seed-set key (the
+setup-go action's `seed` input) on the nightly schedule or a
+default-branch `workflow_dispatch`; every other event restores only.
+The pool gauges (`citiming pool`, run hourly by the `cache-pool-metrics`
+workflow) watch whether the seed entries stay present in the pool.
+
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
