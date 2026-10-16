@@ -1,0 +1,48 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# The rules run in fasthttp itself rather than through a hook. A hook compiles
+# against the real fasthttp, where DD_Instrumented does not exist, and the check
+# on that field is what keeps a server from being wrapped twice.
+
+# Aspect fasthttp.Server. Exported so that frameworks built on fasthttp, such as
+# Fiber, can set it and keep this integration off their server.
+fasthttp_server_instrumented_field:
+  target: github.com/valyala/fasthttp
+  where:
+    struct: Server
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: DD_Instrumented
+            type: bool
+
+# The inject-declarations half of aspect fasthttp.Server: the linkname
+# declaration of the contrib's wrapper.
+fasthttp_server_wrap_handler_link:
+  target: github.com/valyala/fasthttp
+  do:
+    - add_file:
+        file: link.go
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
+
+# Aspect Serve. ListenAndServe, ServeTLS and the other start methods all call
+# Serve, so this covers them too. The flag keeps a server served on several
+# listeners from being wrapped more than once.
+fasthttp_server_serve:
+  target: github.com/valyala/fasthttp
+  where:
+    func: Serve
+    recv: "*Server"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $srv := .Receiver -}}
+          if !{{ $srv }}.DD_Instrumented && {{ $srv }}.Handler != nil {
+            {{ $srv }}.Handler = __dd_fasthttptrace_wrapHandler({{ $srv }}.Handler)
+            {{ $srv }}.DD_Instrumented = true
+          }
