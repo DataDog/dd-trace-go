@@ -88,6 +88,9 @@ type Config struct {
 	// address (via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL), so agent-reported ports must not overwrite it.
 	dogstatsdAddrExplicit bool
 	debug                 bool
+	// logLevel is the diagnostics threshold selected by OTEL_LOG_LEVEL when debug
+	// mode is off. It defaults to info.
+	logLevel log.Level
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -194,6 +197,8 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// otelSDKDisabled is set by OTEL_SDK_DISABLED and disables every OTel SDK signal.
+	otelSDKDisabled bool
 	// BatchLogRecordProcessor settings (OTEL_BLRP_*)
 	blrpMaxQueueSize       int
 	blrpScheduleDelay      time.Duration
@@ -251,13 +256,16 @@ type Config struct {
 	// otlpMetricsProtocol is the OTLP export protocol for metrics: "http/json" or "http/protobuf".
 	otlpMetricsProtocol string
 
-	// OTel runtime metrics exporter transport settings, resolved from the environment only.
-	runtimeMetricsProtocol     string
-	runtimeMetricsHTTPEndpoint string
-	runtimeMetricsHTTPPath     string
-	runtimeMetricsGRPCEndpoint string
-	runtimeMetricsInsecure     bool
-	runtimeMetricsHeaders      map[string]string
+	// OTel runtime metrics exporter and reader settings, resolved from the environment only.
+	runtimeMetricsProtocol       string
+	runtimeMetricsHTTPEndpoint   string
+	runtimeMetricsHTTPPath       string
+	runtimeMetricsGRPCEndpoint   string
+	runtimeMetricsInsecure       bool
+	runtimeMetricsHeaders        map[string]string
+	runtimeMetricsExportInterval time.Duration
+	runtimeMetricsExportTimeout  time.Duration
+	runtimeMetricsTemporality    string
 
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
@@ -387,6 +395,12 @@ func loadConfig() *Config {
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	// OTEL_LOG_LEVEL=debug already reaches debug mode through DD_TRACE_DEBUG, which
+	// keeps DD_TRACE_DEBUG precedence; only the higher levels set a threshold here.
+	cfg.logLevel = log.LevelInfo
+	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
+		cfg.logLevel = lvl
+	}
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
 	cfg.version = p.GetString("DD_VERSION", "")
@@ -396,7 +410,8 @@ func loadConfig() *Config {
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.runtimeMetricsOtel = p.GetBool("DD_METRICS_OTEL_ENABLED", false)
+	cfg.otelSDKDisabled = p.GetBool("OTEL_SDK_DISABLED", false)
+	cfg.runtimeMetricsOtel = resolveOTelSignalEnabled("DD_METRICS_OTEL_ENABLED", p.GetBool("DD_METRICS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -456,10 +471,10 @@ func loadConfig() *Config {
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
-	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.logsOTelEnabled = resolveOTelSignalEnabled("DD_LOGS_OTEL_ENABLED", p.GetBool("DD_LOGS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
 	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, func(v int) bool { return v > 0 })
-	cfg.blrpScheduleDelay = time.Duration(p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds())) * time.Millisecond
-	cfg.blrpExportTimeout = time.Duration(p.GetInt64("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds())) * time.Millisecond
+	cfg.blrpScheduleDelay = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
+	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
@@ -531,6 +546,11 @@ func loadConfig() *Config {
 		cfg.agentURL,
 	)
 	cfg.runtimeMetricsHeaders = resolveRuntimeMetricsHeaders(envP.GetString("OTEL_EXPORTER_OTLP_HEADERS", ""), envP.GetString("OTEL_EXPORTER_OTLP_METRICS_HEADERS", ""))
+	cfg.runtimeMetricsExportInterval = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_INTERVAL", int(defaultRuntimeMetricsExportInterval.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
+	cfg.runtimeMetricsExportTimeout = time.Duration(envP.GetIntWithValidator("OTEL_METRIC_EXPORT_TIMEOUT", int(defaultRuntimeMetricsExportTimeout.Milliseconds()), func(v int) bool { return v > 0 })) * time.Millisecond
+	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
+		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
+	})))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -797,6 +817,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin, product ...Prod
 	}
 	c.debug = enabled
 	configtelemetry.Report("DD_TRACE_DEBUG", enabled, origin)
+}
+
+// LogLevel returns the threshold for tracer diagnostics. Debug mode takes
+// precedence over the OTEL_LOG_LEVEL threshold.
+func (c *Config) LogLevel() log.Level {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.debug {
+		return log.LevelDebug
+	}
+	return c.logLevel
 }
 
 func (c *Config) ProfilerEndpoints() bool {
@@ -1664,6 +1695,13 @@ func (c *Config) LogsOTelEnabled() bool {
 	return c.logsOTelEnabled
 }
 
+// OTelSDKDisabled reports whether OTEL_SDK_DISABLED=true is set.
+func (c *Config) OTelSDKDisabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSDKDisabled
+}
+
 func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1974,6 +2012,24 @@ func (c *Config) RuntimeMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.runtimeMetricsHeaders)
+}
+
+func (c *Config) RuntimeMetricsExportInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportInterval
+}
+
+func (c *Config) RuntimeMetricsExportTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsExportTimeout
+}
+
+func (c *Config) RuntimeMetricsTemporalityPreference() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsTemporality
 }
 
 func (c *Config) TraceID128BitEnabled() bool {
