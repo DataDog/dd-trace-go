@@ -152,12 +152,14 @@ func mapOtelMetrics(ot string) (string, error) {
 	return "", nil
 }
 
-// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
+// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG. Levels above debug disable
+// debug mode; the threshold they select is resolved separately by the config.
 func mapLogLevel(ot string) (string, error) {
-	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
-		return "true", nil
+	lvl, ok := log.ParseLevel(ot)
+	if !ok {
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
+	return strconv.FormatBool(lvl == log.LevelDebug), nil
 }
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED

@@ -2182,11 +2182,10 @@ func TestPushTrace(t *testing.T) {
 
 	oldLvl := log.GetLevel()
 	defer func() { log.SetLevel(oldLvl) }()
-	log.SetLevel(log.LevelDebug)
 
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
-	tracer, err := newUnstartedTracer()
+	tracer, err := newUnstartedTracer(WithDebugMode(true))
 	assert.Nil(err)
 	defer tracer.Stop()
 	trace := []*Span{
@@ -3696,8 +3695,8 @@ func TestNoopTracerStartSpan(t *testing.T) {
 	undo := log.UseLogger(customLogger{l: llog.New(w, "", llog.LstdFlags)})
 	defer undo()
 
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelDebug)
-	defer log.SetLevel(log.LevelWarn)
 
 	StartSpan("abcd")
 

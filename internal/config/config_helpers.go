@@ -92,6 +92,11 @@ const (
 	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
 	otlpDefaultGRPCPort = "4317"
 
+	// defaultRuntimeMetricsExportInterval is the default value for OTEL_METRIC_EXPORT_INTERVAL.
+	defaultRuntimeMetricsExportInterval = 10 * time.Second
+	// defaultRuntimeMetricsExportTimeout is the default value for OTEL_METRIC_EXPORT_TIMEOUT.
+	defaultRuntimeMetricsExportTimeout = 7500 * time.Millisecond
+
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
 
@@ -590,6 +595,19 @@ func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[str
 		}
 	}
 	return headers
+}
+
+// validateRuntimeMetricsTemporality returns true for the two supported temporality preferences.
+// The warning is only logged when warn is true.
+func validateRuntimeMetricsTemporality(v string, warn bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "delta", "cumulative":
+		return true
+	}
+	if warn {
+		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
+	}
+	return false
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
