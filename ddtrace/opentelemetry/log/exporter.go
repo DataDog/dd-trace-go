@@ -149,11 +149,15 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// Sanitize the URL to handle trailing slashes correctly
-		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
-		opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
-		log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
+	if endpointURL := cfg.OTLPLogsHTTPURL(); endpointURL != "" {
+		if endpoint := cfg.OTLPLogsEndpoint(); len(userOpts) == 0 && endpoint != endpointURL {
+			u, _ := url.Parse(endpoint)
+			if strings.HasSuffix(strings.TrimRight(u.Path, "/"), defaultOTLPLogsPath) {
+				log.Warn("OTEL_EXPORTER_OTLP_ENDPOINT already ends in /v1/logs; the default HTTP logs URL appends /v1/logs again. Use OTEL_EXPORTER_OTLP_LOGS_ENDPOINT to specify a complete logs URL.")
+			}
+		}
+		opts = append(opts, otlploghttp.WithEndpointURL(endpointURL))
+		log.Debug("Using resolved OTLP logs endpoint: %s", endpointURL)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
@@ -214,31 +218,6 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	opts = append(opts, userOpts...)
 
 	return opts
-}
-
-// sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:
-// 1. Parsing the URL
-// 2. Trimming any trailing slashes from the path
-// 3. Appending the signal-specific path (e.g., "/v1/logs")
-// 4. Returning the complete URL
-//
-// This works around issues where the OTel SDK may not handle trailing slashes correctly,
-// which can result in double slashes like http://host:4320//v1/logs
-func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
-	u, _ := url.Parse(rawURL)
-
-	// Trim trailing slashes from the path
-	u.Path = strings.TrimRight(u.Path, "/")
-
-	// If the URL already has a path, keep it; otherwise use the signal-specific path
-	if u.Path == "" {
-		u.Path = signalPath
-	} else if !strings.HasSuffix(u.Path, signalPath) {
-		// If path doesn't already end with signal path, append it
-		u.Path = u.Path + signalPath
-	}
-
-	return u.String()
 }
 
 // resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.

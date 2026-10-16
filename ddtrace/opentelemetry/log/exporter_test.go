@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -75,7 +77,7 @@ func TestNewOTLPExporterHTTPConfig(t *testing.T) {
 		require.NoError(t, exporter.Export(t.Context(), []sdklog.Record{{}}))
 
 		r := <-requests
-		assert.Equal(t, "/custom/v1/logs", r.URL.Path)
+		assert.Equal(t, "/custom", r.URL.Path)
 		assert.Equal(t, "secret value", r.Header.Get("api-key"))
 	})
 
@@ -222,4 +224,56 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 		_, insecure := resolveOTLPEndpointGRPC()
 		assert.False(t, insecure, "https should result in insecure=false")
 	})
+}
+
+func TestOTLPLogsDuplicatePathWarning(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
+	previousLevel := internallog.GetLevel()
+	internallog.SetLevel(internallog.LevelDebug)
+	t.Cleanup(func() { internallog.SetLevel(previousLevel) })
+	for _, tc := range []struct {
+		name            string
+		signalEndpoint  string
+		genericEndpoint string
+		grpc            bool
+		userOpts        []otlploghttp.Option
+		wantWarnings    int
+	}{
+		{name: "generic signal suffix", genericEndpoint: "http://collector/v1/logs", wantWarnings: 1},
+		{name: "generic trailing slash", genericEndpoint: "http://collector/v1/logs/", wantWarnings: 1},
+		{name: "generic base", genericEndpoint: "http://collector/base"},
+		{name: "signal custom path overrides generic", signalEndpoint: "http://collector/custom", genericEndpoint: "http://collector/v1/logs"},
+		{name: "signal root", signalEndpoint: "http://collector/"},
+		{name: "same URL in both sources", signalEndpoint: "http://collector/v1/logs", genericEndpoint: "http://collector/v1/logs"},
+		{name: "invalid signal falls back to generic", signalEndpoint: "http://%invalid", genericEndpoint: "http://collector/v1/logs", wantWarnings: 1},
+		{name: "explicit URL", genericEndpoint: "http://collector/v1/logs", userOpts: []otlploghttp.Option{otlploghttp.WithEndpointURL("http://other/v1/logs")}},
+		{name: "explicit path", genericEndpoint: "http://collector/v1/logs", userOpts: []otlploghttp.Option{otlploghttp.WithURLPath("/v1/logs")}},
+		{name: "grpc", genericEndpoint: "http://collector/v1/logs", grpc: true},
+		{name: "credentials omitted", genericEndpoint: "https://secret-user:secret-password@collector/secret-path/v1/logs?token=secret-query", wantWarnings: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", tc.signalEndpoint)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", tc.genericEndpoint)
+			config.CreateNew()
+			logger := new(internallog.RecordLogger)
+			defer internallog.UseLogger(logger)()
+			if tc.grpc {
+				buildGRPCExporterOptions()
+			} else {
+				buildHTTPExporterOptions(tc.userOpts...)
+			}
+			var warnings []string
+			for _, entry := range logger.Logs() {
+				if strings.Contains(entry, " WARN: ") {
+					warnings = append(warnings, entry)
+				}
+			}
+			require.Len(t, warnings, tc.wantWarnings)
+			for _, warning := range warnings {
+				assert.Contains(t, warning, "OTEL_EXPORTER_OTLP_ENDPOINT")
+				assert.Contains(t, warning, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")
+				assert.NotContains(t, warning, "secret-")
+			}
+		})
+	}
 }

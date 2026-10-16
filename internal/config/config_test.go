@@ -1395,7 +1395,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://collector:4317", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("endpoint with path is used as-is", func(t *testing.T) {
@@ -1446,7 +1446,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://metrics-specific:4318", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
@@ -1684,29 +1684,39 @@ func TestOTLPLogsProtocol(t *testing.T) {
 
 func TestOTLPLogsEndpoint(t *testing.T) {
 	t.Run("empty when no env vars set", func(t *testing.T) {
-		assert.Empty(t, loadConfig().OTLPLogsEndpoint())
+		cfg := loadConfig()
+		assert.Empty(t, cfg.OTLPLogsEndpoint())
+		assert.Empty(t, cfg.OTLPLogsHTTPURL())
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://custom:4318")
-		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+		cfg := loadConfig()
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://custom:4318/v1/logs", cfg.OTLPLogsHTTPURL())
 	})
 
 	t.Run("uses OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://custom:4318")
-		assert.Equal(t, "http://custom:4318", loadConfig().OTLPLogsEndpoint())
+		cfg := loadConfig()
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsHTTPURL())
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT wins over generic", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs:4318")
-		assert.Equal(t, "http://logs:4318", loadConfig().OTLPLogsEndpoint())
+		cfg := loadConfig()
+		assert.Equal(t, "http://logs:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://logs:4318", cfg.OTLPLogsHTTPURL())
 	})
 
 	t.Run("unparsable OTEL_EXPORTER_OTLP_LOGS_ENDPOINT falls back to generic", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "::bad")
-		assert.Equal(t, "http://generic:4318", loadConfig().OTLPLogsEndpoint())
+		cfg := loadConfig()
+		assert.Equal(t, "http://generic:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://generic:4318/v1/logs", cfg.OTLPLogsHTTPURL())
 	})
 }
 
@@ -3004,4 +3014,14 @@ func TestRuntimeMetricsTemporalityNoWarningWhenDisabled(t *testing.T) {
 	defer log.UseLogger(tp)()
 	assert.Equal(t, "delta", loadConfig().RuntimeMetricsTemporalityPreference())
 	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+}
+
+func TestOTLPTraceURLInvalidSignalFallback(t *testing.T) {
+	for _, endpoint := range []string{"grpc://traces-collector:4317", "traces-collector:4318/v1/traces"} {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", endpoint)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/base")
+			assert.Equal(t, "http://collector:4318/base/v1/traces", loadConfig().OTLPTraceURL())
+		})
+	}
 }
