@@ -18,6 +18,7 @@ use (
 	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
+	./contrib/connectrpc.com/connect
 	./contrib/database/sql
 	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5
@@ -81,6 +82,7 @@ use (
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
+	./contrib/valyala/fasthttp/otelc
 	./instrumentation/internal/namingschematest
 	./instrumentation/internal/validationtest
 	./instrumentation/testutils/containers

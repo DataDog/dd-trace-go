@@ -514,7 +514,13 @@ func (p *Processor) flushInput() {
 	}
 }
 
+const (
+	minPollInterval = 100 * time.Microsecond
+	maxPollInterval = 5 * time.Millisecond
+)
+
 func (p *Processor) run(tick <-chan time.Time) {
+	pollInterval := minPollInterval
 	for {
 		select {
 		case <-p.stop:
@@ -530,9 +536,11 @@ func (p *Processor) run(tick <-chan time.Time) {
 		default:
 			s := p.in.pop()
 			if s == nil {
-				time.Sleep(time.Millisecond * 10)
+				time.Sleep(pollInterval)
+				pollInterval = min(2*pollInterval, maxPollInterval)
 				continue
 			}
+			pollInterval = minPollInterval
 			p.processInput(s)
 			if !p.earlyFlush {
 				continue
