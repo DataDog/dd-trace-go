@@ -6,12 +6,10 @@
 package log
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"net"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +20,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"golang.org/x/net/http/httpguts"
 )
 
 const (
@@ -30,28 +27,9 @@ const (
 	defaultOTLPHTTPPort = "4318"
 	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-	defaultOTLPProtocol = "http/protobuf"
-
-	// OTLP environment variables (logs-specific)
-	envOTLPLogsEndpoint = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
-	envOTLPLogsProtocol = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
-	envOTLPLogsHeaders  = "OTEL_EXPORTER_OTLP_LOGS_HEADERS"
-	envOTLPLogsTimeout  = "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"
-
-	// OTLP environment variables (generic)
-	envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	envOTLPProtocol = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
-	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
 
 	// DD environment variables for agent configuration
 	envDDAgentHost = "DD_AGENT_HOST"
-
-	// Default timeout for the OTLP logs exporter
-	defaultOTLPLogsTimeout = 10000 * time.Millisecond
-
-	// Default timeout in milliseconds (for telemetry reporting)
-	defaultOTLPTimeoutMs = 10000 // 10 seconds
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -97,43 +75,29 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
-// Protocol selection priority:
-// 1. OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
-// 2. OTEL_EXPORTER_OTLP_PROTOCOL
-// 3. Default: http/protobuf
-//
-// Supported protocols:
+// The protocol comes from config.OTLPLogsProtocol, which only returns supported protocols:
 // - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
 // Endpoint resolution priority:
-// 1. OTEL_EXPORTER_OTLP_LOGS_ENDPOINT (highest priority)
-// 2. OTEL_EXPORTER_OTLP_ENDPOINT
-// 3. DD_TRACE_AGENT_URL hostname with appropriate port
-// 4. DD_AGENT_HOST with appropriate port
-// 5. localhost with default port (default)
+// 1. config.OTLPLogsEndpoint (highest priority)
+// 2. DD_TRACE_AGENT_URL hostname with appropriate port
+// 3. DD_AGENT_HOST with appropriate port
+// 4. localhost with default port (default)
 func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpts []otlploggrpc.Option) (sdklog.Exporter, error) {
 	// Determine protocol
-	protocol := resolveOTLPProtocol()
+	protocol := config.Get().OTLPLogsProtocol()
 
 	var exporter sdklog.Exporter
 	var err error
-	var protocolTag, encodingTag string
+	protocolTag := protocolHTTP
 
 	switch protocol {
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
-		encodingTag = encodingProtobuf
-	case "http/protobuf", "http":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {
@@ -143,23 +107,8 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	// Wrap the exporter with telemetry tracking
 	return &telemetryExporter{
 		Exporter:  exporter,
-		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
+		telemetry: NewLogsExportTelemetry(protocolTag, encodingProtobuf),
 	}, nil
-}
-
-// resolveOTLPProtocol returns the OTLP protocol from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
-func resolveOTLPProtocol() string {
-	// Check logs-specific protocol first
-	if protocol := env.Get(envOTLPLogsProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Fall back to general OTLP protocol
-	if protocol := env.Get(envOTLPProtocol); protocol != "" {
-		return strings.ToLower(strings.TrimSpace(protocol))
-	}
-	// Default to HTTP with protobuf
-	return defaultOTLPProtocol
 }
 
 // newOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.
@@ -192,33 +141,19 @@ func newOTLPGRPCExporter(ctx context.Context, opts ...otlploggrpc.Option) (sdklo
 
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Option {
+	cfg := config.Get()
 	opts := []otlploghttp.Option{
 		// Set timeout
-		otlploghttp.WithTimeout(resolveExportTimeout()),
+		otlploghttp.WithTimeout(cfg.OTLPLogsTimeout()),
 		// Set retry configuration
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
-		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
-
-		// Parse and sanitize the URL to handle trailing slashes correctly
+	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
+		// Sanitize the URL to handle trailing slashes correctly
 		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
-		if sanitizedURL != "" {
-			opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
-			log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
-		} else {
-			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint)
-			endpoint, path, insecure := resolveOTLPEndpointHTTP()
-			opts = append(opts, otlploghttp.WithEndpoint(endpoint))
-			opts = append(opts, otlploghttp.WithURLPath(path))
-			if insecure {
-				opts = append(opts, otlploghttp.WithInsecure())
-			}
-		}
+		opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
+		log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
@@ -230,7 +165,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	}
 
 	// Always set headers so the SDK does not re-read them from the environment
-	opts = append(opts, otlploghttp.WithHeaders(resolveHeaders()))
+	opts = append(opts, otlploghttp.WithHeaders(cfg.OTLPLogsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -240,42 +175,29 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 
 // buildGRPCExporterOptions constructs the OTLP gRPC exporter options with DD-specific defaults
 func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Option {
+	cfg := config.Get()
 	opts := []otlploggrpc.Option{
 		// Set timeout
-		otlploggrpc.WithTimeout(resolveExportTimeout()),
+		otlploggrpc.WithTimeout(cfg.OTLPLogsTimeout()),
 		// Set retry config
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	// Check if OTEL environment variables are set
-	if hasOTLPEndpointInEnv() {
-		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
-
+	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
 		// For gRPC, we extract host:port and insecure flag from the URL
-		u, err := url.Parse(rawEndpoint)
-		if err != nil {
-			// Fallback to DD agent config if URL cannot be parsed
-			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error())
-			endpoint, insecure := resolveOTLPEndpointGRPC()
-			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-			if insecure {
-				opts = append(opts, otlploggrpc.WithInsecure())
-			}
-		} else {
-			endpoint := u.Host
-			if endpoint == "" {
-				endpoint = u.Path // Handle URLs without scheme
-			}
-			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-			if u.Scheme == "http" || u.Scheme == "grpc" {
-				opts = append(opts, otlploggrpc.WithInsecure())
-			}
-			// ruleguard: Forbidden: (internal log) format verbs %v, %+v, or %#v prevents controlled data exposure.
-			// Use specific format verbs like %s, %d, %q and sanitize data before logging. (gocritic)
-			//nolint:gocritic // TODO: Fix the warning above and remove the nolint.
-			log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
+		u, _ := url.Parse(rawEndpoint)
+		endpoint := u.Host
+		if endpoint == "" {
+			endpoint = u.Path // Handle URLs without scheme
 		}
+		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+		insecure := u.Scheme == "http" || u.Scheme == "grpc"
+		if insecure {
+			opts = append(opts, otlploggrpc.WithInsecure())
+		} else if u.Scheme == "https" {
+			opts = append(opts, otlploggrpc.WithEndpointURL(rawEndpoint))
+		}
+		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %t)", endpoint, insecure)
 	} else {
 		// Use DD agent configuration as default
 		endpoint, insecure := resolveOTLPEndpointGRPC()
@@ -286,24 +208,12 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	}
 
 	// Always set headers so the SDK does not re-read them from the environment
-	opts = append(opts, otlploggrpc.WithHeaders(resolveHeaders()))
+	opts = append(opts, otlploggrpc.WithHeaders(cfg.OTLPLogsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
 
 	return opts
-}
-
-// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables.
-// When true, we'll read and sanitize the endpoint ourselves to ensure proper URL formatting.
-func hasOTLPEndpointInEnv() bool {
-	if v := env.Get(envOTLPLogsEndpoint); v != "" {
-		return true
-	}
-	if v := env.Get(envOTLPEndpoint); v != "" {
-		return true
-	}
-	return false
 }
 
 // sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:
@@ -315,11 +225,7 @@ func hasOTLPEndpointInEnv() bool {
 // This works around issues where the OTel SDK may not handle trailing slashes correctly,
 // which can result in double slashes like http://host:4320//v1/logs
 func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
-		return ""
-	}
+	u, _ := url.Parse(rawURL)
 
 	// Trim trailing slashes from the path
 	u.Path = strings.TrimRight(u.Path, "/")
@@ -378,72 +284,6 @@ func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool
 	endpoint = net.JoinHostPort("localhost", port)
 	log.Debug("Using default %s endpoint: %s", name, endpoint)
 	return endpoint, true
-}
-
-// resolveHeaders returns the headers to send with OTLP requests.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_HEADERS > OTEL_EXPORTER_OTLP_HEADERS
-// Format: k=v,k2=v2 (spaces are trimmed, invalid entries are ignored)
-func resolveHeaders() map[string]string {
-	// Check logs-specific headers first
-	if headers := parseHeaders(env.Get(envOTLPLogsHeaders)); len(headers) > 0 {
-		return headers
-	}
-	// Fall back to general OTLP headers
-	return parseHeaders(env.Get(envOTLPHeaders))
-}
-
-// parseHeaders parses header string in format "k=v,k2=v2"
-// Spaces are trimmed and values are percent-decoded; invalid entries, including
-// keys that are not valid HTTP header names, are ignored.
-func parseHeaders(str string) map[string]string {
-	headers := make(map[string]string)
-	for entry := range strings.SplitSeq(str, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) != 2 {
-			// Invalid entry, skip it
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val, err := url.PathUnescape(strings.TrimSpace(parts[1]))
-		if err != nil {
-			continue
-		}
-		if httpguts.ValidHeaderFieldName(key) {
-			headers[key] = val
-		}
-	}
-	return headers
-}
-
-// resolveExportTimeout returns the export timeout from environment variables.
-// Priority: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT > OTEL_EXPORTER_OTLP_TIMEOUT > default (10s)
-func resolveExportTimeout() time.Duration {
-	// Check logs-specific timeout first
-	if timeoutStr := env.Get(envOTLPLogsTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	// Fall back to general OTLP timeout
-	if timeoutStr := env.Get(envOTLPTimeout); timeoutStr != "" {
-		if timeout, err := parseTimeout(timeoutStr); err == nil {
-			return timeout
-		}
-	}
-	return defaultOTLPLogsTimeout
-}
-
-// parseTimeout parses timeout string (milliseconds as integer)
-func parseTimeout(str string) (time.Duration, error) {
-	ms, err := strconv.ParseInt(str, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return time.Duration(ms) * time.Millisecond, nil
 }
 
 // httpRetryConfig returns the retry configuration for OTLP HTTP exporter.

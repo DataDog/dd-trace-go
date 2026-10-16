@@ -7,16 +7,81 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+func TestOTLPGenericProtocolSourceFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, lower, higher, logs, metrics string
+	}{
+		{"logs fallback", "grpc", "http/json", "grpc", "http/json"},
+		{"metrics fallback", "http/json", "grpc", "grpc", "http/json"},
+		{"shared higher priority", "http/json", "http/protobuf", "http/protobuf", "http/protobuf"},
+		{"signal-specific higher priority", "http/protobuf", "http/json", "http/protobuf", "http/json"},
+		{"invalid higher priority", "grpc", "typo", "grpc", "http/protobuf"},
+		{"normalized fallback", " GRPC ", " HTTP/JSON ", "grpc", "http/json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "")
+			generic := []string{tc.lower, tc.higher}
+			p := provider.NewEnvironment()
+			assert.Equal(t, tc.logs, resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", generic, supportsOTLPProtocol(otlpLogsProtocols), false)))
+			assert.Equal(t, tc.metrics, resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", generic, supportsOTLPProtocol(otlpMetricsProtocols), false)))
+		})
+	}
+}
+
+func TestOTLPInvalidGenericProtocolWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name, enabled, specific, protocol string
+	}{
+		{"logs", "DD_LOGS_OTEL_ENABLED", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc"},
+		{"span metrics", "OTEL_TRACES_SPAN_METRICS_ENABLED", "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/json"},
+	} {
+		for _, enabled := range []bool{false, true} {
+			for _, overridden := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/enabled=%t/overridden=%t", tc.name, enabled, overridden), func(t *testing.T) {
+					t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "typo")
+					t.Setenv(tc.enabled, strconv.FormatBool(enabled))
+					t.Setenv(tc.specific, "")
+					if overridden {
+						t.Setenv(tc.specific, tc.protocol)
+					}
+					tp := new(log.RecordLogger)
+					defer log.UseLogger(tp)()
+
+					cfg := loadConfig()
+					protocol := cfg.OTLPLogsProtocol()
+					if tc.name == "span metrics" {
+						protocol = cfg.OTLPMetricsProtocol()
+					}
+					want := "http/protobuf"
+					if overridden {
+						want = tc.protocol
+					}
+					assert.Equal(t, want, protocol)
+					logs := strings.Join(tp.Logs(), "\n")
+					if enabled && !overridden {
+						assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value")
+					} else {
+						assert.NotContains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value")
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestOTLPMetricsProtocolWarning(t *testing.T) {
 	const unsupported = "Unsupported OTEL_EXPORTER_OTLP"
