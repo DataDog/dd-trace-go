@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -1480,6 +1482,68 @@ func TestSendingFailures(t *testing.T) {
 	assert.Len(t, logs.Logs, 1)
 	assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
 	assert.Equal(t, "test", logs.Logs[0].Message)
+}
+
+func TestSCAFlushCancellationLogLevel(t *testing.T) {
+	previousLevel := internallog.GetLevel()
+	internallog.SetLevel(internallog.LevelDebug)
+	defer internallog.SetLevel(previousLevel)
+
+	for _, test := range []struct {
+		name      string
+		err       error
+		wantLevel string
+	}{
+		{
+			name:      "wrapped cancellation is debug",
+			err:       fmt.Errorf("request interrupted: %w", context.Canceled),
+			wantLevel: " DEBUG: ",
+		},
+		{
+			name:      "other failure is warning",
+			err:       errors.New("request failed"),
+			wantLevel: " WARN: ",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := defaultConfig(ClientConfig{
+				AgentURL: "http://localhost:8126",
+				HTTPClient: &http.Client{Transport: &testRoundTripper{
+					t: t,
+					roundTrip: func(_ *http.Request) (*http.Response, error) {
+						return nil, test.err
+					},
+				}},
+				DependencyLoader: func() (*debug.BuildInfo, bool) {
+					return &debug.BuildInfo{Deps: []*debug.Module{{Path: "example.com/dependency", Version: "v1.0.0"}}}, true
+				},
+			})
+			config.internalMetricsEnabled = false
+			config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+			c, err := newClient(internal.TracerConfig{
+				Service: "test-service",
+				Env:     "test-env",
+				Version: "1.0.0",
+			}, config)
+			require.NoError(t, err)
+
+			recorder := &internallog.RecordLogger{}
+			restoreLogger := internallog.UseLogger(recorder)
+			defer restoreLogger()
+
+			c.Flush()
+			require.NoError(t, c.Close())
+
+			var scaLogs []string
+			for _, entry := range recorder.Logs() {
+				if strings.Contains(entry, "appsec: error while flushing SCA Security Data:") {
+					scaLogs = append(scaLogs, entry)
+				}
+			}
+			require.Len(t, scaLogs, 1)
+			assert.Contains(t, scaLogs[0], test.wantLevel+"appsec: error while flushing SCA Security Data:")
+		})
+	}
 }
 
 func TestComputeFlushMetrics_FileSinkSkipsMetrics(t *testing.T) {

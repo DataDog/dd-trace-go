@@ -6,10 +6,12 @@
 package telemetry
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/puzpuzpuz/xsync/v4"
 
@@ -117,6 +119,14 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
+	// startFlushDone is closed when the app-started flush goroutine returns.
+	// It stays nil until StartApp marks that flush pending, so a Close before
+	// StartApp never waits.
+	startFlushMu           sync.Mutex
+	startFlushDone         chan struct{}
+	startFlushReservations int
+	// startFlushClaimed reports that the installed winner owns startFlushDone.
+	startFlushClaimed bool
 	// flushMu is used to ensure that only one flush is happening at a time
 	flushMu sync.Mutex
 
@@ -231,8 +241,11 @@ func (c *client) Flush() {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
 		telemetryClientEnabled = false
-		if gc, ok := GlobalClient().(*client); ok && gc == c {
-			SwapClient(nil)
+		if old := clearGlobalClient(c); old != nil {
+			// Close joins the goroutine that runs this Flush, so Close must not
+			// run here. A new goroutine closes the client after this Flush
+			// returns, which is also when the ticker goroutine can exit.
+			go old.Close()
 		}
 	}()
 
@@ -257,7 +270,11 @@ func (c *client) Flush() {
 			}
 		}
 		if dependenciesFound {
-			log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
+			if errors.Is(err, context.Canceled) {
+				log.Debug("appsec: error while flushing SCA Security Data: %s", err.Error())
+			} else {
+				log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
+			}
 		} else {
 			log.Debug("telemetry: error while flushing telemetry data: %s", err.Error())
 		}
@@ -405,7 +422,111 @@ func (c *client) AppStop() {
 	c.flushMapper = mapper.NewAppClosingMapper(c.flushMapper)
 }
 
+// markStartFlushPending records that an app-started flush is about to run
+// and returns the channel that the flush goroutine closes when it returns.
+// Close joins the flush through that channel. The channel exists before the
+// client becomes globally visible, so a close that races the installation
+// still observes it. Concurrent StartApp calls on the same client share one
+// channel, so a losing call cannot replace the channel of the winner. A nil
+// result means another client became visible before the marker was recorded.
+func (c *client) markStartFlushPending() chan struct{} {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if GlobalClient() != nil {
+		return nil
+	}
+	if c.startFlushDone == nil {
+		c.startFlushDone = make(chan struct{})
+		c.startFlushClaimed = false
+	}
+	c.startFlushReservations++
+	return c.startFlushDone
+}
+
+// claimStartFlush records that done belongs to the client published by the
+// winning start attempt. It runs before publication so a losing same-client
+// attempt cannot clear the winner's shared marker.
+func (c *client) claimStartFlush(done chan struct{}) bool {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done || c.startFlushReservations == 0 {
+		return false
+	}
+	c.startFlushReservations--
+	c.startFlushClaimed = true
+	return true
+}
+
+// completeUnclaimedStartFlush releases a losing attempt's marker reservation.
+// The marker remains pending while another attempt can still claim it or a
+// same-client winner owns it.
+func (c *client) completeUnclaimedStartFlush(done chan struct{}) {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done || c.startFlushReservations == 0 {
+		return
+	}
+	c.startFlushReservations--
+	if c.startFlushReservations != 0 || c.startFlushClaimed {
+		return
+	}
+	c.startFlushDone = nil
+	close(done)
+}
+
+// completeStartFlush clears and closes done when the winning flush returns.
+func (c *client) completeStartFlush(done chan struct{}) {
+	c.startFlushMu.Lock()
+	defer c.startFlushMu.Unlock()
+	if c.startFlushDone != done {
+		return
+	}
+	c.startFlushDone = nil
+	c.startFlushReservations = 0
+	c.startFlushClaimed = false
+	close(done)
+}
+
 func (c *client) Close() error {
 	c.flushTicker.Stop()
+	c.joinBounded(c.flushTicker.Done(), "the ticker flush")
+
+	c.startFlushMu.Lock()
+	done := c.startFlushDone
+	c.startFlushMu.Unlock()
+	if done == nil {
+		return nil
+	}
+	c.joinBounded(done, "the app-started flush")
 	return nil
+}
+
+// flushDeliveryGrace is how long Close allows an in-flight flush to deliver
+// before canceling it.
+const flushDeliveryGrace = 2 * time.Second
+
+// joinBounded gives a flush a fixed delivery grace before canceling its
+// requests. Callers close idle HTTP connections right after Close returns,
+// and a flush still in flight at that point leaves its connection orphaned in
+// the idle pool until the transport IdleConnTimeout elapses.
+//
+// A canceled request closes its connection, so no orphan remains. A Close
+// called from inside the flush, such as from a flush ticker callback, is not
+// released by the cancel, because the flush waits for that caller. The second
+// bounded wait below lets that Close return.
+func (c *client) joinBounded(done <-chan struct{}, what string) {
+	select {
+	case <-done:
+		return
+	case <-time.After(flushDeliveryGrace):
+	}
+	c.writer.Cancel()
+	log.Debug("telemetry: %s did not finish within %s of Close; canceled it", what, flushDeliveryGrace)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		// The flush did not unwind after the cancel. Leave it; the cancel
+		// prevents any new request from this client.
+		log.Debug("telemetry: %s did not unwind after the cancel; Close continues without it", what)
+	}
 }
