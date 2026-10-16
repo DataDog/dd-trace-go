@@ -519,12 +519,7 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		}
 		return sanitizeOTLPEndpoint(scheme + "://" + cmp.Or(u.Host, u.Path)), protocol
 	}
-	// The HTTP exporter appends /v1/logs unless the path already ends with it.
-	u.Path = strings.TrimRight(u.Path, "/")
-	if !strings.HasSuffix(u.Path, path) {
-		u.Path += path
-	}
-	return sanitizeOTLPEndpoint(u.String()), protocol
+	return sanitizeOTLPEndpoint(cfg.OTLPLogsHTTPURL()), protocol
 }
 
 // redactOTLPHeaders returns headers with every value redacted. It never
