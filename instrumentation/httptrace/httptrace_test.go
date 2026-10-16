@@ -347,6 +347,9 @@ func TestBeforeHandleClientAddressesWithAppSec(t *testing.T) {
 			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(tt.otel))
 			appsec.Start()
 			defer appsec.Stop()
+			if !appsec.Enabled() {
+				t.Skip("appsec is not enabled on this platform; skipping client address test")
+			}
 			clientip.ResetConfig()
 			ResetCfg()
 			cfg.otelSemanticsEnabled = tt.otel
