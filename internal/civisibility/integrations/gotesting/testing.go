@@ -441,7 +441,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				// A child profile that cannot be merged makes the parent report
 				// incomplete. Treat it as infrastructure failure, never as a
 				// quarantined test outcome.
-				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error())
+				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error()) //errtrack:ignore failure is surfaced through the test process exit
 				exitCode = processRetryFailureExitCode
 			} else {
 				cov, corrected, publishCoverage = finalizeITRCoverageBackfill()
