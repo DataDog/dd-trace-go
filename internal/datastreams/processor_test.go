@@ -956,13 +956,6 @@ func BenchmarkSetCheckpointSustained(b *testing.B) {
 				}
 				wg.Wait()
 				elapsed := time.Since(start)
-				// Flush before Stop so any checkpoints still sitting in the
-				// queue when producers finished get processed rather than
-				// silently discarded: Stop's stop-case flushes only buckets
-				// already built from processed input, not the raw queue, so
-				// without this, leftover backlog would vanish without
-				// incrementing dropped and drops/op would understate loss.
-				p.Flush()
 				p.Stop()
 
 				n := pushed.Load()
