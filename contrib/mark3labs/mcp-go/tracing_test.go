@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -415,6 +417,77 @@ func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 	taskSpan := tt.RequireSpan(t, "mcp.initialize")
 	assert.Equal(t, "mcp.initialize", taskSpan.Name)
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
+}
+
+// JSON-RPC 2.0 allows only a string or a number as a request ID, but
+// mcp-go does not validate the ID. A client can send an object or an array.
+// The tracing hooks must not panic for these IDs.
+func TestIntegrationInitializeNonComparableID(t *testing.T) {
+	for name, id := range map[string]string{
+		"object": `{"x":1}`,
+		"array":  `[1,2]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			testTracer(t)
+
+			srv := server.NewMCPServer("test-server", "1.0.0",
+				WithMCPServerTracing(nil))
+
+			initRequest := `{"jsonrpc":"2.0","id":` + id + `,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+			var response mcp.JSONRPCMessage
+			require.NotPanics(t, func() {
+				response = srv.HandleMessage(context.Background(), []byte(initRequest))
+			})
+			assert.NotNil(t, response)
+		})
+	}
+}
+
+func TestHooksNonComparableID(t *testing.T) {
+	logger := &recordLogger{}
+	testTracer(t, tracer.WithLogger(logger))
+
+	h := newHooks()
+	ctx := context.Background()
+	request := &mcp.InitializeRequest{}
+	for name, id := range map[string]any{
+		"object": map[string]any{"x": float64(1)},
+		"array":  []any{float64(1), float64(2)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				h.onBeforeInitialize(ctx, id, request)
+				h.onAfterInitialize(ctx, id, request, &mcp.InitializeResult{})
+				h.onError(ctx, id, mcp.MethodInitialize, request, errors.New("initialize failed"))
+			})
+		})
+	}
+
+	// The logger aggregates errors. tracer.Stop flushes them.
+	tracer.Stop()
+	logs := logger.String()
+	assert.Contains(t, logs, "mcp-go: skipping initialize span: unsupported JSON-RPC request ID type")
+	// The client controls the ID value, so the log must not contain it.
+	assert.NotContains(t, logs, "x:1")
+	assert.NotContains(t, logs, "[1 2]")
+}
+
+type recordLogger struct {
+	mu   sync.Mutex
+	logs []string
+}
+
+func (l *recordLogger) Log(msg string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.logs = append(l.logs, msg)
+}
+
+func (l *recordLogger) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.logs, "\n")
 }
 
 // Test helpers
