@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -56,6 +57,36 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		source := &otelEnvConfigSource{}
 		v := source.get("DD_TRACE_DEBUG")
 		assert.Equal(t, "true", v)
+	})
+
+	t.Run("maps OTEL_LOG_LEVEL above debug to DD_TRACE_DEBUG=false", func(t *testing.T) {
+		for _, level := range []string{"info", "warn", "error", "ERROR"} {
+			t.Run(level, func(t *testing.T) {
+				telemetryClient := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(telemetryClient)()
+
+				t.Setenv("OTEL_LOG_LEVEL", level)
+				source := &otelEnvConfigSource{}
+				v := source.get("DD_TRACE_DEBUG")
+
+				assert.Equal(t, "false", v)
+				assert.Zero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"}).Get())
+			})
+		}
+	})
+
+	t.Run("warns with the winning DD key when both are set", func(t *testing.T) {
+		rl := new(log.RecordLogger)
+		defer log.UseLogger(rl)()
+		t.Setenv("OTEL_LOG_LEVEL", "error")
+		t.Setenv("DD_TRACE_DEBUG", "true")
+		source := &otelEnvConfigSource{}
+		source.get("DD_TRACE_DEBUG")
+
+		logs := rl.Logs()
+		if assert.Len(t, logs, 1) {
+			assert.Contains(t, logs[0], `Both "OTEL_LOG_LEVEL" and "DD_TRACE_DEBUG" are set, using DD_TRACE_DEBUG=true`)
+		}
 	})
 
 	t.Run("returns empty for invalid OTEL_LOG_LEVEL", func(t *testing.T) {

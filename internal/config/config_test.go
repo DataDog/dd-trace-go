@@ -1794,6 +1794,64 @@ func TestCIVisibilityAgentlessActive(t *testing.T) {
 	}
 }
 
+func TestLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		wantLevel log.Level
+		wantDebug bool
+	}{
+		{name: "unset", wantLevel: log.LevelInfo},
+		{name: "otel info", env: map[string]string{"OTEL_LOG_LEVEL": "info"}, wantLevel: log.LevelInfo},
+		{name: "otel warn", env: map[string]string{"OTEL_LOG_LEVEL": "warn"}, wantLevel: log.LevelWarn},
+		{name: "otel error", env: map[string]string{"OTEL_LOG_LEVEL": "error"}, wantLevel: log.LevelError},
+		{name: "otel case-insensitive", env: map[string]string{"OTEL_LOG_LEVEL": "ErRoR"}, wantLevel: log.LevelError},
+		{name: "otel debug", env: map[string]string{"OTEL_LOG_LEVEL": "debug"}, wantLevel: log.LevelDebug, wantDebug: true},
+		{name: "otel empty", env: map[string]string{"OTEL_LOG_LEVEL": ""}, wantLevel: log.LevelInfo},
+		{name: "otel invalid", env: map[string]string{"OTEL_LOG_LEVEL": "not-a-log-level"}, wantLevel: log.LevelInfo},
+		{
+			name:      "dd debug wins over otel error",
+			env:       map[string]string{"DD_TRACE_DEBUG": "true", "OTEL_LOG_LEVEL": "error"},
+			wantLevel: log.LevelDebug, wantDebug: true,
+		},
+		{
+			name:      "dd debug disabled hides otel debug",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "debug"},
+			wantLevel: log.LevelInfo,
+		},
+		{
+			name:      "dd debug disabled keeps otel warn",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "warn"},
+			wantLevel: log.LevelWarn,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg := Get()
+			assert.Equal(t, tc.wantLevel, cfg.LogLevel())
+			assert.Equal(t, tc.wantDebug, cfg.Debug())
+		})
+	}
+
+	t.Run("debug option overrides otel threshold", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_LOG_LEVEL", "error")
+
+		cfg := Get()
+		cfg.SetDebug(true, telemetry.OriginCode)
+		assert.Equal(t, log.LevelDebug, cfg.LogLevel())
+
+		cfg.SetDebug(false, telemetry.OriginCode)
+		assert.Equal(t, log.LevelError, cfg.LogLevel())
+	})
+}
+
 func TestAgentTimeout(t *testing.T) {
 	t.Run("default is 10s when unset", func(t *testing.T) {
 		resetGlobalState()
@@ -2334,6 +2392,42 @@ func TestResolveBLRPMaxQueueSize(t *testing.T) {
 	})
 }
 
+func TestResolveBLRPScheduleDelay(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: time.Second},
+		{value: "invalid", expected: time.Second},
+		{value: "0", expected: time.Second},
+		{value: "-100", expected: time.Second},
+		{value: "500", expected: 500 * time.Millisecond},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPScheduleDelay())
+		})
+	}
+}
+
+func TestResolveBLRPExportTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: 30 * time.Second},
+		{value: "invalid", expected: 30 * time.Second},
+		{value: "0", expected: 30 * time.Second},
+		{value: "-100", expected: 30 * time.Second},
+		{value: "15000", expected: 15 * time.Second},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPExportTimeout())
+		})
+	}
+}
+
 func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 	t.Run("falls back to default on zero", func(t *testing.T) {
 		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
@@ -2424,4 +2518,74 @@ func TestRuntimeMetricsHeaders(t *testing.T) {
 			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsHeaders())
 		})
 	}
+}
+
+func TestRuntimeMetricsReaderResolution(t *testing.T) {
+	for _, tc := range []struct {
+		raw               string
+		interval, timeout time.Duration
+	}{
+		{"", 10 * time.Second, 7500 * time.Millisecond},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond},
+		{"0", 10 * time.Second, 7500 * time.Millisecond},
+		{"-1", 10 * time.Second, 7500 * time.Millisecond},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 10 * time.Second, 7500 * time.Millisecond},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
+			t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", tc.raw)
+			cfg := loadConfig()
+			assert.Equal(t, tc.interval, cfg.RuntimeMetricsExportInterval())
+			assert.Equal(t, tc.timeout, cfg.RuntimeMetricsExportTimeout())
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderOverflow(t *testing.T) {
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "9223372036854775807")
+	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "9223372036854775807")
+	cfg := loadConfig()
+	if strconv.IntSize == 64 {
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportTimeout())
+	} else {
+		assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, defaultRuntimeMetricsExportTimeout, cfg.RuntimeMetricsExportTimeout())
+	}
+}
+
+func TestRuntimeMetricsTemporality(t *testing.T) {
+	for _, tc := range []struct {
+		raw, expected string
+		wantWarn      bool
+	}{
+		{"", "delta", false},
+		{" CUMULATIVE ", "cumulative", false},
+		{"DELTA", "delta", false},
+		{"lowmemory", "delta", true},
+		{"unknown", "delta", true},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", tc.raw)
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsTemporalityPreference())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+				return
+			}
+			assert.NotContains(t, logs, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+		})
+	}
+}
+
+func TestRuntimeMetricsTemporalityNoWarningWhenDisabled(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "unknown")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+	assert.Equal(t, "delta", loadConfig().RuntimeMetricsTemporalityPreference())
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
 }

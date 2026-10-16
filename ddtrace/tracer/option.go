@@ -319,9 +319,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
-	}
+	// Always apply the level, so that restarting without one restores the default.
+	log.SetLevel(c.internalConfig.LogLevel())
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
 		// Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
