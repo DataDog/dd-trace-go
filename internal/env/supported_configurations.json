@@ -2218,6 +2218,13 @@
         "default": ""
       }
     ],
+    "OTEL_SDK_DISABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": null
+      }
+    ],
     "OTEL_SERVICE_NAME": [
       {
         "implementation": "B",

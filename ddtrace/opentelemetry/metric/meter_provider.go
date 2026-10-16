@@ -162,6 +162,9 @@ func metricsEnabled(c *internalconfig.Config) bool {
 	if c != nil {
 		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
+	if internalconfig.Get().OTelSDKDisabled() {
+		return false
+	}
 	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
 		if strings.ToLower(strings.TrimSpace(exporter)) == "none" {
 			return false
