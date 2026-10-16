@@ -76,7 +76,7 @@ func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
 		return err
 	}
 	defer resp.Body.Close()
-	defer io.Copy(io.Discard, req.Body)
+	defer io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	log.Debug("datastreams: pipeline_stats POST status=%d", resp.StatusCode)
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
