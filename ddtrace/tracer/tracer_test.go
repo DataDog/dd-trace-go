@@ -232,6 +232,18 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
+	t.Run("otel_sdk_disabled", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		Start()
+		defer Stop()
+		if _, ok := getGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := getGlobalTracer().(*NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
 	t.Run("deadlock/api", func(_ *testing.T) {
 		Stop()
 		Stop()
@@ -2170,11 +2182,10 @@ func TestPushTrace(t *testing.T) {
 
 	oldLvl := log.GetLevel()
 	defer func() { log.SetLevel(oldLvl) }()
-	log.SetLevel(log.LevelDebug)
 
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
-	tracer, err := newUnstartedTracer()
+	tracer, err := newUnstartedTracer(WithDebugMode(true))
 	assert.Nil(err)
 	defer tracer.Stop()
 	trace := []*Span{
@@ -3684,8 +3695,8 @@ func TestNoopTracerStartSpan(t *testing.T) {
 	undo := log.UseLogger(customLogger{l: llog.New(w, "", llog.LstdFlags)})
 	defer undo()
 
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelDebug)
-	defer log.SetLevel(log.LevelWarn)
 
 	StartSpan("abcd")
 

@@ -10,10 +10,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -78,15 +81,35 @@ type startupInfo struct {
 	PartialFlushMinSpans        int                          `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 	Orchestrion                 orchestrionConfig            `json:"orchestrion"`                    // Orchestrion (auto-instrumentation) configuration.
 	FeatureFlags                []string                     `json:"feature_flags"`
-	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
-	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
-	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
-	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
-	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
+	PropagationStyleInject      string                       `json:"propagation_style_inject"`     // Propagation style for inject
+	PropagationStyleExtract     string                       `json:"propagation_style_extract"`    // Propagation style for extract
+	PropagationBehaviorExtract  string                       `json:"propagation_behavior_extract"` // Propagation behavior for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`         // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`            // Destination of statsd payloads
+	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`         // Whether Data Streams is enabled
 
-	OTLPTracesExportEnabled  bool `json:"otlp_traces_export_enabled"`  // Whether traces are exported over OTLP
-	OTLPMetricsExportEnabled bool `json:"otlp_metrics_export_enabled"` // Whether metrics are exported over OTLP
-	OTLPLogsExportEnabled    bool `json:"otlp_logs_export_enabled"`    // Whether logs are exported over OTLP
+	// Effective OpenTelemetry configuration, keyed by the configuration name it
+	// describes. Fields tagged omitempty are omitted when the setting does not
+	// apply to an effective pipeline or has no faithful equivalent.
+	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether any OTel pipeline or semantics is effective
+	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
+	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
+	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
+
+	OTelTracesExporter  string            `json:"OTEL_TRACES_EXPORTER,omitempty"`                // "otlp" when traces are exported over OTLP
+	OTLPTracesEndpoint  string            `json:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,omitempty"`  // Sanitized OTLP traces URL
+	OTLPTracesProtocol  string            `json:"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL,omitempty"`  // OTLP traces transport
+	OTLPTracesHeaders   map[string]string `json:"OTEL_EXPORTER_OTLP_TRACES_HEADERS,omitempty"`   // OTLP traces header names, values redacted
+	OTLPMetricsEndpoint string            `json:"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,omitempty"` // Sanitized OTLP span metrics URL
+	OTLPMetricsProtocol string            `json:"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL,omitempty"` // OTLP span metrics transport
+	OTLPMetricsHeaders  map[string]string `json:"OTEL_EXPORTER_OTLP_METRICS_HEADERS,omitempty"`  // OTLP span metrics header names, values redacted
+
+	OTelLogLevel           string            `json:"OTEL_LOG_LEVEL,omitempty"`           // Minimum level of the tracer logger
+	OTelServiceName        string            `json:"OTEL_SERVICE_NAME,omitempty"`        // Finalized service name
+	OTelResourceAttributes map[string]string `json:"OTEL_RESOURCE_ATTRIBUTES,omitempty"` // Resource exported with OTLP traces
+	OTelPropagators        string            `json:"OTEL_PROPAGATORS,omitempty"`         // Propagators, when inject and extract match
+	OTelTracesSampler      string            `json:"OTEL_TRACES_SAMPLER,omitempty"`      // OTel equivalent of the trace sampler, or a datadog_* name
+	OTelTracesSamplerArg   string            `json:"OTEL_TRACES_SAMPLER_ARG,omitempty"`  // Ratio of a traceidratio sampler
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -136,17 +159,20 @@ func logStartup(t *tracer) {
 		orchCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
 	}
 
-	var injectorNames, extractorNames string
+	var injectorNames, extractorNames, extractBehavior string
 	switch v := t.config.propagator.(type) {
 	case *chainedPropagator:
 		injectorNames = v.injectorNames
 		extractorNames = v.extractorsNames
+		extractBehavior = v.propagationBehaviorExtract
 	case nil:
 		injectorNames = ""
 		extractorNames = ""
+		extractBehavior = ""
 	default:
 		injectorNames = "custom"
 		extractorNames = "custom"
+		extractBehavior = "custom"
 	}
 	af := t.config.agent.load()
 	proto := t.config.effectiveTraceProtocol()
@@ -194,16 +220,15 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		PropagationBehaviorExtract:  extractBehavior,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
-		OTLPTracesExportEnabled:     t.otlpExportMode,
-		OTLPMetricsExportEnabled:    t.config.otelRuntimeMetricsShouldBeEnabled,
-		OTLPLogsExportEnabled:       t.config.internalConfig.LogsOTelEnabled(),
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
+	t.addOTelStartupInfo(&info)
 	if !t.config.internalConfig.LogToStdout() {
 		startupHeaders := traceTransportHeaders(t.config.internalConfig)
 		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(proto), proto, startupHeaders); err != nil {
@@ -219,4 +244,176 @@ func logStartup(t *tracer) {
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 	telemetrylog.Debug("DATADOG TRACER CONFIGURATION", slog.String("config", string(bs)))
+}
+
+// redactedHeaderValue replaces every OTLP header value in the startup log.
+const redactedHeaderValue = "REDACTED"
+
+// addOTelStartupInfo adds the effective OpenTelemetry configuration to info.
+// Every value comes from state resolved during tracer configuration; nothing
+// is read from the environment here.
+func (t *tracer) addOTelStartupInfo(info *startupInfo) {
+	cfg := t.config.internalConfig
+	if t.otlpExportMode {
+		info.OTelTracesExporter = "otlp"
+	}
+	info.MetricsOTelEnabled = cfg.RuntimeMetricsOtelEnabled()
+	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
+	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
+
+	tracesOTLP := t.otlpTracesPipelineEnabled()
+	metricsOTLP := t.config.otelRuntimeMetricsShouldBeEnabled
+	semantics := cfg.OTelSemanticsEnabled() && cfg.TracingEnabled()
+	// DD_LOGS_OTEL_ENABLED alone does not count: the tracer never starts the
+	// OTel logs pipeline and cannot tell whether ddtrace/opentelemetry/log is
+	// linked or started.
+	spanMetricsOTLP := t.otlpSpanMetricsEnabled()
+	info.OTelEnabled = tracesOTLP || metricsOTLP || semantics || spanMetricsOTLP
+
+	if tracesOTLP {
+		info.OTLPTracesEndpoint = sanitizeOTLPEndpoint(cfg.OTLPTraceURL())
+		// The OTLP trace writer only sends protobuf over HTTP.
+		info.OTLPTracesProtocol = "http/protobuf"
+		headers := cfg.OTLPTraceHeaders()
+		// The writer always sets Content-Type itself, overriding any configured value.
+		delete(headers, "Content-Type")
+		info.OTLPTracesHeaders = redactOTLPHeaders(headers)
+	}
+	// The span metrics exporter is the only OTLP metrics exporter whose settings
+	// the tracer resolves. The OTel MeterProvider resolves its own endpoint,
+	// protocol, and headers, which can differ, so report nothing when it is
+	// also active rather than describe only one of the two exporters.
+	if spanMetricsOTLP && !metricsOTLP {
+		info.OTLPMetricsEndpoint = sanitizeOTLPEndpoint(cfg.OTLPMetricsURL())
+		info.OTLPMetricsProtocol = cfg.OTLPMetricsProtocol()
+		info.OTLPMetricsHeaders = redactOTLPHeaders(cfg.OTLPMetricsHeaders())
+	}
+
+	// The logger only filters debug messages; info and above are always emitted.
+	info.OTelLogLevel = "info"
+	if log.DebugEnabled() {
+		info.OTelLogLevel = "debug"
+	}
+	info.OTelServiceName = cfg.ServiceName()
+	if w, ok := t.traceWriter.(*otlpTraceWriter); ok && tracesOTLP {
+		info.OTelResourceAttributes = make(map[string]string, len(w.resource.Attributes))
+		for _, kv := range w.resource.Attributes {
+			info.OTelResourceAttributes[kv.Key] = kv.Value.GetStringValue()
+		}
+	}
+	info.OTelPropagators = otelPropagators(t.config.propagator)
+	info.OTelTracesSampler, info.OTelTracesSamplerArg = t.otelTracesSampler()
+}
+
+// otelPropagators returns the OTEL_PROPAGATORS equivalent of p. It returns ""
+// when p or one of its propagators is custom, or when injection and extraction
+// use different sequences, including when extraction is ignored, since no
+// single OTEL_PROPAGATORS value describes them.
+func otelPropagators(p Propagator) string {
+	cp, ok := p.(*chainedPropagator)
+	if !ok {
+		return ""
+	}
+	if len(cp.injectors) == 0 && len(cp.extractors) == 0 {
+		return "none"
+	}
+	inject, extract := otelPropagatorNames(cp.injectors), otelPropagatorNames(cp.extractors)
+	if inject == "" || inject != extract || cp.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
+		return ""
+	}
+	return inject
+}
+
+// otelPropagatorNames returns the comma-separated OTel names of propagators,
+// or "" when one of them has no OTel name.
+func otelPropagatorNames(propagators []Propagator) string {
+	names := make([]string, len(propagators))
+	for i, p := range propagators {
+		if names[i] = getPropagatorName(p); names[i] == "" {
+			return ""
+		}
+	}
+	return strings.Join(names, ",")
+}
+
+// otelTracesSampler returns the OTel sampler equivalent to the tracer's
+// effective root sampling. Spans with a propagated sampling decision are never
+// resampled, so every equivalent is parent-based. Datadog sampling without an
+// OTel equivalent is reported with a datadog_* name describing what drives it;
+// trace sampling rules use datadog_custom_rules, matching dd-trace-dotnet.
+func (t *tracer) otelTracesSampler() (name, arg string) {
+	// A custom sampler or a WithSamplerRate rate below 1 runs before rule-based
+	// sampling and composes with it.
+	rs, ok := t.config.sampler.(*rateSampler)
+	if !ok {
+		return "datadog_custom_sampler", ""
+	}
+	if rs.Rate() != 1 {
+		return "datadog_sampler_rate", ""
+	}
+	rules := t.rulesSampling.traces
+	rate, ok := rules.fixedRate()
+	if !ok {
+		if rules.enabled() {
+			return "datadog_custom_rules", ""
+		}
+		if _, otel := t.defaultSampler.(*otelParentBasedAlwaysOnSampler); otel {
+			return "parentbased_always_on", ""
+		}
+		return "datadog_agent_rates", ""
+	}
+	switch rate {
+	case 0:
+		return "parentbased_always_off", ""
+	case 1:
+		return "parentbased_always_on", ""
+	}
+	return "parentbased_traceidratio", strconv.FormatFloat(rate, 'f', -1, 64)
+}
+
+// sanitizeOTLPEndpoint returns endpoint without userinfo, query, or fragment so
+// credentials cannot reach the startup log. It returns "" when endpoint cannot
+// be parsed or is opaque or hostless, since it then cannot be sanitized.
+func sanitizeOTLPEndpoint(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Opaque != "" || u.Host == "" {
+		return ""
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
+}
+
+// redactOTLPHeaders returns headers with every value redacted.
+func redactOTLPHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	redacted := maps.Clone(headers)
+	for k := range redacted {
+		redacted[k] = redactedHeaderValue
+	}
+	return redacted
+}
+
+// otlpTracesPipelineEnabled reports whether spans are exported by the OTLP
+// trace writer. OTEL_TRACES_EXPORTER=otlp alone is not enough: CI Visibility
+// and log-to-stdout writers take precedence, and disabled tracing exports
+// nothing.
+func (t *tracer) otlpTracesPipelineEnabled() bool {
+	return t.otlpExportMode && t.config.internalConfig.TracingEnabled()
+}
+
+// otlpSpanMetricsEnabled reports whether the stats concentrator exports span
+// metrics over OTLP.
+func (t *tracer) otlpSpanMetricsEnabled() bool {
+	c, ok := t.stats.(*concentrator)
+	if !ok {
+		return false
+	}
+	_, ok = c.sender.(*otlpStatsSender)
+	return ok
 }
