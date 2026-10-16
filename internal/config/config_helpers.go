@@ -51,6 +51,7 @@ const (
 	defaultStatsPeerTagsCardinalityLimit = 512
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
+	defaultDataStreamsIntakeBufferSize = 10000
 	// defaultBLRPMaxQueueSize is the default value for OTEL_BLRP_MAX_QUEUE_SIZE.
 	defaultBLRPMaxQueueSize = 2048
 	// defaultBLRPScheduleDelay is the default value for OTEL_BLRP_SCHEDULE_DELAY.
@@ -170,6 +171,14 @@ func validateFlaggingProviderInitTimeout(ms int) bool {
 func validateSendRetries(retries int) bool {
 	if retries < 0 {
 		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
+		return false
+	}
+	return true
+}
+
+func validateDataStreamsIntakeBufferSize(size int) bool {
+	if size <= 0 {
+		log.Warn("datastreams: ignoring non-positive intake buffer size %d", size)
 		return false
 	}
 	return true
