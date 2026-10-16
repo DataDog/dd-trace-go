@@ -12,6 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
@@ -20,8 +21,17 @@ require (
 require (
 	github.com/99designs/gqlgen v0.17.92 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
+	github.com/andybalholm/brotli v1.2.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/gofiber/fiber/v2 v2.52.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasthttp v1.70.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.35 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
@@ -93,7 +103,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261005130301-0399637fded6 // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
@@ -134,3 +144,7 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../../contrib/gofiber/fiber.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../contrib/gofiber/fiber.v2
