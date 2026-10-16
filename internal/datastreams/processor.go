@@ -434,7 +434,15 @@ func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
 		case <-p.stop:
-			// drop in flight payloads on the input channel
+			// Bounded so producers that keep pushing during shutdown cannot
+			// hold Stop open indefinitely.
+			for range p.in.size {
+				in := p.in.pop()
+				if in == nil {
+					break
+				}
+				p.processInput(in)
+			}
 			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		case now := <-tick:
