@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestOTLPHTTPEndpointPaths(t *testing.T) {
@@ -51,6 +53,8 @@ func TestOTLPHTTPEndpointPaths(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", tc.genericEndpoint)
 			t.Setenv("DD_TRACE_AGENT_URL", "http://agent.invalid:8126")
 			t.Setenv("DD_AGENT_HOST", "unused-agent.invalid")
+			t.Cleanup(func() { internalconfig.CreateNew() })
+			internalconfig.CreateNew()
 			requests := make(chan *http.Request, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests <- r
