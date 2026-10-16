@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -105,6 +106,64 @@ func newTestOTLPWriter(t *testing.T, srv *testOTLPServer, opts ...StartOption) *
 		buffSize:  baseSize,
 		baseSize:  baseSize,
 		climit:    make(chan struct{}, concurrentConnectionLimit),
+	}
+}
+
+type blockingOTLPTransport struct {
+	received chan []byte
+	release  chan struct{}
+}
+
+func (b *blockingOTLPTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	b.received <- body
+	<-b.release
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+}
+
+func TestOTLPTracerFlush(t *testing.T) {
+	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+	for _, state := range []string{"queued", "in-flight"} {
+		t.Run(state, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), withNoopStats())
+				require.NoError(t, err)
+				defer tr.Stop()
+				writer, ok := tr.traceWriter.(*otlpTraceWriter)
+				require.True(t, ok)
+				transport := &blockingOTLPTransport{
+					received: make(chan []byte, 1),
+					release:  make(chan struct{}),
+				}
+				writer.transport = newOTLPTransport(&http.Client{Transport: transport}, "http://collector/v1/traces", nil)
+				span := newSpan("flush-span", "service", "resource", 1, 1, 0)
+				if state == "queued" {
+					tr.out <- &chunk{spans: []*Span{span}, willSend: true}
+				} else {
+					writer.add([]*Span{span})
+					writer.flush()
+				}
+
+				done := make(chan struct{}, 1)
+				go tr.defaultFlushHandler(done)
+				synctest.Wait()
+				assert.Empty(t, done, "flush must wait for the collector response")
+				close(transport.release)
+				synctest.Wait()
+				require.Len(t, done, 1)
+				require.Len(t, transport.received, 1, "flush must export the finished span")
+				var data otlptrace.TracesData
+				require.NoError(t, proto.Unmarshal(<-transport.received, &data))
+				require.Len(t, data.ResourceSpans, 1)
+				require.Len(t, data.ResourceSpans[0].ScopeSpans, 1)
+				spans := data.ResourceSpans[0].ScopeSpans[0].Spans
+				require.Len(t, spans, 1)
+				assert.Equal(t, "resource", spans[0].Name)
+			})
+		})
 	}
 }
 
