@@ -32,7 +32,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.1.1-0.20261005130301-0399637fded6' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261015110818-d3d72efe9f25' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
@@ -47,6 +47,8 @@ env:
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
     contrib/go-chi/chi.v5/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -61,6 +63,7 @@ env:
     sql
     chi
     chi.v5
+    julienschmidt_httprouter
     redigo
     grpc
     99designs.gqlgen
