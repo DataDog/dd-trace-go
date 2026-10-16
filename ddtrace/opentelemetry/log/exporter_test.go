@@ -6,11 +6,9 @@
 package log
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -21,43 +19,9 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
-	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
-
-func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
-	t.Cleanup(func() { config.CreateNew() })
-	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-	config.CreateNew()
-	logger := new(internallog.RecordLogger)
-	defer internallog.UseLogger(logger)()
-	previousLevel := internallog.GetLevel()
-	internallog.SetLevel(internallog.LevelWarn)
-	defer internallog.SetLevel(previousLevel)
-
-	recorder := &telemetrytest.RecordClient{}
-	defer telemetry.MockClient(recorder)()
-
-	ctx := context.Background()
-	exporter, err := newOTLPExporter(ctx, nil, nil)
-	require.NoError(t, err)
-	defer exporter.Shutdown(ctx)
-
-	wrapped := exporter.(*telemetryExporter)
-	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
-	assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTLP logs protocol; falling back to http/protobuf.")
-
-	wrapped.telemetry.RecordLogRecords(1)
-	key := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceTracers,
-		Name:      "otel.log_records",
-		Tags:      "encoding:protobuf,protocol:http",
-		Kind:      "count",
-	}
-	require.Contains(t, recorder.Metrics, key)
-	assert.Equal(t, float64(1), recorder.Metrics[key].Get())
-}
 
 func TestNewOTLPExporterProtocol(t *testing.T) {
 	t.Cleanup(func() { config.CreateNew() })
@@ -69,6 +33,7 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 		"http/protobuf": {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 		"http":          {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 		" GRPC ":        {&otlploggrpc.Exporter{}, "encoding:protobuf,protocol:grpc"},
+		"http/json":     {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 	} {
 		t.Run(protocol, func(t *testing.T) {
 			recorder := &telemetrytest.RecordClient{}

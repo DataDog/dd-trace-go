@@ -633,6 +633,22 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
 
+	for _, invalid := range []string{"grpc://collector:4317", "collector:4318/v1/traces"} {
+		t.Run("invalid endpoints fall back to the agent host/"+invalid, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("DD_AGENT_HOST", "custom-agent")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", invalid)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", invalid)
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+
+			assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+		})
+	}
+
 	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT used when traces-specific one is unset", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -1655,10 +1671,14 @@ func TestOTLPLogsProtocol(t *testing.T) {
 		assert.Equal(t, "grpc", protocol)
 	})
 
-	t.Run("keeps an unsupported protocol for the exporter to reject", func(t *testing.T) {
+	t.Run("unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL falls back to generic", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
-		assert.Equal(t, "http/json", loadConfig().OTLPLogsProtocol())
+		assert.Equal(t, "grpc", loadConfig().OTLPLogsProtocol())
+		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL value")
 	})
 }
 
@@ -1700,8 +1720,12 @@ func TestOTLPLogsURL(t *testing.T) {
 			map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "collector"},
 			"collector/v1/logs", "//collector",
 		},
-		"unparsable endpoint falls back to the agent": {
+		"unparsable OTEL_EXPORTER_OTLP_LOGS_ENDPOINT falls back to generic": {
 			map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "::bad"},
+			"http://generic:4318/v1/logs", "http://generic:4318",
+		},
+		"unparsable endpoints fall back to the agent": {
+			map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "::bad", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "::bad"},
 			"http://localhost:4318/v1/logs", "http://localhost:4317",
 		},
 	} {
@@ -1724,7 +1748,7 @@ func TestOTLPLogsUnparsableEndpointWarning(t *testing.T) {
 			t.Setenv("DD_LOGS_OTEL_ENABLED", strconv.FormatBool(enabled))
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://user:SECRET@[::1")
 			loadConfig()
-			const warning = "falling back to DD agent configuration"
+			const warning = "Unsupported OTEL_EXPORTER_OTLP_LOGS_ENDPOINT value"
 			logs := strings.Join(logger.Logs(), "\n")
 			assert.NotContains(t, logs, "SECRET")
 			if enabled {
