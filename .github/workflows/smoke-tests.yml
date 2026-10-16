@@ -462,6 +462,9 @@ jobs:
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
             go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
+            # Pass GOPROXY into the build, so its "|" fallback to `direct`
+            # also applies inside the image.
+            GOPROXY=${{ env.GOPROXY }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
 

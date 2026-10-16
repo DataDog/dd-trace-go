@@ -49,6 +49,11 @@ func New() *Provider {
 	}
 }
 
+// NewEnvironment resolves existing environment-only consumers without enabling declarative sources.
+func NewEnvironment() *Provider {
+	return &Provider{sources: []configSource{new(envConfigSource)}}
+}
+
 // get is the core resolution helper shared by all typed getters.
 // It iterates sources in reverse priority order so that higher-priority sources
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
@@ -135,6 +140,19 @@ func (p *Provider) GetInt64(key string, def int64) int64 {
 	return get(p, key, def, func(v string) (int64, bool) {
 		intVal, err := strconv.ParseInt(v, 10, 64)
 		return intVal, err == nil
+	})
+}
+
+func (p *Provider) GetInt64WithValidator(key string, def int64, validate func(int64) bool) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			if validate != nil && !validate(intVal) {
+				return 0, false
+			}
+			return intVal, true
+		}
+		return 0, false
 	})
 }
 
