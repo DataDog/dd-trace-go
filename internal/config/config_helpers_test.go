@@ -160,22 +160,18 @@ func TestValidHeaderFieldName(t *testing.T) {
 
 func TestResolveOTLPSignalURLLogs(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		raw       string
-		isGeneric bool
-		expected  string
+		name     string
+		signal   string
+		generic  string
+		expected string
 	}{
-		{name: "generic no path", raw: "http://collector:4318", isGeneric: true, expected: "http://collector:4318/v1/logs"},
-		{name: "generic trailing slash", raw: "http://collector:4318/", isGeneric: true, expected: "http://collector:4318/v1/logs"},
-		{name: "generic custom path", raw: "http://collector:4318/otlp", isGeneric: true, expected: "http://collector:4318/otlp/v1/logs"},
-		{name: "signal-specific path", raw: "http://collector:4318/custom/", expected: "http://collector:4318/custom/"},
+		{name: "generic no path", generic: "http://collector:4318", expected: "http://collector:4318/v1/logs"},
+		{name: "generic trailing slash", generic: "http://collector:4318/", expected: "http://collector:4318/v1/logs"},
+		{name: "generic custom path", generic: "http://collector:4318/otlp", expected: "http://collector:4318/otlp/v1/logs"},
+		{name: "signal-specific path", signal: "http://collector:4318/custom/", expected: "http://collector:4318/custom/"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			signalEndpoint, genericEndpoint := tc.raw, ""
-			if tc.isGeneric {
-				signalEndpoint, genericEndpoint = "", tc.raw
-			}
-			assert.Equal(t, tc.expected, resolveOTLPSignalURL(signalEndpoint, genericEndpoint, otlpLogsPath, true))
+			assert.Equal(t, tc.expected, resolveOTLPSignalURL(tc.signal, tc.generic, otlpLogsPath, true))
 		})
 	}
 }
