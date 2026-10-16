@@ -47,6 +47,7 @@ use (
 	./contrib/google.golang.org/grpc
 	./contrib/google.golang.org/grpc/otelc
 	./contrib/gorilla/mux
+	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql

@@ -17,6 +17,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestOTelSemantics(t *testing.T) {
 	harness.Run(t, new(TestCaseOTelSemantics))
 }
