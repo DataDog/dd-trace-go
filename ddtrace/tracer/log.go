@@ -7,12 +7,10 @@ package tracer
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -20,10 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
@@ -270,8 +266,8 @@ const redactedHeaderValue = "REDACTED"
 const conflictingOTLPValue = "CONFLICTING"
 
 // addOTelStartupInfo adds the effective OpenTelemetry configuration to info.
-// Every value comes from state resolved during tracer configuration, except
-// DD_AGENT_HOST, which the OTLP logs exporter reads directly.
+// Every value comes from state resolved during tracer configuration; nothing
+// is read from the environment here.
 func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	cfg := t.config.internalConfig
 	if t.otlpExportMode {
@@ -498,41 +494,23 @@ func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 }
 
 // otlpLogsEndpoint returns the sanitized endpoint and the protocol of the OTLP
-// logs exporter, resolved the way ddtrace/opentelemetry/log resolves them. The
+// logs exporter, built the way ddtrace/opentelemetry/log builds them. The
 // scheme ignores OTEL_EXPORTER_OTLP_LOGS_INSECURE and OTEL_EXPORTER_OTLP_INSECURE:
 // the tracer does not support them for logs, but the SDK applies them to an
 // https agent URL and to a gRPC endpoint without a scheme.
 func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
-	grpc := cfg.OTLPLogsProtocol() == "grpc"
-	protocol, port, path := "http/protobuf", "4318", "/v1/logs"
-	if grpc {
-		protocol, port, path = "grpc", "4317", ""
-	}
-	raw := cfg.OTLPLogsEndpoint()
-	if raw == "" {
-		// Like the exporter, fall back to DD_AGENT_HOST, then localhost, when
-		// the agent URL has no host, as with a Unix socket.
-		host, insecure := cmp.Or(env.Get("DD_AGENT_HOST"), internal.DefaultAgentHostname), true
-		if agent := cfg.RawAgentURL(); agent != nil && agent.Hostname() != "" {
-			host, insecure = agent.Hostname(), agent.Scheme == "http" || agent.Scheme == "unix"
+	if cfg.OTLPLogsProtocol() == "grpc" {
+		target, insecure := cfg.OTLPLogsGRPCEndpoint()
+		if target == "" {
+			return "", "grpc"
 		}
-		u := url.URL{Scheme: otlpScheme(insecure), Host: net.JoinHostPort(host, port), Path: path}
-		return u.String(), protocol
+		return sanitizeOTLPEndpoint(otlpScheme(insecure) + "://" + target), "grpc"
 	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", protocol
+	if u := cfg.OTLPLogsHTTPURL(); u != "" {
+		return sanitizeOTLPEndpoint(u), "http/protobuf"
 	}
-	if grpc {
-		// The gRPC exporter only uses the host, and disables TLS only for the
-		// http and grpc schemes.
-		host := cmp.Or(u.Host, u.Path)
-		if host == "" {
-			return "", protocol
-		}
-		return sanitizeOTLPEndpoint(otlpScheme(u.Scheme == "http" || u.Scheme == "grpc") + "://" + host), protocol
-	}
-	return sanitizeOTLPEndpoint(cfg.OTLPLogsHTTPURL()), protocol
+	host, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
+	return (&url.URL{Scheme: otlpScheme(insecure), Host: host, Path: path}).String(), "http/protobuf"
 }
 
 // redactOTLPHeaders returns headers with every value redacted. It never
