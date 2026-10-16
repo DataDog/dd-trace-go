@@ -13,8 +13,20 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestAppSec(t *testing.T) {
+	harness.Run(t, new(TestCaseAppSec))
+}
+
 func TestBase(t *testing.T) {
 	harness.Run(t, new(TestCaseBase))
+}
+
+func TestDefault(t *testing.T) {
+	harness.Run(t, new(TestCaseDefault))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
 }
 
 func TestResponse(t *testing.T) {
