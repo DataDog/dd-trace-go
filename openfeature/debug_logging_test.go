@@ -21,6 +21,8 @@ import (
 
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/isolated"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/open-feature/go-sdk/openfeature/multi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -55,71 +57,43 @@ func (l *capturingLogger) assertContains(t *testing.T, substr string) {
 	assert.Positive(t, l.countContaining(substr), "expected a log containing %q, got:\n%s", substr, strings.Join(l.all(), "\n"))
 }
 
-func TestDebugLoggingHook_Finally(t *testing.T) {
+func TestLogResolution(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
-	hookCtx := of.NewHookContext(
-		"my-flag",
-		of.Boolean,
-		false,
-		of.NewClientMetadata("test"),
-		of.Metadata{Name: datadogProviderName},
-		of.NewEvaluationContext("secret-user-id", map[string]any{"email": "secret@example.com"}),
-	)
-	details := of.InterfaceEvaluationDetails{
+	logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{
 		Value: true,
-		EvaluationDetails: of.EvaluationDetails{
-			FlagKey:  "my-flag",
-			FlagType: of.Boolean,
-			ResolutionDetail: of.ResolutionDetail{
-				Variant:      "on",
-				Reason:       of.TargetingMatchReason,
-				FlagMetadata: of.FlagMetadata{metadataAllocationKey: "alloc-1"},
-			},
+		ProviderResolutionDetail: of.ProviderResolutionDetail{
+			Variant:      "on",
+			Reason:       of.TargetingMatchReason,
+			FlagMetadata: of.FlagMetadata{metadataAllocationKey: "alloc-1"},
 		},
-	}
-
-	newDebugLoggingHook().Finally(context.Background(), hookCtx, details, of.HookHints{})
+	})
 
 	require.Len(t, logger.all(), 1)
-	msg := logger.all()[0]
-	assert.Contains(t, msg, `openfeature: evaluated "my-flag": type=bool`)
-	assert.Contains(t, msg, "value=true")
-	assert.Contains(t, msg, `variant="on"`)
-	assert.Contains(t, msg, "reason=TARGETING_MATCH")
-	assert.Contains(t, msg, `allocation="alloc-1"`)
-	assert.NotContains(t, msg, "secret-user-id", "the targeting key must never be logged")
-	assert.NotContains(t, msg, "secret@example.com", "context attributes must never be logged")
+	logger.assertContains(t, `openfeature: provider resolved "my-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH, allocation="alloc-1", serial_id=, error_code=, error_message=""`)
 }
 
-func TestDebugLoggingHook_FinallyLogsErrors(t *testing.T) {
+func TestLogResolution_Errors(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
-	hookCtx := of.NewHookContext("missing", of.String, "dflt", of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
-	details := of.InterfaceEvaluationDetails{
+	logResolution("missing", of.String, of.StringResolutionDetail{
 		Value: "dflt",
-		EvaluationDetails: of.EvaluationDetails{
-			FlagKey:  "missing",
-			FlagType: of.String,
-			ResolutionDetail: of.ResolutionDetail{
-				Reason:       of.ErrorReason,
-				ErrorCode:    of.FlagNotFoundCode,
-				ErrorMessage: "flag not found",
-			},
+		ProviderResolutionDetail: of.ProviderResolutionDetail{
+			ResolutionError: of.NewFlagNotFoundResolutionError("flag not found"),
+			Reason:          of.ErrorReason,
 		},
-	}
+	})
 
-	newDebugLoggingHook().Finally(context.Background(), hookCtx, details, of.HookHints{})
-
-	logger.assertContains(t, `evaluated "missing": type=string, value="dflt", variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND, error_message="flag not found"`)
+	logger.assertContains(t, `provider resolved "missing": type=string, value="dflt", variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND, error_message="flag not found"`)
 }
 
-func TestDebugLoggingHook_SilentWhenDebugDisabled(t *testing.T) {
+func TestLogResolution_SilentWhenDebugDisabled(t *testing.T) {
 	logger := withLogLevel(t, log.LevelWarn)
 
-	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
-	newDebugLoggingHook().Finally(context.Background(), hookCtx, of.InterfaceEvaluationDetails{Value: true}, of.HookHints{})
+	detail := of.StringResolutionDetail{Value: "on", ProviderResolutionDetail: of.ProviderResolutionDetail{Reason: of.StaticReason}}
+	allocs := testing.AllocsPerRun(100, func() { logResolution("my-flag", of.String, detail) })
 
+	assert.Zero(t, allocs, "the value must not be boxed while debug logging is off")
 	assert.Empty(t, logger.all())
 }
 
@@ -206,8 +180,147 @@ func TestDebugLoggingHook_EndToEnd(t *testing.T) {
 	_, err = client.BooleanValue(context.Background(), "does-not-exist", false, of.NewEvaluationContext("user-1", nil))
 	require.Error(t, err)
 
-	logger.assertContains(t, `evaluated "bool-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH, allocation="allocation1"`)
-	logger.assertContains(t, `evaluated "does-not-exist": type=bool, value=false, variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND`)
+	logger.assertContains(t, `provider resolved "bool-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH, allocation="allocation1"`)
+	logger.assertContains(t, `provider resolved "does-not-exist": type=bool, value=false, variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND`)
+	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value false)`)
+}
+
+// failingAfterHook is an application hook whose After stage fails after the
+// provider resolved the flag.
+type failingAfterHook struct {
+	of.UnimplementedHook
+}
+
+func (failingAfterHook) After(context.Context, of.HookContext, of.InterfaceEvaluationDetails, of.HookHints) error {
+	return errors.New("application after hook failed")
+}
+
+// assertNoReturnedValueClaims fails if a log line about flagKey claims which
+// value the application received, which the hooks cannot know, or reports a
+// flag value other than in the provider's resolution line.
+func assertNoReturnedValueClaims(t *testing.T, logger *capturingLogger, flagKey string) {
+	t.Helper()
+	quoted := strconv.Quote(flagKey)
+	for _, msg := range logger.all() {
+		if !strings.Contains(msg, quoted) {
+			continue
+		}
+		assert.NotContains(t, msg, "return", "no line may claim which value the application received")
+		if strings.Contains(msg, " value=") {
+			assert.Contains(t, msg, "provider resolved "+quoted, "only the provider's resolution may report a flag value")
+		}
+	}
+}
+
+// TestDebugLogging_AfterHookFailure covers an application After hook failing
+// after the provider resolved the flag. The SDK passes Finally hooks the
+// resolution as if the evaluation had succeeded, and what the application
+// receives depends on the call, so the logs must report the resolution and
+// the failure without claiming either was returned.
+func TestDebugLogging_AfterHookFailure(t *testing.T) {
+	evalCtx := of.NewEvaluationContext("user-1", map[string]any{"country": "US"})
+	for _, tc := range []struct {
+		name     string
+		flagType string
+		evaluate func(*of.Client) (any, error)
+		want     any
+	}{
+		{
+			name:     "BooleanValue returns the default",
+			flagType: "bool",
+			evaluate: func(c *of.Client) (any, error) {
+				return c.BooleanValue(context.Background(), "bool-flag", false, evalCtx)
+			},
+			want: false,
+		},
+		{
+			name:     "ObjectValueDetails keeps the resolved value",
+			flagType: "object",
+			evaluate: func(c *of.Client) (any, error) {
+				details, err := c.ObjectValueDetails(context.Background(), "bool-flag", false, evalCtx)
+				return details.Value, err
+			},
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := withLogLevel(t, log.LevelDebug)
+
+			p := newDatadogProvider(ProviderConfig{})
+			p.updateConfiguration(createTestConfig())
+			domain := "debug-logging-after-hook-failure-" + tc.flagType
+			registerDebugLoggingProvider(t, domain, p)
+
+			client := of.NewClient(domain)
+			client.AddHooks(failingAfterHook{})
+			value, err := tc.evaluate(client)
+			require.ErrorContains(t, err, "application after hook failed")
+			require.Equal(t, tc.want, value)
+
+			logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=`+tc.flagType+`, value=true, variant="on", reason=TARGETING_MATCH, allocation="allocation1", serial_id=, error_code=, error_message=""`)
+			logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false)`)
+			assertNoReturnedValueClaims(t, logger, "bool-flag")
+		})
+	}
+}
+
+// newDebugLoggingMultiProviderClient returns a client for a first-match
+// multi-provider that asks the Datadog provider, with ddHooks, before an
+// in-memory provider serving "only-in-mem".
+func newDebugLoggingMultiProviderClient(t *testing.T, ddHooks ...of.Hook) *of.Client {
+	t.Helper()
+	p := newDatadogProvider(ProviderConfig{})
+	p.updateConfiguration(createTestConfig())
+	mem := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"only-in-mem": {Key: "only-in-mem", State: memprovider.Enabled, DefaultVariant: "on", Variants: map[string]any{"on": true}},
+	})
+	mp, err := multi.NewProvider(multi.StrategyFirstMatch,
+		multi.WithProvider("datadog", p, ddHooks...),
+		multi.WithProvider("memory", mem),
+	)
+	require.NoError(t, err)
+
+	api := isolated.NewAPI()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		assert.NoError(t, api.Shutdown(ctx))
+		assert.NoError(t, p.ShutdownWithContext(ctx))
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, api.SetProviderAndWait(ctx, mp))
+	return api.NewClient()
+}
+
+// TestDebugLogging_MultiProvider covers the Datadog provider inside a
+// multi-provider, which can return a value other than the default after the
+// provider's hooks saw a failure.
+func TestDebugLogging_MultiProvider(t *testing.T) {
+	t.Run("falls through to another provider", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		client := newDebugLoggingMultiProviderClient(t)
+
+		value, err := client.BooleanValue(context.Background(), "only-in-mem", false, of.NewEvaluationContext("user-1", nil))
+		require.NoError(t, err)
+		require.True(t, value, "the in-memory provider serves the flag")
+
+		logger.assertContains(t, `openfeature: evaluation of "only-in-mem" failed: error code: FLAG_NOT_FOUND: flag not found: "only-in-mem" (default value false)`)
+		assertNoReturnedValueClaims(t, logger, "only-in-mem")
+	})
+
+	t.Run("returns the resolved value after a failing After hook", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		client := newDebugLoggingMultiProviderClient(t, failingAfterHook{})
+
+		value, err := client.BooleanValue(context.Background(), "bool-flag", false, of.NewEvaluationContext("user-1", map[string]any{"country": "US"}))
+		require.NoError(t, err)
+		require.True(t, value)
+
+		logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH`)
+		logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false)`)
+		assertNoReturnedValueClaims(t, logger, "bool-flag")
+	})
 }
 
 func newDebugAgentlessSource(t *testing.T, baseURL string) *agentlessSource {
@@ -518,7 +631,8 @@ func TestDebugLoggingHook_ContainsMarshalerPanics(t *testing.T) {
 		value, _ = client.ObjectValue(context.Background(), "does-not-exist", panickingValue{}, of.NewEvaluationContext("user-1", nil))
 	})
 	assert.Equal(t, panickingValue{}, value, "the caller's default is still returned")
-	logger.assertContains(t, `evaluated "does-not-exist": type=object, value=<unserializable>, variant="", reason=ERROR`)
+	logger.assertContains(t, `provider resolved "does-not-exist": type=object, value=<unserializable>, variant="", reason=ERROR`)
+	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value <unserializable>)`)
 }
 
 func TestDebugLoggingHook_ContainsPanics(t *testing.T) {
@@ -552,7 +666,8 @@ func TestDebugLoggingHook_LogsNotReadyEvaluations(t *testing.T) {
 	_, err := client.BooleanValue(context.Background(), "early-flag", false, of.NewEvaluationContext("user-1", nil))
 	require.Error(t, err)
 
-	logger.assertContains(t, `openfeature: evaluation of "early-flag" failed: PROVIDER_NOT_READY`)
+	logger.assertContains(t, `openfeature: evaluation of "early-flag" failed: PROVIDER_NOT_READY: provider not yet initialized (default value false)`)
+	assert.Zero(t, logger.countContaining(`provider resolved "early-flag"`), "the SDK does not call the provider before it is ready")
 }
 
 // TestDebugLogging_NeverLogsTargetingData checks the complete log stream of
@@ -585,7 +700,7 @@ func TestDebugLogging_NeverLogsTargetingData(t *testing.T) {
 	require.NoError(t, p.ShutdownWithContext(ctx))
 
 	logger.assertContains(t, "recorded exposure event for flag \"bool-flag\"")
-	logger.assertContains(t, `evaluated "bool-flag"`)
+	logger.assertContains(t, `provider resolved "bool-flag"`)
 	for _, msg := range logger.all() {
 		assert.NotContains(t, msg, attrValue, "context attributes must never be logged")
 		if isOnboardingLog(msg) {
@@ -664,13 +779,14 @@ func TestLifecycle_DebugLogs(t *testing.T) {
 	})
 }
 
-func TestDebugLoggingHook_SerialIDAndDisabledError(t *testing.T) {
+func TestDebugLogging_SerialIDAndDisabledError(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
-	details := of.InterfaceEvaluationDetails{Value: true}
-	details.FlagMetadata = of.FlagMetadata{metadataSplitSerialIDKey: uint32(7)}
 
-	newDebugLoggingHook().Finally(context.Background(), hookCtx, details, of.HookHints{})
+	logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{
+		Value:                    true,
+		ProviderResolutionDetail: of.ProviderResolutionDetail{FlagMetadata: of.FlagMetadata{metadataSplitSerialIDKey: uint32(7)}},
+	})
 	logger.assertContains(t, "serial_id=7,")
 
 	newDebugLoggingHook().Error(context.Background(), hookCtx, nil, of.HookHints{})
@@ -797,7 +913,7 @@ func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
 	h := newDebugLoggingHook()
 
 	assert.NotPanics(t, func() {
-		h.Finally(context.Background(), hookCtx, of.InterfaceEvaluationDetails{Value: true}, of.HookHints{})
+		logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{Value: true})
 	})
 	assert.NotPanics(t, func() {
 		h.Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
@@ -820,7 +936,6 @@ func isOnboardingLog(msg string) bool {
 		"provider ",
 		"agentless configuration ",
 		"remote_config configuration ",
-		"evaluated ",
 		"evaluation of ",
 	}, func(prefix string) bool { return strings.HasPrefix(message, prefix) })
 }
@@ -1000,7 +1115,7 @@ func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
 			require.Error(t, err)
 			require.False(t, value)
 			hasHook := hasDebugLoggingHook(p.Hooks())
-			evaluationLogged := logger.countContaining(`evaluated "review-order-missing-flag"`) > 0
+			evaluationLogged := logger.countContaining(`provider resolved "review-order-missing-flag"`) > 0
 			require.Equal(t, tc.wantHook, hasHook)
 			require.Equal(t, tc.wantDebug, log.DebugEnabled())
 			require.Equal(t, tc.wantEvaluationLog, evaluationLogged)

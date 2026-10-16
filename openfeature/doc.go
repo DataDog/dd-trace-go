@@ -205,9 +205,18 @@
 //   - Initialization start and its outcome, with the failure reason
 //   - Lifecycle changes: recovery after a failed initialization, configuration
 //     becoming unavailable, and shutdown
-//   - Every evaluation's flag key, value, variant, reason, allocation, and
-//     error, including failures such as evaluating before the provider is
-//     ready or an application hook returning an error
+//   - Every flag the provider resolves, with its value, variant, reason,
+//     allocation, and error
+//   - Every evaluation failure, with the evaluation's default value. This
+//     includes failures the provider never sees, such as evaluating before it
+//     is ready, and an application hook returning an error after the provider
+//     resolved the flag
+//
+// A failure line does not say which value the application received, since
+// that depends on how the flag was evaluated. Typed evaluations and
+// ObjectValue return the default value. ObjectValueDetails keeps the resolved
+// value after an After hook fails, and a multi-provider may return the
+// resolved value or another provider's result.
 //
 // Initialization-failure diagnostics are local logs and do not report errors to
 // telemetry.
@@ -222,7 +231,7 @@
 // JSON, truncated to 256 bytes. A value that cannot be encoded, including a
 // default value whose MarshalJSON method fails or panics, is logged as
 // <unserializable> without affecting the evaluation. When debug logging is
-// off, the hook returns before formatting evaluation details.
+// off, evaluations skip formatting these details.
 //
 // # Thread Safety
 //

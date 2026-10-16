@@ -619,7 +619,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 		boolValue = defaultValue
 	}
 
-	return openfeature.BoolResolutionDetail{
+	detail := openfeature.BoolResolutionDetail{
 		Value: boolValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -628,6 +628,8 @@ func (p *DatadogProvider) BooleanEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Boolean, detail)
+	return detail
 }
 
 // StringEvaluation evaluates a string feature flag.
@@ -647,7 +649,7 @@ func (p *DatadogProvider) StringEvaluation(
 		strValue = defaultValue
 	}
 
-	return openfeature.StringResolutionDetail{
+	detail := openfeature.StringResolutionDetail{
 		Value: strValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -656,6 +658,8 @@ func (p *DatadogProvider) StringEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.String, detail)
+	return detail
 }
 
 // FloatEvaluation evaluates a numeric (float) feature flag.
@@ -694,7 +698,7 @@ func (p *DatadogProvider) FloatEvaluation(
 		result.Error = conversionErr
 	}
 
-	return openfeature.FloatResolutionDetail{
+	detail := openfeature.FloatResolutionDetail{
 		Value: floatValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -703,6 +707,8 @@ func (p *DatadogProvider) FloatEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Float, detail)
+	return detail
 }
 
 // IntEvaluation evaluates an integer feature flag.
@@ -748,7 +754,7 @@ func (p *DatadogProvider) IntEvaluation(
 		result.Error = conversionErr
 	}
 
-	return openfeature.IntResolutionDetail{
+	detail := openfeature.IntResolutionDetail{
 		Value: intValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -757,6 +763,8 @@ func (p *DatadogProvider) IntEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Int, detail)
+	return detail
 }
 
 // ObjectEvaluation evaluates a structured (JSON) feature flag.
@@ -768,7 +776,7 @@ func (p *DatadogProvider) ObjectEvaluation(
 ) openfeature.InterfaceResolutionDetail {
 	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
-	return openfeature.InterfaceResolutionDetail{
+	detail := openfeature.InterfaceResolutionDetail{
 		Value: result.Value,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -777,6 +785,8 @@ func (p *DatadogProvider) ObjectEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Object, detail)
+	return detail
 }
 
 // Hooks returns the provider's hooks, built once during construction.

@@ -31,11 +31,41 @@ func logOnboarding(format string, args ...any) {
 	log.Debug("openfeature: "+format, args...)
 }
 
-// debugLoggingHook logs the outcome of every flag evaluation under
-// DD_TRACE_DEBUG, so a customer can see why an evaluation returned what it
-// did. It uses the Finally stage, like flagEvalMetricsHook, so errored and
-// defaulted evaluations are logged too, and the Error stage for failures the
-// SDK reports only there. It never logs the targeting key or context
+// logResolution logs what the provider resolved for a flag under
+// DD_TRACE_DEBUG. The application does not always receive it:
+// debugLoggingHook logs any failure the SDK reports afterwards. It checks the
+// log level before boxing detail.Value, so evaluations do not allocate for it
+// while debug logging is off.
+func logResolution[T any](flagKey string, flagType of.Type, detail of.GenericResolutionDetail[T]) {
+	// The log level can change after provider construction.
+	if !log.DebugEnabled() {
+		return
+	}
+	defer recoverDebugLogging()
+	resolution := detail.ResolutionDetail()
+	allocationKey, _ := resolution.FlagMetadata[metadataAllocationKey].(string)
+	serialID := ""
+	if id, ok := resolution.FlagMetadata[metadataSplitSerialIDKey].(uint32); ok {
+		serialID = strconv.FormatUint(uint64(id), 10)
+	}
+	logOnboarding("provider resolved %q: type=%s, value=%s, variant=%q, reason=%s, allocation=%q, serial_id=%s, error_code=%s, error_message=%q",
+		flagKey,
+		flagType.String(),
+		formatDebugValue(detail.Value),
+		resolution.Variant,
+		string(resolution.Reason),
+		allocationKey,
+		serialID,
+		string(resolution.ErrorCode),
+		resolution.ErrorMessage,
+	)
+}
+
+// debugLoggingHook logs every evaluation failure under DD_TRACE_DEBUG, with
+// the evaluation's default value. The provider logs its resolution itself, in
+// logResolution: the SDK passes Finally hooks the provider's resolution even
+// when an application After hook fails, so a Finally-based line misreports
+// that evaluation as successful. It never logs the targeting key or context
 // attributes itself, but logs an application hook's error message as is.
 type debugLoggingHook struct {
 	of.UnimplementedHook
@@ -45,39 +75,11 @@ func newDebugLoggingHook() *debugLoggingHook {
 	return &debugLoggingHook{}
 }
 
-// Finally logs the flag evaluation details.
-func (h *debugLoggingHook) Finally(
-	_ context.Context,
-	hookContext of.HookContext,
-	details of.InterfaceEvaluationDetails,
-	_ of.HookHints,
-) {
-	defer recoverDebugLogging()
-	// The log level can change after provider construction.
-	if !log.DebugEnabled() {
-		return
-	}
-	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
-	serialID := ""
-	if id, ok := details.FlagMetadata[metadataSplitSerialIDKey].(uint32); ok {
-		serialID = strconv.FormatUint(uint64(id), 10)
-	}
-	logOnboarding("evaluated %q: type=%s, value=%s, variant=%q, reason=%s, allocation=%q, serial_id=%s, error_code=%s, error_message=%q",
-		hookContext.FlagKey(),
-		details.FlagType.String(),
-		formatDebugValue(details.Value),
-		details.Variant,
-		string(details.Reason),
-		allocationKey,
-		serialID,
-		string(details.ErrorCode),
-		details.ErrorMessage,
-	)
-}
-
-// Error logs evaluation failures. The SDK reports some, such as evaluating
-// before the provider is ready, only to Error hooks: Finally then receives
-// details with no reason or error code.
+// Error logs evaluation failures, including those the provider never sees,
+// such as evaluating before it is ready. It names the default value without
+// claiming the application received it: ObjectValueDetails keeps the resolved
+// value after an After hook fails, and a multi-provider may return the
+// resolved value or another provider's result.
 func (h *debugLoggingHook) Error(
 	_ context.Context,
 	hookContext of.HookContext,
@@ -88,12 +90,14 @@ func (h *debugLoggingHook) Error(
 	if !log.DebugEnabled() || err == nil {
 		return
 	}
-	logOnboarding("evaluation of %q failed: %s", hookContext.FlagKey(), err.Error())
+	logOnboarding("evaluation of %q failed: %s (default value %s)",
+		hookContext.FlagKey(), err.Error(), formatDebugValue(hookContext.DefaultValue()))
 }
 
 // recoverDebugLogging contains diagnostic failures in logOnboarding and in
-// evaluation hooks, where formatting can also panic. The OpenFeature SDK does
-// not recover hook panics. It logs nothing, since the logger may be what panicked.
+// evaluation logging, where formatting can also panic. The OpenFeature SDK
+// does not recover provider or hook panics. It logs nothing, since the logger
+// may be what panicked.
 func recoverDebugLogging() {
 	_ = recover()
 }
@@ -136,7 +140,7 @@ func formatDebugValue(v any) string {
 //
 // The recover is necessary: v can be a caller-supplied default value whose
 // MarshalJSON or MarshalText method panics, and encoding/json re-panics it.
-// The OpenFeature SDK does not recover panics from hooks either, so without
+// The OpenFeature SDK does not recover provider or hook panics either, so without
 // the recover, enabling debug logging would turn a normal fallback to the
 // default value into an application panic. recoverDebugLogging would also
 // stop the panic, but it would drop the whole evaluation line.
