@@ -16,4 +16,3 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
-
