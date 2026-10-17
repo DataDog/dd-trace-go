@@ -508,10 +508,10 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
 	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
 		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
-	otlpGenericHeaders := decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter))
+	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
 	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
 		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter)),
+		p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders),
 	))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
@@ -533,7 +533,7 @@ func loadConfig() *Config {
 	)
 	cfg.otlpMetricsHeaders = resolveOTLPHeaders(
 		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter)),
+		p.GetMapWithParser("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	// The protocol is only consumed by the OTLP span metrics exporter. Values
@@ -570,7 +570,7 @@ func loadConfig() *Config {
 	if endpoint := cmp.Or(p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", ""), otlpGenericEndpoint); endpoint != "" {
 		cfg.otlpLogsHTTPURL, cfg.otlpLogsGRPCURL = resolveOTLPLogsURLs(endpoint, cfg.logsOTelEnabled)
 	}
-	cfg.otlpLogsHeaders = p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders), parseOTLPHeaders)
+	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
 	cfg.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds()))) * time.Millisecond
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second

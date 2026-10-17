@@ -513,21 +513,7 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// decodeOTLPHeaders decodes values after splitting header entries so escaped separators
-// stay in the value. PathUnescape preserves literal '+' characters.
-func decodeOTLPHeaders(headers map[string]string) map[string]string {
-	for key, value := range headers {
-		decoded, err := url.PathUnescape(value)
-		if err != nil {
-			delete(headers, key)
-			continue
-		}
-		headers[key] = decoded
-	}
-	return headers
-}
-
-// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics),
+// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
 // or of the generic headers when the signal-specific ones are empty.
 func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(signalHeaders) > 0 {
@@ -574,7 +560,7 @@ func otlpLogsAgentURL(agentURL *url.URL, agentHost, port, path string) string {
 }
 
 // parseOTLPHeaders parses comma-separated key=value pairs with percent-decoded
-// values, dropping invalid entries.
+// values, dropping invalid entries without erasing an earlier valid duplicate.
 func parseOTLPHeaders(str string) map[string]string {
 	var headers map[string]string
 	for entry := range strings.SplitSeq(str, ",") {
@@ -659,25 +645,7 @@ func resolveRuntimeMetricsEndpoint(genericEndpoint, metricsEndpoint, insecureOve
 // resolveRuntimeMetricsHeaders parses the signal headers when set, otherwise the generic ones.
 // Entries with an invalid header name or value encoding are dropped.
 func resolveRuntimeMetricsHeaders(genericHeaders, metricsHeaders string) map[string]string {
-	raw := cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders))
-	if raw == "" {
-		return nil
-	}
-	headers := make(map[string]string)
-	for entry := range strings.SplitSeq(raw, ",") {
-		key, value, found := strings.Cut(entry, "=")
-		key = strings.TrimSpace(key)
-		if !found || key == "" || strings.ContainsFunc(key, func(r rune) bool {
-			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
-		}) {
-			continue
-		}
-		value, err := url.PathUnescape(value)
-		if err == nil {
-			headers[key] = strings.TrimSpace(value)
-		}
-	}
-	return headers
+	return parseOTLPHeaders(cmp.Or(strings.TrimSpace(metricsHeaders), strings.TrimSpace(genericHeaders)))
 }
 
 // validateRuntimeMetricsTemporality returns true for the two supported temporality preferences.
