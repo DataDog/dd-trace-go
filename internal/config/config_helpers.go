@@ -30,6 +30,12 @@ import (
 // auto-discovery. Exported as a var only for test overrides.
 var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
 
+// The OTLP protocols each exporter supports, default first.
+var (
+	otlpMetricsProtocols = []string{defaultOTLPProtocol, "http/json"}
+	otlpLogsProtocols    = []string{defaultOTLPProtocol, "http", "grpc"}
+)
+
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
 	// TODO: Maybe delete this. We will have defaults in supported_configuration.json anyway.
@@ -387,34 +393,13 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
-// Returns (nil, false) on failure, logging a warning when warn is true.
-func parseAndValidateOTLPURL(envVar, rawURL string, warn bool) (*url.URL, bool) {
-	u, err := url.Parse(rawURL)
-	if err == nil && (u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeHTTPS) {
-		return u, true
-	}
-	warnUnsupportedOTLPValue(envVar, warn)
-	return nil, false
-}
-
-// warnUnsupportedOTLPValue logs that key has an unusable value when warn is true.
-// The value is not logged: headers and endpoints may carry credentials.
-func warnUnsupportedOTLPValue(key string, warn bool) {
-	if warn {
-		log.Warn("Unsupported %s value; falling back to default.", key)
-	}
-}
-
-// resolveOTLPTraceURL resolves the OTLP traces endpoint. A valid tracesEndpoint takes
+// resolveOTLPTraceURL resolves the OTLP traces endpoint. tracesEndpoint takes
 // precedence and is used as-is, per the OTel spec. /v1/traces is only appended to
-// genericEndpoint, which must already be resolved and valid (see resolveOTLPEndpoint)
-// since it is used when tracesEndpoint is unset or invalid.
-func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string, warn bool) string {
+// genericEndpoint, which must already be resolved (see resolveOTLPEndpoint).
+// Both must be empty or valid http(s) URLs.
+func resolveOTLPTraceURL(tracesEndpoint, genericEndpoint string) string {
 	if tracesEndpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", tracesEndpoint, warn); ok {
-			return tracesEndpoint
-		}
+		return tracesEndpoint
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpTracesPath).String()
@@ -487,12 +472,10 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
-// resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
-func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string, warn bool) string {
+// resolveOTLPEndpoint returns endpoint, an empty or valid http(s) URL, defaulting to http://<agent-host>:4318.
+func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	if endpoint != "" {
-		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint, warn); ok {
-			return endpoint
-		}
+		return endpoint
 	}
 	host := internal.DefaultAgentHostname
 	if rawAgentURL != nil {
@@ -504,41 +487,141 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string, warn bool) strin
 }
 
 // resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
-func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string, warn bool) string {
+// Both must be empty or valid http(s) URLs.
+func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	if metricsEndpoint != "" {
-		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint, warn); ok {
-			if u.Path == "" || u.Path == "/" {
-				u.Path = otlpMetricsPath
-			}
-			return u.String()
+		u, _ := url.Parse(metricsEndpoint)
+		if u.Path == "" || u.Path == "/" {
+			u.Path = otlpMetricsPath
 		}
+		return u.String()
 	}
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	return u.JoinPath(otlpMetricsPath).String()
 }
 
-// resolveOTLPHeaders returns a copy of the signal-specific OTLP headers (traces, metrics, logs),
-// or of the generic headers when the signal-specific ones are empty.
-func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
-	if len(signalHeaders) > 0 {
-		return maps.Clone(signalHeaders)
-	}
-	if len(genericHeaders) > 0 {
-		return maps.Clone(genericHeaders)
-	}
-	return nil
+// otlpGeneric holds the OTEL_EXPORTER_OTLP_<setting> values every signal falls
+// back to, read once so their telemetry is reported once.
+type otlpGeneric struct {
+	// Endpoint and protocol candidates are ordered from lowest to highest source priority.
+	endpoints []string
+	headers   map[string]string
+	protocols []string
 }
 
-// resolveOTLPLogsURLs returns the HTTP and gRPC logs URLs for a configured endpoint,
-// or empty strings to use the agent when it does not parse.
-func resolveOTLPLogsURLs(endpoint string, warn bool) (httpURL, grpcURL string) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		if warn {
-			log.Warn("Unsupported OTLP logs endpoint; falling back to DD agent configuration.")
-		}
-		return "", ""
+// readOTLPGeneric retains endpoint and protocol candidates for each signal to validate.
+func readOTLPGeneric(p *provider.Provider) otlpGeneric {
+	return otlpGeneric{
+		endpoints: otlpCandidates(p, "OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		headers:   p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders),
+		protocols: otlpCandidates(p, "OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol),
 	}
+}
+
+// otlpCandidates returns the value of key in every source, from lowest to highest priority.
+func otlpCandidates(p *provider.Provider, key, def string) []string {
+	var candidates []string
+	p.GetStringWithValidator(key, def, func(v string) bool {
+		candidates = append(candidates, v)
+		return true
+	})
+	return candidates
+}
+
+// otlpSignal reads the settings of one OTLP exporter from
+// OTEL_EXPORTER_OTLP_<name>_<setting>, falling back to OTEL_EXPORTER_OTLP_<setting>.
+type otlpSignal struct {
+	name    string
+	generic otlpGeneric
+	// validEndpoint reports whether the signal's exporter can use an endpoint.
+	validEndpoint func(string) bool
+	// protocols lists the protocols the signal's exporter supports, default first.
+	protocols []string
+	// warn enables warnings about unusable values. Set it only when the signal's
+	// exporter is enabled: other OpenTelemetry components may accept values this
+	// exporter rejects (e.g. grpc for span metrics).
+	warn bool
+}
+
+// lookup returns the usable signal-specific value of setting and the usable
+// generic one, else def. Every source is validated so an unusable value never
+// hides a lower-priority usable one.
+func (s otlpSignal) lookup(p *provider.Provider, setting string, generic []string, def string, valid func(string) bool) (string, string) {
+	specificKey := "OTEL_EXPORTER_OTLP_" + s.name + "_" + setting
+	genericKey := "OTEL_EXPORTER_OTLP_" + setting
+	specific := p.GetStringWithValidator(specificKey, "", otlpValidator(specificKey, valid, s.warn))
+	// The generic value only matters, and is only worth a warning, when the
+	// signal-specific one is not used.
+	fallback := def
+	for _, v := range generic {
+		if v != "" && otlpValidator(genericKey, valid, s.warn && specific == "")(v) {
+			fallback = v
+		}
+	}
+	return specific, fallback
+}
+
+func otlpValidator(key string, valid func(string) bool, warn bool) func(string) bool {
+	return func(v string) bool {
+		if valid(v) {
+			return true
+		}
+		// The value is not logged: headers and endpoints may carry credentials.
+		if warn {
+			log.Warn("Unsupported %s value; falling back to default.", key)
+		}
+		return false
+	}
+}
+
+// endpoints returns the usable signal-specific and generic endpoints; either may be empty.
+func (s otlpSignal) endpoints(p *provider.Provider) (specific, generic string) {
+	return s.lookup(p, "ENDPOINT", s.generic.endpoints, "", s.validEndpoint)
+}
+
+// headers returns the signal-specific headers, else a copy of the generic ones.
+func (s otlpSignal) headers(p *provider.Provider) map[string]string {
+	if headers := p.GetMapWithParser("OTEL_EXPORTER_OTLP_"+s.name+"_HEADERS", nil, parseOTLPHeaders); len(headers) > 0 {
+		return headers
+	}
+	// Every signal shares the generic map, and callers may modify theirs.
+	return maps.Clone(s.generic.headers)
+}
+
+// protocol returns the lowercased protocol, always one of s.protocols.
+func (s otlpSignal) protocol(p *provider.Provider) string {
+	specific, generic := s.lookup(p, "PROTOCOL", s.generic.protocols, s.protocols[0], func(v string) bool {
+		return slices.Contains(s.protocols, normalizeOTLPProtocol(v))
+	})
+	return normalizeOTLPProtocol(cmp.Or(specific, generic))
+}
+
+// timeout returns the export timeout, configured in milliseconds.
+func (s otlpSignal) timeout(p *provider.Provider) time.Duration {
+	generic := p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+	return time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_"+s.name+"_TIMEOUT", generic)) * time.Millisecond
+}
+
+func normalizeOTLPProtocol(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
+// isOTLPHTTPURL reports whether v is an http or https URL.
+func isOTLPHTTPURL(v string) bool {
+	u, err := url.Parse(v)
+	return err == nil && (u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeHTTPS)
+}
+
+// isURL reports whether v parses as a URL. The logs exporter does not require
+// http or https because its gRPC transport also takes grpc:// endpoints.
+func isURL(v string) bool {
+	_, err := url.Parse(v)
+	return err == nil
+}
+
+// resolveOTLPLogsURLs returns the HTTP and gRPC logs URLs for an endpoint that parses as a URL.
+func resolveOTLPLogsURLs(endpoint string) (httpURL, grpcURL string) {
+	u, _ := url.Parse(endpoint)
 	// gRPC only needs the host; a scheme-less endpoint such as "collector" parses as a path.
 	grpc := url.URL{Scheme: u.Scheme, Host: cmp.Or(u.Host, u.Path)}
 	u.Path = strings.TrimRight(u.Path, "/")
@@ -662,17 +745,6 @@ func validateRuntimeMetricsTemporality(v string, warn bool) bool {
 	if warn {
 		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
 	}
-	return false
-}
-
-// validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
-// envVar is used in the warning message to identify which env var had the bad value.
-// The warning is only logged when warn is true.
-func validateOTLPProtocol(v, envVar string, warn bool) bool {
-	if v == "http/json" || v == "http/protobuf" {
-		return true
-	}
-	warnUnsupportedOTLPValue(envVar, warn)
 	return false
 }
 

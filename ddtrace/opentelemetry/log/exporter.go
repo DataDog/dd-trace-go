@@ -19,8 +19,6 @@ import (
 )
 
 const (
-	defaultOTLPProtocol = "http/protobuf"
-
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
 	// MaxInterval: Cap at 30s to avoid excessive delays while still being patient
@@ -65,7 +63,7 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
-// The protocol comes from config.OTLPLogsProtocol. Supported protocols:
+// The protocol comes from config.OTLPLogsProtocol, which only returns supported protocols:
 // - "http/protobuf" or "http": HTTP with protobuf encoding (default)
 // - "grpc": gRPC
 //
@@ -76,22 +74,14 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 
 	var exporter sdklog.Exporter
 	var err error
-	var protocolTag, encodingTag string
+	protocolTag := protocolHTTP
 
 	switch protocol {
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
-		encodingTag = encodingProtobuf
-	case "http/protobuf", "http":
-		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unsupported OTLP logs protocol; falling back to %s.", defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
-		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
 	}
 
 	if err != nil {
@@ -101,7 +91,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	// Wrap the exporter with telemetry tracking
 	return &telemetryExporter{
 		Exporter:  exporter,
-		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
+		telemetry: NewLogsExportTelemetry(protocolTag, encodingProtobuf),
 	}, nil
 }
 
