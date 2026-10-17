@@ -145,6 +145,15 @@ func RunSimpleSubcontext(ctx context.Context, addrs addresses.RunAddressData, er
 		log.Error("%s", errorLog)
 		return nil
 	}
+	// Filter before allocating a native subcontext: streamed messages may contain
+	// only addresses that the active rules do not inspect (e.g. gRPC responses).
+	maps.DeleteFunc(addrs.Data, func(key string, _ any) bool {
+		_, supported := ctxOp.supportedAddresses[key]
+		return !supported
+	})
+	if len(addrs.Data) == 0 {
+		return nil
+	}
 	var err error
 	op := dyngo.NewOperation(parent)
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
