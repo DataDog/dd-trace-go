@@ -80,6 +80,8 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
+	// agentHost is DD_AGENT_HOST, used for the OTLP logs agent endpoint when agentURL is a Unix socket.
+	agentHost string
 	// dogstatsdAddr is the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -207,6 +209,13 @@ type Config struct {
 	blrpScheduleDelay      time.Duration
 	blrpExportTimeout      time.Duration
 	blrpMaxExportBatchSize int
+	// OTLP logs exporter settings (OTEL_EXPORTER_OTLP_LOGS_*, falling back to OTEL_EXPORTER_OTLP_*)
+	otlpLogsProtocol string
+	// otlpLogsHTTPURL and otlpLogsGRPCURL come from a configured endpoint; empty means the agent.
+	otlpLogsHTTPURL string
+	otlpLogsGRPCURL string
+	otlpLogsHeaders map[string]string
+	otlpLogsTimeout time.Duration
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -388,6 +397,7 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	cfg.agentHost = agentHost
 
 	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
@@ -534,7 +544,8 @@ func loadConfig() *Config {
 	// the generic value never reaches the exporter when it is set; warn about
 	// it only when it is the effective protocol.
 	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
-	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	otlpGenericProtocol := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
+	otlpProtocolFallback := otlpGenericProtocol
 	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
 		otlpProtocolFallback = "http/protobuf"
 	}
@@ -555,6 +566,12 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
 		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
 	})))
+	cfg.otlpLogsProtocol = strings.ToLower(strings.TrimSpace(cmp.Or(p.GetString("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", ""), otlpGenericProtocol)))
+	if endpoint := cmp.Or(p.GetString("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", ""), otlpGenericEndpoint); endpoint != "" {
+		cfg.otlpLogsHTTPURL, cfg.otlpLogsGRPCURL = resolveOTLPLogsURLs(endpoint, cfg.logsOTelEnabled)
+	}
+	cfg.otlpLogsHeaders = p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders), parseOTLPHeaders)
+	cfg.otlpLogsTimeout = time.Duration(p.GetInt64("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", p.GetInt64("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds()))) * time.Millisecond
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1757,6 +1774,43 @@ func (c *Config) BLRPMaxExportBatchSize() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.blrpMaxExportBatchSize
+}
+
+// OTLPLogsProtocol returns the trimmed, lowercased OTLP logs protocol, defaulting to "http/protobuf".
+func (c *Config) OTLPLogsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsProtocol
+}
+
+// OTLPLogsHTTPURL returns the URL the OTLP HTTP logs exporter sends to.
+// A URL without a scheme leaves the choice of TLS to the OTel SDK.
+func (c *Config) OTLPLogsHTTPURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cmp.Or(c.otlpLogsHTTPURL, otlpLogsAgentURL(c.agentURL, c.agentHost, otlpDefaultPort, otlpLogsPath))
+}
+
+// OTLPLogsGRPCURL returns the URL the OTLP gRPC logs exporter connects to.
+// A URL without a scheme leaves the choice of TLS to the OTel SDK.
+func (c *Config) OTLPLogsGRPCURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cmp.Or(c.otlpLogsGRPCURL, otlpLogsAgentURL(c.agentURL, c.agentHost, otlpDefaultGRPCPort, ""))
+}
+
+// OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
+func (c *Config) OTLPLogsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpLogsHeaders)
+}
+
+// OTLPLogsTimeout returns the OTLP logs export timeout.
+func (c *Config) OTLPLogsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsTimeout
 }
 
 func (c *Config) OTelSemanticsEnabled() bool {

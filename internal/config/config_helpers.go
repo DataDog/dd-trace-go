@@ -60,6 +60,10 @@ const (
 	defaultBLRPExportTimeout = 30 * time.Second
 	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
 	defaultBLRPMaxExportBatchSize = 512
+	// defaultOTLPProtocol is the default value for OTEL_EXPORTER_OTLP_PROTOCOL.
+	defaultOTLPProtocol = "http/protobuf"
+	// defaultOTLPTimeout is the default value for OTEL_EXPORTER_OTLP_TIMEOUT.
+	defaultOTLPTimeout = 10 * time.Second
 	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
@@ -89,6 +93,7 @@ const (
 	// OTLP standard traces path and default collector port.
 	otlpTracesPath  = "/v1/traces"
 	otlpMetricsPath = "/v1/metrics"
+	otlpLogsPath    = "/v1/logs"
 	otlpDefaultPort = "4318"
 	// otlpDefaultGRPCPort is the default OTLP gRPC collector port.
 	otlpDefaultGRPCPort = "4317"
@@ -532,6 +537,75 @@ func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[str
 		return maps.Clone(genericHeaders)
 	}
 	return nil
+}
+
+// resolveOTLPLogsURLs returns the HTTP and gRPC logs URLs for a configured endpoint,
+// or empty strings to use the agent when it does not parse.
+func resolveOTLPLogsURLs(endpoint string, warn bool) (httpURL, grpcURL string) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		if warn {
+			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", endpoint)
+		}
+		return "", ""
+	}
+	// gRPC only needs the host; a scheme-less endpoint such as "collector" parses as a path.
+	grpc := url.URL{Scheme: u.Scheme, Host: cmp.Or(u.Host, u.Path)}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(u.Path, otlpLogsPath) {
+		u.Path += otlpLogsPath
+	}
+	return u.String(), grpc.String()
+}
+
+// otlpLogsAgentURL returns the agent's OTLP logs URL on port. TLS is left to the
+// OTel SDK, through an empty scheme, unless the agent is reached over http or a Unix socket.
+func otlpLogsAgentURL(agentURL *url.URL, agentHost, port, path string) string {
+	host, scheme := internal.DefaultAgentHostname, URLSchemeHTTP
+	if agentURL != nil && agentURL.Hostname() != "" {
+		host = agentURL.Hostname()
+		if agentURL.Scheme != URLSchemeHTTP && agentURL.Scheme != URLSchemeUnix {
+			scheme = ""
+		}
+	} else if agentHost != "" {
+		host = agentHost
+	}
+	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, port), Path: path}).String()
+}
+
+// parseOTLPHeaders parses comma-separated key=value pairs with percent-decoded
+// values, dropping invalid entries.
+func parseOTLPHeaders(str string) map[string]string {
+	var headers map[string]string
+	for entry := range strings.SplitSeq(str, ",") {
+		key, val, ok := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		if !ok || !validHeaderFieldName(key) {
+			continue
+		}
+		decoded, err := url.PathUnescape(strings.TrimSpace(val))
+		if err != nil {
+			continue
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers[key] = decoded
+	}
+	return headers
+}
+
+// validHeaderFieldName reports whether s is a non-empty HTTP header field name.
+func validHeaderFieldName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !internal.IsHTTPTokenChar(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveRuntimeMetricsEndpoint resolves the runtime metrics HTTP host and path, gRPC target, and
