@@ -1774,13 +1774,15 @@ func TestOTLPLogsUnparsableEndpointWarning(t *testing.T) {
 			logger := new(log.RecordLogger)
 			defer log.UseLogger(logger)()
 			t.Setenv("DD_LOGS_OTEL_ENABLED", strconv.FormatBool(enabled))
-			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "::bad")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://user:SECRET@[::1")
 			loadConfig()
 			const warning = "falling back to DD agent configuration"
+			logs := strings.Join(logger.Logs(), "\n")
+			assert.NotContains(t, logs, "SECRET")
 			if enabled {
-				assert.Contains(t, strings.Join(logger.Logs(), "\n"), warning)
+				assert.Contains(t, logs, warning)
 			} else {
-				assert.NotContains(t, strings.Join(logger.Logs(), "\n"), warning)
+				assert.NotContains(t, logs, warning)
 			}
 		})
 	}

@@ -88,7 +88,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
+		log.Warn("Unsupported OTLP logs protocol; falling back to %s.", defaultOTLPProtocol)
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf

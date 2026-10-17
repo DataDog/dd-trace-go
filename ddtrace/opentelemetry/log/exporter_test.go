@@ -46,7 +46,7 @@ func TestOTLPJSONFallsBackToProtobuf(t *testing.T) {
 
 	wrapped := exporter.(*telemetryExporter)
 	assert.IsType(t, new(otlploghttp.Exporter), wrapped.Exporter)
-	assert.Contains(t, strings.Join(logger.Logs(), "\n"), `Unknown OTLP logs protocol "http/json", defaulting to http/protobuf`)
+	assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTLP logs protocol; falling back to http/protobuf.")
 
 	wrapped.telemetry.RecordLogRecords(1)
 	key := telemetrytest.MetricKey{

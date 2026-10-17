@@ -502,17 +502,6 @@ func loadConfig() *Config {
 		cfg.otlpExportMode = false
 		cfg.traceProtocolOverridesOTLP = true
 	}
-	otlpGenericEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, otlpGenericEndpoint)
-	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
-	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
-		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
-	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
-	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
-		otlpGenericHeaders,
-		p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders),
-	))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -527,30 +516,43 @@ func loadConfig() *Config {
 			}
 		}
 	}
+	// Values unusable by an exporter may be valid for other OpenTelemetry
+	// components, so only warn about them when that exporter is enabled.
+	// DD_TRACE_OTEL_SEMANTICS_ENABLED enables OTLP trace export later, in applyOTelSemanticsOverrides.
+	warnOTLPTraces := cfg.otlpExportMode || cfg.otelSemanticsEnabled
+	warnOTLPMetrics := cfg.otlpSpanMetricsEnabledWith(warnOTLPTraces)
+	otlpGenericEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, otlpGenericEndpoint, warnOTLPTraces || warnOTLPMetrics)
+	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint, warnOTLPTraces)
+	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
+		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
+	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
+		otlpGenericHeaders,
+		p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders),
+	))
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
 		cfg.otlpEndpoint,
+		warnOTLPMetrics,
 	)
 	cfg.otlpMetricsHeaders = resolveOTLPHeaders(
 		otlpGenericHeaders,
 		p.GetMapWithParser("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
-	// The protocol is only consumed by the OTLP span metrics exporter. Values
-	// such as "grpc" are valid for other OpenTelemetry components, so only warn
-	// about them when this exporter is going to use the value.
-	warnOTLPProtocol := cfg.OTLPSpanMetricsEnabled()
 	// The signal-specific protocol takes precedence over the generic one, so
 	// the generic value never reaches the exporter when it is set; warn about
 	// it only when it is the effective protocol.
-	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
+	warnGeneric := warnOTLPMetrics && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
 	otlpGenericProtocol := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", defaultOTLPProtocol)
 	otlpProtocolFallback := otlpGenericProtocol
 	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
 		otlpProtocolFallback = "http/protobuf"
 	}
 	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
-		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
+		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPMetrics)
 	})
 	envP := provider.NewEnvironment()
 	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
@@ -1841,7 +1843,7 @@ func (c *Config) ResolveOTelSemanticsConfig() {
 		return
 	}
 	if c.otlpTraceURLDerivedFromAgent {
-		c.otlpTraceURL = resolveOTLPTraceURL("", resolveOTLPEndpoint(c.agentURL, ""))
+		c.otlpTraceURL = resolveOTLPTraceURL("", resolveOTLPEndpoint(c.agentURL, "", false), false)
 	}
 	c.disableAutomaticPeerService()
 }
@@ -2024,10 +2026,15 @@ func (c *Config) OTLPTraceHeaders() map[string]string {
 func (c *Config) OTLPSpanMetricsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	return c.otlpSpanMetricsEnabledWith(c.otlpExportMode)
+}
+
+// otlpSpanMetricsEnabledWith is OTLPSpanMetricsEnabled for the given OTLP trace export mode.
+func (c *Config) otlpSpanMetricsEnabledWith(otlpExportMode bool) bool {
 	if c.otlpSpanMetricsEnabled != nil {
 		return *c.otlpSpanMetricsEnabled
 	}
-	return c.otlpExportMode && c.runtimeMetricsOtel
+	return otlpExportMode && c.runtimeMetricsOtel
 }
 
 func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
