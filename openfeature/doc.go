@@ -111,13 +111,6 @@
 // Flag values, experiment exposures, exposure deduplication, application hooks,
 // and previously queued telemetry are unchanged.
 //
-// The experimental OpenFeature Go SDK multi.Provider in v1.18.0 shares hook
-// context between evaluations. It wraps this provider because this provider has
-// hooks. Concurrent evaluations can resolve flags and record exposures with
-// another evaluation's context. Nested and concurrent evaluations can also use
-// another evaluation's opt-out value and send telemetry for an opted-out subject.
-// Register the Datadog provider directly when evaluations can overlap.
-//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:

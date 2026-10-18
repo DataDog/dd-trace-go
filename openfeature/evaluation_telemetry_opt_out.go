@@ -14,7 +14,6 @@ import (
 // evaluationTelemetryOptOutHook gates only Finally because the wrapped hooks
 // emit telemetry only from Finally. The ordinary OpenFeature client supplies the
 // final merged context, including changes returned by a failing Before hook.
-// The experimental multi.Provider does not isolate that context; see doc.go.
 type evaluationTelemetryOptOutHook struct {
 	of.Hook
 }
