@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/isolated"
 	"github.com/open-feature/go-sdk/openfeature/multi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -144,6 +145,30 @@ func TestEvaluationTelemetryOptOut(t *testing.T) {
 	details := h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
 	assert.Equal(t, of.StaticReason, details.Reason)
 	h.assertCounts(t, 0, 1, 1)
+	assert.Equal(t, true, h.sink.exposures[0].Subject.Attributes[optOutTestParameter])
+}
+
+func TestEvaluationTelemetryOptOutRemainsTargetingAttribute(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(enabled)})
+			h.provider.configuration.Flags["experiment"].Allocations[0].Rules = []*rule{{
+				Conditions: []*condition{{Attribute: optOutTestParameter, Operator: operatorOneOf, Value: []string{"true"}}},
+			}}
+			h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
+			want := 1
+			if enabled {
+				want = 0
+			}
+			h.assertCounts(t, want, 1, 1)
+			assert.Equal(t, true, h.sink.exposures[0].Subject.Attributes[optOutTestParameter])
+			result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
+				of.NewEvaluationContext("not-opted-out", map[string]any{optOutTestParameter: false}))
+			require.NoError(t, err)
+			assert.False(t, result.Value)
+			assert.NotEqual(t, "allocation", result.FlagMetadata[metadataAllocationKey])
+		})
+	}
 }
 
 func TestEvaluationTelemetryOptOutEnvironment(t *testing.T) {
@@ -276,11 +301,98 @@ func TestEvaluationTelemetryOptOutStrictBoolean(t *testing.T) {
 }
 
 func TestEvaluationTelemetryOptOutDisabledByDefault(t *testing.T) {
-	config := ProviderConfig{}
-	h := newOptOutHarness(t, config)
-	config.EnableEvaluationTelemetryOptOutParameter = new(true)
+	h := newOptOutHarness(t, ProviderConfig{})
 	h.evaluate(t, "subject", map[string]any{optOutTestParameter: true})
 	h.assertCounts(t, 1, 1, 1)
+}
+
+func TestEvaluationTelemetryOptOutIsNotRememberedForSubject(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
+	h.evaluate(t, "subject", map[string]any{optOutTestParameter: true})
+	h.assertCounts(t, 0, 1, 1)
+	h.evaluate(t, "subject", nil)
+	h.assertCounts(t, 1, 1, 2)
+}
+
+func TestEvaluationTelemetryOptOutTransactionContext(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
+	span := tracer.StartSpan("transaction")
+	ctx := of.WithTransactionContext(tracer.ContextWithSpan(context.Background(), span),
+		of.NewEvaluationContext("subject", map[string]any{optOutTestParameter: true}))
+	value, err := h.client.BooleanValue(ctx, "experiment", false, of.EvaluationContext{})
+	span.Finish()
+	require.NoError(t, err)
+	require.True(t, value)
+	h.assertCounts(t, 0, 1, 1)
+	assert.Equal(t, "subject", h.sink.exposures[0].Subject.ID)
+}
+
+func TestEvaluationTelemetryOptOutProviderNotReady(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
+	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)},
+		internalffe.SourceAgentless, h.provider.exposureWriter.evp)
+	// Shutdown also releases initialization while it waits for configuration.
+	t.Cleanup(p.Shutdown)
+	p.flagEvalMetricsHook.metrics = h.provider.flagEvalMetricsHook.metrics
+	var beforeCalls int
+	p.hooks = append(p.hooks, optOutTestHook{before: func(context.Context, of.HookContext) (*of.EvaluationContext, error) {
+		beforeCalls++
+		return nil, nil
+	}})
+	// Named domains can inherit the global default provider's READY state.
+	// A fresh API keeps this test independent from other provider registrations.
+	api := isolated.NewAPI()
+	t.Cleanup(func() { require.NoError(t, api.Shutdown(context.Background())) })
+	require.NoError(t, api.SetProvider(context.Background(), p))
+	client := api.NewClient()
+	require.Equal(t, of.NotReadyState, client.State())
+	for _, optedOut := range []bool{true, false} {
+		span := tracer.StartSpan("not-ready")
+		_, err := client.BooleanValue(tracer.ContextWithSpan(context.Background(), span), "experiment", false,
+			of.NewEvaluationContext("subject", map[string]any{optOutTestParameter: optedOut}))
+		span.Finish()
+		require.ErrorIs(t, err, of.ProviderNotReadyError)
+	}
+	require.Zero(t, beforeCalls, "the SDK must skip Before hooks on its not-ready path")
+	p.flagEvalLoggingWriter.drainAndFlush()
+	h.assertCounts(t, 1, 0, 2)
+}
+
+// The gate delegates Before, After, and Error unchanged. Guard the assumption
+// that each wrapped telemetry producer emits only in Finally.
+func TestEvaluationTelemetryOptOutHooksEmitOnlyInFinally(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
+	hookContext := makeHookContext("experiment", "subject", nil)
+	details := makeEvalDetails("on", of.StaticReason, "", of.FlagMetadata{
+		metadataSplitSerialIDKey: uint32(42),
+		metadataDoLogKey:         true,
+	})
+	details.FlagKey = "experiment"
+	details.Value = true
+	var hooks []of.Hook
+	for _, hook := range h.provider.hooks {
+		if gate, ok := hook.(evaluationTelemetryOptOutHook); ok {
+			hooks = append(hooks, gate.Hook)
+		}
+	}
+	require.Len(t, hooks, 3)
+	span := tracer.StartSpan("other-hook-stages")
+	ctx := tracer.ContextWithSpan(context.Background(), span)
+	for _, hook := range hooks {
+		_, err := hook.Before(ctx, hookContext, of.HookHints{})
+		require.NoError(t, err)
+		require.NoError(t, hook.After(ctx, hookContext, details, of.HookHints{}))
+		hook.Error(ctx, hookContext, errors.New("evaluation failed"), of.HookHints{})
+	}
+	span.Finish()
+	h.assertCounts(t, 0, 0, 1)
+	span = tracer.StartSpan("finally-hook-stage")
+	ctx = tracer.ContextWithSpan(context.Background(), span)
+	for _, hook := range hooks {
+		hook.Finally(ctx, hookContext, details, of.HookHints{})
+	}
+	span.Finish()
+	h.assertCounts(t, 1, 0, 2)
 }
 
 func TestEvaluationTelemetryOptOutPreservesQueuedDataAndDeduplication(t *testing.T) {
@@ -403,7 +515,8 @@ func TestEvaluationTelemetryOptOutHookErrors(t *testing.T) {
 			}
 			h.client.AddHooks(hook)
 			span := tracer.StartSpan("hook-error")
-			_, err := h.client.BooleanValue(tracer.ContextWithSpan(context.Background(), span), "experiment", false, of.NewEvaluationContext("subject", map[string]any{optOutTestParameter: true}))
+			// Only the failing Before hook's returned context can opt out this arm.
+			_, err := h.client.BooleanValue(tracer.ContextWithSpan(context.Background(), span), "experiment", false, of.NewEvaluationContext("subject", map[string]any{optOutTestParameter: stage != "before"}))
 			span.Finish()
 			require.Error(t, err)
 			exposures := 0

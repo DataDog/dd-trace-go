@@ -300,7 +300,8 @@ type Config struct {
 	// featureFlagsEnabled is DD_FEATURE_FLAGS_ENABLED, the stable Feature Flagging kill switch.
 	// nil means not explicitly set.
 	featureFlagsEnabled *bool
-
+	// featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled is
+	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
 	featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled bool
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
@@ -2198,7 +2199,8 @@ func (c *Config) FeatureFlagsEnabled() (enabled, explicit bool) {
 	return *c.featureFlagsEnabled, true
 }
 
-// FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled enables the per-subject evaluation telemetry opt-out parameter.
+// FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled returns
+// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
 func (c *Config) FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

@@ -56,6 +56,7 @@ type ProviderConfig struct {
 	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
 	// suppresses evaluation events, evaluation metrics, and automatic span
 	// enrichment. Flag results and experiment exposures are unchanged.
+	// The attribute remains available to targeting rules and exposure reporting.
 	// Nil uses DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED,
 	// which defaults to false. A non-nil value overrides the environment setting.
 	// The provider copies the value at construction.

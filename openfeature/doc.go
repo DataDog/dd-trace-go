@@ -103,12 +103,20 @@
 // When enabled, only boolean true in the final merged context suppresses new
 // evaluation events, evaluation metrics, and automatic flag span enrichment.
 // Missing values, false, null, strings, and numbers preserve existing behavior.
+// The provider reads the parameter on every evaluation. It does not remember a
+// subject's decision. Supply the parameter before each evaluation, either in its
+// evaluation context or in the transaction context passed to that evaluation.
+// Do not change a global or shared client context for individual server requests.
+// The attribute remains available to targeting rules and exposure reporting.
 // Flag values, experiment exposures, exposure deduplication, application hooks,
 // and previously queued telemetry are unchanged.
 //
-// OpenFeature Go SDK v1.18.0's experimental multi.Provider shares hook context
-// between evaluations. Nested or concurrent evaluations through that provider
-// cannot safely use this parameter until upstream fixes context isolation.
+// The experimental OpenFeature Go SDK multi.Provider in v1.18.0 shares hook
+// context between evaluations. It wraps this provider because this provider has
+// hooks. Concurrent evaluations can resolve flags and record exposures with
+// another evaluation's context. Nested and concurrent evaluations can also use
+// another evaluation's opt-out value and send telemetry for an opted-out subject.
+// Register the Datadog provider directly when evaluations can overlap.
 //
 // # Flag Configuration
 //
@@ -259,11 +267,6 @@
 //
 // # Environment Variables
 //
-//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
-//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
-//     parameter. This setting does not globally disable evaluation telemetry.
-//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
-//
 //   - DD_FEATURE_FLAGS_ENABLED: Stable kill switch, default "true". Set to "false"
 //     to disable the provider entirely: NewDatadogProvider() returns a NoopProvider
 //     instead of the actual Datadog provider, regardless of any other setting below.
@@ -303,6 +306,11 @@
 //     "true", enables span enrichment — feature flag evaluation details are
 //     recorded as tags on the active trace's root span. Default: false. Note:
 //     the added span tags may affect APM billing.
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
+//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
+//     parameter. This setting does not globally disable evaluation telemetry.
+//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by
