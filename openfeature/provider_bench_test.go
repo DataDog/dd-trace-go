@@ -452,17 +452,6 @@ func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 	})
 }
 
-// BenchmarkFlagEvaluationOTelPlusEVPOptOutEnabled measures the enabled gate with
-// no opt-out attribute, so the same telemetry runs as in OTelPlusEVP.
-func BenchmarkFlagEvaluationOTelPlusEVPOptOutEnabled(b *testing.B) {
-	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		removeHookType[*exposureHook](p)
-		for i, hook := range p.hooks {
-			p.hooks[i] = withEvaluationTelemetryOptOut(hook, true)
-		}
-	})
-}
-
 // BenchmarkFlagEvaluationEVPRecord isolates the EVP hook's synchronous hot-path cost: scalar
 // extraction + shallow context copy + non-blocking enqueue, all on the evaluation goroutine.
 // A discard drainer keeps the queue empty so the asynchronous aggregation (flatten/prune/hash/

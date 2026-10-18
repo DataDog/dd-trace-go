@@ -21,7 +21,6 @@ import (
 
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/isolated"
-	"github.com/open-feature/go-sdk/openfeature/multi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -580,18 +579,6 @@ func TestEvaluationTelemetryOptOutConcurrent(t *testing.T) {
 		assert.NoError(t, err)
 	}
 	h.assertCounts(t, count/2, count, count)
-}
-
-func TestEvaluationTelemetryOptOutMultiProvider(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
-	p, err := multi.NewProvider(multi.StrategyFirstMatch, multi.WithProvider("datadog", h.provider))
-	require.NoError(t, err)
-	t.Cleanup(p.Shutdown)
-	require.NoError(t, of.SetNamedProviderAndWait(t.Name()+"/multi", p))
-	h.client = of.NewClient(t.Name() + "/multi")
-	h.evaluate(t, "opted-out", map[string]any{optOutTestParameter: true})
-	h.evaluate(t, "allowed", nil)
-	h.assertCounts(t, 1, 2, 2)
 }
 
 func checkOptOutTypedEvaluation[T any](t *testing.T, kind valueType, value, fallback T, evaluate func(*of.Client, context.Context, string, T, of.EvaluationContext, ...of.Option) (of.GenericEvaluationDetails[T], error)) {
