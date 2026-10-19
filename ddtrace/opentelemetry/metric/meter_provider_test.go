@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -73,18 +75,47 @@ func TestForceFlush(t *testing.T) {
 
 func setMetricsExportEnv(t *testing.T) {
 	t.Helper()
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	internalconfig.CreateNew()
 
 }
 
 func TestInstallGlobalWithMetricsExport(t *testing.T) {
+	// installGlobal reads the global config, which an earlier test may have cached
+	// with metrics disabled. Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() { internalconfig.CreateNew() })
 	setMetricsExportEnv(t)
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	internalconfig.CreateNew()
 	defer otel.SetMeterProvider(noop.NewMeterProvider())
 
-	require.NoError(t, installGlobal())
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.True(t, installed)
 	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
 	assert.True(t, ok)
+}
+
+// TestInstallGlobalKeepsUserProvider verifies that installGlobal keeps an SDK
+// MeterProvider the application installed and reports it did not install one.
+func TestInstallGlobalKeepsUserProvider(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() {
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		internalconfig.CreateNew()
+	})
+	installedProvider = nil
+	userMP := sdkmetric.NewMeterProvider()
+	otel.SetMeterProvider(userMP)
+	setMetricsExportEnv(t)
+
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.False(t, installed)
+	assert.Nil(t, installedProvider)
+	assert.Same(t, userMP, otel.GetMeterProvider())
 }
 
 // TestNewMeterProviderAlwaysReturnsSDKProvider verifies that NewMeterProvider always
@@ -113,6 +144,43 @@ func TestMetricsEnabled(t *testing.T) {
 	defer Shutdown(ctx, mp)
 }
 
+// TestMetricsDisabledByOtelSDKDisabled verifies that OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true.
+func TestMetricsDisabledByOtelSDKDisabled(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_SDK_DISABLED", "true")
+	internalconfig.CreateNew()
+	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
+	require.NoError(t, err)
+	assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_SDK_DISABLED=true")
+}
+
+// TestInstallGlobalSkippedWhenOtelSDKDisabled verifies that installGlobal installs nothing
+// when OTEL_SDK_DISABLED=true overrides DD_METRICS_OTEL_ENABLED=true.
+func TestInstallGlobalSkippedWhenOtelSDKDisabled(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() {
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		internalconfig.CreateNew()
+	})
+	// Start from a clean state so installGlobal doesn't return early because a
+	// provider is already installed.
+	installedProvider = nil
+	otel.SetMeterProvider(noop.NewMeterProvider())
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_SDK_DISABLED", "true")
+	internalconfig.CreateNew()
+
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.False(t, installed)
+	assert.Nil(t, installedProvider)
+	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+	assert.False(t, ok, "no SDK MeterProvider should be installed when OTEL_SDK_DISABLED=true")
+}
+
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
 // with both gRPC and HTTP exporters and instruments work correctly.
 func TestMeterProviderExporterProtocols(t *testing.T) {
@@ -122,6 +190,7 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 		t.Run(protocol, func(t *testing.T) {
 			setMetricsExportEnv(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
+			internalconfig.CreateNew()
 
 			mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 			require.NoError(t, err)

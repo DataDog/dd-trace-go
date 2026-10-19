@@ -3,10 +3,10 @@ module github.com/DataDog/dd-trace-go/v2/scripts/configinverter
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-dev.3
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
 	github.com/dave/jennifer v1.7.1
 )
 
-require golang.org/x/mod v0.40.0 // indirect
+require golang.org/x/mod v0.41.0 // indirect
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..

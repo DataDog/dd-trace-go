@@ -17,6 +17,7 @@ import (
 	"net/textproto"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -151,14 +152,14 @@ func parseForwardedHeader(value string) []string {
 					valStart = i + 1
 					hasEscape = false
 					state = stateQuotedValue
-				} else if isTokenChar(c) {
+				} else if internal.IsHTTPTokenChar(c) {
 					valStart = i
 					state = stateTokenValue
 				} else {
 					log.Debug("invalid Forwarded header: unexpected character %q at start of value", c)
 					return nil
 				}
-			case isTokenChar(c):
+			case internal.IsHTTPTokenChar(c):
 				if keyStart < 0 {
 					keyStart = i
 				}
@@ -187,7 +188,7 @@ func parseForwardedHeader(value string) []string {
 					isForKey = false
 				}
 				// Stay in stateTokenValue, waiting for delimiter
-			case isTokenChar(c):
+			case internal.IsHTTPTokenChar(c):
 				if valStart < 0 {
 					log.Debug("invalid Forwarded header: unexpected character %q after value", c)
 					return nil
@@ -250,20 +251,6 @@ func parseForwardedHeader(value string) []string {
 		return nil
 	}
 	return result
-}
-
-// isTokenChar returns true if c is a valid token character per RFC 7230.
-// token = 1*tchar
-// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-//
-//	"^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-func isTokenChar(c byte) bool {
-	return (c >= 'a' && c <= 'z') ||
-		(c >= 'A' && c <= 'Z') ||
-		(c >= '0' && c <= '9') ||
-		c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
-		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
-		c == '^' || c == '_' || c == '`' || c == '|' || c == '~'
 }
 
 // isOWS returns true if c is optional whitespace (SP or HTAB) per RFC 7230.

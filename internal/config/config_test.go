@@ -535,6 +535,58 @@ func TestStatsAdditionalTagsCardinalityLimit(t *testing.T) {
 	}
 }
 
+func TestDataStreamsIntakeBufferSize(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		envValue string
+		want     int
+		wantWarn bool
+	}{
+		{name: "default", want: defaultDataStreamsIntakeBufferSize},
+		{name: "valid", envValue: "42", want: 42},
+		{name: "zero", envValue: "0", want: defaultDataStreamsIntakeBufferSize, wantWarn: true},
+		{name: "negative", envValue: "-1", want: defaultDataStreamsIntakeBufferSize, wantWarn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tc.envValue != "" {
+				t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", tc.envValue)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.want, cfg.DataStreamsIntakeBufferSize())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "datastreams: ignoring non-positive intake buffer size")
+				return
+			}
+			assert.Empty(t, logs)
+		})
+	}
+}
+
+func TestSetDataStreamsIntakeBufferSize(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+	cfg.SetDataStreamsIntakeBufferSize(500, telemetry.OriginCode)
+	assert.Equal(t, 500, cfg.DataStreamsIntakeBufferSize())
+
+	cfg.SetDataStreamsIntakeBufferSize(0, telemetry.OriginCode)
+	assert.Equal(t, 500, cfg.DataStreamsIntakeBufferSize())
+	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "datastreams: ignoring non-positive intake buffer size")
+}
+
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()
@@ -632,9 +684,102 @@ func TestOTLPTraceURLResolution(t *testing.T) {
 
 		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
 	})
+
+	for _, invalid := range []string{"grpc://collector:4317", "collector:4318/v1/traces"} {
+		t.Run("invalid endpoints fall back to the agent host/"+invalid, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("DD_AGENT_HOST", "custom-agent")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", invalid)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", invalid)
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+
+			assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+		})
+	}
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT used when traces-specific one is unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes priority over OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://general-collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("traces endpoint wins when the generic endpoint is invalid", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces-collector:4318/v1/traces")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "grpc://general-collector:4317")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://traces-collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("independent OTLP export does not follow programmatic agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export follows resolved agent URL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		original := cfg.OTLPTraceURL()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		assert.Equal(t, original, cfg.OTLPTraceURL())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("semantic OTLP export keeps a user-provided generic endpoint", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+
+		cfg := Get()
+		cfg.SetAgentURL(&url.URL{Scheme: "http", Host: "custom-agent:8126"}, OriginCode)
+		cfg.ResolveOTelSemanticsConfig()
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
 }
 
-func TestOTLPHeaders(t *testing.T) {
+func TestOTLPTraceHeaders(t *testing.T) {
 	t.Run("always populated with at least Content-Type", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -642,7 +787,7 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		require.NotNil(t, headers)
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 		assert.Len(t, headers, 1)
@@ -657,10 +802,62 @@ func TestOTLPHeaders(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "secret", headers["api-key"])
 		assert.Equal(t, "value", headers["x-custom"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("generic OTEL_EXPORTER_OTLP_HEADERS used as fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=acme")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPTraceHeaders()
+		assert.Equal(t, "generic-key", headers["api-key"])
+		assert.Equal(t, "acme", headers["x-tenant"])
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS replace generic headers", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, map[string]string{
+			"authorization": "signal",
+			"Content-Type":  OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+	})
+
+	t.Run("generic headers used when OTEL_EXPORTER_OTLP_TRACES_HEADERS has no usable entry", func(t *testing.T) {
+		for _, tracesHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(tracesHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", tracesHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+					"Content-Type":  OTLPContentTypeHeader,
+				}, cfg.OTLPTraceHeaders())
+			})
+		}
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
@@ -676,7 +873,7 @@ func TestOTLPHeaders(t *testing.T) {
 		require.NotNil(t, cfg)
 
 		// The value is still resolved and parsed for export use.
-		headers := cfg.OTLPHeaders()
+		headers := cfg.OTLPTraceHeaders()
 		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
 
 		// But it must not be reported in configuration telemetry, and no reported
@@ -691,6 +888,192 @@ func TestOTLPHeaders(t *testing.T) {
 		}
 	})
 
+}
+
+func TestOTLPHeadersPercentEncodedValues(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		key     string
+		headers func(*Config) map[string]string
+		traces  bool
+	}{
+		{"generic traces", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"traces", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", (*Config).OTLPTraceHeaders, true},
+		{"generic metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).OTLPMetricsHeaders, false},
+		{"generic logs", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"logs", "OTEL_EXPORTER_OTLP_LOGS_HEADERS", (*Config).OTLPLogsHeaders, false},
+		{"generic runtime metrics", "OTEL_EXPORTER_OTLP_HEADERS", (*Config).RuntimeMetricsHeaders, false},
+		{"runtime metrics", "OTEL_EXPORTER_OTLP_METRICS_HEADERS", (*Config).RuntimeMetricsHeaders, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetGlobalState()
+			t.Cleanup(resetGlobalState)
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "")
+			t.Setenv(tt.key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%,surrounding= \t%0A%20secret%20%0A\t ")
+
+			want := map[string]string{
+				"api-key":     "hello world,value=1",
+				"percent":     "%",
+				"lowercase":   ",=",
+				"plus":        "a+b+c",
+				"once":        "%20",
+				"empty":       "",
+				"plain":       "unchanged",
+				"x%2Dkey":     "value",
+				"surrounding": "\n secret \n",
+			}
+			if tt.traces {
+				want["Content-Type"] = OTLPContentTypeHeader
+			}
+			assert.Equal(t, want, tt.headers(Get()))
+		})
+	}
+
+	t.Run("signal replaces generic", func(t *testing.T) {
+		resetGlobalState()
+		t.Cleanup(resetGlobalState)
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic%20value,generic-only=dropped%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=trace%20value")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metric%20value")
+		cfg := Get()
+		assert.Equal(t, map[string]string{
+			"api-key":      "trace value",
+			"Content-Type": OTLPContentTypeHeader,
+		}, cfg.OTLPTraceHeaders())
+		assert.Equal(t, map[string]string{
+			"api-key": "metric value",
+		}, cfg.OTLPMetricsHeaders())
+	})
+}
+
+func TestOTelSDKDisabled(t *testing.T) {
+	t.Run("disables tracing", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.TracingEnabled())
+	})
+
+	t.Run("explicit DD_TRACE_ENABLED takes precedence", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("DD_TRACE_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.TracingEnabled())
+	})
+
+	t.Run("overrides DD_LOGS_OTEL_ENABLED and DD_METRICS_OTEL_ENABLED", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.LogsOTelEnabled())
+		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
+	})
+
+	t.Run("uppercase TRUE overrides OTel logs and metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "TRUE")
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTelSDKDisabled())
+		assert.False(t, cfg.TracingEnabled())
+		assert.False(t, cfg.LogsOTelEnabled())
+		assert.False(t, cfg.RuntimeMetricsOtelEnabled())
+	})
+
+	t.Run("false leaves OTel logs and metrics enabled", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "false")
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTelSDKDisabled())
+		assert.True(t, cfg.TracingEnabled())
+		assert.True(t, cfg.LogsOTelEnabled())
+		assert.True(t, cfg.RuntimeMetricsOtelEnabled())
+	})
+
+	t.Run("invalid value falls back to false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_SDK_DISABLED", "maybe")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTelSDKDisabled())
+		assert.True(t, cfg.TracingEnabled())
+	})
+}
+
+func TestOTLPHeadersParsedTheSameForEverySignal(t *testing.T) {
+	signals := map[string]func(*Config) map[string]string{
+		"TRACES": func(c *Config) map[string]string {
+			h := c.OTLPTraceHeaders()
+			delete(h, "Content-Type")
+			return h
+		},
+		"METRICS": (*Config).OTLPMetricsHeaders,
+		"LOGS":    (*Config).OTLPLogsHeaders,
+	}
+	for name, tc := range map[string]struct {
+		raw  string
+		want map[string]string
+	}{
+		"keeps spaces inside a single value":                {"Authorization=Bearer abc", map[string]string{"Authorization": "Bearer abc"}},
+		"drops entries without '=' or with an invalid name": {"key=value,invalid,bad key=v", map[string]string{"key": "value"}},
+		"invalid duplicate does not erase a valid value":    {"api-key=valid,api-key=bad%GG", map[string]string{"api-key": "valid"}},
+	} {
+		for signal, headers := range signals {
+			t.Run(name+"/"+signal, func(t *testing.T) {
+				t.Setenv("OTEL_EXPORTER_OTLP_"+signal+"_HEADERS", tc.raw)
+				assert.Equal(t, tc.want, headers(loadConfig()))
+			})
+		}
+	}
+}
+
+func TestOTLPGenericHeadersNotSharedBetweenSignals(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic")
+
+	cfg := loadConfig()
+
+	assert.Equal(t, map[string]string{"api-key": "generic", "Content-Type": OTLPContentTypeHeader}, cfg.OTLPTraceHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPMetricsHeaders())
+	assert.Equal(t, map[string]string{"api-key": "generic"}, cfg.OTLPLogsHeaders())
 }
 
 func TestOTLPExportMode(t *testing.T) {
@@ -782,6 +1165,125 @@ func TestOTLPExportMode(t *testing.T) {
 
 		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
 		assert.False(t, cfg.OTLPExportMode())
+	})
+}
+
+func TestInvalidSpanAttributeSchemaFallsBackWithoutSharedWarning(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+	t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	cfg := Get()
+	assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+	const warning = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=invalid is not a valid value, setting to default of v0"
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), warning)
+}
+
+func TestOTelSemanticsEnforcesConfigurationOverrides(t *testing.T) {
+	const (
+		protocolOverrideLog = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_AGENT_PROTOCOL_VERSION's OTLP opt-out"
+		schemaOverrideLog   = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0"
+		peerOverrideLog     = "Enabling DD_TRACE_OTEL_SEMANTICS_ENABLED overrode DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED to false"
+	)
+
+	t.Run("forces OTLP export", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "OTEL_TRACES_EXPORTER" && c.Value == "otlp" && c.Origin == telemetry.OriginCalculated
+		}))
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("wins over Datadog trace protocol", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		assert.True(t, cfg.OTLPExportMode())
+		assert.Equal(t, TraceProtocolV04, cfg.RequestedTraceProtocol())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+	})
+
+	t.Run("calculates conflicting schema and peer service defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+		t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_OTEL_SEMANTICS_ENABLED" && c.Value == "true" && c.Origin == telemetry.OriginEnvVar
+		}))
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA" && c.Value == "v0" && c.Origin == telemetry.OriginCalculated
+		}))
+		assert.True(t, slices.ContainsFunc(rec.Configuration, func(c telemetry.Configuration) bool {
+			return c.Name == "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED" && c.Value == false && c.Origin == telemetry.OriginCalculated
+		}))
+	})
+
+	t.Run("schema v1 implication also calculates peer defaults false", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.Contains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("does not log non-conflicting defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SpanAttributeSchemaVersion())
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: protocolOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: schemaOverrideLog})
+		assert.NotContains(t, rec.Logs, telemetrytest.LogLine{Level: telemetry.LogWarn, Text: peerOverrideLog})
+	})
+
+	t.Run("resolution overrides programmatic peer defaults", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		cfg.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCode)
+		assert.True(t, cfg.PeerServiceDefaultsEnabled())
+
+		cfg.ResolveOTelSemanticsConfig()
+		assert.False(t, cfg.PeerServiceDefaultsEnabled())
 	})
 }
 
@@ -945,7 +1447,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://collector:4317", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("endpoint with path is used as-is", func(t *testing.T) {
@@ -996,7 +1498,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
+		assert.Equal(t, "http://metrics-specific:4318", cfg.OTLPMetricsURL())
 	})
 
 	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
@@ -1047,19 +1549,49 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
 	})
 
-	t.Run("signal-specific headers take precedence over generic", func(t *testing.T) {
+	t.Run("signal-specific headers replace generic headers", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=shared")
-		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metrics-key")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "authorization=signal")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 
-		h := cfg.OTLPMetricsHeaders()
-		assert.Equal(t, "metrics-key", h["api-key"])
-		assert.Equal(t, "shared", h["x-tenant"])
+		assert.Equal(t, map[string]string{"authorization": "signal"}, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("generic headers used when signal-specific headers have no usable entry", func(t *testing.T) {
+		for _, metricsHeaders := range []string{"", "invalid=bad%"} {
+			t.Run(metricsHeaders, func(t *testing.T) {
+				resetGlobalState()
+				defer resetGlobalState()
+
+				t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+				t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", metricsHeaders)
+
+				cfg := Get()
+				require.NotNil(t, cfg)
+
+				assert.Equal(t, map[string]string{
+					"x-generic":     "old",
+					"authorization": "generic",
+				}, cfg.OTLPMetricsHeaders())
+			})
+		}
+	})
+
+	t.Run("not affected by trace headers sharing the generic fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=generic")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, map[string]string{"authorization": "generic"}, cfg.OTLPMetricsHeaders())
 	})
 }
 
@@ -1163,6 +1695,320 @@ func TestOTLPMetricsProtocol(t *testing.T) {
 		cfg := Get()
 		require.NotNil(t, cfg)
 		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+}
+
+func TestOTLPLogsProtocol(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/protobuf", protocol)
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_PROTOCOL", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "grpc", protocol)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/protobuf")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "http/protobuf", protocol)
+	})
+
+	t.Run("trims and lowercases protocol", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "  GRPC  ")
+		protocol := loadConfig().OTLPLogsProtocol()
+		assert.Equal(t, "grpc", protocol)
+	})
+
+	t.Run("unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL falls back to generic", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+		assert.Equal(t, "grpc", loadConfig().OTLPLogsProtocol())
+		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL value")
+	})
+}
+
+func TestOTLPLogsEndpoint(t *testing.T) {
+	t.Run("empty when no env vars set", func(t *testing.T) {
+		cfg := loadConfig()
+		assert.Empty(t, cfg.OTLPLogsEndpoint())
+		assert.Empty(t, cfg.OTLPLogsHTTPURL())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://custom:4318")
+		cfg := loadConfig()
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://custom:4318/v1/logs", cfg.OTLPLogsHTTPURL())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://custom:4318")
+		cfg := loadConfig()
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://custom:4318", cfg.OTLPLogsHTTPURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs:4318")
+		cfg := loadConfig()
+		assert.Equal(t, "http://logs:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://logs:4318", cfg.OTLPLogsHTTPURL())
+	})
+
+	t.Run("unparsable OTEL_EXPORTER_OTLP_LOGS_ENDPOINT falls back to generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "::bad")
+		cfg := loadConfig()
+		assert.Equal(t, "http://generic:4318", cfg.OTLPLogsEndpoint())
+		assert.Equal(t, "http://generic:4318/v1/logs", cfg.OTLPLogsHTTPURL())
+	})
+}
+
+func TestOTLPLogsTransportEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		env          map[string]string
+		grpcTarget   string
+		grpcInsecure bool
+		httpEndpoint string
+		httpInsecure bool
+	}{
+		{name: "default", grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "agent host", env: map[string]string{"DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "https agent", env: map[string]string{"DD_TRACE_AGENT_URL": "https://agent:8126"}, grpcTarget: "agent:4317", httpEndpoint: "agent:4318"},
+		{name: "unix agent", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket"}, grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "unix agent with host", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "http endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4317/ignored"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "grpc endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "grpc://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "https endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "other scheme endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "endpoint without scheme", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "//collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			target, insecure := cfg.OTLPLogsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, target)
+			assert.Equal(t, tc.grpcInsecure, insecure)
+			endpoint, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
+			assert.Equal(t, tc.httpEndpoint, endpoint)
+			assert.Equal(t, "/v1/logs", path)
+			assert.Equal(t, tc.httpInsecure, insecure)
+		})
+	}
+}
+
+func TestOTLPLogsHeaders(t *testing.T) {
+	t.Run("empty when no headers configured", func(t *testing.T) {
+		assert.Empty(t, loadConfig().OTLPLogsHeaders())
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_HEADERS", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "key1=value1,key2=value2")
+		headers := loadConfig().OTLPLogsHeaders()
+		assert.Equal(t, map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		}, headers)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_HEADERS wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "logs=specific")
+		headers := loadConfig().OTLPLogsHeaders()
+		assert.Equal(t, map[string]string{
+			"logs": "specific",
+		}, headers)
+	})
+
+	for name, tc := range map[string]struct {
+		raw      string
+		expected map[string]string
+	}{
+		"trims spaces": {
+			"  key = value  ,  key2=value2  ",
+			map[string]string{"key": "value", "key2": "value2"},
+		},
+		"ignores entries without equals": {
+			"key1=value1,invalid,key2=value2",
+			map[string]string{"key1": "value1", "key2": "value2"},
+		},
+		"keeps equals signs in values": {
+			"key=value=with=equals",
+			map[string]string{"key": "value=with=equals"},
+		},
+		"ignores entries with empty key": {
+			"=value,key=value2",
+			map[string]string{"key": "value2"},
+		},
+		"ignores entries with invalid header names": {
+			"bad key=value,bad:key=value,key=value2",
+			map[string]string{"key": "value2"},
+		},
+		"keeps spaces inside values": {
+			"Authorization=Bearer token123,Content-Type=application/json",
+			map[string]string{"Authorization": "Bearer token123", "Content-Type": "application/json"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", tc.raw)
+			assert.Equal(t, tc.expected, loadConfig().OTLPLogsHeaders())
+		})
+	}
+
+	for name, logs := range map[string]string{
+		"no valid entry":            "invalid",
+		"only invalid header names": "bad key=value",
+		"only invalid escapes":      "key=bad%GG",
+	} {
+		t.Run("falls back to generic when OTEL_EXPORTER_OTLP_LOGS_HEADERS has "+name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "generic=value")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", logs)
+			assert.Equal(t, map[string]string{"generic": "value"}, loadConfig().OTLPLogsHeaders())
+		})
+	}
+
+	for _, key := range []string{"OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_LOGS_HEADERS"} {
+		t.Run("percent-decodes "+key, func(t *testing.T) {
+			t.Setenv(key, "api-key=hello%20world%2Cvalue%3D1,percent=%25,lowercase=%2c%3d,plus=a+b%2Bc,once=%2520,empty=,plain=unchanged,x%2Dkey=value,short=bad%2,invalid=bad%GG,trailing=bad%")
+			assert.Equal(t, map[string]string{
+				"api-key":   "hello world,value=1",
+				"percent":   "%",
+				"lowercase": ",=",
+				"plus":      "a+b+c",
+				"once":      "%20",
+				"empty":     "",
+				"plain":     "unchanged",
+				"x%2Dkey":   "value",
+			}, loadConfig().OTLPLogsHeaders())
+		})
+	}
+
+	t.Run("returns a copy", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "key=value")
+		cfg := loadConfig()
+		cfg.OTLPLogsHeaders()["key"] = "changed"
+		assert.Equal(t, "value", cfg.OTLPLogsHeaders()["key"])
+	})
+}
+
+func TestOTLPLogsTimeout(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 10*time.Second, timeout)
+	})
+
+	t.Run("uses OTEL_EXPORTER_OTLP_TIMEOUT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 5*time.Second, timeout)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "10000")
+		timeout := loadConfig().OTLPLogsTimeout()
+		assert.Equal(t, 10*time.Second, timeout)
+	})
+
+	for _, raw := range []string{"invalid", "1000.5", "-1000"} {
+		t.Run("invalid logs timeout falls back to generic: "+raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", raw)
+			assert.Equal(t, 5*time.Second, loadConfig().OTLPLogsTimeout())
+		})
+
+		t.Run("invalid generic timeout falls back to default: "+raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", raw)
+			assert.Equal(t, 10*time.Second, loadConfig().OTLPLogsTimeout())
+		})
+	}
+
+	t.Run("accepts zero", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "0")
+		assert.Equal(t, time.Duration(0), loadConfig().OTLPLogsTimeout())
+	})
+}
+
+func TestOTLPLogsConfigTelemetry(t *testing.T) {
+	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=SENTINEL_OTLP_BASE")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "log-key=SENTINEL_OTLP_LOGS")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "8000")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com:4317")
+
+		// The OTLP header variants must not be reported in configuration telemetry, and
+		// no reported configuration value may contain a header sentinel.
+		for _, cfg := range recorder.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_HEADERS", cfg.Name)
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_LOGS_HEADERS", cfg.Name)
+			if s, ok := cfg.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP",
+					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
+			}
+		}
+	})
+
+	t.Run("reports default timeouts when env vars not set", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		loadConfig()
+
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+		telemetrytest.CheckConfig(t, recorder.Configuration, "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", defaultOTLPTimeout.Milliseconds())
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == "OTEL_EXPORTER_OTLP_TIMEOUT" || cfg.Name == "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT" {
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
+			}
+		}
+	})
+
+	t.Run("reports each generic setting once for all signals", func(t *testing.T) {
+		recorder := &telemetrytest.RecordClient{}
+		defer telemetry.MockClient(recorder)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.com:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+
+		loadConfig()
+
+		for _, key := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL"} {
+			var reports int
+			for _, cfg := range recorder.Configuration {
+				if cfg.Name == key && cfg.Origin == telemetry.OriginEnvVar {
+					reports++
+				}
+			}
+			// Once for the OTLP signals, once for the environment-only runtime metrics reader.
+			assert.Equal(t, 2, reports, key)
+		}
 	})
 }
 
@@ -1460,6 +2306,64 @@ func TestCIVisibilityAgentlessActive(t *testing.T) {
 			assert.Equal(t, tc.want, cfg.CIVisibilityAgentlessActive())
 		})
 	}
+}
+
+func TestLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		wantLevel log.Level
+		wantDebug bool
+	}{
+		{name: "unset", wantLevel: log.LevelInfo},
+		{name: "otel info", env: map[string]string{"OTEL_LOG_LEVEL": "info"}, wantLevel: log.LevelInfo},
+		{name: "otel warn", env: map[string]string{"OTEL_LOG_LEVEL": "warn"}, wantLevel: log.LevelWarn},
+		{name: "otel error", env: map[string]string{"OTEL_LOG_LEVEL": "error"}, wantLevel: log.LevelError},
+		{name: "otel case-insensitive", env: map[string]string{"OTEL_LOG_LEVEL": "ErRoR"}, wantLevel: log.LevelError},
+		{name: "otel debug", env: map[string]string{"OTEL_LOG_LEVEL": "debug"}, wantLevel: log.LevelDebug, wantDebug: true},
+		{name: "otel empty", env: map[string]string{"OTEL_LOG_LEVEL": ""}, wantLevel: log.LevelInfo},
+		{name: "otel invalid", env: map[string]string{"OTEL_LOG_LEVEL": "not-a-log-level"}, wantLevel: log.LevelInfo},
+		{
+			name:      "dd debug wins over otel error",
+			env:       map[string]string{"DD_TRACE_DEBUG": "true", "OTEL_LOG_LEVEL": "error"},
+			wantLevel: log.LevelDebug, wantDebug: true,
+		},
+		{
+			name:      "dd debug disabled hides otel debug",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "debug"},
+			wantLevel: log.LevelInfo,
+		},
+		{
+			name:      "dd debug disabled keeps otel warn",
+			env:       map[string]string{"DD_TRACE_DEBUG": "false", "OTEL_LOG_LEVEL": "warn"},
+			wantLevel: log.LevelWarn,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg := Get()
+			assert.Equal(t, tc.wantLevel, cfg.LogLevel())
+			assert.Equal(t, tc.wantDebug, cfg.Debug())
+		})
+	}
+
+	t.Run("debug option overrides otel threshold", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("OTEL_LOG_LEVEL", "error")
+
+		cfg := Get()
+		cfg.SetDebug(true, telemetry.OriginCode)
+		assert.Equal(t, log.LevelDebug, cfg.LogLevel())
+
+		cfg.SetDebug(false, telemetry.OriginCode)
+		assert.Equal(t, log.LevelError, cfg.LogLevel())
+	})
 }
 
 func TestAgentTimeout(t *testing.T) {
@@ -1984,6 +2888,231 @@ func TestFlaggingProviderInitTimeout(t *testing.T) {
 			}
 			cfg := Get()
 			assert.Equal(t, tt.expected, cfg.FlaggingProviderInitTimeout())
+		})
+	}
+}
+
+func TestResolveBLRPMaxQueueSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "0")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "-100")
+		size := loadConfig().BLRPMaxQueueSize()
+		assert.Equal(t, 2048, size)
+	})
+}
+
+func TestResolveBLRPScheduleDelay(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: time.Second},
+		{value: "invalid", expected: time.Second},
+		{value: "0", expected: time.Second},
+		{value: "-100", expected: time.Second},
+		{value: "500", expected: 500 * time.Millisecond},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPScheduleDelay())
+		})
+	}
+}
+
+func TestResolveBLRPExportTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		expected time.Duration
+	}{
+		{value: "", expected: 30 * time.Second},
+		{value: "invalid", expected: 30 * time.Second},
+		{value: "0", expected: 30 * time.Second},
+		{value: "-100", expected: 30 * time.Second},
+		{value: "15000", expected: 15 * time.Second},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", tc.value)
+			assert.Equal(t, tc.expected, loadConfig().BLRPExportTimeout())
+		})
+	}
+}
+
+func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
+	t.Run("falls back to default on zero", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "0")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+
+	t.Run("falls back to default on negative", func(t *testing.T) {
+		t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "-100")
+		size := loadConfig().BLRPMaxExportBatchSize()
+		assert.Equal(t, 512, size)
+	})
+}
+
+func TestRuntimeMetricsProtocol(t *testing.T) {
+	for _, tc := range []struct{ name, generic, signal, expected string }{
+		{"signal over generic", "http/protobuf", "grpc", "grpc"},
+		{"generic fallback", "grpc", "", "grpc"},
+		{"normalized", "  GRPC  ", "", "grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", tc.generic)
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsProtocol())
+		})
+	}
+}
+
+func TestRuntimeMetricsEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		env                            map[string]string
+		httpHost, httpPath, grpcTarget string
+		insecure                       bool
+		httpURL, grpcURL               string
+	}{
+		{"default", nil, "localhost:4318", "/v1/metrics", "localhost:4317", true, "http://localhost:4318/v1/metrics", "http://localhost:4317"},
+		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true, "http://agent:4318/v1/metrics", "http://agent:4317"},
+		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false, "https://agent:4318/v1/metrics", "https://agent:4317"},
+		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true, "http://host:4318/v1/metrics", "http://host:4317"},
+		{"unsupported agent URL scheme", map[string]string{"DD_TRACE_AGENT_URL": "tcp://agent:8126", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true, "http://host:4318/v1/metrics", "http://host:4317"},
+		{"unix agent URL", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "host"}, "localhost:4318", "/v1/metrics", "localhost:4317", true, "http://localhost:4318/v1/metrics", "http://localhost:4317"},
+		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true, "http://collector:4318/prefix/v1/metrics", "http://collector:4318/prefix"},
+		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false, "https://signal:443/custom/", "https://signal:443/custom"},
+		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true, "http://signal:4318/", "http://signal:4318"},
+		{"invalid signal", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "generic:4318", "/v1/metrics", "generic:4318", true, "http://generic:4318/v1/metrics", "http://generic:4318"},
+		{"both invalid", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://%", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "localhost:4318", "/v1/metrics", "localhost:4317", false, "https://localhost:4318/v1/metrics", "https://localhost:4317"},
+		{"whitespace", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "   "}, "localhost:4318", "/v1/metrics", "localhost:4317", false, "https://localhost:4318/v1/metrics", "https://localhost:4317"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			httpHost, httpPath, insecure := cfg.RuntimeMetricsHTTPEndpoint()
+			assert.Equal(t, tc.httpHost, httpHost)
+			assert.Equal(t, tc.httpPath, httpPath)
+			assert.Equal(t, tc.insecure, insecure)
+			grpcTarget, _ := cfg.RuntimeMetricsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, grpcTarget)
+			assert.Equal(t, tc.httpURL, cfg.RuntimeMetricsHTTPURL())
+			assert.Equal(t, tc.grpcURL, cfg.RuntimeMetricsGRPCURL())
+		})
+	}
+}
+
+func TestRuntimeMetricsInsecurePrecedence(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector:4318")
+	t.Setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+	_, _, insecure := loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.True(t, insecure)
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_INSECURE", "false")
+	_, _, insecure = loadConfig().RuntimeMetricsHTTPEndpoint()
+	assert.False(t, insecure)
+}
+
+func TestRuntimeMetricsHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name, signal string
+		expected     map[string]string
+	}{
+		{"generic", "", map[string]string{"Authorization": "Bearer token"}},
+		{"blank signal", "  ", map[string]string{"Authorization": "Bearer token"}},
+		{"signal replaces", "x-key=a%2Bb", map[string]string{"x-key": "a+b"}},
+		{"invalid signal replaces", "invalid,bad key=value,bad=%XX,=value", nil},
+		{"mixed", "bad key=x,good=some%20value,empty=", map[string]string{"good": "some value", "empty": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer%20token")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", tc.signal)
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsHeaders())
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderResolution(t *testing.T) {
+	for _, tc := range []struct {
+		raw               string
+		interval, timeout time.Duration
+	}{
+		{"", 10 * time.Second, 7500 * time.Millisecond},
+		{"bad", 10 * time.Second, 7500 * time.Millisecond},
+		{"0", 10 * time.Second, 7500 * time.Millisecond},
+		{"-1", 10 * time.Second, 7500 * time.Millisecond},
+		{"25", 25 * time.Millisecond, 25 * time.Millisecond},
+		{" 25 ", 10 * time.Second, 7500 * time.Millisecond},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", tc.raw)
+			t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", tc.raw)
+			cfg := loadConfig()
+			assert.Equal(t, tc.interval, cfg.RuntimeMetricsExportInterval())
+			assert.Equal(t, tc.timeout, cfg.RuntimeMetricsExportTimeout())
+		})
+	}
+}
+
+func TestRuntimeMetricsReaderOverflow(t *testing.T) {
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "9223372036854775807")
+	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "9223372036854775807")
+	cfg := loadConfig()
+	if strconv.IntSize == 64 {
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, -time.Millisecond, cfg.RuntimeMetricsExportTimeout())
+	} else {
+		assert.Equal(t, defaultRuntimeMetricsExportInterval, cfg.RuntimeMetricsExportInterval())
+		assert.Equal(t, defaultRuntimeMetricsExportTimeout, cfg.RuntimeMetricsExportTimeout())
+	}
+}
+
+func TestRuntimeMetricsTemporality(t *testing.T) {
+	for _, tc := range []struct {
+		raw, expected string
+		wantWarn      bool
+	}{
+		{"", "delta", false},
+		{" CUMULATIVE ", "cumulative", false},
+		{"DELTA", "delta", false},
+		{"lowmemory", "delta", true},
+		{"unknown", "delta", true},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", tc.raw)
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsTemporalityPreference())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+				return
+			}
+			assert.NotContains(t, logs, "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+		})
+	}
+}
+
+func TestRuntimeMetricsTemporalityNoWarningWhenDisabled(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "unknown")
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+	assert.Equal(t, "delta", loadConfig().RuntimeMetricsTemporalityPreference())
+	assert.NotContains(t, strings.Join(tp.Logs(), "\n"), "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+}
+
+func TestOTLPTraceURLInvalidSignalFallback(t *testing.T) {
+	for _, endpoint := range []string{"grpc://traces-collector:4317", "traces-collector:4318/v1/traces"} {
+		t.Run(endpoint, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", endpoint)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/base")
+			assert.Equal(t, "http://collector:4318/base/v1/traces", loadConfig().OTLPTraceURL())
 		})
 	}
 }

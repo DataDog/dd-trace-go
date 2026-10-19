@@ -212,6 +212,17 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	span.applyTraceRuleSampling(rate, sampler, limiter, now)
 }
 
+// fixedRate returns the global sample rate when it alone drives rule-based
+// trace sampling: it is set and no trace rule can take precedence over it.
+func (rs *traceRulesSampler) fixedRate() (float64, bool) {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	if len(rs.rules) > 0 || math.IsNaN(rs.globalRate) {
+		return math.NaN(), false
+	}
+	return rs.globalRate, true
+}
+
 func (rs *traceRulesSampler) limit() (float64, bool) {
 	if rs.enabled() {
 		return rs.limiter.Limit(), true
