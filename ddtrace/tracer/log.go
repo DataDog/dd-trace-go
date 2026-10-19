@@ -504,8 +504,14 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		}
 		return sanitizeOTLPEndpoint(otlpScheme(insecure) + "://" + target), "grpc"
 	}
-	if u := cfg.OTLPLogsHTTPURL(); u != "" {
-		return sanitizeOTLPEndpoint(u), "http/protobuf"
+	if raw := cfg.OTLPLogsHTTPURL(); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", "http/protobuf"
+		}
+		// The SDK keeps only the decoded path, so /a%2Fb is sent as /a/b.
+		u.RawPath = ""
+		return sanitizeOTLPEndpoint(u.String()), "http/protobuf"
 	}
 	host, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
 	return (&url.URL{Scheme: otlpScheme(insecure), Host: host, Path: path}).String(), "http/protobuf"

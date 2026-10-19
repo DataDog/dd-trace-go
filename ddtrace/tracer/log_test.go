@@ -378,6 +378,7 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 		{"agent grpc", map[string]string{"DD_AGENT_HOST": "agent", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"}, "http://agent:4317", "grpc"},
 		{"generic", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/"}, "http://collector:4318/v1/logs", "http/protobuf"},
 		{"signal", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://u:p@collector/v1/logs?k=v"}, "https://collector/v1/logs", "http/protobuf"},
+		{"signal encoded path", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4318/tenant%2Fblue"}, "http://collector:4318/tenant/blue", "http/protobuf"},
 		{"signal grpc", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
 		{"signal grpc https", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "https://collector:4317", "grpc"},
 		{"signal grpc other scheme", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
