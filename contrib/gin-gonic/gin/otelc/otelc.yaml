@@ -55,6 +55,10 @@ gin_default:
 # filled in, one rule per method, since a point selector cannot be alternated.
 # All of them share AfterBind, which works because gin declares these methods
 # in one file with the same signature.
+#
+# TODO: merge the bind rules, the render rules, and gin_new with gin_default
+# into one rule each once otelc supports one-of in where:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1520
 gin_context_bind:
   target: github.com/gin-gonic/gin
   where:
