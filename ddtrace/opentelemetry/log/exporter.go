@@ -8,13 +8,11 @@ package log
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -23,13 +21,7 @@ import (
 )
 
 const (
-	// Default OTLP endpoint for Datadog Agent logs
-	defaultOTLPHTTPPort = "4318"
-	defaultOTLPGRPCPort = "4317"
 	defaultOTLPLogsPath = "/v1/logs"
-
-	// DD environment variables for agent configuration
-	envDDAgentHost = "DD_AGENT_HOST"
 
 	// HTTP retry configuration
 	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
@@ -187,29 +179,14 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	if rawEndpoint := cfg.OTLPLogsEndpoint(); rawEndpoint != "" {
-		// For gRPC, we extract host:port and insecure flag from the URL
-		u, _ := url.Parse(rawEndpoint)
-		endpoint := u.Host
-		if endpoint == "" {
-			endpoint = u.Path // Handle URLs without scheme
-		}
-		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-		insecure := u.Scheme == "http" || u.Scheme == "grpc"
-		if insecure {
-			opts = append(opts, otlploggrpc.WithInsecure())
-		} else if u.Scheme == "https" {
-			opts = append(opts, otlploggrpc.WithEndpointURL(rawEndpoint))
-		}
-		log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %t)", endpoint, insecure)
-	} else {
-		// Use DD agent configuration as default
-		endpoint, insecure := resolveOTLPEndpointGRPC()
-		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-		if insecure {
-			opts = append(opts, otlploggrpc.WithInsecure())
-		}
+	endpoint, insecure := resolveOTLPEndpointGRPC()
+	opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+	if insecure {
+		opts = append(opts, otlploggrpc.WithInsecure())
+	} else if u, _ := url.Parse(cfg.OTLPLogsEndpoint()); u.Scheme == "https" {
+		opts = append(opts, otlploggrpc.WithEndpointURL(u.String()))
 	}
+	log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %t)", endpoint, insecure)
 
 	// Always set headers so the SDK does not re-read them from the environment
 	opts = append(opts, otlploggrpc.WithHeaders(cfg.OTLPLogsHeaders()))
@@ -226,43 +203,22 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 // - path is the URL path (e.g., "/v1/logs")
 // - insecure indicates whether to use http (true) or https (false)
 //
-// Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
-// reads those environment variables.
+// Note: Only called when internal/config cannot resolve a logs URL from
+// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT. Then the
+// DD agent configuration supplies the endpoint.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
-	endpoint, insecure = resolveLogsAgentEndpoint(defaultOTLPHTTPPort, "OTLP logs")
-	return endpoint, defaultOTLPLogsPath, insecure
+	endpoint, path, insecure = config.Get().OTLPLogsAgentHTTPEndpoint()
+	log.Debug("Using OTLP logs endpoint from the agent configuration: %s", endpoint)
+	return endpoint, path, insecure
 }
 
-// resolveOTLPEndpointGRPC determines the OTLP gRPC endpoint from DD agent configuration.
+// resolveOTLPEndpointGRPC determines the OTLP gRPC endpoint from the OTLP logs
+// endpoint, or from DD agent configuration when it is not set.
 // Returns (endpoint, insecure) where:
 // - endpoint is the host:port (e.g., "localhost:4317")
 // - insecure indicates whether to use grpc (true) or grpcs (false)
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
-	return resolveLogsAgentEndpoint(defaultOTLPGRPCPort, "OTLP gRPC logs")
-}
-
-// resolveLogsAgentEndpoint returns the tracer's agent host with the given OTLP
-// port, and whether to connect without TLS.
-//
-// Priority order:
-// 1. The tracer's resolved agent URL (DD_TRACE_AGENT_URL, DD_AGENT_HOST, or a programmatic override)
-// 2. DD_AGENT_HOST, when the agent URL is a Unix socket
-// 3. localhost (default)
-func resolveLogsAgentEndpoint(port, name string) (endpoint string, insecure bool) {
-	if u := config.Get().RawAgentURL(); u != nil && u.Hostname() != "" {
-		endpoint = net.JoinHostPort(u.Hostname(), port)
-		log.Debug("Using %s endpoint from DD_TRACE_AGENT_URL: %s", name, endpoint)
-		return endpoint, u.Scheme == "http" || u.Scheme == "unix"
-	}
-	if host := env.Get(envDDAgentHost); host != "" {
-		endpoint = net.JoinHostPort(host, port)
-		log.Debug("Using %s endpoint from DD_AGENT_HOST: %s", name, endpoint)
-		return endpoint, true
-	}
-	endpoint = net.JoinHostPort("localhost", port)
-	log.Debug("Using default %s endpoint: %s", name, endpoint)
-	return endpoint, true
+	return config.Get().OTLPLogsGRPCEndpoint()
 }
 
 // httpRetryConfig returns the retry configuration for OTLP HTTP exporter.

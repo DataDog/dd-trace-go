@@ -8,7 +8,6 @@ package metric
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -137,12 +136,7 @@ func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichtt
 		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelector()),
 	)
 
-	endpoint, path, insecure := internalconfig.Get().RuntimeMetricsHTTPEndpoint()
-	scheme := "https"
-	if insecure {
-		scheme = "http"
-	}
-	opts = append(opts, otlpmetrichttp.WithEndpointURL((&url.URL{Scheme: scheme, Host: endpoint, Path: path}).String()), otlpmetrichttp.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
+	opts = append(opts, otlpmetrichttp.WithEndpointURL(internalconfig.Get().RuntimeMetricsHTTPURL()), otlpmetrichttp.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
 
 	// Add user-provided options last so they can override defaults
 	opts = append(opts, userOpts...)
@@ -162,11 +156,7 @@ func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrp
 	}
 
 	endpoint, insecure := internalconfig.Get().RuntimeMetricsGRPCEndpoint()
-	scheme := "https"
-	if insecure {
-		scheme = "http"
-	}
-	opts = append(opts, otlpmetricgrpc.WithEndpointURL(scheme+"://"+endpoint), otlpmetricgrpc.WithEndpoint(endpoint), otlpmetricgrpc.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
+	opts = append(opts, otlpmetricgrpc.WithEndpointURL(internalconfig.Get().RuntimeMetricsGRPCURL()), otlpmetricgrpc.WithEndpoint(endpoint), otlpmetricgrpc.WithHeaders(internalconfig.Get().RuntimeMetricsHeaders()))
 	if insecure {
 		opts = append(opts, otlpmetricgrpc.WithInsecure())
 	}
