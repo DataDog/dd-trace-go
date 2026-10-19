@@ -14,3 +14,7 @@ import (
 func TestGRPC(t *testing.T) { harness.Run(t, new(GRPCTestCase)) }
 
 func TestStream(t *testing.T) { harness.Run(t, new(StreamCase)) }
+
+func TestRejectedHTTP(t *testing.T) { harness.Run(t, &TestCase{reject: true}) }
+
+func TestRejectedGRPC(t *testing.T) { harness.Run(t, &GRPCTestCase{reject: true}) }

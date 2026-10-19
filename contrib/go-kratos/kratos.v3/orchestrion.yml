@@ -20,9 +20,10 @@ aspects:
       - prepend-statements:
           imports:
             kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+            middleware: github.com/go-kratos/kratos/v3/middleware
           template: |
             {{ .Function.Argument 0 }} = append({{ .Function.Argument 0 }}, func(s *Server) {
-              s.middleware.Use(append(s.middleware.Match(""), kratostrace.Server())...)
+              s.middleware.Use(append([]middleware.Middleware{kratostrace.Server()}, s.middleware.Match("")...)...)
             })
   - id: GRPCServer
     join-point:
@@ -35,9 +36,10 @@ aspects:
       - prepend-statements:
           imports:
             kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+            middleware: github.com/go-kratos/kratos/v3/middleware
           template: |
             {{ .Function.Argument 0 }} = append({{ .Function.Argument 0 }}, func(s *Server) {
-              s.middleware.Use(append(s.middleware.Match(""), kratostrace.Server())...)
+              s.middleware.Use(append([]middleware.Middleware{kratostrace.Server()}, s.middleware.Match("")...)...)
             })
   # Append middleware after all caller options have been applied, since
   # WithMiddleware replaces the chain rather than extending it.

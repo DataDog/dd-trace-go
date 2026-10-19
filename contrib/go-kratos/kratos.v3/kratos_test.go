@@ -493,6 +493,28 @@ func TestHTTPQueryStringDisabled(t *testing.T) {
 	}
 }
 
+func TestClientQueryStringIndependentOfServer(t *testing.T) {
+	t.Setenv(envQueryStringDisabled, "true")
+	for _, tc := range []struct {
+		name          string
+		clientSetting string
+		want          bool
+	}{
+		{name: "default", clientSetting: "", want: true},
+		{name: "enabled", clientSetting: "true", want: true},
+		{name: "disabled", clientSetting: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envClientQueryStringEnabled, tc.clientSetting)
+			var client, server config
+			clientDefaults(&client)
+			serverDefaults(&server)
+			assert.Equal(t, tc.want, client.queryString)
+			assert.False(t, server.queryString)
+		})
+	}
+}
+
 func TestGRPCTransportEndToEnd(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()

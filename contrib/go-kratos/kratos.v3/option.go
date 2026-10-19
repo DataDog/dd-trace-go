@@ -92,7 +92,7 @@ func clientDefaults(cfg *config) {
 		return instr.ServiceName(instrumentation.ComponentClient, nil)
 	})
 	cfg.serviceSource = string(component)
-	cfg.queryString = cfg.queryString && options.GetBoolEnv(envClientQueryStringEnabled, true)
+	cfg.queryString = options.GetBoolEnv(envClientQueryStringEnabled, true)
 	cfg.isStatusError = isClientError
 	if cfg.otelEnabled {
 		cfg.isStatusError = func(code int) bool { return code < 100 || code >= 400 }

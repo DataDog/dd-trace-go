@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/go-kratos/kratos/v3/errors"
 	"github.com/go-kratos/kratos/v3/middleware"
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,7 @@ type TestCase struct {
 	server *kratoshttp.Server
 	addr   string
 	called atomic.Bool
+	reject bool
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
@@ -32,6 +34,9 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	tc.server = kratoshttp.NewServer(kratoshttp.Listener(listener), kratoshttp.Middleware(func(next middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			tc.called.Store(true)
+			if tc.reject {
+				return nil, errors.Unauthorized("DENIED", "denied by middleware")
+			}
 			return next(ctx, req)
 		}
 	}))
@@ -56,7 +61,11 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	if tc.reject {
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	} else {
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+	}
 	require.True(t, tc.called.Load(), "caller server middleware must be preserved")
 }
 

@@ -12,10 +12,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/go-kratos/kratos/v3/errors"
 	"github.com/go-kratos/kratos/v3/middleware"
 	kratosgrpc "github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
@@ -24,6 +27,7 @@ type GRPCTestCase struct {
 	server *kratosgrpc.Server
 	addr   string
 	called atomic.Bool
+	reject bool
 }
 
 func (*GRPCTestCase) ExpectedSpanCount() int { return 2 }
@@ -35,6 +39,9 @@ func (tc *GRPCTestCase) Setup(ctx context.Context, t *testing.T) {
 	tc.server = kratosgrpc.NewServer(kratosgrpc.Listener(lis), kratosgrpc.Middleware(func(next middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			tc.called.Store(true)
+			if tc.reject {
+				return nil, errors.Unauthorized("DENIED", "denied by middleware")
+			}
 			return next(ctx, req)
 		}
 	}))
@@ -43,11 +50,15 @@ func (tc *GRPCTestCase) Setup(ctx context.Context, t *testing.T) {
 }
 
 func (tc *GRPCTestCase) Run(ctx context.Context, t *testing.T) {
-	conn, err := kratosgrpc.NewClient(ctx, kratosgrpc.WithEndpoint(tc.addr))
+	conn, err := kratosgrpc.NewClient(ctx, kratosgrpc.WithEndpoint(tc.addr), kratosgrpc.WithHealthCheck(false))
 	require.NoError(t, err)
 	defer conn.Close()
 	_, err = grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	require.NoError(t, err)
+	if tc.reject {
+		require.Equal(t, codes.Unauthenticated, status.Code(err))
+	} else {
+		require.NoError(t, err)
+	}
 	require.True(t, tc.called.Load(), "caller server middleware must be preserved")
 }
 
