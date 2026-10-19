@@ -19,7 +19,7 @@ func Example() {
 	tracer.Start()
 	defer tracer.Stop()
 
-	server := kratoshttp.NewServer(kratoshttp.Middleware(kratostrace.Server()))
+	server := kratoshttp.NewServer(kratoshttp.Middleware(kratostrace.Server()), kratoshttp.Filter(kratostrace.HTTPServerFilter))
 	client, err := kratoshttp.NewClient(context.Background(), kratoshttp.WithEndpoint("http://127.0.0.1:8000"), kratoshttp.WithMiddleware(kratostrace.Client()))
 	if err != nil {
 		return
@@ -35,6 +35,7 @@ func ExampleServer() {
 	httpServer := kratoshttp.NewServer(
 		kratoshttp.Address(":8000"),
 		kratoshttp.Middleware(kratostrace.Server()),
+		kratoshttp.Filter(kratostrace.HTTPServerFilter),
 	)
 	grpcServer := kratosgrpc.NewServer(
 		kratosgrpc.Address(":9000"),

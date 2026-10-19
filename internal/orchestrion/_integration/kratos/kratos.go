@@ -9,6 +9,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -17,6 +18,8 @@ import (
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -25,9 +28,29 @@ type TestCase struct {
 	addr   string
 	called atomic.Bool
 	reject bool
+	status int
+	otel   bool
+}
+
+func (tc *TestCase) responseStatus() int {
+	if tc.reject {
+		return http.StatusUnauthorized
+	}
+	if tc.status != 0 {
+		return tc.status
+	}
+	return http.StatusOK
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+	if tc.otel {
+		internalconfig.Get().SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+		httptrace.ResetCfg()
+		t.Cleanup(func() {
+			internalconfig.Get().SetOTelSemanticsEnabled(false, internalconfig.OriginCode)
+			httptrace.ResetCfg()
+		})
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	tc.addr = listener.Addr().String()
@@ -49,7 +72,10 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return ctx.JSON(http.StatusOK, reply)
+		if tc.responseStatus() == http.StatusNoContent {
+			return ctx.String(http.StatusNoContent, "")
+		}
+		return ctx.JSON(tc.responseStatus(), reply)
 	})
 	go func() { _ = tc.server.Start(ctx) }()
 	t.Cleanup(func() { require.NoError(t, tc.server.Stop(context.Background())) })
@@ -61,14 +87,14 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	if tc.reject {
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-	} else {
-		require.Equal(t, http.StatusOK, resp.StatusCode)
-	}
+	require.Equal(t, tc.responseStatus(), resp.StatusCode)
 	require.True(t, tc.called.Load(), "caller server middleware must be preserved")
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
-	return trace.Traces{{Tags: map[string]any{"name": "kratos.server.request", "resource": "GET /hello", "type": "web"}}}
+func (tc *TestCase) ExpectedTraces() trace.Traces {
+	statusTag := "http.status_code"
+	if tc.otel {
+		statusTag = "http.response.status_code"
+	}
+	return trace.Traces{{Tags: map[string]any{"name": "kratos.server.request", "resource": "GET /hello", "type": "web", statusTag: strconv.Itoa(tc.responseStatus())}}}
 }

@@ -264,7 +264,7 @@ func TestFinishInferredHTTPSpan(t *testing.T) {
 			defer mt.Stop()
 
 			span := tracer.StartSpan("aws.apigateway")
-			finishInferredHTTPSpan(span, tc.err, &config{isStatusError: isServerError, noDebugStack: tc.noDebugStack})
+			finishInferredHTTPSpan(span, tc.err, &config{isStatusError: isServerError, noDebugStack: tc.noDebugStack}, 0)
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)

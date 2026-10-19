@@ -24,6 +24,7 @@ aspects:
           template: |
             {{ .Function.Argument 0 }} = append({{ .Function.Argument 0 }}, func(s *Server) {
               s.middleware.Use(append([]middleware.Middleware{kratostrace.Server()}, s.middleware.Match("")...)...)
+              s.filters = append([]FilterFunc{kratostrace.HTTPServerFilter}, s.filters...)
             })
   - id: GRPCServer
     join-point:

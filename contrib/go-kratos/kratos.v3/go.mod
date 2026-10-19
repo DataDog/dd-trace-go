@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
+	github.com/felixge/httpsnoop v1.0.4
 	github.com/go-kratos/kratos/v3 v3.0.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2

@@ -53,7 +53,8 @@ func init() {
 }
 
 // Server returns middleware that traces Kratos request/response HTTP and unary
-// gRPC server calls.
+// gRPC server calls. For HTTP, also register HTTPServerFilter to capture the
+// final response status and include response encoding in the span duration.
 func Server(opts ...Option) middleware.Middleware {
 	cfg := new(config)
 	serverDefaults(cfg)
@@ -114,10 +115,19 @@ func Server(opts ...Option) middleware.Middleware {
 				spanCtx = context.WithValue(spanCtx, component, ext.SpanKindServer+":"+tr.Operation())
 			}
 			defer func() {
-				finishSpan(span, tr, err, ext.SpanKindServer, cfg)
-				if inferredSpan != nil {
-					finishInferredHTTPSpan(inferredSpan, err, cfg)
+				finish := func(code int) {
+					finishSpan(span, tr, err, ext.SpanKindServer, cfg, code)
+					if inferredSpan != nil {
+						finishInferredHTTPSpan(inferredSpan, err, cfg, code)
+					}
 				}
+				if tr.Kind() == transport.KindHTTP {
+					if state, ok := ctx.Value(httpResponseKey{}).(*httpResponseState); ok {
+						state.register(finish)
+						return
+					}
+				}
+				finish(0)
 			}()
 			return handler(spanCtx, req)
 		}
@@ -145,7 +155,7 @@ func Client(opts ...Option) middleware.Middleware {
 			if tr.Kind() == transport.KindGRPC {
 				spanCtx = context.WithValue(spanCtx, component, ext.SpanKindClient+":"+tr.Operation())
 			}
-			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
+			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg, 0) }()
 			for key, value := range baggage.All(ctx) {
 				span.SetBaggageItem(key, value)
 			}
@@ -320,7 +330,7 @@ func prepareSpanConfig(cfg *config, spanKind string) {
 	cfg.spanConfig = tracer.NewStartSpanConfig(staticOpts...)
 }
 
-func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config) {
+func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind string, cfg *config, httpStatus int) {
 	if tr.Kind() == transport.KindGRPC {
 		if errors.Is(err, io.EOF) {
 			err = nil
@@ -335,10 +345,13 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 			return
 		}
 	}
-	if err == nil {
-		if tr.Kind() == transport.KindHTTP && cfg.otelEnabled {
-			setHTTPStatus(span, http.StatusOK, cfg)
+	if tr.Kind() == transport.KindHTTP && httpStatus > 0 {
+		setHTTPStatus(span, httpStatus, cfg)
+		if err == nil && cfg.isStatusError(httpStatus) {
+			err = kratoserrors.New(httpStatus, "", http.StatusText(httpStatus))
 		}
+	}
+	if err == nil {
 		span.Finish()
 		return
 	}
@@ -355,6 +368,9 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 		}
 		if hasProtocolStatus {
 			statusCode := int(kratosErr.Code)
+			if httpStatus > 0 {
+				statusCode = httpStatus
+			}
 			setHTTPStatus(span, statusCode, cfg)
 			markError = cfg.isStatusError(statusCode)
 		}
@@ -369,7 +385,11 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 	if markError {
 		if tr.Kind() == transport.KindHTTP && cfg.otelEnabled && hasProtocolStatus {
 			span.SetTag(ext.Error, err)
-			span.SetTag(ext.ErrorType, strconv.Itoa(int(kratosErr.Code)))
+			code := int(kratosErr.Code)
+			if httpStatus > 0 {
+				code = httpStatus
+			}
+			span.SetTag(ext.ErrorType, strconv.Itoa(code))
 			if cfg.noDebugStack {
 				span.SetTag("error.stack", "")
 			}
@@ -384,7 +404,15 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 	span.Finish(finishOpts...)
 }
 
-func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config) {
+func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config, responseStatus int) {
+	if responseStatus > 0 {
+		setHTTPStatus(span, responseStatus, cfg)
+		if !cfg.isStatusError(responseStatus) {
+			span.Finish()
+			return
+		}
+		err = kratoserrors.New(responseStatus, "", http.StatusText(responseStatus))
+	}
 	if err == nil {
 		span.Finish()
 		return
