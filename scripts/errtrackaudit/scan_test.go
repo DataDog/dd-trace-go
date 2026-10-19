@@ -257,7 +257,11 @@ func TestHasIgnoreDirective(t *testing.T) {
 		{"bare", "//errtrack:ignore", true},
 		{"with reason", "//errtrack:ignore adopted in #5251", true},
 		{"spaced", "// errtrack:ignore", true},
+		{"block comment", "/*errtrack:ignore*/", true},
+		{"block comment with reason", "/* errtrack:ignore adopted in #5251 */", true},
+		{"block doc-style", "/**errtrack:ignore reviewed*/", true},
 		{"nolint form is not recognized", "//nolint:errtrack", false},
+		{"block nolint form is not recognized", "/*nolint:errtrack*/", false},
 		{"unrelated directive", "//nolint:errcheck", false},
 		{"plain comment", "// just a comment", false},
 	}

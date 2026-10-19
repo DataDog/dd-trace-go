@@ -430,9 +430,12 @@ const errtrackIgnore = "errtrack:ignore"
 
 // hasIgnoreDirective reports whether text is a comment carrying
 // //errtrack:ignore, with or without a trailing reason
-// (e.g. "//errtrack:ignore adopted in #5251").
+// (e.g. "//errtrack:ignore adopted in #5251"). Both line and block comment
+// forms are recognized, like golangci-lint's nolint, so a /* */ directive
+// suppresses the same as a // one.
 func hasIgnoreDirective(text string) bool {
-	fields := strings.Fields(strings.TrimLeft(text, "/"))
+	t := strings.TrimRight(strings.TrimLeft(text, "/*"), "*/ ")
+	fields := strings.Fields(t)
 	return len(fields) > 0 && fields[0] == errtrackIgnore
 }
 
