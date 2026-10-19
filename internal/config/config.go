@@ -1797,7 +1797,9 @@ func (c *Config) OTLPLogsAgentHTTPEndpoint() (endpoint, path string, insecure bo
 
 // OTLPLogsGRPCEndpoint returns the gRPC logs exporter target and insecure flag.
 // The target is only the host of OTLPLogsEndpoint, or the agent host when the
-// endpoint is empty.
+// endpoint is empty. Like the OTel SDK, any scheme other than https is
+// insecure; an endpoint without a scheme returns false and leaves transport
+// security to the SDK default and OTEL_EXPORTER_OTLP_INSECURE.
 func (c *Config) OTLPLogsGRPCEndpoint() (target string, insecure bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1806,7 +1808,7 @@ func (c *Config) OTLPLogsGRPCEndpoint() (target string, insecure bool) {
 	}
 	// otlpLogsEndpoint is validated to parse as a URL.
 	u, _ := url.Parse(c.otlpLogsEndpoint)
-	return cmp.Or(u.Host, u.Path), u.Scheme == URLSchemeHTTP || u.Scheme == "grpc"
+	return cmp.Or(u.Host, u.Path), u.Scheme != "" && u.Scheme != URLSchemeHTTPS
 }
 
 // otlpLogsAgentEndpoint returns the agent host with the given port: the agent

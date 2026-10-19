@@ -1789,7 +1789,7 @@ func TestOTLPLogsTransportEndpoints(t *testing.T) {
 		{name: "http endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4317/ignored"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
 		{name: "grpc endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "grpc://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
 		{name: "https endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
-		{name: "other scheme endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "other scheme endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
 		{name: "endpoint without scheme", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "//collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
