@@ -562,6 +562,24 @@ func TestGetInt64(t *testing.T) {
 	}
 }
 
+func TestGetMapWithParser(t *testing.T) {
+	var parsed []string
+	parse := func(v string) map[string]string {
+		parsed = append(parsed, v)
+		if v == "bad" {
+			return nil
+		}
+		return map[string]string{"k": v}
+	}
+	p := newTestProvider(
+		newTestConfigSource(map[string]string{"OTEL_EXPORTER_OTLP_HEADERS": "bad"}, telemetry.OriginManagedStableConfig),
+		newTestConfigSource(map[string]string{"OTEL_EXPORTER_OTLP_HEADERS": "good"}, telemetry.OriginEnvVar),
+	)
+
+	assert.Equal(t, map[string]string{"k": "good"}, p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parse))
+	assert.ElementsMatch(t, []string{"bad", "good"}, parsed, "each source is parsed exactly once")
+}
+
 func TestGetInt64WithValidator(t *testing.T) {
 	const defaultValue int64 = 1000
 	isPositive := func(v int64) bool { return v > 0 }

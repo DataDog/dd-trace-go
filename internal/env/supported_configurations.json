@@ -457,6 +457,13 @@
         "default": "false"
       }
     ],
+    "DD_DATA_STREAMS_INTAKE_BUFFER_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
     "DD_DBM_PROPAGATION_MODE": [
       {
         "implementation": "A",
@@ -701,6 +708,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "5000"
       }
     ],
     "DD_INSTRUMENTATION_INSTALL_ID": [
@@ -1312,6 +1326,13 @@
       }
     ],
     "DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_TRACE_CONNECT_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -2216,6 +2237,13 @@
         "implementation": "B",
         "type": "string",
         "default": ""
+      }
+    ],
+    "OTEL_SDK_DISABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": null
       }
     ],
     "OTEL_SERVICE_NAME": [

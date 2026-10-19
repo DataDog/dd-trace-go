@@ -165,12 +165,33 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # Data Streams Monitoring Intake Buffer Size
+//
+// The Data Streams Monitoring processor holds incoming checkpoints and Kafka
+// offsets in a fixed-size ring buffer. When the buffer is full, new entries
+// overwrite the oldest unread ones, and the drop count is reported on the
+// datadog.datastreams.processor.dropped_payloads metric, split by cause into
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall. Raise the
+// buffer size to trade memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots.
+//
 // # OpenTelemetry Semantic Conventions
 //
 // DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
 // conventions, forces trace export through OTLP, and overrides
 // DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
 // to false.
+//
+// # Disabling the OpenTelemetry SDK
+//
+// OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set
+// explicitly, and takes precedence over OTEL_TRACES_EXPORTER. It also disables
+// OTel logs and metrics, even when DD_LOGS_OTEL_ENABLED or
+// DD_METRICS_OTEL_ENABLED is set to true.
 //
 // # Diagnostic Log Level
 //

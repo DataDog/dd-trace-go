@@ -347,6 +347,9 @@ func TestBeforeHandleClientAddressesWithAppSec(t *testing.T) {
 			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", strconv.FormatBool(tt.otel))
 			appsec.Start()
 			defer appsec.Stop()
+			if !appsec.Enabled() {
+				t.Skip("appsec is not enabled on this platform; skipping client address test")
+			}
 			clientip.ResetConfig()
 			ResetCfg()
 			cfg.otelSemanticsEnabled = tt.otel
@@ -722,6 +725,30 @@ func TestObfuscateQueryString(t *testing.T) {
 		cfg.queryStringRegexp = regexp.MustCompile(`secret=\w+`)
 		require.Equal(t, "<redacted>", ObfuscateQueryString("secret=abc"))
 	})
+	t.Run("size limit does not apply to the default obfuscator", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = true
+		cfg.queryStringSizeLimit = 5
+		require.Equal(t, "a=1&<redacted>", ObfuscateQueryString("a=1&token=value"))
+	})
+	t.Run("size limit does not apply to the allowlist", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = false
+		cfg.queryStringRegexp = regexp.MustCompile(`secret=\w+`)
+		cfg.queryStringSizeLimit = 5
+		cfg.serverQueryStringAllowlist = map[string]struct{}{"p1": {}}
+		require.Equal(t, "p1=a", ObfuscateQueryString("p1=a&secret=abc"))
+	})
+	t.Run("size limit does not apply when the obfuscation is disabled", func(t *testing.T) {
+		cfg = oldCfg
+		cfg.queryString = true
+		cfg.useDefaultObfuscator = false
+		cfg.queryStringRegexp = nil
+		cfg.queryStringSizeLimit = 5
+		require.Equal(t, "token=value", ObfuscateQueryString("token=value"))
+	})
 	t.Run("server allowlist", func(t *testing.T) {
 		cfg = oldCfg
 		cfg.queryString = true
@@ -813,6 +840,51 @@ func TestURLTagQueryStringRegexpEnv(t *testing.T) {
 				wantQuery = q
 			}
 			require.Equal(t, wantQuery, ObfuscateQueryString(query), "ObfuscateQueryString")
+		})
+	}
+}
+
+// TestURLTagQueryStringSizeEnv checks the value of http.url for each kind of
+// value of DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE with a custom
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP, for server and client spans.
+func TestURLTagQueryStringSizeEnv(t *testing.T) {
+	const query = "a=1&secret=abc"
+	prefix := strings.Repeat("a=1&", defaultQueryStringSizeLimit/4)
+	long := prefix + "secret=abc" // Longer than the default limit.
+	for _, tc := range []struct {
+		name  string
+		value *string // nil: not set
+		query string
+		want  string
+	}{
+		{name: "unset-short", query: query, want: "a=1&<redacted>"},
+		{name: "unset-long", query: long, want: "<redacted>"},
+		{name: "at-limit", value: new("14"), query: query, want: "a=1&<redacted>"},
+		{name: "over-limit", value: new("13"), query: query, want: "<redacted>"},
+		{name: "no-limit", value: new("0"), query: long, want: prefix + "<redacted>"},
+		// A value that is not valid gives the default limit.
+		{name: "negative", value: new("-1"), query: long, want: "<redacted>"},
+		{name: "not-an-integer", value: new("x"), query: long, want: "<redacted>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldCfg := cfg
+			t.Cleanup(func() { cfg = oldCfg })
+			if tc.value == nil {
+				unsetEnv(t, envQueryStringSize)
+			} else {
+				t.Setenv(envQueryStringSize, *tc.value)
+			}
+			t.Setenv(EnvQueryStringRegexp, `secret=\w+`)
+			unsetEnv(t, envQueryStringDisabled)
+			unsetEnv(t, envQueryStringAllowlist)
+			unsetEnv(t, envClientQueryStringAllowlist)
+			unsetEnv(t, envServerQueryStringAllowlist)
+			ResetCfg()
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/x?"+tc.query, nil)
+			want := "http://example.com/x?" + tc.want
+			require.Equal(t, want, URLFromRequest(r, true), "server")
+			require.Equal(t, want, URLFromClientRequest(r, true), "client")
+			require.Equal(t, tc.want, ObfuscateQueryString(tc.query), "ObfuscateQueryString")
 		})
 	}
 }
