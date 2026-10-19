@@ -90,9 +90,32 @@ func TestInstallGlobalWithMetricsExport(t *testing.T) {
 	internalconfig.CreateNew()
 	defer otel.SetMeterProvider(noop.NewMeterProvider())
 
-	require.NoError(t, installGlobal())
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.True(t, installed)
 	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
 	assert.True(t, ok)
+}
+
+// TestInstallGlobalKeepsUserProvider verifies that installGlobal keeps an SDK
+// MeterProvider the application installed and reports it did not install one.
+func TestInstallGlobalKeepsUserProvider(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() {
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		internalconfig.CreateNew()
+	})
+	installedProvider = nil
+	userMP := sdkmetric.NewMeterProvider()
+	otel.SetMeterProvider(userMP)
+	setMetricsExportEnv(t)
+
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.False(t, installed)
+	assert.Nil(t, installedProvider)
+	assert.Same(t, userMP, otel.GetMeterProvider())
 }
 
 // TestNewMeterProviderAlwaysReturnsSDKProvider verifies that NewMeterProvider always
@@ -150,7 +173,9 @@ func TestInstallGlobalSkippedWhenOtelSDKDisabled(t *testing.T) {
 	t.Setenv("OTEL_SDK_DISABLED", "true")
 	internalconfig.CreateNew()
 
-	require.NoError(t, installGlobal())
+	installed, err := installGlobal()
+	require.NoError(t, err)
+	assert.False(t, installed)
 	assert.Nil(t, installedProvider)
 	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
 	assert.False(t, ok, "no SDK MeterProvider should be installed when OTEL_SDK_DISABLED=true")

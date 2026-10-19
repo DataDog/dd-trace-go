@@ -279,6 +279,9 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 
 	tracesOTLP := t.otlpTracesPipelineEnabled()
 	metricsOTLP := t.config.otelRuntimeMetricsShouldBeEnabled
+	// An SDK MeterProvider the application installed before the tracer
+	// started exports runtime metrics with settings the tracer cannot read.
+	ownMeterProvider := metricsOTLP && t.config.otelMeterProviderInstalled
 	semantics := cfg.OTelSemanticsEnabled() && cfg.TracingEnabled()
 	// DD_LOGS_OTEL_ENABLED alone does not count: the tracer never starts the
 	// OTel logs pipeline and cannot tell whether ddtrace/opentelemetry/log is
@@ -298,7 +301,7 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	// The OTel MeterProvider and the span metrics exporter resolve their
 	// transport separately, so they can disagree on a setting.
 	var metricsExporters []otlpExporterInfo
-	if metricsOTLP {
+	if ownMeterProvider {
 		metricsExporters = append(metricsExporters, runtimeMetricsExporterInfo(cfg))
 	}
 	if spanMetricsOTLP {
@@ -311,7 +314,7 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	info.OTLPMetricsEndpoint, info.OTLPMetricsProtocol, info.OTLPMetricsHeaders = commonOTLPExporterInfo(metricsExporters)
 	// Only the MeterProvider reads these: span metrics are always delta and
 	// flushed on the stats interval.
-	if metricsOTLP {
+	if ownMeterProvider {
 		info.OTelMetricExportInterval = cfg.RuntimeMetricsExportInterval().Milliseconds()
 		info.OTLPMetricsTemporalityPreference = cfg.RuntimeMetricsTemporalityPreference()
 	}

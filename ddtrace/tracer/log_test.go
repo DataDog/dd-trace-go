@@ -352,6 +352,7 @@ func TestOTelStartupInfoMetricsAndLogs(t *testing.T) {
 	require.NoError(t, err)
 	defer tr.Stop()
 	tr.config.otelRuntimeMetricsShouldBeEnabled = true
+	tr.config.otelMeterProviderInstalled = true
 
 	var info startupInfo
 	tr.addOTelStartupInfo(&info)
@@ -366,6 +367,43 @@ func TestOTelStartupInfoMetricsAndLogs(t *testing.T) {
 	assert.Equal(t, int64(7000), info.BLRPExportTimeout)
 	assert.Equal(t, 100, info.BLRPMaxQueueSize)
 	assert.Equal(t, 100, info.BLRPMaxExportBatchSize)
+}
+
+// TestOTelStartupInfoUserMeterProvider verifies that the MeterProvider exporter
+// settings are not reported when the application installed its own provider.
+func TestOTelStartupInfoUserMeterProvider(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "agent")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=secret")
+	for _, spanMetrics := range []bool{false, true} {
+		t.Run(fmt.Sprintf("span metrics %t", spanMetrics), func(t *testing.T) {
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTLPSpanMetricsEnabled(spanMetrics, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.otelRuntimeMetricsShouldBeEnabled = true
+			tr.config.otelMeterProviderInstalled = false
+
+			var info startupInfo
+			tr.addOTelStartupInfo(&info)
+			assert.True(t, info.OTelEnabled)
+			assert.True(t, info.MetricsOTelEnabled)
+			assert.Zero(t, info.OTelMetricExportInterval)
+			assert.Empty(t, info.OTLPMetricsTemporalityPreference)
+			if !spanMetrics {
+				assert.Empty(t, info.OTLPMetricsEndpoint)
+				assert.Empty(t, info.OTLPMetricsProtocol)
+				assert.Nil(t, info.OTLPMetricsHeaders)
+				return
+			}
+			// Only the span metrics exporter is reported, so nothing conflicts.
+			assert.Equal(t, "http://agent:4318/v1/metrics", info.OTLPMetricsEndpoint)
+			assert.Equal(t, "http/protobuf", info.OTLPMetricsProtocol)
+			assert.Equal(t, map[string]string{"api-key": redactedHeaderValue}, info.OTLPMetricsHeaders)
+		})
+	}
 }
 
 func TestOTLPLogsEndpoint(t *testing.T) {
