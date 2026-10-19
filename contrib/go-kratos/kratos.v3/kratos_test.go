@@ -143,6 +143,42 @@ func TestOTelHTTP(t *testing.T) {
 	}
 }
 
+func TestOTelClientErrorStatuses(t *testing.T) {
+	t.Cleanup(func() {
+		tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
+		tracer.Stop()
+	})
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
+	defer tracer.Stop()
+	for _, tc := range []struct {
+		name     string
+		statuses string
+		opts     []Option
+		code     int
+		want     bool
+	}{
+		{name: "below_range", code: 99, want: true},
+		{name: "informational", code: 100},
+		{name: "success", code: 200},
+		{name: "redirect", code: 399},
+		{name: "client_error", code: 400, want: true},
+		{name: "server_error", code: 500, want: true},
+		{name: "above_range", code: 600, want: true},
+		{name: "environment_override", statuses: "400-499", code: 600},
+		{name: "option_override", statuses: "500-699", opts: []Option{WithStatusCheck(func(int) bool { return false })}, code: 600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envClientErrorStatuses, tc.statuses)
+			var cfg config
+			clientDefaults(&cfg)
+			applyOptions(&cfg, tc.opts)
+			require.True(t, cfg.otelEnabled)
+			assert.Equal(t, tc.want, cfg.isStatusError(tc.code))
+		})
+	}
+}
+
 func TestServerHTTPClientIP(t *testing.T) {
 	t.Cleanup(httptrace.ResetCfg)
 	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")

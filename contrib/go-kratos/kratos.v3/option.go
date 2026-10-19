@@ -95,7 +95,7 @@ func clientDefaults(cfg *config) {
 	cfg.queryString = cfg.queryString && options.GetBoolEnv(envClientQueryStringEnabled, true)
 	cfg.isStatusError = isClientError
 	if cfg.otelEnabled {
-		cfg.isStatusError = func(code int) bool { return code >= 400 && code < 600 }
+		cfg.isStatusError = func(code int) bool { return code < 100 || code >= 400 }
 	}
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envClientErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
