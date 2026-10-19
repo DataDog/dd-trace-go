@@ -8,10 +8,9 @@ Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effe
 
 Run required verification commands directly. If you pipe their output, enable `pipefail` so an earlier failure cannot be masked.
 
-Every `curl` run in CI must fail on HTTP errors and retry (`curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused`); download scripts to a file instead of `curl | sh`.
-
 Before reviewing or changing files in these areas, read the applicable scoped instructions:
 
+* [.github/AGENTS.md](./.github/AGENTS.md) -- for updating CI workflows, actions and scripts
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
