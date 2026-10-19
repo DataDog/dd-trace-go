@@ -249,11 +249,16 @@ func reportInitTime(start time.Time) {
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	return start(false, opts...)
+}
+
+func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
 
+	opts = startOptionsForCIVisibilityLifecycle(opts, ciVisibilityBootstrap)
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -272,7 +277,7 @@ func Start(opts ...StartOption) error {
 	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
-	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	setGlobalTracerWithCIVisibility(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -288,11 +293,14 @@ func Start(opts ...StartOption) error {
 	}
 
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
+		if err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
 		}
+		t.config.otelMeterProviderInstalled = installed
 	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
@@ -472,7 +480,7 @@ func Stop() {
 	defer startStopMu.Unlock()
 
 	llmobs.Stop()
-	setGlobalTracer(&NoopTracer{})
+	stopGlobalTracerPreservingCIVisibility()
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }
@@ -567,6 +575,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
 	var otlpExportMode bool
+	var supportsOTLPSpanMetrics bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -577,13 +586,16 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 		otlpExportMode = true
+		supportsOTLPSpanMetrics = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
+		supportsOTLPSpanMetrics = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient,
+			datastreams.WithQueueSize(c.internalConfig.DataStreamsIntakeBufferSize()))
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -593,11 +605,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	useOTLPSpanMetrics := c.internalConfig.OTLPSpanMetricsEnabled()
+	skipStats := c.internalConfig.OTLPExportMode()
+	if c.internalConfig.OTelSemanticsEnabled() {
+		useOTLPSpanMetrics = useOTLPSpanMetrics && supportsOTLPSpanMetrics
+		skipStats = otlpExportMode
+	}
 	var sc statsConcentrator
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
+	if useOTLPSpanMetrics {
 		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
-	} else if c.internalConfig.OTLPExportMode() {
+	} else if skipStats {
 		sc = &noopConcentrator{}
 	} else {
 		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
@@ -1127,8 +1145,12 @@ func markChildTopLevel(s *Span, isRootSpan bool, parentService string) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-// +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
+	return t.startSpan(operationName, "", options...)
+}
+
+// +checklocksignore — Initialization time, span not yet returned to caller.
+func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options ...StartSpanOption) *Span {
 	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
@@ -1136,6 +1158,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
 	span, isRootSpan, parentService := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	if ciVisibilityTracerType != "" {
+		setCIVisibilityTracerType(span, ciVisibilityTracerType)
+	}
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName
