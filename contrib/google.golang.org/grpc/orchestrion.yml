@@ -9,46 +9,13 @@ meta:
   description: The Go implementation of gRPC.
 
 aspects:
-  # Kratos supplies unary middleware, but streaming RPCs still need gRPC tracing.
-  - id: KratosStreamClient
-    join-point:
-      all-of:
-        - import-path: github.com/go-kratos/kratos/v3/transport/grpc
-        - one-of:
-            - function-call: google.golang.org/grpc.Dial
-            - function-call: google.golang.org/grpc.DialContext
-            - function-call: google.golang.org/grpc.NewClient
-    advice:
-      - append-args:
-          type: google.golang.org/grpc.DialOption
-          values:
-            - imports:
-                grpc: google.golang.org/grpc
-                grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
-              template: grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())
-  - id: KratosStreamServer
-    join-point:
-      all-of:
-        - import-path: github.com/go-kratos/kratos/v3/transport/grpc
-        - function-call: google.golang.org/grpc.NewServer
-    advice:
-      - append-args:
-          type: google.golang.org/grpc.ServerOption
-          values:
-            - imports:
-                grpc: google.golang.org/grpc
-                grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
-              template: grpc.ChainStreamInterceptor(grpctrace.StreamServerInterceptor())
   # Client Instrumentation
   - id: Client
     join-point:
-      all-of:
-        - not:
-            import-path: github.com/go-kratos/kratos/v3/transport/grpc
-        - one-of:
-            - function-call: google.golang.org/grpc.Dial
-            - function-call: google.golang.org/grpc.DialContext
-            - function-call: google.golang.org/grpc.NewClient
+      one-of:
+        - function-call: google.golang.org/grpc.Dial
+        - function-call: google.golang.org/grpc.DialContext
+        - function-call: google.golang.org/grpc.NewClient
     advice:
       - append-args:
           type: google.golang.org/grpc.DialOption
@@ -63,10 +30,7 @@ aspects:
   # Server Instrumentation
   - id: Server
     join-point:
-      all-of:
-        - not:
-            import-path: github.com/go-kratos/kratos/v3/transport/grpc
-        - function-call: google.golang.org/grpc.NewServer
+      function-call: google.golang.org/grpc.NewServer
     advice:
       - append-args:
           type: google.golang.org/grpc.ServerOption

@@ -34,6 +34,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// The named package key also coordinates unary span deduplication with the
+// generic gRPC interceptors. They consume the direction/method marker once.
 const component = instrumentation.PackageGoKratosV3
 
 // A structural interface avoids importing the HTTP transport, allowing
@@ -108,6 +110,9 @@ func Server(opts ...Option) middleware.Middleware {
 			spanOpts = append(spanOpts, cfg.spanOpts...)
 
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentServer), spanOpts...)
+			if tr.Kind() == transport.KindGRPC {
+				spanCtx = context.WithValue(spanCtx, component, ext.SpanKindServer+":"+tr.Operation())
+			}
 			defer func() {
 				finishSpan(span, tr, err, ext.SpanKindServer, cfg)
 				if inferredSpan != nil {
@@ -137,6 +142,9 @@ func Client(opts ...Option) middleware.Middleware {
 			spanOpts := startSpanOptions(cfg, startSpanTags(cfg, tr, ext.SpanKindClient))
 			spanOpts = append(spanOpts, cfg.spanOpts...)
 			span, spanCtx := tracer.StartSpanFromContext(ctx, operationName(tr, instrumentation.ComponentClient), spanOpts...)
+			if tr.Kind() == transport.KindGRPC {
+				spanCtx = context.WithValue(spanCtx, component, ext.SpanKindClient+":"+tr.Operation())
+			}
 			defer func() { finishSpan(span, tr, err, ext.SpanKindClient, cfg) }()
 			for key, value := range baggage.All(ctx) {
 				span.SetBaggageItem(key, value)
