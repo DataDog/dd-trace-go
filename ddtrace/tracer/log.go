@@ -514,6 +514,10 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		}
 		// The SDK keeps only the decoded path, so /a%2Fb is sent as /a/b.
 		u.RawPath = ""
+		// The SDK connects without TLS for every scheme other than https.
+		if u.Scheme != "" {
+			u.Scheme = otlpScheme(u.Scheme != "https")
+		}
 		return sanitizeOTLPEndpoint(u.String()), "http/protobuf"
 	}
 	host, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
