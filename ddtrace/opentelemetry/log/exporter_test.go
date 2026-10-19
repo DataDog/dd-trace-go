@@ -6,6 +6,8 @@
 package log
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -98,6 +100,58 @@ func TestNewOTLPExporterHTTPConfig(t *testing.T) {
 		assert.Error(t, exporter.Export(t.Context(), []sdklog.Record{{}}))
 		assert.Less(t, time.Since(start), 5*time.Second)
 	})
+}
+
+func TestNewOTLPExporterGRPCTransportSecurity(t *testing.T) {
+	t.Cleanup(func() { config.CreateNew() })
+	const tlsHandshakeRecord = 0x16
+	for scheme, wantTLS := range map[string]bool{
+		"http":  false,
+		"grpc":  false,
+		"https": true,
+	} {
+		t.Run(scheme, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			defer ln.Close()
+			firstByte := make(chan byte, 1)
+			go func() {
+				conn, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				b := make([]byte, 1)
+				if _, err := conn.Read(b); err == nil {
+					firstByte <- b[0]
+				}
+			}()
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "grpc")
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", scheme+"://"+ln.Addr().String())
+			config.CreateNew()
+			// An env endpoint with the opposite security must not reach the SDK.
+			conflictingScheme := "https"
+			if wantTLS {
+				conflictingScheme = "http"
+			}
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", conflictingScheme+"://"+ln.Addr().String())
+
+			noRetry := []otlploggrpc.Option{otlploggrpc.WithRetry(otlploggrpc.RetryConfig{Enabled: false})}
+			exporter, err := newOTLPExporter(t.Context(), nil, noRetry)
+			require.NoError(t, err)
+			defer exporter.Shutdown(t.Context())
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			_ = exporter.Export(ctx, []sdklog.Record{{}})
+
+			select {
+			case b := <-firstByte:
+				assert.Equal(t, wantTLS, b == tlsHandshakeRecord)
+			case <-time.After(5 * time.Second):
+				t.Fatal("exporter did not connect")
+			}
+		})
+	}
 }
 
 func TestResolveOTLPEndpointHTTP(t *testing.T) {
