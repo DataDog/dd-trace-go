@@ -17,87 +17,13 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2" // used by the otelc.yaml rules
 )
 
-// Each rule has its own hook. otelc declares a hook's linkname stub once per
-// file, so a hook shared by methods that gin keeps in different files would be
-// declared twice in the package.
-
-// AfterBind monitors the value bound by [gin.Context.Bind].
+// AfterBind monitors the value bound by a [gin.Context] bind method, such as
+// [gin.Context.Bind] or [gin.Context.ShouldBindJSON].
 func AfterBind(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
 
-// AfterShouldBind monitors the value bound by [gin.Context.ShouldBind].
-func AfterShouldBind(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterBindJSON monitors the value bound by [gin.Context.BindJSON].
-func AfterBindJSON(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterShouldBindJSON monitors the value bound by [gin.Context.ShouldBindJSON].
-func AfterShouldBindJSON(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterBindTOML monitors the value bound by [gin.Context.BindTOML].
-func AfterBindTOML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterShouldBindTOML monitors the value bound by [gin.Context.ShouldBindTOML].
-func AfterShouldBindTOML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterBindYAML monitors the value bound by [gin.Context.BindYAML].
-func AfterBindYAML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterShouldBindYAML monitors the value bound by [gin.Context.ShouldBindYAML].
-func AfterShouldBindYAML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterBindXML monitors the value bound by [gin.Context.BindXML].
-func AfterBindXML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// AfterShouldBindXML monitors the value bound by [gin.Context.ShouldBindXML].
-func AfterShouldBindXML(ictx hook.HookContext, err error) { monitorParsedBody(ictx, err) }
-
-// BeforeASCIIJSON monitors the response body passed to [gin.Context.AsciiJSON].
-func BeforeASCIIJSON(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeIndentedJSON monitors the response body passed to [gin.Context.IndentedJSON].
-func BeforeIndentedJSON(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeJSON monitors the response body passed to [gin.Context.JSON].
-func BeforeJSON(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeJSONP monitors the response body passed to [gin.Context.JSONP].
-func BeforeJSONP(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforePureJSON monitors the response body passed to [gin.Context.PureJSON].
-func BeforePureJSON(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeSecureJSON monitors the response body passed to [gin.Context.SecureJSON].
-func BeforeSecureJSON(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeXML monitors the response body passed to [gin.Context.XML].
-func BeforeXML(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeYAML monitors the response body passed to [gin.Context.YAML].
-func BeforeYAML(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeTOML monitors the response body passed to [gin.Context.TOML].
-func BeforeTOML(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
-	monitorResponseBody(ictx, c, obj)
-}
-
-// BeforeProtoBuf monitors the response body passed to [gin.Context.ProtoBuf].
-func BeforeProtoBuf(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
+// BeforeRender monitors the response body passed to a [gin.Context] render
+// method, such as [gin.Context.JSON] or [gin.Context.XML].
+func BeforeRender(ictx hook.HookContext, c *gin.Context, _ int, obj any) {
 	monitorResponseBody(ictx, c, obj)
 }
 

@@ -3,17 +3,15 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# otelc port of ../orchestrion.yml.
+# Wraps gin.New call sites with the tracing middleware. Like orchestrion, it
+# reaches every package of the build, dependencies included, except gin and the
+# gin contrib, whose own tests create engines. gin.Default calls New inside gin,
+# where this rule does not apply, so gin_default covers it.
 #
-# Middleware: like orchestrion, the rules rewrite gin.New and gin.Default call
-# sites in every package of the build, dependencies included, except gin itself
-# and the gin contrib. gin.Default calls New inside gin, so each call site is
-# wrapped once. The contrib's own tests create engines, and wrapping those would
-# import the contrib into itself.
-#
-# AppSec: the rules hook the *gin.Context bind and render methods, one rule per
-# method, since a point selector cannot be alternated. See hooks.go.
-
+# A call site rewrite instead of a hook on gin.New: the rewritten package
+# imports the contrib, so the contrib is initialized before an engine created
+# in a package level variable. A hook gives no such order, so it can build the
+# middleware before the contrib's init runs.
 gin_new:
   target:
     - "**"
@@ -33,6 +31,7 @@ gin_new:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 
+# Wraps gin.Default call sites, like gin_new.
 gin_default:
   target:
     - "**"
@@ -52,6 +51,10 @@ gin_default:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 
+# The bind rules run AppSec on the value a successful *gin.Context bind call
+# filled in, one rule per method, since a point selector cannot be alternated.
+# All of them share AfterBind, which works because gin declares these methods
+# in one file with the same signature.
 gin_context_bind:
   target: github.com/gin-gonic/gin
   where:
@@ -69,7 +72,7 @@ gin_context_should_bind:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterShouldBind
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_bind_json:
@@ -79,7 +82,7 @@ gin_context_bind_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterBindJSON
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_should_bind_json:
@@ -89,7 +92,7 @@ gin_context_should_bind_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterShouldBindJSON
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_bind_toml:
@@ -99,7 +102,7 @@ gin_context_bind_toml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterBindTOML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_should_bind_toml:
@@ -109,7 +112,7 @@ gin_context_should_bind_toml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterShouldBindTOML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_bind_yaml:
@@ -119,7 +122,7 @@ gin_context_bind_yaml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterBindYAML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_should_bind_yaml:
@@ -129,7 +132,7 @@ gin_context_should_bind_yaml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterShouldBindYAML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_bind_xml:
@@ -139,7 +142,7 @@ gin_context_bind_xml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterBindXML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_should_bind_xml:
@@ -149,9 +152,12 @@ gin_context_should_bind_xml:
     recv: "*Context"
   do:
     - inject_hooks:
-        after: AfterShouldBindXML
+        after: AfterBind
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
+# The render rules run AppSec on the body passed to a *gin.Context render
+# method, and skip the write when AppSec blocks the request. They share
+# BeforeRender, like the bind rules share AfterBind.
 gin_context_ascii_json:
   target: github.com/gin-gonic/gin
   where:
@@ -159,7 +165,7 @@ gin_context_ascii_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeASCIIJSON
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_indented_json:
@@ -169,7 +175,7 @@ gin_context_indented_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeIndentedJSON
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_json:
@@ -179,7 +185,7 @@ gin_context_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeJSON
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_jsonp:
@@ -189,7 +195,7 @@ gin_context_jsonp:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeJSONP
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_pure_json:
@@ -199,7 +205,7 @@ gin_context_pure_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforePureJSON
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_secure_json:
@@ -209,7 +215,7 @@ gin_context_secure_json:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeSecureJSON
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_xml:
@@ -219,7 +225,7 @@ gin_context_xml:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeXML
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_yaml:
@@ -229,7 +235,7 @@ gin_context_yaml:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeYAML
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_toml:
@@ -239,7 +245,7 @@ gin_context_toml:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeTOML
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 
 gin_context_protobuf:
@@ -249,5 +255,5 @@ gin_context_protobuf:
     recv: "*Context"
   do:
     - inject_hooks:
-        before: BeforeProtoBuf
+        before: BeforeRender
         path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
