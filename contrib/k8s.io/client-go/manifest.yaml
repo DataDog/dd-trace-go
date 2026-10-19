@@ -1,0 +1,11 @@
+_v: 1
+name: k8s.io/client-go
+display_name: client-go
+description: Instruments Kubernetes API HTTP requests made by client-go, creating client spans with trace-context propagation,
+  normalized resource names, and audit ID correlation.
+packages:
+- name: k8s.io/client-go
+category:
+- http.client
+systems: []
+creation_date: '2018-08-08'
