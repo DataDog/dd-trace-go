@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
@@ -37,7 +39,16 @@ func TestBuildResource(t *testing.T) {
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "my-service")
 	})
 
-	t.Run("DD_ENV maps to deployment.environment", func(t *testing.T) {
+	t.Run("OTEL_SERVICE_NAME maps to service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
+	})
+
+	t.Run("DD_ENV maps to deployment.environment.name", func(t *testing.T) {
 		t.Setenv("DD_ENV", "production")
 
 		res, err := buildResource(context.Background())
@@ -74,6 +85,39 @@ func TestBuildResource(t *testing.T) {
 		assertResourceAttributeString(t, res, "otel.key", "otel.value")
 		assertResourceAttributeString(t, res, "another", "test")
 	})
+
+	t.Run("deprecated environment is exported with the stable name", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=production")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		exported := exportedResource(t, res)
+		assertResourceAttribute(t, exported, semconv.DeploymentEnvironmentNameKey, "production")
+		assertResourceAttributeString(t, exported, "deployment.environment", "production")
+	})
+
+	t.Run("DD_ENV overrides deprecated environment on exported records", func(t *testing.T) {
+		t.Setenv("DD_ENV", "dd-env")
+		t.Setenv("DD_TAGS", "deployment.environment:tag-env")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=legacy")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		exported := exportedResource(t, res)
+		assertResourceAttribute(t, exported, semconv.DeploymentEnvironmentNameKey, "dd-env")
+		assertResourceAttributeString(t, exported, "deployment.environment", "dd-env")
+	})
+
+	t.Run("empty stable environment falls back to deprecated name", func(t *testing.T) {
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=,deployment.environment=production")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.DeploymentEnvironmentNameKey, "production")
+	})
 }
 
 func TestPrecedence(t *testing.T) {
@@ -85,6 +129,58 @@ func TestPrecedence(t *testing.T) {
 		require.NoError(t, err)
 
 		assertResourceAttribute(t, res, semconv.ServiceNameKey, "dd-service")
+	})
+
+	t.Run("OTEL_SERVICE_NAME wins over OTEL service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
+	})
+
+	t.Run("whitespace-only OTEL_SERVICE_NAME falls back to OTEL service.name", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "   ")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "resource-service")
+	})
+
+	t.Run("OTEL_SERVICE_NAME is trimmed", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", " otel-service\n")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "otel-service")
+	})
+
+	t.Run("DD_SERVICE wins over OTEL_SERVICE_NAME and OTEL service.name", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "dd-service")
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, res, semconv.ServiceNameKey, "dd-service")
+	})
+
+	// sdklog.WithResource merges resource.Environment() underneath our resource,
+	// so check the service.name that exported records actually carry.
+	t.Run("OTEL_SERVICE_NAME wins over OTEL service.name on exported records", func(t *testing.T) {
+		t.Setenv("OTEL_SERVICE_NAME", "otel-service")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=resource-service")
+
+		res, err := buildResource(context.Background())
+		require.NoError(t, err)
+
+		assertResourceAttribute(t, exportedResource(t, res), semconv.ServiceNameKey, "otel-service")
 	})
 
 	t.Run("DD_ENV wins over OTEL deployment.environment.name", func(t *testing.T) {
@@ -118,7 +214,7 @@ func TestPrecedence(t *testing.T) {
 	})
 
 	t.Run("OTEL attributes used when DD not set", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment.name=otel-env,service.version=1.0.0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=otel-service,deployment.environment=legacy-env,deployment.environment.name=otel-env,service.version=1.0.0")
 
 		res, err := buildResource(context.Background())
 		require.NoError(t, err)
@@ -382,6 +478,24 @@ func TestParseOtelResourceAttributes(t *testing.T) {
 }
 
 // Helper functions
+
+func exportedResource(t *testing.T, res *resource.Resource) *resource.Resource {
+	t.Helper()
+	exporter := newTestExporter()
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewSimpleProcessor(exporter)),
+	)
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+
+	var record otellog.Record
+	record.SetBody(attribute.StringValue("test"))
+	provider.Logger("test").Emit(context.Background(), record)
+
+	records := exporter.GetRecords()
+	require.Len(t, records, 1)
+	return records[0].Resource()
+}
 
 func assertResourceAttribute(t *testing.T, res *resource.Resource, key attribute.Key, expectedValue string) {
 	t.Helper()

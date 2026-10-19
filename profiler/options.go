@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -27,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -140,7 +140,7 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err.Error())
+		telemetrylog.LogAndReportError("Marshaling profiler configuration", err)
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -150,19 +150,6 @@ func urlForSite(site string) (string, error) {
 	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
 	_, err := url.Parse(u)
 	return u, err
-}
-
-// isAPIKeyValid reports whether the given string is a structurally valid API key
-func isAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
 }
 
 func (c *config) addProfileType(t ProfileType) {

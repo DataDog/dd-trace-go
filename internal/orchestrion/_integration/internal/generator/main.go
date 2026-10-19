@@ -36,7 +36,7 @@ func main() {
 
 	files, err := os.ReadDir(rootDir)
 	if err != nil {
-		log.Fatalf("Failed listing %s: %v\n", rootDir, err)
+		log.Fatalf("Failed listing %s: %s\n", rootDir, err.Error())
 	}
 
 	for _, file := range files {

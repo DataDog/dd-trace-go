@@ -1,0 +1,11 @@
+panic: traceback all fixture
+
+goroutine 1 [running]:
+main.main()
+	/tmp/crashtracker-fixtures/panic_traceback_all.go:8 +0x70
+
+goroutine 19 [chan receive]:
+main.main.func1()
+	/tmp/crashtracker-fixtures/panic_traceback_all.go:6 +0x24
+created by main.main in goroutine 1
+	/tmp/crashtracker-fixtures/panic_traceback_all.go:5 +0x5c

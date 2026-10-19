@@ -476,7 +476,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 				if cfg.abortOnError {
 					return retErr
 				} else {
-					log.Warn("llmobs: %s", retErr)
+					log.Warn("llmobs: %s", retErr) //errtrack:ignore user task returned an error
 				}
 			}
 			results[i] = res
@@ -558,7 +558,7 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 					if cfg.abortOnError {
 						return retErr
 					} else {
-						log.Warn("llmobs: %s", retErr)
+						log.Warn("llmobs: %s", retErr) //errtrack:ignore user evaluator returned an error
 					}
 				}
 				evs = append(evs, newEvaluation(ev.Name(), val, err))
@@ -604,7 +604,7 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 			if cfg.abortOnError {
 				return nil, retErr
 			} else {
-				log.Warn("llmobs: %s", retErr)
+				log.Warn("llmobs: %s", retErr) //errtrack:ignore user evaluator returned an error
 			}
 		}
 		summaryEvals = append(summaryEvals, newEvaluation(sumEv.Name(), val, err))
@@ -644,20 +644,20 @@ func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluat
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
-		boolVal = transport.AnyPtr(t)
+		metricType = transport.EvalMetricTypeBoolean
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		metricType = transport.EvalMetricTypeScore
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
 	return transport.ExperimentEvalMetricEvent{
@@ -686,20 +686,20 @@ func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timesta
 		boolVal  *bool
 	)
 
-	metricType := "categorical"
+	metricType := transport.EvalMetricTypeCategorical
 	switch t := ev.Value.(type) {
 	case bool:
-		metricType = "boolean"
-		boolVal = transport.AnyPtr(t)
+		metricType = transport.EvalMetricTypeBoolean
+		boolVal = new(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
-		metricType = "score"
-		scoreVal = transport.AnyPtr(asFloat64(t))
+		metricType = transport.EvalMetricTypeScore
+		scoreVal = new(asFloat64(t))
 
 	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = new(fmt.Sprintf("%v", t))
 	}
 
 	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations.

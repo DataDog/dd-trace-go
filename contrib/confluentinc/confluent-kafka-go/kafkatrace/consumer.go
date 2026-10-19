@@ -51,31 +51,65 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer C
 	return out
 }
 
-func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every message consumed through a Tracer with the
+// given config, so per-message calls don't need to rebuild them.
+//
+// The analytics rate is deliberately NOT included here: StartConsumeSpan
+// applies it as a separate, later Tag() call instead, so it's guaranteed to
+// run after any WithCustomTag callback and win a key collision with one
+// targeting ext.EventSampleRate — matching pre-migration behavior, where
+// this Tag() call was always appended after the tagFns loop.
+func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
-		tracer.ResourceName("Consume Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),
-		tracer.Tag("offset", msg.GetTopicPartition().GetOffset()),
 		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, msg.GetTopicPartition().GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
 	}
+	return tracer.NewStartSpanConfig(opts...)
+}
+
+func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
+	// Partition, offset, topic, and the Kafka cluster ID (fetched
+	// asynchronously in the background after the Tracer is created, see
+	// startClusterIDFetch in the calling kafka package) are genuinely
+	// per-message/mutable, so they stay dynamic instead of moving into the
+	// static consumerSpanCfg base. tagFns are user-supplied per-message
+	// callbacks and are dynamic by nature.
+	tags := map[string]any{
+		ext.ResourceName:             "Consume Topic " + msg.GetTopicPartition().GetTopic(),
+		ext.MessagingKafkaPartition:  msg.GetTopicPartition().GetPartition(),
+		"offset":                     msg.GetTopicPartition().GetOffset(),
+		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
+	}
 	if tr.ClusterID() != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
+		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(tr.consumerSpanCfg),
 	}
 	if tr.tagFns != nil {
+		customTags := make(map[string]any, len(tr.tagFns))
 		for key, tagFn := range tr.tagFns {
-			opts = append(opts, tracer.Tag(key, tagFn(msg)))
+			customTags[key] = tagFn(msg)
 		}
+		// Applied after the cached static base so a custom tag wins over
+		// it on key collision, matching pre-migration behavior where
+		// custom-tag options were appended last.
+		opts = append(opts, tracer.WithTags(customTags))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
+		// Applied last, after any custom tag, so the configured analytics
+		// rate always wins a collision with a custom tag targeting
+		// ext.EventSampleRate. Pre-migration, this Tag() call was always
+		// appended after the tagFns loop for the same reason.
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context

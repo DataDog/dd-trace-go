@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
@@ -64,6 +65,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	}
 
 	exerciseTestingInternalsOffsetLayout(t)
+	exerciseTestingFReflectionLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
 	exerciseTestingInternalsHelperMapIsolation(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
@@ -77,6 +79,50 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseSlowEFDAbortTagging(t)
 	exerciseITRCoverageBackfillState(t)
 	exerciseNarrowingFlagParsing(t)
+}
+
+func exerciseTestingFReflectionLayout(t *testing.T) {
+	t.Helper()
+	f := &testing.F{}
+	typ := reflect.TypeFor[testing.F]()
+	common, ok := typ.FieldByName("common")
+	if !ok || common.Offset != 0 || common.Type != reflect.TypeFor[testing.T]().Field(0).Type {
+		t.Fatal("testing.F must embed testing.common at offset zero for shared lifecycle fields")
+	}
+	state, ok := typ.FieldByName("tstate")
+	tState, tStateOK := reflect.TypeFor[testing.T]().FieldByName("tstate")
+	if !ok || !tStateOK || state.Type.Kind() != reflect.Pointer || state.Type != tState.Type {
+		t.Fatal("testing.F.tstate must have the same pointer type as testing.T.tstate")
+	}
+	statePointer, err := getFieldPointerFromWithType(f, "tstate", state.Type)
+	if err != nil || statePointer == nil {
+		t.Fatalf("testing.F.tstate is unreadable: %v", err)
+	}
+	wantState := &testingTestState{}
+	*(**testingTestState)(statePointer) = wantState
+	if getFuzzTestState(f) != wantState {
+		t.Fatal("testing.F scheduler state lookup must use the F-specific field offset")
+	}
+	fuzzCalled, err := getFieldPointerFromWithType(f, "fuzzCalled", reflect.TypeFor[bool]())
+	if err != nil || fuzzCalled == nil {
+		t.Fatalf("testing.F.fuzzCalled must be a readable bool: %v", err)
+	}
+	if testingFFuzzCalled(f) {
+		t.Fatal("a new testing.F must not have called F.Fuzz")
+	}
+	*(*bool)(fuzzCalled) = true
+	if !testingFFuzzCalled(f) {
+		t.Fatal("testing.F.fuzzCalled lookup must observe F.Fuzz completion")
+	}
+	if getInternalFuzzTargetArray(&testing.M{}) == nil || getInternalExampleArray(&testing.M{}) == nil {
+		t.Fatal("testing.M fuzz target and example descriptors must retain their expected slice types")
+	}
+	for _, native := range []any{f, &testing.T{}} {
+		if ptr, err := getFieldPointerFromWithType(native, "duration", reflect.TypeFor[time.Duration]()); err != nil || ptr == nil {
+			t.Fatalf("%T.duration must retain its time.Duration type: %v", native, err)
+		}
+	}
+	runtime.KeepAlive(f)
 }
 
 func exerciseDenyParallelFieldCompatibility(t *testing.T) {
@@ -98,7 +144,7 @@ func exerciseDenyParallelFieldCompatibility(t *testing.T) {
 
 	boolSource := struct{ denyParallel bool }{denyParallel: true}
 	boolTarget := struct{ denyParallel bool }{}
-	boolField, _ := denyParallelField(reflect.TypeOf(boolSource))
+	boolField, _ := denyParallelField(reflect.TypeFor[struct{ denyParallel bool }]())
 	copyDenyParallelField(unsafe.Pointer(&boolSource), unsafe.Pointer(&boolTarget), boolField)
 	if !boolTarget.denyParallel {
 		t.Fatal("expected bool denyParallel value to be preserved")
@@ -106,7 +152,7 @@ func exerciseDenyParallelFieldCompatibility(t *testing.T) {
 
 	stringSource := struct{ denyParallel string }{denyParallel: "t.Setenv"}
 	stringTarget := struct{ denyParallel string }{}
-	stringField, _ := denyParallelField(reflect.TypeOf(stringSource))
+	stringField, _ := denyParallelField(reflect.TypeFor[struct{ denyParallel string }]())
 	copyDenyParallelField(unsafe.Pointer(&stringSource), unsafe.Pointer(&stringTarget), stringField)
 	if stringTarget.denyParallel != stringSource.denyParallel {
 		t.Fatalf("expected string denyParallel value %q, got %q", stringSource.denyParallel, stringTarget.denyParallel)

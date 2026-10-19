@@ -8,6 +8,7 @@ package waf
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,9 @@ import (
 	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -337,4 +341,201 @@ func countRuleID(ruleIDs []string, id string) int {
 		}
 	}
 	return count
+}
+
+type actionRunner struct{ action string }
+
+func (r actionRunner) Run(context.Context, libddwaf.RunAddressData) (libddwaf.Result, error) {
+	actions := map[string]any{"generate_stack": map[string]any{"stack_id": "sql-stack"}}
+	if r.action != "" {
+		actions[r.action] = map[string]any{}
+	}
+	return libddwaf.Result{
+		Events:  []any{"SQL injection"},
+		Actions: actions,
+		Keep:    true,
+	}, nil
+}
+
+func TestRunWAFMonitorOnlyMetrics(t *testing.T) {
+	// wantOutcome is the rasp.rule.match block tag for each mode. A redirect is
+	// block:irrelevant in both modes, so monitor-only does not change its outcome.
+	for _, tc := range []struct {
+		action      string
+		monitorOnly bool
+		wantOutcome string
+	}{
+		{action: "block_request", monitorOnly: true, wantOutcome: "failure"},
+		{action: "block_request", monitorOnly: false, wantOutcome: "success"},
+		{action: "redirect_request", monitorOnly: true, wantOutcome: "irrelevant"},
+		{action: "redirect_request", monitorOnly: false, wantOutcome: "irrelevant"},
+		{action: "", monitorOnly: true, wantOutcome: "irrelevant"},
+		{action: "", monitorOnly: false, wantOutcome: "irrelevant"},
+	} {
+		t.Run(fmt.Sprintf("%s/monitorOnly=%t", tc.action, tc.monitorOnly), func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			op.SetSupportedAddresses(config.NewAddressSet([]string{addresses.ServerDBStatementAddr, addresses.ServerDBTypeAddr}))
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+			op.SetMetricsInstance(metrics)
+			op.runWAF(op, actionRunner{tc.action}, addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build(), tc.monitorOnly)
+			require.EqualValues(t, 1, metrics.SumRASPCalls.Load())
+			if tc.monitorOnly {
+				require.False(t, metrics.Milestones.requestBlocked)
+			}
+			for _, outcome := range []string{"failure", "irrelevant", "success"} {
+				var want float64
+				if outcome == tc.wantOutcome {
+					want = 1
+				}
+				tags := []string{"block:" + outcome, "rule_type:sql_injection", "waf_version:" + libddwaf.Version(), "event_rules_version:test"}
+				require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get(), outcome)
+			}
+		})
+	}
+}
+
+func TestSubcontextOperationMonitorOnlyBlockFailure(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+	client := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(client)()
+	op, _, metrics := newSubcontextTestOperation(t)
+	seedRequestContext(t, op)
+	var blocks, stacks int
+	dyngo.OnData(op, func(*events.BlockingSecurityEvent) { blocks++ })
+	dyngo.OnData(op, func(*actions.StackTraceAction) { stacks++ })
+	sub := op.NewSubcontextOp()
+	sub.RunMonitorOnly(op, ssrfRequestRunData())
+	sub.Close()
+	require.Zero(t, blocks)
+	require.Positive(t, stacks)
+	require.Contains(t, eventRuleIDs(op.Events()), "rasp-934-100")
+	require.False(t, metrics.Milestones.requestBlocked)
+	for _, outcome := range []string{"failure", "success", "irrelevant"} {
+		tags := []string{"block:" + outcome, "rule_type:ssrf", "rule_variant:request", "waf_version:" + libddwaf.Version(), "event_rules_version:1.99.0"}
+		var want float64
+		if outcome == "failure" {
+			want = 1
+		}
+		require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get())
+	}
+	sub = op.NewSubcontextOp()
+	sub.Run(op, ssrfRequestRunData())
+	sub.Close()
+	require.Positive(t, blocks)
+	require.EqualValues(t, 2, metrics.SumRASPCalls.Load())
+	tags := []string{"block:success", "rule_type:ssrf", "rule_variant:request", "waf_version:" + libddwaf.Version(), "event_rules_version:1.99.0"}
+	require.EqualValues(t, 1, client.Count(telemetry.NamespaceAppSec, "rasp.rule.match", tags).Get())
+}
+
+// TestRunWAFMonitorOnlyWAFRequests checks the emitted waf.requests tags. A
+// monitor-only block must not count as a requested block, so it must not report
+// block_failure:true or hide a later real block of the same request. A redirect
+// is never a requested block.
+func TestRunWAFMonitorOnlyWAFRequests(t *testing.T) {
+	for _, action := range []string{"block_request", "redirect_request"} {
+		for _, tc := range []struct {
+			name      string
+			laterReal bool
+		}{
+			{name: "monitor-only"},
+			{name: "monitor-only then real", laterReal: true},
+		} {
+			t.Run(action+"/"+tc.name, func(t *testing.T) {
+				client := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(client)()
+				op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+				defer op.Finish()
+				op.SetLimiter(limiter.NewTokenTicker(100, 100))
+				handleMetrics := NewMetricsInstance(nil, "test")
+				metrics := handleMetrics.NewContextMetrics()
+				op.SetMetricsInstance(metrics)
+
+				addrs := addresses.RunAddressData{TimerKey: addresses.WAFScope}
+				op.runWAF(op, actionRunner{action}, addrs, true)
+				if tc.laterReal {
+					op.runWAF(op, actionRunner{action}, addrs, false)
+				}
+				metrics.Submit(libddwaf.Truncations{}, nil)
+
+				requireBlockOutcome(t, client, true, tc.laterReal && action == "block_request", false)
+			})
+		}
+	}
+}
+
+func TestRunWAFMonitorOnlyActions(t *testing.T) {
+	for _, action := range []string{"block_request", "redirect_request"} {
+		t.Run(action, func(t *testing.T) {
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			metrics := &ContextMetrics{}
+			op.SetMetricsInstance(metrics)
+			var blocks, stacks, securityEvents int
+			dyngo.OnData(op, func(*events.BlockingSecurityEvent) { blocks++ })
+			dyngo.OnData(op, func(*actions.StackTraceAction) { stacks++ })
+			dyngo.OnData(op, func(*SecurityEvent) { securityEvents++ })
+			op.runWAF(op, actionRunner{action}, addresses.RunAddressData{}, true)
+			require.Zero(t, blocks)
+			require.Equal(t, 1, stacks)
+			require.Equal(t, 1, securityEvents)
+			require.Equal(t, []any{"SQL injection"}, op.Events())
+
+			// Monitoring does not alter the rules or suppress subsequent protection.
+			op.runWAF(op, actionRunner{action}, addresses.RunAddressData{}, false)
+			require.Positive(t, blocks)
+			require.Equal(t, 2, stacks)
+			require.Equal(t, 2, securityEvents)
+		})
+	}
+}
+
+// TestRunWAFMarksReportedBlock checks that only a WAF-scope block_request that
+// can block the request creates the HTTP block whose outcome waf.requests
+// reports. A redirect or a RASP-scope block must not change that outcome.
+func TestRunWAFMarksReportedBlock(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		action      string
+		addrs       addresses.RunAddressData
+		monitorOnly bool
+		wantBlock   bool
+		wantReports bool
+	}{
+		{name: "waf block", action: "block_request", addrs: addresses.RunAddressData{TimerKey: addresses.WAFScope}, wantBlock: true, wantReports: true},
+		{name: "waf redirect", action: "redirect_request", addrs: addresses.RunAddressData{TimerKey: addresses.WAFScope}, wantBlock: true},
+		{name: "rasp block", action: "block_request", addrs: ssrfRequestRunData(), wantBlock: true},
+		{name: "monitor-only waf block", action: "block_request", addrs: addresses.RunAddressData{TimerKey: addresses.WAFScope}, monitorOnly: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+			defer op.Finish()
+			op.SetLimiter(limiter.NewTokenTicker(100, 100))
+			op.SetSupportedAddresses(config.NewAddressSet([]string{
+				addresses.ServerIONetURLAddr,
+				addresses.ServerIONetRequestMethodAddr,
+				addresses.ServerIONetRequestHeadersAddr,
+			}))
+			handleMetrics := NewMetricsInstance(nil, "test")
+			op.SetMetricsInstance(handleMetrics.NewContextMetrics())
+			var blocks []*actions.BlockHTTP
+			dyngo.OnData(op, func(a *actions.BlockHTTP) { blocks = append(blocks, a) })
+
+			op.runWAF(op, actionRunner{tc.action}, tc.addrs, tc.monitorOnly)
+
+			if !tc.wantBlock {
+				require.Empty(t, blocks)
+				return
+			}
+			require.Len(t, blocks, 1)
+			require.Equal(t, tc.wantReports, blocks[0].ReportsBlockOutcome())
+		})
+	}
 }

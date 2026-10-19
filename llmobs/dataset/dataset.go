@@ -330,7 +330,12 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 	}
 
 	records := make([]*Record, 0, len(recordsResp))
+	missingRecordID := false
 	for _, rec := range recordsResp {
+		if rec.ID == "" {
+			missingRecordID = true
+			continue
+		}
 		records = append(records, &Record{
 			id:             rec.ID,
 			Input:          rec.Input,
@@ -338,6 +343,9 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			Metadata:       rec.Metadata,
 			version:        rec.Version,
 		})
+	}
+	if missingRecordID {
+		log.Error("llmobs: backend returned dataset records without IDs; discarding malformed records") //errtrack:ignore caller request path; malformed records are logged locally only
 	}
 	// When pulling a specific historical version, report that version so that
 	// experiment.Run registers the run against the correct dataset snapshot
@@ -379,8 +387,8 @@ func (d *Dataset) Append(records ...Record) {
 	d.initialize()
 
 	for _, rec := range records {
-		// This id will be discarded after push, since the backend will generate a new one.
-		// It is used for tracking new records locally before the push.
+		// The id tracks the record locally before the push, and Push sends it as
+		// the record's id, so it stays valid afterwards.
 		id := uuid.New().String()
 		rec.id = id
 
@@ -395,18 +403,18 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range updating dataset record", index)
+		log.Warn("llmobs: index %d out of range updating dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 	if update.Input == nil && update.Metadata == nil && update.ExpectedOutput == nil {
-		log.Warn("llmobs: invalid dataset update (no changes)")
+		log.Warn("llmobs: invalid dataset update (no changes)") //errtrack:ignore invalid caller update
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -431,14 +439,14 @@ func (d *Dataset) Delete(index int) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range deleting dataset record", index)
+		log.Warn("llmobs: index %d out of range deleting dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -484,11 +492,13 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 
 	// Build slices for inserts, updates, and deletes from the pending maps.
-	insertOldIDs := make([]string, 0, len(d.appendRecords))
+	// Inserts carry the id Append already minted, and the backend persists it.
+	// That is what makes the response uninteresting: nothing has to be matched
+	// back to what was sent.
 	insert := make([]transport.DatasetRecordCreate, 0, len(d.appendRecords))
 	for id, rec := range d.appendRecords {
-		insertOldIDs = append(insertOldIDs, id)
 		insert = append(insert, transport.DatasetRecordCreate{
+			ID:             id,
 			Input:          rec.Input,
 			ExpectedOutput: rec.ExpectedOutput,
 			Metadata:       rec.Metadata,
@@ -499,7 +509,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 		update = append(update, transport.DatasetRecordUpdate{
 			ID:             id,
 			Input:          rec.Input,
-			ExpectedOutput: transport.AnyPtr(rec.ExpectedOutput),
+			ExpectedOutput: new(rec.ExpectedOutput),
 			Metadata:       rec.Metadata,
 		})
 	}
@@ -522,7 +532,6 @@ func (d *Dataset) Push(ctx context.Context) error {
 		for i := 0; i < len(insert); i += chunkSize {
 			end := min(i+chunkSize, len(insert))
 			chunkInsert := insert[i:end]
-			chunkOldIDs := insertOldIDs[i:end]
 			chunkNum := (i / chunkSize) + 1
 
 			log.Debug("llmobs: uploading dataset chunk %d/%d (%d records)", chunkNum, numBatches, len(chunkInsert))
@@ -535,17 +544,11 @@ func (d *Dataset) Push(ctx context.Context) error {
 				chunkDel = del
 			}
 
-			newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, chunkInsert, chunkUpdate, chunkDel)
+			newVersion, err := ll.Transport.BatchUpdateDataset(ctx, d.id, chunkInsert, chunkUpdate, chunkDel)
 			if err != nil {
 				return fmt.Errorf("failed to batch update dataset (chunk %d): %w", chunkNum, err)
 			}
 			log.Debug("llmobs: successfully uploaded dataset chunk %d/%d", chunkNum, numBatches)
-			if len(chunkOldIDs) != len(newRecordIDs) {
-				return fmt.Errorf("received a different number of new records than what it was sent (want: %d, got: %d)", len(chunkOldIDs), len(newRecordIDs))
-			}
-			for j, newID := range newRecordIDs {
-				d.appendRecords[chunkOldIDs[j]].id = newID
-			}
 			if newVersion > 0 {
 				lastVersion = newVersion
 			}
@@ -565,28 +568,16 @@ func (d *Dataset) Push(ctx context.Context) error {
 	// Small delta: a single batch_update request is sufficient.
 	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
 
-	// newRecordIDs should go in the same order
-	newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
+	newVersion, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
 	if err != nil {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}
 
-	// TODO(rarguelloF): migrate to new backend response format so this is not necessary
-	if len(insertOldIDs) != len(newRecordIDs) {
-		return fmt.Errorf("received a different number of new records than what it was sent (want: %d, got :%d)", len(insertOldIDs), len(newRecordIDs))
-	}
-
-	// FIXME(rarguelloF): we don't get version numbers in responses to deletion requests
+	// A batch containing only deletions comes back without a version.
 	if newVersion > 0 {
 		d.version = newVersion
 	} else {
 		d.version++
-	}
-
-	// update the inserted records with the new IDs generated by the backend
-	for i, newID := range newRecordIDs {
-		oldID := insertOldIDs[i]
-		d.appendRecords[oldID].id = newID
 	}
 	d.appendRecords = make(map[string]*Record)
 	d.updateRecords = make(map[string]*RecordUpdate)

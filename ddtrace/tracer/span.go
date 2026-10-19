@@ -29,6 +29,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -459,7 +460,7 @@ func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 		return false
 	}
 
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
 	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
 		return false
 	}
@@ -529,9 +530,13 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) && hasEndpointLabel(s.pprofCtxActive) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
+			//
+			// Only spans that already carry an endpoint label are updated:
+			// AppSec also populates pprofCtxActive, and endpoint labels must
+			// stay tied to endpoint profiling.
 			//
 			// We don't change s.pprofCtxRestore since that should
 			// stay as the original parent span context regardless
@@ -1100,7 +1105,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := concreteTracerForSpan(getGlobalTracer(), s).(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -1167,7 +1172,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
 			return
@@ -1307,7 +1312,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		if tr := concreteTracerForSpanContext(getGlobalTracer(), s.context); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -1382,6 +1387,46 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
+	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+}
+
+// setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
+// propagating tag set. Tags are trace-scoped so they are always explicitly set or unset,
+// preventing stale values from a sibling from leaking to downstream services.
+func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name string) {
+	if parentAgentSpanID == "" {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentSpanID)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+	} else {
+		// Span ID is always propagated; id-only attribution is still useful to the backend.
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentSpanID, parentAgentSpanID)
+		if name == "" || !illmobs.AgentNameWireSafe(name) {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			return
+		}
+		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
+		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+			used += 27
+			tsUsed += 23
+		}
+		var nameXTagsLen int
+		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
+			nameXTagsLen = used - len(prior) + len(name)
+			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
+		} else {
+			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
+		}
+		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
+		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
+		} else {
+			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
+		}
+	}
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1440,6 +1485,10 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
+	// attribute) or the native Datadog encoding ("false": on the first span of each chunk, and
+	// as a v1 payload attribute).
+	keySDKOTLPExport = "_dd.sdk.otlp_export"
 	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
 	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
 	keyKnuthSamplingRate = "_dd.p.ksr"
@@ -1451,6 +1500,11 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
+	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
+	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
+	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
+	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

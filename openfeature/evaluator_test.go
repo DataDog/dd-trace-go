@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,94 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
+
+type evaluatorTestProvider struct {
+	of.NoopProvider
+	evaluations chan of.FlattenedContext
+}
+
+func (evaluatorTestProvider) Metadata() of.Metadata {
+	return of.Metadata{Name: datadogProviderName}
+}
+
+func (provider evaluatorTestProvider) ObjectEvaluation(_ context.Context, _ string, _ any, evaluationContext of.FlattenedContext) of.InterfaceResolutionDetail {
+	provider.evaluations <- evaluationContext
+	return of.InterfaceResolutionDetail{Value: map[string]any{"value": "ok"}}
+}
+
+type waitingEvaluatorTestProvider struct {
+	evaluatorTestProvider
+	started chan<- struct{}
+	ready   <-chan struct{}
+}
+
+func (provider waitingEvaluatorTestProvider) Init(of.EvaluationContext) error {
+	close(provider.started)
+	<-provider.ready
+	return nil
+}
+
+func (waitingEvaluatorTestProvider) Shutdown() {}
+
+func TestRegisteredEvaluatorUsesDefaultDatadogProvider(t *testing.T) {
+	of.Shutdown()
+	provider := evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)}
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := evaluate(context.Background(), "flag", "alice", map[string]any{"tier": "gold"})
+	if err != nil || value.(map[string]any)["value"] != "ok" {
+		t.Fatalf("value=%#v err=%v", value, err)
+	}
+	evaluationContext := <-provider.evaluations
+	if evaluationContext[of.TargetingKey] != "alice" || evaluationContext["tier"] != "gold" {
+		t.Fatalf("evaluation context=%#v", evaluationContext)
+	}
+}
+
+func TestRegisteredEvaluatorWaitsForProvider(t *testing.T) {
+	of.Shutdown()
+	started := make(chan struct{})
+	ready := make(chan struct{})
+	provider := waitingEvaluatorTestProvider{
+		evaluatorTestProvider: evaluatorTestProvider{evaluations: make(chan of.FlattenedContext, 1)},
+		started:               started,
+		ready:                 ready,
+	}
+	if err := of.SetProvider(provider); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { of.Shutdown() })
+	<-started
+
+	evaluate, err := internalffe.NewEvaluator("test-domain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := evaluate(canceled, "flag", "alice", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error=%v, want context canceled", err)
+	}
+	select {
+	case <-provider.evaluations:
+		t.Fatal("flag evaluated before provider was ready")
+	default:
+	}
+	close(ready)
+	if _, err := evaluate(context.Background(), "flag", "alice", nil); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestEvaluateShard(t *testing.T) {
 	t.Run("targeting key hashes to correct shard", func(t *testing.T) {
@@ -175,7 +263,7 @@ func TestEvaluateSemverCondition(t *testing.T) {
 		{name: "greater than or equal ignores build metadata", operator: operatorSemverGTE, attribute: "4.0.0+build.42", comparand: "4.0.0", want: true},
 		{name: "different build metadata has equal precedence", operator: operatorSemverEQ, attribute: "1.0.0+linux", comparand: "1.0.0+darwin", want: true},
 		{name: "invalid attribute", operator: operatorSemverNEQ, attribute: "not-a-version", comparand: "1.0.0"},
-		{name: "short attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0"},
+		{name: "two-part attribute", operator: operatorSemverGTE, attribute: "1.2", comparand: "1.0.0", want: true},
 		{name: "prefixed attribute", operator: operatorSemverGTE, attribute: "v1.2.3", comparand: "1.0.0"},
 		{name: "overflowing attribute", operator: operatorSemverGTE, attribute: "18446744073709551616.0.0", comparand: "1.0.0"},
 		{name: "non-string attribute", operator: operatorSemverEQ, attribute: 1.2, comparand: "1.2.0"},
@@ -341,6 +429,13 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(&cfg)
+	if err := of.SetProviderAndWait(provider); err != nil {
+		t.Fatalf("set provider: %v", err)
+	}
+	client := of.NewClient("fixture-test")
+
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -361,8 +456,9 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
-					Value  any    `json:"value"`
-					Reason string `json:"reason"`
+					Value     any    `json:"value"`
+					Reason    string `json:"reason"`
+					ErrorCode string `json:"errorCode"`
 				} `json:"result"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
@@ -387,6 +483,19 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					if tc.Result.ErrorCode != "" {
+						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
+						if tc.TargetingKey != nil {
+							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
+						}
+						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
+						if err == nil {
+							t.Error("expected SDK evaluation error, got nil")
+						}
+						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						}
 					}
 				})
 			}

@@ -5,6 +5,9 @@ on:
     - cron: '00 06 * * 1'  # Mondays at 6 AM UTC
   workflow_dispatch:
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   contents: write
 
@@ -18,10 +21,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          # Pinned off `stable` (=1.26.5), which intermittently corrupts its own
-          # heap mid-build (golang/go#77168). Restore `stable` once a fixed
-          # 1.26.x ships.
-          go-version: "1.26.4"
+          go-version: "1.27"
           cache-dependency-path: '**/go.sum'
       - name: Install govulncheck
         run: |

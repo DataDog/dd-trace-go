@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -428,6 +429,190 @@ func TestSpanTree(t *testing.T) {
 		}
 		assert.Equal(2, clientSpans)
 		assert.Equal(2, serverSpans)
+	})
+}
+
+// TestStreamPeerFromContext checks that callers can read the transport peer
+// and the stream call span from the context of a traced client stream.
+// Unary calls use the grpc.Peer call option; stream callers depend on
+// peer.FromContext(stream.Context()). This guards the fix for
+// https://github.com/DataDog/dd-trace-go/issues/5469.
+func TestStreamPeerFromContext(t *testing.T) {
+	roundTrip := func(t *testing.T, stream fixturepb.Fixture_StreamPingClient) {
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		require.NoError(t, stream.CloseSend())
+		_, err := stream.Recv()
+		require.NoError(t, err)
+	}
+	assertPeer := func(t *testing.T, sctx context.Context, wantPort string) {
+		p, ok := peer.FromContext(sctx)
+		require.True(t, ok, "the stream context must carry the transport peer")
+		require.NotNil(t, p.Addr)
+		_, port, err := net.SplitHostPort(p.Addr.String())
+		require.NoError(t, err)
+		assert.Equal(t, wantPort, port)
+	}
+
+	t.Run("no client interceptor", func(t *testing.T) {
+		rig, err := newRig(false)
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		roundTrip(t, stream)
+		assertPeer(t, stream.Context(), rig.port)
+	})
+
+	t.Run("traced client stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRig(true)
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		root, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+		defer root.Finish()
+
+		stream, err := rig.client.StreamPing(ctx)
+		require.NoError(t, err)
+		roundTrip(t, stream)
+		assertPeer(t, stream.Context(), rig.port)
+
+		// The stream context must also carry the stream call span so that code
+		// which wraps the stream parents new spans to the grpc.client span
+		// instead of starting a new trace.
+		span, ok := tracer.SpanFromContext(stream.Context())
+		require.True(t, ok, "the stream context must carry the stream call span")
+		var found bool
+		for _, s := range mt.OpenSpans() {
+			if s.OperationName() == "grpc.client" && s.SpanID() == span.Context().SpanID() {
+				found = true
+			}
+		}
+		require.True(t, found, "the stream context must carry the grpc.client span, got span id %d", span.Context().SpanID())
+	})
+}
+
+// TestStreamMessagePeerTags checks that client grpc.message spans carry the
+// peer host and port tags. The rig runs without the server interceptor so
+// every grpc.message span comes from the client stream wrapper.
+func TestStreamMessagePeerTags(t *testing.T) {
+	t.Run("traced calls", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor()),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		require.NoError(t, stream.CloseSend())
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		require.NotEmpty(t, msgSpans)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+
+	// With call tracing disabled, the interceptor never reads the transport
+	// context at stream creation, so transparent retries stay enabled until
+	// the first receive returns. Message spans must respect that window: the
+	// span of the first send carries no peer tags, every later span does.
+	t.Run("messages only", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetHost), "the first send must not read the transport context before any receive returned")
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetPort))
+		for _, s := range msgSpans[1:] {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+
+	// Context and Header commits the stream attempt as well. A caller that
+	// calls either method closes the retry window itself, so message spans
+	// after that point may read the transport context.
+	t.Run("messages only after Context and Header", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		// The caller closes the retry window through Context before the first
+		// send, so the send span may already read the transport context.
+		_ = stream.Context()
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		// The headers arrived with the first reply, so Header returns at once.
+		// The call commits the attempt, so the send span after it may read the
+		// transport context as well.
+		_, err = stream.Header()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
 	})
 }
 

@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	gotesting "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -29,6 +31,12 @@ const (
 
 // TestMain forces subtest-specific features on and orchestrates scenario subprocesses so this suite exercises the flag-enabled paths.
 func TestMain(m *testing.M) {
+	if reason, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason); ok && reason == "quarantined_race" {
+		// A quarantined subtree child must reach RunM before this package's scenario
+		// harness initializes another mock session. Ordinary process retries retain
+		// the harness so their descendant spans keep the existing behavior.
+		os.Exit(gotesting.RunM(m))
+	}
 	prevDD, hadDD := os.LookupEnv(constants.CIVisibilitySubtestFeaturesEnabled)
 
 	if scenario := os.Getenv(subtestScenarioEnv); scenario != "" {

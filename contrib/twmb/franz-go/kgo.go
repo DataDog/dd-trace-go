@@ -7,7 +7,9 @@ package kgo
 
 import (
 	"context"
+	"regexp"
 	"sync"
+	"sync/atomic"
 
 	kgo "github.com/twmb/franz-go/pkg/kgo"
 
@@ -37,10 +39,22 @@ func init() {
 }
 
 type tracingHook struct {
-	cfg           config
-	client        *kgo.Client
+	cfg config
+	// group is set in OnNewClient and read by the record hooks, which may run
+	// concurrently on another client when the hook is attached to several.
+	group         atomic.Pointer[groupInfo]
+	clientBound   atomic.Bool
 	activeSpans   []*tracer.Span
 	activeSpansMu sync.Mutex
+	// consumerSpanCfg and producerSpanCfg hold the tags that are constant
+	// for every record consumed/produced through this hook (component,
+	// span kind, messaging system, service name, measured). They are built
+	// once when the hook is created (see newConsumerSpanConfig/
+	// newProducerSpanConfig) and merged into each record's span via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every record.
+	consumerSpanCfg *tracer.StartSpanConfig
+	producerSpanCfg *tracer.StartSpanConfig
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -49,11 +63,17 @@ func newTracingHook(opts ...Option) *tracingHook {
 	for _, o := range opts {
 		o.apply(&cfg)
 	}
-	return &tracingHook{cfg: cfg}
+	return &tracingHook{
+		cfg:             cfg,
+		consumerSpanCfg: newConsumerSpanConfig(&cfg),
+		producerSpanCfg: newProducerSpanConfig(&cfg),
+	}
 }
 
-// WithTracing creates return a kgo.Hook enabling
-// tracing on the client
+// WithTracing returns a kgo.Opt that enables tracing on the client.
+//
+// The returned Opt holds per-client state. Pass it to a single
+// kgo.NewClient call, and call WithTracing again for each client.
 func WithTracing(opts ...Option) kgo.Opt {
 	return kgo.WithHooks(newTracingHook(opts...))
 }
@@ -63,17 +83,68 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 	for _, span := range h.activeSpans {
 		span.Finish()
 	}
+	// clear zeroes out the backing array so finished spans aren't kept alive
+	// by stale pointers past the truncated length (see issue #5192).
+	clear(h.activeSpans)
 	h.activeSpans = h.activeSpans[:0]
 	h.activeSpansMu.Unlock()
 }
 
 // OnNewClient is a kgo hook called when the client is initialized
-// before any client goroutines are started.
+// before any client goroutines are started. It resolves the group name
+// used for DSM.
 //
-// We need a reference to the client in the TracingHook
-// in order to retrieve metadata later on for DSM
+// The hook holds per-client state. Attach the Opt returned by WithTracing
+// to one client only. A hook attached to two clients logs a warning and
+// reports the group of the client created last for both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
-	h.client = c
+	if !h.clientBound.CompareAndSwap(false, true) {
+		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise Data Streams Monitoring reports the consumer group of the most recently created client for all of them")
+	}
+	var g *groupInfo
+	if name, isShareGroup := groupName(c); name != "" {
+		g = &groupInfo{name: name, isShareGroup: isShareGroup}
+	}
+	h.group.Store(g)
+}
+
+// groupInfo is the consumer or share group a client was configured with.
+type groupInfo struct {
+	name         string
+	isShareGroup bool
+}
+
+type optValuer interface {
+	OptValue(opt any) any
+}
+
+var warnShareGroupUnsupported sync.Once
+
+// groupName returns the consumer group or share group name the client was
+// configured with, and whether it is a share group. It returns "" for direct
+// (non-group) consumers and producers.
+//
+// Client.GroupMetadata is deliberately not used: it returns the
+// broker-assigned member ID, not the group name.
+func groupName(c optValuer) (name string, isShareGroup bool) {
+	if g, _ := c.OptValue(kgo.ConsumerGroup).(string); g != "" {
+		return g, false
+	}
+	// franz-go before v1.21.4 has no ShareGroup case in OptValue and returns nil.
+	g, ok := c.OptValue(kgo.ShareGroup).(string)
+	if !ok {
+		// Share groups always subscribe with ConsumeTopics, so only warn for
+		// clients that could be one. This excludes producers and
+		// partition-assigned consumers, but cannot exclude direct consumers
+		// that use ConsumeTopics.
+		if topics, _ := c.OptValue(kgo.ConsumeTopics).(map[string]*regexp.Regexp); len(topics) > 0 {
+			warnShareGroupUnsupported.Do(func() {
+				instr.Logger().Warn("contrib/twmb/franz-go: this franz-go version does not report ShareGroup through OptValue; share group DSM tagging is disabled")
+			})
+		}
+		return "", false
+	}
+	return g, g != ""
 }
 
 // OnPollStart is a kgo hook called at the start of every PollFetches or
@@ -132,18 +203,30 @@ func (h *tracingHook) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	h.activeSpansMu.Unlock()
 }
 
-func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(h.cfg.consumerServiceName, h.cfg.serviceSource),
-		tracer.ResourceName("Consume Topic " + r.Topic),
+// newConsumerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every record consumed through a hook with the
+// given config, so per-record calls don't need to rebuild them.
+func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	return tracer.NewStartSpanConfig(
+		instrumentation.ServiceNameWithSource(cfg.consumerServiceName, cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, r.Partition),
-		tracer.Tag("offset", r.Offset),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
 		tracer.Measured(),
+	)
+}
+
+func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
+	tags := map[string]any{
+		ext.ResourceName:             "Consume Topic " + r.Topic,
+		ext.MessagingKafkaPartition:  r.Partition,
+		"offset":                     r.Offset,
+		ext.MessagingDestinationName: r.Topic,
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(h.consumerSpanCfg),
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -162,15 +245,27 @@ func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *trac
 	return span
 }
 
-func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		instrumentation.ServiceNameWithSource(h.cfg.producerServiceName, h.cfg.serviceSource),
-		tracer.ResourceName("Produce Topic " + r.Topic),
+// newProducerSpanConfig builds the base StartSpanConfig holding the tags
+// that stay constant for every record produced through a hook with the
+// given config, so per-record calls don't need to rebuild them.
+func newProducerSpanConfig(cfg *config) *tracer.StartSpanConfig {
+	return tracer.NewStartSpanConfig(
+		instrumentation.ServiceNameWithSource(cfg.producerServiceName, cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
+	)
+}
+
+func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *tracer.Span {
+	tags := map[string]any{
+		ext.ResourceName:             "Produce Topic " + r.Topic,
+		ext.MessagingDestinationName: r.Topic,
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.WithTags(tags),
+		tracer.WithStartSpanConfig(h.producerSpanCfg),
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -192,17 +287,9 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + r.Topic, "type:kafka"}
-
-	// The client should never be nil when we reach that point
-	// but still checking to avoid a panic.
-	var groupID string
-	if h.client != nil {
-		// GroupMetadata uses an atomic load internally, so it is safe to call
-		// concurrently without additional locking.
-		groupID, _ = h.client.GroupMetadata()
-		if groupID != "" {
-			edges = append(edges, "group:"+groupID)
-		}
+	g := h.group.Load()
+	if g != nil {
+		edges = append(edges, "group:"+g.name)
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -215,8 +302,12 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		return
 	}
 	datastreams.InjectToBase64Carrier(ctx, carrier)
-	if groupID != "" {
-		tracer.TrackKafkaCommitOffset(groupID, r.Topic, r.Partition, r.Offset)
+	// Share groups have no per-partition committed offset: the broker tracks
+	// per-record acknowledgement and may deliver a partition's records to
+	// several members, out of order and with redeliveries. Reporting consumed
+	// offsets as commit offsets would produce a misleading consumer lag.
+	if g != nil && !g.isShareGroup {
+		tracer.TrackKafkaCommitOffset(g.name, r.Topic, r.Partition, r.Offset)
 	}
 }
 

@@ -448,7 +448,7 @@ func requireProtocolRequests(t *testing.T, requests []string, protocol testTrace
 func runStrictSpanPoolAgentScenario(t *testing.T, protocol testTraceProtocol, poolEnabled bool) ([]observedAgentSpan, []string) {
 	t.Helper()
 	agent := startTestAgent(t)
-	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled))
+	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled), WithSendRetries(3))
 	defer stopTracerTest(tr)
 
 	base := time.Unix(1_700_000_000, 0)
@@ -682,7 +682,7 @@ func runPartialFlushReuseAgentScenario(t *testing.T, protocol testTraceProtocol,
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 
 	agent := startTestAgent(t)
-	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled))
+	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled), WithSendRetries(3))
 	defer stopTracerTest(tr)
 
 	base := time.Unix(1_700_000_100, 0)
@@ -810,6 +810,7 @@ func runSingleSpanSamplingAgentScenario(t *testing.T, protocol testTraceProtocol
 		WithSpanPool(poolEnabled),
 		WithSamplerRate(0),
 		WithSamplingRules(SpanSamplingRules(Rule{NameGlob: "sampling.keep", Rate: 1.0})),
+		WithSendRetries(3),
 	)
 	defer stopTracerTest(tr)
 
@@ -1013,7 +1014,12 @@ func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 	const spansPerGoroutine = 50 // 500 total, well within payloadQueueSize
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// The send loop drops a payload after one failed attempt when send retries
+	// are unset (the default). A transient loopback failure on a loaded CI
+	// runner, such as windows-latest, then fails the exact-count assertion
+	// below with a shortfall equal to one payload. Retry sends so this test
+	// measures span delivery, not transport luck.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	var wg sync.WaitGroup
 	for g := range numGoroutines {
@@ -1062,7 +1068,10 @@ func TestSpanPoolEndToEndParentChild(t *testing.T) {
 	const numPairs = 200
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// Like TestSpanPoolEndToEndConcurrentCorrectness, this test asserts exact
+	// delivery. Retry sends so a transient loopback failure on a loaded CI
+	// runner does not drop a payload and fail the exact-count assertion.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	for i := range numPairs {
 		parent := tr.StartSpan("parent.op",
@@ -1129,7 +1138,10 @@ func TestSpanPoolEndToEndCorrectness(t *testing.T) {
 	const numSpans = 500
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// Like TestSpanPoolEndToEndConcurrentCorrectness, this test asserts exact
+	// delivery. Retry sends so a transient loopback failure on a loaded CI
+	// runner does not drop a payload and fail the exact-count assertion.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	for i := range numSpans {
 		span := tr.StartSpan("pool.test",

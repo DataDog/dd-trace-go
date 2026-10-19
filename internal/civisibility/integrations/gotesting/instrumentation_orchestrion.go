@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	_ "unsafe" // required blank import to run orchestrion
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -125,6 +125,57 @@ func instrumentTestingBuiltWithOrchestrion() {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	return instrumentTestingTFuncWithSourceOptions(f, nil, true, false)
+}
+
+// instrumentTestingFuzzFunc preserves the callback's exact concrete type,
+// which testing.F.Fuzz validates through reflection.
+//
+//go:linkname instrumentTestingFuzzFunc
+func instrumentTestingFuzzFunc(ff any) any {
+	release, ok := acquireOrchestrionTestingHook()
+	if !ok {
+		return ff
+	}
+	defer release()
+	if isProcessRetryChild() {
+		return ff
+	}
+	if testingFuzzWorkerActive() {
+		// Generated fuzzing mutations are not JUnit test cases. Coordinator
+		// processes still execute ordinary seeds for non-selected fuzz targets.
+		return ff
+	}
+	if !isCiVisibilityEnabled() || !testing.Testing() || ff == nil {
+		return ff
+	}
+
+	fn := reflect.ValueOf(ff)
+	fnType := fn.Type()
+	testingTPtr := reflect.TypeFor[*testing.T]()
+	if fn.Kind() != reflect.Func || fnType.NumIn() == 0 || fnType.In(0) != testingTPtr || fnType.NumOut() != 0 {
+		// Let testing.F.Fuzz produce its native validation error unchanged.
+		return ff
+	}
+
+	sourceFunc := runtime.FuncForPC(fn.Pointer())
+	return reflect.MakeFunc(fnType, func(args []reflect.Value) []reflect.Value {
+		t := args[0].Interface().(*testing.T)
+		seedBody := func(currentT *testing.T) {
+			args[0] = reflect.ValueOf(currentT)
+			fn.Call(args)
+		}
+		instrumentTestingTFuncWithSourceOptions(seedBody, sourceFunc, false, true)(t)
+		return nil
+	}).Interface()
+}
+
+func instrumentTestingTFuncWithSourceOptions(
+	f func(*testing.T),
+	sourceFunc *runtime.Func,
+	additionalFeatures bool,
+	drainNativeLifecycle bool,
+) func(*testing.T) {
 	release, ok := acquireOrchestrionTestingHook()
 	if !ok {
 		return f
@@ -141,10 +192,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 	log.Debug("instrumentTestingTFunc: instrumenting test function")
 
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+	if sourceFunc == nil {
+		fReflect := reflect.Indirect(reflect.ValueOf(f))
+		sourceFunc = runtime.FuncForPC(fReflect.Pointer())
+	}
+	callbackModuleName, callbackSuiteName := utils.GetModuleAndSuiteName(sourceFunc.Entry())
+	originalFunc := sourceFunc
 
 	// Avoid instrumenting twice
 	metadata := getInstrumentationMetadata(originalFunc)
@@ -154,6 +207,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 	}
 
 	instrumentedFn := func(t *testing.T) {
+		moduleName := callbackModuleName
+		suiteName := callbackSuiteName
+
 		// Check if we have testify suite data related to this test
 		testifyData := getTestifyTest(t)
 		if testifyData != nil {
@@ -172,6 +228,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			testPrivateFields = getTestPrivateFields(t)
 			if testPrivateFields != nil && testPrivateFields.parent != nil {
 				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
+			}
+			if testifyData == nil {
+				moduleName = subtestModuleName(moduleName, parentExecMeta)
+				subtestIdentity.ModuleName = moduleName
 			}
 
 			settings := integrations.GetSettings()
@@ -241,6 +301,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				defer deleteTestMetadata(currentT)
 			}
 			execMeta.identity = localIdentity
+			if drainNativeLifecycle && parentExecMeta != nil {
+				execMeta.fuzzEvents = parentExecMeta.fuzzEvents
+			}
+			if drainNativeLifecycle && execMeta.cleanupResult == nil {
+				execMeta.cleanupResult = &testCleanupResult{}
+			}
 
 			currentPrivates := getTestPrivateFields(currentT)
 			if currentPrivates != nil && currentPrivates.parent != nil {
@@ -263,25 +329,41 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			defer func() {
 				r := recover()
 				bodyDuration := time.Since(startTime)
+				terminalStack := ""
+				if r != nil && execMeta.fuzzEvents != nil {
+					terminalStack = utils.GetStacktrace(1)
+					recordFuzzPanic(execMeta, r, terminalStack)
+				}
 
 				if execMeta.usesFreshRetryAttemptRuntime {
 					bodyTerminal := r
-					bodyStack := ""
-					if bodyTerminal != nil {
+					bodyStack := terminalStack
+					if bodyTerminal != nil && bodyStack == "" {
 						bodyStack = utils.GetStacktrace(1)
 					}
 					execMeta.retryAttemptFinalizer = func(result retryAttemptResult) {
 						terminal := bodyTerminal
 						terminalStack := bodyStack
-						if result.panicData != nil {
-							terminal = result.panicData
-							terminalStack = string(result.panicStack)
-						}
-						if result.cleanupPanicData != nil {
-							terminal = result.cleanupPanicData
-							terminalStack = string(result.cleanupPanicStack)
+						// Fuzz telemetry keeps the original body panic when cleanup
+						// also panics. Other retry attempts retain native precedence.
+						if execMeta.fuzzEvents == nil || bodyTerminal == nil {
+							if result.panicData != nil {
+								terminal = result.panicData
+								terminalStack = string(result.panicStack)
+							}
+							if result.cleanupPanicData != nil {
+								terminal = result.cleanupPanicData
+								terminalStack = string(result.cleanupPanicStack)
+							}
 						}
 						logFreshRetryAttemptState("finalize_orchestrion", currentT, result)
+						if execMeta.fuzzEvents != nil && terminal != nil {
+							// The fresh runner has already finalized this T's outcome.
+							// Preserve panic telemetry without calling Fail after done.
+							execMeta.panicData = terminal
+							execMeta.panicStacktrace = terminalStack
+							terminal = nil
+						}
 						finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, result.duration, result.output, terminal, terminalStack, false)
 					}
 					if r != nil {
@@ -291,25 +373,55 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 
 				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
-				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, bodyDuration)
+				duration := runAndApplyTestCleanupWithDurationOptions(currentT, execMeta, bodyDuration, drainNativeLifecycle)
 				if unexpectedTermination {
 					r = unexpectedTestTerminationMessage
 				}
-				terminalStack := ""
-				if r != nil {
+				nativeTerminal := r
+				if execMeta.fuzzEvents != nil && execMeta.cleanupResult != nil && execMeta.cleanupResult.goexit {
+					// Cleanup Goexit replaces the body panic. Fatal/SkipNow keep
+					// their native outcome; bare Goexit still needs native exit 2.
+					nativeTerminal = nil
+					if !bodyReturned && !currentT.Skipped() && (currentPrivates == nil || !currentPrivates.GetFinished()) {
+						nativeTerminal = errTestingDidNotReturn
+						if r == nil {
+							r = nativeTerminal
+						}
+					}
+				}
+				if r != nil && terminalStack == "" {
 					terminalStack = utils.GetStacktrace(1)
 				}
-				finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
-				nativeTerminal := r
+				if execMeta.fuzzEvents != nil {
+					collectAndWriteLogs(currentT, test, nil)
+					if r != nil {
+						if nativeTerminal != nil {
+							currentT.Fail()
+						}
+						execMeta.panicData = r
+						execMeta.panicStacktrace = terminalStack
+						if unexpectedTermination {
+							recordFuzzPanic(execMeta, r, terminalStack)
+						}
+					}
+					execMeta.fuzzEvents.add(fuzzTestEvent{native: t, metadata: execMeta, test: test, suite: suite, module: module, finishTime: time.Now(), failed: currentT.Failed(), skipped: currentT.Skipped(), closeContainers: !execMeta.hasAdditionalFeatureWrapper})
+				} else {
+					finalizeInstrumentedTestExecution(currentT, execMeta, test, suite, module, duration, nil, r, terminalStack, false)
+				}
 				if nativeTerminal == nil && execMeta.cleanupResult != nil {
 					nativeTerminal = execMeta.cleanupResult.panicData
 				}
-				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper {
-					checkModuleAndSuite(module, suite)
+				maskedByTestManagement := execMeta.isDisabled || execMeta.isQuarantined
+				if nativeTerminal != nil && !execMeta.hasAdditionalFeatureWrapper && !maskedByTestManagement {
+					if execMeta.fuzzEvents != nil {
+						execMeta.fuzzEvents.finish()
+					} else {
+						checkModuleAndSuite(module, suite)
+					}
 					integrations.ExitCiVisibility()
 					panic(nativeTerminal)
 				}
-				if !execMeta.hasAdditionalFeatureWrapper {
+				if !execMeta.hasAdditionalFeatureWrapper && execMeta.fuzzEvents == nil {
 					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
 					checkModuleAndSuite(module, suite)
 				}
@@ -321,12 +433,22 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			bodyReturned = true
 		}
 
-		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{testManagementOnly: !additionalFeatures})
 		wrappedFunc(t)
 	}
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
 	return instrumentedFn
+}
+
+// subtestModuleName keeps subtests in the module of the test binary that owns
+// them. The callback can live in an imported production helper package, while
+// the suite continues to identify the callback's source file.
+func subtestModuleName(callbackModuleName string, parentExecMeta *testExecutionMetadata) string {
+	if parentExecMeta == nil || parentExecMeta.identity == nil || parentExecMeta.identity.ModuleName == "" {
+		return callbackModuleName
+	}
+	return parentExecMeta.identity.ModuleName
 }
 
 // instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
@@ -395,9 +517,8 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly. Store the skip reason for the defer block.
-		if ciTestItem.hasAdditionalFeatureWrapper {
+		// Retry wrappers and deferred fuzz events observe cleanup before closing.
+		if ciTestItem.hasAdditionalFeatureWrapper || ciTestItem.fuzzEvents != nil {
 			ciTestItem.skipReason = skipReason
 			return
 		}
@@ -433,9 +554,8 @@ func instrumentSkipNow(tb testing.TB) {
 			ciTestItem.skipReason = *formatted
 		}
 		log.Debug("instrumentSkipNow: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), ciTestItem.skipReason)
-		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
-		// so that test.final_status can be set properly.
-		if ciTestItem.hasAdditionalFeatureWrapper {
+		// Retry wrappers and deferred fuzz events observe cleanup before closing.
+		if ciTestItem.hasAdditionalFeatureWrapper || ciTestItem.fuzzEvents != nil {
 			return
 		}
 		// For single-execution tests (no wrapper), this is the final execution.
@@ -633,7 +753,12 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 	}
 	defer release()
 	if isProcessRetryChild() {
-		return
+		execMeta := getTestMetadata(t)
+		if execMeta == nil || execMeta.quarantinedRaceChild == nil {
+			return
+		}
+		// The isolated subtree still needs the real Testify method for source,
+		// CODEOWNERS, impacted-test, and ITR metadata; it creates no child span.
 	}
 
 	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
@@ -680,11 +805,59 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 }
 
 // instrumentTestingParallel reports whether CI Visibility has replaced the
-// native Parallel implementation. Retry attempts now use a fresh testing.T and
-// bridge the real scheduler directly, so Parallel always remains native here.
+// native Parallel implementation. Only an isolated quarantined race subtree
+// takes ownership; every other call keeps the existing native fast path.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
-	_ = t
-	return false
+	if !quarantinedRaceParallelHookActive {
+		return false
+	}
+	execMeta := getTestMetadata(t)
+	if execMeta == nil || execMeta.processRetryParallelPause == nil || execMeta.processRetryParallelPaused.Load() || !testingParallelWillSuspend(t) {
+		return false
+	}
+	if !execMeta.processRetryParallelPaused.CompareAndSwap(false, true) {
+		return false
+	}
+	defer execMeta.processRetryParallelPaused.Store(false)
+
+	if state := execMeta.quarantinedRaceChild; state != nil && state.cfg != nil && t.Name() == state.cfg.SelectedRoot {
+		state.startParallelBridge()
+	}
+	resume := execMeta.processRetryParallelPause()
+	if resume != nil {
+		defer resume()
+	}
+	// Parallel is already woven with this hook. The guard above makes that
+	// nested entry return false so exactly one native call suspends the test.
+	t.Parallel()
+	return true
+}
+
+func testingParallelWillSuspend(t *testing.T) bool {
+	layout := getTestingInternalsLayout()
+	if t == nil || layout == nil || layout.disabled || !allAvailable(
+		layout.common.isParallel, layout.common.parent.unsafeField, layout.common.barrier, layout.denyParallel,
+	) {
+		return false
+	}
+	base := commonBaseForTest(t, layout)
+	if base == nil {
+		return false
+	}
+	parent := pointerWord(base, layout.common.parent)
+	if parent == nil || *fieldPtr[bool](base, layout.common.isParallel) ||
+		layout.common.isSynctest.available && *fieldPtr[bool](base, layout.common.isSynctest) ||
+		*fieldPtr[chan bool](parent, layout.common.barrier) == nil {
+		return false
+	}
+	switch layout.denyParallel.typ {
+	case reflect.TypeFor[bool]():
+		return !*fieldPtr[bool](unsafe.Pointer(t), layout.denyParallel)
+	case reflect.TypeFor[string]():
+		return *fieldPtr[string](unsafe.Pointer(t), layout.denyParallel) == ""
+	default:
+		return false
+	}
 }

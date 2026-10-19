@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -20,32 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testAPIKey is an example API key for validation purposes
 const testAPIKey = "12345678901234567890123456789012"
 
 func TestOptions(t *testing.T) {
-	t.Run("APIKeyChecks", func(t *testing.T) {
-		var apikeytests = []struct {
-			in  string
-			out bool
-		}{
-			{"", false}, // Fail, empty string
-			{"1234567890123456789012345678901", false},   // Fail, too short
-			{"123456789012345678901234567890123", false}, // Fail, too long
-			{"12345678901234567890123456789012", true},   // Pass, numeric only
-			{"abcdefabcdabcdefabcdefabcdefabcd", true},   // Pass, alpha only
-			{"abcdefabcdabcdef7890abcdef789012", true},   // Pass, alphanumeric
-			{"abcdefabcdabcdef7890Abcdef789012", false},  // Fail, contains an uppercase
-			{"abcdefabcdabcdef7890@bcdef789012", false},  // Fail, contains an ASCII symbol
-			{"abcdefabcdabcdef7890ábcdef789012", false},  // Fail, lowercase extended ASCII
-			{"abcdefabcdabcdef7890ábcdef78901", false},   // Fail, lowercase extended ASCII, conservative
-		}
-
-		for i, tt := range apikeytests {
-			assert.Equal(t, tt.out, isAPIKeyValid(tt.in), strconv.Itoa(i)+" : "+tt.in)
-		}
-	})
-
 	t.Run("WithAgentAddr", func(t *testing.T) {
 		var cfg config
 		WithAgentAddr("test:123")(&cfg)

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	_ "unsafe" // Needed for the private tracer bootstrap entry point.
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -83,9 +84,12 @@ var (
 func EnsureCiVisibilityInitialization() {
 	internalCiVisibilityInitialization(func(opts []tracer.StartOption) {
 		// Initialize the tracer.
-		tracer.Start(opts...)
+		startCIVisibility(opts...)
 	})
 }
+
+//go:linkname startCIVisibility github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.startCIVisibility
+func startCIVisibility(opts ...tracer.StartOption) error
 
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
@@ -122,6 +126,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		parentOnly := enabledMode == envconfig.EnabledModeParent
 
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
+		// Note: this runs right before tracer.Start below, so config.RecordProductStart's
+		// env-diff telemetry can misattribute this self-mutation to a cross-product change
+		// if another product's Start already ran in this process.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
 		// Avoid sampling rate warning (in CI Visibility mode we send all data)

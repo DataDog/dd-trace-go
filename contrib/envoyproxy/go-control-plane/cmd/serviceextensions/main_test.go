@@ -7,9 +7,13 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"runtime/debug"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 )
@@ -207,4 +211,208 @@ func setEnv(env map[string]string) {
 			panic(err)
 		}
 	}
+}
+
+func TestIntegrationSelection(t *testing.T) {
+	tests := []struct {
+		name       string
+		envValue   string
+		socketPath string
+		want       gocontrolplane.Integration
+	}{
+		{name: "default-is-google-cloud", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "a-unix-socket-implies-self-managed-envoy", socketPath: "/var/run/ext.sock", want: gocontrolplane.EnvoyIntegration},
+		{
+			// The case the Kubernetes guess used to try to cover, and got wrong.
+			name:     "envoy-gateway-must-be-named-explicitly",
+			envValue: "envoy-gateway",
+			want:     gocontrolplane.EnvoyGatewayIntegration,
+		},
+		{name: "istio", envValue: "istio", want: gocontrolplane.IstioIntegration},
+		{name: "envoy", envValue: "envoy", want: gocontrolplane.EnvoyIntegration},
+		{name: "google-cloud-stays-explicitly-selectable", envValue: "gcp-service-extension", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "case-and-space-insensitive", envValue: "  Envoy-Gateway ", want: gocontrolplane.EnvoyGatewayIntegration},
+		{
+			// An explicit value wins over the socket inference, otherwise a self-managed
+			// Envoy Gateway reached over a socket could not name itself.
+			name:       "explicit-value-beats-the-socket-inference",
+			envValue:   "envoy-gateway",
+			socketPath: "/var/run/ext.sock",
+			want:       gocontrolplane.EnvoyGatewayIntegration,
+		},
+		{name: "unknown-value-falls-back", envValue: "nginx", want: gocontrolplane.GCPServiceExtensionIntegration},
+		{name: "unknown-value-still-honours-the-socket", envValue: "nginx", socketPath: "/var/run/ext.sock", want: gocontrolplane.EnvoyIntegration},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := integration(serviceExtensionConfig{
+				integration:         tt.envValue,
+				extensionSocketPath: tt.socketPath,
+			})
+
+			require.Equal(t, tt.want, got, "resolved %s, wanted %s", got, tt.want)
+		})
+	}
+}
+
+const (
+	// Fixture paths, mirroring the layout the code reads under a filesystem root.
+	fixtureV2Limit  = "sys/fs/cgroup/memory.max"
+	fixtureV1Limit  = "sys/fs/cgroup/memory/memory.limit_in_bytes"
+	fixtureSelfCgrp = "proc/self/cgroup"
+)
+
+func TestCgroupMemoryLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		// files maps a path relative to the fixture root to its contents.
+		files     map[string]string
+		wantLimit int64
+		wantOK    bool
+	}{
+		{
+			name:      "cgroup-v2",
+			files:     map[string]string{fixtureV2Limit: "536870912\n"},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			name:  "cgroup-v2-unlimited-is-the-literal-max",
+			files: map[string]string{fixtureV2Limit: "max\n"},
+		},
+		{
+			name:      "cgroup-v1",
+			files:     map[string]string{fixtureV1Limit: "268435456"},
+			wantLimit: 268435456,
+			wantOK:    true,
+		},
+		{
+			name: "cgroup-v1-unlimited-is-a-huge-sentinel",
+			// The value cgroup v1 reports when no limit is set.
+			files: map[string]string{fixtureV1Limit: "9223372036854771712"},
+		},
+		{
+			name: "v2-wins-over-v1",
+			files: map[string]string{
+				fixtureV2Limit: "111",
+				fixtureV1Limit: "222",
+			},
+			wantLimit: 111,
+			wantOK:    true,
+		},
+		{
+			name: "falls-back-to-v1-when-v2-is-unlimited",
+			files: map[string]string{
+				fixtureV2Limit: "max",
+				fixtureV1Limit: "222",
+			},
+			wantLimit: 222,
+			wantOK:    true,
+		},
+		{
+			name: "no-cgroup-files-at-all",
+		},
+		{
+			name:  "unparseable",
+			files: map[string]string{fixtureV2Limit: "not-a-number"},
+		},
+		{
+			name:  "zero-is-not-a-usable-limit",
+			files: map[string]string{fixtureV2Limit: "0"},
+		},
+		{
+			// Host cgroup namespace: the mount root is the host's cgroup and carries no
+			// limit, while the process's own cgroup below it does. Reading the root would
+			// silently skip the protection.
+			name: "host-namespace-reads-the-process-own-cgroup",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/burstable/podabc/container123\n",
+				fixtureV2Limit:  "max",
+				"sys/fs/cgroup/kubepods/burstable/podabc/container123/memory.max": "268435456",
+			},
+			wantLimit: 268435456,
+			wantOK:    true,
+		},
+		{
+			// The limit is frequently set on the pod rather than the container, so the
+			// walk up towards the root has to find it.
+			name: "walks-up-to-an-ancestor-cgroup",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/kubepods/burstable/podabc/container123\n",
+				"sys/fs/cgroup/kubepods/burstable/podabc/memory.max": "134217728",
+			},
+			wantLimit: 134217728,
+			wantOK:    true,
+		},
+		{
+			// Private cgroup namespace, the common container case: the process reports "/"
+			// and the limit sits at the mount root.
+			name: "private-namespace-reports-root",
+			files: map[string]string{
+				fixtureSelfCgrp: "0::/\n",
+				fixtureV2Limit:  "536870912",
+			},
+			wantLimit: 536870912,
+			wantOK:    true,
+		},
+		{
+			// cgroup v1 lists one hierarchy per line; only the memory controller matters.
+			name: "cgroup-v1-picks-the-memory-controller-line",
+			files: map[string]string{
+				fixtureSelfCgrp: "5:cpu,cpuacct:/some/cpu/path\n4:memory:/mem/path\n",
+				"sys/fs/cgroup/memory/mem/path/memory.limit_in_bytes": "99999",
+			},
+			wantLimit: 99999,
+			wantOK:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for path, content := range tt.files {
+				full := filepath.Join(root, path)
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+			}
+
+			limit, ok := cgroupMemoryLimit(root)
+
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.wantLimit, limit)
+		})
+	}
+}
+
+// The runtime default is math.MaxInt64, which is precisely the state that lets the
+// kernel OOM-kill us, so leaving it in place must be a deliberate decision rather
+// than an accident.
+func TestConfigureGoMemoryLimitLeavesAnExplicitSettingAlone(t *testing.T) {
+	before := currentGoMemoryLimit()
+	t.Setenv("GOMEMLIMIT", strconv.FormatInt(before, 10))
+
+	configureGoMemoryLimit()
+
+	require.Equal(t, before, currentGoMemoryLimit())
+}
+
+// A manifest that templates GOMEMLIMIT to an empty string means "unset" to the Go
+// runtime, so it must not be read as an operator opt-out here either.
+func TestConfigureGoMemoryLimitTreatsEmptyAsUnset(t *testing.T) {
+	t.Setenv("GOMEMLIMIT", "")
+
+	value, present := os.LookupEnv("GOMEMLIMIT")
+	require.True(t, present, "the variable is present but empty, which is the case under test")
+	require.Empty(t, value)
+
+	// There is no cgroup limit on the test host, so the call must reach the derivation
+	// path and leave the limit untouched rather than return early on the env check.
+	require.NotPanics(t, configureGoMemoryLimit)
+}
+
+// currentGoMemoryLimit reads the limit without changing it: a negative argument to
+// SetMemoryLimit is documented as a pure retrieval.
+func currentGoMemoryLimit() int64 {
+	return debug.SetMemoryLimit(-1)
 }

@@ -1149,6 +1149,9 @@ const (
 	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
 	// kept from an incoming tracestate, per the W3C recommendation.
 	tracestateMemberMaxSize = 512
+	// tracestateHeaderReserve is the byte budget consumed by the fixed dd= prefix
+	// (e.g. "dd=s:1;p:<16-hex-chars>") before any t.* tag entries are written.
+	tracestateHeaderReserve = 28
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts

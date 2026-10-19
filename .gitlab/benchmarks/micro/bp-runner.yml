@@ -19,8 +19,11 @@ experiments:
             git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
             cd "$CODE_SRC" && git checkout $COMMIT_SHA
 
-            # Download module dependencies required by `go test -bench`
-            go mod download
+            # Download module dependencies required by `go test -bench`. Fall back to `direct` on
+            # any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a
+            # comma-separated GOPROXY falls through on -- since a single flaky fetch here fails
+            # the whole benchmark run.
+            GOPROXY="https://proxy.golang.org|direct" go mod download
           fi
 
         cpus: 4-47

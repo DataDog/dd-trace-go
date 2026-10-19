@@ -98,8 +98,13 @@ type (
 	testingMInstrumentationClaim struct {
 		tests                map[string]func(*testing.T)
 		benchmarks           map[string]func(*testing.B)
+		fuzzTargets          map[string]func(*testing.F)
+		fuzzEvents           *fuzzEventQueue
+		examples             map[string]func()
 		testDescriptors      *[]testing.InternalTest
 		benchmarkDescriptors *[]testing.InternalBenchmark
+		fuzzDescriptors      *[]testing.InternalFuzzTarget
+		exampleDescriptors   *[]testing.InternalExample
 		retired              bool
 		stickyExitCode       int
 		deferredFailure      bool
@@ -285,6 +290,11 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 		return instrumentProcessRetryChild(m, cfg)
 	}
+	if testingFuzzWorkerActive() {
+		// The coordinator owns the native fuzz event. Mutation workers must run
+		// the standard library workload without creating their own CI session.
+		return true, identityTestingMFinalizer
+	}
 	claim, disposition := claimTestingMInstrumentation(m)
 	switch disposition {
 	case testingMClaimActiveConflict:
@@ -312,6 +322,13 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if targets := getInternalFuzzTargetArray(m); targets != nil && len(*targets) > 0 {
+		claim.fuzzEvents = &fuzzEventQueue{}
+		if !integrations.TryPushCiVisibilityPreCloseAction(claim.fuzzEvents.finish) {
+			log.Debug("instrumentTestingM: fuzz event shutdown registration rejected; keeping immediate reporting")
+			claim.fuzzEvents = nil
+		}
+	}
 	processModeEnabled := snapshotProcessRetryWrapperOptions(&wrapperOpts)
 	if processModeEnabled && !registerProcessRetryShutdownAction() {
 		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
@@ -353,11 +370,28 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 	if !coverageInitialized && testing.CoverMode() != "" {
 		coverage.InitializeCoverage(m, false)
 	}
+	if processModeEnabled && quarantinedRaceProcessSupported() &&
+		settings != nil && settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+		// This context is deliberately narrower than the general retry backend:
+		// only explicitly opted-in quarantined tests in race binaries move their
+		// first execution out of process. The parent remains the sole owner of CI
+		// Visibility events and retries; children execute one selected subtree.
+		// Keep the context when process setup failed so an eligible test fails
+		// closed instead of silently running its body in the parent.
+		wrapperOpts.quarantinedRaceProcess = newQuarantinedRaceProcessContext(
+			wrapperOpts.processRetryLaunchTemplate,
+			wrapperOpts.mRunEpoch,
+			wrapperOpts.mRunInvocations,
+			settings.TestManagement.AttemptToFixRetries,
+		)
+	}
 
 	ddm := (*M)(m)
 
 	// Instrument the internal tests for CI visibility.
 	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts, claim)
+	ddm.instrumentInternalFuzzTargets(getInternalFuzzTargetArray(m), claim)
+	ddm.instrumentInternalExamples(getInternalExampleArray(m), claim)
 
 	// Instrument the internal benchmarks for CI visibility.
 	for _, v := range os.Args {
@@ -388,15 +422,32 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 			recordTestingMDeferredDisposition(claim, summary)
 		}
 		markEFDSessionFaultyIfNeeded(wrapperOpts.efdFaultySessionGuard)
+		if claim.fuzzEvents != nil {
+			if abnormalExit {
+				claim.fuzzEvents.finish()
+			} else {
+				claim.fuzzEvents.finishAfterNativeRun()
+			}
+		}
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
-			uploadFinalCoverageReport(settings)
-			if !publishCoverage {
+			isolatedCoverageMerged, err := coverage.FinalizeProcessCoverageProfiles()
+			cov, corrected, publishCoverage := 0.0, false, true
+			if err != nil {
+				// A child profile that cannot be merged makes the parent report
+				// incomplete. Treat it as infrastructure failure, never as a
+				// quarantined test outcome.
+				log.Error("civisibility.cov: failed to merge isolated process coverage: %s", err.Error())
+				exitCode = processRetryFailureExitCode
+			} else {
+				cov, corrected, publishCoverage = finalizeITRCoverageBackfill()
+				uploadFinalCoverageReport(settings)
+			}
+			if err != nil || !publishCoverage {
 				session.Close(exitCode)
 				coverage.CleanupRuntimeCoverageSnapshot()
 				integrations.ExitCiVisibility()
@@ -405,7 +456,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				}
 				return exitCode
 			}
-			if !corrected {
+			if isolatedCoverageMerged || !corrected {
 				// let's try first with our coverage package
 				cov = coverage.GetCoverage()
 			}
@@ -670,6 +721,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 			defer deleteTestMetadata(t)
 		}
 		execMeta.identity = testInfo.identity
+		execMeta.quarantinedRaceProcess = wrapperOpts.quarantinedRaceProcess
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModule(testInfo.moduleName)
@@ -883,6 +935,8 @@ func restoreTestingMWorkloads(m *testing.M, claim *testingMInstrumentationClaim)
 	}
 	restoreTestingMTests(claim.testDescriptors, claim.tests)
 	restoreTestingMBenchmarks(claim.benchmarkDescriptors, claim.benchmarks)
+	restoreTestingMFuzzTargets(claim.fuzzDescriptors, claim.fuzzTargets)
+	restoreTestingMExamples(claim.exampleDescriptors, claim.examples)
 }
 
 func retireTestingMInstrumentation(m *testing.M, claim *testingMInstrumentationClaim) {
@@ -919,6 +973,28 @@ func restoreTestingMBenchmarks(benchmarks *[]testing.InternalBenchmark, original
 	for idx := range *benchmarks {
 		if original, ok := originals[(*benchmarks)[idx].Name]; ok {
 			(*benchmarks)[idx].F = original
+		}
+	}
+}
+
+func restoreTestingMFuzzTargets(fuzzTargets *[]testing.InternalFuzzTarget, originals map[string]func(*testing.F)) {
+	if fuzzTargets == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *fuzzTargets {
+		if original, ok := originals[(*fuzzTargets)[idx].Name]; ok {
+			(*fuzzTargets)[idx].Fn = original
+		}
+	}
+}
+
+func restoreTestingMExamples(examples *[]testing.InternalExample, originals map[string]func()) {
+	if examples == nil || len(originals) == 0 {
+		return
+	}
+	for idx := range *examples {
+		if original, ok := originals[(*examples)[idx].Name]; ok {
+			(*examples)[idx].F = original
 		}
 	}
 }

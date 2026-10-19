@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +24,15 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type traces [][]map[string]any
@@ -90,6 +95,75 @@ func waitForPayload(payloads chan traces) (traces, error) {
 	}
 }
 
+type otlpPayload struct {
+	traces *otlptrace.TracesData
+	err    error
+}
+
+func mockOTLPTracerProvider(t *testing.T, opts ...tracer.StartOption) (*TracerProvider, <-chan otlpPayload, func()) {
+	payloads := make(chan otlpPayload, 1)
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/traces" {
+			err := fmt.Errorf("unexpected OTLP request: %s %s", r.Method, r.URL.Path)
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var data otlptrace.TracesData
+		if err := proto.Unmarshal(body, &data); err != nil {
+			payloads <- otlpPayload{err: err}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		payloads <- otlpPayload{traces: &data}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", collector.URL+"/v1/traces")
+
+	tp := NewTracerProvider(opts...)
+	otel.SetTracerProvider(tp)
+	return tp, payloads, func() {
+		if err := tp.Shutdown(); err != nil {
+			t.Fatalf("Tracer Provider shutdown failure: %v", err)
+		}
+		collector.Close()
+	}
+}
+
+func waitForOTLPPayload(payloads <-chan otlpPayload) (*otlptrace.TracesData, error) {
+	select {
+	case payload := <-payloads:
+		return payload.traces, payload.err
+	case <-time.After(10 * time.Second):
+		return nil, errors.New("timed out waiting for OTLP traces")
+	}
+}
+
+func spansFromOTLPPayload(payload *otlptrace.TracesData) []*otlptrace.Span {
+	var spans []*otlptrace.Span
+	for _, resourceSpans := range payload.ResourceSpans {
+		for _, scopeSpans := range resourceSpans.ScopeSpans {
+			spans = append(spans, scopeSpans.Spans...)
+		}
+	}
+	return spans
+}
+
+func findOTLPAttribute(span *otlptrace.Span, key string) (*otlpcommon.AnyValue, bool) {
+	for _, attribute := range span.Attributes {
+		if attribute.Key == key {
+			return attribute.Value, true
+		}
+	}
+	return nil, false
+}
+
 func TestSpanResourceNameDefault(t *testing.T) {
 	assert := assert.New(t)
 	ctx := context.Background()
@@ -134,16 +208,14 @@ func TestSpanSetName(t *testing.T) {
 }
 
 // TestSpanSetNameUpdatesResourceOtelSemantics verifies that under OTel semantics SetName
-// updates the resource (the OTLP span name) — e.g. otelhttp renames "GET" to "GET /users/{id}".
+// determines the exported OTLP span name, as when otelhttp renames "GET" to "GET /users/{id}".
 func TestSpanSetNameUpdatesResourceOtelSemantics(t *testing.T) {
-	assert := assert.New(t)
 	// The flag is resolved when the provider is created; reload on cleanup so it
 	// doesn't leak (LIFO order runs this after t.Setenv restores the env).
 	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
-	internalconfig.CreateNew()
 
-	_, payloads, cleanup := mockTracerProvider(t)
+	_, payloads, cleanup := mockOTLPTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
@@ -154,16 +226,11 @@ func TestSpanSetNameUpdatesResourceOtelSemantics(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(payloads)
-	if err != nil {
-		t.Fatal(err.Error())
-	}
-	p := traces[0]
-	// Resource follows the rename. Under OTel semantics the operation-name logic is
-	// skipped entirely (no remap, no computed default), so the operation name is left
-	// as it was set at Start and the span attributes pass through unchanged.
-	assert.Equal("GET /users/{id}", p[0]["resource"])
-	assert.Equal("GET", p[0]["name"])
+	payload, err := waitForOTLPPayload(payloads)
+	require.NoError(t, err)
+	spans := spansFromOTLPPayload(payload)
+	require.Len(t, spans, 1)
+	assert.Equal(t, "GET /users/{id}", spans[0].Name)
 }
 
 func TestSpanLink(t *testing.T) {
@@ -265,6 +332,8 @@ func TestSpanEnd(t *testing.T) {
 	assert.Equal(1.0, p[0]["error"])                 // this should be an error span
 	meta := fmt.Sprintf("%v", p[0]["meta"])
 	assert.Contains(meta, msg)
+	// Non-semantics error path: WithError injects error.type as the wrapper's reflect type.
+	assert.Contains(meta, "error.type:*errors.errorString")
 	for k, v := range attributes {
 		assert.Contains(meta, fmt.Sprintf("%s:%s", k, v))
 	}
@@ -276,6 +345,96 @@ func TestSpanEnd(t *testing.T) {
 		nowUnixNano, nowUnixNano,
 	)
 	assert.Contains(meta, jsonMeta)
+}
+
+// TestSpanEndKeepsUserErrorAttributes verifies that finishing an error-status span keeps
+// user-set error.message, error.type and error.stack attributes instead of replacing them
+// with values derived from the status description.
+// See https://github.com/DataDog/dd-trace-go/issues/3708.
+func TestSpanEndKeepsUserErrorAttributes(t *testing.T) {
+	const statusDesc = "status description"
+
+	tests := []struct {
+		name       string
+		attributes []attribute.KeyValue
+		wantMeta   map[string]string
+	}{
+		{
+			name:       "no error attributes",
+			attributes: nil,
+			wantMeta: map[string]string{
+				ext.ErrorMsg:  statusDesc,
+				ext.ErrorType: "*errors.errorString",
+			},
+		},
+		{
+			name:       "error.message",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorMsg, "custom message")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg: "custom message",
+			},
+		},
+		{
+			name:       "error.type",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorType, "custom.ErrorType")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:  statusDesc,
+				ext.ErrorType: "custom.ErrorType",
+			},
+		},
+		{
+			name:       "error.stack",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorStack, "custom stack")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:   statusDesc,
+				ext.ErrorStack: "custom stack",
+			},
+		},
+		{
+			name: "all error attributes",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorMsg, "custom message"),
+				attribute.String(ext.ErrorType, "custom.ErrorType"),
+				attribute.String(ext.ErrorStack, "custom stack"),
+			},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:   "custom message",
+				ext.ErrorType:  "custom.ErrorType",
+				ext.ErrorStack: "custom stack",
+			},
+		},
+	}
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, sp := tr.Start(context.Background(), "op")
+			sp.SetAttributes(tc.attributes...)
+			sp.SetStatus(codes.Error, statusDesc)
+			sp.End()
+
+			tracer.Flush()
+			traces, err := waitForPayload(payloads)
+			require.NoError(t, err)
+			p := traces[0][0]
+			meta, ok := p["meta"].(map[string]any)
+			require.True(t, ok)
+
+			assert.Equal(t, 1.0, p["error"])
+			for k, v := range tc.wantMeta {
+				assert.Equal(t, v, meta[k], k)
+			}
+			if len(tc.attributes) > 0 {
+				// The stack captured in End points at the bridge, not at the user's error.
+				assert.NotContains(t, meta, ext.ErrorHandlingStack)
+			} else {
+				assert.Contains(t, meta, ext.ErrorHandlingStack)
+			}
+		})
+	}
 }
 
 // This test verifies that setting the status of a span
@@ -1011,15 +1170,12 @@ func TestToReservedAttributesOtelSemantics(t *testing.T) {
 // TestRemapStatusCodeOtelSemantics verifies that under OTel semantics the bridge keeps
 // http.response.status_code instead of remapping it to the legacy http.status_code tag.
 func TestRemapStatusCodeOtelSemantics(t *testing.T) {
-	assert := assert.New(t)
-
 	// Reload global config on cleanup so the flag doesn't leak; LIFO order runs this
 	// after t.Setenv restores the env.
 	t.Cleanup(func() { internalconfig.CreateNew() })
 	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
-	internalconfig.CreateNew()
 
-	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	_, payloads, cleanup := mockOTLPTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
 	defer cleanup()
 
@@ -1029,14 +1185,151 @@ func TestRemapStatusCodeOtelSemantics(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(payloads)
-	if err != nil {
-		t.Fatal(err.Error())
+	payload, err := waitForOTLPPayload(payloads)
+	require.NoError(t, err)
+	spans := spansFromOTLPPayload(payload)
+	require.Len(t, spans, 1)
+
+	statusCode, found := findOTLPAttribute(spans[0], "http.response.status_code")
+	require.True(t, found)
+	integer, ok := statusCode.Value.(*otlpcommon.AnyValue_IntValue)
+	require.True(t, ok, "http.response.status_code must be an OTLP integer")
+	assert.Equal(t, int64(200), integer.IntValue)
+	_, found = findOTLPAttribute(spans[0], "http.status_code")
+	assert.False(t, found)
+}
+
+// TestSpanEndErrorTypeOtelSemantics verifies that finishing an error-status span under
+// OTel semantics marks it errored without injecting Datadog's error.type or
+// error.handling_stack: an instrumentation-set error.type survives, and when none is set
+// no reflect-type value is injected. (The non-semantics path is covered by TestSpanEnd.)
+func TestSpanEndErrorTypeOtelSemantics(t *testing.T) {
+	// Finish an error-status span under semantics, optionally with an
+	// instrumentation-set error.type, and return the exported OTLP span.
+	run := func(t *testing.T, instrumentationErrorType string) *otlptrace.Span {
+		t.Cleanup(func() { internalconfig.CreateNew() })
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		_, payloads, cleanup := mockOTLPTracerProvider(t)
+		tr := otel.Tracer("")
+		defer cleanup()
+
+		_, sp := tr.Start(context.Background(), "op")
+		if instrumentationErrorType != "" {
+			sp.SetAttributes(attribute.String(ext.ErrorType, instrumentationErrorType))
+		}
+		sp.SetStatus(codes.Error, "boom")
+		sp.End()
+
+		tracer.Flush()
+		payload, err := waitForOTLPPayload(payloads)
+		require.NoError(t, err)
+		spans := spansFromOTLPPayload(payload)
+		require.Len(t, spans, 1)
+		return spans[0]
 	}
-	p := traces[0]
-	meta := fmt.Sprintf("%v", p[0]["meta"])
-	metrics := fmt.Sprintf("%v", p[0]["metrics"])
-	// No legacy string remap; OTel key retained as a numeric tag.
-	assert.NotContains(meta, "http.status_code")
-	assert.Contains(metrics, "http.response.status_code:200")
+
+	t.Run("preserves instrumentation error.type", func(t *testing.T) {
+		span := run(t, "*net.OpError")
+		assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, span.Status.Code)
+		errorType, found := findOTLPAttribute(span, ext.ErrorType)
+		require.True(t, found)
+		assert.Equal(t, "*net.OpError", errorType.GetStringValue())
+		_, found = findOTLPAttribute(span, ext.ErrorHandlingStack)
+		assert.False(t, found)
+	})
+
+	t.Run("injects no error.type when instrumentation sets none", func(t *testing.T) {
+		span := run(t, "")
+		assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, span.Status.Code)
+		_, found := findOTLPAttribute(span, ext.ErrorType)
+		assert.False(t, found)
+		_, found = findOTLPAttribute(span, ext.ErrorHandlingStack)
+		assert.False(t, found)
+	})
+}
+
+// TestSpanEndErrorTypeOtelSemanticsOTLPRoundTrip finishes a bridge span under OTel
+// semantics with OTLP export enabled and asserts on the exported protobuf, so the bridge
+// End() behavior and the OTLP conversion are verified as a composed whole rather than
+// separately (End() via TestSpanEndErrorTypeOtelSemantics, conversion via
+// TestConvertSpanAttributesOtelSemantics).
+func TestSpanEndErrorTypeOtelSemanticsOTLPRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+
+	// The OTLP writer builds its own HTTP client, so httpmem/WithHTTPClient cannot be
+	// used here; it needs a real listener.
+	bodies := make(chan []byte, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if b, err := io.ReadAll(r.Body); err == nil && len(b) > 0 {
+			select {
+			case bodies <- b:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Reload global config on cleanup so the flags don't leak; LIFO order runs this
+	// after t.Setenv restores the env.
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL)
+	internalconfig.CreateNew()
+
+	tp := NewTracerProvider()
+	_, sp := tp.Tracer("").Start(context.Background(), "op")
+	// Instrumentation sets the stable OTel error.type attribute (as otelhttp does on a
+	// failed request), then reports the error status.
+	sp.SetAttributes(attribute.String(ext.ErrorType, "*net.OpError"))
+	sp.SetStatus(codes.Error, "boom")
+	sp.End()
+	// Shutdown drains the OTLP writer; tracer.Flush() does not cover it.
+	if err := tp.Shutdown(); err != nil {
+		t.Fatalf("Tracer Provider shutdown failure: %v", err)
+	}
+
+	var body []byte
+	select {
+	case body = <-bodies:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timed out waiting for the OTLP payload")
+	}
+
+	var td otlptrace.TracesData
+	if err := proto.Unmarshal(body, &td); err != nil {
+		t.Fatalf("Failed to unmarshal the OTLP payload: %v", err)
+	}
+
+	var found *otlptrace.Span
+	for _, rs := range td.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, s := range ss.GetSpans() {
+				if s.GetName() == "op" {
+					found = s
+				}
+			}
+		}
+	}
+	if found == nil {
+		t.Fatal("Exported OTLP payload contained no span named \"op\"")
+	}
+
+	attrs := make(map[string]string, len(found.GetAttributes()))
+	for _, kv := range found.GetAttributes() {
+		attrs[kv.GetKey()] = kv.GetValue().GetStringValue()
+	}
+
+	// The error state rides on the OTLP status, and the instrumentation-set error.type
+	// survives as a span attribute.
+	assert.Equal(otlptrace.Status_STATUS_CODE_ERROR, found.GetStatus().GetCode())
+	assert.Equal("boom", found.GetStatus().GetMessage())
+	assert.Equal("*net.OpError", attrs[ext.ErrorType])
+	// DD-only tags stay out of the OTLP attributes.
+	for _, k := range []string{ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack, ext.SpanKind, "operation.name", ext.ResourceName} {
+		_, ok := attrs[k]
+		assert.Falsef(ok, "%q should not be exported under OTel semantics", k)
+	}
 }

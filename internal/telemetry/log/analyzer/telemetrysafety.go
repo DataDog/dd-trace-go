@@ -1,0 +1,237 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+// telemetrysafety.go replaces the ruleguard rules formerly in
+// rules/telemetry_rules.go (telemetryLogSmartSlogAny, telemetryLogStringErrorCall,
+// telemetryLogRawErrorUsage), which required golangci-lint's gocritic/ruleguard
+// integration. Folding them into this go/analysis pass means the SDK's own
+// error-reporting API (this package) is checked by the same standalone
+// `make lint/errlog` tool as the constant-message rule, with one less moving
+// part in CI.
+package analyzer
+
+import (
+	"go/ast"
+	"go/types"
+
+	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
+)
+
+const telemetrySafetyDoc = `telemetrysafety enforces PII-safety rules on internal/telemetry/log calls:
+
+  - slog.Any(key, value): value's exact type must implement slog.LogValuer
+    (e.g. SafeError, SafeSlice) or be a nil literal — a pointer-receiver
+    LogValue on T does not exempt a non-pointer T, since slog.Any boxes the
+    value as-is and cannot reach a pointer method. A value that merely
+    implements error is called out specifically: wrap it with NewSafeError
+    first.
+  - slog.String(key, err.Error()): forbidden when err implements error — the
+    raw error message bypasses redaction. Use slog.Any(key, NewSafeError(err)).
+
+These replace the ruleguard rules in the retired rules/telemetry_rules.go
+(telemetryLogSmartSlogAny, telemetryLogStringErrorCall, telemetryLogRawErrorUsage).`
+
+// telemetryLogFuncNames are the message-emitting entry points checked: the
+// package-level functions and the identically-named *Logger methods.
+var telemetryLogFuncNames = map[string]bool{"Debug": true, "Warn": true, "Error": true}
+
+// TelemetrySafetyAnalyzer is the production analyzer, scoped to
+// internal/telemetry/log; it skips that package's own files (see New's doc).
+var TelemetrySafetyAnalyzer = NewTelemetrySafety(telemetryLogPkg, telemetryLogPkg)
+
+// NewTelemetrySafety returns an analyzer that checks slog.Any/slog.String
+// arguments passed directly to logPkg's Debug/Warn/Error functions and Logger
+// methods. skipPkg's own files are not analyzed — internal/telemetry/log's
+// implementation builds these slog.Attr values itself (e.g. forward.go,
+// helpers.go) using NewSafeError directly rather than through logPkg's public
+// entry points, so there is nothing for this analyzer to see there, but the
+// skip keeps the intent explicit and matches Analyzer's convention.
+func NewTelemetrySafety(logPkg, skipPkg string) *analysis.Analyzer {
+	r := &telemetrySafetyRunner{logPkg: logPkg, skipPkg: skipPkg}
+	return &analysis.Analyzer{
+		Name:     "telemetrysafety",
+		Doc:      telemetrySafetyDoc,
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Run:      r.run,
+	}
+}
+
+type telemetrySafetyRunner struct {
+	logPkg  string
+	skipPkg string
+}
+
+func (r *telemetrySafetyRunner) run(pass *analysis.Pass) (any, error) {
+	if pass.Pkg.Path() == r.skipPkg {
+		return nil, nil
+	}
+
+	ins := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	errIface := errorInterface()
+	logValuerIface := lookupInterface(pass.Pkg, "log/slog", "LogValuer")
+
+	ins.Preorder([]ast.Node{(*ast.CallExpr)(nil)}, func(n ast.Node) {
+		call := n.(*ast.CallExpr)
+		fn, pkg := resolveFunc(pass, call)
+		if pkg != r.logPkg || !telemetryLogFuncNames[fn] || len(call.Args) < 2 {
+			return
+		}
+
+		// Args[0] is the message; only structured attrs passed directly as
+		// arguments are inspected. checkAttrArg also unwraps parenthesized
+		// attrs and descends into slog.Group children.
+		//
+		// Known limitation: a slog.Any/slog.String call assigned to a local
+		// variable first and passed by that variable is invisible here —
+		// this pass does no dataflow analysis. That gap let a raw recover()
+		// value reach telemetry via `var errAttr slog.Attr; errAttr =
+		// slog.Any(...)` at two openfeature call sites (fixed directly at
+		// those call sites; teaching this pass to follow local slog.Attr
+		// variables is a separate, larger change).
+		for _, arg := range call.Args[1:] {
+			r.checkAttrArg(pass, call, arg, errIface, logValuerIface)
+		}
+	})
+
+	return nil, nil
+}
+
+// checkAttrArg inspects one structured-attr argument passed to a telemetry
+// log call. It unwraps parentheses — record.AddAttrs((slog.Any("error", err)))
+// makes the argument an *ast.ParenExpr, which would otherwise slip past the
+// call assertion unexamined — and descends into slog.Group children: attrs
+// nested in a group resolve to log/slog themselves, so the Preorder filter
+// never reaches them on its own.
+func (r *telemetrySafetyRunner) checkAttrArg(pass *analysis.Pass, call *ast.CallExpr, arg ast.Expr, errIface, logValuerIface *types.Interface) {
+	for {
+		paren, ok := arg.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		arg = paren.X
+	}
+	inner, ok := arg.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	innerFn, innerPkg := resolveFunc(pass, inner)
+	if innerPkg != "log/slog" || len(inner.Args) < 1 {
+		return
+	}
+	switch innerFn {
+	case "Any":
+		if len(inner.Args) >= 2 {
+			r.checkSlogAny(pass, call, inner.Args[1], errIface, logValuerIface)
+		}
+	case "String":
+		if len(inner.Args) >= 2 {
+			r.checkSlogString(pass, call, inner.Args[1], errIface)
+		}
+	case "Group":
+		// Args[0] is the group name; the rest are attrs, which may
+		// themselves be nested groups.
+		for _, child := range inner.Args[1:] {
+			r.checkAttrArg(pass, call, child, errIface, logValuerIface)
+		}
+	}
+}
+
+func (r *telemetrySafetyRunner) checkSlogAny(pass *analysis.Pass, call *ast.CallExpr, value ast.Expr, errIface, logValuerIface *types.Interface) {
+	if isNilLiteral(pass, value) || nolintSuppressed(pass, value.Pos(), call.Pos(), "gocritic", "telemetrysafety") {
+		return
+	}
+	t := pass.TypesInfo.TypeOf(value)
+	if t == nil {
+		return
+	}
+	// Only the exact type passed is exempted — NOT types.NewPointer(t). A
+	// pointer-receiver LogValue on T is unreachable when a non-pointer T is
+	// boxed into the any that slog.Any takes: slog reflects over the value
+	// instead, which is exactly what this check exists to prevent. Callers
+	// with pointer-receiver LogValuer implementations must pass a pointer
+	// explicitly (slog.Any(key, &v)).
+	if logValuerIface != nil && types.Implements(t, logValuerIface) {
+		return // already safe: SafeError, SafeSlice, or a caller-provided LogValuer
+	}
+	if errIface != nil && types.Implements(t, errIface) {
+		pass.Reportf(value.Pos(),
+			"telemetry logging: raw error value (%s) passed to slog.Any exposes its message via reflection; wrap it first: slog.Any(key, NewSafeError(err))", t.String())
+		return
+	}
+	pass.Reportf(value.Pos(),
+		"telemetry logging: slog.Any value of type %s does not implement slog.LogValuer and may leak data via reflection; use an explicit slog.<Type>() helper or implement LogValuer", t.String())
+}
+
+func (r *telemetrySafetyRunner) checkSlogString(pass *analysis.Pass, call *ast.CallExpr, value ast.Expr, errIface *types.Interface) {
+	call, ok := value.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Error" || len(call.Args) != 0 {
+		return
+	}
+	recvType := pass.TypesInfo.TypeOf(sel.X)
+	if recvType == nil || errIface == nil || !types.Implements(recvType, errIface) {
+		return
+	}
+	if nolintSuppressed(pass, value.Pos(), call.Pos(), "gocritic", "telemetrysafety") {
+		return
+	}
+	pass.Reportf(value.Pos(),
+		"telemetry logging: slog.String with err.Error() exposes the raw error message; use slog.Any(key, NewSafeError(err)) instead")
+}
+
+// isNilLiteral reports whether e is the predeclared nil identifier — not
+// merely an identifier spelled "nil", which Go permits shadowing (e.g.
+// `nil := customerData`).
+func isNilLiteral(pass *analysis.Pass, e ast.Expr) bool {
+	ident, ok := e.(*ast.Ident)
+	if !ok || ident.Name != "nil" {
+		return false
+	}
+	return pass.TypesInfo.Uses[ident] == types.Universe.Lookup("nil")
+}
+
+// errorInterface returns the predeclared "error" interface type.
+func errorInterface() *types.Interface {
+	iface, _ := types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+	return iface
+}
+
+// lookupInterface finds the named interface type in the package identified by
+// importPath, searching pkg's import graph (direct and transitive). Returns
+// nil if the package or interface can't be found — callers treat that as "no
+// LogValuer-style check possible" rather than failing.
+func lookupInterface(pkg *types.Package, importPath, name string) *types.Interface {
+	target := findImportedPkg(pkg, importPath, map[*types.Package]bool{})
+	if target == nil {
+		return nil
+	}
+	obj := target.Scope().Lookup(name)
+	if obj == nil {
+		return nil
+	}
+	iface, _ := obj.Type().Underlying().(*types.Interface)
+	return iface
+}
+
+func findImportedPkg(pkg *types.Package, importPath string, seen map[*types.Package]bool) *types.Package {
+	if pkg == nil || seen[pkg] {
+		return nil
+	}
+	seen[pkg] = true
+	if pkg.Path() == importPath {
+		return pkg
+	}
+	for _, imp := range pkg.Imports() {
+		if found := findImportedPkg(imp, importPath, seen); found != nil {
+			return found
+		}
+	}
+	return nil
+}

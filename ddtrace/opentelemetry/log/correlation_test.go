@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -122,8 +123,8 @@ func TestContextWithDDSpan(t *testing.T) {
 		assert.Contains(t, retrievedState, "dd=")
 
 		// Extract just the dd vendor part (before any comma)
-		originalDD := strings.SplitN(originalState, ",", 2)[0]
-		retrievedDD := strings.SplitN(retrievedState, ",", 2)[0]
+		originalDD, _, _ := strings.Cut(originalState, ",")
+		retrievedDD, _, _ := strings.Cut(retrievedState, ",")
 
 		// Check that both contain the same fields (order-independent)
 		// Extract expected fields from original
@@ -179,7 +180,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// Emit a log with the context
 		var logRecord log.Record
-		logRecord.SetBody(log.StringValue("test log message"))
+		logRecord.SetBody(attribute.StringValue("test log message"))
 		logRecord.SetSeverity(log.SeverityInfo)
 
 		logger.Emit(ctx, logRecord)
@@ -248,7 +249,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// Emit a log with the context
 		var logRecord log.Record
-		logRecord.SetBody(log.StringValue("test log message from otel span"))
+		logRecord.SetBody(attribute.StringValue("test log message from otel span"))
 		logRecord.SetSeverity(log.SeverityInfo)
 
 		logger.Emit(ctx, logRecord)
@@ -303,7 +304,7 @@ func TestLogCorrelation(t *testing.T) {
 		// Emit a log WITHOUT any span context
 		ctx := context.Background()
 		var logRecord log.Record
-		logRecord.SetBody(log.StringValue("test log without span"))
+		logRecord.SetBody(attribute.StringValue("test log without span"))
 		logRecord.SetSeverity(log.SeverityInfo)
 
 		logger.Emit(ctx, logRecord)
@@ -363,7 +364,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// Log from DD span context (automatic bridging by DD-aware logger)
 		var logRecord1 log.Record
-		logRecord1.SetBody(log.StringValue("log from DD span"))
+		logRecord1.SetBody(attribute.StringValue("log from DD span"))
 		logRecord1.SetSeverity(log.SeverityInfo)
 		logger.Emit(ctx, logRecord1)
 
@@ -373,7 +374,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// Log from OTel span context
 		var logRecord2 log.Record
-		logRecord2.SetBody(log.StringValue("log from OTel span"))
+		logRecord2.SetBody(attribute.StringValue("log from OTel span"))
 		logRecord2.SetSeverity(log.SeverityInfo)
 		logger.Emit(ctx2, logRecord2)
 

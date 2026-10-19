@@ -1,8 +1,14 @@
 name: Govulncheck
 on:
   pull_request:
+    # No "**/*.go" here, deliberately. Vulnerabilities enter through
+    # dependencies, which these globs cover. A Go edit can still change
+    # *reachability* of an already-known vulnerable symbol, and that case is
+    # covered twice over without paying 17 job-minutes on every pull request:
+    # the `push` trigger below has no paths filter, so every merge-queue branch
+    # is scanned in full before it can land on main, and the nightly cron
+    # rescans the whole tree.
     paths:
-      - "**/*.go"
       - "**/go.mod"
       - "**/go.sum"
       - "go.work"
@@ -25,6 +31,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   schedule:
     - cron: '00 00 * * *'
@@ -33,6 +40,9 @@ on:
 concurrency:
   group: govulncheck-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
 
 permissions:
   contents: read
@@ -68,11 +78,19 @@ jobs:
           # action re-runs actions/checkout with default credentials and the
           # event ref, which can diverge from inputs.ref on workflow_call.
           repo-checkout: false
+      - name: Deduplicate identical SARIF stacks
+        # govulncheck can emit duplicate stacks, violating SARIF's uniqueItems constraint.
+        # Remove only identical stacks; keep all findings and distinct call stacks.
+        # Upstream: https://github.com/golang/go/issues/81953
+        if: always() && hashFiles('govulncheck.sarif') != ''
+        run: |-
+          jq '(.runs[].results[] | select(.stacks != null) | .stacks) |= unique' \
+            govulncheck.sarif > govulncheck-deduplicated.sarif
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
-          sarif_file: govulncheck.sarif
+          sarif_file: govulncheck-deduplicated.sarif
           category: govulncheck
       - name: Run govulncheck (OpenVEX)
         if: always()
@@ -137,7 +155,7 @@ jobs:
           git clean -fdx -e govulncheck-contribs.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: govulncheck-contribs.sarif
           category: govulncheck-contribs

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v5"
 
@@ -17,6 +18,8 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/status"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -26,16 +29,14 @@ import (
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load()
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started && activeAppSec.cfg.RASP
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load() && a.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -107,7 +108,7 @@ func Start(opts ...config.StartOption) {
 				// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 				logUnexpectedStartError(err)
 			}
-			appsec.stopRC()
+			appsec.close()
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
@@ -117,10 +118,11 @@ func Start(opts ...config.StartOption) {
 
 	if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
-		appsec.stopRC()
+		appsec.close()
 		return
 	}
 
+	internalconfig.RecordProductStart(internalconfig.ProductAppsec)
 	setActiveAppSec(appsec)
 }
 
@@ -139,30 +141,44 @@ func Stop() {
 }
 
 var (
-	activeAppSec *appsec
-	mu           sync.RWMutex
+	activeAppSec atomic.Pointer[appsec]
+	mu           sync.Mutex
 )
 
 func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
-	if activeAppSec != nil {
-		activeAppSec.stopRC()
-		activeAppSec.stop()
+	if previous := activeAppSec.Load(); previous != nil {
+		previous.close()
 	}
-	activeAppSec = a
+	activeAppSec.Store(a)
+}
+
+// close stops the remote config client and AppSec, then releases the WAF manager. The instance must not be used
+// afterward.
+func (a *appsec) close() {
+	a.stopRC()
+	a.stop()
+	a.cfg.WAFManager.Close()
 }
 
 type appsec struct {
-	cfg        *config.Config
-	features   []listener.Feature
-	featuresMu sync.Mutex
-	started    bool
+	cfg *config.Config
+	// featureBuilders are the constructors of the features to start, i.e. the ones not disabled by the configuration.
+	featureBuilders []listener.NewFeature
+	features        []listener.Feature
+	featuresMu      sync.Mutex
+	// started is read by Enabled/RASPEnabled and written by start()/stop(), which the
+	// remote-config client invokes from its own goroutine; it must be atomic.
+	started atomic.Bool
 }
 
 func newAppSec(cfg *config.Config) *appsec {
+	builders, disabledAddrs := enabledFeatures(cfg.DisabledFeatures)
+	cfg.DisabledAddresses = disabledAddrs
 	return &appsec{
-		cfg: cfg,
+		cfg:             cfg,
+		featureBuilders: builders,
 	}
 }
 
@@ -188,7 +204,8 @@ func (a *appsec) start() error {
 	a.enableRCBlocking()
 	a.enableRASP()
 
-	a.started = true
+	status.MarkEnabled()
+	a.started.Store(true)
 	log.Info("appsec: up and running")
 
 	// TODO: log the config like the APM tracer does but we first need to define
@@ -199,10 +216,11 @@ func (a *appsec) start() error {
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
-	if !a.started {
+	if !a.started.Load() {
 		return
 	}
-	a.started = false
+
+	a.started.Store(false)
 	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()

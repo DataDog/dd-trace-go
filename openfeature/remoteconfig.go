@@ -13,6 +13,7 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -21,7 +22,11 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProvider(config)
+	provider := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
@@ -72,7 +77,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -82,7 +87,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -200,20 +205,34 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, condition.Operator)
 				}
 
-				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if _, ok := internal.ToFloat64(condition.Value); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorMatches, operatorNotMatches:
 					regex, ok := condition.Value.(string)
 					if !ok {
 						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
 							flagKey, i, condition.Operator)
 					}
-
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
 					}
-				}
-
-				switch condition.Operator {
+				case operatorOneOf, operatorNotOneOf:
+					if _, ok := condition.Value.([]any); !ok {
+						if _, ok := condition.Value.([]string); !ok {
+							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
+								flagKey, i, condition.Operator)
+						}
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
+					}
 				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
 					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
 					comparand, ok := condition.Value.(string)

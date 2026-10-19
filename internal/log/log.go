@@ -4,6 +4,25 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package log provides logging utilities for the tracer.
+//
+// # Constant message convention
+//
+// [Error] aggregates messages by their format string (used as the dedup key)
+// and flushes them periodically. For this aggregation to behave predictably,
+// the first argument to [Error] and [Warn] MUST be a compile-time constant
+// string — dynamic detail belongs in the variadic args, not the format string
+// itself. The `constantlogmsg` analyzer (internal/telemetry/log/analyzer)
+// enforces this.
+//
+// This package does not report to telemetry itself. SDK code that wants an
+// error or panic surfaced in Error Tracking should call
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportError] or
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.ReportPanic]
+// explicitly at that call site. A call site that wants both a local log line
+// and a report, without duplicating the message, should use
+// [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportError]
+// or [github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.LogAndReportPanic]
+// instead.
 package log
 
 import (
@@ -48,6 +67,22 @@ const (
 	// LevelError represents error messages.
 	LevelError
 )
+
+// ParseLevel parses a case-insensitive level name: debug, info, warn or error.
+func ParseLevel(s string) (Level, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return LevelDebug, true
+	case "info":
+		return LevelInfo, true
+	case "warn":
+		return LevelWarn, true
+	case "error":
+		return LevelError, true
+	default:
+		return 0, false
+	}
+}
 
 var prefixMsg = "Datadog Tracer " + version.Tag
 
@@ -100,7 +135,7 @@ var (
 )
 
 func init() {
-	levelThreshold.Store(int32(LevelWarn))
+	levelThreshold.Store(int32(LevelInfo))
 }
 
 // UseLogger sets l as the active logger and returns a function to restore the
@@ -142,6 +177,8 @@ func SetLevel(lvl Level) {
 	levelThreshold.Store(int32(lvl))
 }
 
+// DefaultLevel returns the level given to messages logged without one: the
+// current threshold. tracer.AdaptLogger documents this behavior.
 func DefaultLevel() Level {
 	return GetLevel()
 }
@@ -149,6 +186,11 @@ func DefaultLevel() Level {
 // GetLevel returns the currrent log level.
 func GetLevel() Level {
 	return Level(levelThreshold.Load())
+}
+
+// Enabled reports whether messages at lvl pass the current log threshold.
+func Enabled(lvl Level) bool {
+	return lvl >= GetLevel()
 }
 
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
@@ -165,12 +207,12 @@ func Debug(fmt string, a ...any) {
 	printMsg(LevelDebug, fmt, a...)
 }
 
-// Warn prints a warning message.
+// Warn prints a warning message if the level is LevelWarn or lower.
 func Warn(fmt string, a ...any) {
 	printMsg(LevelWarn, fmt, a...)
 }
 
-// Info prints an informational message.
+// Info prints an informational message if the level is LevelInfo or lower.
 func Info(fmt string, a ...any) {
 	printMsg(LevelInfo, fmt, a...)
 }
@@ -280,7 +322,12 @@ func flushLocked() {
 	erron = false
 }
 
+// printMsg checks the threshold itself so that Warn and Info stay small enough
+// to inline at their call sites.
 func printMsg(lvl Level, format string, a ...any) {
+	if !Enabled(lvl) {
+		return
+	}
 	var b strings.Builder
 	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
 	b.WriteString(prefixMsg)

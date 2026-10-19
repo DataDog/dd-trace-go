@@ -17,6 +17,14 @@ func TestParseSemver(t *testing.T) {
 		want    parsedSemver
 	}{
 		{version: "0.0.0", want: parsedSemver{}},
+		{version: "1", want: parsedSemver{major: 1}},
+		{version: "1.2", want: parsedSemver{major: 1, minor: 2}},
+		{version: "1.2.3.4", want: parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4}}},
+		{version: "1.2.3.4.5", want: parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4, 5}}},
+		{
+			version: "1.2.3.4.5.6.7.8.9.10.11.12.13",
+			want:    parsedSemver{major: 1, minor: 2, patch: 3, extra: []uint64{4, 5, 6, 7, 8, 9, 10, 11, 12, 13}},
+		},
 		{
 			version: "18446744073709551615.18446744073709551615.18446744073709551615",
 			want: parsedSemver{
@@ -46,9 +54,6 @@ func TestParseSemver(t *testing.T) {
 
 	invalid := []string{
 		"",
-		"1",
-		"1.2",
-		"1.2.3.4",
 		"v1.2.3",
 		"01.2.3",
 		"1.02.3",
@@ -106,6 +111,29 @@ func TestCompareSemver(t *testing.T) {
 			}
 		}
 	}
+
+	t.Run("extended numeric components", func(t *testing.T) {
+		tests := []struct {
+			left, right string
+			want        int
+		}{
+			{left: "1.2.3", right: "1.2.3.0", want: 0},
+			{left: "1.2.3.4", right: "1.2.3.5", want: -1},
+			{left: "1.2.3.4", right: "1.2.3.4.0", want: 0},
+			{left: "1.2.3.4.1", right: "1.2.3.4", want: 1},
+			{left: "1.2.3.4.5.6", right: "1.2.3.4.5.7", want: -1},
+			{left: "1.2.3.4.5.6", right: "1.2.3.4.5.6.0", want: 0},
+			{left: "1.2.3.4.5.6-alpha", right: "1.2.3.4.5.6", want: -1},
+			{left: "1.2.3.4.5.6.7.8.9.10.11.12.13", right: "1.2.3.4.5.6.7.8.9.10.11.12.14", want: -1},
+		}
+		for _, tt := range tests {
+			left, ok := parseSemver(tt.left)
+			require.True(t, ok)
+			right, ok := parseSemver(tt.right)
+			require.True(t, ok)
+			require.Equal(t, tt.want, compareSemver(left, right))
+		}
+	})
 
 	t.Run("arbitrarily large numeric prerelease identifiers", func(t *testing.T) {
 		left, ok := parseSemver("1.0.0-99999999999999999999")

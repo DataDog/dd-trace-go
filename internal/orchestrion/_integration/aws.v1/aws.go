@@ -36,8 +36,8 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 
 	tc.cfg = &aws.Config{
 		Credentials: credentials.NewStaticCredentials("NOTANACCESSKEY", "NOTASECRETKEY", ""),
-		Endpoint:    aws.String(fmt.Sprintf("http://%s:%s", host, port)),
-		Region:      aws.String("test-region-1337"),
+		Endpoint:    new(fmt.Sprintf("http://%s:%s", host, port)),
+		Region:      new("test-region-1337"),
 	}
 }
 

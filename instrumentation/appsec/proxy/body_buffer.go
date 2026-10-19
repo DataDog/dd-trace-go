@@ -36,9 +36,37 @@ func (b *bodyBuffer) append(chunk []byte) {
 		b.truncated = true
 	}
 
-	if b.buffer == nil {
-		b.buffer = make([]byte, 0, bytesToAdd)
+	b.grow(currentSize + bytesToAdd)
+	b.buffer = append(b.buffer, chunk[:bytesToAdd]...)
+}
+
+// minBodyBufferCapacity is the smallest allocation worth making once a body has shown
+// it arrives in more than one chunk, at which point reallocating per chunk costs more
+// than the slack does.
+const minBodyBufferCapacity = 4096
+
+// grow ensures the buffer can hold size bytes without reallocating.
+//
+// Capacity is doubled to keep appends amortized, then clamped to sizeLimit, which
+// append cannot do on its own: left to itself it rounds the final chunk of a large
+// body up past the limit we promised to respect. Bodies never exceed sizeLimit, so
+// clamping only ever removes waste.
+//
+// The first allocation is sized exactly to the chunk. Most bodies arrive whole and are
+// released right after analysis, so rounding those up to a page would add allocation
+// traffic at request rate for no amortization in return.
+func (b *bodyBuffer) grow(size int) {
+	if cap(b.buffer) >= size {
+		return
 	}
 
-	b.buffer = append(b.buffer, chunk[:bytesToAdd]...)
+	capacity := max(2*cap(b.buffer), size)
+	if cap(b.buffer) > 0 {
+		capacity = max(capacity, minBodyBufferCapacity)
+	}
+	capacity = min(capacity, b.sizeLimit)
+
+	grown := make([]byte, len(b.buffer), capacity)
+	copy(grown, b.buffer)
+	b.buffer = grown
 }

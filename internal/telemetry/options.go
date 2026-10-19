@@ -7,6 +7,8 @@ package telemetry
 
 import (
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
 
 // WithTags returns a LogOption that appends the tags for the telemetry log message. Tags are key-value pairs that are then
@@ -62,9 +64,13 @@ func WithTags(tags []string) LogOption {
 	}
 }
 
-// WithStacktrace returns a LogOption that sets the stacktrace for the telemetry log message. The stacktrace is a string
-// that is generated inside the WithStacktrace function. Logs demultiplication does not take the stacktrace into account.
-// This means that a log that has been demultiplicated will only show of the first log.
+// WithStacktrace returns a LogOption that requests a stack trace be attached
+// to the telemetry log message. The stack is captured lazily by
+// loggerBackend.add, at Log-dedup time — NOT inside this function — unless
+// [Log] has already captured one synchronously because the global client
+// wasn't installed yet (see [withRawStacktrace]). Logs demultiplication does
+// not take the stacktrace into account: a log that has been demultiplicated
+// will only show the first log's stack.
 func WithStacktrace() LogOption {
 	return func(_ *loggerKey, value *loggerValue) {
 		if value == nil {
@@ -72,4 +78,77 @@ func WithStacktrace() LogOption {
 		}
 		value.captureStacktrace = true
 	}
+}
+
+// withCaptureStacktraceNowSkip skips WithCaptureStacktraceNow's own frame, landing the
+// capture on whatever function called it (e.g. ReportError) — the same
+// "keep telemetry call-chain frames, only skip pure capture machinery"
+// convention as telemetryStackSkip in backend.go.
+const withCaptureStacktraceNowSkip = 1
+
+// WithCaptureStacktraceNow returns a LogOption that captures the stack trace
+// synchronously, at the caller's own call site, right now — instead of
+// deferring capture to whenever the backend actually processes the record
+// (see [WithStacktrace]). Use this at any call site whose Log call may be
+// queued and replayed later (e.g. before telemetry.StartApp runs), so the
+// stack reflects where the call was actually made, not the replay machinery
+// that eventually delivers it.
+//
+// When telemetry is disabled ([Disabled] is true), this returns the same
+// no-capture-yet option as WithStacktrace instead of paying the capture cost:
+// every call through the package-level Log function is a no-op in that case,
+// so there's nothing to preserve accuracy for.
+//
+// Entries sent with this option are deduplicated separately from entries
+// without it: the backend's dedup key carries a flag set here, so a report
+// can never merge into a plain, stackless log entry that happens to share
+// the same message, level, and tags — a merge would drop the report's
+// stack trace and error attributes.
+func WithCaptureStacktraceNow() LogOption {
+	if Disabled() {
+		return WithStacktrace()
+	}
+	raw := stacktrace.CaptureRaw(withCaptureStacktraceNowSkip)
+	return func(key *loggerKey, value *loggerValue) {
+		if key != nil {
+			key.captureStackNow = true
+			return
+		}
+		if value == nil {
+			return
+		}
+		value.captureStacktrace = true
+		value.stacktraceCaptured = true
+		value.rawStack = raw
+	}
+}
+
+// withRawStacktrace attaches a stack trace captured earlier — before the
+// global telemetry client existed — instead of leaving loggerBackend.add to
+// capture one when the queued [Log] call is eventually replayed. Without
+// this, the captured stack would belong to the replay goroutine, not the
+// call site that actually requested it.
+//
+// Unexported: [Log] appends this automatically when it detects a queued
+// [WithStacktrace] request; callers should keep using [WithStacktrace] only.
+func withRawStacktrace(raw stacktrace.RawStackTrace) LogOption {
+	return func(_ *loggerKey, value *loggerValue) {
+		if value == nil {
+			return
+		}
+		value.captureStacktrace = true
+		value.rawStack = raw
+	}
+}
+
+// wantsStacktrace reports whether options includes a [WithStacktrace]
+// request, by applying each option's value-phase against a throwaway
+// loggerValue — the same phase loggerBackend.add applies for real inside
+// its LoadOrCompute closure.
+func wantsStacktrace(options []LogOption) bool {
+	var probe loggerValue
+	for _, opt := range options {
+		opt(nil, &probe)
+	}
+	return probe.captureStacktrace
 }

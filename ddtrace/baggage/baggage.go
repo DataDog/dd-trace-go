@@ -33,6 +33,12 @@ func withBaggage(ctx context.Context, baggage map[string]string) context.Context
 
 // Set sets or updates a single baggage key/value pair in the context.
 // If the key already exists, this function overwrites the existing value.
+//
+// Set clones the entire baggage map on every call. Use it for one-off,
+// standalone updates. If you're writing more than one key as part of the same
+// logical update (e.g. reconciling baggage from another source), call SetAll
+// once instead of Set in a loop — looping Set reclones the whole map on every
+// iteration, which is O(N) clones for N keys instead of one.
 func Set(ctx context.Context, key, value string) context.Context {
 	bm, ok := baggageMap(ctx)
 	if !ok || bm == nil {
@@ -43,6 +49,27 @@ func Set(ctx context.Context, key, value string) context.Context {
 	}
 	bm[key] = value
 	return withBaggage(ctx, bm)
+}
+
+// SetAll merges multiple key/value pairs into the baggage in a single context write.
+// Equivalent to calling Set once per entry in values, but only clones the baggage map
+// once instead of once per key. Prefer this over a Set loop whenever the key/value
+// pairs are already available together, e.g. when reconciling baggage extracted from
+// another source (headers, another baggage format, etc.) rather than a single
+// standalone update.
+func SetAll(ctx context.Context, values map[string]string) context.Context {
+	if len(values) == 0 {
+		return ctx
+	}
+
+	bm, ok := baggageMap(ctx)
+	merged := make(map[string]string, len(bm)+len(values))
+	if ok {
+		maps.Copy(merged, bm)
+	}
+	maps.Copy(merged, values)
+
+	return withBaggage(ctx, merged)
 }
 
 // Get retrieves the value associated with a baggage key.

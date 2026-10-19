@@ -52,6 +52,7 @@ var processRetryUnitTestPrefixes = []string{
 	"TestWriteProcessRetry",
 	"TestFinalizeProcessRetry",
 	"TestCombineProcessRetry",
+	"TestQuarantinedRace",
 }
 
 const retryParityUnitTestPrefix = "TestProcessRetryParity"
@@ -107,6 +108,8 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
+	} else if quarantinedRaceIsolationFixtureSelected() {
+		runQuarantinedRaceIsolationFixture(m)
 	} else if internal.BoolEnv(processRetryNativeLifecycleFixtureEnv, false) &&
 		os.Getenv(processRetryChildResultScenarioEnv) != processRetryOrdinaryDescendantHelperScenario {
 		os.Exit(runProcessRetryChild(m))
@@ -123,6 +126,7 @@ func TestMain(m *testing.M) {
 		_, layoutReason := getRetryAttemptLayout()
 		layoutAvailable := layoutReason == ""
 		runTestControllerSubprocess("AdditionalFeatureAllocationUnitTests", "^TestAdditionalFeatureSelectorDoesNotAllocate$", "Bypass=true", "-test.parallel=1")
+		runTestControllerSubprocess("FuzzExampleUnitTests", "^Test(CompleteFuzz|RecordFuzzPanic|TestingFuzzWorkerRequested|FuzzEvents|ExampleOutput|CaptureExampleOutput|RunManagedExample|RestoreTestingMWorkloads|FuzzAndExampleDescriptors)", "Bypass=true")
 		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
@@ -1621,6 +1625,7 @@ func setUpHTTPServer(
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
 				ImpactedTestsEnabled:    impactedTests,
+				CodeCoverage:            quarantinedRaceIsolationFixtureSelected(),
 			}
 
 			response.Data.Attributes.TestManagement.Enabled = testManagement

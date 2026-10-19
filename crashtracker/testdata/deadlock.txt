@@ -1,0 +1,5 @@
+fatal error: all goroutines are asleep - deadlock!
+
+goroutine 1 [chan receive]:
+main.main()
+	/tmp/crashtracker-fixtures/deadlock.go:5 +0x30

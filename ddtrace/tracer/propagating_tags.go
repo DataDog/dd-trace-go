@@ -8,6 +8,7 @@ package tracer
 import (
 	"maps"
 	"strconv"
+	"strings"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -201,11 +202,38 @@ func (t *trace) propagatingTagsLen() int {
 	return len(t.loadPropagatingTags())
 }
 
+// propagatingTagsByteLens returns the byte lengths of the propagating tags in
+// both the x-datadog-tags header and the tracestate dd= entry in a single pass.
+// xTagsLen uses "k1=v1,k2=v2,..." format (excluding tracestate/traceparent keys).
+// tracestateLen counts only _dd.p.* tags as (stripped-key + value + 4) bytes,
+// matching composeTracestate (";t." prefix + ":" separator = 4 bytes); the fixed
+// dd= header is not included.
+func (t *trace) propagatingTagsByteLens() (xTagsLen, tracestateLen int) {
+	for k, v := range t.loadPropagatingTags() {
+		if k == tracestateHeader || k == traceparentHeader {
+			continue
+		}
+		if xTagsLen > 0 {
+			xTagsLen++ // comma separator
+		}
+		xTagsLen += len(k) + 1 + len(v)
+		if strings.HasPrefix(k, "_dd.p.") {
+			tracestateLen += len(k) - len("_dd.p.") + len(v) + 4
+		}
+	}
+	return
+}
+
 // parseDecisionMaker parses the decision maker string (e.g. "-4") into
 // its absolute uint32 form for v1 protocol encoding.
 func parseDecisionMaker(dm string) uint32 {
 	v, err := strconv.ParseInt(dm, 10, 32)
 	if err != nil {
+		// Not reported to Error Tracking: dm comes directly from an inbound
+		// propagation header (_dd.p.dm), so any upstream peer can trigger this
+		// on every request. It is invalid external input, not a dd-trace-go
+		// defect, and reporting it per-request would let a peer arbitrarily
+		// inflate an SDK Error Tracking issue.
 		log.Error("failed to convert decision maker to uint32: %s", err.Error())
 		return 0
 	}

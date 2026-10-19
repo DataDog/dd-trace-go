@@ -308,6 +308,7 @@ func TestDeferredProcessRetryAggregatePolicy(t *testing.T) {
 		name         string
 		metadata     processRetryMetadataSnapshot
 		observations [][2]bool
+		descendants  []processRetrySubtreeResult
 		failed       bool
 	}{
 		{name: "efd failure then pass", metadata: processRetryMetadataSnapshot{isEarlyFlakeDetectionEnabled: true, isANewTest: true}, observations: [][2]bool{{true, false}, {false, false}}},
@@ -315,6 +316,9 @@ func TestDeferredProcessRetryAggregatePolicy(t *testing.T) {
 		{name: "ftr final pass", metadata: processRetryMetadataSnapshot{isFlakyTestRetriesEnabled: true}, observations: [][2]bool{{true, false}, {false, false}}},
 		{name: "ftr final fail", metadata: processRetryMetadataSnapshot{isFlakyTestRetriesEnabled: true}, observations: [][2]bool{{true, false}, {true, false}}, failed: true},
 		{name: "a2f any failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true, shouldOrchestrateAttemptToFix: true}, observations: [][2]bool{{true, false}, {false, false}}, failed: true},
+		{name: "a2f descendant failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFixOwn: true}}, failed: true},
+		{name: "inherited a2f descendant failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFix: true}}, failed: true},
+		{name: "quarantined a2f descendant masks failure", metadata: processRetryMetadataSnapshot{isAttemptToFix: true}, observations: [][2]bool{{false, false}}, descendants: []processRetrySubtreeResult{{Failed: true, AttemptToFixOwn: true, Quarantined: true}}},
 		{name: "quarantined masks failure", metadata: processRetryMetadataSnapshot{isQuarantined: true}, observations: [][2]bool{{true, false}}},
 	}
 	for _, test := range tests {
@@ -325,6 +329,7 @@ func TestDeferredProcessRetryAggregatePolicy(t *testing.T) {
 				group.latest.failed = observation[0]
 				group.latest.skipped = observation[1]
 			}
+			group.observeQuarantinedRaceSubtree(test.descendants)
 			require.Equal(t, test.failed, group.packageFailed())
 		})
 	}
@@ -514,8 +519,7 @@ func TestDeferredProcessRetryFamilyPrecedenceAndSlowEFDFallback(t *testing.T) {
 
 func TestDeferredProcessRetryGroupRetainsNoAttemptRuntime(t *testing.T) {
 	groupType := reflect.TypeFor[deferredProcessRetryGroup]()
-	for index := range groupType.NumField() {
-		field := groupType.Field(index)
+	for field := range groupType.Fields() {
 		require.NotEqual(t, reflect.Func, field.Type.Kind(), "queue field %s must not retain a callback", field.Name)
 		require.NotEqual(t, reflect.TypeFor[*testing.T](), field.Type, "queue field %s must not retain testing.T", field.Name)
 		require.NotEqual(t, reflect.TypeFor[*retryAttemptGroup](), field.Type, "queue field %s must not retain the fresh-attempt runtime", field.Name)

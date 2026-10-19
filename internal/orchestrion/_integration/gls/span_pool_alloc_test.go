@@ -31,8 +31,8 @@ import (
 // the pooling itself. Read allocs/op and B/op rather than ns/op: the allocation
 // counts are deterministic, while ns/op is not comparable across separate runs.
 func BenchmarkSpanLifecycleAllocs(b *testing.B) {
-	if !orchestrionEnabled {
-		b.Skip("the GLS only exists in orchestrion builds")
+	if !glsWoven {
+		b.Skip("the GLS only exists in woven builds")
 	}
 
 	for _, tc := range []struct {
@@ -65,8 +65,8 @@ func BenchmarkSpanLifecycleAllocs(b *testing.B) {
 // difference against BenchmarkSpanLifecycleAllocs is what the GLS bookkeeping costs
 // per span.
 func BenchmarkSpanLifecycleNoActivation(b *testing.B) {
-	if !orchestrionEnabled {
-		b.Skip("the GLS only exists in orchestrion builds")
+	if !glsWoven {
+		b.Skip("the GLS only exists in woven builds")
 	}
 
 	for _, tc := range []struct {
