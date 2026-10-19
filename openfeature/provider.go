@@ -243,7 +243,7 @@ func newDatadogProviderWithSourceAndEVP(
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
-	telemetryOptOutEnabled := internalconfig.Get().FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled()
+	telemetryOptOutEnabled := internalconfig.Get().FlagEvalTelemetryOptOutEnabled()
 	if config.EnableEvaluationTelemetryOptOutParameter != nil {
 		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
 	}

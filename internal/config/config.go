@@ -300,9 +300,9 @@ type Config struct {
 	// featureFlagsEnabled is DD_FEATURE_FLAGS_ENABLED, the stable Feature Flagging kill switch.
 	// nil means not explicitly set.
 	featureFlagsEnabled *bool
-	// featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled is
+	// flagEvalTelemetryOptOutEnabled is
 	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
-	featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled bool
+	flagEvalTelemetryOptOutEnabled bool
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
 	// to tell a blank value apart from an unrecognized one.
@@ -576,7 +576,7 @@ func loadConfig() *Config {
 	if featureFlagsEnabledOrigin != telemetry.OriginDefault {
 		cfg.featureFlagsEnabled = &featureFlagsEnabled
 	}
-	cfg.featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
+	cfg.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
 	featureFlagsSource, featureFlagsSourceOrigin := p.GetStringWithOrigin("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
 	cfg.featureFlagsConfigurationSource = featureFlagsSource
 	cfg.featureFlagsConfigurationSourceSet = featureFlagsSourceOrigin != telemetry.OriginDefault
@@ -2199,12 +2199,12 @@ func (c *Config) FeatureFlagsEnabled() (enabled, explicit bool) {
 	return *c.featureFlagsEnabled, true
 }
 
-// FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled returns
+// FlagEvalTelemetryOptOutEnabled returns
 // DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
-func (c *Config) FeatureFlagsEvaluationTelemetryPerSubjectOptOutEnabled() bool {
+func (c *Config) FlagEvalTelemetryOptOutEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.featureFlagsEvaluationTelemetryPerSubjectOptOutEnabled
+	return c.flagEvalTelemetryOptOutEnabled
 }
 
 // FeatureFlagsConfigurationSource returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE and whether
