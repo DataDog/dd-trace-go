@@ -84,17 +84,17 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
 }
 
-// Enricher adds the Datadog trace context and the Data Streams checkpoint to the request of one AWS service.
-type Enricher interface {
+// enricher adds the Datadog trace context and the Data Streams checkpoint to the request of one AWS service.
+type enricher interface {
 	EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string)
 }
 
 type traceMiddleware struct {
 	cfg         *config
-	sqs         Enricher
-	sns         Enricher
-	kinesis     Enricher
-	eventBridge Enricher
+	sqs         enricher
+	sns         enricher
+	kinesis     enricher
+	eventBridge enricher
 }
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
