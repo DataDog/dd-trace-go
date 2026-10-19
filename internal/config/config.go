@@ -2106,6 +2106,27 @@ func (c *Config) RuntimeMetricsGRPCEndpoint() (endpoint string, insecure bool) {
 	return c.runtimeMetricsGRPCEndpoint, c.runtimeMetricsInsecure
 }
 
+// RuntimeMetricsHTTPURL returns the URL the HTTP runtime metrics exporter posts to.
+func (c *Config) RuntimeMetricsHTTPURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return (&url.URL{Scheme: otlpScheme(c.runtimeMetricsInsecure), Host: c.runtimeMetricsHTTPEndpoint, Path: c.runtimeMetricsHTTPPath}).String()
+}
+
+// RuntimeMetricsGRPCURL returns the URL of the gRPC runtime metrics exporter target.
+func (c *Config) RuntimeMetricsGRPCURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return otlpScheme(c.runtimeMetricsInsecure) + "://" + c.runtimeMetricsGRPCEndpoint
+}
+
+func otlpScheme(insecure bool) string {
+	if insecure {
+		return URLSchemeHTTP
+	}
+	return URLSchemeHTTPS
+}
+
 func (c *Config) RuntimeMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

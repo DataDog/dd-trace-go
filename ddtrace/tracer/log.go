@@ -478,16 +478,14 @@ func otlpScheme(insecure bool) string {
 // its http/protobuf fallback for unsupported protocols.
 func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 	if cfg.RuntimeMetricsProtocol() == "grpc" {
-		target, insecure := cfg.RuntimeMetricsGRPCEndpoint()
 		return otlpExporterInfo{
-			endpoint: sanitizeOTLPEndpoint(otlpScheme(insecure) + "://" + target),
+			endpoint: sanitizeOTLPEndpoint(cfg.RuntimeMetricsGRPCURL()),
 			protocol: "grpc",
 			headers:  cfg.RuntimeMetricsHeaders(),
 		}
 	}
-	host, path, insecure := cfg.RuntimeMetricsHTTPEndpoint()
 	return otlpExporterInfo{
-		endpoint: sanitizeOTLPEndpoint((&url.URL{Scheme: otlpScheme(insecure), Host: host, Path: path}).String()),
+		endpoint: sanitizeOTLPEndpoint(cfg.RuntimeMetricsHTTPURL()),
 		protocol: "http/protobuf",
 		headers:  cfg.RuntimeMetricsHeaders(),
 	}
