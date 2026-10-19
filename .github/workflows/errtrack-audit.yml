@@ -26,10 +26,15 @@ on:
       - 'openfeature/**'
       - 'orchestrion/**'
       - 'profiler/**'
-      # The remaining root-module directories the scan walks: scripts/ and
-      # tools/ subdirectories that have no go.mod of their own.
+      # The remaining root-module directories the scan walks: the scripts/
+      # subdirectories without a go.mod of their own whose files the default
+      # build compiles (parseversion is //go:build scripts-tagged and
+      # actiontest holds only test files, so neither is ever scanned), plus
+      # .github/actions/add-codeowners, further root-module code with no
+      # go.mod of its own.
       - 'scripts/ciselect/**'
-      - 'scripts/parseversion/**'
+      - 'scripts/citiming/**'
+      - '.github/actions/add-codeowners/**'
       # The root package and its module files.
       - 'go.mod'
       - 'go.sum'
