@@ -94,7 +94,10 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 		})
 	case transport.GaugeMetric:
 		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
-			return &gauge{metric: metric{key: key}}, false
+			g := &gauge{metric: metric{key: key}}
+			now := time.Now()
+			g.intervalStart.Store(&now)
+			return g, false
 		})
 	case transport.RateMetric:
 		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
@@ -200,6 +203,7 @@ func (m *count) Submit(newValue float64) {
 // gauge is a metric that represents a single value at a point in time that is not incremental
 type gauge struct {
 	metric
+	intervalStart atomic.Pointer[time.Time]
 }
 
 func (g *gauge) Submit(value float64) {
@@ -212,6 +216,32 @@ func (g *gauge) Submit(value float64) {
 			return
 		}
 	}
+}
+
+// Payload returns the metric data of the gauge. The generate-metrics schema
+// requires an interval on every gauge series. The interval is the whole seconds
+// elapsed since the previous flush of this gauge. For the first flush, the
+// interval runs from handle creation.
+func (g *gauge) Payload() transport.MetricData {
+	now := time.Now()
+	intervalStart := g.intervalStart.Swap(&now)
+	if intervalStart == nil {
+		return transport.MetricData{}
+	}
+
+	intervalSeconds := time.Since(*intervalStart).Seconds()
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, send no series. A zero
+		// interval reports a wrong measurement period.
+		return transport.MetricData{}
+	}
+
+	payload := g.metric.Payload()
+	if payload.Type == "" {
+		return transport.MetricData{}
+	}
+	payload.Interval = int64(intervalSeconds)
+	return payload
 }
 
 // rate is like a count metric but the value sent is divided by an interval of time that is also sent/
@@ -228,7 +258,9 @@ func (r *rate) Get() float64 {
 	}
 
 	intervalSeconds := time.Since(*intervalStart).Seconds()
-	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, return NaN. A sub-second
+		// window reports a wrong rate.
 		return math.NaN()
 	}
 
@@ -243,7 +275,9 @@ func (r *rate) Payload() transport.MetricData {
 	}
 
 	intervalSeconds := time.Since(*intervalStart).Seconds()
-	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, send no series. A zero
+		// interval reports a wrong measurement period.
 		return transport.MetricData{}
 	}
 
