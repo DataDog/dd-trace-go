@@ -34,11 +34,12 @@ const (
 var installedProvider *metric.MeterProvider
 
 func init() {
-	otelmetricsinstall.StartHook = func(ctx context.Context) error {
-		if err := installGlobal(); err != nil {
-			return err
+	otelmetricsinstall.StartHook = func(ctx context.Context) (bool, error) {
+		installed, err := installGlobal()
+		if err != nil {
+			return false, err
 		}
-		return startGoRuntimeMetrics(ctx)
+		return installed, startGoRuntimeMetrics(ctx)
 	}
 	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
 		p := installedProvider
@@ -52,20 +53,21 @@ func init() {
 	}
 }
 
-// installGlobal installs a DD-configured MeterProvider as the OTel global.
+// installGlobal installs a DD-configured MeterProvider as the OTel global and
+// reports whether that provider is the global one.
 // Called only from StartHook after the tracer has already verified that metrics
 // should be enabled — no further enablement checks are needed here.
-func installGlobal(opts ...Option) error {
+func installGlobal(opts ...Option) (bool, error) {
 	// Already installed by us.
 	if installedProvider != nil {
-		return nil
+		return true, nil
 	}
 	// Don't replace a real OTel SDK MeterProvider the user installed themselves.
 	// The OTel global defaults to a delegating provider (not a real SDK) that
 	// silently drops metrics; we only skip installation if a real SDK provider
 	// is already in place.
 	if _, ok := otel.GetMeterProvider().(*metric.MeterProvider); ok {
-		return nil
+		return false, nil
 	}
 	allOpts := append(opts,
 		optionFunc(func(cfg *config) {
@@ -75,23 +77,23 @@ func installGlobal(opts ...Option) error {
 	)
 	mp, err := NewMeterProvider(allOpts...)
 	if err != nil {
-		return err
+		return false, err
 	}
 	sdkMP, ok := mp.(*metric.MeterProvider)
 	if !ok {
 		// metrics were disabled by the time NewMeterProvider ran; nothing to install.
-		return nil
+		return false, nil
 	}
 	otel.SetMeterProvider(sdkMP)
 	installedProvider = sdkMP
-	return nil
+	return true, nil
 }
 
 // NewMeterProvider creates a new MeterProvider configured with Datadog-specific settings:
 // - Resource with DD service, env, version, hostname, and tags
 // - OTLP HTTP exporter with DD defaults (localhost:4318, http/protobuf)
 // - Delta temporality for all metrics (default)
-// - 60-second export interval
+// - 10-second export interval
 //
 // Users can override these defaults by passing additional options.
 func NewMeterProvider(opts ...Option) (otelmetric.MeterProvider, error) {
@@ -162,6 +164,9 @@ func metricsEnabled(c *internalconfig.Config) bool {
 	if c != nil {
 		return c.RuntimeMetricsOtelEnabled() && c.OTLPExportMetricsMode()
 	}
+	if internalconfig.Get().OTelSDKDisabled() {
+		return false
+	}
 	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
 		if strings.ToLower(strings.TrimSpace(exporter)) == "none" {
 			return false
@@ -214,7 +219,7 @@ func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
 // UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested).
 func deltaTemporalitySelector() metric.TemporalitySelector {
 	// Check if user has explicitly set temporality preference
-	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
+	temporalityPref := internalconfig.Get().RuntimeMetricsTemporalityPreference()
 
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
 		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference
@@ -226,7 +231,7 @@ func deltaTemporalitySelector() metric.TemporalitySelector {
 		}
 
 		// For monotonic instruments, respect the user's preference if set
-		if temporalityPref == "CUMULATIVE" {
+		if temporalityPref == "cumulative" {
 			return metricdata.CumulativeTemporality
 		}
 

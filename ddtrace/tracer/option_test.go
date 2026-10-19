@@ -461,7 +461,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 61, len(cfg.integrations))
+		assert.Equal(t, 62, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -617,6 +617,62 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.False(t, c.internalConfig.Debug())
+		})
+		t.Run("otel-env-threshold", func(t *testing.T) {
+			for _, tc := range []struct {
+				otel  string
+				want  log.Level
+				lines int
+			}{
+				{otel: "info", want: log.LevelInfo, lines: 2},
+				{otel: "warn", want: log.LevelWarn, lines: 1},
+				{otel: "error", want: log.LevelError, lines: 0},
+				{otel: "invalid", want: log.LevelInfo, lines: 2},
+			} {
+				t.Run(tc.otel, func(t *testing.T) {
+					defer log.SetLevel(log.GetLevel())
+					log.SetLevel(log.LevelDebug)
+					t.Setenv("OTEL_LOG_LEVEL", tc.otel)
+					c, err := newTestConfig()
+					assert.NoError(t, err)
+					assert.False(t, c.internalConfig.Debug())
+					assert.Equal(t, tc.want, log.GetLevel())
+
+					rl := new(log.RecordLogger)
+					defer log.UseLogger(rl)()
+					log.Info("info message")
+					log.Warn("warn message")
+					assert.Len(t, rl.Logs(), tc.lines)
+				})
+			}
+		})
+		t.Run("dd-debug-overrides-otel-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.True(t, c.internalConfig.Debug())
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+		})
+		t.Run("restart-restores-default-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			_, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelError, log.GetLevel())
+
+			t.Setenv("OTEL_LOG_LEVEL", "")
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+
+			_, err = newTestConfig(WithDebugMode(true))
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
 		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
@@ -2007,6 +2063,34 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.internalConfig.StatsComputationEnabled())
+	})
+}
+
+func TestWithDataStreamsIntakeBufferSize(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(500))
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", "500")
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("non-positive-ignored", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(0))
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 }
 

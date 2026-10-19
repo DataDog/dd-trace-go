@@ -54,10 +54,14 @@ jobs:
     # A merge that makes orchestrion/all/v2 import a package or a nested module
     # that no published version contains breaks the app builds until the next
     # dev tag is cut. The job reuses the apps' own build flow for the version
-    # selection on purpose. A `go mod edit -replace` pin of the root module at
-    # the commit under test would hide exactly that break: the commit contains
-    # the new package, and the published tags do not. The root module and every
-    # contrib module must keep resolving from published tags.
+    # selection on purpose. Their `go get` pair moves the root module and
+    # orchestrion/all/v2 to the pseudo-version of the commit under test.
+    # Contrib modules keep resolving from published tags.
+    #
+    # orchestrion/all/go.mod requires a root tag. A tag that is not in the
+    # history of main sorts above every pseudo-version of main, so the apps
+    # build that tag, not the commit under test. The guards after each build
+    # catch this. A `go mod edit -replace` pin of the root module would hide it.
     name: Build
     needs:
       - changes
@@ -165,9 +169,8 @@ jobs:
           #   - `orchestrion pin` writes the tools file and runs the last
           #     `go mod tidy` the app sees, resolving dd-trace-go from published
           #     versions only;
-          #   - the `go get` pair bumps orchestrion/all/v2 (and the root module
-          #     requirement, which MVS re-selects from published tags) to
-          #     ${TRACER_VERSION} -- nothing tidies after this point, so the first
+          #   - the `go get` pair bumps the root module and orchestrion/all/v2
+          #     to ${TRACER_VERSION} -- nothing tidies after this point, so the first
           #     build attempt runs against the go.sum state of an external
           #     consumer that does not tidy;
           #   - `go mod download`, then the -toolexec build.
@@ -181,13 +184,15 @@ jobs:
           retry_on_corruption make -f "${buildroot}/build.Makefile" datadog-latest 2>&1 | tee "${RUNNER_TEMP}/go-prof-app-build.log"
 
           # Guard against a false pass: the whole point is building against the
-          # commit under test, so the build must not have silently settled on a
-          # published orchestrion/all/v2 tag instead of ${TRACER_VERSION}.
-          resolved="$(go list -m -f '{{.Version}}' github.com/DataDog/dd-trace-go/orchestrion/all/v2)"
-          if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
-            echo "::error::expected github.com/DataDog/dd-trace-go/orchestrion/all/v2@${TRACER_VERSION}, resolved ${resolved}"
-            exit 1
-          fi
+          # commit under test. Version selection can settle on a published tag
+          # for either module, and the build then passes on the code of that tag.
+          for module in github.com/DataDog/dd-trace-go/v2 github.com/DataDog/dd-trace-go/orchestrion/all/v2; do
+            resolved="$(go list -m -f '{{.Version}}' "${module}")"
+            if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
+              echo "::error::expected ${module}@${TRACER_VERSION}, resolved ${resolved}"
+              exit 1
+            fi
+          done
       - name: Build fibonacci (datadog-orchestrion)
         id: build-fibonacci
         shell: bash
@@ -215,11 +220,13 @@ jobs:
           retry_on_corruption bash "${bench}/app/go/fibonacci/src/build.sh" 2>&1 | tee "${RUNNER_TEMP}/fibonacci-build.log"
 
           # Same false-pass guard as the go-prof-app build.
-          resolved="$(go list -m -f '{{.Version}}' github.com/DataDog/dd-trace-go/orchestrion/all/v2)"
-          if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
-            echo "::error::expected github.com/DataDog/dd-trace-go/orchestrion/all/v2@${TRACER_VERSION}, resolved ${resolved}"
-            exit 1
-          fi
+          for module in github.com/DataDog/dd-trace-go/v2 github.com/DataDog/dd-trace-go/orchestrion/all/v2; do
+            resolved="$(go list -m -f '{{.Version}}' "${module}")"
+            if [[ "${resolved}" != "${TRACER_VERSION}" ]]; then
+              echo "::error::expected ${module}@${TRACER_VERSION}, resolved ${resolved}"
+              exit 1
+            fi
+          done
       - name: Diagnose failure
         if: failure()
         shell: bash
@@ -250,14 +257,18 @@ jobs:
             done
             echo "Likely fixes:"
             echo
-            echo "1. Cut a dev tag, so the packages and modules \`orchestrion/all/v2\` imports at this commit are resolvable from the module proxy:"
+            echo "1. If \`github.com/DataDog/dd-trace-go/v2\` resolved to a version other than \`${TRACER_VERSION:-the pinned version}\`, or a package of that module is missing, the root module resolved to a tag. The change in this pull request is probably not the cause. \`orchestrion/all/go.mod\` requires a root tag that is not in the history of \`main\`. This occurs when a version pull request from a \`dev-vX.Y.x\` branch merges as a squash commit. Merge that branch into \`main\` with a merge commit."
+            echo
+            echo "2. Cut a dev tag, so the packages and modules \`orchestrion/all/v2\` imports at this commit are resolvable from the module proxy:"
             echo
             echo '   ```sh'
             echo '   git checkout -b dev-vX.Y.x origin/main'
             echo '   go run ./scripts/autoreleasetagger --version vX.Y.0-dev.N --root .'
             echo '   ```'
             echo
-            echo "2. If the benchmark apps themselves need a change (e.g. an import was renamed), coordinate an \`apm-sdks-benchmarks\` update with the benchmarking team. This job never modifies that repository."
+            echo "   Merge the version pull request from \`dev-vX.Y.x\` into \`main\` with a merge commit (see fix 1)."
+            echo
+            echo "3. If the benchmark apps themselves need a change (e.g. an import was renamed), coordinate an \`apm-sdks-benchmarks\` update with the benchmarking team. This job never modifies that repository."
           } >> "${GITHUB_STEP_SUMMARY}"
 
           # Post-failure diagnostics only: a `go mod tidy` names exactly what the

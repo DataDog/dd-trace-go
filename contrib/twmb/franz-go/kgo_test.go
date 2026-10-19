@@ -9,6 +9,8 @@ import (
 	"context"
 	"log"
 	"os"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -439,10 +441,6 @@ func TestConsumeDSMPathway(t *testing.T) {
 	records := fetches.Records()
 	require.Len(t, records, 1)
 
-	// Get the actual group ID that franz-go reports (used for DSM checkpoint)
-	actualGroupID, _ := consumerCl.GroupMetadata()
-	require.NotEmpty(t, actualGroupID, "consumer should have joined a group")
-
 	record := records[0]
 
 	// Extract pathway from consumed record headers
@@ -454,19 +452,201 @@ func TestConsumeDSMPathway(t *testing.T) {
 	require.True(t, ok, "pathway not found in kafka message headers")
 
 	// Create expected pathway so we are able to compare the hashes: produce checkpoint -> consume checkpoint
-	// Use the actual group ID that franz-go reports (may differ from configured)
 	ctx, _ := tracer.SetDataStreamsCheckpoint(
 		context.Background(),
 		"direction:out", "topic:"+topic, "type:kafka",
 	)
 	ctx, _ = tracer.SetDataStreamsCheckpoint(
 		ctx,
-		"direction:in", "topic:"+topic, "type:kafka", "group:"+actualGroupID,
+		"direction:in", "topic:"+topic, "type:kafka", "group:"+testGroupID,
 	)
 	want, _ := datastreams.PathwayFromContext(ctx)
 
 	assert.NotEqual(t, uint64(0), want.GetHash())
 	assert.Equal(t, want.GetHash(), got.GetHash())
+	assert.Contains(t, backlogTags(mt.SentDSMBacklogs()), commitBacklogTags(testGroupID, topic, 0))
+}
+
+func TestGroupName(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		opts      []kgo.Opt
+		wantGroup string
+		wantShare bool
+	}{
+		{
+			name:      "consumer group",
+			opts:      []kgo.Opt{kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("my-consumer-group")},
+			wantGroup: "my-consumer-group",
+		},
+		{
+			name:      "share group",
+			opts:      []kgo.Opt{kgo.ConsumeTopics("topic"), kgo.ShareGroup("my-share-group")},
+			wantGroup: "my-share-group",
+			wantShare: true,
+		},
+		{
+			name: "direct consumer",
+			opts: []kgo.Opt{kgo.ConsumeTopics("topic")},
+		},
+		{
+			name: "producer",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTracingHook()
+			cl := newOfflineClient(t, h, tc.opts...)
+
+			group, share := groupName(cl)
+			assert.Equal(t, tc.wantGroup, group)
+			assert.Equal(t, tc.wantShare, share)
+			g := h.group.Load()
+			if tc.wantGroup == "" {
+				assert.Nil(t, g, "OnNewClient should not resolve a group")
+				return
+			}
+			require.NotNil(t, g, "OnNewClient should resolve the group name")
+			assert.Equal(t, tc.wantGroup, g.name)
+			assert.Equal(t, tc.wantShare, g.isShareGroup)
+		})
+	}
+}
+
+func TestHookAttachedToTwoClients(t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+	h := newTracingHook()
+	newOfflineClient(t, h, kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("first-group"))
+	require.True(t, h.clientBound.Load())
+
+	// Consume on the first client while the second one is created, so the
+	// race detector checks OnNewClient against the record hooks.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			h.OnFetchRecordUnbuffered(&kgo.Record{Topic: "topic", Context: context.Background()}, true)
+		}
+	}()
+	newOfflineClient(t, h, kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("second-group"))
+	<-done
+	h.finishAndClearActiveSpans()
+
+	g := h.group.Load()
+	require.NotNil(t, g)
+	assert.Equal(t, "second-group", g.name)
+}
+
+// preShareGroupOptValues mimics franz-go before v1.21.4, whose OptValue has no
+// ShareGroup case.
+type preShareGroupOptValues struct{ *kgo.Client }
+
+func (c preShareGroupOptValues) OptValue(opt any) any {
+	if reflect.ValueOf(opt).Pointer() == reflect.ValueOf(kgo.ShareGroup).Pointer() {
+		return nil
+	}
+	return c.Client.OptValue(opt)
+}
+
+func TestGroupNameWithoutShareGroupOptValue(t *testing.T) {
+	share := newOfflineClient(t, newTracingHook(), kgo.ConsumeTopics("topic"), kgo.ShareGroup("my-share-group"))
+	group, isShare := groupName(preShareGroupOptValues{share})
+	assert.Empty(t, group)
+	assert.False(t, isShare)
+
+	consumer := newOfflineClient(t, newTracingHook(), kgo.ConsumeTopics("topic"), kgo.ConsumerGroup("my-consumer-group"))
+	group, isShare = groupName(preShareGroupOptValues{consumer})
+	assert.Equal(t, "my-consumer-group", group)
+	assert.False(t, isShare)
+}
+
+func TestConsumeDSMCheckpointGroup(t *testing.T) {
+	const topic = "dsm-topic"
+	for _, tc := range []struct {
+		name       string
+		opts       []kgo.Opt
+		wantEdges  []string
+		wantCommit []string
+	}{
+		{
+			name:       "consumer group",
+			opts:       []kgo.Opt{kgo.ConsumeTopics(topic), kgo.ConsumerGroup(testGroupID)},
+			wantEdges:  []string{"direction:in", "topic:" + topic, "type:kafka", "group:" + testGroupID},
+			wantCommit: commitBacklogTags(testGroupID, topic, 3),
+		},
+		{
+			name:      "share group",
+			opts:      []kgo.Opt{kgo.ConsumeTopics(topic), kgo.ShareGroup(testGroupID)},
+			wantEdges: []string{"direction:in", "topic:" + topic, "type:kafka", "group:" + testGroupID},
+		},
+		{
+			name:      "direct consumer",
+			opts:      []kgo.Opt{kgo.ConsumeTopics(topic)},
+			wantEdges: []string{"direction:in", "topic:" + topic, "type:kafka"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			h := newTracingHook(WithDataStreams())
+			newOfflineClient(t, h, tc.opts...)
+
+			r := &kgo.Record{Topic: topic, Partition: 3, Offset: 42, Value: []byte("value")}
+			h.OnFetchRecordUnbuffered(r, true)
+			h.finishAndClearActiveSpans()
+
+			got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+				context.Background(),
+				newKafkaHeadersCarrier(r),
+			))
+			require.True(t, ok, "pathway not found in kafka message headers")
+			wantCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), tc.wantEdges...)
+			want, _ := datastreams.PathwayFromContext(wantCtx)
+			assert.NotEqual(t, uint64(0), want.GetHash())
+			assert.Equal(t, want.GetHash(), got.GetHash())
+
+			var commits [][]string
+			for _, b := range mt.SentDSMBacklogs() {
+				if slices.Contains(b.Tags, "type:kafka_commit") {
+					commits = append(commits, b.Tags)
+					assert.Equal(t, int64(42), b.Value)
+				}
+			}
+			if tc.wantCommit == nil {
+				assert.Empty(t, commits)
+			} else {
+				assert.Equal(t, [][]string{tc.wantCommit}, commits)
+			}
+		})
+	}
+}
+
+// newOfflineClient builds a client with h registered as a hook. The seed
+// broker is unreachable, which is fine because nothing is produced or polled.
+func newOfflineClient(t *testing.T, h *tracingHook, opts ...kgo.Opt) *kgo.Client {
+	t.Helper()
+	opts = append([]kgo.Opt{kgo.SeedBrokers("127.0.0.1:1"), kgo.WithHooks(h)}, opts...)
+	cl, err := kgo.NewClient(opts...)
+	require.NoError(t, err)
+	t.Cleanup(cl.Close)
+	return cl
+}
+
+func commitBacklogTags(group, topic string, partition int32) []string {
+	return []string{
+		"consumer_group:" + group,
+		"partition:" + strconv.Itoa(int(partition)),
+		"topic:" + topic,
+		"type:kafka_commit",
+	}
+}
+
+func backlogTags(backlogs []mocktracer.DSMBacklog) [][]string {
+	tags := make([][]string, 0, len(backlogs))
+	for _, b := range backlogs {
+		tags = append(tags, b.Tags)
+	}
+	return tags
 }
 
 // topicName returns a unique topic name for the current test.

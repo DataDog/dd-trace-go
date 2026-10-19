@@ -49,6 +49,11 @@ func New() *Provider {
 	}
 }
 
+// NewEnvironment resolves existing environment-only consumers without enabling declarative sources.
+func NewEnvironment() *Provider {
+	return &Provider{sources: []configSource{new(envConfigSource)}}
+}
+
 // get is the core resolution helper shared by all typed getters.
 // It iterates sources in reverse priority order so that higher-priority sources
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
@@ -138,6 +143,19 @@ func (p *Provider) GetInt64(key string, def int64) int64 {
 	})
 }
 
+func (p *Provider) GetInt64WithValidator(key string, def int64, validate func(int64) bool) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
+		if err == nil {
+			if validate != nil && !validate(intVal) {
+				return 0, false
+			}
+			return intVal, true
+		}
+		return 0, false
+	})
+}
+
 func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
 	return get(p, key, def, func(v string) (int, bool) {
 		intVal, err := strconv.Atoi(v)
@@ -154,6 +172,15 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
 		m := parseMapString(v, delimiter)
+		return m, len(m) > 0
+	})
+}
+
+// GetMapWithParser is like GetMap but parses each source with parse. A source whose
+// value parses to an empty map is skipped.
+func (p *Provider) GetMapWithParser(key string, def map[string]string, parse func(string) map[string]string) map[string]string {
+	return get(p, key, def, func(v string) (map[string]string, bool) {
+		m := parse(v)
 		return m, len(m) > 0
 	})
 }

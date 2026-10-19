@@ -293,12 +293,14 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	}
 
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
+		if err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
 		}
+		t.config.otelMeterProviderInstalled = installed
 	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
@@ -592,7 +594,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient,
+			datastreams.WithQueueSize(c.internalConfig.DataStreamsIntakeBufferSize()))
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
