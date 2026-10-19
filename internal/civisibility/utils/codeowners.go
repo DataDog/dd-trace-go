@@ -140,7 +140,7 @@ func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	}
 	defer func() {
 		err = file.Close()
-		if err != nil && !errors.Is(os.ErrClosed, err) {
+		if err != nil && !errors.Is(err, os.ErrClosed) {
 			logger.Warn("Error closing codeowners file: %s", err.Error())
 		}
 	}()
