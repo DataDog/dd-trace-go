@@ -71,12 +71,8 @@ func TestOTLPInvalidGenericProtocolWarning(t *testing.T) {
 						want = tc.protocol
 					}
 					assert.Equal(t, want, protocol)
-					logs := strings.Join(tp.Logs(), "\n")
-					if enabled && !overridden {
-						assert.Contains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value")
-					} else {
-						assert.NotContains(t, logs, "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value")
-					}
+					// A value no signal supports warns even when unused.
+					assert.Contains(t, strings.Join(tp.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value")
 				})
 			}
 		}
@@ -198,6 +194,41 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 				want = "http/protobuf"
 			}
 			assert.Equal(t, want, cfg.OTLPMetricsProtocol())
+		})
+	}
+}
+
+func TestOTLPGenericProtocolWarning(t *testing.T) {
+	const warning = "Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value; falling back to default."
+	for _, tc := range []struct {
+		name         string
+		generic      string
+		logsOverride string
+		wantProtocol string
+		wantWarning  bool
+	}{
+		{name: "invalid protocol warns and uses default", generic: "invalid", wantProtocol: "http/protobuf", wantWarning: true},
+		{name: "valid protocol does not warn", generic: "grpc", wantProtocol: "grpc"},
+		{name: "unset protocol uses default without warning", wantProtocol: "http/protobuf"},
+		{name: "invalid generic still warns with a valid logs override", generic: "invalid", logsOverride: "grpc", wantProtocol: "grpc", wantWarning: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Invalid generic configuration is reported even with exporters disabled.
+			t.Setenv("DD_LOGS_OTEL_ENABLED", "false")
+			t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", tc.generic)
+			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", tc.logsOverride)
+			rec := new(log.RecordLogger)
+			defer log.UseLogger(rec)()
+
+			cfg := loadConfig()
+			assert.Equal(t, tc.wantProtocol, cfg.OTLPLogsProtocol())
+			logs := strings.Join(rec.Logs(), "\n")
+			if tc.wantWarning {
+				assert.Contains(t, logs, warning)
+			} else {
+				assert.NotContains(t, logs, warning)
+			}
 		})
 	}
 }
