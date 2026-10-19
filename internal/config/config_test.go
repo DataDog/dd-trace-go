@@ -3089,6 +3089,11 @@ func TestInjectDatadogAttributeEnabled(t *testing.T) {
 		{"sqs", "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SQSInjectDatadogAttributeEnabled},
 		{"sns", "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SNSInjectDatadogAttributeEnabled},
 	}
+	// Neutralize values inherited from the environment of the test process. The subtests set the
+	// one they need.
+	for _, s := range services {
+		t.Setenv(s.env, "")
+	}
 
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()
