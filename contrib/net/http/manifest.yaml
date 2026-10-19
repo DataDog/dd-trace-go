@@ -7,7 +7,5 @@ packages: []
 category:
 - http.client
 - http.server
-- messaging.consumer
-systems:
-- gcp.pubsub
+systems: []
 creation_date: '2017-08-17'
