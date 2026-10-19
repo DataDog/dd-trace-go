@@ -50,6 +50,10 @@ The feature builds on three pillars:
   (`Exact`, `Ancestor`, or `None`) so subtests can tell whether they should run the additional
   wrapper or inherit parent behaviour.
 - The subtest matrix exercises identity matching directly; no extra test-only helpers are required.
+- Process retry children use the selected root's module when discovery ancestors have no
+  instrumented identity. This keeps a root implemented in an imported helper, and its descendants,
+  in the same consumer module as the parent attempt. Testify suite identity is applied independently
+  of method source lookup; a missing method function leaves source metadata unchanged.
 
 ## Instrumentation Enhancements
 

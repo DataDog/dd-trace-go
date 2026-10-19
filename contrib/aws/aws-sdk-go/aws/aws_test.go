@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -780,4 +782,148 @@ func prepareTestRole(t *testing.T, sess *session.Session) string {
 		assert.NoError(t, err)
 	})
 	return *resp.Role.Arn
+}
+
+// queryStringEnv are the environment variables that change the query string
+// in the http.url tag.
+var queryStringEnv = []string{
+	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER",
+}
+
+// setQueryStringEnv sets the query string environment variables to env, and
+// unsets the others. It also resets the httptrace configuration, before and
+// after the test.
+func setQueryStringEnv(t *testing.T, env map[string]string) {
+	t.Helper()
+	t.Cleanup(httptrace.ResetCfg) // Runs after the environment is restored.
+	for _, k := range queryStringEnv {
+		t.Setenv(k, "") // Restores the original value at the end of the test.
+		if v, ok := env[k]; ok {
+			t.Setenv(k, v)
+		} else {
+			require.NoError(t, os.Unsetenv(k))
+		}
+	}
+	httptrace.ResetCfg()
+}
+
+// TestHTTPURLQueryString checks that the query string in the http.url tag is
+// obfuscated, and that it is removed when the configured obfuscation regexp is
+// not valid.
+func TestHTTPURLQueryString(t *testing.T) {
+	var gotQuery atomic.Pointer[string]
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.RawQuery
+			gotQuery.Store(&q)
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	for _, tc := range []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, url string)
+	}{
+		{
+			name: "obfuscated",
+			check: func(t *testing.T, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "invalid regexp fails closed",
+			env:  map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`},
+			check: func(t *testing.T, url string) {
+				assert.Equal(t, server.URL+"/BUCKET", url)
+			},
+		},
+		{
+			// DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED only applies to server spans.
+			name: "query string disabled for server spans",
+			env:  map[string]string{"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": "true"},
+			check: func(t *testing.T, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "client allowlist",
+			env: map[string]string{
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": "list-type",
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": "continuation-token",
+			},
+			check: func(t *testing.T, url string) {
+				assert.Equal(t, server.URL+"/BUCKET?list-type=2", url)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+			gotQuery.Store(nil)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			resolver := endpoints.ResolverFunc(func(_, _ string, _ ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+				return endpoints.ResolvedEndpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+			region := "eu-west-1"
+			awsCfg := aws.Config{
+				Region:           &region,
+				Credentials:      credentials.AnonymousCredentials,
+				EndpointResolver: resolver,
+				MaxRetries:       aws.Int(0),
+			}
+			session := WrapSession(session.Must(session.NewSession(&awsCfg)))
+			req, _ := s3.New(session).ListObjectsV2Request(&s3.ListObjectsV2Input{
+				Bucket:            aws.String("BUCKET"),
+				ContinuationToken: aws.String("supersecret"),
+			})
+			req.SetContext(context.Background())
+			_ = req.Send() // The mock response is not valid XML.
+
+			// The outgoing request is not changed.
+			q := gotQuery.Load()
+			require.NotNil(t, q, "the server did not get a request")
+			assert.Contains(t, *q, "supersecret")
+			spans := mt.FinishedSpans()
+			require.NotEmpty(t, spans)
+			url, _ := spans[0].Tag(ext.HTTPURL).(string)
+			assert.NotContains(t, url, "supersecret")
+			tc.check(t, url)
+		})
+	}
+}
+
+func TestRedactURLQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		url  url.URL
+		want string
+	}{
+		{name: "raw query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", RawQuery: "token=secret&a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query", url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret", RawQuery: "a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query fails closed", env: map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`}, url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret"}, want: "https://h/p"},
+		{name: "opaque user information", url: url.URL{Scheme: "https", Opaque: "//user:password@h/p?a=1"}, want: "https://h/p?a=1"},
+		{name: "opaque user information without path", url: url.URL{Scheme: "https", Opaque: "//user:password@h"}, want: "https://h"},
+		{name: "force query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", ForceQuery: true}, want: "https://h/p"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+			u := tc.url
+			redactURLQuery(&u)
+			assert.Equal(t, tc.want, u.String())
+		})
+	}
 }

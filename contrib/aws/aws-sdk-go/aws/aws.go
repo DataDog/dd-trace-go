@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const componentName = "aws/aws-sdk-go/aws"
@@ -79,6 +81,9 @@ func (h *handlers) Send(req *request.Request) {
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.HTTPRequest.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
+	// Obfuscate the query string (for example, a presigned URL signature), or
+	// remove it when it must not be reported.
+	redactURLQuery(&url)
 
 	region := awsRegion(req)
 
@@ -454,4 +459,30 @@ func stateMachineNameFromExecutionARN(arn *string) (string, error) {
 		return "", fmt.Errorf("got unexpected execution ARN format: %q", *arn)
 	}
 	return parts[len(parts)-2], nil
+}
+
+// redactURLQuery obfuscates the query string of u for the http.url tag (for
+// example, a presigned URL signature), or removes it when it must not be
+// reported. u must be a copy of the request URL. An opaque URL can also
+// contain user information and a query string: the user information is
+// removed, and the query string is moved to RawQuery before the obfuscation.
+func redactURLQuery(u *url.URL) {
+	if rest, ok := strings.CutPrefix(u.Opaque, "//"); ok {
+		authority, path := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, path = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+			u.Opaque = "//" + authority[i+1:] + path
+		}
+	}
+	if opaque, query, ok := strings.Cut(u.Opaque, "?"); ok {
+		u.Opaque = opaque
+		if u.RawQuery != "" {
+			query += "&" + u.RawQuery
+		}
+		u.RawQuery = query
+	}
+	u.RawQuery = httptrace.ObfuscateQueryString(u.RawQuery, httptrace.ForClientSpan())
+	u.ForceQuery = false
 }

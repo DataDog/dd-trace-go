@@ -6,6 +6,8 @@
 package fasthttp
 
 import (
+	"context"
+	"runtime/pprof"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -14,6 +16,38 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 )
+
+type labelKeyContext struct {
+	context.Context
+	key any
+}
+
+func (ctx *labelKeyContext) Value(key any) any {
+	ctx.key = key
+	return ctx.Context.Value(key)
+}
+
+func TestSnapshotSpanContext(t *testing.T) {
+	var fctx fasthttp.RequestCtx
+	assert.Nil(t, snapshotSpanContext(&fctx).Value("missing"))
+
+	capture := &labelKeyContext{Context: context.Background()}
+	labels := pprof.WithLabels(capture, pprof.Labels("incoming", "preserved"))
+	fctx.SetUserValue(capture.key, labels.Value(capture.key))
+	fctx.SetUserValue(nil, "nil key")
+	fctx.SetUserValueBytes([]byte("bytes"), "original")
+	snapshot := snapshotSpanContext(&fctx)
+	fctx.RemoveUserValue(capture.key)
+	fctx.SetUserValue(nil, "changed")
+	fctx.SetUserValue("bytes", "changed")
+
+	value, found := pprof.Label(snapshot, "incoming")
+	assert.True(t, found)
+	assert.Equal(t, "preserved", value)
+	assert.Equal(t, "nil key", snapshot.Value(nil))
+	assert.Equal(t, "original", snapshot.Value([]byte("bytes")))
+	assert.Nil(t, snapshot.Value("missing"))
+}
 
 func TestStartSpanFromContext(t *testing.T) {
 	assert := assert.New(t)

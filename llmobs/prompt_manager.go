@@ -24,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/config"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -125,7 +126,7 @@ var globalPromptManager = func() *promptManager {
 		if enabled, _ := cfg.ExperimentalFlaggingProviderEnabled(); enabled {
 			if internalffe.NewEvaluator == nil {
 				promptEvaluatorMissingWarning.Do(func() {
-					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting")
+					log.Warn("LLMObs prompt feature flag evaluation is enabled but unavailable; import github.com/DataDog/dd-trace-go/v2/openfeature to enable A/B exposure reporting") //errtrack:ignore optional integration was not imported
 				})
 			} else {
 				managerConfig.evaluate = evaluatePromptFeatureFlag
@@ -361,7 +362,7 @@ func (manager *promptManager) fetchHTTP(ctx context.Context, request promptReque
 	}
 	response, err := manager.httpClient.Do(httpRequest)
 	if err != nil {
-		log.Warn("Prompt fetch exception: prompt_id=%s: %v", request.promptID, err.Error())
+		log.Warn("Prompt fetch exception: prompt_id=%s: %v", request.promptID, err.Error()) //errtrack:ignore remote request failure
 		return nil, &promptFetchError{reason: err.Error(), cause: err}
 	}
 	defer response.Body.Close()
@@ -375,7 +376,7 @@ func (manager *promptManager) fetchHTTP(ctx context.Context, request promptReque
 		if notFound {
 			log.Debug("Prompt not found: prompt_id=%s detail=%q", request.promptID, reason)
 		} else {
-			log.Warn("Prompt fetch failed: prompt_id=%s status=%d detail=%q", request.promptID, response.StatusCode, reason)
+			log.Warn("Prompt fetch failed: prompt_id=%s status=%d detail=%q", request.promptID, response.StatusCode, reason) //errtrack:ignore remote service response
 		}
 		return nil, &promptFetchError{reason: reason, notFound: notFound}
 	}
@@ -477,7 +478,7 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 		value, exists = data["chat_template"]
 	}
 	if !exists || value == nil {
-		return PromptTemplate{Messages: []PromptMessage{}}, nil
+		return PromptTemplate{Messages: []ChatTemplateItem{}}, nil
 	}
 	if text, ok := value.(string); ok {
 		return PromptTemplate{Text: text}, nil
@@ -486,18 +487,17 @@ func promptTemplate(data map[string]any) (PromptTemplate, error) {
 	if !ok {
 		return PromptTemplate{}, errors.New("invalid prompt response: template must be text or messages")
 	}
-	messages := make([]PromptMessage, len(items))
+	messages := make([]ChatTemplateItem, len(items))
 	for i, item := range items {
-		message, ok := item.(map[string]any)
+		fields, ok := item.(map[string]any)
 		if !ok {
 			return PromptTemplate{}, errors.New("invalid prompt response: invalid chat message")
 		}
-		role, roleOK := message["role"].(string)
-		content, contentOK := message["content"].(string)
-		if !roleOK || !contentOK {
-			return PromptTemplate{}, errors.New("invalid prompt response: chat role and content must be strings")
+		message, err := illmobs.ParseChatTemplateItem(fields)
+		if err != nil {
+			return PromptTemplate{}, fmt.Errorf("invalid prompt response: %w", err)
 		}
-		messages[i] = PromptMessage{Role: role, Content: content}
+		messages[i] = message
 	}
 	return PromptTemplate{Messages: messages}, nil
 }
