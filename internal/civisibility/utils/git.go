@@ -702,21 +702,18 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		objectsShasString.WriteString(objectSha + "\n")
 	}
 
-	workingDirectory := func() string {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "."
-		}
-		return wd
-	}
-
 	var temporaryPath string
 	var out string
 	var err error
 
 	// Git can throw a cross device error if the temporal folder is in a different drive than the .git folder (eg. symbolic link)
-	// to handle this edge case, we first try with a temp folder and if we fail then we try in the working directory folder.
-	for _, folder := range []string{"", workingDirectory()} {
+	// to handle this edge case, we first try with a temp folder and if we fail then we try in the git objects directory,
+	// where git writes the temporary pack it moves, which also keeps the working tree free of temporary files. A directory
+	// that ends without pack files is removed; RemovePackFiles removes the rest after the upload.
+	for _, folder := range packObjectsFolders() {
+		if folder == "" {
+			continue
+		}
 		// get a temporary path to store the pack files
 		temporaryPath, err = os.MkdirTemp(folder, ".dd-pack-objects")
 		if err != nil {
@@ -730,6 +727,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		if err == nil {
 			break
 		}
+		_ = os.RemoveAll(temporaryPath)
 	}
 
 	if err != nil {
@@ -751,10 +749,55 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		packFiles = append(packFiles, file)
 	}
 
+	if len(packFiles) == 0 {
+		_ = os.RemoveAll(temporaryPath)
+	}
 	return packFiles
 }
 
-// getParentGitFolder searches from the given directory upwards to find the nearest .git directory.
+// packObjectsFolders lists where pack-objects may write, in order. Git moves
+// each pack out of the objects directory, so a temporary directory known to be
+// on another filesystem than the objects would only fail first.
+func packObjectsFolders() []string {
+	temporary, objectsDir := os.TempDir(), gitObjectsDir()
+	if objectsDir != "" && differentFilesystems(temporary, objectsDir) {
+		return []string{objectsDir}
+	}
+	return []string{temporary, objectsDir}
+}
+
+// RemovePackFiles deletes pack files from CreatePackFiles together with their
+// temporary directory, including the index files git writes next to them.
+func RemovePackFiles(packFiles []string) {
+	if len(packFiles) == 0 {
+		return
+	}
+	if dir := filepath.Dir(packFiles[0]); strings.HasPrefix(filepath.Base(dir), ".dd-pack-objects") {
+		_ = os.RemoveAll(dir)
+		return
+	}
+	for _, file := range packFiles {
+		_ = os.Remove(file)
+	}
+}
+
+// gitObjectsDir returns the absolute path of the repository's objects
+// directory, which GIT_OBJECT_DIRECTORY may move, or "" when git cannot report it.
+func gitObjectsDir() string {
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--git-path", "objects")
+	if err != nil || out == "" || strings.HasPrefix(out, "-") {
+		return ""
+	}
+	dir, err := filepath.Abs(filepath.FromSlash(out))
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// getParentGitFolder searches from the given directory upwards to find the nearest .git entry.
+// A linked worktree or submodule has a .git file that points to its git directory;
+// accept it so that the checkout root, which git names in its safe.directory advice, is still found.
 func getParentGitFolder(innerFolder string) (string, error) {
 	if innerFolder == "" {
 		return "", nil
@@ -764,7 +807,7 @@ func getParentGitFolder(innerFolder string) (string, error) {
 	for {
 		gitDirPath := filepath.Join(dir, ".git")
 		info, err := os.Stat(gitDirPath)
-		if err == nil && info.IsDir() {
+		if err == nil && (info.IsDir() || info.Mode().IsRegular()) {
 			return gitDirPath, nil
 		}
 		if err != nil && !os.IsNotExist(err) {
