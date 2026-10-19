@@ -1875,18 +1875,18 @@ func TestOTLPLogsTimeout(t *testing.T) {
 		assert.Equal(t, 10*time.Second, timeout)
 	})
 
-	for _, raw := range []string{"invalid", "1000.5"} {
+	for _, raw := range []string{"invalid", "1000.5", "-1000"} {
 		t.Run("invalid logs timeout falls back to generic: "+raw, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "5000")
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", raw)
 			assert.Equal(t, 5*time.Second, loadConfig().OTLPLogsTimeout())
 		})
-	}
 
-	t.Run("invalid generic timeout falls back to default", func(t *testing.T) {
-		t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "invalid")
-		assert.Equal(t, 10*time.Second, loadConfig().OTLPLogsTimeout())
-	})
+		t.Run("invalid generic timeout falls back to default: "+raw, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", raw)
+			assert.Equal(t, 10*time.Second, loadConfig().OTLPLogsTimeout())
+		})
+	}
 
 	t.Run("accepts zero", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", "0")
