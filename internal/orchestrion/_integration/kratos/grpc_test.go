@@ -12,3 +12,5 @@ import (
 )
 
 func TestGRPC(t *testing.T) { harness.Run(t, new(GRPCTestCase)) }
+
+func TestStream(t *testing.T) { harness.Run(t, new(StreamCase)) }

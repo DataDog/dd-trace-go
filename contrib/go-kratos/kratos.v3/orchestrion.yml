@@ -11,26 +11,34 @@ meta:
 aspects:
   - id: HTTPServer
     join-point:
-      function-call: github.com/go-kratos/kratos/v3/transport/http.NewServer
+      all-of:
+        - import-path: github.com/go-kratos/kratos/v3/transport/http
+        - function-body:
+            function:
+              - name: NewServer
     advice:
-      - append-args:
-          type: github.com/go-kratos/kratos/v3/transport/http.ServerOption
-          values:
-            - imports:
-                kratoshttp: github.com/go-kratos/kratos/v3/transport/http
-                kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
-              template: kratoshttp.Middleware(kratostrace.Server())
+      - prepend-statements:
+          imports:
+            kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+          template: |
+            {{ .Function.Argument 0 }} = append({{ .Function.Argument 0 }}, func(s *Server) {
+              s.middleware.Use(append(s.middleware.Match(""), kratostrace.Server())...)
+            })
   - id: GRPCServer
     join-point:
-      function-call: github.com/go-kratos/kratos/v3/transport/grpc.NewServer
+      all-of:
+        - import-path: github.com/go-kratos/kratos/v3/transport/grpc
+        - function-body:
+            function:
+              - name: NewServer
     advice:
-      - append-args:
-          type: github.com/go-kratos/kratos/v3/transport/grpc.ServerOption
-          values:
-            - imports:
-                kratosgrpc: github.com/go-kratos/kratos/v3/transport/grpc
-                kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
-              template: kratosgrpc.Middleware(kratostrace.Server())
+      - prepend-statements:
+          imports:
+            kratostrace: github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
+          template: |
+            {{ .Function.Argument 0 }} = append({{ .Function.Argument 0 }}, func(s *Server) {
+              s.middleware.Use(append(s.middleware.Match(""), kratostrace.Server())...)
+            })
   # Append middleware after all caller options have been applied, since
   # WithMiddleware replaces the chain rather than extending it.
   - id: HTTPClientMiddleware

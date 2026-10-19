@@ -33,6 +33,7 @@ type config struct {
 	headerTags        instrumentation.HeaderTags
 	queryString       bool
 	isStatusError     func(int) bool
+	otelEnabled       bool
 }
 
 type cachedServiceName struct {
@@ -68,6 +69,7 @@ func applyOptions(cfg *config, opts []Option) {
 }
 
 func defaults(cfg *config) {
+	cfg.otelEnabled = instr.OTelSemanticsEnabled()
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.queryString = !options.GetBoolEnv(envQueryStringDisabled, false)
 }
@@ -92,6 +94,9 @@ func clientDefaults(cfg *config) {
 	cfg.serviceSource = string(component)
 	cfg.queryString = cfg.queryString && options.GetBoolEnv(envClientQueryStringEnabled, true)
 	cfg.isStatusError = isClientError
+	if cfg.otelEnabled {
+		cfg.isStatusError = func(code int) bool { return code >= 400 && code < 600 }
+	}
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envClientErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
 	}

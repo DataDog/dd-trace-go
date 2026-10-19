@@ -193,6 +193,9 @@ func startSpanTags(cfg *config, tr transport.Transporter, spanKind string) map[s
 			if route := httpTr.PathTemplate(); route != "" {
 				tags[ext.HTTPRoute] = route
 			}
+			if cfg.otelEnabled {
+				setOTelHTTPTags(tags, req, httpTr.PathTemplate(), spanKind, cfg.queryString)
+			}
 		}
 	} else if tr.Kind() == transport.KindGRPC {
 		tags[ext.SpanType] = ext.AppTypeRPC
@@ -212,6 +215,67 @@ func startSpanTags(cfg *config, tr transport.Transporter, spanKind string) map[s
 	return tags
 }
 
+func setOTelHTTPTags(tags map[string]any, req *http.Request, route, spanKind string, queryString bool) {
+	method, token, original := httptrace.NormalizeHTTPMethod(req.Method)
+	tags[ext.HTTPRequestMethod] = method
+	if original != "" {
+		tags[ext.HTTPRequestMethodOriginal] = original
+	}
+	delete(tags, ext.HTTPMethod)
+	delete(tags, ext.HTTPURL)
+	delete(tags, "http.host")
+	delete(tags, ext.HTTPUserAgent)
+	if spanKind == ext.SpanKindClient {
+		tags[ext.ResourceName] = token
+		tags[ext.URLFull] = httptrace.URLFullFromClientRequest(req, queryString)
+		address, port := httptrace.ServerAddressPortFromClientRequest(req)
+		if address != "" {
+			tags[ext.ServerAddress] = address
+		}
+		if port > 0 {
+			tags[ext.ServerPort] = port
+		}
+		delete(tags, ext.NetworkDestinationName)
+		delete(tags, ext.NetworkDestinationPort)
+		return
+	}
+	tags[ext.ResourceName] = httptrace.ServerSpanName(req.Method, route)
+	scheme := "http"
+	if req.TLS != nil {
+		scheme = "https"
+	}
+	tags[ext.URLScheme] = scheme
+	if req.URL != nil {
+		tags[ext.URLPath] = req.URL.Path
+		if fullURL, err := url.Parse(httptrace.URLFromRequest(req, queryString)); err == nil && fullURL.RawQuery != "" {
+			tags[ext.URLQuery] = fullURL.RawQuery
+		}
+	}
+	if req.UserAgent() != "" {
+		tags[ext.UserAgentOriginal] = req.UserAgent()
+	}
+	host := req.Host
+	if req.URL != nil && req.URL.Host != "" {
+		host = req.URL.Host
+	}
+	authority := &http.Request{URL: &url.URL{Scheme: scheme, Host: host}}
+	address, port := httptrace.ServerAddressPortFromClientRequest(authority)
+	if address != "" {
+		tags[ext.ServerAddress] = address
+	}
+	if port > 0 && !((port == 80 && scheme == "http") || (port == 443 && scheme == "https")) {
+		tags[ext.ServerPort] = port
+	}
+	if ip, ok := tags[ext.HTTPClientIP]; ok {
+		tags[ext.ClientAddress] = ip
+	}
+	if ip, ok := tags[ext.NetworkClientIP]; ok {
+		tags[ext.NetworkPeerAddress] = ip
+	}
+	delete(tags, ext.HTTPClientIP)
+	delete(tags, ext.NetworkClientIP)
+}
+
 func startSpanOptions(cfg *config, tags map[string]any) []tracer.StartSpanOption {
 	spanOpts := make([]tracer.StartSpanOption, 0, 3)
 	spanOpts = append(spanOpts, tracer.WithTags(tags))
@@ -224,7 +288,7 @@ func startSpanOptions(cfg *config, tags map[string]any) []tracer.StartSpanOption
 
 func prepareSpanConfig(cfg *config, spanKind string) {
 	staticOpts := []tracer.StartSpanOption{
-		tracer.Tag(ext.Component, component),
+		tracer.Tag(ext.Component, string(component)),
 		tracer.Tag(ext.SpanKind, spanKind),
 	}
 	if spanKind == ext.SpanKindServer {
@@ -264,6 +328,9 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 		}
 	}
 	if err == nil {
+		if tr.Kind() == transport.KindHTTP && cfg.otelEnabled {
+			setHTTPStatus(span, http.StatusOK, cfg)
+		}
 		span.Finish()
 		return
 	}
@@ -280,7 +347,7 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 		}
 		if hasProtocolStatus {
 			statusCode := int(kratosErr.Code)
-			span.SetTag(ext.HTTPCode, strconv.Itoa(statusCode))
+			setHTTPStatus(span, statusCode, cfg)
 			markError = cfg.isStatusError(statusCode)
 		}
 	}
@@ -292,6 +359,15 @@ func finishSpan(span *tracer.Span, tr transport.Transporter, err error, spanKind
 	}
 	var finishOpts []tracer.FinishOption
 	if markError {
+		if tr.Kind() == transport.KindHTTP && cfg.otelEnabled && hasProtocolStatus {
+			span.SetTag(ext.Error, err)
+			span.SetTag(ext.ErrorType, strconv.Itoa(int(kratosErr.Code)))
+			if cfg.noDebugStack {
+				span.SetTag("error.stack", "")
+			}
+			span.Finish()
+			return
+		}
 		finishOpts = append(finishOpts, tracer.WithError(err))
 		if cfg.noDebugStack {
 			finishOpts = append(finishOpts, tracer.NoDebugStack())
@@ -306,8 +382,17 @@ func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config) {
 		return
 	}
 	statusCode := int(kratoserrors.FromError(err).Code)
-	span.SetTag(ext.HTTPCode, strconv.Itoa(statusCode))
+	setHTTPStatus(span, statusCode, cfg)
 	if !cfg.isStatusError(statusCode) {
+		span.Finish()
+		return
+	}
+	if cfg.otelEnabled {
+		span.SetTag(ext.Error, err)
+		span.SetTag(ext.ErrorType, strconv.Itoa(statusCode))
+		if cfg.noDebugStack {
+			span.SetTag("error.stack", "")
+		}
 		span.Finish()
 		return
 	}
@@ -316,6 +401,17 @@ func finishInferredHTTPSpan(span *tracer.Span, err error, cfg *config) {
 		finishOpts = append(finishOpts, tracer.NoDebugStack())
 	}
 	span.Finish(finishOpts...)
+}
+
+func setHTTPStatus(span *tracer.Span, statusCode int, cfg *config) {
+	key := ext.HTTPCode
+	if cfg.otelEnabled {
+		key = ext.HTTPResponseStatusCode
+		if cfg.isStatusError(statusCode) {
+			span.SetTag(ext.ErrorType, strconv.Itoa(statusCode))
+		}
+	}
+	span.SetTag(key, strconv.Itoa(statusCode))
 }
 
 func operationName(_ transport.Transporter, componentType instrumentation.Component) string {

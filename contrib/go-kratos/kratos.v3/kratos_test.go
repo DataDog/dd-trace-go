@@ -96,6 +96,53 @@ func TestServerHTTP(t *testing.T) {
 	assert.Equal(t, "test-uuid", span.Tag("http.request.headers.x-datadog-security-test"))
 }
 
+func TestComponentUsesString(t *testing.T) {
+	cfg := new(config)
+	serverDefaults(cfg)
+	prepareSpanConfig(cfg, ext.SpanKindServer)
+	componentTag, ok := cfg.spanConfig.Tags[ext.Component].(string)
+	require.True(t, ok, "real tracer component attribution requires a string")
+	require.Equal(t, string(component), componentTag)
+}
+
+func TestOTelHTTP(t *testing.T) {
+	for _, kind := range []string{ext.SpanKindServer, ext.SpanKindClient} {
+		t.Run(kind, func(t *testing.T) {
+			t.Cleanup(func() {
+				tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
+				tracer.Stop()
+			})
+			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+			tracer.Start(tracer.WithAgentAddr("127.0.0.1:0"))
+			defer tracer.Stop()
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/test", nil)
+			tr := &testTransport{kind: transport.KindHTTP, operation: "/example.Service/Test", header: testHeader{}, request: req, pathTemplate: "/test"}
+			ctx := context.Background()
+			mw := Client()
+			if kind == ext.SpanKindServer {
+				ctx = transport.NewServerContext(ctx, tr)
+				mw = Server()
+			} else {
+				ctx = transport.NewClientContext(ctx, tr)
+			}
+			_, err := mw(func(context.Context, any) (any, error) {
+				return nil, kratoserrors.New(500, "INTERNAL", "failure")
+			})(ctx, nil)
+			require.Error(t, err)
+			span := findSpan(t, mt, operationNameForSpanKind(kind), kind)
+			assert.Equal(t, "GET", span.Tag(ext.HTTPRequestMethod))
+			assert.Equal(t, "500", span.Tag(ext.HTTPResponseStatusCode))
+			assert.Equal(t, "500", span.Tag(ext.ErrorType))
+			assert.Equal(t, "example.com", span.Tag(ext.ServerAddress))
+			assert.NotNil(t, span.Tag(ext.ErrorMsg))
+			assert.Nil(t, span.Tag(ext.HTTPMethod))
+			assert.Nil(t, span.Tag(ext.HTTPCode))
+		})
+	}
+}
+
 func TestServerHTTPClientIP(t *testing.T) {
 	t.Cleanup(httptrace.ResetCfg)
 	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")

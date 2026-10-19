@@ -9,8 +9,10 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
+	"github.com/go-kratos/kratos/v3/middleware"
 	kratoshttp "github.com/go-kratos/kratos/v3/transport/http"
 	"github.com/stretchr/testify/require"
 
@@ -20,13 +22,19 @@ import (
 type TestCase struct {
 	server *kratoshttp.Server
 	addr   string
+	called atomic.Bool
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	tc.addr = listener.Addr().String()
-	tc.server = kratoshttp.NewServer(kratoshttp.Listener(listener))
+	tc.server = kratoshttp.NewServer(kratoshttp.Listener(listener), kratoshttp.Middleware(func(next middleware.Handler) middleware.Handler {
+		return func(ctx context.Context, req any) (any, error) {
+			tc.called.Store(true)
+			return next(ctx, req)
+		}
+	}))
 	tc.server.Route("/").GET("/hello", func(ctx kratoshttp.Context) error {
 		kratoshttp.SetOperation(ctx, "GET /hello")
 		handler := ctx.Middleware(func(context.Context, any) (any, error) {
@@ -49,6 +57,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.True(t, tc.called.Load(), "caller server middleware must be preserved")
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
