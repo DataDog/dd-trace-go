@@ -1339,6 +1339,10 @@ func (t *tracer) Stop() {
 		}
 		telemetry.StopApp()
 	})
+	// StartApp sends the app-started payload from a background goroutine. An
+	// in-flight flush can park its keep-alive connection in the idle pool after
+	// CloseIdleConnections runs, so wait for the flush first.
+	telemetry.WaitForStartAppFlush()
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
