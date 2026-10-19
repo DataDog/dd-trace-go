@@ -61,7 +61,7 @@ func injectCases() []injectCase {
 						StreamName: aws.String("my-stream"),
 						Records: []kinesistypes.PutRecordsRequestEntry{
 							{PartitionKey: aws.String("pk1"), Data: []byte(`{"message":"hello"}`)},
-							{PartitionKey: aws.String("pk2"), Data: []byte(`{"message":"world"}`)},
+							{PartitionKey: aws.String("pk2"), Data: []byte(`{"message":"a longer message"}`)},
 						},
 					}
 					_, _ = kinesis.NewFromConfig(cfg).PutRecords(ctx, in)
@@ -86,7 +86,7 @@ func injectCases() []injectCase {
 						}
 					}
 					in := &eventbridge.PutEventsInput{Entries: []ebtypes.PutEventsRequestEntry{
-						entry(`{"message":"hello"}`), entry(`{"message":"world"}`),
+						entry(`{"message":"hello"}`), entry(`{"message":"a longer message"}`),
 					}}
 					_, _ = eventbridge.NewFromConfig(cfg).PutEvents(ctx, in)
 					injected := make([]bool, len(in.Entries))
@@ -114,7 +114,7 @@ func injectCases() []injectCase {
 						QueueUrl: aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
 						Entries: []sqstypes.SendMessageBatchRequestEntry{
 							{Id: aws.String("1"), MessageBody: aws.String(`{"message":"hello"}`)},
-							{Id: aws.String("2"), MessageBody: aws.String(`{"message":"world"}`)},
+							{Id: aws.String("2"), MessageBody: aws.String(`{"message":"a longer message"}`)},
 						},
 					}
 					_, _ = sqs.NewFromConfig(cfg).SendMessageBatch(ctx, in)
@@ -143,7 +143,7 @@ func injectCases() []injectCase {
 						TopicArn: aws.String("arn:aws:sns:eu-west-1:123456789012:my-topic"),
 						PublishBatchRequestEntries: []snstypes.PublishBatchRequestEntry{
 							{Id: aws.String("1"), Message: aws.String(`{"message":"hello"}`)},
-							{Id: aws.String("2"), Message: aws.String(`{"message":"world"}`)},
+							{Id: aws.String("2"), Message: aws.String(`{"message":"a longer message"}`)},
 						},
 					}
 					_, _ = sns.NewFromConfig(cfg).PublishBatch(ctx, in)
