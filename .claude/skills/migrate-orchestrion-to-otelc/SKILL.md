@@ -108,7 +108,9 @@ From the sources in `references.md`, learn:
 
 Orchestrion renders Go code templates into the matched AST node. otelc calls external hook functions
 through a trampoline and `//go:linkname`, and can also inject raw code in-package (`inject_code`).
-Prefer hooks; inject raw code only when it must run inside the target package.
+Prefer hooks; inject raw code only when it must run inside the target package. The exception is a
+constructor whose result the instrumentation changes, such as a router that gets a middleware:
+wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
 
 ## Workflow
 
@@ -116,7 +118,9 @@ Prefer hooks; inject raw code only when it must run inside the target package.
    calls).
 2. Map each aspect with `pattern-mapping.md`, taking exact syntax from `references.md`.
 3. Check the whole list against `feature-gaps.md`, not just the first aspect that trips a gap.
-   Report every gap together instead of hacking around it.
+   Report every gap together instead of hacking around it. When a rule works around an otelc limit
+   that has a cleaner fix upstream, put a `TODO` above it with the upstream issue link, and open
+   the issue if none exists.
 4. Author `contrib/<name>/otelc/` as **its own Go module**, holding the rules and the hooks. The
    hooks import `go.opentelemetry.io/otelc/pkg/hook`, which would otherwise land in the `go.mod` of
    everyone importing the contrib.
@@ -130,6 +134,9 @@ Prefer hooks; inject raw code only when it must run inside the target package.
      it.
    - Rule files live in this directory, named `otelc.yaml` or `*.otelc.yaml` (`.yml` works too).
      Each rule's `path:` is this package.
+   - Comment each rule, or the first rule of a group of similar ones, with what it does and why:
+     what it targets and excludes, and why it uses this rule kind when another looks more natural.
+     Do not add a file header that restates the rules or says the file ports `orchestrion.yml`.
    - Do not add the file-level `version:` key. It rejects pseudo-versions, and `OTELC_VERSION` is
      a `main` commit, so there is nothing valid to declare.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
@@ -195,11 +202,12 @@ Prefer hooks; inject raw code only when it must run inside the target package.
   new goroutines. When there is no such value, put `//otelc:ignore` above the contrib's call. It
   skips every hook on that goroutine for the whole statement, other integrations' too, and does
   not reach goroutines the call starts.
-- Give every `inject_hooks` rule its own before/after names, and delegate to a shared helper.
-  otelc emits a hook's `//go:linkname` stub once per target file. Two rules can share a hook when
-  their targets are in the same file and have the same signature, but in different files of one
-  package the stubs fail with `redeclared in this block`, and a library release can move a method
-  to another file.
+- Rules whose targets do the same thing share one hook when the targets are in the same file and
+  have the same signature. otelc emits a hook's `//go:linkname` stub once per target file, so
+  targets in different files of one package need separate hook names, which delegate to a shared
+  helper; a shared name there fails with `redeclared in this block`. If a library release moves a
+  method to another file, the build fails loudly the same way. Say in a comment above the rules
+  why sharing is safe.
 - Do not declare `...any` for a variadic parameter. otelc keeps the target's element type in the
   stub, so the hook reads a garbage slice with a green build. If the element is a func type the
   hook cannot name, declare `_ ...func()` and never read it (every func value is one pointer).
@@ -218,6 +226,14 @@ Prefer hooks; inject raw code only when it must run inside the target package.
 
 ### Rules
 
+- When the instrumentation changes what a constructor returns, such as adding a middleware to a
+  router or wrapping a client, wrap the constructor's call sites with `wrap_call` instead of
+  hooking the constructor. The rewritten package imports the contrib, so Go initializes the
+  contrib before a value built in a package-level variable, such as `var r = gin.New()`. A hook creates no import
+  edge (see the init-ordering caution under "Hooks"), so it can build the contrib's middleware or
+  client before the contrib's `init` runs, and the panic is swallowed. Queueing the calls does not
+  help when the hook must change the value before the caller uses it. Explain this in a comment
+  above the rule, since a hook looks like the more natural choice.
 - A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
   library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
 - `function_call` and `method_call` only match qualified calls (`pkg.Func()`). Calls inside the
