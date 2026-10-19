@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go-kratos/kratos.v3/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
 	github.com/go-kratos/kratos/v3 v3.0.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2
