@@ -366,15 +366,25 @@ func findModules(root string) (map[string]GoMod, error) {
 func getModGoFiles(mod GoMod) ([]string, error) {
 	var goFiles []string
 	var nestedMods []string
-	foundGoMod := false
+	// The walk starts at mod.dir and reports the module's own go.mod at
+	// exactly this path. Comparing the path instead of relying on walk order
+	// matters: a nested module directory (e.g. "aaa/") can sort before the
+	// parent's go.mod, so the walk may meet a nested go.mod first.
+	ownGoMod := filepath.Join(mod.dir, "go.mod")
 
 	err := filepath.WalkDir(mod.dir, func(path string, f fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if f.Name() == "go.mod" {
-			if foundGoMod {
-				nestedMods = append(nestedMods, filepath.Dir(path))
-				return fs.SkipAll
+			if path == ownGoMod {
+				return nil
 			}
-			foundGoMod = true
+			// A nested module. SkipDir on a file skips the remaining entries
+			// of its directory, and the walk continues with the next sibling,
+			// so every nested module is recorded and no parent file is dropped.
+			nestedMods = append(nestedMods, filepath.Dir(path))
+			return fs.SkipDir
 		}
 		if filepath.Ext(path) == ".go" {
 			goFiles = append(goFiles, path)
@@ -385,9 +395,14 @@ func getModGoFiles(mod GoMod) ([]string, error) {
 		return nil, err
 	}
 
+	// A nested module's .go files that sort before its go.mod are collected
+	// before the module is discovered, so filter them out by path here. The
+	// separator keeps a merely similarly-named sibling directory (e.g.
+	// "testdata/broken" vs "testdata/brokenimport") distinguishable from the
+	// nested module's own files.
 	shouldInclude := func(path string) bool {
 		for _, nm := range nestedMods {
-			if strings.HasPrefix(path, nm) {
+			if strings.HasPrefix(path, nm+string(filepath.Separator)) {
 				return false
 			}
 		}
