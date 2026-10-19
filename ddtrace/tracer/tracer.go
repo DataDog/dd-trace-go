@@ -187,6 +187,16 @@ type tracer struct {
 	// State related to the Dynamic Instrumentation product.
 	dynInstSubscriptions dynInstSubscriptions
 
+	// rcConfig is the remote-config client configuration built by startAppSec.
+	// It is kept so remote config can still be started later, when an /info
+	// poll is the first to advertise /v0.7/config (for example because the
+	// agent was not reachable yet when the tracer started).
+	rcConfig atomic.Pointer[remoteconfig.ClientConfig]
+
+	// rcStartAttempted ensures the tracer starts remote config at most once,
+	// whether from startAppSec or from a later /info poll.
+	rcStartAttempted atomic.Bool
+
 	// flushHandler is called by the worker when an explicit flush is triggered
 	// (i.e. when Flush() is called). It defaults to defaultFlushHandler.
 	// Tests can override this to provide stronger flush semantics.
@@ -409,19 +419,39 @@ func (t *tracer) startAppSec() {
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.internalConfig.ServiceName()
-	if t.config.agent.load().hasRemoteConfig {
-		if err := t.startRemoteConfig(cfg); err != nil {
-			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
-				log.Debug("remoteconfig: client not started, remote configuration is disabled")
-			} else {
-				log.Warn("Remote config startup error: %s", err.Error())
-			}
-		}
-	}
+	t.rcConfig.Store(&cfg)
+	t.maybeStartRemoteConfig()
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
 	appsec.Start(appsecopts...)
+}
+
+// maybeStartRemoteConfig starts remote config once the agent advertises
+// /v0.7/config. It is called from startAppSec and after every successful /info
+// poll, so a tracer that started before the agent was reachable (or before the
+// agent enabled remote config) still subscribes to APM_TRACING (remote sampling
+// rules, sample rate, tags, ...) instead of silently running without it until
+// the process restarts. It is a no-op until startAppSec has stored the client
+// configuration, and after the first attempt.
+func (t *tracer) maybeStartRemoteConfig() {
+	if !t.config.agent.load().hasRemoteConfig {
+		return
+	}
+	cfg := t.rcConfig.Load()
+	if cfg == nil {
+		return
+	}
+	if !t.rcStartAttempted.CompareAndSwap(false, true) {
+		return
+	}
+	if err := t.startRemoteConfig(*cfg); err != nil {
+		if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+			log.Debug("remoteconfig: client not started, remote configuration is disabled")
+		} else {
+			log.Warn("Remote config startup error: %s", err.Error())
+		}
+	}
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
@@ -808,6 +838,9 @@ func (t *tracer) refreshAgentFeatures() {
 			f.hasTelemetryProxy = current.hasTelemetryProxy
 			return f
 		})
+		// The agent may advertise /v0.7/config only now (it was unreachable at
+		// startup, or remote config was enabled later): start remote config.
+		t.maybeStartRemoteConfig()
 	}
 	proto := t.config.effectiveTraceProtocol()
 	if t.config.internalConfig.ReportEffectiveTraceProtocol(proto) {
