@@ -110,6 +110,52 @@ func TestRenderTable_EscapesControlCharacters(t *testing.T) {
 	}
 }
 
+func TestRenderTable_EscapesTabwriterTerminators(t *testing.T) {
+	// text/tabwriter treats \v as a cell terminator, \f as a line
+	// terminator, and \xff as its escape-sequence start, so a message
+	// carrying any of them must be escaped like \t and \n: one site stays
+	// one row.
+	co := mustLoadCodeowners(t, "/internal/ @DataDog/guild\n")
+	rep := buildReport([]Site{{
+		File: "internal/example.go", Line: 1, Package: "internal", Func: "f",
+		Level: levelError, Message: "first\vsecond\ffeed\xffbyte",
+	}}, co)
+	var buf bytes.Buffer
+	if err := renderTable(&buf, rep); err != nil {
+		t.Fatalf("renderTable: %v", err)
+	}
+	if got := buf.String(); !strings.Contains(got, `first\vsecond\ffeed\xffbyte`) {
+		t.Errorf("rendered table did not escape tabwriter terminators:\n%s", got)
+	}
+}
+
+func TestBuildReport_EmptyGroupsEmitEmptyArrays(t *testing.T) {
+	// A group whose backlog is fully worked keeps Sites == Ignored with an
+	// empty site list, and an empty audit has no owner groups; both must
+	// serialize as [] rather than null so JSON consumers can iterate them.
+	co := mustLoadCodeowners(t, "/internal/ @DataDog/guild\n")
+	rep := buildReport([]Site{
+		{File: "internal/done.go", Line: 1, Package: "internal", Func: "f", Level: levelError, Message: "x", Ignored: true},
+	}, co)
+	if len(rep.Owners) != 1 || len(rep.Owners[0].Sites) != 0 {
+		t.Fatalf("owners = %+v, want one group with an empty site list", rep.Owners)
+	}
+	var buf bytes.Buffer
+	if err := renderJSON(&buf, rep); err != nil {
+		t.Fatalf("renderJSON: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"sites": []`) {
+		t.Errorf("empty site list serialized as null:\n%s", buf.String())
+	}
+	var buf2 bytes.Buffer
+	if err := renderJSON(&buf2, buildReport(nil, co)); err != nil {
+		t.Fatalf("renderJSON: %v", err)
+	}
+	if !strings.Contains(buf2.String(), `"owners": []`) {
+		t.Errorf("empty owner list serialized as null:\n%s", buf2.String())
+	}
+}
+
 func TestRenderTable_DeterministicAcrossRuns(t *testing.T) {
 	rep := buildTestReport(t)
 	var a, b bytes.Buffer

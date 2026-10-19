@@ -53,12 +53,15 @@ type Report struct {
 // Output is deterministic: owners sort by name, sites by file and line.
 func buildReport(sites []Site, co *codeowners) Report {
 	groups := map[string]*OwnerGroup{}
-	var rep Report
+	// Owners and each group's Sites start as empty, not nil, so a fully
+	// worked group and an empty audit serialize as [] rather than null in
+	// JSON — consumers that iterate the arrays would otherwise see nil.
+	rep := Report{Owners: make([]OwnerGroup, 0)}
 	for _, s := range sites {
 		key := strings.Join(co.ownersFor(s.File), " ")
 		g := groups[key]
 		if g == nil {
-			g = &OwnerGroup{Owner: key}
+			g = &OwnerGroup{Owner: key, Sites: []SiteRow{}}
 			groups[key] = g
 		}
 		g.Totals.Sites++
@@ -126,7 +129,10 @@ func renderJSON(w io.Writer, rep Report) error {
 	return enc.Encode(rep)
 }
 
-var tableCellEscaper = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`)
+// tabwriter treats \t, \v, and \xff as cell terminators and \r, \n, and
+// \f as line terminators, so a message carrying any of them must be escaped
+// for one site to stay on one table row.
+var tableCellEscaper = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`, "\v", `\v`, "\f", `\f`, "\xff", `\xff`)
 
 func renderTable(w io.Writer, rep Report) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
