@@ -347,6 +347,96 @@ func TestSpanEnd(t *testing.T) {
 	assert.Contains(meta, jsonMeta)
 }
 
+// TestSpanEndKeepsUserErrorAttributes verifies that finishing an error-status span keeps
+// user-set error.message, error.type and error.stack attributes instead of replacing them
+// with values derived from the status description.
+// See https://github.com/DataDog/dd-trace-go/issues/3708.
+func TestSpanEndKeepsUserErrorAttributes(t *testing.T) {
+	const statusDesc = "status description"
+
+	tests := []struct {
+		name       string
+		attributes []attribute.KeyValue
+		wantMeta   map[string]string
+	}{
+		{
+			name:       "no error attributes",
+			attributes: nil,
+			wantMeta: map[string]string{
+				ext.ErrorMsg:  statusDesc,
+				ext.ErrorType: "*errors.errorString",
+			},
+		},
+		{
+			name:       "error.message",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorMsg, "custom message")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg: "custom message",
+			},
+		},
+		{
+			name:       "error.type",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorType, "custom.ErrorType")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:  statusDesc,
+				ext.ErrorType: "custom.ErrorType",
+			},
+		},
+		{
+			name:       "error.stack",
+			attributes: []attribute.KeyValue{attribute.String(ext.ErrorStack, "custom stack")},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:   statusDesc,
+				ext.ErrorStack: "custom stack",
+			},
+		},
+		{
+			name: "all error attributes",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorMsg, "custom message"),
+				attribute.String(ext.ErrorType, "custom.ErrorType"),
+				attribute.String(ext.ErrorStack, "custom stack"),
+			},
+			wantMeta: map[string]string{
+				ext.ErrorMsg:   "custom message",
+				ext.ErrorType:  "custom.ErrorType",
+				ext.ErrorStack: "custom stack",
+			},
+		},
+	}
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, sp := tr.Start(context.Background(), "op")
+			sp.SetAttributes(tc.attributes...)
+			sp.SetStatus(codes.Error, statusDesc)
+			sp.End()
+
+			tracer.Flush()
+			traces, err := waitForPayload(payloads)
+			require.NoError(t, err)
+			p := traces[0][0]
+			meta, ok := p["meta"].(map[string]any)
+			require.True(t, ok)
+
+			assert.Equal(t, 1.0, p["error"])
+			for k, v := range tc.wantMeta {
+				assert.Equal(t, v, meta[k], k)
+			}
+			if len(tc.attributes) > 0 {
+				// The stack captured in End points at the bridge, not at the user's error.
+				assert.NotContains(t, meta, ext.ErrorHandlingStack)
+			} else {
+				assert.Contains(t, meta, ext.ErrorHandlingStack)
+			}
+		})
+	}
+}
+
 // This test verifies that setting the status of a span
 // behaves accordingly to the Otel API spec
 // (https://opentelemetry.io/docs/reference/specification/trace/api/#set-status)

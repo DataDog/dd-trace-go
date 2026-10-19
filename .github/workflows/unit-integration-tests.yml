@@ -93,6 +93,10 @@ jobs:
     if: needs.set-up.outputs.has-contribs == 'true'
     runs-on:
       group: "APM Larger Runners"
+    # Without this the job inherits GitHub's 360-minute default, so a hang (for
+    # example in docker compose up) burns six hours of a larger runner and holds
+    # the merge queue. A healthy chunk takes under 22 minutes (p99 about 12).
+    timeout-minutes: 45
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml

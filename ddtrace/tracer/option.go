@@ -62,6 +62,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/cloudevents/sdk-go/v2":               {"CloudEvents SDK v2", false},
 	"github.com/confluentinc/confluent-kafka-go":     {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2":  {"Kafka (confluent) v2", false},
+	"connectrpc.com/connect":                         {"Connect RPC", false},
 	"database/sql":                                   {"SQL", false},
 	"github.com/dimfeld/httptreemux/v5":              {"HTTP Treemux", false},
 	"github.com/elastic/go-elasticsearch/v6":         {"Elasticsearch v6", false},
@@ -1327,6 +1328,18 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
+	}
+}
+
+// WithDataStreamsIntakeBufferSize sets the number of slots in the Data Streams
+// Monitoring processor's input ring buffer. Once full, new checkpoints and
+// Kafka offsets overwrite the oldest unread ones, so raising this value
+// trades memory for tolerance to bursts or a slow agent. This can also be
+// configured by setting DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. Non-positive
+// values are ignored.
+func WithDataStreamsIntakeBufferSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
 	}
 }
 
