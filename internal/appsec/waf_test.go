@@ -522,7 +522,42 @@ func TestBlocking(t *testing.T) {
 	}
 }
 
+// TestDisableFeaturesHTTPBody checks that disabling the http feature also stops the WAF from evaluating the HTTP body,
+// which reaches the WAF context without going through the http feature listener.
+func TestDisableFeaturesHTTPBody(t *testing.T) {
+	isolateTelemetry(t)
+	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	t.Setenv(config.EnvDisableFeatures, "http")
+	testutils.StartAppSec(t)
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+
+	// "$globals" matches the crs-933-130-block body rule, which blocks the request when http is enabled (see TestBlocking).
+	res, err := srv.Client().Post(srv.URL+"/body", "text/plain", strings.NewReader("$globals"))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Nil(t, spans[0].Tag("_dd.appsec.json"))
+}
+
 func TestBlockingUnavailable(t *testing.T) {
+	telemetryClient := testutils.StartTelemetryRecorder(t)
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
 	testutils.StartAppSec(t, config.WithBlockingUnavailable(true))
 
@@ -535,9 +570,6 @@ func TestBlockingUnavailable(t *testing.T) {
 
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
-	telemetryClient := new(telemetrytest.RecordClient)
-	prevClient := telemetry.SwapClient(telemetryClient)
-	t.Cleanup(func() { telemetry.SwapClient(prevClient) })
 
 	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)

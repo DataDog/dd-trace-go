@@ -91,14 +91,24 @@ jobs:
           persist-credentials: false
           ref: ${{ github.ref }}
 
-      - name: Setup Go and development tools
+      - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: "true"
           workload: dynamic-locking
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          variant: |-
+            {"runner":"ubuntu-latest",
+             "modules":["internal/locking"],
+             "tags":"${{ matrix.build_tags }}"}
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Test internal/locking package
         env:
@@ -126,7 +136,7 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
-      
+
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
@@ -141,7 +151,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cache-metrics
         with:
-          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           # No pull request ever waits on this workflow's jobs directly, but
           # keep the walk off the pull_request path for consistency.

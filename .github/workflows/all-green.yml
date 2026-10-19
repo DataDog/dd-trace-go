@@ -1,10 +1,13 @@
 name: Check Pull Request CI Status
 
 on:
-  workflow_dispatch: # allow to trigger the workflow on main, to add it in suggestion on branch protection rules
+  workflow_dispatch: # a manual run on main makes this check selectable in branch protection rules
   pull_request:
 
 permissions:
+  # actions: read lets the action resolve each check run to its workflow run
+  # for ignore-check-runs-from-other-pull-requests.
+  actions: read
   checks: read
   statuses: read
 
@@ -13,15 +16,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Ensure CI Success
-        uses: DataDog/ensure-ci-success@b0d931ac77c810490e61964c321103040eef888e
+        uses: DataDog/ensure-ci-success@cccc70e01e12f746739ac9ad158b93439fac4821
         with:
-          # This action only evaluates checks that exist when it polls, so the
-          # delay has to outlast GitHub's fan-out of the triggering event.
-          # max-retries rises with it to hold the ceiling near 70 minutes.
+          # The action evaluates only the checks that exist when it polls.
+          # The delay must outlast the GitHub fan-out of the trigger event.
+          # max-retries holds the ceiling near 70 minutes.
           initial-delay-seconds: "300"
           max-retries: "65"
-          # polling-interval-seconds is a no-op: the action reads `polling-interval`.
-          # polling-interval-seconds: "60"
+          # A fork PR and its shadow PR share the head commit, so both report
+          # check runs with equal names. The action keeps one run per name and
+          # can keep the fork run, which fails on permission-gated steps
+          # because the fork GITHUB_TOKEN is read-only. This option ignores
+          # the check runs of the fork PR.
+          ignore-check-runs-from-other-pull-requests: "true"
           ignored-name-patterns: |
             devflow/merge
             devflow/mergegate
@@ -33,15 +40,16 @@ jobs:
 
 # Reason for ignored-name-patterns:
 #
-# * devflow/merge: technical job used by the merge queue, do not remove it.
-# * devflow/mergegate: stays pending until the PR is approved by codeowners and other checks pass; ignoring it
-#   prevents all open PRs from appearing as failing CI before reviews are complete, making PRs with actual
-#   CI failures indistinguishable from PRs that are simply awaiting review.
-# * check-title: CI job used to validate the PR title, enforced by branch protection rules, do not remove it.
-# * dd-gitlab/.* and DDCI Status: Datadog-internal GitLab statuses. They cannot be re-run from GitHub, and
-#   DDCI Status is already marked "Not required to merge", so re-reporting them as this workflow's failure
-#   sends people to the wrong place.
-# * errtrack-audit: the errtrack-audit workflow's job, documented as advisory — a run failure (infra, a
-#   broken package graph) must not block the PR, only the PR comment reports its findings. The tool's
-#   own tests moved to the gated check-modules job in static-checks, so a regression in the tool does
-#   block.
+# * devflow/merge: merge-queue job. Do not remove it.
+# * devflow/mergegate: stays pending until codeowners approve the PR and the
+#   other checks pass. Ignoring it separates PRs that wait for review from
+#   PRs with real CI failures.
+# * check-title: validates the PR title. Branch protection enforces it. Do
+#   not remove it.
+# * dd-gitlab/.* and DDCI Status: internal GitLab statuses. GitHub cannot
+#   re-run them, and DDCI Status is "Not required to merge". Reporting them
+#   as failures of this workflow sends people to the wrong place.
+# * errtrack-audit: advisory job. A run failure (infra, a broken package
+#   graph) must not block the PR; the PR comment reports the findings. The
+#   tool's own tests run in the gated check-modules job in static-checks, so
+#   a regression in the tool still blocks.
