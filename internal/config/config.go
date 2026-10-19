@@ -80,6 +80,9 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
+	// agentHost is DD_AGENT_HOST, which the OTLP logs exporter falls back to
+	// when agentURL has no host.
+	agentHost string
 	// dogstatsdAddr is the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -395,6 +398,7 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	cfg.agentHost = agentHost
 
 	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
@@ -1782,6 +1786,40 @@ func (c *Config) OTLPLogsHTTPURL() string {
 	return c.otlpLogsHTTPURL
 }
 
+// OTLPLogsAgentHTTPEndpoint returns the host:port, path, and insecure flag the
+// HTTP logs exporter uses when OTLPLogsHTTPURL is empty.
+func (c *Config) OTLPLogsAgentHTTPEndpoint() (endpoint, path string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	endpoint, insecure = c.otlpLogsAgentEndpoint(otlpDefaultPort)
+	return endpoint, otlpLogsPath, insecure
+}
+
+// OTLPLogsGRPCEndpoint returns the gRPC logs exporter target and insecure flag.
+// The target is only the host of OTLPLogsEndpoint, or the agent host when the
+// endpoint is empty. Like the OTel SDK, any scheme other than https is
+// insecure; an endpoint without a scheme returns false and leaves transport
+// security to the SDK default and OTEL_EXPORTER_OTLP_INSECURE.
+func (c *Config) OTLPLogsGRPCEndpoint() (target string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.otlpLogsEndpoint == "" {
+		return c.otlpLogsAgentEndpoint(otlpDefaultGRPCPort)
+	}
+	// otlpLogsEndpoint is validated to parse as a URL.
+	u, _ := url.Parse(c.otlpLogsEndpoint)
+	return cmp.Or(u.Host, u.Path), u.Scheme != "" && u.Scheme != URLSchemeHTTPS
+}
+
+// otlpLogsAgentEndpoint returns the agent host with the given port: the agent
+// URL host, then DD_AGENT_HOST, then localhost. c.mu must be held.
+func (c *Config) otlpLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
+	if u := c.agentURL; u != nil && u.Hostname() != "" {
+		return net.JoinHostPort(u.Hostname(), port), u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeUnix
+	}
+	return net.JoinHostPort(cmp.Or(c.agentHost, internal.DefaultAgentHostname), port), true
+}
+
 // OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
 func (c *Config) OTLPLogsHeaders() map[string]string {
 	c.mu.RLock()
@@ -2066,6 +2104,27 @@ func (c *Config) RuntimeMetricsGRPCEndpoint() (endpoint string, insecure bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.runtimeMetricsGRPCEndpoint, c.runtimeMetricsInsecure
+}
+
+// RuntimeMetricsHTTPURL returns the URL the HTTP runtime metrics exporter posts to.
+func (c *Config) RuntimeMetricsHTTPURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return (&url.URL{Scheme: otlpScheme(c.runtimeMetricsInsecure), Host: c.runtimeMetricsHTTPEndpoint, Path: c.runtimeMetricsHTTPPath}).String()
+}
+
+// RuntimeMetricsGRPCURL returns the URL of the gRPC runtime metrics exporter target.
+func (c *Config) RuntimeMetricsGRPCURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return otlpScheme(c.runtimeMetricsInsecure) + "://" + c.runtimeMetricsGRPCEndpoint
+}
+
+func otlpScheme(insecure bool) string {
+	if insecure {
+		return URLSchemeHTTP
+	}
+	return URLSchemeHTTPS
 }
 
 func (c *Config) RuntimeMetricsHeaders() map[string]string {

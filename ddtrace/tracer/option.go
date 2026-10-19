@@ -207,6 +207,10 @@ type config struct {
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
+
+	// otelMeterProviderInstalled reports whether OTel runtime metrics are
+	// exported by the MeterProvider the tracer installed.
+	otelMeterProviderInstalled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.

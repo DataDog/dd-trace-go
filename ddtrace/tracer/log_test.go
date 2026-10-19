@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"testing"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -25,8 +26,11 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 const otelStartupFieldsRegexp = `(,"(?:OTEL_ENABLED|DD_METRICS_OTEL_ENABLED|DD_LOGS_OTEL_ENABLED|DD_TRACE_OTEL_SEMANTICS_ENABLED|` +
 	`OTEL_TRACES_EXPORTER|OTEL_EXPORTER_OTLP_TRACES_ENDPOINT|OTEL_EXPORTER_OTLP_TRACES_PROTOCOL|OTEL_EXPORTER_OTLP_TRACES_HEADERS|` +
 	`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT|OTEL_EXPORTER_OTLP_METRICS_PROTOCOL|OTEL_EXPORTER_OTLP_METRICS_HEADERS|` +
+	`OTEL_METRIC_EXPORT_INTERVAL|OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE|` +
+	`OTEL_LOGS_EXPORTER|OTEL_EXPORTER_OTLP_LOGS_ENDPOINT|OTEL_EXPORTER_OTLP_LOGS_PROTOCOL|OTEL_EXPORTER_OTLP_LOGS_HEADERS|` +
+	`OTEL_BLRP_SCHEDULE_DELAY|OTEL_BLRP_EXPORT_TIMEOUT|OTEL_BLRP_MAX_QUEUE_SIZE|OTEL_BLRP_MAX_EXPORT_BATCH_SIZE|` +
 	`OTEL_LOG_LEVEL|OTEL_SERVICE_NAME|OTEL_RESOURCE_ATTRIBUTES|OTEL_PROPAGATORS|OTEL_TRACES_SAMPLER|OTEL_TRACES_SAMPLER_ARG)":` +
-	`(?:"[^"]*"|true|false|\{[^}]*\}))*`
+	`(?:"[^"]*"|true|false|[0-9]+|\{[^}]*\}))*`
 
 // commonLogIgnore is a list of strings that are commonly ignored by tests
 // involving the output of the logger.
@@ -305,6 +309,136 @@ func TestOTelPropagators(t *testing.T) {
 	}
 }
 
+func TestCommonOTLPExporterInfo(t *testing.T) {
+	a := otlpExporterInfo{"http://agent:4318/v1/metrics", "http/protobuf", map[string]string{"api-key": "a", "tenant": "t"}}
+	b := otlpExporterInfo{"http://agent:4317", "grpc", map[string]string{"api-key": "b"}}
+	redacted := map[string]string{"api-key": redactedHeaderValue, "tenant": redactedHeaderValue}
+	for _, tc := range []struct {
+		name               string
+		exporters          []otlpExporterInfo
+		endpoint, protocol string
+		headers            map[string]string
+	}{
+		{"none", nil, "", "", nil},
+		{"no headers", []otlpExporterInfo{{endpoint: a.endpoint}, {endpoint: a.endpoint}}, a.endpoint, "", map[string]string{}},
+		{"one", []otlpExporterInfo{a}, a.endpoint, a.protocol, redacted},
+		{"same", []otlpExporterInfo{a, a}, a.endpoint, a.protocol, redacted},
+		{"different protocol", []otlpExporterInfo{a, {a.endpoint, "http/json", a.headers}}, a.endpoint, conflictingOTLPValue, redacted},
+		{"headers on one exporter", []otlpExporterInfo{{a.endpoint, a.protocol, nil}, a}, a.endpoint, a.protocol, map[string]string{"api-key": conflictingOTLPValue, "tenant": conflictingOTLPValue}},
+		// Header values are compared before redaction.
+		{"different", []otlpExporterInfo{a, b}, conflictingOTLPValue, conflictingOTLPValue, map[string]string{"api-key": conflictingOTLPValue, "tenant": conflictingOTLPValue}},
+		{"third exporter differs", []otlpExporterInfo{a, a, {a.endpoint, a.protocol, map[string]string{"api-key": "a"}}}, a.endpoint, a.protocol, map[string]string{"api-key": redactedHeaderValue, "tenant": conflictingOTLPValue}},
+	} {
+		endpoint, protocol, headers := commonOTLPExporterInfo(tc.exporters)
+		assert.Equal(t, tc.endpoint, endpoint, tc.name)
+		assert.Equal(t, tc.protocol, protocol, tc.name)
+		assert.Equal(t, tc.headers, headers, tc.name)
+	}
+}
+
+func TestOTelStartupInfoMetricsAndLogs(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "agent")
+	// The MeterProvider exports over gRPC; span metrics only support HTTP and fall back to http/protobuf.
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=secret")
+	t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_BLRP_SCHEDULE_DELAY", "2000")
+	t.Setenv("OTEL_BLRP_EXPORT_TIMEOUT", "7000")
+	t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "100")
+	t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "500")
+	tr, err := newUnstartedTracer(func(c *config) {
+		c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	defer tr.Stop()
+	tr.config.otelRuntimeMetricsShouldBeEnabled = true
+	tr.config.otelMeterProviderInstalled = true
+
+	var info startupInfo
+	tr.addOTelStartupInfo(&info)
+	assert.True(t, info.OTelEnabled)
+	assert.Equal(t, conflictingOTLPValue, info.OTLPMetricsEndpoint)
+	assert.Equal(t, conflictingOTLPValue, info.OTLPMetricsProtocol)
+	assert.Equal(t, map[string]string{"api-key": redactedHeaderValue}, info.OTLPMetricsHeaders)
+	assert.Equal(t, "otlp", info.OTelLogsExporter)
+	assert.Equal(t, "http://agent:4318/v1/logs", info.OTLPLogsEndpoint)
+	assert.Equal(t, "http/protobuf", info.OTLPLogsProtocol)
+	assert.Equal(t, int64(2000), info.BLRPScheduleDelay)
+	assert.Equal(t, int64(7000), info.BLRPExportTimeout)
+	assert.Equal(t, 100, info.BLRPMaxQueueSize)
+	assert.Equal(t, 100, info.BLRPMaxExportBatchSize)
+}
+
+// TestOTelStartupInfoUserMeterProvider verifies that the MeterProvider exporter
+// settings are not reported when the application installed its own provider.
+func TestOTelStartupInfoUserMeterProvider(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "agent")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=secret")
+	for _, spanMetrics := range []bool{false, true} {
+		t.Run(fmt.Sprintf("span metrics %t", spanMetrics), func(t *testing.T) {
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTLPSpanMetricsEnabled(spanMetrics, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.otelRuntimeMetricsShouldBeEnabled = true
+			tr.config.otelMeterProviderInstalled = false
+
+			var info startupInfo
+			tr.addOTelStartupInfo(&info)
+			assert.True(t, info.OTelEnabled)
+			assert.True(t, info.MetricsOTelEnabled)
+			assert.Zero(t, info.OTelMetricExportInterval)
+			assert.Empty(t, info.OTLPMetricsTemporalityPreference)
+			if !spanMetrics {
+				assert.Empty(t, info.OTLPMetricsEndpoint)
+				assert.Empty(t, info.OTLPMetricsProtocol)
+				assert.Nil(t, info.OTLPMetricsHeaders)
+				return
+			}
+			// Only the span metrics exporter is reported, so nothing conflicts.
+			assert.Equal(t, "http://agent:4318/v1/metrics", info.OTLPMetricsEndpoint)
+			assert.Equal(t, "http/protobuf", info.OTLPMetricsProtocol)
+			assert.Equal(t, map[string]string{"api-key": redactedHeaderValue}, info.OTLPMetricsHeaders)
+		})
+	}
+}
+
+func TestOTLPLogsEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		env                map[string]string
+		endpoint, protocol string
+	}{
+		{"agent", map[string]string{"DD_AGENT_HOST": "agent"}, "http://agent:4318/v1/logs", "http/protobuf"},
+		{"agent grpc", map[string]string{"DD_AGENT_HOST": "agent", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"}, "http://agent:4317", "grpc"},
+		{"generic", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/"}, "http://collector:4318/v1/logs", "http/protobuf"},
+		{"signal", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://u:p@collector/v1/logs?k=v"}, "https://collector/v1/logs", "http/protobuf"},
+		{"signal other scheme", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4318/v1/logs"}, "http://collector:4318/v1/logs", "http/protobuf"},
+		{"signal encoded path", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4318/tenant%2Fblue"}, "http://collector:4318/tenant/blue", "http/protobuf"},
+		{"signal grpc", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
+		{"signal grpc https", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "https://collector:4317", "grpc"},
+		{"signal grpc other scheme", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
+		{"signal grpc no host", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "", "grpc"},
+		{"signal grpc no scheme", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "//collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "https://collector:4317", "grpc"},
+		{"https agent", map[string]string{"DD_TRACE_AGENT_URL": "https://agent:8126"}, "https://agent:4318/v1/logs", "http/protobuf"},
+		{"unix agent", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket"}, "http://localhost:4318/v1/logs", "http/protobuf"},
+		{"unix agent with host", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "agent"}, "http://agent:4318/v1/logs", "http/protobuf"},
+		{"unix agent grpc", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"}, "http://localhost:4317", "grpc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			endpoint, protocol := otlpLogsEndpoint(internalconfig.CreateNew())
+			assert.Equal(t, tc.endpoint, endpoint)
+			assert.Equal(t, tc.protocol, protocol)
+		})
+	}
+}
+
 type prop struct{}
 
 func (p *prop) Inject(_ *SpanContext, _ any) (e error) {
@@ -416,8 +550,7 @@ func TestRedactOTLPHeaders(t *testing.T) {
 	headers := map[string]string{"dd-api-key": "secret", "Authorization": "Bearer token"}
 	assert.Equal(t, map[string]string{"dd-api-key": "REDACTED", "Authorization": "REDACTED"}, redactOTLPHeaders(headers))
 	assert.Equal(t, "secret", headers["dd-api-key"])
-	assert.Nil(t, redactOTLPHeaders(map[string]string{}))
-	assert.Nil(t, redactOTLPHeaders(nil))
+	assert.Equal(t, map[string]string{}, redactOTLPHeaders(nil))
 }
 
 func TestOTelTracesSampler(t *testing.T) {
