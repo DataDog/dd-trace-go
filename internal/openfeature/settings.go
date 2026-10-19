@@ -127,7 +127,7 @@ func resolveSource(in sourceInputs) (source Source, legacyDecided bool) {
 				// dark with nothing pointing at the typo, so warn as the other
 				// tracers do. The raw value is logged, not the normalized one,
 				// so the customer sees what they actually set.
-				log.Warn("openfeature: unsupported Feature Flagging configuration source %q; provider disabled", in.source)
+				log.Warn("openfeature: unsupported Feature Flagging configuration source %q; provider disabled", in.source) //errtrack:ignore invalid user configuration
 				return SourceDisabled, false
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -404,6 +405,87 @@ func TestStatusError(t *testing.T) {
 	}
 }
 
+// TestSentinelStatusError covers echo v5's unexported status-carrying errors
+// (echo.ErrNotFound, echo.ErrUnauthorized, ...). Unlike v4, where those
+// sentinels are *echo.HTTPError values, in v5 they only satisfy
+// echo.HTTPStatusCoder, so they must not be flattened to a 500.
+func TestSentinelStatusError(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		err      error
+		wantCode string
+		wantErr  bool
+	}{
+		{
+			name:     "unrouted-request",
+			err:      nil, // no handler registered: echo's router returns echo.ErrNotFound
+			wantCode: "404",
+		},
+		{
+			name:     "sentinel-404",
+			err:      echo.ErrNotFound,
+			wantCode: "404",
+		},
+		{
+			name:     "sentinel-401",
+			err:      echo.ErrUnauthorized,
+			wantCode: "401",
+		},
+		{
+			name:     "sentinel-500",
+			err:      echo.ErrInternalServerError,
+			wantCode: "500",
+			wantErr:  true,
+		},
+		{
+			name:     "sentinel-wrapped-503",
+			err:      fmt.Errorf("upstream down: %w", echo.ErrServiceUnavailable),
+			wantCode: "503",
+			wantErr:  true,
+		},
+		{
+			// echo.httpError.Wrap promotes the sentinel to an *echo.HTTPError
+			// keeping its status code.
+			name:     "sentinel-promoted-to-httperror",
+			err:      echo.ErrForbidden.Wrap(errors.New("nope")),
+			wantCode: "403",
+		},
+		{
+			// Errors without a status of their own still fall back to 500.
+			name:     "no-status",
+			err:      errors.New("oh no"),
+			wantCode: "500",
+			wantErr:  true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithService("foobar")))
+			if tt.err != nil {
+				router.GET("/err", func(_ *echo.Context) error { return tt.err })
+			}
+
+			r := httptest.NewRequest(http.MethodGet, "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
+			assert.Equal(t, tt.wantCode, span.Tag(ext.HTTPCode))
+			assert.Equal(t, tt.wantCode, strconv.Itoa(w.Code), "response status should match the tagged status")
+			if tt.wantErr {
+				assert.NotNil(t, span.Tag(ext.ErrorMsg))
+			} else {
+				assert.NotContains(t, span.Tags(), ext.ErrorMsg)
+			}
+		})
+	}
+}
+
 func TestGetSpanNotInstrumented(t *testing.T) {
 	assert := assert.New(t)
 	router := echo.New()
@@ -543,6 +625,78 @@ func TestWithErrorTranslator(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 }
 
+// TestWithErrorTranslatorFallback asserts that a translator which only knows
+// about the application's own error types does not force every other error to
+// a 500: errors echo can resolve a status for keep it.
+func TestWithErrorTranslatorFallback(t *testing.T) {
+	appTranslator := func(err error) (*echo.HTTPError, bool) {
+		if custom, ok := errors.AsType[*testCustomError](err); ok {
+			return echo.NewHTTPError(custom.TestCode, custom.Error()), true
+		}
+		return nil, false
+	}
+	zeroTranslator := func(error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{Code: 0, Message: "unset"}, true
+	}
+
+	for _, tt := range []struct {
+		name      string
+		err       error
+		translate func(error) (*echo.HTTPError, bool)
+		wantCode  string
+	}{
+		{name: "translated", err: &testCustomError{TestCode: 401}, translate: appTranslator, wantCode: "401"},
+		{name: "sentinel", err: echo.ErrTooManyRequests, translate: appTranslator, wantCode: "429"},
+		{name: "http-error", err: echo.NewHTTPError(http.StatusBadRequest, "bad"), translate: appTranslator, wantCode: "400"},
+		{name: "unknown", err: errors.New("oh no"), translate: appTranslator, wantCode: "500"},
+		{name: "zero-code-sentinel", err: echo.ErrTooManyRequests, translate: zeroTranslator, wantCode: "429"},
+		{name: "zero-code-unknown", err: errors.New("oh no"), translate: zeroTranslator, wantCode: "500"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithErrorTranslator(tt.translate)))
+			router.GET("/err", func(_ *echo.Context) error { return tt.err })
+
+			r := httptest.NewRequest(http.MethodGet, "/err", nil)
+			router.ServeHTTP(httptest.NewRecorder(), r)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.wantCode, spans[0].Tag(ext.HTTPCode))
+		})
+	}
+}
+
+// TestCommittedResponseWinsOverError asserts that a handler which writes a
+// response and then returns an error is tagged with the committed status, not
+// the error's status. echo.ResolveResponseStatus gives the committed response
+// precedence, matching the wire status.
+func TestCommittedResponseWinsOverError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := echo.New()
+	router.Use(Middleware())
+	router.GET("/err", func(c *echo.Context) error {
+		if err := c.JSON(http.StatusCreated, map[string]string{"ok": "true"}); err != nil {
+			return err
+		}
+		return errors.New("after commit")
+	})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/err", nil))
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "201", spans[0].Tag(ext.HTTPCode))
+	assert.NotContains(t, spans[0].Tags(), ext.ErrorMsg)
+}
+
 func TestWithErrorCheck(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -596,6 +750,19 @@ func TestWithErrorCheck(t *testing.T) {
 			opts: []Option{
 				WithErrorCheck(func(_ error) bool {
 					return false
+				}),
+			},
+			wantErr: nil,
+		},
+		{
+			// echo.StatusCode is the way to reach the status of a sentinel
+			// error, whose type is unexported.
+			name: "ignore-4xx-sentinel-error",
+			err:  echo.ErrNotFound,
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					code := echo.StatusCode(err)
+					return !(code >= 400 && code < 500)
 				}),
 			},
 			wantErr: nil,

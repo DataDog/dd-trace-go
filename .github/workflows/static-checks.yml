@@ -86,12 +86,20 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-warm-tools-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
     needs: [changes, warm-tools-cache]
@@ -103,12 +111,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-copyright
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Copyright
         run: |
           go run ./scripts/check_copyright.go
@@ -127,12 +145,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-github-actions
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Lint GitHub Actions workflows
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -147,6 +175,8 @@ jobs:
       # step exists.
       - name: Verify CI component table and workflow invariants
         run: go test ./scripts/ciselect/
+      - name: Test CI tooling scripts
+        run: go test ./scripts/citiming/ ./scripts/actiontest/
 
   check-modules:
     needs: [changes, warm-tools-cache]
@@ -158,12 +188,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-modules
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run fixmodules
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -181,12 +220,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-docs
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Update documentation
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -204,12 +253,22 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-check-format
+          cache-provider: github-cache
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Format
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -233,6 +292,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 2 # HEAD^1 is the base for the nested-modules lint step
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
@@ -257,13 +317,56 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version || 'stable' }}
+          check-latest: "true"
+          workload: static-lint
           cache: "false"
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+
+      # With cache "false" this job has no module cache, so a tools-cache
+      # miss downloads the whole _tools module set and compiles every tool.
+      # It therefore depends on warm-tools-cache producing an exact tools hit.
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The golangci-lint steps above stop at Go workspace module boundaries.
+      # Lint only the nested modules this change touches, and report only the
+      # issues it adds: those modules still carry pre-existing findings.
+      - name: golangci-lint (nested modules)
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          # The reviewdog steps install golangci-lint from
+          # GOLANGCI_LINT_VERSION. This step runs the binary that _tools
+          # builds for the tools cache. When the two versions drift, the
+          # root module and the nested modules disagree about what a
+          # finding is. Check the versions, so drift fails the job.
+          if [[ "$(golangci-lint version)" != *"version ${GOLANGCI_LINT_VERSION#v} built"* ]]; then
+            echo "::error::golangci-lint in bin/ is $(golangci-lint version | head -n1); the workflow expects ${GOLANGCI_LINT_VERSION}. Sync _tools/go.mod with GOLANGCI_LINT_VERSION."
+            exit 1
+          fi
+          base="HEAD~1"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            before="${{ github.event.before }}"
+            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
+              # The push creates the branch, so no earlier tip exists to
+              # diff against. The step lints nothing.
+              before="$GITHUB_SHA"
+            else
+              # A push can carry several commits, and HEAD~1 covers only the
+              # last commit of the range. Fetch the whole push: git
+              # merge-base cannot pass the shallow boundary of the checkout.
+              git fetch --no-tags --depth="$(( $(jq '.commits | length' "$GITHUB_EVENT_PATH") + 2 ))" origin "$GITHUB_SHA"
+            fi
+            base="$before"
+          fi
+          ./scripts/lint_go_modules.sh "$base" --timeout 10m
 
       - name: constantlogmsg analyzer (make lint/errlog)
         run: make lint/errlog
@@ -312,12 +415,21 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          check-latest: "true"
+          workload: static-checklocks
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
       - name: Run checklocks
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"

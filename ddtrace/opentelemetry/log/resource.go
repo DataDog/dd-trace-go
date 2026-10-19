@@ -6,9 +6,11 @@
 package log
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"os"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -29,7 +31,12 @@ const (
 	envDDTraceReportHostname = "DD_TRACE_REPORT_HOSTNAME"
 
 	// OTel environment variable names
+	envOtelServiceName        = "OTEL_SERVICE_NAME"
 	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// OTel resource attribute keys
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = string(semconv.DeploymentEnvironmentNameKey)
 )
 
 // buildResource creates an OpenTelemetry resource for logs with Datadog-specific attributes.
@@ -37,9 +44,10 @@ const (
 // Precedence rule (critical): Datadog settings win over OTEL_RESOURCE_ATTRIBUTES
 // Implementation:
 // 1. Parse OTEL_RESOURCE_ATTRIBUTES into a map first (base layer)
-// 2. Overlay Datadog-derived attributes on top (overwrite conflicts):
+// 2. Overlay OTEL_SERVICE_NAME → service.name (wins over OTEL_RESOURCE_ATTRIBUTES per the OTel spec)
+// 3. Overlay Datadog-derived attributes on top (overwrite conflicts):
 //   - DD_SERVICE → service.name
-//   - DD_ENV → deployment.environment
+//   - DD_ENV → deployment.environment.name
 //   - DD_VERSION → service.version
 //   - DD_TAGS → convert k:v pairs into resource attributes
 //
@@ -56,6 +64,9 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	if otelAttrStr := env.Get(envOtelResourceAttributes); otelAttrStr != "" {
 		otelAttrs = parseOtelResourceAttributes(otelAttrStr)
 	}
+	if v := cmp.Or(otelAttrs[deploymentEnvironmentNameKey], otelAttrs[deploymentEnvironmentKey]); v != "" {
+		otelAttrs[deploymentEnvironmentNameKey] = v
+	}
 
 	// Step 2: Parse DD_TAGS
 	ddTags := make(map[string]string)
@@ -68,6 +79,11 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	attrs := make(map[string]string)
 	maps.Copy(attrs, otelAttrs)
 
+	// Overlay OTEL_SERVICE_NAME → service.name, trimmed like the OTel SDK's env detector.
+	if otelService := strings.TrimSpace(env.Get(envOtelServiceName)); otelService != "" {
+		attrs["service.name"] = otelService
+	}
+
 	// Overlay DD_SERVICE → service.name
 	if ddService := env.Get(envDDService); ddService != "" {
 		attrs["service.name"] = ddService
@@ -75,7 +91,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 
 	// Overlay DD_ENV → deployment.environment.name
 	if ddEnv := env.Get(envDDEnv); ddEnv != "" {
-		attrs["deployment.environment.name"] = ddEnv
+		attrs[deploymentEnvironmentNameKey] = ddEnv
 	}
 
 	// Overlay DD_VERSION → service.version
@@ -85,6 +101,11 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 
 	// Overlay DD_TAGS (all key-value pairs)
 	maps.Copy(attrs, ddTags)
+
+	// sdklog.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
+	if _, ok := otelAttrs[deploymentEnvironmentKey]; ok {
+		attrs[deploymentEnvironmentKey] = attrs[deploymentEnvironmentNameKey]
+	}
 
 	// Step 4: Handle hostname with special rules
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
@@ -103,7 +124,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 		switch k {
 		case "service.name":
 			keyValues = append(keyValues, semconv.ServiceName(v))
-		case "deployment.environment.name":
+		case deploymentEnvironmentNameKey:
 			keyValues = append(keyValues, semconv.DeploymentEnvironmentNameKey.String(v))
 		case "service.version":
 			keyValues = append(keyValues, semconv.ServiceVersion(v))

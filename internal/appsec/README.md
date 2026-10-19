@@ -197,20 +197,27 @@ flowchart TD
     IG{Instrumentation<br> Gateway} -->|Start grpcsec.HandlerOperation| GRPCListener
 ```
 
-All currently available features are the following ones:
+All currently available features are the following ones. Each feature is identified by a name (a slug, defined in
+the `listener` package and returned by the feature's `String()` method):
 
-| Feature Name           | Description                                            |
-|------------------------|--------------------------------------------------------|
-| HTTP WAF Protection    | Protects HTTP requests from attacks                    |
-| GRPC WAF Protection    | Protects GRPC requests from attacks                    |
-| GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
-| SQL RASP               | Runtime Application Self-Protection for SQL injections |
-| OS RASP                | Runtime Application Self-Protection for LFI attacks    |
-| CMDi RASP              | Runtime Application Self-Protection for command injection attacks |
-| HTTP RASP              | Runtime Application Self-Protection for SSRF attacks   |
-| User Security          | User blocking and login failures/success events        |
-| WAF Context            | Setup of the request scoped context system of the WAF  |
-| Tracing                | Bridge between the tracer and AppSec features          |
+| Name      | Feature                | Description                                            |
+|-----------|------------------------|--------------------------------------------------------|
+| `http`    | HTTP WAF Protection    | Protects HTTP requests from attacks                    |
+| `grpc`    | GRPC WAF Protection    | Protects GRPC requests from attacks                    |
+| `graphql` | GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
+| `sqli`    | SQL RASP               | Runtime Application Self-Protection for SQL injections |
+| `lfi`     | OS RASP                | Runtime Application Self-Protection for LFI attacks    |
+| `cmdi`    | CMDi RASP              | Runtime Application Self-Protection for command injection attacks |
+| `ssrf`    | HTTP RASP              | Runtime Application Self-Protection for SSRF attacks and downstream request analysis |
+| `user`    | User Security          | User blocking and login failures/success events        |
+| `waf`     | WAF Context            | Setup of the request scoped context system of the WAF  |
+| `trace`   | Tracing                | Bridge between the tracer and AppSec features          |
+
+`DD_APPSEC_DISABLE_FEATURES` takes a comma-separated list of feature names (case-insensitive) that must not be
+started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. The `waf` and `trace` features are required by every other
+feature and cannot be disabled. Unknown names are ignored with a warning log. Because HTTP bodies, HTTP route parameters
+and gRPC messages reach the WAF context without going through the `http` and `grpc` listeners, disabling those features
+also removes their WAF addresses from the supported addresses, so the WAF never evaluates them.
 
 ### AppSec state checks
 
@@ -225,6 +232,10 @@ The native pgx integration only monitors SQL; it cannot block it. See
 for its behavior and limitations.
 
 ### Block outcome telemetry
+
+Tests that inspect WAF telemetry should install `testutils.StartTelemetryRecorder`
+before starting AppSec. This isolates the recorded metrics from submissions
+buffered by earlier tests while preserving exact request-count assertions.
 
 The `waf.requests` metric has one data point for each WAF context. Two of its
 tags show the block outcome of the request:
