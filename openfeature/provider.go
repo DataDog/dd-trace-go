@@ -220,7 +220,8 @@ func reportFlagEvalMetricsCreationError(err error) {
 }
 
 func handleFlagEvalMetricsCreationError(err error) {
-	if _, ok := errors.AsType[*flagEvalMeterProviderError](err); ok {
+	var providerErr *flagEvalMeterProviderError
+	if errors.As(err, &providerErr) {
 		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error()) //errtrack:ignore invalid user configuration
 		return
 	}
