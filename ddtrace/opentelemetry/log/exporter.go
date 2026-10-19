@@ -203,9 +203,9 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 // - path is the URL path (e.g., "/v1/logs")
 // - insecure indicates whether to use http (true) or https (false)
 //
-// Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
-// reads those environment variables.
+// Note: Only called when internal/config cannot resolve a logs URL from
+// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT. Then the
+// DD agent configuration supplies the endpoint.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	endpoint, path, insecure = config.Get().OTLPLogsAgentHTTPEndpoint()
 	log.Debug("Using OTLP logs endpoint from the agent configuration: %s", endpoint)
