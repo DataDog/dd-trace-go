@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -174,6 +175,8 @@ type exposureWriter struct {
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       bool
+	// Keep the cache active when only the customer records exposures.
+	disableDatadogLogging bool
 }
 
 // newExposureWriter creates a new exposure writer with the given configuration
@@ -185,11 +188,12 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 	executable, _ := os.Executable()
 
 	return &exposureWriter{
-		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
-		cache:         newExposureLRUCache(defaultExposureCacheCapacity),
-		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
-		evp:           evp,
-		stopChan:      make(chan struct{}),
+		buffer:                make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		flushInterval:         cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
+		evp:                   evp,
+		stopChan:              make(chan struct{}),
+		disableDatadogLogging: !internalconfig.Get().FeatureFlagsExposuresDatadogLoggingEnabled(),
 		context: exposureContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
 			Version: env.Get("DD_VERSION"),
@@ -221,12 +225,12 @@ func (w *exposureWriter) start() {
 }
 
 // append adds an exposure event to the buffer with deduplication
-func (w *exposureWriter) append(event exposureEvent) {
+func (w *exposureWriter) append(event exposureEvent) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.stopped {
-		return
+		return false
 	}
 
 	// Create cache key and value from event
@@ -246,11 +250,13 @@ func (w *exposureWriter) append(event exposureEvent) {
 	// Check deduplication cache - returns true if this is a new or changed entry
 	if !w.cache.add(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
-		return
+		return false
 	}
 
-	// Append event to buffer
-	w.buffer = append(w.buffer, event)
+	if !w.disableDatadogLogging {
+		w.buffer = append(w.buffer, event)
+	}
+	return true
 }
 
 // flush sends all buffered exposure events to the agent

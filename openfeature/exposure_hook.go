@@ -8,6 +8,7 @@ package openfeature
 import (
 	"context"
 	"maps"
+	"sync"
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -97,11 +98,85 @@ func (h *exposureHook) After(
 	}
 
 	// Send to writer for buffering and eventual flushing
-	h.writer.append(event)
+	// Decide once for all destinations. Customer hooks run after provider hooks
+	// and read this stamp without consuming another cache entry.
+	isNew := h.writer.append(event)
+	if flagEvaluationDetails.FlagMetadata != nil {
+		flagEvaluationDetails.FlagMetadata[metadataExposureCacheHitKey] = !isNew
+	}
 
 	log.Debug("openfeature: recorded exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
 		hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 
+	return nil
+}
+
+const metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
+
+// ExposureEvaluation describes a successful provider evaluation. Its cache decision
+// is shared with Datadog's default exposure hook, even when Datadog logging is disabled.
+// It does not confirm delivery to Datadog or to a customer destination.
+type ExposureEvaluation struct {
+	Context of.EvaluationContext
+	Details of.InterfaceEvaluationDetails
+}
+
+// IsExposure reports whether the result selected an exposure-logging allocation.
+func (e ExposureEvaluation) IsExposure() bool {
+	_, hasAllocation := e.Details.FlagMetadata[metadataAllocationKey].(string)
+	doLog, _ := e.Details.FlagMetadata[metadataDoLogKey].(bool)
+	return e.Details.ErrorCode == "" && e.Details.Reason != of.ErrorReason &&
+		e.Details.Variant != "" && hasAllocation && doLog
+}
+
+// IsCacheHit reports whether this exposure repeats the cached allocation, variant
+// and optional split serial ID for this flag and subject.
+func (e ExposureEvaluation) IsCacheHit() bool {
+	hit, _ := e.Details.FlagMetadata[metadataExposureCacheHitKey].(bool)
+	return e.IsExposure() && hit
+}
+
+// ShouldSend reports an eligible cache miss. False also means the cache decision
+// is unavailable, for example when Datadog's provider hooks did not run.
+func (e ExposureEvaluation) ShouldSend() bool {
+	hit, known := e.Details.FlagMetadata[metadataExposureCacheHitKey].(bool)
+	return e.IsExposure() && known && !hit
+}
+
+// ExposureHook calls customer code after successful provider evaluations, including
+// non-exposures and cache hits. Register it with an OpenFeature client or evaluation,
+// not by replacing the provider's hooks. The callback runs synchronously: enqueue
+// copied scalar fields for background delivery. It can run concurrently.
+//
+// Like the existing Datadog logger, this hook runs in the After stage. A later
+// application hook can still reject the result. Provider errors do not invoke it.
+// A callback panic is recovered and does not change the flag result.
+type ExposureHook struct {
+	of.UnimplementedHook
+	callback func(ExposureEvaluation)
+	warnOnce sync.Once
+}
+
+// NewExposureHook creates an exposure-aware customer hook. A nil callback is a no-op.
+func NewExposureHook(callback func(ExposureEvaluation)) *ExposureHook {
+	return &ExposureHook{callback: callback}
+}
+
+// After invokes the callback with the shared exposure decision.
+func (h *ExposureHook) After(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) error {
+	if h.callback == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			h.warnOnce.Do(func() {
+				log.Warn("openfeature: customer exposure callback panicked; later failures are suppressed") //errtrack:ignore customer callback
+			})
+		}
+	}()
+	// Isolate metadata edits from the other callbacks and returned evaluation.
+	details.FlagMetadata = maps.Clone(details.FlagMetadata)
+	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
 	return nil
 }
 

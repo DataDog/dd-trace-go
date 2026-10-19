@@ -2780,6 +2780,20 @@ func TestFlagEvalTelemetryOptOutEnabled(t *testing.T) {
 	}
 }
 
+func TestFeatureFlagsExposuresDatadogLoggingEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExposuresDatadogLoggingEnabled())
+		})
+	}
+}
+
 func TestFeatureFlagsConfigurationSource(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()

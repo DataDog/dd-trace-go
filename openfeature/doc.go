@@ -111,6 +111,49 @@
 // Flag values, experiment exposures, exposure deduplication, application hooks,
 // and previously queued telemetry are unchanged.
 //
+// # Customer Exposure Hooks
+//
+// Register a customer callback with the OpenFeature client:
+//
+//	client.AddHooks(ddopenfeature.NewExposureHook(func(e ddopenfeature.ExposureEvaluation) {
+//	    if !e.ShouldSend() {
+//	        return
+//	    }
+//	    // Copy the fields into your own background queue. Do not block here.
+//	    enqueueRow(e.Details.FlagKey, e.Context.TargetingKey(), e.Details.Variant,
+//	        e.Details.FlagMetadata["dd.allocation.key"],
+//	        e.Details.FlagMetadata["__dd_split_serial_id"])
+//	}))
+//
+// enqueueRow is application code, not a Datadog API. The callback runs on the
+// evaluation goroutine and must support concurrent calls. Callback panics do not
+// affect flag results or Datadog exposure logging.
+//
+// IsExposure reports successful resolution of an allocation with doLog enabled.
+// IsCacheHit identifies repeats. ShouldSend selects new or changed exposures.
+// The cache compares allocation, variant, and optional serial ID for each flag
+// and subject. Serial ID zero is distinct from an absent serial ID. All customer
+// hooks receive the same decision; one hook cannot consume another's exposure.
+// The decision is also available as __dd_exposure_cache_hit in flag metadata.
+// A cache hit does not confirm successful delivery. Customers own queueing,
+// retries, and shutdown. Use IsExposure with customer-owned deduplication when
+// independent delivery guarantees are required.
+//
+// Set DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false before SDK
+// initialization for customer-only exposure logging. The default is true.
+// The provider snapshots this setting at construction. The cache and customer
+// hooks remain active when it is false. Evaluation events, metrics, span
+// enrichment, and flag values are unchanged.
+//
+// This MVP preserves Go's existing After-stage capture. The callback runs for
+// successful provider evaluations, including non-exposures and repeats, but not
+// provider errors. A later application After hook can still reject the result;
+// this does not retract an exposure already recorded. OpenFeature Go 1.18 does
+// not report that rejection in its Finally details, unlike the Java SDK.
+// Calling provider resolution methods directly does not run hooks. Register
+// customer hooks on the client or evaluation, and retain the provider's hooks.
+// Split-feature routing (including holdout metadata) is separate from this MVP.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:
