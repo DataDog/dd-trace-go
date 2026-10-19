@@ -115,19 +115,22 @@ func Server(opts ...Option) middleware.Middleware {
 				spanCtx = context.WithValue(spanCtx, component, ext.SpanKindServer+":"+tr.Operation())
 			}
 			defer func() {
-				finish := func(code int) {
-					finishSpan(span, tr, err, ext.SpanKindServer, cfg, code)
-					if inferredSpan != nil {
-						finishInferredHTTPSpan(inferredSpan, err, cfg, code)
-					}
-				}
 				if tr.Kind() == transport.KindHTTP {
 					if state, ok := ctx.Value(httpResponseKey{}).(*httpResponseState); ok {
-						state.register(finish)
+						requestErr, inferred := err, inferredSpan
+						state.register(func(code int) {
+							finishSpan(span, tr, requestErr, ext.SpanKindServer, cfg, code)
+							if inferred != nil {
+								finishInferredHTTPSpan(inferred, requestErr, cfg, code)
+							}
+						})
 						return
 					}
 				}
-				finish(0)
+				finishSpan(span, tr, err, ext.SpanKindServer, cfg, 0)
+				if inferredSpan != nil {
+					finishInferredHTTPSpan(inferredSpan, err, cfg, 0)
+				}
 			}()
 			return handler(spanCtx, req)
 		}
