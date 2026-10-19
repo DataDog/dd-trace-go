@@ -145,7 +145,7 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		if endpoint := cfg.OTLPLogsEndpoint(); len(userOpts) == 0 && endpoint != endpointURL {
 			u, _ := url.Parse(endpoint)
 			if strings.HasSuffix(strings.TrimRight(u.Path, "/"), defaultOTLPLogsPath) {
-				log.Warn("OTEL_EXPORTER_OTLP_ENDPOINT already ends in /v1/logs; the default HTTP logs URL appends /v1/logs again. Use OTEL_EXPORTER_OTLP_LOGS_ENDPOINT to specify a complete logs URL.")
+				log.Warn("OTEL_EXPORTER_OTLP_ENDPOINT already ends in /v1/logs; the default HTTP logs URL appends /v1/logs again. Use OTEL_EXPORTER_OTLP_LOGS_ENDPOINT to specify a complete logs URL.") //errtrack:ignore invalid user configuration
 			}
 		}
 		opts = append(opts, otlploghttp.WithEndpointURL(endpointURL))
