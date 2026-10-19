@@ -326,6 +326,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 => ../../contrib/cloudevents/sdk-go.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 => ../../contrib/connectrpc.com/connect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 => ../../contrib/elastic/go-elasticsearch.v6
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 => ../../contrib/gin-gonic/gin
