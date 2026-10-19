@@ -12,12 +12,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/maintest"
 )
 
-// TestEchoInMain covers echo instances created in package main, including one
-// imported under another name. The harness suites never build a package main.
+// TestEchoInMain covers echo instances created in package main, with New and
+// NewWithConfig, including one imported under another name. The harness suites never build a package main.
 func TestEchoInMain(t *testing.T) {
 	agent := maintest.Run(t, "./echo.v5/mainapp")
 	for _, resource := range []string{
 		"GET /v5/main",
+		"GET /v5/config",
 		"GET /v5/alias",
 	} {
 		agent.RequireSpan(t, agenttest.With().

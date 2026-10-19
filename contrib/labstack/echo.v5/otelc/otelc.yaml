@@ -20,3 +20,19 @@ echo_v5_new:
         replace: echov5trace.Wrap({{ . }})
   imports:
     echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
+
+# Wraps echo.NewWithConfig call sites, like echo_v5_new. NewWithConfig calls New
+# inside echo, where echo_v5_new does not apply, so each instance is wrapped
+# once.
+echo_v5_new_with_config:
+  target:
+    - "**"
+    - not: "github.com/labstack/echo/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/labstack/**"
+  where:
+    function_call: github.com/labstack/echo/v5.NewWithConfig
+  do:
+    - wrap_call:
+        replace: echov5trace.Wrap({{ . }})
+  imports:
+    echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2

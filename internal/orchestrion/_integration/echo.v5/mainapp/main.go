@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-// Command mainapp calls echo.New from package main, which the harness suites
-// never build. TestEchoInMain builds and runs it.
+// Command mainapp calls echo.New and echo.NewWithConfig from package main,
+// which the harness suites never build. TestEchoInMain builds and runs it.
 package main
 
 import (
@@ -19,6 +19,9 @@ func main() {
 	e := echo.New()
 	e.GET("/v5/main", ok)
 	serve(e, "/v5/main")
+	c := echo.NewWithConfig(echo.Config{})
+	c.GET("/v5/config", ok)
+	serve(c, "/v5/config")
 	serveAliased()
 
 	// The injected `defer tracer.Stop()` flushes the spans, so main has to
