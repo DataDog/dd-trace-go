@@ -6,6 +6,6 @@ description: Instruments Vault API client HTTP requests with tracing and context
 packages:
 - name: github.com/hashicorp/vault/api
 category:
-- http.client
+- other
 systems: []
 creation_date: '2019-10-15'

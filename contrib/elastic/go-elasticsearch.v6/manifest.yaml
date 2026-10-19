@@ -1,6 +1,6 @@
 _v: 1
 name: github.com/elastic/go-elasticsearch/v6
-display_name: go-elasticsearch v6
+display_name: go-elasticsearch
 description: Instruments Elasticsearch client operations through a tracing transport, recording request methods, URLs, parameters,
   body snippets, response status, and errors.
 packages:
