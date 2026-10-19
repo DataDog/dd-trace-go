@@ -49,117 +49,128 @@ func TestDedicatedClientPubSub(t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 	_, addr := containers.StartRedisTestContainer(t)
 	opt := rueidis.ClientOption{InitAddress: []string{addr}, DisableCache: true}
-	publisher, err := rueidis.NewClient(opt)
-	require.NoError(t, err)
+	publisher := newDedicatedPubSubClient(t, opt, false)
 	t.Cleanup(publisher.Close)
 
-	for _, traced := range []bool{false, true} {
-		name := "plain"
-		if traced {
-			name = "traced"
-		}
-		t.Run(name, func(t *testing.T) {
-			for _, factory := range dedicatedClientFactories {
-				t.Run(factory.name, func(t *testing.T) {
-					for _, method := range []string{"Do", "DoMulti", "Receive"} {
-						t.Run(method, func(t *testing.T) {
-							mt := mocktracer.Start()
-							defer mt.Stop()
+	for _, client := range []struct {
+		name   string
+		traced bool
+	}{
+		{name: "plain"},
+		{name: "traced", traced: true},
+	} {
+		for _, factory := range dedicatedClientFactories {
+			for _, method := range []string{"Do", "DoMulti", "Receive"} {
+				t.Run(client.name+"/"+factory.name+"/"+method, func(t *testing.T) {
+					mt := mocktracer.Start()
+					defer mt.Stop()
+					c := newDedicatedPubSubClient(t, opt, client.traced)
+					defer c.Close()
 
-							var c rueidis.Client
-							var err error
-							if traced {
-								c, err = NewClient(opt, WithRawCommand(true), WithService("dedicated-redis"))
-							} else {
-								c, err = rueidis.NewClient(opt)
-							}
-							require.NoError(t, err)
-							defer c.Close()
+					root, ctx := tracer.StartSpanFromContext(context.Background(), "test.root")
+					defer root.Finish()
+					factory.run(t, c, func(dc rueidis.DedicatedClient) {
+						testDedicatedPubSubDelivery(t, ctx, dc, publisher, method)
+					})
 
-							root, ctx := tracer.StartSpanFromContext(context.Background(), "test.root")
-							defer root.Finish()
-							ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-							defer cancel()
-
-							factory.run(t, c, func(dc rueidis.DedicatedClient) {
-								channel := t.Name()
-								got := make(chan string, 1)
-								subscribed := make(chan struct{}, 1)
-								onMessage := func(msg rueidis.PubSubMessage) { got <- msg.Message }
-								hooks := rueidis.PubSubHooks{
-									OnSubscription: func(s rueidis.PubSubSubscription) {
-										if s.Kind == "subscribe" {
-											subscribed <- struct{}{}
-										}
-									},
-								}
-								if method != "Receive" {
-									hooks.OnMessage = onMessage
-								}
-								dc.SetPubSubHooks(hooks)
-								subscribe := dc.B().Subscribe().Channel(channel).Build()
-								var receiveErr chan error
-								switch method {
-								case "Do":
-									require.NoError(t, dc.Do(ctx, subscribe).Error())
-								case "DoMulti":
-									results := dc.DoMulti(ctx, subscribe)
-									require.Len(t, results, 1)
-									require.NoError(t, results[0].Error())
-								case "Receive":
-									receiveErr = make(chan error, 1)
-									go func() { receiveErr <- dc.Receive(ctx, subscribe, onMessage) }()
-									defer func() {
-										cancel()
-										require.ErrorIs(t, <-receiveErr, ctx.Err())
-									}()
-									select {
-									case <-subscribed:
-									case <-ctx.Done():
-										t.Fatal("subscription did not reach the dedicated connection")
-									}
-								}
-
-								n, err := publisher.Do(ctx, publisher.B().Publish().Channel(channel).Message("hello").Build()).AsInt64()
-								require.NoError(t, err)
-								require.EqualValues(t, 1, n)
-								select {
-								case msg := <-got:
-									require.Equal(t, "hello", msg)
-								case <-ctx.Done():
-									t.Fatal("PUBLISH reported a receiver, but the dedicated hook received no message")
-								}
-							})
-
-							spans := mt.FinishedSpans()
-							if !traced {
-								require.Empty(t, spans)
-								return
-							}
-							require.Len(t, spans, 1)
-							span := spans[0]
-							assert.Equal(t, root.Context().SpanID(), span.ParentID())
-							assert.Equal(t, "redis.command", span.OperationName())
-							assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
-							assert.Equal(t, "SUBSCRIBE "+t.Name(), span.Tag(ext.RedisRawCommand))
-							assert.Equal(t, "dedicated-redis", span.Tag(ext.ServiceName))
-							assert.Equal(t, "redis/rueidis", span.Tag(ext.Component))
-							assert.Equal(t, "client", span.Tag(ext.SpanKind))
-							if method == "Receive" {
-								assert.Equal(t, context.Canceled.Error(), span.Tag(ext.ErrorMsg))
-							} else {
-								assert.Nil(t, span.Tag(ext.Error))
-							}
-							if method == "Do" {
-								assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
-							} else {
-								assert.Nil(t, span.Tag(ext.RedisClientCacheHit))
-							}
-						})
+					spans := mt.FinishedSpans()
+					if !client.traced {
+						require.Empty(t, spans)
+						return
 					}
+					assertDedicatedPubSubSpans(t, spans, root.Context().SpanID(), method)
 				})
 			}
-		})
+		}
+	}
+}
+
+func newDedicatedPubSubClient(t *testing.T, opt rueidis.ClientOption, traced bool) rueidis.Client {
+	t.Helper()
+	var c rueidis.Client
+	var err error
+	if traced {
+		c, err = NewClient(opt, WithRawCommand(true), WithService("dedicated-redis"))
+	} else {
+		c, err = rueidis.NewClient(opt)
+	}
+	require.NoError(t, err)
+	return c
+}
+
+func testDedicatedPubSubDelivery(t *testing.T, ctx context.Context, dc rueidis.DedicatedClient, publisher rueidis.Client, method string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	channel := t.Name()
+	got := make(chan string, 1)
+	subscribed := make(chan struct{}, 1)
+	onMessage := func(msg rueidis.PubSubMessage) { got <- msg.Message }
+	hooks := rueidis.PubSubHooks{
+		OnSubscription: func(s rueidis.PubSubSubscription) {
+			if s.Kind == "subscribe" {
+				subscribed <- struct{}{}
+			}
+		},
+	}
+	if method != "Receive" {
+		hooks.OnMessage = onMessage
+	}
+	dc.SetPubSubHooks(hooks)
+	subscribe := dc.B().Subscribe().Channel(channel).Build()
+	switch method {
+	case "Do":
+		require.NoError(t, dc.Do(ctx, subscribe).Error())
+	case "DoMulti":
+		results := dc.DoMulti(ctx, subscribe)
+		require.Len(t, results, 1)
+		require.NoError(t, results[0].Error())
+	case "Receive":
+		receiveErr := make(chan error, 1)
+		go func() { receiveErr <- dc.Receive(ctx, subscribe, onMessage) }()
+		defer func() {
+			cancel()
+			require.ErrorIs(t, <-receiveErr, ctx.Err())
+		}()
+		select {
+		case <-subscribed:
+		case <-ctx.Done():
+			t.Fatal("subscription did not reach the dedicated connection")
+		}
+	}
+
+	n, err := publisher.Do(ctx, publisher.B().Publish().Channel(channel).Message("hello").Build()).AsInt64()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+	select {
+	case msg := <-got:
+		require.Equal(t, "hello", msg)
+	case <-ctx.Done():
+		t.Fatal("PUBLISH reported a receiver, but the dedicated hook received no message")
+	}
+}
+
+func assertDedicatedPubSubSpans(t *testing.T, spans []*mocktracer.Span, parentID uint64, method string) {
+	t.Helper()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal(t, parentID, span.ParentID())
+	assert.Equal(t, "redis.command", span.OperationName())
+	assert.Equal(t, "SUBSCRIBE", span.Tag(ext.ResourceName))
+	assert.Equal(t, "SUBSCRIBE "+t.Name(), span.Tag(ext.RedisRawCommand))
+	assert.Equal(t, "dedicated-redis", span.Tag(ext.ServiceName))
+	assert.Equal(t, "redis/rueidis", span.Tag(ext.Component))
+	assert.Equal(t, "client", span.Tag(ext.SpanKind))
+	if method == "Receive" {
+		assert.Equal(t, context.Canceled.Error(), span.Tag(ext.ErrorMsg))
+	} else {
+		assert.Nil(t, span.Tag(ext.Error))
+	}
+	if method == "Do" {
+		assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+	} else {
+		assert.Nil(t, span.Tag(ext.RedisClientCacheHit))
 	}
 }
 
