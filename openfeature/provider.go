@@ -270,6 +270,11 @@ func newDatadogProviderWithSourceAndEVP(
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
+	telemetryOptOutEnabled := internalconfig.Get().FlagEvalTelemetryOptOutEnabled()
+	if config.EnableEvaluationTelemetryOptOutParameter != nil {
+		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
+	}
+
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
 	if !writer.datadogLoggingEnabled {
@@ -310,13 +315,13 @@ func newDatadogProviderWithSourceAndEVP(
 		hooks = append(hooks, exposureLoggingHook)
 	}
 	if evalMetricsHook != nil {
-		hooks = append(hooks, evalMetricsHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalMetricsHook, telemetryOptOutEnabled))
 	}
 	if evalLoggingHook != nil {
-		hooks = append(hooks, evalLoggingHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalLoggingHook, telemetryOptOutEnabled))
 	}
 	if spanEnrichmentHook != nil {
-		hooks = append(hooks, spanEnrichmentHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, telemetryOptOutEnabled))
 	}
 	// The tracer may enable debug logging after the provider is constructed.
 	// The hook checks the current level before formatting evaluation details.
