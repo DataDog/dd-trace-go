@@ -220,19 +220,20 @@ func (g *gauge) Submit(value float64) {
 
 // Payload returns the metric data of the gauge. The generate-metrics schema
 // requires an interval on every gauge series. The interval is the whole seconds
-// elapsed since the previous flush of this gauge. For the first flush, the
-// interval runs from handle creation.
+// elapsed since the previous flush that sent the series. For the first flush,
+// the interval runs from handle creation.
 func (g *gauge) Payload() transport.MetricData {
-	now := time.Now()
-	intervalStart := g.intervalStart.Swap(&now)
+	intervalStart := g.intervalStart.Load()
 	if intervalStart == nil {
 		return transport.MetricData{}
 	}
 
-	intervalSeconds := time.Since(*intervalStart).Seconds()
+	now := time.Now()
+	intervalSeconds := now.Sub(*intervalStart).Seconds()
 	if int64(intervalSeconds) == 0 {
 		// When less than one whole second elapsed, send no series. A zero
-		// interval reports a wrong measurement period.
+		// interval reports a wrong measurement period. Keep the interval
+		// start so that the elapsed time accumulates until the next flush.
 		return transport.MetricData{}
 	}
 
@@ -240,6 +241,8 @@ func (g *gauge) Payload() transport.MetricData {
 	if payload.Type == "" {
 		return transport.MetricData{}
 	}
+
+	g.intervalStart.Store(&now)
 	payload.Interval = int64(intervalSeconds)
 	return payload
 }
@@ -268,16 +271,17 @@ func (r *rate) Get() float64 {
 }
 
 func (r *rate) Payload() transport.MetricData {
-	now := time.Now()
-	intervalStart := r.intervalStart.Swap(&now)
+	intervalStart := r.intervalStart.Load()
 	if intervalStart == nil {
 		return transport.MetricData{}
 	}
 
-	intervalSeconds := time.Since(*intervalStart).Seconds()
+	now := time.Now()
+	intervalSeconds := now.Sub(*intervalStart).Seconds()
 	if int64(intervalSeconds) == 0 {
 		// When less than one whole second elapsed, send no series. A zero
-		// interval reports a wrong measurement period.
+		// interval reports a wrong measurement period. Keep the interval
+		// start so that the elapsed time accumulates until the next flush.
 		return transport.MetricData{}
 	}
 
@@ -289,5 +293,6 @@ func (r *rate) Payload() transport.MetricData {
 	point.value /= intervalSeconds
 	payload := r.metric.payload(point)
 	payload.Interval = int64(intervalSeconds)
+	r.intervalStart.Store(&now)
 	return payload
 }
