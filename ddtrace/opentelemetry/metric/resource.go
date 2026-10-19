@@ -31,6 +31,10 @@ const (
 	// OTel environment variable names
 	envOtelServiceName        = "OTEL_SERVICE_NAME"
 	envOtelResourceAttributes = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// OTel resource attribute keys
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = string(semconv.DeploymentEnvironmentNameKey)
 )
 
 // buildDatadogResource creates an OpenTelemetry resource with Datadog-specific attributes.
@@ -39,7 +43,8 @@ const (
 //
 // Priority order for each attribute:
 //   - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-//   - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+//   - deployment.environment.name: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+//     → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 //   - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
 //   - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
 //     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
@@ -65,7 +70,8 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		attrs = append(attrs, semconv.ServiceName(serviceName))
 	}
 
-	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment.name]
+	//    → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 	envName := environmentName(ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
@@ -96,13 +102,19 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		ddCustomKeys[key] = true // Track that this key is set by DD_TAGS
 	}
 
+	// metric.WithResource re-merges OTEL_RESOURCE_ATTRIBUTES; keep the deprecated key in sync.
+	if _, ok := otelAttrs[deploymentEnvironmentKey]; ok {
+		attrs = append(attrs, attribute.String(deploymentEnvironmentKey, envName))
+	}
+
 	// 6. Add OTEL_RESOURCE_ATTRIBUTES (excluding reserved keys AND keys already set by DD_TAGS)
 	// DD_TAGS has higher priority than OTEL_RESOURCE_ATTRIBUTES for custom tags
 	excludeKeys := map[string]bool{
-		"service.name":           true,
-		"deployment.environment": true,
-		"service.version":        true,
-		"host.name":              true,
+		"service.name":               true,
+		deploymentEnvironmentKey:     true,
+		deploymentEnvironmentNameKey: true,
+		"service.version":            true,
+		"host.name":                  true,
 	}
 	for key, val := range otelAttrs {
 		if excludeKeys[key] {
@@ -155,8 +167,10 @@ func environmentName(ddTags, otelAttrs map[string]string) string {
 	if v, ok := ddTags["env"]; ok && v != "" {
 		return v
 	}
-	// OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
-	if v, ok := otelAttrs["deployment.environment"]; ok && v != "" {
+	if v, ok := otelAttrs[deploymentEnvironmentNameKey]; ok && v != "" {
+		return v
+	}
+	if v, ok := otelAttrs[deploymentEnvironmentKey]; ok && v != "" {
 		return v
 	}
 	return ""
@@ -213,7 +227,7 @@ func hostname(otelAttrs map[string]string) (string, bool) {
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
 		return hostname, true
 	} else if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
+		log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore host environment failure
 	}
 
 	// No hostname could be determined

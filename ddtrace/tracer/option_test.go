@@ -403,6 +403,44 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+func TestOTelSemanticsConfigResolvesStartOptions(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	tests := []struct {
+		name string
+		opt  StartOption
+		want string
+	}{
+		{
+			name: "WithAgentAddr",
+			opt:  WithAgentAddr("agent.example:8126"),
+			want: "http://agent.example:4318/v1/traces",
+		},
+		{
+			name: "WithAgentURL",
+			opt:  WithAgentURL("https://agent.example:8126"),
+			want: "http://agent.example:4318/v1/traces",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := newTestConfig(tt.opt, WithPeerServiceDefaults(true))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.internalConfig.OTLPTraceURL())
+			assert.False(t, cfg.internalConfig.PeerServiceDefaultsEnabled())
+		})
+	}
+}
+
+func TestAgentOptionsPreserveExplicitOTLPTraceURL(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://collector.example:4317/custom")
+
+	cfg, err := newTestConfig(WithAgentAddr("agent.example:8126"))
+	require.NoError(t, err)
+	assert.Equal(t, "https://collector.example:4317/custom", cfg.internalConfig.OTLPTraceURL())
+}
+
 // clearIntegreationsForTests clears the state of all integrations
 func clearIntegrationsForTests() {
 	for name, state := range contribIntegrations {
@@ -423,7 +461,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 60, len(cfg.integrations))
+		assert.Equal(t, 62, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -579,6 +617,62 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.False(t, c.internalConfig.Debug())
+		})
+		t.Run("otel-env-threshold", func(t *testing.T) {
+			for _, tc := range []struct {
+				otel  string
+				want  log.Level
+				lines int
+			}{
+				{otel: "info", want: log.LevelInfo, lines: 2},
+				{otel: "warn", want: log.LevelWarn, lines: 1},
+				{otel: "error", want: log.LevelError, lines: 0},
+				{otel: "invalid", want: log.LevelInfo, lines: 2},
+			} {
+				t.Run(tc.otel, func(t *testing.T) {
+					defer log.SetLevel(log.GetLevel())
+					log.SetLevel(log.LevelDebug)
+					t.Setenv("OTEL_LOG_LEVEL", tc.otel)
+					c, err := newTestConfig()
+					assert.NoError(t, err)
+					assert.False(t, c.internalConfig.Debug())
+					assert.Equal(t, tc.want, log.GetLevel())
+
+					rl := new(log.RecordLogger)
+					defer log.UseLogger(rl)()
+					log.Info("info message")
+					log.Warn("warn message")
+					assert.Len(t, rl.Logs(), tc.lines)
+				})
+			}
+		})
+		t.Run("dd-debug-overrides-otel-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.True(t, c.internalConfig.Debug())
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+		})
+		t.Run("restart-restores-default-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			_, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelError, log.GetLevel())
+
+			t.Setenv("OTEL_LOG_LEVEL", "")
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+
+			_, err = newTestConfig(WithDebugMode(true))
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
 		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
@@ -1032,6 +1126,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.internalConfig.PeerServiceDefaultsEnabled(), true)
 			assert.Equal(t, c.internalConfig.PeerServiceMappings(), map[string]string{"old": "new", "old2": "new2"})
 		})
+
+		t.Run("OpenTelemetry semantics overrides option", func(t *testing.T) {
+			t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+			c, err := newTestConfig(WithAgentTimeout(2), WithPeerServiceDefaults(true))
+			assert.NoError(t, err)
+			assert.False(t, c.internalConfig.PeerServiceDefaultsEnabled())
+			assert.True(t, c.internalConfig.OTLPExportMode())
+		})
 	})
 
 	t.Run("debug-open-spans", func(t *testing.T) {
@@ -1421,16 +1523,15 @@ func TestStartWithLink(t *testing.T) {
 	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
-func TestOtelResourceAtttributes(t *testing.T) {
-	t.Run("max 10", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		globalTags := c.internalConfig.GlobalTags()
-		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
-		assert.Len(globalTags, 11)
-	})
+func TestOtelResourceAttributes(t *testing.T) {
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	tags := c.internalConfig.GlobalTags()
+	for i := 1; i <= 12; i++ {
+		assert.Equal(t, fmt.Sprintf("val%d", i), tags[fmt.Sprintf("tag%d", i)])
+	}
 }
 
 func TestTagSeparators(t *testing.T) {
@@ -1632,12 +1733,16 @@ func TestEnvConfig(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing")
-		assert := assert.New(t)
-		c, err := newTestConfig()
-		assert.NoError(err)
+		for _, key := range []string{"deployment.environment.name", "deployment.environment"} {
+			t.Run(key, func(t *testing.T) {
+				t.Setenv("OTEL_RESOURCE_ATTRIBUTES", key+"=testing")
+				assert := assert.New(t)
+				c, err := newTestConfig()
+				assert.NoError(err)
 
-		assert.Equal("testing", c.internalConfig.Env())
+				assert.Equal("testing", c.internalConfig.Env())
+			})
+		}
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1655,7 +1760,7 @@ func TestEnvConfig(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.Env(), "")
 
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal("testing0", c.internalConfig.Env())
@@ -2031,6 +2136,34 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.internalConfig.StatsComputationEnabled())
+	})
+}
+
+func TestWithDataStreamsIntakeBufferSize(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(500))
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", "500")
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("non-positive-ignored", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(0))
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 }
 

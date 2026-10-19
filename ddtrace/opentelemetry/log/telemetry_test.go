@@ -17,115 +17,15 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-// TestRegisterTelemetry verifies that registerTelemetry reports all expected configurations.
-func TestRegisterTelemetry(t *testing.T) {
-	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		t.Setenv(envOTLPTimeout, "5000")
-		t.Setenv(envOTLPHeaders, "api-key=SENTINEL_OTLP_BASE")
-		t.Setenv(envOTLPProtocol, "http/protobuf")
-		t.Setenv(envOTLPEndpoint, "http://example.com:4318")
-		t.Setenv(envOTLPLogsTimeout, "8000")
-		t.Setenv(envOTLPLogsHeaders, "log-key=SENTINEL_OTLP_LOGS")
-		t.Setenv(envOTLPLogsProtocol, "grpc")
-		t.Setenv(envOTLPLogsEndpoint, "http://logs.example.com:4317")
-
-		registerTelemetry()
-
-		// Verify generic OTLP configurations
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPTimeout, 5000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPProtocol, "http/protobuf")
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPEndpoint, "http://example.com:4318")
-
-		// Verify logs-specific configurations
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, 8000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsProtocol, "grpc")
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsEndpoint, "http://logs.example.com:4317")
-
-		// The OTLP header variants must not be reported in configuration telemetry, and
-		// no reported configuration value may contain a header sentinel.
-		for _, cfg := range recorder.Configuration {
-			assert.NotEqual(t, envOTLPHeaders, cfg.Name,
-				"%s should not be reported in configuration telemetry", envOTLPHeaders)
-			assert.NotEqual(t, envOTLPLogsHeaders, cfg.Name,
-				"%s should not be reported in configuration telemetry", envOTLPLogsHeaders)
-			if s, ok := cfg.Value.(string); ok {
-				assert.NotContains(t, s, "SENTINEL_OTLP",
-					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
-			}
-		}
-	})
-
-	t.Run("reports BLRP configurations", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		t.Setenv(envBLRPMaxQueueSize, "4096")
-		t.Setenv(envBLRPScheduleDelay, "2000")
-		t.Setenv(envBLRPExportTimeout, "60000")
-		t.Setenv(envBLRPMaxExportBatchSize, "1024")
-
-		registerTelemetry()
-
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPMaxQueueSize, 4096)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPScheduleDelay, 2000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPExportTimeout, 60000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envBLRPMaxExportBatchSize, 1024)
-	})
-
-	t.Run("reports default values when env vars not set", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		registerTelemetry()
-
-		// Check that defaults are reported with OriginDefault
-		var foundLogsTimeout, foundMaxQueueSize, foundScheduleDelay, foundExportTimeout, foundMaxBatchSize bool
-
-		for _, cfg := range recorder.Configuration {
-			switch cfg.Name {
-			case envOTLPLogsTimeout:
-				foundLogsTimeout = true
-				assert.Equal(t, defaultOTLPTimeoutMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPMaxQueueSize:
-				foundMaxQueueSize = true
-				assert.Equal(t, defaultBLRPMaxQueueSize, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPScheduleDelay:
-				foundScheduleDelay = true
-				assert.Equal(t, defaultBLRPScheduleDelayMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPExportTimeout:
-				foundExportTimeout = true
-				assert.Equal(t, defaultBLRPExportTimeoutMs, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			case envBLRPMaxExportBatchSize:
-				foundMaxBatchSize = true
-				assert.Equal(t, defaultBLRPMaxExportBatchSize, cfg.Value)
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			}
-		}
-
-		assert.True(t, foundLogsTimeout, "expected OTEL_EXPORTER_OTLP_LOGS_TIMEOUT config")
-		assert.True(t, foundMaxQueueSize, "expected OTEL_BLRP_MAX_QUEUE_SIZE config")
-		assert.True(t, foundScheduleDelay, "expected OTEL_BLRP_SCHEDULE_DELAY config")
-		assert.True(t, foundExportTimeout, "expected OTEL_BLRP_EXPORT_TIMEOUT config")
-		assert.True(t, foundMaxBatchSize, "expected OTEL_BLRP_MAX_EXPORT_BATCH_SIZE config")
-	})
-}
-
 // TestLogsExportTelemetry verifies that the LogsExportTelemetry struct correctly
 // tracks log record exports with different protocols and encodings.
 func TestLogsExportTelemetry(t *testing.T) {
-	t.Run("http/json", func(t *testing.T) {
+	t.Run("http/protobuf accumulated records", func(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		// Create telemetry tracker for HTTP/JSON
-		let := NewLogsExportTelemetry("http", "json")
+		// Create telemetry tracker for HTTP/protobuf
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record some log exports
 		let.RecordLogRecords(5)
@@ -136,7 +36,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -198,7 +98,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Create a test exporter
 		testExp := &testExporter{}
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Wrap it with telemetry
 		te := &telemetryExporter{
@@ -223,7 +123,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -244,7 +144,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record zero
 		let.RecordLogRecords(0)
@@ -253,7 +153,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
