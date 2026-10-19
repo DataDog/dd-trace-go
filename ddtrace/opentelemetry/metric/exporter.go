@@ -79,7 +79,7 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
 	default:
-		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
+		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol) //errtrack:ignore invalid user configuration
 		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
