@@ -33,6 +33,11 @@ variable initializers (`ddtrace/tracer/time_windows.go`'s `var now = func()`
 initializer is the canonical in-repo example), which are reported with
 `(package-init)` as their enclosing function.
 
+One detection limit: a call through an assigned function value
+(`f := log.Error; f("x")`) does not resolve to the log package through the
+type checker and stays outside the audit — the same blind spot the
+`constantlogmsg` analyzer has. The repository has no such call site today.
+
 The scan loads both `linux/amd64` and `windows/amd64` with cgo disabled, then
 merges the results by source location. This keeps CI's inventory stable and
 includes the repository's Windows-only log sites. Add another build platform
