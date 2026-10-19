@@ -14,7 +14,7 @@ in `references.md`.
 | `add-struct-field` | `add_struct_fields`. A hook cannot read the new field (see below) |
 | `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
-| `inject-declarations` (`go:linkname` to the contrib) | usually nothing, since otelc links hooks through its own trampoline. Only needed if `inject_code` must reference a contrib symbol |
+| `inject-declarations` | `add_file`: a Go file with `//go:build ignore` in the rules module, copied into the target package at build time. It can declare types, functions, methods on the target's types, and a `//go:linkname` to an unexported contrib function. Nothing is needed when the declaration only linked a hook, since otelc links hooks itself. For `package main`, see `feature-gaps.md` |
 | `add-blank-import` | the rule's top-level `imports:` map |
 
 ## Join point → otelc selector
@@ -62,7 +62,10 @@ literal name breaks when the target renames it, and the compile error then point
 instrumented copy of the package, nowhere near the yaml.
 
 The snippet compiles inside the target package, so the target module's `go` directive caps its
-language version. Against an old dependency, avoid `any` and generic calls.
+language version. Against an old dependency, avoid `any` and generic calls. The same applies to
+`add_file`, which blanks every `//go:build` line in the copied file, so `//go:build go1.N` cannot
+raise it. When the contrib's entry point is generic, add a non-generic one for the injected code to
+call.
 
 ## Reaching state the aspect read in-package
 
@@ -70,3 +73,16 @@ Hooks compile against the unmodified library. They can read and write its export
 its unexported ones, and not fields added by `add_struct_fields`. For either, wrap a public
 accessor's return value, or read the field in-package with `inject_code`
 (`transport_round_trip_tracer_internal` in `contrib/net/http/otelc/otelc.yaml`).
+
+When the aspect injects more than a few statements around an added field, as router and server
+aspects do, move the whole template into the target package instead of a hook:
+
+- `add_struct_fields` adds the field.
+- `add_file` adds the template as a function or as a method on the target type, together with any
+  types and helpers it needs and a `//go:linkname` to the contrib when it calls an unexported
+  contrib function.
+- `inject_code` at the top of the target function calls it, for example
+  `if {{ .Receiver }}.__dd_serveHTTP(w, req) { return }`.
+
+This code compiles as part of the library, so it reads the added field directly. The runtime GLS
+rules in `ddtrace/tracer/otelc.yaml` use the same three rules.

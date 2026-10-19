@@ -24,7 +24,8 @@ because `where` is ignored for file rules. Both halves are open upstream
 https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1348).
 
 For statements at the top of an existing function use `inject_code` on `func main`, which does not
-match test-main builds (`ddtrace/tracer/otelc.yaml`). For a new declaration, stop.
+match test-main builds (`ddtrace/tracer/otelc.yaml`). For a new declaration, stop. In any package
+other than `main`, `add_file` works (`pattern-mapping.md`).
 
 ## 3. Negating or alternating a point selector
 
