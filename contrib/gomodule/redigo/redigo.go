@@ -77,8 +77,10 @@ func newSpanConfig(cfg *dialConfig, network, host, port string) *tracer.StartSpa
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		tracer.Tag("out.network", network),
-		tracer.Tag(ext.TargetPort, port),
 		tracer.Tag(ext.TargetHost, host),
+	}
+	if port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, port))
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -140,7 +142,9 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, err
+		// The address has no port, for example a unix socket path. The
+		// connection is already established, so use the address as the host.
+		host, port = address, ""
 	}
 	p := &params{config: cfg, network: network, host: host, port: port}
 	p.spanCfg = newSpanConfig(cfg, network, host, port)
