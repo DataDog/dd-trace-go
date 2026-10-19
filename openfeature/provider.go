@@ -32,6 +32,7 @@ var (
 	errParseError          = errors.New("parse error")
 	errNoConfiguration     = errors.New("no configuration loaded")
 	errTargetingKeyMissing = errors.New("targeting key missing")
+	errInvalidContext      = errors.New("invalid context")
 )
 
 const (
@@ -52,6 +53,11 @@ func init() {
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
+	// ExperimentationOptOutMode controls how the provider uses the
+	// dd_experimentation_opt_out_at context parameter. The zero value disables
+	// experimentation opt-out. Evaluation telemetry is controlled separately.
+	ExperimentationOptOutMode ExperimentationOptOutMode
+
 	// EnableEvaluationTelemetryOptOutParameter enables the per-evaluation
 	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
 	// suppresses evaluation events, evaluation metrics, and automatic span
@@ -75,6 +81,8 @@ type ProviderConfig struct {
 // using configuration received from Datadog, either via Remote Config or
 // Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
+	experimentationOptOutMode ExperimentationOptOutMode
+
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
@@ -143,7 +151,14 @@ type DatadogProvider struct {
 // subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
 // attachment. If the default client is the one at fault, please call tracer.Start before
 // creating the provider.
+// Unsupported ExperimentationOptOutMode values also return an error.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
+	switch config.ExperimentationOptOutMode {
+	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate:
+	default:
+		return nil, fmt.Errorf("openfeature: unsupported experimentation opt-out mode: %d", config.ExperimentationOptOutMode)
+	}
+
 	settings := internalffe.ResolveSettings(internalconfig.Get())
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
@@ -295,6 +310,7 @@ func newDatadogProviderWithSourceAndEVP(
 	}
 
 	p := &DatadogProvider{
+		experimentationOptOutMode: config.ExperimentationOptOutMode,
 		metadata: openfeature.Metadata{
 			Name: datadogProviderName,
 		},
@@ -814,8 +830,13 @@ func (p *DatadogProvider) evaluate(
 	// cannot change the value stamped on the result.
 	observeFullEvaluationData = config.ObserveFullEvaluationData
 
+	excludeExperiments, err := p.experimentationOptOutMode.excludeExperiments(flatCtx)
+	if err != nil {
+		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
+	}
+
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow)
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, excludeExperiments)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.
@@ -839,6 +860,8 @@ func toResolutionError(err error) openfeature.ResolutionError {
 		return openfeature.NewProviderNotReadyResolutionError(errMsg)
 	case errors.Is(err, errTargetingKeyMissing):
 		return openfeature.NewTargetingKeyMissingResolutionError(errMsg)
+	case errors.Is(err, errInvalidContext):
+		return openfeature.NewInvalidContextResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}

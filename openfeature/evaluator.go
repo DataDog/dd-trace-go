@@ -57,7 +57,7 @@ const (
 // checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
 // second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time, excludeExperiments bool) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -71,6 +71,11 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 
 	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
+		// Match the existing exposure-logging default when doLog is omitted.
+		// Exclude before targeting or sharding, without changing eligible subjects' buckets.
+		if excludeExperiments && (allocation.DoLog == nil || *allocation.DoLog) {
+			continue
+		}
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
 			return evaluationResult{
@@ -156,10 +161,11 @@ func evaluateConfiguredFlag(
 	defaultValue any,
 	context map[string]any,
 	now time.Time,
+	excludeExperiments bool,
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
 	if exists {
-		return evaluateFlag(flag, defaultValue, context, now)
+		return evaluateFlag(flag, defaultValue, context, now, excludeExperiments)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
 		return evaluationResult{

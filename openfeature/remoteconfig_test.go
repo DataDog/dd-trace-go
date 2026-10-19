@@ -540,7 +540,7 @@ func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
 	require.NotContains(t, config.Flags, "invalid-semver")
 	require.ErrorIs(t, config.invalidFlags["invalid-semver"], errInvalidSemverComparand)
 
-	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now())
+	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now(), false)
 	require.Equal(t, false, result.Value)
 	require.Equal(t, "ERROR", string(result.Reason))
 	require.ErrorIs(t, result.Error, errParseError)
@@ -632,11 +632,11 @@ func TestProcessConfigUpdate(t *testing.T) {
 		require.NotContains(t, updatedConfig.Flags, "invalid-flag")
 		require.Contains(t, updatedConfig.invalidFlags, "invalid-flag")
 
-		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now())
+		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now(), false)
 		require.Equal(t, true, validResult.Value)
 		require.Equal(t, "STATIC", string(validResult.Reason))
 
-		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
+		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now(), false)
 		require.Equal(t, false, invalidResult.Value)
 		require.Equal(t, "ERROR", string(invalidResult.Reason))
 		require.ErrorIs(t, invalidResult.Error, errParseError)

@@ -111,6 +111,43 @@
 // Flag values, experiment exposures, exposure deduplication, application hooks,
 // and previously queued telemetry are unchanged.
 //
+// # Experimentation Opt-Out
+//
+// Enable immediate exclusion separately from evaluation telemetry opt-out:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    ExperimentationOptOutMode: ddopenfeature.ExperimentationOptOutImmediate,
+//	})
+//	// Handle err and register the provider before evaluating flags.
+//	attributes := map[string]any{}
+//	// OptOutAt is a customer-owned *time.Time. Nil means not opted out.
+//	if user.OptOutAt != nil {
+//	    attributes["dd_experimentation_opt_out_at"] = user.OptOutAt.UTC().Format(time.RFC3339Nano)
+//	}
+//	value, err := client.BooleanValue(ctx, "new-feature", false,
+//	    of.NewEvaluationContext(user.ID, attributes))
+//
+// The default mode, ExperimentationOptOutDisabled, ignores the parameter.
+// Immediate mode accepts an RFC3339 timestamp string, including fractional seconds.
+// Any valid timestamp activates exclusion immediately, regardless of its date.
+// Omit the attribute to permit experimentation. Null, empty, or malformed values
+// return the application default with INVALID_CONTEXT; they do not permit enrollment.
+// Supply the attribute on each evaluation. The SDK does not persist preference history.
+//
+// Immediate mode skips allocations whose doLog value is true or omitted, before
+// targeting and randomization. This includes experiments enrolling 100% of subjects
+// and exposure-logging holdouts. It continues through ordinary doLog=false allocations
+// in order. If none match, it returns the application's default, not a forced control variant.
+// Eligible subjects retain their existing hash buckets; exclusion does not rebalance them.
+//
+// This MVP uses exposure logging as its classification signal. A winner that still
+// has doLog=true is also skipped. The SDK cannot recover fallback allocations removed
+// during configuration compilation. Ordinary delivery requires doLog=false in that configuration.
+// Immediate withdrawal can change an enrolled subject's experience without notifying
+// experiment analysis. Customers must account for that change in their analysis.
+// No withdrawal event is emitted. Evaluation telemetry remains enabled unless separately
+// suppressed with the evaluation telemetry opt-out parameter.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:

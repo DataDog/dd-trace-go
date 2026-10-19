@@ -401,7 +401,7 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 				},
 			}
 
-			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now())
+			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now(), false)
 
 			if result.Reason != of.ErrorReason {
 				t.Errorf("expected ErrorReason, got %s", result.Reason)
@@ -476,7 +476,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now())
+					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now(), false)
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
