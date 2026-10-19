@@ -401,6 +401,20 @@
         "default": null
       }
     ],
+    "DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS_FORMAT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "service-$(owner)"
+      }
+    ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
       {
         "implementation": "A",

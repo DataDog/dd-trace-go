@@ -105,4 +105,10 @@ const (
 
 	// CIVisibilityUseNoopTracer indicates if the ci visibility mode must set a noop tracer (avoid change current test behaviors over the noop tracer implementation)
 	CIVisibilityUseNoopTracer = "DD_CIVISIBILITY_USE_NOOP_TRACER"
+
+	// CIVisibilityServiceFromCodeOwnersEnvironmentVariable enables the service derived from the CODEOWNERS owner of the test package when DD_SERVICE is not set.
+	CIVisibilityServiceFromCodeOwnersEnvironmentVariable = "DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS"
+
+	// CIVisibilityServiceFromCodeOwnersFormatEnvironmentVariable is the service format, where $(owner) is replaced by the owner. The default is service-$(owner).
+	CIVisibilityServiceFromCodeOwnersFormatEnvironmentVariable = "DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS_FORMAT"
 )

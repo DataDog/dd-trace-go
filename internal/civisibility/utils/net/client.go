@@ -109,6 +109,9 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	if serviceName == "" {
 		serviceName = env.Get("DD_SERVICE")
 		if serviceName == "" {
+			serviceName = utils.ServiceFromCodeOwners()
+		}
+		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
 				repoRegex := regexp.MustCompile(`(?m)/([a-zA-Z0-9\-_.]*)$`)

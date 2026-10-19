@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 )
 
@@ -162,7 +163,7 @@ func loadSourceFunctionCodeOwnerWithLookup(metadata sourceFunctionMetadata, look
 }
 
 type codeOwnerMatcher interface {
-	Match(string) (*utils.Entry, bool)
+	Match(string) (*codeownership.Ownership, bool)
 }
 
 func loadSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerMatcher, lookupComplete bool, sourceFile string) (string, bool) {
@@ -184,7 +185,7 @@ func resolveSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerM
 		return
 	}
 	if match, found := codeOwners.Match("/" + sourceFile); found {
-		slot.codeOwner = match.GetOwnersString()
+		slot.codeOwner = match.Tag()
 		slot.codeOwnerFound = true
 	}
 }

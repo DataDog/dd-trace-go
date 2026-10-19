@@ -9,10 +9,12 @@
 // tracked file resolves to an owner, and that GitHub and CI Visibility resolve
 // that owner identically.
 //
-// GitHub and CI Visibility do not implement the same matching rules: GitHub
-// follows gitignore semantics, while CI Visibility uses the simpler matcher in
-// internal/civisibility/utils. Rather than reconcile the two after the fact,
-// this tool restricts patterns to the subset on which they provably agree:
+// GitHub follows gitignore semantics, and this tool resolves GitHub's
+// ownership with its own matcher for a subset of them. CI Visibility uses the
+// GitHub matcher in internal/civisibility/utils/codeownership; its previous
+// matcher handled less, which is where the subset and the rules below come
+// from. Rather than reconcile the two after the fact, this tool restricts
+// patterns to the subset on which they provably agree:
 //
 //	/path/to/dir/   anchored, applies to everything beneath it
 //	/path/to/file   anchored, exact match
@@ -37,7 +39,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
 )
 
 // codeownersPath is the repository-relative location of the CODEOWNERS file.
@@ -135,7 +137,7 @@ func run() error {
 		}
 	}
 
-	civis, err := utils.NewCodeOwners(codeownersPath)
+	civis, err := codeownership.Load(codeownersPath, codeownership.GitHub)
 	if err != nil {
 		return fmt.Errorf("parsing %s with the CI Visibility matcher: %w", codeownersPath, err)
 	}
@@ -152,8 +154,8 @@ func run() error {
 		var civisOwners []string
 		civisPattern := "(none)"
 		if matched {
-			civisOwners = entry.Owners
-			civisPattern = entry.Pattern
+			civisOwners = entry.Owners()
+			civisPattern = "matched"
 		}
 		if normalize(owners) != normalize(civisOwners) {
 			diverged = append(diverged, fmt.Sprintf(
