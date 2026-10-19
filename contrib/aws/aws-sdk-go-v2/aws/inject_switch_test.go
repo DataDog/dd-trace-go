@@ -6,81 +6,164 @@
 package aws
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
+	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	ebtypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	kinesistypes "github.com/aws/aws-sdk-go-v2/service/kinesis/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
+	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-type injectCase struct {
-	service   string // matches the "aws.service" span tag
+// injectOp is one request type of a service.
+type injectOp struct {
 	operation string // matches the "aws.operation" span tag
-	env       string // environment variable that disables injection
-	run       func(ctx context.Context, cfg aws.Config) (injected bool)
+	entries   int    // number of messages in the request, each one gets its own checkpoint
+	// run sends the request and reports, for each entry, whether the trace context was written into it.
+	run func(ctx context.Context, cfg aws.Config) []bool
+}
+
+type injectCase struct {
+	service  string   // matches the "aws.service" span tag
+	env      string   // environment variable that disables injection
+	edgeTags []string // edge tags of the outgoing Data Streams checkpoints
+	ops      []injectOp
 }
 
 func injectCases() []injectCase {
 	return []injectCase{
 		{
-			service: "Kinesis", operation: "PutRecord", env: "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
-			run: func(ctx context.Context, cfg aws.Config) bool {
-				in := &kinesis.PutRecordInput{
-					StreamName:   aws.String("my-stream"),
-					PartitionKey: aws.String("pk"),
-					Data:         []byte(`{"message":"hello"}`),
-				}
-				_, _ = kinesis.NewFromConfig(cfg).PutRecord(ctx, in)
-				return strings.Contains(string(in.Data), "_datadog")
+			service: "Kinesis", env: "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
+			edgeTags: []string{"direction:out", "topic:my-stream", "type:kinesis"},
+			ops: []injectOp{
+				{operation: "PutRecord", entries: 1, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &kinesis.PutRecordInput{
+						StreamName:   aws.String("my-stream"),
+						PartitionKey: aws.String("pk"),
+						Data:         []byte(`{"message":"hello"}`),
+					}
+					_, _ = kinesis.NewFromConfig(cfg).PutRecord(ctx, in)
+					return []bool{strings.Contains(string(in.Data), "_datadog")}
+				}},
+				{operation: "PutRecords", entries: 2, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &kinesis.PutRecordsInput{
+						StreamName: aws.String("my-stream"),
+						Records: []kinesistypes.PutRecordsRequestEntry{
+							{PartitionKey: aws.String("pk1"), Data: []byte(`{"message":"hello"}`)},
+							{PartitionKey: aws.String("pk2"), Data: []byte(`{"message":"world"}`)},
+						},
+					}
+					_, _ = kinesis.NewFromConfig(cfg).PutRecords(ctx, in)
+					injected := make([]bool, len(in.Records))
+					for i, r := range in.Records {
+						injected[i] = strings.Contains(string(r.Data), "_datadog")
+					}
+					return injected
+				}},
 			},
 		},
 		{
-			service: "EventBridge", operation: "PutEvents", env: "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED",
-			run: func(ctx context.Context, cfg aws.Config) bool {
-				in := &eventbridge.PutEventsInput{Entries: []ebtypes.PutEventsRequestEntry{{
-					EventBusName: aws.String("my-bus"),
-					Source:       aws.String("test"),
-					DetailType:   aws.String("test"),
-					Detail:       aws.String(`{"message":"hello"}`),
-				}}}
-				_, _ = eventbridge.NewFromConfig(cfg).PutEvents(ctx, in)
-				return strings.Contains(aws.ToString(in.Entries[0].Detail), "_datadog")
+			service: "EventBridge", env: "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED",
+			edgeTags: []string{"direction:out", "exchange:my-bus", "topic:test", "type:eventbridge"},
+			ops: []injectOp{
+				{operation: "PutEvents", entries: 2, run: func(ctx context.Context, cfg aws.Config) []bool {
+					entry := func(detail string) ebtypes.PutEventsRequestEntry {
+						return ebtypes.PutEventsRequestEntry{
+							EventBusName: aws.String("my-bus"),
+							Source:       aws.String("test"),
+							DetailType:   aws.String("test"),
+							Detail:       aws.String(detail),
+						}
+					}
+					in := &eventbridge.PutEventsInput{Entries: []ebtypes.PutEventsRequestEntry{
+						entry(`{"message":"hello"}`), entry(`{"message":"world"}`),
+					}}
+					_, _ = eventbridge.NewFromConfig(cfg).PutEvents(ctx, in)
+					injected := make([]bool, len(in.Entries))
+					for i, e := range in.Entries {
+						injected[i] = strings.Contains(aws.ToString(e.Detail), "_datadog")
+					}
+					return injected
+				}},
 			},
 		},
 		{
-			service: "SQS", operation: "SendMessage", env: "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
-			run: func(ctx context.Context, cfg aws.Config) bool {
-				in := &sqs.SendMessageInput{
-					QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
-					MessageBody: aws.String(`{"message":"hello"}`),
-				}
-				_, _ = sqs.NewFromConfig(cfg).SendMessage(ctx, in)
-				_, ok := in.MessageAttributes["_datadog"]
-				return ok
+			service: "SQS", env: "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
+			edgeTags: []string{"direction:out", "topic:my-queue", "type:sqs"},
+			ops: []injectOp{
+				{operation: "SendMessage", entries: 1, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sqs.SendMessageInput{
+						QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
+						MessageBody: aws.String(`{"message":"hello"}`),
+					}
+					_, _ = sqs.NewFromConfig(cfg).SendMessage(ctx, in)
+					_, ok := in.MessageAttributes["_datadog"]
+					return []bool{ok}
+				}},
+				{operation: "SendMessageBatch", entries: 2, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sqs.SendMessageBatchInput{
+						QueueUrl: aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
+						Entries: []sqstypes.SendMessageBatchRequestEntry{
+							{Id: aws.String("1"), MessageBody: aws.String(`{"message":"hello"}`)},
+							{Id: aws.String("2"), MessageBody: aws.String(`{"message":"world"}`)},
+						},
+					}
+					_, _ = sqs.NewFromConfig(cfg).SendMessageBatch(ctx, in)
+					injected := make([]bool, len(in.Entries))
+					for i, e := range in.Entries {
+						_, injected[i] = e.MessageAttributes["_datadog"]
+					}
+					return injected
+				}},
 			},
 		},
 		{
-			service: "SNS", operation: "Publish", env: "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
-			run: func(ctx context.Context, cfg aws.Config) bool {
-				in := &sns.PublishInput{
-					TopicArn: aws.String("arn:aws:sns:eu-west-1:123456789012:my-topic"),
-					Message:  aws.String(`{"message":"hello"}`),
-				}
-				_, _ = sns.NewFromConfig(cfg).Publish(ctx, in)
-				_, ok := in.MessageAttributes["_datadog"]
-				return ok
+			service: "SNS", env: "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED",
+			edgeTags: []string{"direction:out", "topic:my-topic", "type:sns"},
+			ops: []injectOp{
+				{operation: "Publish", entries: 1, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sns.PublishInput{
+						TopicArn: aws.String("arn:aws:sns:eu-west-1:123456789012:my-topic"),
+						Message:  aws.String(`{"message":"hello"}`),
+					}
+					_, _ = sns.NewFromConfig(cfg).Publish(ctx, in)
+					_, ok := in.MessageAttributes["_datadog"]
+					return []bool{ok}
+				}},
+				{operation: "PublishBatch", entries: 2, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sns.PublishBatchInput{
+						TopicArn: aws.String("arn:aws:sns:eu-west-1:123456789012:my-topic"),
+						PublishBatchRequestEntries: []snstypes.PublishBatchRequestEntry{
+							{Id: aws.String("1"), Message: aws.String(`{"message":"hello"}`)},
+							{Id: aws.String("2"), Message: aws.String(`{"message":"world"}`)},
+						},
+					}
+					_, _ = sns.NewFromConfig(cfg).PublishBatch(ctx, in)
+					injected := make([]bool, len(in.PublishBatchRequestEntries))
+					for i, e := range in.PublishBatchRequestEntries {
+						_, injected[i] = e.MessageAttributes["_datadog"]
+					}
+					return injected
+				}},
 			},
 		},
 	}
@@ -134,14 +217,20 @@ func newInjectTestConfig(t *testing.T) aws.Config {
 
 func TestInjectionEnabledByDefault(t *testing.T) {
 	for _, tc := range injectCases() {
-		t.Run(tc.service, func(t *testing.T) {
-			clearInjectEnv(t)
-			reloadTracerConfig(t)
-			mt := mocktracer.Start()
-			defer mt.Stop()
+		for _, op := range tc.ops {
+			t.Run(tc.service+"/"+op.operation, func(t *testing.T) {
+				clearInjectEnv(t)
+				reloadTracerConfig(t)
+				mt := mocktracer.Start()
+				defer mt.Stop()
 
-			assert.True(t, tc.run(context.Background(), newInjectTestConfig(t)))
-		})
+				injected := op.run(context.Background(), newInjectTestConfig(t))
+				require.Len(t, injected, op.entries)
+				for i, ok := range injected {
+					assert.True(t, ok, "entry %d", i)
+				}
+			})
+		}
 	}
 }
 
@@ -152,19 +241,25 @@ func TestInjectionDisabledPerService(t *testing.T) {
 			setInjectEnv(t, off.env, "false")
 
 			for _, tc := range cases {
-				mt := mocktracer.Start()
-				injected := tc.run(context.Background(), newInjectTestConfig(t))
-				spans := mt.FinishedSpans()
-				mt.Stop()
+				for _, op := range tc.ops {
+					mt := mocktracer.Start()
+					injected := op.run(context.Background(), newInjectTestConfig(t))
+					spans := mt.FinishedSpans()
+					mt.Stop()
 
-				assert.Equal(t, tc.service != off.service, injected,
-					"%s injection with only %s disabled", tc.service, off.service)
+					// Every entry of a batch request is checked, so that a missing guard in the loop is caught.
+					require.Len(t, injected, op.entries, "%s %s", tc.service, op.operation)
+					for i, ok := range injected {
+						assert.Equal(t, tc.service != off.service, ok,
+							"%s %s entry %d with only %s disabled", tc.service, op.operation, i, off.service)
+					}
 
-				require.Len(t, spans, 1, tc.service)
-				assert.Equal(t, tc.operation, spans[0].Tag("aws.operation"), tc.service)
-				assert.Equal(t, tc.service, spans[0].Tag("aws.service"), tc.service)
-				if tc.service == "SQS" {
-					assert.Equal(t, ext.MessagingSystemSQS, spans[0].Tag(ext.MessagingSystem))
+					require.Len(t, spans, 1, "%s %s", tc.service, op.operation)
+					assert.Equal(t, op.operation, spans[0].Tag("aws.operation"), tc.service)
+					assert.Equal(t, tc.service, spans[0].Tag("aws.service"), tc.service)
+					if tc.service == "SQS" {
+						assert.Equal(t, ext.MessagingSystemSQS, spans[0].Tag(ext.MessagingSystem))
+					}
 				}
 			}
 		})
@@ -178,7 +273,115 @@ func TestInjectionEnvFalseyAndTruthyValues(t *testing.T) {
 			setInjectEnv(t, kinesisCase.env, value)
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			assert.Equal(t, want, kinesisCase.run(context.Background(), newInjectTestConfig(t)))
+			assert.Equal(t, []bool{want}, kinesisCase.ops[0].run(context.Background(), newInjectTestConfig(t)))
 		})
+	}
+}
+
+// dsmRecorder is the transport of a tracer that records the Data Streams payloads it sends.
+type dsmRecorder struct {
+	mu     sync.Mutex
+	bodies [][]byte
+}
+
+func (r *dsmRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, "/v0.1/pipeline_stats") {
+		if body, err := io.ReadAll(req.Body); err == nil {
+			r.mu.Lock()
+			r.bodies = append(r.bodies, body)
+			r.mu.Unlock()
+		}
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("{}")),
+		Request:    req,
+	}, nil
+}
+
+// dsmPoint is a Data Streams stats point as it is sent to the agent.
+type dsmPoint struct {
+	edgeTags      []string
+	timestampType string // each checkpoint is reported once as "current" and once as "origin"
+	payloadSize   []byte // serialized sketch of the payload sizes, so it also encodes how many were recorded
+}
+
+func (r *dsmRecorder) points(t *testing.T) []dsmPoint {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var points []dsmPoint
+	for _, body := range r.bodies {
+		zr, err := gzip.NewReader(bytes.NewReader(body))
+		require.NoError(t, err)
+		decoded, err := msgp.NewReader(zr).ReadIntf()
+		require.NoError(t, err)
+		payload, ok := decoded.(map[string]any)
+		require.True(t, ok)
+		buckets, _ := payload["Stats"].([]any)
+		for _, bucket := range buckets {
+			stats, _ := bucket.(map[string]any)["Stats"].([]any)
+			for _, stat := range stats {
+				point := stat.(map[string]any)
+				var tags []string
+				for _, tag := range point["EdgeTags"].([]any) {
+					tags = append(tags, tag.(string))
+				}
+				kind, _ := point["TimestampType"].(string)
+				size, _ := point["PayloadSize"].([]byte)
+				points = append(points, dsmPoint{edgeTags: tags, timestampType: kind, payloadSize: size})
+			}
+		}
+	}
+	return points
+}
+
+// sentDataStreamsPoints sends the request of op with a tracer that reports Data Streams, with
+// injection disabled through disableEnv if it is not empty, and returns the stats points it reports.
+func sentDataStreamsPoints(t *testing.T, op injectOp, disableEnv string) []dsmPoint {
+	t.Helper()
+	clearInjectEnv(t)
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+	if disableEnv != "" {
+		t.Setenv(disableEnv, "false")
+	}
+
+	recorder := &dsmRecorder{}
+	require.NoError(t, tracer.Start(
+		tracer.WithHTTPClient(&http.Client{Transport: recorder}),
+		tracer.WithLogStartup(false),
+	))
+	stopped := false
+	defer func() {
+		if !stopped {
+			tracer.Stop()
+		}
+	}()
+
+	op.run(context.Background(), newInjectTestConfig(t))
+	tracer.Flush()
+	tracer.Stop()
+	stopped = true
+	return recorder.points(t)
+}
+
+// With injection disabled the Data Streams checkpoints must still be recorded, with the same edge
+// tags, count and payload sizes as with injection enabled.
+func TestInjectionDisabledKeepsDataStreamsCheckpoints(t *testing.T) {
+	for _, tc := range injectCases() {
+		for _, op := range tc.ops {
+			t.Run(tc.service+"/"+op.operation, func(t *testing.T) {
+				enabled := sentDataStreamsPoints(t, op, "")
+				require.Len(t, enabled, 2, "enabled")
+				for _, point := range enabled {
+					assert.Equal(t, tc.edgeTags, point.edgeTags)
+				}
+
+				disabled := sentDataStreamsPoints(t, op, tc.env)
+				assert.Equal(t, enabled, disabled)
+			})
+		}
 	}
 }
