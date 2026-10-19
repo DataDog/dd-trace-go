@@ -438,7 +438,7 @@ components:
 
   # ------------------------------------------------------------------- tools
   - id: release-tooling
-    why: Not imported by shipped code; own tests run under test-core.
+    why: Not imported by shipped code; root-module scripts test under test-core, and the scripts/errtrackaudit nested module tests under static-checks' check-modules job.
     paths:
       - scripts/**
       - tools/**

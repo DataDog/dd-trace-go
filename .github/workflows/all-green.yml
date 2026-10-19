@@ -42,4 +42,6 @@ jobs:
 #   DDCI Status is already marked "Not required to merge", so re-reporting them as this workflow's failure
 #   sends people to the wrong place.
 # * errtrack-audit: the errtrack-audit workflow's job, documented as advisory — a run failure (infra, a
-#   broken package graph) must not block the PR, only the PR comment reports its findings.
+#   broken package graph) must not block the PR, only the PR comment reports its findings. The tool's
+#   own tests moved to the gated check-modules job in static-checks, so a regression in the tool does
+#   block.
