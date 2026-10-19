@@ -139,7 +139,13 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		// Only suppress a duplicate when Kratos already started this call's
 		// server span, and do not leak the marker into downstream calls.
 		if ctx.Value(instrumentation.PackageGoKratosV3) == ext.SpanKindServer+":"+info.FullMethod {
-			return handler(context.WithValue(ctx, instrumentation.PackageGoKratosV3, false), req)
+			ctx = context.WithValue(ctx, instrumentation.PackageGoKratosV3, false)
+			if span, ok := tracer.SpanFromContext(ctx); ok {
+				if instr.AppSecEnabled() {
+					handler = appsecUnaryHandlerMiddleware(info.FullMethod, span, handler)
+				}
+				return handler(ctx, req)
+			}
 		}
 		_, um := cfg.untracedMethods[info.FullMethod]
 		if um {

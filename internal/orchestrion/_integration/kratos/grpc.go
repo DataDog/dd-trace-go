@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
@@ -28,6 +29,7 @@ type GRPCTestCase struct {
 	addr   string
 	called atomic.Bool
 	reject bool
+	attack bool
 }
 
 func (*GRPCTestCase) ExpectedSpanCount() int { return 2 }
@@ -53,8 +55,13 @@ func (tc *GRPCTestCase) Run(ctx context.Context, t *testing.T) {
 	conn, err := kratosgrpc.NewClient(ctx, kratosgrpc.WithEndpoint(tc.addr), kratosgrpc.WithHealthCheck(false))
 	require.NoError(t, err)
 	defer conn.Close()
+	if tc.attack {
+		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
+	}
 	_, err = grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	if tc.reject {
+	if tc.attack {
+		require.Equal(t, codes.Aborted, status.Code(err), "AppSec must block even when the generic span is deduplicated")
+	} else if tc.reject {
 		require.Equal(t, codes.Unauthenticated, status.Code(err))
 	} else {
 		require.NoError(t, err)

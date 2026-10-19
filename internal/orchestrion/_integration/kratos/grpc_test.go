@@ -20,6 +20,8 @@ func TestRejectedHTTP(t *testing.T) { harness.Run(t, &TestCase{reject: true}) }
 
 func TestRejectedGRPC(t *testing.T) { harness.Run(t, &GRPCTestCase{reject: true}) }
 
+func TestAppSecGRPC(t *testing.T) { harness.Run(t, new(AppSecGRPCCase)) }
+
 func TestFinalHTTPStatus(t *testing.T) {
 	for _, otel := range []bool{false, true} {
 		for _, code := range []int{201, 204} {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,11 @@ func TestKratosUnaryDeduplication(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 				ctx := context.Background()
+				if tc.wantSpans == 0 {
+					span, spanCtx := tracer.StartSpanFromContext(ctx, "kratos.request")
+					defer span.Finish()
+					ctx = spanCtx
+				}
 				if tc.marker != nil {
 					ctx = context.WithValue(ctx, instrumentation.PackageGoKratosV3, tc.marker)
 				}
@@ -62,4 +68,17 @@ func TestKratosUnaryDeduplication(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestKratosServerMarkerRequiresSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	const method = "/example.Service/Call"
+	ctx := context.WithValue(context.Background(), instrumentation.PackageGoKratosV3, ext.SpanKindServer+":"+method)
+	_, err := UnaryServerInterceptor()(ctx, nil, &grpc.UnaryServerInfo{FullMethod: method}, func(ctx context.Context, _ any) (any, error) {
+		assert.Equal(t, false, ctx.Value(instrumentation.PackageGoKratosV3))
+		return nil, nil
+	})
+	require.NoError(t, err)
+	assert.Len(t, mt.FinishedSpans(), 1, "a marker alone must not bypass the generic instrumentation")
 }
