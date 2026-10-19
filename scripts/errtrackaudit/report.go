@@ -53,43 +53,69 @@ type Report struct {
 // Output is deterministic: owners sort by name, sites by file and line.
 func buildReport(sites []Site, co *codeowners) Report {
 	groups := map[string]*OwnerGroup{}
-	// Owners and each group's Sites start as empty, not nil, so a fully
-	// worked group and an empty audit serialize as [] rather than null in
-	// JSON — consumers that iterate the arrays would otherwise see nil.
-	rep := Report{Owners: make([]OwnerGroup, 0)}
+	summary := Totals{}
 	for _, s := range sites {
 		key := strings.Join(co.ownersFor(s.File), " ")
 		g := groups[key]
 		if g == nil {
+			// Each group's Sites starts as empty, not nil, so a fully
+			// worked group serializes as [] rather than null in JSON —
+			// consumers that iterate the arrays would otherwise see nil.
 			g = &OwnerGroup{Owner: key, Sites: []SiteRow{}}
 			groups[key] = g
 		}
-		g.Totals.Sites++
-		rep.Summary.Sites++
-		if s.Ignored {
-			g.Totals.Ignored++
-			rep.Summary.Ignored++
-			continue
-		}
-		row := SiteRow{
-			File:    s.File,
-			Line:    s.Line,
-			Package: s.Package,
-			Func:    s.Func,
-			Level:   s.Level,
-			Message: s.Message,
-		}
-		if classifyMessage(s.Message) == classificationLikelyIneligible {
-			row.Classification = classificationLikelyIneligible
-			g.Totals.LikelyIneligible++
-			rep.Summary.LikelyIneligible++
-		} else {
-			row.Classification = classificationCandidate
-			g.Totals.Candidate++
-			rep.Summary.Candidate++
-		}
-		g.Sites = append(g.Sites, row)
+		addSite(g, &summary, s)
 	}
+	return finalizeReport(groups, summary)
+}
+
+// addSite records one scanned site in its owner group and the running
+// summary totals. Ignored sites count toward Sites and Ignored only; their
+// rows never reach the group's site list.
+func addSite(g *OwnerGroup, summary *Totals, s Site) {
+	g.Totals.Sites++
+	summary.Sites++
+	if s.Ignored {
+		g.Totals.Ignored++
+		summary.Ignored++
+		return
+	}
+	row, ineligible := classifiedRow(s)
+	if ineligible {
+		g.Totals.LikelyIneligible++
+		summary.LikelyIneligible++
+	} else {
+		g.Totals.Candidate++
+		summary.Candidate++
+	}
+	g.Sites = append(g.Sites, row)
+}
+
+// classifiedRow builds one reported row from a scanned site and reports
+// whether its message classifies the site as likely ineligible.
+func classifiedRow(s Site) (SiteRow, bool) {
+	row := SiteRow{
+		File:    s.File,
+		Line:    s.Line,
+		Package: s.Package,
+		Func:    s.Func,
+		Level:   s.Level,
+		Message: s.Message,
+	}
+	if classifyMessage(s.Message) == classificationLikelyIneligible {
+		row.Classification = classificationLikelyIneligible
+		return row, true
+	}
+	row.Classification = classificationCandidate
+	return row, false
+}
+
+// finalizeReport sorts each group's sites by file and line, the groups by
+// owner name, and returns the finished report. Owners starts as empty, not
+// nil, so an empty audit serializes as [] rather than null in JSON —
+// consumers that iterate the arrays would otherwise see nil.
+func finalizeReport(groups map[string]*OwnerGroup, summary Totals) Report {
+	rep := Report{Summary: summary, Owners: make([]OwnerGroup, 0)}
 	for _, g := range groups {
 		slices.SortStableFunc(g.Sites, func(a, b SiteRow) int {
 			if c := strings.Compare(a.File, b.File); c != 0 {

@@ -28,19 +28,28 @@ func main() {
 	)
 	flag.Parse()
 
-	if err := run(*root, *format, *pkgPref, os.Stdout); err != nil {
+	if err := run(runOptions{root: *root, format: *format, pkgPrefix: *pkgPref, out: os.Stdout}); err != nil {
 		fmt.Fprintln(os.Stderr, "errtrackaudit:", err)
 		os.Exit(1)
 	}
 }
 
-func run(root, format, pkgPrefix string, out io.Writer) error {
-	switch format {
+// runOptions parameterizes run with named fields instead of three strings
+// of different meaning.
+type runOptions struct {
+	root      string // repository root, as given
+	format    string // output format: table or json
+	pkgPrefix string // restricts output to sites whose package path starts with this prefix
+	out       io.Writer
+}
+
+func run(opts runOptions) error {
+	switch opts.format {
 	case "table", "json":
 	default:
-		return fmt.Errorf("unknown format %q", format)
+		return fmt.Errorf("unknown format %q", opts.format)
 	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, err := filepath.Abs(opts.root)
 	if err != nil {
 		return err
 	}
@@ -52,14 +61,14 @@ func run(root, format, pkgPrefix string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	sites = filterByPackage(sites, pkgPrefix)
+	sites = filterByPackage(sites, opts.pkgPrefix)
 	rep := buildReport(sites, owners)
-	switch format {
+	switch opts.format {
 	case "json":
-		return renderJSON(out, rep)
+		return renderJSON(opts.out, rep)
 	case "table":
-		return renderTable(out, rep)
+		return renderTable(opts.out, rep)
 	default:
-		return fmt.Errorf("unknown format %q", format)
+		return fmt.Errorf("unknown format %q", opts.format)
 	}
 }

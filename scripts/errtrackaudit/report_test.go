@@ -215,9 +215,8 @@ func TestFilterByPackage(t *testing.T) {
 }
 
 func TestRun_UnknownFormat(t *testing.T) {
-	root := filepath.Join("testdata", "fixture")
 	var out bytes.Buffer
-	err := run(root, "yaml", "", &out)
+	err := run(runOptions{root: filepath.Join("testdata", "fixture"), format: "yaml", out: &out})
 	if err == nil || !strings.Contains(err.Error(), "unknown format") {
 		t.Errorf("run with unknown format error = %v, want unknown format error", err)
 	}
