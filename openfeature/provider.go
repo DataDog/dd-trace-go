@@ -162,17 +162,21 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	}
 	config.ExperimentationOptOutMode = mode
 
-	settings := internalffe.ResolveSettings(internalconfig.Get())
+	cfg := internalconfig.Get()
+	settings := internalffe.ResolveSettings(cfg)
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
 	}
 
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
+		logOnboarding("configuration source is %s", settings.Source.String())
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
+		logOnboarding("configuration source is %s", settings.Source.String())
 		return startWithAgentless(config, settings)
 	default:
+		logOnboarding("feature flagging is disabled; flag evaluations will return their default values")
 		return &openfeature.NoopProvider{}, nil
 	}
 }
@@ -298,7 +302,7 @@ func newDatadogProviderWithSourceAndEVP(
 		log.Debug("openfeature: span enrichment is disabled")
 	}
 
-	hooks := make([]openfeature.Hook, 0, 4)
+	hooks := make([]openfeature.Hook, 0, 5)
 	if exposureLoggingHook != nil {
 		hooks = append(hooks, exposureLoggingHook)
 	}
@@ -311,6 +315,9 @@ func newDatadogProviderWithSourceAndEVP(
 	if spanEnrichmentHook != nil {
 		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, telemetryOptOutEnabled))
 	}
+	// The tracer may enable debug logging after the provider is constructed.
+	// The hook checks the current level before formatting evaluation details.
+	hooks = append(hooks, newDebugLoggingHook())
 
 	p := &DatadogProvider{
 		experimentationOptOutMode: config.ExperimentationOptOutMode,
@@ -357,6 +364,8 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		return p, nil
 	}
 
+	logOnboarding("starting agentless configuration source at %s (poll interval %s, request timeout %s)",
+		redactedOrigin(src.endpoint), settings.PollInterval.String(), settings.RequestTimeout.String())
 	src.start()
 	return p, nil
 }
@@ -379,12 +388,20 @@ func (p *DatadogProvider) tryRegisterAgentless(src *agentlessSource) bool {
 // called by the Remote Config callback or the Agentless poller when a new
 // configuration is received.
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
+	// Logged after p.mu is released: an application logger may evaluate a
+	// flag, which needs p.mu.
+	p.setConfiguration(config).logDebug()
+}
+
+// setConfiguration stores config under p.mu and returns the readiness change
+// for updateConfiguration to log.
+func (p *DatadogProvider) setConfiguration(config *universalFlagsConfiguration) readinessChange {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.shutdownCalled {
 		// A poll or RC callback already in flight must not resurrect
 		// configuration after Shutdown.
-		return
+		return readinessUnchanged
 	}
 	p.configuration = config
 	// Wake every waiter blocked on the current generation, then start a fresh
@@ -410,7 +427,7 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 		}
 		p.writersStarted = true
 	}
-	p.emitFirstOrChangeEvent(config)
+	return p.emitFirstOrChangeEvent(config)
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -457,7 +474,7 @@ func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error 
 // This method respects context cancellation and timeouts, allowing users
 // to cancel the initialization process if needed. A context without a
 // deadline gets DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS.
-func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) (err error) {
 	// The SDK's SetProviderAndWait calls this directly with context.Background(),
 	// never Init, so the timeout has to be applied here or it waits forever.
 	if _, ok := ctx.Deadline(); !ok {
@@ -465,6 +482,20 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		ctx, cancel = context.WithTimeout(ctx, internalconfig.Get().FlaggingProviderInitTimeout())
 		defer cancel()
 	}
+
+	start := time.Now()
+	if log.DebugEnabled() {
+		deadline, _ := ctx.Deadline()
+		logOnboarding("waiting for provider initialization... (timeout %s)", time.Until(deadline).Round(time.Millisecond).String())
+	}
+	defer func() {
+		if err != nil {
+			// Routine initialization failures stay in local logs, without telemetry.
+			logOnboarding("provider failed to initialize: %s", err.Error())
+			return
+		}
+		logOnboarding("provider initialized successfully in %s", time.Since(start).Round(time.Millisecond).String())
+	}()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -556,6 +587,9 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	}
 	p.configChange = make(chan struct{})
 	p.mu.Unlock()
+	// Logged after p.mu is released: an application logger may evaluate a
+	// flag, which needs p.mu.
+	logOnboarding("provider shutting down")
 
 	done := make(chan error, 1)
 	go func() {
@@ -594,8 +628,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	// Wait for completion or context cancellation
 	select {
 	case <-ctx.Done():
+		logOnboarding("provider shutdown did not finish before the context expired: %s", ctx.Err().Error())
 		return ctx.Err()
 	case err := <-done:
+		logOnboarding("provider shut down")
 		return err
 	}
 }
@@ -617,7 +653,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 		boolValue = defaultValue
 	}
 
-	return openfeature.BoolResolutionDetail{
+	detail := openfeature.BoolResolutionDetail{
 		Value: boolValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -626,6 +662,8 @@ func (p *DatadogProvider) BooleanEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Boolean, detail)
+	return detail
 }
 
 // StringEvaluation evaluates a string feature flag.
@@ -645,7 +683,7 @@ func (p *DatadogProvider) StringEvaluation(
 		strValue = defaultValue
 	}
 
-	return openfeature.StringResolutionDetail{
+	detail := openfeature.StringResolutionDetail{
 		Value: strValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -654,6 +692,8 @@ func (p *DatadogProvider) StringEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.String, detail)
+	return detail
 }
 
 // FloatEvaluation evaluates a numeric (float) feature flag.
@@ -692,7 +732,7 @@ func (p *DatadogProvider) FloatEvaluation(
 		result.Error = conversionErr
 	}
 
-	return openfeature.FloatResolutionDetail{
+	detail := openfeature.FloatResolutionDetail{
 		Value: floatValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -701,6 +741,8 @@ func (p *DatadogProvider) FloatEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Float, detail)
+	return detail
 }
 
 // IntEvaluation evaluates an integer feature flag.
@@ -746,7 +788,7 @@ func (p *DatadogProvider) IntEvaluation(
 		result.Error = conversionErr
 	}
 
-	return openfeature.IntResolutionDetail{
+	detail := openfeature.IntResolutionDetail{
 		Value: intValue,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -755,6 +797,8 @@ func (p *DatadogProvider) IntEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Int, detail)
+	return detail
 }
 
 // ObjectEvaluation evaluates a structured (JSON) feature flag.
@@ -766,7 +810,7 @@ func (p *DatadogProvider) ObjectEvaluation(
 ) openfeature.InterfaceResolutionDetail {
 	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
-	return openfeature.InterfaceResolutionDetail{
+	detail := openfeature.InterfaceResolutionDetail{
 		Value: result.Value,
 		ProviderResolutionDetail: openfeature.ProviderResolutionDetail{
 			ResolutionError: toResolutionError(result.Error),
@@ -775,9 +819,11 @@ func (p *DatadogProvider) ObjectEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
+	logResolution(flagKey, openfeature.Object, detail)
+	return detail
 }
 
-// Hooks returns the provider's hooks, built once during Init.
+// Hooks returns the provider's hooks, built once during construction.
 // Returns p.hooks directly to avoid per-evaluation allocations.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
 	return p.hooks

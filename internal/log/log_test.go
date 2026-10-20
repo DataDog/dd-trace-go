@@ -354,3 +354,25 @@ func BenchmarkLog(b *testing.B) {
 		Warn("test")
 	}
 }
+
+type panickingLogger struct{}
+
+func (panickingLogger) Log(string) { panic("logger failure") }
+
+// TestPanickingLoggerReleasesLock pins that a Logger panic recovered by the
+// caller leaves the logger lock free, so UseLogger cannot block forever.
+func TestPanickingLoggerReleasesLock(t *testing.T) {
+	undo := UseLogger(panickingLogger{})
+	assert.Panics(t, func() { Warn("boom") })
+
+	done := make(chan struct{})
+	go func() {
+		undo()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a panicking Logger left the logger lock held")
+	}
+}
