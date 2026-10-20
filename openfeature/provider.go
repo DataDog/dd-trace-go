@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -758,10 +759,17 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the provider's hooks, built once during Init.
-// Returns p.hooks directly to avoid per-evaluation allocations.
+// Hooks returns hooks for one evaluation.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	return p.hooks
+	// OpenFeature calls Hooks once per evaluation. Keep the temporary After/Error
+	// bridge isolated across concurrent and nested calls. See go-sdk#623.
+	hooks := slices.Clone(p.hooks)
+	for i, hook := range hooks {
+		if exposure, ok := hook.(*exposureHook); ok {
+			hooks[i] = newExposureHook(exposure.writer)
+		}
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.

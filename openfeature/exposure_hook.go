@@ -21,7 +21,8 @@ import (
 // to Datadog's event platform intake.
 type exposureHook struct {
 	of.UnimplementedHook
-	writer *exposureWriter
+	writer             *exposureWriter
+	evaluationMetadata of.FlagMetadata
 }
 
 // newExposureHook creates a new exposure tracking hook with the given writer
@@ -29,6 +30,32 @@ func newExposureHook(writer *exposureWriter) *exposureHook {
 	return &exposureHook{
 		writer: writer,
 	}
+}
+
+// TODO(open-feature/go-sdk#623): Remove the After/Error bridge and per-evaluation
+// hook allocation after upgrading to a release with corrected Finally details.
+// The metadata map belongs to this evaluation, not to the exposure cache.
+func (h *exposureHook) After(_ context.Context, _ of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) error {
+	h.evaluationMetadata = details.FlagMetadata
+	return nil
+}
+
+func (h *exposureHook) Error(context.Context, of.HookContext, error, of.HookHints) {
+	if h.evaluationMetadata != nil {
+		h.evaluationMetadata[metadataExposureAfterErrorKey] = true
+	}
+}
+
+const metadataExposureAfterErrorKey = "__dd_exposure_after_error"
+
+func exposureFinalDetails(ctx of.HookContext, details of.InterfaceEvaluationDetails) of.InterfaceEvaluationDetails {
+	if failed, _ := details.FlagMetadata[metadataExposureAfterErrorKey].(bool); failed && details.ErrorCode == "" {
+		details.Value = ctx.DefaultValue()
+		details.Reason = of.ErrorReason
+		details.ErrorCode = of.GeneralCode
+		details.ErrorMessage = "after hook failed"
+	}
+	return details
 }
 
 // Finally records only completed, successful evaluations. An application After
@@ -39,6 +66,7 @@ func (h *exposureHook) Finally(
 	flagEvaluationDetails of.InterfaceEvaluationDetails,
 	_ of.HookHints,
 ) {
+	flagEvaluationDetails = exposureFinalDetails(hookContext, flagEvaluationDetails)
 	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
 		return
 	}
@@ -174,8 +202,10 @@ func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of
 			})
 		}
 	}()
+	details = exposureFinalDetails(ctx, details)
 	// Isolate metadata edits from the other callbacks and returned evaluation.
 	details.FlagMetadata = maps.Clone(details.FlagMetadata)
+	delete(details.FlagMetadata, metadataExposureAfterErrorKey)
 	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
 }
 

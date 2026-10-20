@@ -180,6 +180,8 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			assert.Equal(t, false, rows[0].Details.Value)
 			assert.Equal(t, of.GeneralCode, rows[0].Details.ErrorCode)
 			assert.Equal(t, of.ErrorReason, rows[0].Details.Reason)
+			assert.Equal(t, "after hook failed", rows[0].Details.ErrorMessage)
+			assert.NotContains(t, rows[0].Details.FlagMetadata, metadataExposureAfterErrorKey)
 			assert.False(t, rows[0].IsExposure())
 			assert.False(t, rows[0].ShouldSend())
 			assert.False(t, rows[0].IsCacheHit())
@@ -197,6 +199,93 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			assert.Len(t, h.sink.exposures, tt.wantDatadogExposures)
 		})
 	}
+}
+
+func TestCustomerExposureHookNestedFailures(t *testing.T) {
+	tests := []struct {
+		name        string
+		rejectOuter bool
+		rejectInner bool
+	}{
+		{name: "outer_rejected", rejectOuter: true},
+		{name: "inner_rejected", rejectInner: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			var rows []ExposureEvaluation
+			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+			ctx := context.Background()
+			evalContext := of.NewEvaluationContext("same-subject", nil)
+			outerHook := optOutTestHook{
+				after: func(context.Context, of.HookContext) error {
+					var options []of.Option
+					if tt.rejectInner {
+						options = append(options, of.WithHooks(rejectExposureResultHook{}))
+					}
+					value, err := h.client.BooleanValue(ctx, "experiment", false, evalContext, options...)
+					assert.Equal(t, tt.rejectInner, err != nil)
+					assert.Equal(t, !tt.rejectInner, value)
+					if tt.rejectOuter {
+						return errors.New("outer evaluation rejected")
+					}
+					return nil
+				},
+			}
+			value, err := h.client.BooleanValue(ctx, "experiment", false, evalContext, of.WithHooks(outerHook))
+			assert.Equal(t, tt.rejectOuter, err != nil)
+			assert.Equal(t, !tt.rejectOuter, value)
+			require.Len(t, rows, 2)
+			assert.Equal(t, !tt.rejectInner, rows[0].ShouldSend())
+			assert.Equal(t, !tt.rejectOuter, rows[1].ShouldSend())
+			assert.False(t, rows[0].IsCacheHit())
+			assert.False(t, rows[1].IsCacheHit())
+			h.provider.exposureWriter.flush()
+			assert.Len(t, h.sink.exposures, 1)
+		})
+	}
+}
+
+func TestCustomerExposureHookConcurrentFailures(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	var sends, successes, failures atomic.Int64
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) {
+		if e.Details.ErrorCode != "" {
+			failures.Add(1)
+			assert.Equal(t, false, e.Details.Value)
+			assert.False(t, e.IsExposure())
+			assert.False(t, e.ShouldSend())
+			assert.False(t, e.IsCacheHit())
+		} else {
+			successes.Add(1)
+			assert.Equal(t, true, e.Details.Value)
+			assert.True(t, e.IsExposure())
+		}
+		if e.ShouldSend() {
+			sends.Add(1)
+		}
+	}))
+	ctx := context.Background()
+	evalContext := of.NewEvaluationContext("same-subject", nil)
+	var wg sync.WaitGroup
+	for i := range 100 {
+		wg.Go(func() {
+			var options []of.Option
+			reject := i%2 == 0
+			if reject {
+				options = append(options, of.WithHooks(rejectExposureResultHook{}))
+			}
+			value, err := h.client.BooleanValue(ctx, "experiment", false, evalContext, options...)
+			assert.Equal(t, reject, err != nil)
+			assert.Equal(t, !reject, value)
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, int64(50), failures.Load())
+	assert.Equal(t, int64(50), successes.Load())
+	assert.Equal(t, int64(1), sends.Load())
+	h.provider.exposureWriter.flush()
+	assert.Len(t, h.sink.exposures, 1)
 }
 
 func TestCustomerExposureHookPanicsDoNotAffectDelivery(t *testing.T) {
