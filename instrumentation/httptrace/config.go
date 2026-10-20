@@ -27,6 +27,9 @@ const (
 	envQueryStringDisabled = "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED"
 	// EnvQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
 	EnvQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
+	// envQueryStringSize is the name of the env var used to specify the maximum size, in bytes, of a query string
+	// that a custom EnvQueryStringRegexp obfuscates. See queryStringSizeLimitFromEnv.
+	envQueryStringSize = "DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE"
 	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
 	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
@@ -67,6 +70,10 @@ const defaultQueryStringReplacement = "${1}<redacted>"
 // machine.
 var defaultQueryStringPatternNonCapturing = strings.Replace(defaultQueryStringPattern, `|(^|[^\w%-]|`, `|(?:^|[^\w%-]|`, 1)
 
+// defaultQueryStringSizeLimit is the default value of [envQueryStringSize]. It
+// is the same as the default value in the .NET tracer.
+const defaultQueryStringSizeLimit = 5000
+
 // defaultQueryStringRegexp is the compiled form of [defaultQueryStringPattern].
 var defaultQueryStringRegexp = regexp.MustCompile(defaultQueryStringPattern)
 
@@ -81,6 +88,7 @@ type config struct {
 	useDefaultObfuscator                     bool                // reports whether to use the default query string obfuscator.
 	replaceJWTDelimiter                      bool                // reports whether the default obfuscator also replaces the JWT delimiter (the default regexp is set explicitly).
 	dropQueryString                          bool                // reports whether the query string must not be reported, because the configured regexp is not valid.
+	queryStringSizeLimit                     int                 // the maximum size of a query string that queryStringRegexp obfuscates. 0 means no limit.
 	queryString                              bool                // reports whether the query string should be included in the URL span tag.
 	clientQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for client spans and skip regex obfuscation.
 	serverQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for server spans and skip regex obfuscation.
@@ -111,6 +119,7 @@ func otelSemanticsEnabled() bool { return cfg.otelSemanticsEnabled }
 func newConfig() config {
 	c := config{
 		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
+		queryStringSizeLimit:                     queryStringSizeLimitFromEnv(),
 		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
 		otelSemanticsEnabled:                     instr.OTelSemanticsEnabled(),
 		isStatusError:                            isServerError,
@@ -177,6 +186,25 @@ func newConfig() config {
 		c.serverQueryStringAllowlist = parseAllowlist(v)
 	}
 	return c
+}
+
+// queryStringSizeLimitFromEnv returns the value of [envQueryStringSize], or
+// [defaultQueryStringSizeLimit] when the value is not set or is not valid.
+//
+// The limit bounds the cost of a custom [EnvQueryStringRegexp]. Go's regexp
+// package runs in linear time, but it does not accept a timeout, and an
+// attacker controls the length of the query string. A query string that is
+// longer than the limit is redacted in full. Unlike the .NET tracer, the tracer
+// does not truncate it: a scan of a truncated query string does not scan the
+// tail, and the tail can contain a secret. The limit also applies to client
+// spans.
+func queryStringSizeLimitFromEnv() int {
+	v := internal.IntEnv(envQueryStringSize, defaultQueryStringSizeLimit)
+	if v < 0 {
+		log.Warn("Negative value for env var %s, defaulting to %d.", envQueryStringSize, defaultQueryStringSizeLimit)
+		return defaultQueryStringSizeLimit
+	}
+	return v
 }
 
 func appsecEnabledAtStartup() bool {
