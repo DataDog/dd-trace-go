@@ -30,13 +30,20 @@ type Router struct {
 
 // New returns a new router augmented with tracing.
 func New(opts ...RouterOption) *Router {
+	return WrapRouter(httprouter.New(), opts...)
+}
+
+// WrapRouter returns the given router wrapped with the tracing of the HTTP
+// requests and responses served by the router.
+func WrapRouter(router *httprouter.Router, opts ...RouterOption) *Router {
 	cfg := tracing.NewConfig(opts...)
 	instr.Logger().Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
-	return &Router{httprouter.New(), cfg}
+	return &Router{router, cfg}
 }
 
 // ServeHTTP implements [http.Handler].
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	req = req.WithContext(traceMark(req.Context(), r.Router))
 	tw, treq, afterHandle, handled := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
 	defer afterHandle()
 	if handled {

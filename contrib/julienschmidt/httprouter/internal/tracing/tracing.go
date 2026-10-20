@@ -39,17 +39,7 @@ func BeforeHandle[T any, WT Router](
 	w http.ResponseWriter,
 	req *http.Request,
 ) (http.ResponseWriter, *http.Request, func(), bool) {
-	return BeforeHandleRouter(cfg, wrapRouter(router), w, req)
-}
-
-// BeforeHandleRouter is BeforeHandle without type parameters. The otelc rules
-// call it from inside httprouter, whose go directive predates generics.
-func BeforeHandleRouter(
-	cfg *Config,
-	wRouter Router,
-	w http.ResponseWriter,
-	req *http.Request,
-) (http.ResponseWriter, *http.Request, func(), bool) {
+	wRouter := wrapRouter(router)
 	// get the resource associated to this request
 	route := req.URL.Path
 	_, ps, _ := wRouter.Lookup(req.Method, route)

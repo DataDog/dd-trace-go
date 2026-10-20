@@ -3,52 +3,15 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# Adds the per-router tracing config to httprouter.Router.
-router_config_field:
-  target: github.com/julienschmidt/httprouter
-  where:
-    struct: Router
-  do:
-    - add_struct_fields:
-        new_field:
-          - name: __dd_config
-            type: "*__dd_httprouter_tracing.Config"
-  imports:
-    __dd_httprouter_tracing: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing
-
-# Adds the Router and Param wrappers and __dd_init to httprouter, copied from
-# router_decls.go.
-router_decls:
-  target: github.com/julienschmidt/httprouter
-  do:
-    - add_file:
-        file: router_decls.go
-        path: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
-
-# Traces the request at the top of Router.ServeHTTP, and returns early when it
-# was already handled, for example blocked by AppSec. The code runs inside
-# httprouter, because a hook compiles against the unmodified Router and cannot
-# read __dd_config. It compiles under httprouter's go directive (go 1.7), so it
-# calls the non generic BeforeHandleRouter.
+# Traces every request an httprouter.Router serves through the contrib,
+# routers built in dependencies included. Routers the application wrapped with
+# the contrib itself are traced once.
 router_serve_http:
   target: github.com/julienschmidt/httprouter
   where:
     func: ServeHTTP
     recv: "*Router"
   do:
-    - inject_code:
-        raw: |-
-          {{- $r := .Receiver -}}
-          {{- $w := .FuncArgument 0 -}}
-          {{- $req := .FuncArgument 1 -}}
-          __dd_init({{ $r }})
-
-          __dd_tw, __dd_treq, __dd_afterHandle, __dd_handled := __dd_httprouter_tracing.BeforeHandleRouter({{ $r }}.__dd_config, __dd_wRouter{ {{- $r -}} }, {{ $w }}, {{ $req }})
-          {{ $w }} = __dd_tw
-          {{ $req }} = __dd_treq
-          defer __dd_afterHandle()
-          if __dd_handled {
-          	return
-          }
-  imports:
-    __dd_httprouter_tracing: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing
+    - inject_hooks:
+        before: BeforeServeHTTP
+        path: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
