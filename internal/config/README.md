@@ -17,6 +17,12 @@ When migrating a configuration value from another package (e.g. `ddtrace/tracer`
 
 Sample migration PR: https://github.com/DataDog/dd-trace-go/pull/4214
 
+## Runtime metrics
+
+`RuntimeMetrics*` accessors describe the OTel runtime-metrics pipeline; `OTLPMetrics*` accessors describe span metrics. Runtime-metrics resolution uses `provider.NewEnvironment()` to preserve its existing environment-only sources. Exporter options stay local to each MeterProvider and override these defaults without modifying shared configuration.
+
+Reader defaults are 10 seconds for the interval and 7.5 seconds for the timeout. Nonpositive environment values and programmatic options fall back to the environment value when positive, then to these defaults. The SDK's existing untrimmed, architecture-sized parsing and duration overflow behavior are preserved. Temporality resolves to delta unless cumulative is requested; custom selectors remain provider-local.
+
 ## Cross-product gate
 
 Every `Set*` method accepts an optional trailing `...Product` parameter. When a product (tracer, profiler, etc.) sets a field via its programmatic API, it passes its `Product` identity:

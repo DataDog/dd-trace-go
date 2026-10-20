@@ -354,6 +354,12 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			},
 		},
 		{
+			workflow: "benchmark-apps.yml",
+			job:      "benchmark-apps-done",
+			strict:   []string{"needs.changes.outputs.benchmark-apps == 'true'"},
+			deps:     []string{"changes", "benchmark-apps"},
+		},
+		{
 			workflow: "unit-integration-tests.yml",
 			job:      "test-contrib",
 			strict:   []string{"needs.set-up.outputs.has-contribs == 'true'"},

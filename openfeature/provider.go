@@ -18,6 +18,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -51,6 +52,16 @@ func init() {
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
+	// EnableEvaluationTelemetryOptOutParameter enables the per-evaluation
+	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
+	// suppresses evaluation events, evaluation metrics, and automatic span
+	// enrichment. Flag results and experiment exposures are unchanged.
+	// The attribute remains available to targeting rules and exposure reporting.
+	// Nil uses DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED,
+	// which defaults to false. A non-nil value overrides the environment setting.
+	// The provider copies the value at construction.
+	EnableEvaluationTelemetryOptOutParameter *bool
+
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
@@ -199,7 +210,7 @@ func waitForProvider(ctx context.Context, client *openfeature.Client) error {
 }
 
 var warnLegacyFlaggingProviderOnce = sync.OnceFunc(func() {
-	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead")
+	log.Warn("openfeature: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED is deprecated; use DD_FEATURE_FLAGS_CONFIGURATION_SOURCE instead") //errtrack:ignore deprecated user configuration
 })
 
 // newDatadogProvider is a test-only bare provider constructor. Tests that use
@@ -214,11 +225,29 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	)
 }
 
+func reportFlagEvalMetricsCreationError(err error) {
+	telemetrylog.LogAndReportError("openfeature: failed to create flag evaluation metrics", err)
+}
+
+func handleFlagEvalMetricsCreationError(err error) {
+	var providerErr *flagEvalMeterProviderError
+	if errors.As(err, &providerErr) {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error()) //errtrack:ignore invalid user configuration
+		return
+	}
+	reportFlagEvalMetricsCreationError(err)
+}
+
 func newDatadogProviderWithSourceAndEVP(
 	config ProviderConfig,
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
+	telemetryOptOutEnabled := internalconfig.Get().FlagEvalTelemetryOptOutEnabled()
+	if config.EnableEvaluationTelemetryOptOutParameter != nil {
+		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
+	}
+
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
 
@@ -228,7 +257,7 @@ func newDatadogProviderWithSourceAndEVP(
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
-		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
+		handleFlagEvalMetricsCreationError(err)
 	}
 	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 
@@ -256,13 +285,13 @@ func newDatadogProviderWithSourceAndEVP(
 		hooks = append(hooks, exposureLoggingHook)
 	}
 	if evalMetricsHook != nil {
-		hooks = append(hooks, evalMetricsHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalMetricsHook, telemetryOptOutEnabled))
 	}
 	if evalLoggingHook != nil {
-		hooks = append(hooks, evalLoggingHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(evalLoggingHook, telemetryOptOutEnabled))
 	}
 	if spanEnrichmentHook != nil {
-		hooks = append(hooks, spanEnrichmentHook)
+		hooks = append(hooks, withEvaluationTelemetryOptOut(spanEnrichmentHook, telemetryOptOutEnabled))
 	}
 
 	p := &DatadogProvider{
@@ -298,7 +327,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 	src, err := newAgentlessSource(settings, p.updateConfiguration)
 	if err != nil {
 		// err never contains the configured endpoint or credentials.
-		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error())
+		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error()) //errtrack:ignore invalid user configuration
 		p.mu.Lock()
 		p.deliveryErr = err
 		p.mu.Unlock()
@@ -461,7 +490,7 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 			// handoff complete so a later configuration emits ProviderReady and
 			// recovers the SDK from this not-ready initialization result.
 			p.initialReadyHandoffComplete = true
-			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives")
+			log.Warn("openfeature: init did not receive configuration before its deadline; the provider will become ready once configuration arrives") //errtrack:ignore remote configuration timeout
 			return &openfeature.ProviderInitError{
 				ErrorCode: openfeature.ProviderNotReadyCode,
 				Message:   "initialization timed out before configuration arrived",
@@ -521,7 +550,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
 				// The outer select can still report success on this path, so
 				// without this a truncated teardown would be invisible.
-				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error())
+				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
 			}
 		}
 

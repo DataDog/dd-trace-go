@@ -6,7 +6,9 @@
 package provider
 
 import (
+	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -18,26 +20,35 @@ import (
 const (
 	ddPrefix   = "config_datadog:"
 	otelPrefix = "config_opentelemetry:"
+
+	deploymentEnvironmentKey     = "deployment.environment"
+	deploymentEnvironmentNameKey = "deployment.environment.name"
 )
 
 type otelEnvConfigSource struct{}
 
 func (o *otelEnvConfigSource) get(key string) string {
 	ddKey := normalizeKey(key)
-	entry := otelConfigs[ddKey]
-	if entry == nil {
-		return ""
+	for _, entry := range otelConfigs[ddKey] {
+		if val := entry.resolve(ddKey); val != "" {
+			return val
+		}
 	}
+	return ""
+}
+
+func (entry *otelDDEnv) resolve(ddKey string) string {
 	otVal := env.Get(entry.ot)
 	if otVal == "" {
 		return ""
 	}
-	if ddVal := env.Get(ddKey); ddVal != "" {
-		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal) //errtrack:ignore conflicting user configuration
+	val, err := entry.remapper(otVal)
+	// A valid value that maps to nothing (e.g. OTEL_SDK_DISABLED=false) doesn't hide the DD value.
+	if ddVal := env.Get(ddKey); ddVal != "" && (err != nil || val != "") {
+		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, ddKey, ddVal) //errtrack:ignore conflicting user configuration
 		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
 		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 	}
-	val, err := entry.remapper(otVal)
 	if err != nil {
 		log.Warn("%s", err.Error()) //errtrack:ignore invalid user configuration
 		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
@@ -56,45 +67,50 @@ type otelDDEnv struct {
 	remapper func(string) (string, error)
 }
 
-var otelConfigs = map[string]*otelDDEnv{
-	"DD_SERVICE": {
+// otelConfigs maps each DD key to the OTEL env vars that can set it. When several
+// OTEL vars map to the same key, they are evaluated in order and the first
+// non-empty mapped value wins.
+var otelConfigs = map[string][]*otelDDEnv{
+	"DD_SERVICE": {{
 		ot:       "OTEL_SERVICE_NAME",
 		remapper: mapService,
-	},
-	"DD_RUNTIME_METRICS_ENABLED": {
+	}},
+	"DD_RUNTIME_METRICS_ENABLED": {{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
-	},
-	"DD_METRICS_OTEL_ENABLED": {
+	}},
+	"DD_METRICS_OTEL_ENABLED": {{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapOtelMetrics,
-	},
-	"DD_TRACE_DEBUG": {
+	}},
+	"DD_TRACE_DEBUG": {{
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
-	},
-	"DD_TRACE_ENABLED": {
+	}},
+	"DD_TRACE_ENABLED": {{
+		ot:       "OTEL_SDK_DISABLED",
+		remapper: mapSDKDisabled,
+	}, {
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
-	},
-	"DD_TRACE_SAMPLE_RATE": {
+	}},
+	"DD_TRACE_SAMPLE_RATE": {{
 		ot:       "OTEL_TRACES_SAMPLER",
 		remapper: mapSampleRate,
-	},
-	"DD_TRACE_PROPAGATION_STYLE": {
+	}},
+	"DD_TRACE_PROPAGATION_STYLE": {{
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
-	},
-	"DD_TAGS": {
+	}},
+	"DD_TAGS": {{
 		ot:       "OTEL_RESOURCE_ATTRIBUTES",
 		remapper: mapDDTags,
-	},
+	}},
 }
 
 var ddTagsMapping = map[string]string{
-	"service.name":           "service",
-	"deployment.environment": "env",
-	"service.version":        "version",
+	"service.name":    "service",
+	"service.version": "version",
 }
 
 var unsupportedSamplerMapping = map[string]string{
@@ -136,12 +152,14 @@ func mapOtelMetrics(ot string) (string, error) {
 	return "", nil
 }
 
-// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
+// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG. Levels above debug disable
+// debug mode; the threshold they select is resolved separately by the config.
 func mapLogLevel(ot string) (string, error) {
-	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
-		return "true", nil
+	lvl, ok := log.ParseLevel(ot)
+	if !ok {
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
+	return strconv.FormatBool(lvl == log.LevelDebug), nil
 }
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
@@ -154,6 +172,19 @@ func mapEnabled(ot string) (string, error) {
 	default:
 		return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 	}
+}
+
+// mapSDKDisabled maps OTEL_SDK_DISABLED to DD_TRACE_ENABLED. OTEL_SDK_DISABLED=false
+// yields no value so that other OTEL mappings for DD_TRACE_ENABLED still apply.
+func mapSDKDisabled(ot string) (string, error) {
+	disabled, err := strconv.ParseBool(strings.TrimSpace(ot))
+	if err != nil {
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_SDK_DISABLED=%v", ot)
+	}
+	if disabled {
+		return "false", nil
+	}
+	return "", nil
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"
@@ -201,7 +232,16 @@ func mapPropagationStyle(ot string) (string, error) {
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
 	ddTags := make([]string, 0)
+	var stableEnv, legacyEnv string
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
+		switch key {
+		case deploymentEnvironmentNameKey:
+			stableEnv = val
+			return
+		case deploymentEnvironmentKey:
+			legacyEnv = val
+			return
+		}
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
@@ -209,14 +249,8 @@ func mapDDTags(ot string) (string, error) {
 			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)
 		}
 	})
-
-	if len(ddTags) > 10 {
-		log.Warn(
-			//errtrack:ignore user configuration exceeds a documented limit
-			"The following resource attributes have been dropped: %s. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10],
-		) //nolint:gocritic // Slice logging for debugging
-		ddTags = ddTags[:10]
+	if env := cmp.Or(stableEnv, legacyEnv); env != "" {
+		ddTags = append([]string{"env" + internal.DDTagsDelimiter + env}, ddTags...)
 	}
-
 	return strings.Join(ddTags, ","), nil
 }
