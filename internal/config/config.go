@@ -317,7 +317,9 @@ type Config struct {
 	featureFlagsEnabled *bool
 	// flagEvalTelemetryOptOutEnabled is
 	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
-	flagEvalTelemetryOptOutEnabled             bool
+	flagEvalTelemetryOptOutEnabled bool
+	// Disabling Datadog exposure delivery preserves customer hooks,
+	// exposure deduplication, and evaluation telemetry.
 	featureFlagsExposuresDatadogLoggingEnabled bool
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
