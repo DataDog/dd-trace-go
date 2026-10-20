@@ -243,6 +243,13 @@ func createTestConfig() *universalFlagsConfiguration {
 	}
 }
 
+// defaultHookCount is the number of hooks a provider registers with default
+// settings: exposure + OTel flag eval metrics + EVP flagevaluation (enabled by
+// default via DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true) + debug logging.
+// Span enrichment is opt-in and not counted. Update it when adding a
+// default-on hook.
+const defaultHookCount = 4
+
 func TestNewDatadogProvider(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
 	if provider == nil {
@@ -255,10 +262,8 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	// 4 hooks: exposure + OTel metrics + EVP flagevaluation + debug logging.
-	// The EVP hook is enabled by default (DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true).
-	if len(hooks) != 4 {
-		t.Errorf("expected 4 hooks (exposure + flag eval metrics + EVP flagevaluation + debug logging), got %d", len(hooks))
+	if len(hooks) != defaultHookCount {
+		t.Errorf("expected %d hooks (exposure + flag eval metrics + EVP flagevaluation + debug logging), got %d", defaultHookCount, len(hooks))
 	}
 }
 

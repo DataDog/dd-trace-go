@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"cmp"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -176,7 +177,6 @@ func (s *agentlessSource) run() {
 // times with backoff before giving up until the next tick.
 func (s *agentlessSource) poll() {
 	for attempt := 1; attempt <= maxPollAttempts; attempt++ {
-		logOnboarding("agentless configuration poll attempt %d/%d", attempt, maxPollAttempts)
 		outcome, retryAfter := s.pollOnce(attempt)
 		if outcome != pollOutcomeRetryable {
 			return
@@ -275,11 +275,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotModified {
-		logOnboarding("agentless configuration poll attempt %d/%d returned HTTP 304 (unchanged)", attempt, maxPollAttempts)
-	} else {
-		logOnboarding("agentless configuration poll attempt %d/%d returned HTTP %d", attempt, maxPollAttempts, resp.StatusCode)
-	}
+	logOnboarding("agentless configuration poll attempt %d/%d returned HTTP %d", attempt, maxPollAttempts, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		// Never decode a non-200 body; drain a bounded prefix so the
@@ -337,15 +333,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	s.apply(config)
 	s.setETag(etag)
 	if log.DebugEnabled() {
-		env := s.env
-		if env == "" {
-			env = "unset"
-		}
-		if etag == "" {
-			etag = "none"
-		}
 		logOnboarding("agentless configuration applied successfully (%d flag(s), %d rejected, env=%s, created_at=%s, etag=%s)",
-			len(config.Flags), len(config.invalidFlags), env, formatCreatedAt(config.CreatedAt), etag)
+			len(config.Flags), len(config.invalidFlags),
+			cmp.Or(s.env, "unset"), formatCreatedAt(config.CreatedAt), cmp.Or(etag, "none"))
 	}
 	return pollOutcomeSuccess, 0
 }

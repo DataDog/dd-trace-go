@@ -197,8 +197,8 @@
 // so they can be filtered from other tracer output. It covers:
 //
 //   - The selected configuration source, or that feature flagging is disabled
-//   - Each Agentless poll attempt and its outcome: the HTTP status, including
-//     304 (unchanged), or the transport error, plus any retry delay
+//   - Each Agentless poll attempt and its outcome: the HTTP status or the
+//     transport error, plus any retry delay
 //   - Each configuration applied, with its flag count, how many flags were
 //     rejected as invalid, and its createdAt (and, for Agentless, the
 //     effective DD_ENV and ETag)

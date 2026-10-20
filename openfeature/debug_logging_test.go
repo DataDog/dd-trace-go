@@ -344,7 +344,6 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
-		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3")
 		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 200")
 		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, env=staging, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
 	})
@@ -366,7 +365,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
-		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 304 (unchanged)")
+		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 304")
 		assert.Zero(t, logger.countContaining("applied successfully"))
 	})
 
@@ -1059,7 +1058,7 @@ func TestAgentlessPoll_ContainsLoggerPanics(t *testing.T) {
 	requests, _, etag, _ := backend.status()
 	assert.Equal(t, 3, requests)
 	assert.Equal(t, fakeUFCBackendETag, etag)
-	logger.assertContains(t, "HTTP 304 (unchanged)")
+	logger.assertContains(t, "HTTP 304")
 }
 
 func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
