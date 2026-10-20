@@ -209,6 +209,14 @@ jobs:
           ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
+      - name: Test errtrackaudit module
+        # The root-module test suites never cross the nested-module boundary,
+        # and the advisory errtrack-audit workflow is ignored by all-green,
+        # so this is the only gated run of the audit tool's tests:
+        # check-modules fires for every scripts/** change via the
+        # @go-hygiene group and on every push, so a regression in the tool
+        # blocks the PR instead of merging silently.
+        run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
 
   check-docs:
     needs: [changes, warm-tools-cache]

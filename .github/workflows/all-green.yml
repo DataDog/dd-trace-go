@@ -36,6 +36,7 @@ jobs:
             check-title
             dd-gitlab/.*
             DDCI Status
+            errtrack-audit
 
 # Reason for ignored-name-patterns:
 #
@@ -48,3 +49,7 @@ jobs:
 # * dd-gitlab/.* and DDCI Status: internal GitLab statuses. GitHub cannot
 #   re-run them, and DDCI Status is "Not required to merge". Reporting them
 #   as failures of this workflow sends people to the wrong place.
+# * errtrack-audit: advisory job. A run failure (infra, a broken package
+#   graph) must not block the PR; the PR comment reports the findings. The
+#   tool's own tests run in the gated check-modules job in static-checks, so
+#   a regression in the tool still blocks.
