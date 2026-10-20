@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -77,7 +78,59 @@ func TestCustomerExposureHookChangesAndNonExposures(t *testing.T) {
 	require.Error(t, err)
 	_, err = h.client.BooleanValue(context.Background(), "missing", false, of.NewEvaluationContext("athlete", nil))
 	require.Error(t, err)
-	assert.Len(t, rows, 11, "provider errors must not call the hook")
+	require.Len(t, rows, 13, "Finally callbacks include provider errors")
+	for _, row := range rows[11:] {
+		assert.False(t, row.IsExposure())
+		assert.False(t, row.IsCacheHit())
+		assert.False(t, row.ShouldSend())
+		assert.NotEmpty(t, row.Details.ErrorCode)
+	}
+}
+
+type rejectExposureResultHook struct{ of.UnimplementedHook }
+
+func (rejectExposureResultHook) After(context.Context, of.HookContext, of.InterfaceEvaluationDetails, of.HookHints) error {
+	return errors.New("application rejected the flag result")
+}
+
+func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	for _, send := range []bool{true, false} {
+		t.Run(fmt.Sprint(send), func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", fmt.Sprint(send))
+			h := newOptOutHarness(t, ProviderConfig{})
+			var rows []ExposureEvaluation
+			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+			value, err := h.client.BooleanValue(context.Background(), "experiment", false,
+				of.NewEvaluationContext("athlete", nil), of.WithHooks(rejectExposureResultHook{}))
+			require.Error(t, err)
+			assert.False(t, value)
+			require.Len(t, rows, 1)
+			assert.Equal(t, false, rows[0].Details.Value)
+			assert.Equal(t, of.GeneralCode, rows[0].Details.ErrorCode)
+			assert.Equal(t, of.ErrorReason, rows[0].Details.Reason)
+			assert.False(t, rows[0].IsExposure())
+			assert.False(t, rows[0].ShouldSend())
+			assert.False(t, rows[0].IsCacheHit())
+			h.provider.exposureWriter.flush()
+			assert.Empty(t, h.sink.exposures)
+
+			h.evaluate(t, "athlete", nil)
+			h.evaluate(t, "athlete", nil)
+			require.Len(t, rows, 3)
+			assert.True(t, rows[1].ShouldSend(), "the rejected evaluation must not consume the cache")
+			assert.False(t, rows[1].IsCacheHit())
+			assert.False(t, rows[2].ShouldSend())
+			assert.True(t, rows[2].IsCacheHit())
+			h.provider.exposureWriter.flush()
+			want := 0
+			if send {
+				want = 1
+			}
+			assert.Len(t, h.sink.exposures, want)
+		})
+	}
 }
 
 func TestCustomerExposureHookPanicsDoNotAffectDelivery(t *testing.T) {

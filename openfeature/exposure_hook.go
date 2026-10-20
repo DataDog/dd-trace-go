@@ -31,33 +31,35 @@ func newExposureHook(writer *exposureWriter) *exposureHook {
 	}
 }
 
-// After is called after a successful flag evaluation.
-// It extracts the necessary information from the evaluation details and sends
-// an exposure event to the writer if doLog is true.
-func (h *exposureHook) After(
+// Finally records only completed, successful evaluations. An application After
+// hook can reject the provider result, so it must not consume the exposure cache.
+func (h *exposureHook) Finally(
 	ctx context.Context,
 	hookContext of.HookContext,
 	flagEvaluationDetails of.InterfaceEvaluationDetails,
 	_ of.HookHints,
-) error {
-	// Check if context was cancelled before starting evaluation
+) {
+	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
+		return
+	}
+	// Reporting must not change the evaluation result, even after cancellation.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return
 	default:
 	}
 
 	// Check if we should log this exposure
 	if !h.shouldLog(flagEvaluationDetails.FlagMetadata) {
 		log.Debug("openfeature: skipping exposure event (doLog=false) for flag %q", hookContext.FlagKey())
-		return nil
+		return
 	}
 
 	// Get allocation key from metadata
 	allocationKey, ok := h.getAllocationKey(flagEvaluationDetails.FlagMetadata)
 	if !ok {
 		log.Debug("openfeature: skipping exposure event (no allocation key) for flag %q", hookContext.FlagKey())
-		return nil
+		return
 	}
 
 	serialID := h.getSerialID(flagEvaluationDetails.FlagMetadata)
@@ -107,13 +109,11 @@ func (h *exposureHook) After(
 
 	log.Debug("openfeature: recorded exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
 		hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
-
-	return nil
 }
 
 const metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
 
-// ExposureEvaluation describes a successful provider evaluation. Its cache decision
+// ExposureEvaluation describes a completed evaluation. Its cache decision
 // is shared with Datadog's default exposure hook, even when Datadog logging is disabled.
 // It does not confirm delivery to Datadog or to a customer destination.
 type ExposureEvaluation struct {
@@ -143,13 +143,13 @@ func (e ExposureEvaluation) ShouldSend() bool {
 	return e.IsExposure() && known && !hit
 }
 
-// ExposureHook calls customer code after successful provider evaluations, including
+// ExposureHook calls customer code after completed evaluations, including errors,
 // non-exposures and cache hits. Register it with an OpenFeature client or evaluation,
 // not by replacing the provider's hooks. The callback runs synchronously: enqueue
 // copied scalar fields for background delivery. It can run concurrently.
 //
-// Like the existing Datadog logger, this hook runs in the After stage. A later
-// application hook can still reject the result. Provider errors do not invoke it.
+// Like the Datadog logger, this hook runs in the Finally stage. Failed evaluations
+// never have a sendable exposure and do not consume the deduplication cache.
 // A callback panic is recovered and does not change the flag result.
 type ExposureHook struct {
 	of.UnimplementedHook
@@ -162,10 +162,10 @@ func NewExposureHook(callback func(ExposureEvaluation)) *ExposureHook {
 	return &ExposureHook{callback: callback}
 }
 
-// After invokes the callback with the shared exposure decision.
-func (h *ExposureHook) After(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) error {
+// Finally invokes the callback with the shared exposure decision.
+func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) {
 	if h.callback == nil {
-		return nil
+		return
 	}
 	defer func() {
 		if recover() != nil {
@@ -177,7 +177,6 @@ func (h *ExposureHook) After(_ context.Context, ctx of.HookContext, details of.I
 	// Isolate metadata edits from the other callbacks and returned evaluation.
 	details.FlagMetadata = maps.Clone(details.FlagMetadata)
 	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
-	return nil
 }
 
 // shouldLog checks if the exposure should be logged based on the doLog metadata flag

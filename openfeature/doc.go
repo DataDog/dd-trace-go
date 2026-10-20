@@ -145,11 +145,16 @@
 // hooks remain active when it is false. Evaluation events, metrics, span
 // enrichment, and flag values are unchanged.
 //
-// This MVP preserves Go's existing After-stage capture. The callback runs for
-// successful provider evaluations, including non-exposures and repeats, but not
-// provider errors. A later application After hook can still reject the result;
-// this does not retract an exposure already recorded. OpenFeature Go 1.18 does
-// not report that rejection in its Finally details, unlike the Java SDK.
+// Exposure hooks run in Finally, after all application After hooks. Callbacks
+// include errors, non-exposures and repeats. A failed evaluation never has a
+// sendable exposure and does not consume the cache. The next successful
+// evaluation can therefore emit an exposure.
+//
+// Release dependency: OpenFeature Go must report After-hook failures in Finally
+// details (specification 4.3.8 and 4.4.8). Version 1.18.0 does not do this. This
+// draft requires https://github.com/open-feature/go-sdk/pull/623 and a dependency
+// upgrade before release;
+// validation uses an explicit test-only replacement, not a production fork.
 // Calling provider resolution methods directly does not run hooks. Register
 // customer hooks on the client or evaluation, and retain the provider's hooks.
 // Split-feature routing (including holdout metadata) is separate from this MVP.

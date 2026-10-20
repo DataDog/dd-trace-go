@@ -487,7 +487,7 @@ func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After(t *testing.T) {
+func TestExposureHook_Finally(t *testing.T) {
 	tests := []struct {
 		name              string
 		targetingKey      string
@@ -651,11 +651,7 @@ func TestExposureHook_After(t *testing.T) {
 				},
 			}
 
-			// Call After hook
-			err := hook.After(context.Background(), hookCtx, details, of.HookHints{})
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
 			// Check if event was created
 			if tc.expectEvent {
@@ -690,7 +686,7 @@ func TestExposureHook_After(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
+func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	// This test specifically verifies that exposures with empty targeting keys
 	// but with attributes are correctly logged (server-side evaluations)
 	writer := &exposureWriter{
@@ -729,10 +725,7 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 		},
 	}
 
-	err := hook.After(context.Background(), hookCtx, details, of.HookHints{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
 	if len(writer.buffer) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(writer.buffer))
@@ -758,7 +751,7 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After_ContextCancelled(t *testing.T) {
+func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
 	writer := &exposureWriter{
 		buffer: make([]exposureEvent, 0, 256),
 		cache:  newExposureLRUCache(1000),
@@ -793,10 +786,7 @@ func TestExposureHook_After_ContextCancelled(t *testing.T) {
 		},
 	}
 
-	err := hook.After(ctx, hookCtx, details, of.HookHints{})
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled error, got %v", err)
-	}
+	hook.Finally(ctx, hookCtx, details, of.HookHints{})
 
 	// No event should be logged
 	if len(writer.buffer) != 0 {
