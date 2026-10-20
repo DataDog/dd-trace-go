@@ -241,7 +241,33 @@ func TestEnsureSettingsInitializationFlakyRetryEnvironmentOverrideEnablesRetries
 	}, ciVisibilityFlakyRetriesSettings)
 }
 
-func TestEnsureAdditionalFeaturesInitializationDynamicFlakyRetryCounts(t *testing.T) {
+func TestEnsureAdditionalFeaturesInitializationDynamicFlakyRetryCountsIgnoreEFDCap(t *testing.T) {
+	// The environment is set before the reset so that the CI Visibility initializer started by TestMain, if it runs
+	// after the reset, builds the same state as this test.
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, "1")
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return &mockCIVisibilityClient{
+			getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
+				settings := &civisibilitynet.SettingsResponseData{FlakyTestRetriesEnabled: true}
+				settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
+				settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 2
+				return settings, nil
+			},
+		}
+	}
+
+	ensureSettingsInitialization("service")
+	ensureAdditionalFeaturesInitialization("service")
+
+	assert.Equal(t, 1, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveS)
+	assert.Equal(t, &[5]int64{4, 1, 2, 1, 1}, ciVisibilityFlakyRetriesSettings.DynamicRetryCounts)
+}
+
+func TestDynamicFlakyRetryCounts(t *testing.T) {
 	enabledMetric := telemetrytest.MetricKey{Namespace: coretelemetry.NamespaceCIVisibility, Name: "dynamic_atr_retries.enabled", Kind: "count"}
 	customBucketsMetric := enabledMetric
 	customBucketsMetric.Tags = "has_custom_buckets:true"
@@ -260,32 +286,12 @@ func TestEnsureAdditionalFeaturesInitializationDynamicFlakyRetryCounts(t *testin
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resetCIVisibilityStateForTesting()
-			t.Cleanup(resetCIVisibilityStateForTesting)
 			recorder := new(telemetrytest.RecordClient)
 			defer coretelemetry.MockClient(recorder)()
-			t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
 			t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, tt.enabled)
 			t.Setenv(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, tt.buckets)
-			// The EFD retry cap must not lower the dynamic counts taken from the backend.
-			t.Setenv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, "1")
 
-			newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
-				return &mockCIVisibilityClient{
-					getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
-						settings := &civisibilitynet.SettingsResponseData{FlakyTestRetriesEnabled: true}
-						settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
-						settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 2
-						return settings, nil
-					},
-				}
-			}
-
-			ensureSettingsInitialization("service")
-			ensureAdditionalFeaturesInitialization("service")
-
-			assert.Equal(t, 1, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveS)
-			assert.Equal(t, tt.wantCounts, ciVisibilityFlakyRetriesSettings.DynamicRetryCounts)
+			assert.Equal(t, tt.wantCounts, dynamicFlakyRetryCounts([4]int{4, 0, 2, 0}))
 			if tt.wantMetric == nil {
 				assert.NotContains(t, recorder.Metrics, enabledMetric)
 				assert.NotContains(t, recorder.Metrics, customBucketsMetric)
