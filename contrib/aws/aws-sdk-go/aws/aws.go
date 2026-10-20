@@ -393,9 +393,9 @@ func kinesisTags(params interface{}) (map[string]interface{}, error) {
 }
 
 // coalesceNameOrArnResource returns name when it is set, otherwise the
-// resource portion of arnVal, otherwise the empty string. Kinesis requests may
-// identify a stream by name or by ARN, and the two fields are mutually
-// exclusive.
+// trailing "/" segment of arnVal, otherwise the empty string. Kinesis requests
+// may identify a stream by name or by ARN; when both are set, the name takes
+// precedence.
 func coalesceNameOrArnResource(name *string, arnVal *string) string {
 	if name != nil {
 		return *name
