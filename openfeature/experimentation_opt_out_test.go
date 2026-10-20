@@ -21,87 +21,114 @@ const experimentOptOutTestTime = "2026-10-19T12:00:00Z"
 
 func TestExperimentationOptOutInput(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		value any
-		valid bool
+		name       string
+		attributes map[string]any
+		exclude    bool
+		invalid    bool
 	}{
-		{"timestamp", experimentOptOutTestTime, true},
-		{"fractional seconds", "2026-10-19T12:00:00.123456789Z", true},
-		{"offset", "2026-10-19T08:00:00-04:00", true},
-		{"future is not a schedule", "2099-01-01T00:00:00Z", true},
-		{"empty", "", false},
-		{"invalid", "private-invalid-value", false},
-		{"boolean", true, false},
-		{"number", 123, false},
-		{"null", nil, false},
-		{"time object", time.Now(), false},
+		{name: "no attributes"},
+		{name: "missing attribute", attributes: map[string]any{"country": "US"}},
+		{"timestamp", map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}, true, false},
+		{"fractional seconds", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T12:00:00.123456789Z"}, true, false},
+		{"offset", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T08:00:00-04:00"}, true, false},
+		{"future is not a schedule", map[string]any{experimentationOptOutAtAttribute: "2099-01-01T00:00:00Z"}, true, false},
+		{"empty", map[string]any{experimentationOptOutAtAttribute: ""}, false, true},
+		{"invalid", map[string]any{experimentationOptOutAtAttribute: "private-invalid-value"}, false, true},
+		{"boolean", map[string]any{experimentationOptOutAtAttribute: true}, false, true},
+		{"number", map[string]any{experimentationOptOutAtAttribute: 123}, false, true},
+		{"null", map[string]any{experimentationOptOutAtAttribute: nil}, false, true},
+		{"time object", map[string]any{experimentationOptOutAtAttribute: time.Now()}, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			attrs := map[string]any{experimentationOptOutAtAttribute: tc.value}
-			exclude, err := ExperimentationOptOutImmediate.excludeExperiments(attrs)
-			assert.Equal(t, tc.valid, exclude)
-			if tc.valid {
-				require.NoError(t, err)
-			} else {
+			exclude, err := ExperimentationOptOutImmediate.excludeExperiments(tc.attributes)
+			assert.Equal(t, tc.exclude, exclude)
+			if tc.invalid {
 				require.ErrorIs(t, err, errInvalidContext)
 				assert.NotContains(t, err.Error(), "private-invalid-value")
+			} else {
+				require.NoError(t, err)
 			}
-			exclude, err = ExperimentationOptOutDisabled.excludeExperiments(attrs)
+			exclude, err = ExperimentationOptOutDisabled.excludeExperiments(tc.attributes)
 			require.NoError(t, err)
 			assert.False(t, exclude)
 		})
 	}
-	exclude, err := ExperimentationOptOutImmediate.excludeExperiments(nil)
-	require.NoError(t, err)
-	assert.False(t, exclude)
 }
 
 func TestExperimentationOptOutInvalidMode(t *testing.T) {
-	for _, mode := range []ExperimentationOptOutMode{-1, 2} {
-		p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: mode})
-		require.ErrorContains(t, err, "unsupported experimentation opt-out mode")
-		assert.Nil(t, p)
+	for _, tc := range []struct {
+		name string
+		mode ExperimentationOptOutMode
+	}{
+		{"negative", -1},
+		{"unknown", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
+			require.ErrorContains(t, err, "unsupported experimentation opt-out mode")
+			assert.Nil(t, p)
+		})
 	}
 }
 
 func TestExperimentationOptOutAllocations(t *testing.T) {
-	for _, doLog := range []*bool{new(true), nil} {
-		h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate})
-		f := h.provider.configuration.Flags["experiment"]
-		f.Allocations[0].DoLog = doLog
-		f.Variations["ordinary"] = &variant{Key: "ordinary", Value: true}
-		f.Allocations = append(f.Allocations, &allocation{Key: "ordinary", DoLog: new(false),
-			Splits: []*split{{VariationKey: "ordinary"}}})
-		ctx := of.NewEvaluationContext("subject", map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime})
-		result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false, ctx)
-		require.NoError(t, err)
-		assert.True(t, result.Value, "ordinary delivery is not forced to false")
-		assert.Equal(t, "ordinary", result.Variant)
-		assert.Equal(t, "ordinary", result.FlagMetadata[metadataAllocationKey])
-		assert.Equal(t, false, result.FlagMetadata[metadataDoLogKey])
-		h.provider.exposureWriter.flush()
-		assert.Empty(t, h.sink.exposures)
-
-		// Ordinary targeting still applies after exclusion. No match uses the caller default.
-		f.Allocations[1].Rules = []*rule{{Conditions: []*condition{{
-			Attribute: "beta", Operator: operatorOneOf, Value: []string{"true"},
-		}}}}
-		result, err = h.client.BooleanValueDetails(context.Background(), "experiment", false, ctx)
-		require.NoError(t, err)
-		assert.False(t, result.Value)
-		assert.Equal(t, of.DefaultReason, result.Reason)
-		assert.Empty(t, result.Variant)
-
-		f.Enabled = false
-		result, err = h.client.BooleanValueDetails(context.Background(), "experiment", false, ctx)
-		require.NoError(t, err)
-		assert.Equal(t, of.DisabledReason, result.Reason)
+	for _, logging := range []struct {
+		name  string
+		doLog *bool
+	}{
+		{"explicit doLog", new(true)},
+		{"default doLog", nil},
+	} {
+		t.Run(logging.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name     string
+				rules    []*rule
+				disabled bool
+				value    bool
+				reason   of.Reason
+				variant  string
+			}{
+				{name: "ordinary fallback", value: true, reason: of.StaticReason, variant: "ordinary"},
+				{name: "fallback targeting does not match", reason: of.DefaultReason,
+					rules: []*rule{{Conditions: []*condition{{Attribute: "beta", Operator: operatorOneOf, Value: []string{"true"}}}}}},
+				{name: "disabled flag", disabled: true, reason: of.DisabledReason},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate})
+					f := h.provider.configuration.Flags["experiment"]
+					f.Enabled = !tc.disabled
+					f.Allocations[0].DoLog = logging.doLog
+					f.Variations["ordinary"] = &variant{Key: "ordinary", Value: true}
+					f.Allocations = append(f.Allocations, &allocation{Key: "ordinary", DoLog: new(false),
+						Rules: tc.rules, Splits: []*split{{VariationKey: "ordinary"}}})
+					ctx := of.NewEvaluationContext("subject", map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime})
+					result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false, ctx)
+					require.NoError(t, err)
+					assert.Equal(t, tc.value, result.Value)
+					assert.Equal(t, tc.reason, result.Reason)
+					assert.Equal(t, tc.variant, result.Variant)
+					if tc.variant != "" {
+						assert.Equal(t, tc.variant, result.FlagMetadata[metadataAllocationKey])
+						assert.Equal(t, false, result.FlagMetadata[metadataDoLogKey])
+					}
+					h.provider.exposureWriter.flush()
+					assert.Empty(t, h.sink.exposures)
+				})
+			}
+		})
 	}
 }
 
 func TestExperimentationOptOutIndependentTelemetry(t *testing.T) {
-	for _, suppressTelemetry := range []bool{false, true} {
-		t.Run(strconv.FormatBool(suppressTelemetry), func(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		suppressTelemetry bool
+		evaluationCount   int64
+	}{
+		{"evaluation telemetry enabled", false, 2},
+		{"evaluation telemetry suppressed", true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			h := newOptOutHarness(t, ProviderConfig{
 				ExperimentationOptOutMode:                ExperimentationOptOutImmediate,
 				EnableEvaluationTelemetryOptOutParameter: new(true),
@@ -111,7 +138,7 @@ func TestExperimentationOptOutIndependentTelemetry(t *testing.T) {
 			result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
 				of.NewEvaluationContext("subject", map[string]any{
 					experimentationOptOutAtAttribute: experimentOptOutTestTime,
-					optOutTestParameter:              suppressTelemetry,
+					optOutTestParameter:              tc.suppressTelemetry,
 				}))
 			require.NoError(t, err)
 			assert.False(t, result.Value)
@@ -123,11 +150,7 @@ func TestExperimentationOptOutIndependentTelemetry(t *testing.T) {
 			for _, e := range h.sink.events {
 				count += e.EvaluationCount
 			}
-			want := int64(2)
-			if suppressTelemetry {
-				want = 1
-			}
-			assert.Equal(t, want, count, "evaluation telemetry remains a separate control")
+			assert.Equal(t, tc.evaluationCount, count, "evaluation telemetry remains a separate control")
 		})
 	}
 }
@@ -143,10 +166,23 @@ func TestExperimentationOptOutInvalidContext(t *testing.T) {
 	assert.Empty(t, h.sink.exposures)
 }
 
-func TestExperimentationOptOutDisabled(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{})
-	h.evaluate(t, "subject", map[string]any{experimentationOptOutAtAttribute: "invalid"})
-	h.assertCounts(t, 1, 1, 1)
+func TestExperimentationOptOutDefaultBehavior(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		config     ProviderConfig
+		attributes map[string]any
+	}{
+		{name: "unset mode and no attribute"},
+		{name: "unset mode ignores timestamp", attributes: map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}},
+		{name: "unset mode ignores invalid timestamp", attributes: map[string]any{experimentationOptOutAtAttribute: "invalid"}},
+		{name: "immediate mode without attribute", config: ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newOptOutHarness(t, tc.config)
+			h.evaluate(t, "subject", tc.attributes)
+			h.assertCounts(t, 1, 1, 1)
+		})
+	}
 }
 
 func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {

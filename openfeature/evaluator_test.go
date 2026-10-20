@@ -448,6 +448,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	capabilityProviders := map[string]*DatadogProvider{
 		"experimentationOptOutImmediate": immediateProvider,
 	}
+	capabilityCases := make(map[string]int)
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -512,6 +513,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						if !supported {
 							continue
 						}
+						capabilityCases[capability]++
 						t.Run(capability, func(t *testing.T) {
 							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
 							if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", expected.Value) {
@@ -528,5 +530,10 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				})
 			}
 		})
+	}
+	for capability := range capabilityProviders {
+		if capabilityCases[capability] == 0 {
+			t.Errorf("no canonical fixture cases ran for supported capability %q", capability)
+		}
 	}
 }
