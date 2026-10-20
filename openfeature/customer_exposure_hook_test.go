@@ -8,7 +8,7 @@ package openfeature
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,8 +24,8 @@ func TestCustomerExposureHooksShareDecision(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	for _, send := range []bool{true, false} {
-		t.Run(fmt.Sprint(send), func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", fmt.Sprint(send))
+		t.Run(strconv.FormatBool(send), func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(send))
 			h := newOptOutHarness(t, ProviderConfig{})
 			var first, second []ExposureEvaluation
 			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { first = append(first, e) }))
@@ -97,8 +97,8 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	for _, send := range []bool{true, false} {
-		t.Run(fmt.Sprint(send), func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", fmt.Sprint(send))
+		t.Run(strconv.FormatBool(send), func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(send))
 			h := newOptOutHarness(t, ProviderConfig{})
 			var rows []ExposureEvaluation
 			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
