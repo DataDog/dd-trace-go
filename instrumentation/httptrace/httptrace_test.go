@@ -1594,18 +1594,32 @@ func TestObfuscateAdversarialScaling(t *testing.T) {
 		// minBatch is the minimum duration of a batch. A long batch makes the
 		// fast inputs precise.
 		minBatch = time.Millisecond
-		rounds   = 9
-		attempts = 3
+		// batchTicks is the minimum number of clock ticks in a batch. The
+		// rounding error of a batch is at most one tick, thus it is at most 10%
+		// of the batch. This is small compared to the noise factor of 4.
+		batchTicks = 10
+		rounds     = 9
+		attempts   = 3
+		// maxDuration is the longest accepted estimate for the first attempt of
+		// all subtests. The real duration is about 20% longer.
+		maxDuration = 25 * time.Second
 	)
+	tick := clockTick()
+	batchTime := max(minBatch, batchTicks*tick)
 	small, large := adversarialQueryStrings(smallSize), adversarialQueryStrings(largeSize)
-	// batchSize returns the number of calls that take at least minBatch.
+	// Each subtest runs two batches for each round and about four batches to
+	// find the batch sizes.
+	if d := time.Duration(len(small)*(2*rounds+4)) * batchTime; d > maxDuration {
+		t.Skipf("the clock tick is %v, thus the test needs about %v (limit: %v)", tick, d, maxDuration)
+	}
+	// batchSize returns the number of calls that take at least batchTime.
 	batchSize := func(s string) int {
 		for calls := 1; ; calls *= 2 {
 			start := time.Now()
 			for range calls {
 				obfuscateQueryStringDefault(s)
 			}
-			if time.Since(start) >= minBatch {
+			if time.Since(start) >= batchTime {
 				return calls
 			}
 		}
@@ -1628,22 +1642,57 @@ func TestObfuscateAdversarialScaling(t *testing.T) {
 			sCalls, lCalls := batchSize(s), batchSize(l)
 			// A noisy machine can slow down one measurement. Linear code passes
 			// at least one of the attempts; quadratic code fails all of them.
+			const noTime = time.Duration(math.MaxInt64)
 			var ratio float64
 			var ds, dl time.Duration
 			for range attempts {
-				ds, dl = time.Duration(math.MaxInt64), time.Duration(math.MaxInt64)
+				ds, dl = noTime, noTime
 				for range rounds {
-					ds = min(ds, batch(s, sCalls))
-					dl = min(dl, batch(l, lCalls))
+					// A batch of zero time is not valid. It must not become
+					// the fastest batch, and the ratio must not divide by it.
+					if d := batch(s, sCalls); d > 0 {
+						ds = min(ds, d)
+					}
+					if d := batch(l, lCalls); d > 0 {
+						dl = min(dl, d)
+					}
 				}
-				if ratio = float64(dl) / float64(max(ds, 1)); ratio < maxRatio {
+				if ds == noTime || dl == noTime {
+					continue
+				}
+				if ratio = float64(dl) / float64(ds); ratio < maxRatio {
 					return
 				}
+			}
+			if ds == noTime || dl == noTime {
+				t.Fatalf("the clock measured no time in any batch (tick: %v, batch: %v)", tick, batchTime)
 			}
 			t.Errorf("multiplying the input size by %d multiplies the time by %.1f, the limit is %.0f (small: %v, large: %v)",
 				largeSize/smallSize, ratio, maxRatio, ds, dl)
 		})
 	}
+}
+
+// clockTick returns the step of the monotonic clock. A coarse clock has a step
+// of many milliseconds. It keeps the smallest of a few steps, because a
+// preemption can make a step longer, but never shorter.
+func clockTick() time.Duration {
+	// next spins until the clock changes and returns the new time.
+	next := func(from time.Time) time.Time {
+		for {
+			if now := time.Now(); now.Sub(from) != 0 {
+				return now
+			}
+		}
+	}
+	tick := time.Duration(math.MaxInt64)
+	for range 5 {
+		// The first step aligns the probe with the start of a tick. The second
+		// step is a full tick.
+		start := next(time.Now())
+		tick = min(tick, next(start).Sub(start))
+	}
+	return tick
 }
 
 // BenchmarkObfuscateAdversarial reports the time per byte on adversarial
