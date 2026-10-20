@@ -1487,6 +1487,56 @@ func TestOTLPExportMode(t *testing.T) {
 	})
 }
 
+func TestAppSecMetaStructAvailable(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		agentMetaStruct bool
+		otlpExportMode  bool
+		want            bool
+	}{
+		{name: "agent supports meta_struct", agentMetaStruct: true, want: true},
+		{name: "agent supports meta_struct but OTLP export", agentMetaStruct: true, otlpExportMode: true},
+		{name: "agent without meta_struct"},
+		{name: "agent without meta_struct and OTLP export", otlpExportMode: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &tracer{config: &config{}, otlpExportMode: tc.otlpExportMode}
+			tr.config.agent.store(agentFeatures{metaStructAvailable: tc.agentMetaStruct})
+			assert.Equal(t, tc.want, tr.appsecMetaStructAvailable())
+		})
+	}
+}
+
+// TestAppSecMetaStructAvailableAtStartup builds real unstarted tracers. It checks
+// that the startup path sets otlpExportMode and the agent features as the
+// meta_struct decision expects.
+func TestAppSecMetaStructAvailableAtStartup(t *testing.T) {
+	t.Run("OTLP export, agent unreachable", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		tr, err := newUnstartedTracer(WithAgentAddr("127.0.0.1:1"))
+		require.NoError(t, err)
+		defer tr.Stop()
+		assert.True(t, tr.otlpExportMode)
+		assert.False(t, tr.appsecMetaStructAvailable())
+	})
+
+	// CI Visibility is selected before OTLP, so the OTLP writer stays off.
+	// The agent value then decides.
+	for _, agentMetaStruct := range []bool{true, false} {
+		t.Run(fmt.Sprintf("CI Visibility with OTLP configured, agent meta_struct %t", agentMetaStruct), func(t *testing.T) {
+			t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+			tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), func(c *config) {
+				c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.agent.store(agentFeatures{metaStructAvailable: agentMetaStruct})
+			assert.False(t, tr.otlpExportMode)
+			assert.Equal(t, agentMetaStruct, tr.appsecMetaStructAvailable())
+		})
+	}
+}
+
 func TestOTLPSpanMetricsUseOTLPSenderWithAgentTraceWriter(t *testing.T) {
 	tr, err := newUnstartedTracer(func(c *config) {
 		c.internalConfig.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
