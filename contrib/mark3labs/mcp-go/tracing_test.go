@@ -421,11 +421,14 @@ func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 
 // JSON-RPC 2.0 allows only a string or a number as a request ID, but
 // mcp-go does not validate the ID. A client can send an object or an array.
-// The tracing hooks must not panic for these IDs.
+// A JSON true also arrives as a comparable bool, which the hooks reject
+// deliberately because it is not a valid JSON-RPC ID. The tracing hooks must
+// not panic for these IDs.
 func TestIntegrationInitializeNonComparableID(t *testing.T) {
 	for name, id := range map[string]string{
 		"object": `{"x":1}`,
 		"array":  `[1,2]`,
+		"bool":   `true`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			testTracer(t)
@@ -454,6 +457,7 @@ func TestHooksNonComparableID(t *testing.T) {
 	for name, id := range map[string]any{
 		"object": map[string]any{"x": float64(1)},
 		"array":  []any{float64(1), float64(2)},
+		"bool":   true,
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.NotPanics(t, func() {

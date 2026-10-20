@@ -111,9 +111,12 @@ func newHooks() *hooks {
 // only a string or a number as a request ID. mcp-go does not validate the ID,
 // so a client can send an object or an array. These values are not comparable
 // and cause sync.Map to panic. For them, spanCacheKey returns false.
+// mcp-go's RequestId.UnmarshalJSON stores integral numbers as int64, and the
+// hooks receive the ID as any. Accept int64 and int so a numeric ID stays
+// traceable even if mcp-go starts passing RequestId.Value() into the hooks.
 func spanCacheKey(id any) (any, bool) {
 	switch id.(type) {
-	case string, float64:
+	case string, float64, int64, int:
 		return id, true
 	default:
 		return nil, false
