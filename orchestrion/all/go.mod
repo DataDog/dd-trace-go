@@ -65,7 +65,7 @@ require (
 	cloud.google.com/go/pubsub v1.50.1 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	connectrpc.com/connect v1.16.2 // indirect
-	github.com/99designs/gqlgen v0.17.92 // indirect
+	github.com/99designs/gqlgen v0.17.95 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.82.1 // indirect
@@ -228,7 +228,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.30 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polyfloyd/go-errorlint v1.8.1-0.20250906200200-9b25878c4dea // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
@@ -246,7 +245,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
@@ -261,7 +260,7 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.75.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.35 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.37 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
