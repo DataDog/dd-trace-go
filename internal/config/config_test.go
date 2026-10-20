@@ -2763,6 +2763,23 @@ func TestFeatureFlagsEnabled(t *testing.T) {
 	})
 }
 
+func TestFlagEvalTelemetryOptOutEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", false},
+		{"true", true},
+		{"false", false},
+		{"invalid", false},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FlagEvalTelemetryOptOutEnabled())
+		})
+	}
+}
+
 func TestFeatureFlagsConfigurationSource(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()

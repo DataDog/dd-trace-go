@@ -83,6 +83,34 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry Opt-Out
+//
+// Applications can enable a per-evaluation telemetry opt-out parameter:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EnableEvaluationTelemetryOptOutParameter: new(true),
+//	})
+//	// Handle err and register provider with OpenFeature before evaluating flags.
+//	evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+//	    "dd_evaluation_telemetry_opt_out": true,
+//	})
+//	value, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//
+// Alternatively, set DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED=true
+// before SDK initialization and leave EnableEvaluationTelemetryOptOutParameter nil.
+// An explicit new(true) or new(false) option overrides the environment setting.
+// Activation defaults to false. The provider copies the resolved value at construction.
+// When enabled, only boolean true in the final merged context suppresses new
+// evaluation events, evaluation metrics, and automatic flag span enrichment.
+// Missing values, false, null, strings, and numbers preserve existing behavior.
+// The provider reads the parameter on every evaluation. It does not remember a
+// subject's decision. Supply the parameter before each evaluation, either in its
+// evaluation context or in the transaction context passed to that evaluation.
+// Do not change a global or shared client context for individual server requests.
+// The attribute remains available to targeting rules and exposure reporting.
+// Flag values, experiment exposures, exposure deduplication, application hooks,
+// and previously queued telemetry are unchanged.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:
@@ -271,6 +299,11 @@
 //     "true", enables span enrichment — feature flag evaluation details are
 //     recorded as tags on the active trace's root span. Default: false. Note:
 //     the added span tags may affect APM billing.
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
+//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
+//     parameter. This setting does not globally disable evaluation telemetry.
+//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by
