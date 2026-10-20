@@ -19,20 +19,20 @@ require (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.92 // indirect
+	github.com/99designs/gqlgen v0.17.95 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.70.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.35 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.37 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
@@ -109,14 +109,14 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 => ../../contrib/go-chi/chi/otelc

@@ -942,8 +942,8 @@ func (t *trace) push(sp *Span) {
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
-		t.spans = nil // allow our spans to be collected by GC.
-		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize)
+		t.spans = nil                                                           // allow our spans to be collected by GC.
+		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize) //errtrack:ignore per-span capacity limit
 		if tr != nil {
 			tracerstats.Signal(tracerstats.TracesDropped, 1)
 		}

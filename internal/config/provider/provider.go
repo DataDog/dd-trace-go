@@ -176,6 +176,15 @@ func (p *Provider) GetMap(key string, def map[string]string, delimiter string) m
 	})
 }
 
+// GetMapWithParser is like GetMap but parses each source with parse. A source whose
+// value parses to an empty map is skipped.
+func (p *Provider) GetMapWithParser(key string, def map[string]string, parse func(string) map[string]string) map[string]string {
+	return get(p, key, def, func(v string) (map[string]string, bool) {
+		m := parse(v)
+		return m, len(m) > 0
+	})
+}
+
 func (p *Provider) GetDuration(key string, def time.Duration) time.Duration {
 	return get(p, key, def, func(v string) (time.Duration, bool) {
 		d, err := time.ParseDuration(v)

@@ -318,9 +318,14 @@ func fuzzTargetName(target func(*testing.F)) string {
 
 func printedDuration(t *testing.T, output, name string) string {
 	t.Helper()
-	match := regexp.MustCompile(`--- PASS: ` + regexp.QuoteMeta(name) + ` \(([0-9.]+)s\)`).FindStringSubmatch(output)
+	match := regexp.MustCompile(`--- PASS: ` + regexp.QuoteMeta(name) + ` \((-?[0-9.]+)s\)`).FindStringSubmatch(output)
 	if len(match) != 2 {
 		t.Fatalf("missing Go duration for %s: %s", name, output)
+	}
+	// On Windows, testing and the parallel-wait offset use different clocks.
+	// Normalize negative zero at Go's printed precision, but retain nonzero values.
+	if match[1] == "-0.00" {
+		return "0.00"
 	}
 	return match[1]
 }

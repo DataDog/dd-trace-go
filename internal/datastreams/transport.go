@@ -39,8 +39,11 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
-	if entityID := internal.ContainerID(); entityID != "" {
-		defaultHeaders["Datadog-Entity-ID"] = entityID
+	if eid := internal.EntityID(); eid != "" {
+		defaultHeaders["Datadog-Entity-ID"] = eid
+	}
+	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+		defaultHeaders["Datadog-External-Env"] = extEnv
 	}
 	url := agentURL.String() + "/v0.1/pipeline_stats"
 	return &httpTransport{
