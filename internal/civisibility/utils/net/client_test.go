@@ -7,13 +7,11 @@ package net
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
@@ -64,41 +62,6 @@ func TestNewClient_DefaultValues(t *testing.T) {
 	// we check if serviceName is set or not empty.
 	if c.serviceName == "" {
 		t.Errorf("Expected serviceName to be set, got empty string")
-	}
-}
-
-// With the opt-in enabled and no DD_SERVICE, requests use the service of the
-// test package's CODEOWNERS owner instead of the repository name.
-func TestNewClient_ServiceFromCodeOwners(t *testing.T) {
-	origEnv := saveEnv()
-	path := os.Getenv("PATH")
-	defer restoreEnv(origEnv)
-
-	os.Clearenv()
-	os.Setenv("PATH", path)
-	os.Setenv(constants.CIVisibilityServiceFromCodeOwnersEnvironmentVariable, "true")
-
-	root := t.TempDir()
-	packageDir := filepath.Join(root, "pkg")
-	if err := os.MkdirAll(packageDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "CODEOWNERS"), []byte("/pkg/ @org/team\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(packageDir)
-	civisibilityutils.ResetCITags()
-	civisibilityutils.AddCITags(constants.CIWorkspacePath, root)
-	civisibilityutils.ResetCodeOwnersForTesting()
-	civisibilityutils.ResetServiceFromCodeOwnersForTesting()
-	t.Cleanup(func() {
-		civisibilityutils.ResetCodeOwnersForTesting()
-		civisibilityutils.ResetServiceFromCodeOwnersForTesting()
-	})
-
-	c := NewClient().(*client)
-	if c.serviceName != "service-team" {
-		t.Errorf("Expected serviceName 'service-team', got '%s'", c.serviceName)
 	}
 }
 

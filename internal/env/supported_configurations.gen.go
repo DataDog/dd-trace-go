@@ -65,8 +65,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_RETRY_EXECUTION_MODE":                                    {},
 	"DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY":                           {},
 	"DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT":                                   {},
-	"DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS":                                 {},
-	"DD_CIVISIBILITY_SERVICE_FROM_CODEOWNERS_FORMAT":                          {},
 	"DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED":                                {},
 	"DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT":                                 {},
 	"DD_CIVISIBILITY_USE_NOOP_TRACER":                                         {},

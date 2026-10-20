@@ -38,14 +38,6 @@ const (
 	testFramework = "golang.org/pkg/testing"
 )
 
-func init() {
-	// go test runs each test binary in its package directory. Record it before
-	// TestMain can change directories, for the CODEOWNERS service.
-	if directory, err := os.Getwd(); err == nil {
-		utils.RegisterTestPackageDirectory(directory)
-	}
-}
-
 var (
 	// session represents the CI visibility test session.
 	session integrations.TestSession
