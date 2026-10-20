@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: hannahkm/upgrade-gqlgen # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: d40bff7f200bef6b49a694da1da1e85113f944ad # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
