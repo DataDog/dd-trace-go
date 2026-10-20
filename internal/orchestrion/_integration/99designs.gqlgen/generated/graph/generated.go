@@ -2219,10 +2219,6 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 	return res
 }
 
-func (ec *executionContext) marshalNTopLevel2githubᚗcomᚋDataDogᚋddᚑtraceᚑgoᚋv2ᚋinternalᚋorchestrionᚋ_integrationᚋ99designsᚗgqlgenᚋgeneratedᚋgraphᚋmodelᚐTopLevel(ctx context.Context, sel ast.SelectionSet, v model.TopLevel) graphql.Marshaler {
-	return ec._TopLevel(ctx, sel, &v)
-}
-
 func (ec *executionContext) marshalNTopLevel2ᚖgithubᚗcomᚋDataDogᚋddᚑtraceᚑgoᚋv2ᚋinternalᚋorchestrionᚋ_integrationᚋ99designsᚗgqlgenᚋgeneratedᚋgraphᚋmodelᚐTopLevel(ctx context.Context, sel ast.SelectionSet, v *model.TopLevel) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -2270,8 +2266,7 @@ func (ec *executionContext) marshalN__DirectiveLocation2string(ctx context.Conte
 }
 
 func (ec *executionContext) unmarshalN__DirectiveLocation2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
-	var vSlice []any
-	vSlice = graphql.CoerceList(v)
+	vSlice := graphql.CoerceList(v)
 	var err error
 	res := make([]string, len(vSlice))
 	for i := range vSlice {
