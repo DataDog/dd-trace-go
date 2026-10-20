@@ -118,7 +118,7 @@ const (
 
 func validateSampleRate(rate float64) bool {
 	if rate < 0.0 || rate > 1.0 {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", rate)
+		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", rate) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -126,7 +126,7 @@ func validateSampleRate(rate float64) bool {
 
 func validateRateLimit(rate float64) bool {
 	if rate < 0.0 {
-		log.Warn("ignoring DD_TRACE_RATE_LIMIT: negative value %f", rate)
+		log.Warn("ignoring DD_TRACE_RATE_LIMIT: negative value %f", rate) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -134,7 +134,7 @@ func validateRateLimit(rate float64) bool {
 
 func validateAgentTimeout(timeout int) bool {
 	if timeout < 0 {
-		log.Warn("ignoring DD_TRACE_AGENT_TIMEOUT: negative value %d", timeout)
+		log.Warn("ignoring DD_TRACE_AGENT_TIMEOUT: negative value %d", timeout) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -144,7 +144,7 @@ func validateAgentTimeout(timeout int) bool {
 // silently move a misconfigured billed-polling interval to a valid one.
 func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 	if seconds <= 0 || seconds > 3600 {
-		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds)
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS: value %d out of range (0, 3600]", seconds) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -155,7 +155,7 @@ func validateFeatureFlagsAgentlessPollInterval(seconds int) bool {
 // "no timeout".
 func validateFeatureFlagsAgentlessRequestTimeout(seconds int) bool {
 	if seconds <= 0 || seconds > 300 {
-		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds)
+		log.Warn("ignoring DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS: value %d out of range (0, 300]", seconds) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -173,7 +173,7 @@ const maxDurationSeconds = float64(math.MaxInt64 / int64(time.Second))
 // back to the default rather than Init receiving an already-expired context.
 func validateFlaggingProviderInitTimeout(ms int) bool {
 	if ms <= 0 || int64(ms) > maxFlaggingProviderInitTimeoutMs {
-		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs)
+		log.Warn("ignoring DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: value %d out of range (0, %d]", ms, maxFlaggingProviderInitTimeoutMs) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -181,7 +181,7 @@ func validateFlaggingProviderInitTimeout(ms int) bool {
 
 func validateSendRetries(retries int) bool {
 	if retries < 0 {
-		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
+		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -189,7 +189,7 @@ func validateSendRetries(retries int) bool {
 
 func validateDataStreamsIntakeBufferSize(size int) bool {
 	if size <= 0 {
-		log.Warn("datastreams: ignoring non-positive intake buffer size %d", size)
+		log.Warn("datastreams: ignoring non-positive intake buffer size %d", size) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -214,7 +214,7 @@ func capAdditionalTagKeys(tags []string) []string {
 	}
 	if len(unique) > maxAdditionalTagKeys {
 		dropped := unique[maxAdditionalTagKeys:]
-		log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ","))
+		log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ",")) //errtrack:ignore user configuration exceeds a documented limit
 		unique = unique[:maxAdditionalTagKeys]
 	}
 	slices.Sort(unique)
@@ -231,7 +231,7 @@ func parseSpanAttributeSchema(v string) (int, bool) {
 	case "v1":
 		return 1, true
 	default:
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, ignoring", v)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, ignoring", v) //errtrack:ignore invalid user configuration
 		return 0, false
 	}
 }
@@ -241,11 +241,11 @@ func parseSpanAttributeSchema(v string) (int, bool) {
 // tags propagation); values above MaxPropagatedTagsLength are clamped down.
 func resolveMaxTagsHeaderLen(v int) int {
 	if v < 0 {
-		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Setting to 0.", v)
+		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Setting to 0.", v) //errtrack:ignore invalid user configuration
 		return 0
 	}
 	if v > MaxPropagatedTagsLength {
-		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Maximum allowed is %d. Setting to %d.", v, MaxPropagatedTagsLength, MaxPropagatedTagsLength)
+		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Maximum allowed is %d. Setting to %d.", v, MaxPropagatedTagsLength, MaxPropagatedTagsLength) //errtrack:ignore invalid user configuration
 		return MaxPropagatedTagsLength
 	}
 	return v
@@ -253,11 +253,11 @@ func resolveMaxTagsHeaderLen(v int) int {
 
 func validatePartialFlushMinSpans(minSpans int) bool {
 	if minSpans <= 0 {
-		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: negative value %d", minSpans)
+		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: negative value %d", minSpans) //errtrack:ignore invalid user configuration
 		return false
 	}
 	if minSpans >= TraceMaxSize {
-		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: value %d is greater than the max number of spans that can be kept in memory for a single trace (%d spans)", minSpans, TraceMaxSize)
+		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: value %d is greater than the max number of spans that can be kept in memory for a single trace (%d spans)", minSpans, TraceMaxSize) //errtrack:ignore invalid user configuration
 		return false
 	}
 	return true
@@ -299,10 +299,10 @@ func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 			case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
 				return u
 			default:
-				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix) //errtrack:ignore invalid user configuration
 			}
 		} else {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error()) //errtrack:ignore invalid user configuration
 		}
 	}
 
@@ -376,7 +376,7 @@ func parseDogstatsdAddr(addr string) *url.URL {
 		if u, err := url.Parse(addr); err == nil {
 			return u
 		} else {
-			log.Warn("Failed to parse DogStatsD unix address %q: %s", addr, err)
+			log.Warn("Failed to parse DogStatsD unix address %q: %s", addr, err) //errtrack:ignore invalid user configuration
 		}
 	}
 	return &url.URL{Host: addr}
@@ -424,11 +424,11 @@ func samplingRulesFromSource(p *provider.Provider, key string, spanType sampling
 	raw, origin := p.GetStringWithOrigin(key, "")
 	rulesFile := p.GetString(key+"_FILE", "")
 	if raw != "" && rulesFile != "" {
-		log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", key, key)
+		log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", key, key) //errtrack:ignore conflicting user configuration
 	} else if raw == "" && rulesFile != "" {
 		b, err := os.ReadFile(rulesFile)
 		if err != nil {
-			log.Warn("DIAGNOSTICS Error(s): couldn't read file from %s_FILE: %s", key, err)
+			log.Warn("DIAGNOSTICS Error(s): couldn't read file from %s_FILE: %s", key, err) //errtrack:ignore user configuration file failure
 		} else {
 			raw = string(b)
 			origin = telemetry.OriginEnvVar
@@ -436,7 +436,7 @@ func samplingRulesFromSource(p *provider.Provider, key string, spanType sampling
 	}
 	rules, err := samplingrules.UnmarshalSamplingRules([]byte(raw), spanType)
 	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing %s: %s", key, err)
+		log.Warn("DIAGNOSTICS Error(s) parsing %s: %s", key, err) //errtrack:ignore invalid user configuration
 	}
 	return rules, origin
 }
@@ -448,7 +448,7 @@ func samplingRulesBlockedByPrecedence(field string, current, incoming telemetry.
 	if incoming != telemetry.OriginCode || current == telemetry.OriginDefault || current == telemetry.OriginCode {
 		return false
 	}
-	log.Warn("config: %s is already set via %s; ignoring WithSamplingRules", field, current)
+	log.Warn("config: %s is already set via %s; ignoring WithSamplingRules", field, current) //errtrack:ignore conflicting user configuration
 	return true
 }
 
@@ -526,7 +526,7 @@ func otlpValidator(key string, valid func(string) bool, warn bool) func(string) 
 		}
 		// The value is not logged: headers and endpoints may carry credentials.
 		if warn {
-			log.Warn("Unsupported %s value; falling back to default.", key)
+			log.Warn("Unsupported %s value; falling back to default.", key) //errtrack:ignore invalid user configuration
 		}
 		return false
 	}
@@ -667,7 +667,7 @@ func validateRuntimeMetricsTemporality(v string, warn bool) bool {
 		return true
 	}
 	if warn {
-		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v)
+		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE %q; must be delta or cumulative. Falling back to delta.", v) //errtrack:ignore invalid user configuration
 	}
 	return false
 }
@@ -679,7 +679,7 @@ func resolveOTelSignalEnabled(key string, enabled, sdkDisabled bool) bool {
 	if !enabled || !sdkDisabled {
 		return enabled
 	}
-	log.Warn("OTEL_SDK_DISABLED=true overrides %s=true", key)
+	log.Warn("OTEL_SDK_DISABLED=true overrides %s=true", key) //errtrack:ignore conflicting user configuration
 	configtelemetry.Report(key, false, telemetry.OriginCalculated)
 	return false
 }
@@ -692,7 +692,7 @@ func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	}
 	ms, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || ms <= 0 {
-		log.Warn("Invalid _DD_TRACE_STATS_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		log.Warn("Invalid _DD_TRACE_STATS_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval) //errtrack:ignore invalid user configuration
 		return OTLPMetricsFlushInterval
 	}
 	return time.Duration(ms) * time.Millisecond

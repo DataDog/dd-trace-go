@@ -32,11 +32,16 @@ func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 	if base == nil || !field.available {
 		return
 	}
+	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		// Go 1.28 keeps the start as a time.Time, on Windows too.
+		value.Set(reflect.ValueOf(time.Now()))
+		return
+	}
 	counter, ok := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
 	if !ok {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
 	now := value.FieldByName("now")
 	if now.IsValid() && now.CanAddr() && now.Kind() == reflect.Int64 {
 		reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().SetInt(counter)
@@ -48,12 +53,16 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 	if base == nil || !field.available {
 		return
 	}
+	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		*fieldPtr[time.Duration](base, layout.common.duration) += time.Since(value.Interface().(time.Time))
+		return
+	}
 	now, counterOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
 	frequency, frequencyOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceFrequency)
 	if !counterOK || !frequencyOK || frequency <= 0 {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
 	startedField := value.FieldByName("now")
 	if !startedField.IsValid() || !startedField.CanAddr() || startedField.Kind() != reflect.Int64 {
 		return
