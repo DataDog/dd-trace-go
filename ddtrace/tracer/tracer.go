@@ -420,8 +420,16 @@ func (t *tracer) startAppSec() {
 	}
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.metaStructAvailable()))
 	appsec.Start(appsecopts...)
+}
+
+// metaStructAvailable reports whether spans can carry meta_struct to the backend. OTLP has no
+// meta_struct field: the OTLP exporter writes a meta_struct value as a JSON string attribute under
+// its own key, which Datadog does not read. Without meta_struct, App and API Protection writes the
+// _dd.appsec.json span tag, which OTLP ingestion keeps.
+func (t *tracer) metaStructAvailable() bool {
+	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
