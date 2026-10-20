@@ -59,7 +59,9 @@ func GetCodeOwnersWithStatus() (*codeownership.Resolver, bool) {
 	var resolver *codeownership.Resolver
 	var err error
 	if locations.Workspace != "" {
-		resolver, err = codeownership.Discover(locations)
+		// Source paths are relative to the workspace, the repository root, so
+		// its CODEOWNERS file is read without looking for an enclosing Git root.
+		resolver, err = codeownership.DiscoverIn(locations.Workspace, locations)
 	}
 	if err == nil && resolver == nil {
 		// Standalone test binaries may have no CI workspace, or one that does

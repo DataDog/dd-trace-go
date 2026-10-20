@@ -131,15 +131,8 @@ func TestRepositoryRootAndWorkspaceRebasing(t *testing.T) {
 			if got.FirstOwner() != "@package" {
 				t.Fatal(got.Tag())
 			}
-			got, _ = resolver.MatchDirectory("/pkg")
-			if got.FirstOwner() != "@package" {
-				t.Fatal(got.Tag())
-			}
 			if _, ok := resolver.Match("../outside.go"); ok {
 				t.Fatal("outside repository match")
-			}
-			if _, ok := resolver.MatchDirectory("../outside"); ok {
-				t.Fatal("outside repository directory match")
 			}
 		})
 	}

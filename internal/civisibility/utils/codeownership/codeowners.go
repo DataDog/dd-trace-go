@@ -4,7 +4,7 @@
 // Copyright 2026 Datadog, Inc.
 
 // Package codeownership parses GitHub and GitLab CODEOWNERS and resolves
-// immutable ownership for repository-relative files and package directories.
+// immutable ownership for repository-relative files.
 // It has no dependency on CI initialization or process-global configuration.
 //
 // The rules and file discovery follow dd-trace-dotnet's implementation:
@@ -35,7 +35,7 @@ const (
 const GitHubMaximumFileSize = 3 * 1024 * 1024
 
 // Ownership is immutable. Callers can obtain a defensive owner list, the first
-// owner for a service identity, or the test.codeowners value.
+// owner, or the test.codeowners value.
 type Ownership struct {
 	owners []string
 	// tag is the encoded owner list, built on first use: a file holds many
@@ -86,11 +86,10 @@ type CodeOwners struct {
 	diagnostics int
 }
 type rule struct {
-	glob          globPattern
-	directoryGlob globPattern
-	ownership     *Ownership
-	exclusion     bool
-	key           string // GitLab-only; released after duplicate compaction.
+	glob      globPattern
+	ownership *Ownership
+	exclusion bool
+	key       string // GitLab-only; released after duplicate compaction.
 }
 type section struct {
 	rules         []rule
@@ -168,26 +167,16 @@ func Parse(reader io.Reader, dialect Dialect) (*CodeOwners, error) {
 // Leading slashes are optional; backslashes are accepted as path separators.
 // A matching ownerless GitHub rule returns true and an empty Ownership.
 func (c *CodeOwners) Match(filename string) (*Ownership, bool) {
-	return c.match(normalizePath(filename), false)
+	return c.match(normalizePath(filename))
 }
 
-// MatchDirectory resolves a package directory without choosing a synthetic
-// filename. Directory rules include the directory itself. Terminal /* selects
-// immediate children only; other directory patterns can be inherited.
-func (c *CodeOwners) MatchDirectory(directory string) (*Ownership, bool) {
-	if directory == "." {
-		directory = "/"
-	}
-	return c.match(normalizePath(directory), true)
-}
-
-func (c *CodeOwners) match(value string, directory bool) (*Ownership, bool) {
+func (c *CodeOwners) match(value string) (*Ownership, bool) {
 	if c == nil || value == "" {
 		return nil, false
 	}
 	if c.dialect == GitHub {
 		for i := range c.rules {
-			if c.rules[i].matches(value, directory) {
+			if c.rules[i].glob.match(value) {
 				return c.rules[i].ownership, true
 			}
 		}
@@ -197,7 +186,7 @@ func (c *CodeOwners) match(value string, directory bool) (*Ownership, bool) {
 	var combined []string
 	var seen map[string]bool
 	for _, section := range c.sections {
-		owners := section.match(value, directory)
+		owners := section.match(value)
 		if owners == nil {
 			continue
 		}
@@ -247,17 +236,11 @@ func (c *CodeOwners) match(value string, directory bool) (*Ownership, bool) {
 	}
 	return selected, selected != nil
 }
-func (r *rule) matches(value string, directory bool) bool {
-	if directory {
-		return r.directoryGlob.match(value)
-	}
-	return r.glob.match(value)
-}
-func (s section) match(value string, directory bool) *Ownership {
+func (s section) match(value string) *Ownership {
 	var selected *Ownership
 	for i := range s.rules {
 		r := &s.rules[i]
-		if !r.matches(value, directory) {
+		if !r.glob.match(value) {
 			continue
 		}
 		if r.exclusion {
@@ -325,11 +308,11 @@ func uniqueOwners(owners []string) []string {
 	return result
 }
 func compileRule(pattern string, dialect Dialect, owners []string, exclusion bool) (rule, bool) {
-	file, directory, ok := compileGlobs(pattern, dialect)
+	glob, ok := compileGlob(pattern, dialect)
 	if !ok {
 		return rule{}, false
 	}
-	return rule{glob: file, directoryGlob: directory, ownership: newOwnership(owners), exclusion: exclusion}, true
+	return rule{glob: glob, ownership: newOwnership(owners), exclusion: exclusion}, true
 }
 
 // Owner tokens are separated by ASCII spaces or tabs.

@@ -68,31 +68,6 @@ func TestTheoryAndBoundaryCases(t *testing.T) {
 		}
 	}
 }
-func TestDirectorySemantics(t *testing.T) {
-	for _, tc := range []struct {
-		pattern, directory string
-		match              bool
-	}{
-		{"/pkg/", "/pkg", true}, {"/pkg/", "/pkg/nested", true}, {"/pkg/", "/x/pkg", false},
-		{"/pkg/*", "/pkg/child", true}, {"/pkg/*", "/pkg/child/deep", false},
-		{"/pkg/**/mobile*", "/pkg/mobile-tests", true}, {"/pkg/**/mobile*", "/pkg/a/mobile-tests/deep", true},
-		{"/pkg/**", "/pkg", true}, {"tests/", "/pkg/tests", true}, {"tests/", "/pkg/mytests", false},
-		{"/*", "/", true}, {"/pkg/[ab]/", "/pkg/a", false},
-	} {
-		t.Run(tc.pattern+tc.directory, func(t *testing.T) {
-			c, _ := Parse(strings.NewReader(tc.pattern+" @owner"), GitHub)
-			got, match := c.MatchDirectory(tc.directory)
-			if match != tc.match {
-				t.Fatalf("matched=%t owners=%v", match, got.Owners())
-			}
-		})
-	}
-	c, _ := Parse(strings.NewReader("* @global\n/pkg/"), GitHub)
-	got, ok := c.MatchDirectory("/pkg")
-	if !ok || got.FirstOwner() != "" {
-		t.Fatalf("ownerless rule: %v %t", got, ok)
-	}
-}
 func TestDiagnostics(t *testing.T) {
 	for _, tc := range []struct {
 		rules   string
@@ -294,7 +269,6 @@ func FuzzMatch(f *testing.F) {
 			if ok != again || !reflect.DeepEqual(a, d) {
 				t.Fatal("non-deterministic match")
 			}
-			c.MatchDirectory(value)
 		}
 	})
 }
@@ -498,7 +472,8 @@ func TestLargeSectionUnionKeepsOrderAndImmutableOwners(t *testing.T) {
 	}
 }
 
-func TestFileAndDirectoryQueriesKeepSeparateRequirements(t *testing.T) {
+// A directory rule owns the files below the directory, not a file with its name.
+func TestDirectoryRulesOwnOnlyDescendants(t *testing.T) {
 	for _, dialect := range []Dialect{GitHub, GitLab} {
 		for _, pattern := range []string{"/pkg/", "/pkg/**/"} {
 			c, err := Parse(strings.NewReader(pattern+" @owner"), dialect)
@@ -506,9 +481,6 @@ func TestFileAndDirectoryQueriesKeepSeparateRequirements(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 3 {
-				if got, found := c.MatchDirectory("/pkg"); !found || got.FirstOwner() != "@owner" {
-					t.Fatal("directory must own itself", dialect, pattern)
-				}
 				if _, found := c.Match("/pkg"); found {
 					t.Fatal("file query inherited a directory requirement", dialect, pattern)
 				}

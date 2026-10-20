@@ -51,17 +51,6 @@ func (r *Resolver) Match(value string) (*Ownership, bool) {
 	return r.rules.Match(value)
 }
 
-// MatchDirectory resolves a logical package directory relative to the workspace.
-func (r *Resolver) MatchDirectory(value string) (*Ownership, bool) {
-	if r == nil {
-		return nil, false
-	}
-	value, ok := r.repositoryPath(value)
-	if !ok {
-		return nil, false
-	}
-	return r.rules.MatchDirectory(value)
-}
 func (r *Resolver) repositoryPath(value string) (string, bool) {
 	value = normalizePath(value)
 	if value == "" {

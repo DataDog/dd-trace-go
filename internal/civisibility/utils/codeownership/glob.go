@@ -30,9 +30,7 @@ type segmentToken struct {
 }
 type runeRange struct{ start, end rune }
 
-// File and directory targets share immutable compiled tokens. Their globstar
-// requirements differ, so only the small segment lists are copied.
-func compileGlobs(pattern string, dialect Dialect) (globPattern, globPattern, bool) {
+func compileGlob(pattern string, dialect Dialect) (globPattern, bool) {
 	parts, firstSlash, trailing := splitPattern(pattern)
 	rooted := len(parts) > 0 && parts[0] == "" || dialect == GitHub && firstSlash >= 0 && firstSlash < len(pattern)-1
 	first, last := 0, len(parts)
@@ -54,14 +52,9 @@ func compileGlobs(pattern string, dialect Dialect) (globPattern, globPattern, bo
 		}
 		segment, ok := compilePathSegment(parts[i], dialect)
 		if !ok {
-			return globPattern{}, globPattern{}, false
+			return globPattern{}, false
 		}
 		file.segments = append(file.segments, segment)
-	}
-	directory := globPattern{segments: make([]globSegment, len(file.segments), len(file.segments)+1)}
-	copy(directory.segments, file.segments)
-	for i := range directory.segments {
-		directory.segments[i].requiresSegment = false
 	}
 	// A rooted literal prefix also owns files below a matching directory.
 	// Terminal /* keeps its existing immediate-child rule.
@@ -69,12 +62,6 @@ func compileGlobs(pattern string, dialect Dialect) (globPattern, globPattern, bo
 		!strings.HasSuffix(pattern, "/*") && !strings.ContainsAny(pattern[:len(pattern)-1], "*?[]\\")
 	if trailing || dialect == GitHub && (literalLastSegment(pattern) || anchoredFilenamePrefix) {
 		file.addGlobstar(trailing)
-	}
-	if strings.Trim(pattern, "/") == "*" {
-		directory.segments = directory.segments[:0]
-		directory.addGlobstar(false)
-	} else if trailing || last > first && parts[last-1] != "*" {
-		directory.addGlobstar(false)
 	}
 	// A rooted literal prefix cannot backtrack. Compare it once instead of
 	// splitting the same path and checking each literal for every rule.
@@ -98,11 +85,9 @@ func compileGlobs(pattern string, dialect Dialect) (globPattern, globPattern, bo
 			}
 			file.prefix = prefix.String()
 		}
-		directory.prefix = file.prefix
 		file.segments = file.segments[prefixSegments:]
-		directory.segments = directory.segments[prefixSegments:]
 	}
-	return file, directory, true
+	return file, true
 }
 
 // ASCII literals need no token array. Escapes, wildcards and non-ASCII use

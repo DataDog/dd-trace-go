@@ -88,6 +88,29 @@ func TestGetCodeOwnersCachesSuccessfulDiscovery(t *testing.T) {
 	assert.Equal(t, "[\"@first\"]", match.Tag())
 }
 
+// Source paths are relative to the CI workspace, so a workspace inside a Git
+// checkout reads its own CODEOWNERS locations and not the enclosing root's.
+func TestGetCodeOwnersReadsOnlyTheWorkspace(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".github"), 0o700))
+	writeCodeOwnersFile(t, filepath.Join(root, ".github", "CODEOWNERS"), "* @root\n")
+	workspaceDir := filepath.Join(root, "internal")
+	require.NoError(t, os.Mkdir(workspaceDir, 0o700))
+	t.Chdir(t.TempDir())
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.True(t, complete)
+
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/config/ @workspace\n")
+	ResetCodeOwnersForTesting()
+	match, ok := GetCodeOwners().Match("/config/config.go")
+	require.True(t, ok)
+	assert.Equal(t, "@workspace", match.FirstOwner())
+}
+
 // A binary that runs where its CI workspace does not exist still finds the
 // CODEOWNERS file in its current directory.
 func TestGetCodeOwnersFallsBackToWorkingDirectory(t *testing.T) {
