@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +27,8 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/multi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -60,7 +64,11 @@ func (l *capturingLogger) assertContains(t *testing.T, substr string) {
 func TestLogResolution(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
-	logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{
+	logResolution(nil, "my-flag", of.Boolean, false, of.FlattenedContext{
+		of.TargetingKey: "user-1",
+		"country":       "US",
+		"tier":          int64(3),
+	}, of.BoolResolutionDetail{
 		Value: true,
 		ProviderResolutionDetail: of.ProviderResolutionDetail{
 			Variant:      "on",
@@ -70,13 +78,13 @@ func TestLogResolution(t *testing.T) {
 	})
 
 	require.Len(t, logger.all(), 1)
-	logger.assertContains(t, `openfeature: provider resolved "my-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH, allocation="alloc-1", serial_id=, error_code=, error_message=""`)
+	logger.assertContains(t, `openfeature: provider resolved "my-flag": type=bool, value=true, default=false, variant="on", reason=TARGETING_MATCH, allocation="alloc-1", serial_id=, error_code=, error_message="", targeting_key="user-1", attributes={"country":"US","tier":3}`)
 }
 
 func TestLogResolution_Errors(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
-	logResolution("missing", of.String, of.StringResolutionDetail{
+	logResolution(nil, "missing", of.String, "dflt", nil, of.StringResolutionDetail{
 		Value: "dflt",
 		ProviderResolutionDetail: of.ProviderResolutionDetail{
 			ResolutionError: of.NewFlagNotFoundResolutionError("flag not found"),
@@ -84,17 +92,21 @@ func TestLogResolution_Errors(t *testing.T) {
 		},
 	})
 
-	logger.assertContains(t, `provider resolved "missing": type=string, value="dflt", variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND, error_message="flag not found"`)
+	// A context without a targeting key logs null, distinct from an empty key.
+	logger.assertContains(t, `provider resolved "missing": type=string, value="dflt", default="dflt", variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND, error_message="flag not found", targeting_key=null, attributes={}`)
 }
 
 func TestLogResolution_SilentWhenDebugDisabled(t *testing.T) {
 	logger := withLogLevel(t, log.LevelWarn)
 
 	detail := of.StringResolutionDetail{Value: "on", ProviderResolutionDetail: of.ProviderResolutionDetail{Reason: of.StaticReason}}
-	allocs := testing.AllocsPerRun(100, func() { logResolution("my-flag", of.String, detail) })
+	flatCtx := of.FlattenedContext{of.TargetingKey: "user-1", "country": "US"}
+	warned := new(atomic.Bool)
+	allocs := testing.AllocsPerRun(100, func() { logResolution(warned, "my-flag", of.String, "off", flatCtx, detail) })
 
 	assert.Zero(t, allocs, "the value must not be boxed while debug logging is off")
 	assert.Empty(t, logger.all())
+	assert.False(t, warned.Load())
 }
 
 func TestFormatDebugValue(t *testing.T) {
@@ -112,13 +124,13 @@ func TestFormatDebugValue(t *testing.T) {
 		{"float", 1.5, "1.5"},
 		{"float32", float32(0.5), "0.5"},
 		{"object", map[string]any{"k": []any{1, "v"}}, `{"k":[1,"v"]}`},
-		{"large object", map[string]any{"k": strings.Repeat("x", 300)}, `{"k":"` + strings.Repeat("x", maxDebugValueLen-6) + "...(truncated)"},
+		{"large object", map[string]any{"k": strings.Repeat("x", 300)}, `{"k":"` + strings.Repeat("x", 300) + `"}`},
 		{"panicking marshaler", panickingValue{}, "<unserializable>"},
 		{"panicking marshaler in an array", []any{panickingValue{}}, "<unserializable>"},
 		{"typed nil", (*panickingValue)(nil), "null"},
 		{"named type", namedString("x"), `"x"`},
 		{"unsupported type", make(chan int), "<unserializable>"},
-		{"truncated", strings.Repeat("x", 300), `"` + strings.Repeat("x", maxDebugValueLen-1) + "...(truncated)"},
+		{"large string", strings.Repeat("x", 300), `"` + strings.Repeat("x", 300) + `"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,9 +192,10 @@ func TestDebugLoggingHook_EndToEnd(t *testing.T) {
 	_, err = client.BooleanValue(context.Background(), "does-not-exist", false, of.NewEvaluationContext("user-1", nil))
 	require.Error(t, err)
 
-	logger.assertContains(t, `provider resolved "bool-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH, allocation="allocation1"`)
-	logger.assertContains(t, `provider resolved "does-not-exist": type=bool, value=false, variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND`)
-	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value false)`)
+	logger.assertContains(t, `provider resolved "bool-flag": type=bool, value=true, default=false, variant="on", reason=TARGETING_MATCH, allocation="allocation1"`)
+	logger.assertContains(t, `targeting_key="user-1", attributes={"country":"US"}`)
+	logger.assertContains(t, `provider resolved "does-not-exist": type=bool, value=false, default=false, variant="", reason=ERROR, allocation="", serial_id=, error_code=FLAG_NOT_FOUND`)
+	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value false, targeting_key="user-1", attributes={})`)
 }
 
 // failingAfterHook is an application hook whose After stage fails after the
@@ -257,8 +270,8 @@ func TestDebugLogging_AfterHookFailure(t *testing.T) {
 			require.ErrorContains(t, err, "application after hook failed")
 			require.Equal(t, tc.want, value)
 
-			logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=`+tc.flagType+`, value=true, variant="on", reason=TARGETING_MATCH, allocation="allocation1", serial_id=, error_code=, error_message=""`)
-			logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false)`)
+			logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=`+tc.flagType+`, value=true, default=false, variant="on", reason=TARGETING_MATCH, allocation="allocation1", serial_id=, error_code=, error_message=""`)
+			logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false, targeting_key="user-1", attributes={"country":"US"})`)
 			assertNoReturnedValueClaims(t, logger, "bool-flag")
 		})
 	}
@@ -305,7 +318,7 @@ func TestDebugLogging_MultiProvider(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, value, "the in-memory provider serves the flag")
 
-		logger.assertContains(t, `openfeature: evaluation of "only-in-mem" failed: error code: FLAG_NOT_FOUND: flag not found: "only-in-mem" (default value false)`)
+		logger.assertContains(t, `openfeature: evaluation of "only-in-mem" failed: error code: FLAG_NOT_FOUND: flag not found: "only-in-mem" (default value false, targeting_key="user-1", attributes={})`)
 		assertNoReturnedValueClaims(t, logger, "only-in-mem")
 	})
 
@@ -317,8 +330,8 @@ func TestDebugLogging_MultiProvider(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, value)
 
-		logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=bool, value=true, variant="on", reason=TARGETING_MATCH`)
-		logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false)`)
+		logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=bool, value=true, default=false, variant="on", reason=TARGETING_MATCH`)
+		logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false, targeting_key="user-1", attributes={"country":"US"})`)
 		assertNoReturnedValueClaims(t, logger, "bool-flag")
 	})
 }
@@ -345,7 +358,9 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 		newDebugAgentlessSource(t, backend.server.URL).poll()
 
 		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 200")
-		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, env=staging, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
+		// A custom endpoint never receives DD_ENV, so the configuration's
+		// environment can differ from the SDK's.
+		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, sdk_env=staging, requested_env=none (custom endpoint), config_env=Test, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
 	})
 
 	t.Run("applied configuration without DD_ENV", func(t *testing.T) {
@@ -355,7 +370,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 
 		newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {}).poll()
 
-		logger.assertContains(t, "openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, env=unset, ")
+		logger.assertContains(t, "openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, sdk_env=unset, ")
 	})
 
 	t.Run("unchanged configuration", func(t *testing.T) {
@@ -597,7 +612,7 @@ func TestRemoteConfig_DebugLogs(t *testing.T) {
 	processConfigUpdate(p, path, nil)
 
 	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" received`)
-	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
+	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, sdk_env=`+cmp.Or(internalconfig.Get().Env(), "unset")+`, config_env=test, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
 	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" removed`)
 }
 
@@ -630,8 +645,8 @@ func TestDebugLoggingHook_ContainsMarshalerPanics(t *testing.T) {
 		value, _ = client.ObjectValue(context.Background(), "does-not-exist", panickingValue{}, of.NewEvaluationContext("user-1", nil))
 	})
 	assert.Equal(t, panickingValue{}, value, "the caller's default is still returned")
-	logger.assertContains(t, `provider resolved "does-not-exist": type=object, value=<unserializable>, variant="", reason=ERROR`)
-	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value <unserializable>)`)
+	logger.assertContains(t, `provider resolved "does-not-exist": type=object, value=<unserializable>, default=<unserializable>, variant="", reason=ERROR`)
+	logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value <unserializable>, `)
 }
 
 func TestDebugLoggingHook_ContainsPanics(t *testing.T) {
@@ -639,7 +654,7 @@ func TestDebugLoggingHook_ContainsPanics(t *testing.T) {
 	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
 
 	require.NotPanics(t, func() {
-		newDebugLoggingHook().Error(context.Background(), hookCtx, panickingError{}, of.HookHints{})
+		newDebugLoggingHook(nil).Error(context.Background(), hookCtx, panickingError{}, of.HookHints{})
 	})
 	assert.Empty(t, logger.all(), "recovery logs nothing: the logger may be what panicked")
 }
@@ -665,47 +680,179 @@ func TestDebugLoggingHook_LogsNotReadyEvaluations(t *testing.T) {
 	_, err := client.BooleanValue(context.Background(), "early-flag", false, of.NewEvaluationContext("user-1", nil))
 	require.Error(t, err)
 
-	logger.assertContains(t, `openfeature: evaluation of "early-flag" failed: PROVIDER_NOT_READY: provider not yet initialized (default value false)`)
+	logger.assertContains(t, `openfeature: evaluation of "early-flag" failed: PROVIDER_NOT_READY: provider not yet initialized (default value false, targeting_key="user-1", attributes={})`)
 	assert.Zero(t, logger.countContaining(`provider resolved "early-flag"`), "the SDK does not call the provider before it is ready")
 }
 
-// TestDebugLogging_NeverLogsTargetingData checks the complete log stream of
-// real evaluations, every registered hook and writer included, not only the
-// debug hook. The exposure hook's line carries the targeting key by design,
-// so only onboarding lines are checked for it.
-func TestDebugLogging_NeverLogsTargetingData(t *testing.T) {
+// TestDebugLogging_EvaluationInputs checks the complete log stream of real
+// evaluations, every registered hook and writer included. DD_TRACE_DEBUG
+// exposes the raw targeting key and attributes so a customer can explain a
+// result; with debug logging off, no line carries them.
+func TestDebugLogging_EvaluationInputs(t *testing.T) {
 	const (
-		subject   = "subject-secret-42"
-		attrValue = "attr-secret@example.com"
+		subject   = "subject-42"
+		attrValue = "attr@example.com"
 	)
-	logger := withLogLevel(t, log.LevelDebug)
+	evaluate := func(t *testing.T, lvl log.Level) *capturingLogger {
+		logger := withLogLevel(t, lvl)
+		p := newDatadogProvider(ProviderConfig{})
+		p.updateConfiguration(createTestConfig())
+		domain := "debug-logging-evaluation-inputs-" + lvl.String()
+		registerDebugLoggingProvider(t, domain, p)
 
-	p := newDatadogProvider(ProviderConfig{})
-	p.updateConfiguration(createTestConfig())
-	const domain = "debug-logging-targeting-data"
-	registerDebugLoggingProvider(t, domain, p)
-
-	client := of.NewClient(domain)
-	evalCtx := of.NewEvaluationContext(subject, map[string]any{"country": "US", "email": attrValue})
-	on, err := client.BooleanValue(context.Background(), "bool-flag", false, evalCtx)
-	require.NoError(t, err)
-	require.True(t, on)
-	_, _ = client.StringValue(context.Background(), "string-flag", "dflt", evalCtx)
-	_, _ = client.BooleanValue(context.Background(), "does-not-exist", false, evalCtx)
-
-	// Shutting down flushes the exposure and evaluation writers, so their logs are included.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, p.ShutdownWithContext(ctx))
-
-	logger.assertContains(t, "recorded exposure event for flag \"bool-flag\"")
-	logger.assertContains(t, `provider resolved "bool-flag"`)
-	for _, msg := range logger.all() {
-		assert.NotContains(t, msg, attrValue, "context attributes must never be logged")
-		if isOnboardingLog(msg) {
-			assert.NotContains(t, msg, subject, "onboarding lines must never carry the targeting key")
-		}
+		client := of.NewClient(domain)
+		evalCtx := of.NewEvaluationContext(subject, map[string]any{"country": "US", "email": attrValue})
+		on, err := client.BooleanValue(context.Background(), "bool-flag", false, evalCtx)
+		require.NoError(t, err)
+		require.True(t, on)
+		_, _ = client.StringValue(context.Background(), "string-flag", "dflt", evalCtx)
+		_, _ = client.BooleanValue(context.Background(), "does-not-exist", false, evalCtx)
+		return logger
 	}
+
+	t.Run("debug", func(t *testing.T) {
+		logger := evaluate(t, log.LevelDebug)
+		inputs := `targeting_key="` + subject + `", attributes={"country":"US","email":"` + attrValue + `"}`
+		logger.assertContains(t, `provider resolved "bool-flag": type=bool, value=true, default=false, `)
+		logger.assertContains(t, `provider resolved "string-flag": type=string, value="dflt", default="dflt", `)
+		assert.Equal(t, 4, logger.countContaining(inputs), "every provider resolution and failure logs its inputs")
+		logger.assertContains(t, `evaluation of "does-not-exist" failed: error code: FLAG_NOT_FOUND: flag not found: "does-not-exist" (default value false, `+inputs+`)`)
+	})
+
+	t.Run("debug disabled", func(t *testing.T) {
+		logger := evaluate(t, log.LevelWarn)
+		for _, msg := range logger.all() {
+			assert.NotContains(t, msg, subject)
+			assert.NotContains(t, msg, attrValue)
+		}
+	})
+}
+
+// TestExposure_DebugLogs covers the exposure lifecycle: queued, suppressed
+// with its reason, and the final shutdown flush outcome.
+func TestExposure_DebugLogs(t *testing.T) {
+	newProvider := func(t *testing.T, status int) *DatadogProvider {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == exposureEndpoint {
+				w.WriteHeader(status)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		t.Cleanup(srv.Close)
+		evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
+		return newDatadogProviderWithSourceAndEVP(ProviderConfig{ExposureFlushInterval: time.Hour}, internalffe.SourceAgentless, evp)
+	}
+	expose := func(p *DatadogProvider, subject string) {
+		hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.NewEvaluationContext(subject, nil))
+		details := of.InterfaceEvaluationDetails{EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "my-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant:      "on",
+				FlagMetadata: of.FlagMetadata{metadataAllocationKey: "alloc-1", metadataDoLogKey: true},
+			},
+		}}
+		_ = newExposureHook(p.exposureWriter).After(context.Background(), hookCtx, details, of.HookHints{})
+	}
+	shutdown := func(t *testing.T, p *DatadogProvider) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, p.ShutdownWithContext(ctx))
+	}
+
+	t.Run("queued, duplicate, and sent at shutdown", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusAccepted)
+		expose(p, "user-1")
+		expose(p, "user-1")
+		shutdown(t, p)
+		expose(p, "user-2")
+
+		logger.assertContains(t, `openfeature: queued exposure event for flag "my-flag" (allocation=alloc-1, variant=on, subject=user-1)`)
+		logger.assertContains(t, `openfeature: skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag "my-flag" (subject=user-1)`)
+		logger.assertContains(t, "openfeature: shutdown sent 1 pending exposure event(s)")
+		logger.assertContains(t, `openfeature: skipping exposure event (exposure writer stopped) for flag "my-flag"`)
+	})
+
+	t.Run("dropped at shutdown when delivery fails", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusInternalServerError)
+		expose(p, "user-1")
+		shutdown(t, p)
+
+		logger.assertContains(t, "openfeature: shutdown dropped 1 pending exposure event(s): final delivery failed: ")
+	})
+
+	t.Run("dropped by a periodic flush when delivery fails", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusInternalServerError)
+		p.exposureWriter.flushInterval = time.Millisecond
+		p.exposureWriter.start()
+		expose(p, "user-1")
+
+		assert.Eventually(t, func() bool {
+			return logger.countContaining("openfeature: dropped 1 exposure event(s) after failed delivery: ") > 0
+		}, 5*time.Second, 5*time.Millisecond)
+		shutdown(t, p)
+	})
+
+	t.Run("nothing pending at shutdown", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		shutdown(t, newProvider(t, http.StatusAccepted))
+
+		logger.assertContains(t, "openfeature: shutdown found no pending exposure events to flush")
+	})
+
+	t.Run("silent when debug logging is disabled", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelWarn)
+		p := newProvider(t, http.StatusAccepted)
+		expose(p, "user-1")
+		expose(p, "user-1")
+		shutdown(t, p)
+
+		assert.Empty(t, logger.all())
+	})
+}
+
+func TestAgentlessSource_MalformedConfigurationDebugLogs(t *testing.T) {
+	logger := withLogLevel(t, log.LevelDebug)
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("malformed")
+	src := newDebugAgentlessSource(t, backend.server.URL)
+
+	src.poll()
+	src.poll()
+
+	// Unlike the warning, the debug line fires on every malformed response.
+	assert.Equal(t, 2, logger.countContaining("openfeature: agentless configuration poll attempt 1/3 returned malformed configuration: "))
+	logger.assertContains(t, "; keeping the last known configuration")
+	assert.Equal(t, 1, logger.countContaining("openfeature: agentless: received malformed configuration"))
+}
+
+func TestAgentlessSource_RequestedEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		managed bool
+		env     string
+		want    string
+	}{
+		{"custom endpoint never sends dd_env", false, "production", "none (custom endpoint)"},
+		{"managed endpoint without DD_ENV", true, "", "none"},
+		{"managed endpoint", true, "production", "production"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := &agentlessSource{managed: tc.managed, env: tc.env}
+			assert.Equal(t, tc.want, src.requestedEnv())
+		})
+	}
+
+	src, err := newAgentlessSource(internalffe.Settings{APIKey: "key", Env: "production"}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	assert.True(t, src.managed)
+	assert.Contains(t, src.endpoint, "dd_env=production", "requested_env must match what the managed endpoint receives")
 }
 
 const ufcWithRejectedFlag = `{
@@ -729,8 +876,9 @@ func TestRejectedFlags_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, srv.URL).poll()
 
-		logger.assertContains(t, `agentless configuration applied successfully (1 flag(s), 1 rejected, env=staging, created_at=2026-10-01T12:00:00Z, etag="v7")`)
-		assert.Zero(t, logger.countContaining("bad-flag"), "only the rejected count is logged")
+		logger.assertContains(t, `agentless configuration applied successfully (1 flag(s), 1 rejected, sdk_env=staging, requested_env=none (custom endpoint), config_env=Test, created_at=2026-10-01T12:00:00Z, etag="v7")`)
+		logger.assertContains(t, `openfeature: agentless configuration rejected flag "bad-flag": `)
+		assert.Zero(t, logger.countContaining(`rejected flag "good-flag"`))
 	})
 
 	t.Run("remote_config", func(t *testing.T) {
@@ -739,8 +887,9 @@ func TestRejectedFlags_DebugLogs(t *testing.T) {
 
 		processConfigUpdate(p, "path/config", []byte(ufcWithRejectedFlag))
 
-		logger.assertContains(t, `remote_config configuration "path/config" applied successfully (1 flag(s), 1 rejected, created_at=2026-10-01T12:00:00Z)`)
-		assert.Zero(t, logger.countContaining("bad-flag"), "only the rejected count is logged")
+		logger.assertContains(t, `remote_config configuration "path/config" applied successfully (1 flag(s), 1 rejected, sdk_env=`+cmp.Or(internalconfig.Get().Env(), "unset")+`, config_env=Test, created_at=2026-10-01T12:00:00Z)`)
+		logger.assertContains(t, `openfeature: remote_config configuration "path/config" rejected flag "bad-flag": `)
+		assert.Zero(t, logger.countContaining(`rejected flag "good-flag"`))
 	})
 }
 
@@ -782,15 +931,15 @@ func TestDebugLogging_SerialIDAndDisabledError(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
 
-	logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{
+	logResolution(nil, "my-flag", of.Boolean, false, nil, of.BoolResolutionDetail{
 		Value:                    true,
 		ProviderResolutionDetail: of.ProviderResolutionDetail{FlagMetadata: of.FlagMetadata{metadataSplitSerialIDKey: uint32(7)}},
 	})
 	logger.assertContains(t, "serial_id=7,")
 
-	newDebugLoggingHook().Error(context.Background(), hookCtx, nil, of.HookHints{})
+	newDebugLoggingHook(nil).Error(context.Background(), hookCtx, nil, of.HookHints{})
 	log.SetLevel(log.LevelWarn)
-	newDebugLoggingHook().Error(context.Background(), hookCtx, errors.New("boom"), of.HookHints{})
+	newDebugLoggingHook(nil).Error(context.Background(), hookCtx, errors.New("boom"), of.HookHints{})
 	assert.Zero(t, logger.countContaining("failed:"), "no Error line for a nil error or with debug disabled")
 }
 
@@ -894,6 +1043,7 @@ func TestLifecycle_DebugLogsReleaseProviderLock(t *testing.T) {
 	logger.assertLoggedWithoutLock(t, "provider recovered")
 	logger.assertLoggedWithoutLock(t, "provider is stale")
 	logger.assertLoggedWithoutLock(t, "provider shutting down")
+	logger.assertLoggedWithoutLock(t, "shutdown found no pending exposure events")
 }
 
 type panickingLogger struct{}
@@ -909,10 +1059,10 @@ func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
 		log.SetLevel(prev)
 	})
 	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
-	h := newDebugLoggingHook()
+	h := newDebugLoggingHook(new(atomic.Bool))
 
 	assert.NotPanics(t, func() {
-		logResolution("my-flag", of.Boolean, of.BoolResolutionDetail{Value: true})
+		logResolution(new(atomic.Bool), "my-flag", of.Boolean, false, of.FlattenedContext{of.TargetingKey: "user-1"}, of.BoolResolutionDetail{Value: true})
 	})
 	assert.NotPanics(t, func() {
 		h.Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
@@ -928,6 +1078,7 @@ func isOnboardingLog(msg string) bool {
 	}
 	return slices.ContainsFunc([]string{
 		"configuration source is ",
+		"debug logging is enabled, ",
 		"feature flagging is disabled;",
 		"starting agentless configuration source ",
 		"starting remote_config configuration source ",
@@ -936,6 +1087,12 @@ func isOnboardingLog(msg string) bool {
 		"agentless configuration ",
 		"remote_config configuration ",
 		"evaluation of ",
+		"evaluating flag ",
+		"queued exposure event ",
+		"skipping exposure event ",
+		"dropped ",
+		"shutdown ",
+		"flag evaluation metrics did not shut down",
 	}, func(prefix string) bool { return strings.HasPrefix(message, prefix) })
 }
 
@@ -1061,6 +1218,55 @@ func TestAgentlessPoll_ContainsLoggerPanics(t *testing.T) {
 	logger.assertContains(t, "HTTP 304")
 }
 
+func TestEvaluationAndExposure_ContainLoggerPanics(t *testing.T) {
+	logger := withPanickingOnboardingLogger(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(srv.Close)
+	evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
+	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{ExposureFlushInterval: time.Hour}, internalffe.SourceAgentless, evp)
+
+	var status rc.ApplyStatus
+	require.NotPanics(t, func() { status = processConfigUpdate(p, "path/config", []byte(ufcWithRejectedFlag)) })
+	assert.Equal(t, rc.ApplyStateAcknowledged, status.State)
+	require.NotNil(t, p.getConfiguration(), "a failing logger must not skip applying configuration")
+	logger.assertContains(t, `rejected flag "bad-flag"`)
+
+	var detail of.BoolResolutionDetail
+	require.NotPanics(t, func() {
+		detail = p.BooleanEvaluation(context.Background(), "good-flag", false, of.FlattenedContext{of.TargetingKey: "user-1"})
+	})
+	// good-flag has no allocations, so the provider resolves its default.
+	assert.Equal(t, of.DefaultReason, detail.Reason)
+	assert.Equal(t, of.ResolutionError{}, detail.ResolutionError)
+	logger.assertContains(t, `evaluating flag "good-flag"`)
+
+	hookCtx := of.NewHookContext("good-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.NewEvaluationContext("user-1", nil))
+	details := of.InterfaceEvaluationDetails{EvaluationDetails: of.EvaluationDetails{
+		FlagKey:          "good-flag",
+		ResolutionDetail: of.ResolutionDetail{Variant: "on", FlagMetadata: of.FlagMetadata{metadataAllocationKey: "alloc-1", metadataDoLogKey: true}},
+	}}
+	hook := newExposureHook(p.exposureWriter)
+	for range 2 {
+		require.NotPanics(t, func() { require.NoError(t, hook.After(context.Background(), hookCtx, details, of.HookHints{})) })
+	}
+	p.exposureWriter.mu.Lock()
+	queued := len(p.exposureWriter.buffer)
+	p.exposureWriter.mu.Unlock()
+	assert.Equal(t, 1, queued, "a failing logger must not change what is queued")
+	logger.assertContains(t, "skipping exposure event (duplicate")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NotPanics(t, func() { require.NoError(t, p.ShutdownWithContext(ctx)) })
+	logger.assertContains(t, "shutdown sent 1 pending exposure event(s)")
+	p.exposureWriter.mu.Lock()
+	stopped := p.exposureWriter.stopped
+	p.exposureWriter.mu.Unlock()
+	assert.True(t, stopped, "a failing logger must not skip stopping the exposure writer")
+}
+
 func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
 	for _, tc := range []struct {
 		name                                                                       string
@@ -1121,4 +1327,118 @@ func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
 			require.Equal(t, tc.tracerDebug, internalconfig.Get().Debug())
 		})
 	}
+}
+
+const rawDebugDataWarning = "openfeature: debug logging is enabled, so feature flag logs include raw evaluation data"
+
+func (l *capturingLogger) indexContaining(substr string) int {
+	return slices.IndexFunc(l.all(), func(msg string) bool { return strings.Contains(msg, substr) })
+}
+
+func findDebugLoggingHook(t *testing.T, p *DatadogProvider) *debugLoggingHook {
+	t.Helper()
+	for _, h := range p.Hooks() {
+		if dh, ok := h.(*debugLoggingHook); ok {
+			return dh
+		}
+	}
+	t.Fatal("debug logging hook not registered")
+	return nil
+}
+
+func TestRawDebugDataWarning(t *testing.T) {
+	newConfiguredProvider := func(t *testing.T) *DatadogProvider {
+		t.Helper()
+		p := newDatadogProvider(ProviderConfig{})
+		p.updateConfiguration(createTestConfig())
+		t.Cleanup(p.Shutdown)
+		return p
+	}
+	evaluate := func(p *DatadogProvider) of.BoolResolutionDetail {
+		return p.BooleanEvaluation(context.Background(), "bool-flag", false, of.FlattenedContext{of.TargetingKey: "user-1", "country": "US"})
+	}
+	hookCtx := of.NewHookContext("early-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.NewEvaluationContext("user-1", nil))
+
+	t.Run("warns once at construction when debug logging is enabled", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newConfiguredProvider(t)
+		require.Equal(t, 1, logger.countContaining(rawDebugDataWarning))
+		logger.assertContains(t, "WARN: openfeature: debug logging is enabled, so feature flag logs include raw evaluation data (targeting keys, evaluation context attributes, flag values, and default values) that may contain personal or sensitive information. Unset DD_TRACE_DEBUG when you no longer need it.")
+
+		evaluate(p)
+		evaluate(p)
+		findDebugLoggingHook(t, p).Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
+		logger.assertContains(t, `provider resolved "bool-flag"`)
+		logger.assertContains(t, `evaluation of "early-flag" failed`)
+		assert.Equal(t, 1, logger.countContaining(rawDebugDataWarning), "evaluations must not repeat the warning")
+
+		newConfiguredProvider(t)
+		assert.Equal(t, 2, logger.countContaining(rawDebugDataWarning), "each provider warns once")
+	})
+
+	t.Run("silent when debug logging is disabled", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelWarn)
+		p := newConfiguredProvider(t)
+		evaluate(p)
+		findDebugLoggingHook(t, p).Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
+		assert.Zero(t, logger.countContaining(rawDebugDataWarning))
+		assert.False(t, p.rawDataWarned.Load())
+	})
+
+	t.Run("silent when feature flagging is disabled", func(t *testing.T) {
+		internalconfig.SetUseFreshConfig(true)
+		t.Cleanup(func() { internalconfig.SetUseFreshConfig(false) })
+		logger := withLogLevel(t, log.LevelDebug)
+		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "offline")
+
+		p, err := NewDatadogProvider(ProviderConfig{})
+		require.NoError(t, err)
+		require.IsType(t, &of.NoopProvider{}, p)
+		logger.assertContains(t, "feature flagging is disabled")
+		assert.Zero(t, logger.countContaining(rawDebugDataWarning))
+	})
+
+	t.Run("warns once before the first resolution when debug logging is enabled later", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelWarn)
+		p := newConfiguredProvider(t)
+		evaluate(p)
+		require.Zero(t, logger.countContaining(rawDebugDataWarning))
+
+		log.SetLevel(log.LevelDebug)
+		evaluate(p)
+		evaluate(p)
+		findDebugLoggingHook(t, p).Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
+		assert.Equal(t, 1, logger.countContaining(rawDebugDataWarning))
+		firstRaw := logger.indexContaining(`provider resolved "bool-flag"`)
+		require.GreaterOrEqual(t, firstRaw, 0)
+		assert.Less(t, logger.indexContaining(rawDebugDataWarning), firstRaw)
+	})
+
+	t.Run("warns once before the first failure when debug logging is enabled later", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelWarn)
+		p := newDatadogProvider(ProviderConfig{}) // not ready: the SDK reports failures only to Error hooks
+
+		log.SetLevel(log.LevelDebug)
+		findDebugLoggingHook(t, p).Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})
+		p.BooleanEvaluation(context.Background(), "early-flag", false, of.FlattenedContext{of.TargetingKey: "user-1"})
+		assert.Equal(t, 1, logger.countContaining(rawDebugDataWarning), "the hook and the provider share one warning")
+		firstRaw := logger.indexContaining(`evaluation of "early-flag" failed`)
+		require.GreaterOrEqual(t, firstRaw, 0)
+		assert.Less(t, logger.indexContaining(rawDebugDataWarning), firstRaw)
+	})
+
+	t.Run("contains logger panics", func(t *testing.T) {
+		logger := withPanickingOnboardingLogger(t)
+		require.NotPanics(t, func() { newDatadogProvider(ProviderConfig{}) })
+
+		log.SetLevel(log.LevelWarn)
+		var p *DatadogProvider
+		require.NotPanics(t, func() { p = newConfiguredProvider(t) })
+		log.SetLevel(log.LevelDebug)
+		var detail of.BoolResolutionDetail
+		require.NotPanics(t, func() { detail = evaluate(p) })
+		assert.True(t, detail.Value, "a failing logger must not change the resolution")
+		assert.Equal(t, of.TargetingMatchReason, detail.Reason)
+		assert.Equal(t, 2, logger.countContaining(rawDebugDataWarning))
+	})
 }
