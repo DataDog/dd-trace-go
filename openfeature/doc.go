@@ -140,9 +140,8 @@
 // in order. If none match, it returns the application's default, not a forced control variant.
 // Eligible subjects retain their existing hash buckets; exclusion does not rebalance them.
 //
-// This MVP uses exposure logging as its classification signal. A winner that still
-// has doLog=true is also skipped. The SDK cannot recover fallback allocations removed
-// during configuration compilation. Ordinary delivery requires doLog=false in that configuration.
+// Winner rollouts with doLog=true are also skipped. Ordinary delivery requires a
+// matching doLog=false allocation in the configuration received by the SDK.
 // Immediate withdrawal can change an enrolled subject's experience without notifying
 // experiment analysis. Customers must account for that change in their analysis.
 // No withdrawal event is emitted. Evaluation telemetry remains enabled unless separately
