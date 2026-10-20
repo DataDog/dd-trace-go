@@ -50,5 +50,7 @@ func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 // TopLevel returns TopLevelResolver implementation.
 func (r *Resolver) TopLevel() TopLevelResolver { return &topLevelResolver{r} }
 
-type queryResolver struct{ *Resolver }
-type topLevelResolver struct{ *Resolver }
+type (
+	queryResolver    struct{ *Resolver }
+	topLevelResolver struct{ *Resolver }
+)
