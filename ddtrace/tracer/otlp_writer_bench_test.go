@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -68,9 +69,44 @@ func BenchmarkOTLPTraceWriterAdd(b *testing.B) {
 	}
 }
 
-func BenchmarkOTLPTraceWriterFlush(b *testing.B) {
-	writer := newBenchOTLPWriter(b)
-	trace := []*Span{newBasicSpan("flush-test")}
+// benchOTLPDiscardTransport excludes socket I/O so collector scheduling does not
+// dominate flush measurements.
+type benchOTLPDiscardTransport struct{}
+
+func (benchOTLPDiscardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		_, readErr := io.Copy(io.Discard, req.Body)
+		closeErr := req.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+}
+
+func newBenchOTLPFlushFixture(t testing.TB) (*otlpTraceWriter, []*Span) {
+	t.Helper()
+	cfg, err := newTestConfig(WithService("bench-service"), WithEnv("bench"), WithServiceVersion("1"))
+	require.NoError(t, err)
+	writer := newOTLPTraceWriter(cfg)
+	writer.transport = newOTLPTransport(
+		&http.Client{Transport: benchOTLPDiscardTransport{}},
+		"http://collector.invalid/v1/traces", nil,
+	)
+	t.Cleanup(writer.stop)
+
+	span := newSpan("flush-test", "bench-service", "flush-test", 1, 2, 0)
+	span.start = 1_700_000_000_000_000_000
+	span.duration = 1_000_000
+	span.context.traceID.SetUpper(0)
+	return writer, []*Span{span}
+}
+
+func BenchmarkOTLPTraceWriterFlushInMemory(b *testing.B) {
+	writer, trace := newBenchOTLPFlushFixture(b)
 
 	b.ReportAllocs()
 	b.ResetTimer()
