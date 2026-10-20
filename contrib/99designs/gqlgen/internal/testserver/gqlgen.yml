@@ -41,8 +41,8 @@ resolver:
 # Optional: turn on to not generate any file notice comments in generated files
 # omit_gqlgen_file_notice: false
 
-# Optional: turn on to exclude the gqlgen version in the generated file notice. No effect if `omit_gqlgen_file_notice` is true.
-# omit_gqlgen_version_in_file_notice: false
+# Turn on to exclude the gqlgen version in the generated file notice. No effect if `omit_gqlgen_file_notice` is true.
+omit_gqlgen_version_in_file_notice: true
 
 # Optional: turn off to make struct-type struct fields not use pointers
 # e.g. type Thing struct { FieldA OtherThing } instead of { FieldA *OtherThing }
