@@ -6,7 +6,6 @@
 package openfeature
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,6 +33,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 // withLogLevel sets the global log level for the duration of the test and
@@ -602,6 +602,11 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 
 func TestRemoteConfig_DebugLogs(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	rcConfig := remoteconfig.DefaultClientConfig()
+	rcConfig.Env = "actual-client-env"
+	require.NoError(t, remoteconfig.Start(rcConfig))
+	t.Cleanup(remoteconfig.Stop)
 	p := newDatadogProvider(ProviderConfig{})
 	cfg := createTestConfig()
 	data, err := json.Marshal(cfg)
@@ -612,7 +617,7 @@ func TestRemoteConfig_DebugLogs(t *testing.T) {
 	processConfigUpdate(p, path, nil)
 
 	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" received`)
-	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, sdk_env=`+cmp.Or(internalconfig.Get().Env(), "unset")+`, config_env=test, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
+	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" applied successfully (`+strconv.Itoa(len(cfg.Flags))+` flag(s), 0 rejected, sdk_env=actual-client-env, config_env=test, created_at=`+formatCreatedAt(cfg.CreatedAt)+`)`)
 	logger.assertContains(t, `openfeature: remote_config configuration "`+path+`" removed`)
 }
 
@@ -887,7 +892,7 @@ func TestRejectedFlags_DebugLogs(t *testing.T) {
 
 		processConfigUpdate(p, "path/config", []byte(ufcWithRejectedFlag))
 
-		logger.assertContains(t, `remote_config configuration "path/config" applied successfully (1 flag(s), 1 rejected, sdk_env=`+cmp.Or(internalconfig.Get().Env(), "unset")+`, config_env=Test, created_at=2026-10-01T12:00:00Z)`)
+		logger.assertContains(t, `remote_config configuration "path/config" applied successfully (1 flag(s), 1 rejected, sdk_env=unset, config_env=Test, created_at=2026-10-01T12:00:00Z)`)
 		logger.assertContains(t, `openfeature: remote_config configuration "path/config" rejected flag "bad-flag": `)
 		assert.Zero(t, logger.countContaining(`rejected flag "good-flag"`))
 	})
@@ -1363,7 +1368,7 @@ func TestRawDebugDataWarning(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newConfiguredProvider(t)
 		require.Equal(t, 1, logger.countContaining(rawDebugDataWarning))
-		logger.assertContains(t, "WARN: openfeature: debug logging is enabled, so feature flag logs include raw evaluation data (targeting keys, evaluation context attributes, flag values, and default values) that may contain personal or sensitive information. Unset DD_TRACE_DEBUG when you no longer need it.")
+		logger.assertContains(t, "WARN: openfeature: debug logging is enabled, so feature flag logs include raw evaluation data (targeting keys, evaluation context attributes, flag values, and default values) that may contain personal or sensitive information. Disable the debug logging setting that enabled it (DD_TRACE_DEBUG, OTEL_LOG_LEVEL, or tracer.WithDebugMode) when you no longer need it.")
 
 		evaluate(p)
 		evaluate(p)
