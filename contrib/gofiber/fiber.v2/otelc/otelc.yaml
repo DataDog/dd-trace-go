@@ -5,9 +5,8 @@
 ---
 # Wraps fiber.New call sites, in every package of the build, dependencies
 # included, except the fiber contrib, whose own tests wrap their apps
-# themselves. It also sets DD_Instrumented on the app's fasthttp server, a field
-# the fasthttp rules add, so they skip Fiber's server and each request gets one
-# span. otelc/all always brings the fasthttp rules into the build.
+# themselves. It also passes the app's fasthttp server to SkipServer, so the
+# fasthttp rules leave it alone and each request gets one span.
 new_app:
   target:
     - "**"
@@ -17,10 +16,11 @@ new_app:
   do:
     - wrap_call:
         replace: |-
-          func(app *__dd_fiber.App) *__dd_fiber.App {
-            app.Server().DD_Instrumented = true
+          func(app *fiber.App) *fiber.App {
+            fasthttpotelc.SkipServer(app.Server())
             return app
           }(fibertrace.Wrap({{ . }}))
   imports:
-    __dd_fiber: github.com/gofiber/fiber/v2
+    fiber: github.com/gofiber/fiber/v2
     fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
+    fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2

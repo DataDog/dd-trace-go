@@ -3,43 +3,16 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# Adds DD_Instrumented to fasthttp.Server. It is exported so that frameworks
-# built on fasthttp, such as Fiber, can set it and keep this integration off
-# their server.
-fasthttp_server_instrumented_field:
-  target: github.com/valyala/fasthttp
-  where:
-    struct: Server
-  do:
-    - add_struct_fields:
-        new_field:
-          - name: DD_Instrumented
-            type: bool
-
-# Adds to fasthttp a linkname declaration of the contrib's handler wrapper,
-# which fasthttp_server_serve calls.
-fasthttp_server_wrap_handler_link:
-  target: github.com/valyala/fasthttp
-  do:
-    - add_file:
-        file: link.go
-        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
-
-# Wraps the server's handler at the top of Server.Serve. ListenAndServe,
-# ServeTLS and the other start methods all call Serve, so this covers them too.
-# DD_Instrumented keeps a server served on several listeners from being wrapped
-# more than once. The code runs inside fasthttp, because a hook compiles against
-# the unmodified Server and cannot read DD_Instrumented.
+# Wraps the server's handler with the contrib's tracing the first time
+# Server.Serve runs. ListenAndServe, ServeTLS and the other start methods all
+# call Serve, so this covers them too. Servers passed to SkipServer, such as
+# Fiber's, are left alone.
 fasthttp_server_serve:
   target: github.com/valyala/fasthttp
   where:
     func: Serve
     recv: "*Server"
   do:
-    - inject_code:
-        raw: |-
-          {{- $srv := .Receiver -}}
-          if !{{ $srv }}.DD_Instrumented && {{ $srv }}.Handler != nil {
-            {{ $srv }}.Handler = __dd_fasthttptrace_wrapHandler({{ $srv }}.Handler)
-            {{ $srv }}.DD_Instrumented = true
-          }
+    - inject_hooks:
+        before: BeforeServe
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
