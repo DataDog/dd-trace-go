@@ -111,7 +111,9 @@ func (q *fuzzEventQueue) drain(nativeFinished bool) {
 // nativeResult reads Go's stored result, never Failed's process-wide race check.
 // Fatal shutdown can read an active root's already-propagated seed failure, but
 // must not read duration: Go writes it without holding common.mu.
-func (e *fuzzTestEvent) nativeResult(nativeFinished bool) (failed, skipped bool, duration time.Duration) {
+// durationRead reports whether the native duration field was read; a read
+// duration of zero is a valid native result, unlike an unreadable one.
+func (e *fuzzTestEvent) nativeResult(nativeFinished bool) (failed, skipped bool, duration time.Duration, durationRead bool) {
 	var t *testing.T
 	switch native := e.native.(type) {
 	case *testing.T:
@@ -134,19 +136,26 @@ func (e *fuzzTestEvent) nativeResult(nativeFinished bool) (failed, skipped bool,
 		skipped = *fields.skipped
 	}
 	fields.mu.RUnlock()
-	if nativeFinished {
-		durationPtr, err := getFieldPointerFromWithType(e.native, "duration", reflect.TypeFor[time.Duration]())
-		if err != nil {
-			log.Debug("civisibility: native fuzz duration field unavailable; retaining captured finish time")
-			return
-		}
-		duration = *(*time.Duration)(durationPtr)
+	duration, durationRead = nativeDuration(e.native, nativeFinished)
+	return failed, skipped, duration, durationRead
+}
+
+// nativeDuration reads Go's stored duration after M.Run returned. M.Run
+// returning provides the memory barrier that nativeResult lacks before then.
+func nativeDuration(native testing.TB, nativeFinished bool) (time.Duration, bool) {
+	if !nativeFinished {
+		return 0, false
 	}
-	return
+	durationPtr, err := getFieldPointerFromWithType(native, "duration", reflect.TypeFor[time.Duration]())
+	if err != nil {
+		log.Debug("civisibility: native fuzz duration field unavailable; retaining captured finish time")
+		return 0, false
+	}
+	return *(*time.Duration)(durationPtr), true
 }
 
 func (e *fuzzTestEvent) finish(nativeFinished bool) {
-	failed, skipped, duration := e.nativeResult(nativeFinished)
+	failed, skipped, duration, durationRead := e.nativeResult(nativeFinished)
 	failed = failed || e.failed
 	// A managed pass/failure is changed to native skip by design. That skip
 	// must not replace the raw event status captured before masking.
@@ -156,7 +165,14 @@ func (e *fuzzTestEvent) finish(nativeFinished bool) {
 		// A seed panic aborts its root before the root wrapper can complete.
 		finishTime = time.Now()
 	}
-	if duration > 0 {
+	if durationRead {
+		// The parallel-wait compensation can leave a non-positive native
+		// duration when the wait clock and the native accumulator skew. Go
+		// prints such a result as ±0.00s, so report the zero length instead of
+		// the captured finish time, which still spans the parallel-seed wait.
+		if duration < 0 {
+			duration = 0
+		}
 		finishTime = e.test.StartTime().Add(duration)
 	}
 	finishFuzzTestEvent(failed, skipped, e.metadata, e.test, e.suite, e.module, finishTime)
