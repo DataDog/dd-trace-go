@@ -40,6 +40,14 @@ type traceWriter interface {
 // asynchronously; wait() blocks until in-flight sends finish.
 type flushWaiter interface{ wait() }
 
+// flushBlocker is implemented by trace writers whose flush() never waits
+// for an outgoing connection slot and can therefore defer a send under a
+// saturated agent. flushBlocking() is the variant that does wait, for the
+// callers that must send what is buffered rather than defer it: shutdown,
+// where deferring would drop every trace still in the payload, and the
+// synchronous flushes of the inspectable test tracer.
+type flushBlocker interface{ flushBlocking() }
+
 type agentTraceWriter struct {
 	// config holds the tracer configuration
 	config *config
@@ -104,6 +112,25 @@ func (h *agentTraceWriter) add(trace []*Span) {
 	} else {
 		h.rotateStalePayload(protocol)
 	}
+	// The deferred flush (see flush()) can hold this payload for as long as
+	// every connection is in flight, so this check is the only bound on its
+	// growth. A flush already fired for the bytes below: needsFlush triggers
+	// once a push crosses payloadSizeLimit, and under a stalled agent that
+	// flush defers. Retry that flush once before dropping the trace: a send
+	// may have freed a slot since the deferred flush returned. Only when
+	// every slot is still in flight does the trace drop. flush() takes h.mu
+	// itself, so it must run without the lock held here.
+	if h.payload.size() >= int(payloadSizeLimit) {
+		h.mu.Unlock()
+		h.flush()
+		h.mu.Lock()
+		if size := h.payload.size(); size >= int(payloadSizeLimit) {
+			h.mu.Unlock()
+			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:payload_full"}, 1)
+			log.Error("payload buffer holds %d bytes; dropping a trace of %d spans", size, len(trace))
+			return
+		}
+	}
 	stats, pushErr := h.payload.push(trace)
 	needsFlush := pushErr == nil && stats.size > payloadSizeLimit
 	if pushErr == nil {
@@ -137,7 +164,10 @@ func (h *agentTraceWriter) add(trace []*Span) {
 
 func (h *agentTraceWriter) stop() {
 	h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
-	h.flush()
+	// Blocking, unlike every other flush call site: shutdown must send the
+	// traces still buffered in the payload, not defer them to a next tick
+	// that will never come.
+	h.flushBlocking()
 	h.wg.Wait()
 }
 
@@ -206,8 +236,47 @@ func (h *agentTraceWriter) rotateStalePayload(protocol float64) {
 	}
 }
 
-// flush will push any currently buffered traces to the server.
+// flush will push any currently buffered traces to the server. It never
+// waits for an outgoing connection slot: when all concurrentConnectionLimit
+// connections are in flight — a slow or stalled agent — it returns without
+// swapping h.payload, leaving the buffered traces in place for the next
+// scheduled tick to retry. Its caller is the tracer's single worker
+// goroutine, so blocking it here would also stop it draining t.out, and once
+// t.out fills, pushChunk starts dropping chunks with reason:queue_full
+// (see #5135). The deferral is bounded: once the payload holds
+// payloadSizeLimit bytes, add() drops further traces with
+// reason:payload_full instead of growing a payload that no flush can drain.
 func (h *agentTraceWriter) flush() {
+	select {
+	case h.climit <- struct{}{}:
+	default:
+		log.Debug("all %d outgoing connections are in flight; deferring trace flush", concurrentConnectionLimit)
+		return
+	}
+	h.flushHoldingSlot()
+}
+
+// flushBlocking is the flush variant that waits for a connection slot; see
+// flushBlocker for who needs it. It returns at once when the payload is
+// empty: a connection slot can only carry a payload, so an empty payload
+// must not make its caller wait for a stalled send to finish.
+func (h *agentTraceWriter) flushBlocking() {
+	h.mu.Lock()
+	empty := h.payload.itemCount() == 0
+	h.mu.Unlock()
+	if empty {
+		return
+	}
+	h.climit <- struct{}{}
+	h.flushHoldingSlot()
+}
+
+// flushHoldingSlot flushes the current payload using a connection slot the
+// caller already acquired; the send goroutine spawned by sendAsyncHolding
+// releases that slot in its deferred cleanup, so this method must not. The
+// slot is acquired before h.payload is swapped so that a caller that cannot
+// get one leaves the payload untouched. Callers must not hold h.mu.
+func (h *agentTraceWriter) flushHoldingSlot() {
 	h.mu.Lock()
 	// Read under the lock, same reasoning as add(): a read taken before
 	// h.mu.Lock() could go stale relative to a concurrent add()/flush() that
@@ -218,12 +287,13 @@ func (h *agentTraceWriter) flush() {
 	if oldp.itemCount() == 0 {
 		h.rotateStalePayload(protocol)
 		h.mu.Unlock()
+		<-h.climit // nothing to send; hand the slot straight back
 		return
 	}
 	h.payload = h.newPayload(protocol, min(oldp.size(), int(payloadMaxLimit)))
 	h.mu.Unlock()
 
-	h.sendAsync(oldp)
+	h.sendAsyncHolding(oldp)
 }
 
 // retirePayload runs the cleanup a payload needs once it's done being sent:
@@ -247,6 +317,16 @@ func (h *agentTraceWriter) retirePayload(p payload) {
 // wide, not just the ones actually contending for a connection slot.
 func (h *agentTraceWriter) sendAsync(p payload) {
 	h.climit <- struct{}{}
+	h.sendAsyncHolding(p)
+}
+
+// sendAsyncHolding is sendAsync for a connection slot the caller has
+// already acquired; the goroutine it spawns releases that slot in its
+// deferred cleanup, so the caller must not. Splitting the acquisition out is
+// what lets flush() try a slot non-blockingly before committing to swap
+// h.payload, while keeping the climit token lifecycle at exactly one acquire
+// and one release per send.
+func (h *agentTraceWriter) sendAsyncHolding(p payload) {
 	h.wg.Add(1)
 	go func(p payload) {
 		defer func(start time.Time) {
