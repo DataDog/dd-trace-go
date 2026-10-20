@@ -443,6 +443,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	immediateProvider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
 	})
+	t.Cleanup(immediateProvider.Shutdown)
 	// Reuse the configuration without starting telemetry workers for capability checks.
 	immediateProvider.configuration = &cfg
 	capabilityProviders := map[string]*DatadogProvider{
@@ -459,22 +460,28 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 
 	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cases []struct {
+			Flag         string                   `json:"flag"`
+			DefaultValue any                      `json:"defaultValue"`
+			TargetingKey *string                  `json:"targetingKey"`
+			Attributes   map[string]any           `json:"attributes"`
+			Result       fixtureResult            `json:"result"`
+			Capabilities map[string]fixtureResult `json:"capabilities"`
+		}
+		if err := json.Unmarshal(data, &cases); err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		// Count discovered cases, not selected subtests, so -run filters remain usable.
+		for _, tc := range cases {
+			for capability := range tc.Capabilities {
+				capabilityCases[capability]++
+			}
+		}
 		t.Run(filepath.Base(file), func(t *testing.T) {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var cases []struct {
-				Flag         string                   `json:"flag"`
-				DefaultValue any                      `json:"defaultValue"`
-				TargetingKey *string                  `json:"targetingKey"`
-				Attributes   map[string]any           `json:"attributes"`
-				Result       fixtureResult            `json:"result"`
-				Capabilities map[string]fixtureResult `json:"capabilities"`
-			}
-			if err := json.Unmarshal(data, &cases); err != nil {
-				t.Fatalf("parse error: %v", err)
-			}
 			for i, tc := range cases {
 				tkLabel := "<nil>"
 				if tc.TargetingKey != nil {
@@ -513,7 +520,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						if !supported {
 							continue
 						}
-						capabilityCases[capability]++
 						t.Run(capability, func(t *testing.T) {
 							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
 							if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", expected.Value) {
@@ -533,7 +539,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 	for capability := range capabilityProviders {
 		if capabilityCases[capability] == 0 {
-			t.Errorf("no canonical fixture cases ran for supported capability %q", capability)
+			t.Errorf("no canonical fixture cases found for supported capability %q", capability)
 		}
 	}
 }

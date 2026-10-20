@@ -194,11 +194,15 @@ func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {
 		{VariationKey: "off", Shards: []*shard{{Salt: "experiment", TotalShards: 10000, Ranges: []*shardRange{{Start: 5000, End: 10000}}}}},
 	}
 	var wg sync.WaitGroup
+	variants := make([]string, 100)
 	for i := range 100 {
 		wg.Go(func() {
 			attrs := of.FlattenedContext{of.TargetingKey: strconv.Itoa(i)}
 			baseline := evaluateFlag(f, false, attrs, time.Now(), false)
+			assert.Contains(t, []string{"on", "off"}, baseline.VariantKey)
+			variants[i] = baseline.VariantKey
 			eligible := h.provider.BooleanEvaluation(context.Background(), "experiment", false, attrs)
+			assert.Equal(t, baseline.Value, eligible.Value)
 			assert.Equal(t, baseline.VariantKey, eligible.Variant)
 			assert.Equal(t, baseline.Reason, eligible.Reason)
 			attrs[experimentationOptOutAtAttribute] = experimentOptOutTestTime
@@ -207,8 +211,11 @@ func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {
 			assert.Empty(t, excluded.Variant)
 			delete(attrs, experimentationOptOutAtAttribute)
 			reincluded := h.provider.BooleanEvaluation(context.Background(), "experiment", false, attrs)
+			assert.Equal(t, baseline.Value, reincluded.Value)
 			assert.Equal(t, baseline.VariantKey, reincluded.Variant)
 		})
 	}
 	wg.Wait()
+	assert.Contains(t, variants, "on")
+	assert.Contains(t, variants, "off")
 }
