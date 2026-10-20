@@ -1,0 +1,73 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+  description: |-
+    Links the OpenTelemetry trace API to dd-trace-go.
+
+    The bridge is active only when the environment variable `DD_TRACE_OTEL_ENABLED` is `true`.
+
+    `trace.SpanFromContext` returns the span that a Datadog integration started, for example the
+    `net/http` server span. Attributes, events, errors, and status set through the OpenTelemetry
+    API go to that span.
+
+    If the application does not set a TracerProvider with `otel.SetTracerProvider`, the
+    OpenTelemetry global tracer creates spans with dd-trace-go. If the application sets a
+    TracerProvider, the OpenTelemetry API uses it.
+
+aspects:
+  # Show Datadog spans to the OpenTelemetry API.
+  - id: trace.SpanFromContext
+    join-point:
+      all-of:
+        - import-path: go.opentelemetry.io/otel/trace
+        - function-body:
+            function:
+              - name: SpanFromContext
+    advice:
+      - inject-declarations:
+          # go:linkname prevents an import cycle: ddtrace/opentelemetry imports go.opentelemetry.io/otel/trace.
+          imports:
+            context: context
+          links:
+            - github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+          template: |-
+            //go:linkname __dd_otel_bridgeSpanFromContext github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry.bridgeSpanFromContext
+            func __dd_otel_bridgeSpanFromContext(context.Context, any) (Span, bool)
+      - prepend-statements:
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            if {{ $ctx }} != nil {
+              if __dd_span, __dd_ok := __dd_otel_bridgeSpanFromContext({{ $ctx }}, {{ $ctx }}.Value(currentSpanKey)); __dd_ok {
+                return __dd_span
+              }
+            }
+
+  # Back the OpenTelemetry global tracer with dd-trace-go until the application sets a TracerProvider.
+  - id: global.tracer.Start
+    join-point:
+      function-body:
+        function:
+          - receiver: '*go.opentelemetry.io/otel/internal/global.tracer'
+          - name: Start
+    advice:
+      - inject-declarations:
+          imports:
+            trace: go.opentelemetry.io/otel/trace
+          links:
+            - github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+          template: |-
+            //go:linkname __dd_otel_bridgeTracer github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry.bridgeTracer
+            func __dd_otel_bridgeTracer() trace.Tracer
+      - prepend-statements:
+          template: |-
+            {{- $t := .Function.Receiver -}}
+            if {{ $t }}.delegate.Load() == nil {
+              if __dd_tracer := __dd_otel_bridgeTracer(); __dd_tracer != nil {
+                return __dd_tracer.Start({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}, {{ .Function.Argument 2 }}...)
+              }
+            }
