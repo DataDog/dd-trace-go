@@ -150,14 +150,8 @@
 // sendable exposure and does not consume the cache. The next successful
 // evaluation can therefore emit an exposure.
 //
-// Release dependency: OpenFeature Go must report After-hook failures in Finally
-// details (specification 4.3.8 and 4.4.8). Version 1.18.0 does not do this. This
-// draft requires https://github.com/open-feature/go-sdk/pull/623 and a dependency
-// upgrade before release;
-// validation uses an explicit test-only replacement, not a production fork.
 // Calling provider resolution methods directly does not run hooks. Register
 // customer hooks on the client or evaluation, and retain the provider's hooks.
-// Split-feature routing (including holdout metadata) is separate from this MVP.
 //
 // # Flag Configuration
 //
