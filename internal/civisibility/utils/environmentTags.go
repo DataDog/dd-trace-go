@@ -314,7 +314,7 @@ func createCITagsMap() map[string]string {
 		// If the head commit SHA is available, populate additional Git head metadata
 		if headCommitSha, ok := localTags[constants.GitHeadCommit]; ok {
 			if headCommitData, err := fetchCommitDataFunc(headCommitSha); err != nil {
-				log.Warn("civisibility: failed to fetch head commit data for %s: %s", headCommitSha, err.Error())
+				log.Warn("civisibility: failed to fetch head commit data for %s: %s", headCommitSha, err.Error()) //errtrack:ignore repository command failure
 			} else if headCommitSha == headCommitData.CommitSha {
 				localTags[constants.GitHeadAuthorDate] = headCommitData.AuthorDate.String()
 				localTags[constants.GitHeadAuthorName] = headCommitData.AuthorName
@@ -324,7 +324,7 @@ func createCITagsMap() map[string]string {
 				localTags[constants.GitHeadCommitterEmail] = headCommitData.CommitterEmail
 				localTags[constants.GitHeadMessage] = headCommitData.CommitMessage
 			} else {
-				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha)
+				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha) //errtrack:ignore repository state mismatch
 			}
 		}
 
