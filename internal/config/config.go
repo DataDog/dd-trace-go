@@ -80,6 +80,9 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
+	// agentHost is DD_AGENT_HOST, which the OTLP logs exporter falls back to
+	// when agentURL has no host.
+	agentHost string
 	// dogstatsdAddr is the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -207,6 +210,13 @@ type Config struct {
 	blrpScheduleDelay      time.Duration
 	blrpExportTimeout      time.Duration
 	blrpMaxExportBatchSize int
+	// OTLP logs exporter settings (OTEL_EXPORTER_OTLP_LOGS_*, falling back to OTEL_EXPORTER_OTLP_*)
+	otlpLogsProtocol string
+	otlpLogsEndpoint string
+	otlpLogsHeaders  map[string]string
+	otlpLogsTimeout  time.Duration
+	// Resolved HTTP URL; empty when the exporter should use its agent fallback.
+	otlpLogsHTTPURL string
 	// traceProtocol is the Datadog trace protocol version the user requested
 	// (TraceProtocolV04 or TraceProtocolV1). This is independent of whether the
 	// trace-agent actually supports it — see RequestedTraceProtocol's doc.
@@ -305,6 +315,9 @@ type Config struct {
 	// featureFlagsEnabled is DD_FEATURE_FLAGS_ENABLED, the stable Feature Flagging kill switch.
 	// nil means not explicitly set.
 	featureFlagsEnabled *bool
+	// flagEvalTelemetryOptOutEnabled is
+	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
+	flagEvalTelemetryOptOutEnabled bool
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
 	// to tell a blank value apart from an unrecognized one.
@@ -367,7 +380,7 @@ func (c *Config) checkProductConflict(field string, origin telemetry.Origin, val
 			"second_value:" + fmt.Sprint(value),
 		}).Submit(1)
 		log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
-			prev.product, field, p)
+			prev.product, field, p) //errtrack:ignore conflicting user configuration
 		return true
 	}
 	c.overrides[field] = programmaticOverride{product: p, value: value}
@@ -388,6 +401,7 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	cfg.agentHost = agentHost
 
 	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
@@ -437,32 +451,32 @@ func loadConfig() *Config {
 	}
 	cfg.statsAdditionalTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", defaultStatsAdditionalTagsCardinalityLimit)
 	if cfg.statsAdditionalTagsCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value %d", cfg.statsAdditionalTagsCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value %d", cfg.statsAdditionalTagsCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsAdditionalTagsCardinalityLimit = defaultStatsAdditionalTagsCardinalityLimit
 	}
 	cfg.statsWholeKeyCardinalityLimit = p.GetInt("DD_TRACE_STATS_CARDINALITY_LIMIT", defaultStatsWholeKeyCardinalityLimit)
 	if cfg.statsWholeKeyCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsWholeKeyCardinalityLimit, defaultStatsWholeKeyCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsWholeKeyCardinalityLimit, defaultStatsWholeKeyCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsWholeKeyCardinalityLimit = defaultStatsWholeKeyCardinalityLimit
 	}
 	cfg.statsResourceCardinalityLimit = p.GetInt("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", defaultStatsResourceCardinalityLimit)
 	if cfg.statsResourceCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsResourceCardinalityLimit, defaultStatsResourceCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsResourceCardinalityLimit, defaultStatsResourceCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsResourceCardinalityLimit = defaultStatsResourceCardinalityLimit
 	}
 	cfg.statsHTTPEndpointCardinalityLimit = p.GetInt("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", defaultStatsHTTPEndpointCardinalityLimit)
 	if cfg.statsHTTPEndpointCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsHTTPEndpointCardinalityLimit, defaultStatsHTTPEndpointCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsHTTPEndpointCardinalityLimit, defaultStatsHTTPEndpointCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsHTTPEndpointCardinalityLimit = defaultStatsHTTPEndpointCardinalityLimit
 	}
 	cfg.statsPeerTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", defaultStatsPeerTagsCardinalityLimit)
 	if cfg.statsPeerTagsCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsPeerTagsCardinalityLimit, defaultStatsPeerTagsCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsPeerTagsCardinalityLimit, defaultStatsPeerTagsCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsPeerTagsCardinalityLimit = defaultStatsPeerTagsCardinalityLimit
 	}
 	cfg.statsOriginCardinalityLimit = p.GetInt("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", defaultStatsOriginCardinalityLimit)
 	if cfg.statsOriginCardinalityLimit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit)
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
@@ -482,7 +496,7 @@ func loadConfig() *Config {
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+		log.Warn("OTEL_LOGS_EXPORTER is not supported") //errtrack:ignore unsupported user configuration
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
@@ -492,17 +506,19 @@ func loadConfig() *Config {
 		cfg.otlpExportMode = false
 		cfg.traceProtocolOverridesOTLP = true
 	}
-	otlpGenericEndpoint := p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	otlpTracesEndpoint := p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
-	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, otlpGenericEndpoint)
-	cfg.otlpTraceURL = resolveOTLPTraceURL(otlpTracesEndpoint, cfg.otlpEndpoint)
-	cfg.otlpTraceURLDerivedFromAgent = (otlpTracesEndpoint == "" || cfg.otlpTraceURL != otlpTracesEndpoint) &&
-		(otlpGenericEndpoint == "" || cfg.otlpEndpoint != otlpGenericEndpoint)
-	otlpGenericHeaders := decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter))
-	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(
-		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter)),
-	))
+	otlpGenericEndpoints := []string{p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL)}
+	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
+	otlpGenericProtocols := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_PROTOCOL")
+	for _, v := range otlpGenericProtocols {
+		if v != "" && !supportsOTLPProtocol(otlpMetricsProtocols)(v) && !supportsOTLPProtocol(otlpLogsProtocols)(v) {
+			log.Warn("Unsupported OTEL_EXPORTER_OTLP_PROTOCOL value; falling back to default.") //errtrack:ignore invalid user configuration
+		}
+	}
+	tracesEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, cfg.otlpExportMode)
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
+	cfg.otlpTraceURL = resolveOTLPSignalURL(tracesEndpoint, cfg.otlpEndpoint, otlpTracesPath, false)
+	cfg.otlpTraceURLDerivedFromAgent = tracesEndpoint == "" && genericEndpoint == ""
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders)))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -517,30 +533,13 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
-		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
-		cfg.otlpEndpoint,
-	)
-	cfg.otlpMetricsHeaders = resolveOTLPHeaders(
-		otlpGenericHeaders,
-		decodeOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter)),
-	)
+	// Only warn about OTLP metrics values the span metrics exporter is going to use.
+	warnOTLPMetrics := cfg.OTLPSpanMetricsEnabled()
+	metricsEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, warnOTLPMetrics)
+	cfg.otlpMetricsURL = resolveOTLPSignalURL(metricsEndpoint, resolveOTLPEndpoint(cfg.agentURL, genericEndpoint), otlpMetricsPath, false)
+	cfg.otlpMetricsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpMetricsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpMetricsProtocols), warnOTLPMetrics))
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
-	// The protocol is only consumed by the OTLP span metrics exporter. Values
-	// such as "grpc" are valid for other OpenTelemetry components, so only warn
-	// about them when this exporter is going to use the value.
-	warnOTLPProtocol := cfg.OTLPSpanMetricsEnabled()
-	// The signal-specific protocol takes precedence over the generic one, so
-	// the generic value never reaches the exporter when it is set; warn about
-	// it only when it is the effective protocol.
-	warnGeneric := warnOTLPProtocol && !p.IsSet("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL")
-	otlpProtocolFallback := p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
-	if !validateOTLPProtocol(otlpProtocolFallback, "OTEL_EXPORTER_OTLP_PROTOCOL", warnGeneric) {
-		otlpProtocolFallback = "http/protobuf"
-	}
-	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", otlpProtocolFallback, func(v string) bool {
-		return validateOTLPProtocol(v, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", warnOTLPProtocol)
-	})
 	envP := provider.NewEnvironment()
 	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
 	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
@@ -555,6 +554,15 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
 		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
 	})))
+	logsEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isURL, cfg.logsOTelEnabled)
+	cfg.otlpLogsEndpoint = cmp.Or(logsEndpoint, genericEndpoint)
+	if cfg.otlpLogsEndpoint != "" {
+		cfg.otlpLogsHTTPURL = resolveOTLPSignalURL(logsEndpoint, genericEndpoint, otlpLogsPath, true)
+	}
+	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpLogsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpLogsProtocols), cfg.logsOTelEnabled))
+	logsTimeout := p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds(), func(v int64) bool { return v >= 0 })
+	cfg.otlpLogsTimeout = time.Duration(p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", logsTimeout, func(v int64) bool { return v >= 0 })) * time.Millisecond
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -580,6 +588,7 @@ func loadConfig() *Config {
 	if featureFlagsEnabledOrigin != telemetry.OriginDefault {
 		cfg.featureFlagsEnabled = &featureFlagsEnabled
 	}
+	cfg.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
 	featureFlagsSource, featureFlagsSourceOrigin := p.GetStringWithOrigin("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
 	cfg.featureFlagsConfigurationSource = featureFlagsSource
 	cfg.featureFlagsConfigurationSourceSet = featureFlagsSourceOrigin != telemetry.OriginDefault
@@ -649,7 +658,7 @@ func loadConfig() *Config {
 	if p.GetBool("DD_TRACE_REPORT_HOSTNAME", false) {
 		hostname, err := os.Hostname()
 		if err != nil {
-			log.Warn("unable to look up hostname: %s", err.Error())
+			log.Warn("unable to look up hostname: %s", err.Error()) //errtrack:ignore host environment failure
 			cfg.hostnameLookupError = err
 		}
 		cfg.hostname = hostname
@@ -1273,7 +1282,7 @@ func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1293,7 +1302,7 @@ func (c *Config) SetStatsResourceCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1313,7 +1322,7 @@ func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int, origin telemetr
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1333,7 +1342,7 @@ func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int, origin telemetry.Or
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1353,7 +1362,7 @@ func (c *Config) SetStatsOriginCardinalityLimit(limit int, origin telemetry.Orig
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
-		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d", limit)
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d", limit) //errtrack:ignore invalid programmatic configuration
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", origin, limit, product...) {
@@ -1759,6 +1768,76 @@ func (c *Config) BLRPMaxExportBatchSize() int {
 	return c.blrpMaxExportBatchSize
 }
 
+// OTLPLogsProtocol returns "http/protobuf" (default), "http" or "grpc".
+func (c *Config) OTLPLogsProtocol() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsProtocol
+}
+
+// OTLPLogsEndpoint returns an endpoint that parses as a URL, or "" to use the agent.
+func (c *Config) OTLPLogsEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsEndpoint
+}
+
+// OTLPLogsHTTPURL returns the resolved HTTP logs URL, or an empty string when
+// the exporter should derive its endpoint from the agent configuration.
+func (c *Config) OTLPLogsHTTPURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsHTTPURL
+}
+
+// OTLPLogsAgentHTTPEndpoint returns the host:port, path, and insecure flag the
+// HTTP logs exporter uses when OTLPLogsHTTPURL is empty.
+func (c *Config) OTLPLogsAgentHTTPEndpoint() (endpoint, path string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	endpoint, insecure = c.otlpLogsAgentEndpoint(otlpDefaultPort)
+	return endpoint, otlpLogsPath, insecure
+}
+
+// OTLPLogsGRPCEndpoint returns the gRPC logs exporter target and insecure flag.
+// The target is only the host of OTLPLogsEndpoint, or the agent host when the
+// endpoint is empty. Like the OTel SDK, any scheme other than https is
+// insecure; an endpoint without a scheme returns false and leaves transport
+// security to the SDK default and OTEL_EXPORTER_OTLP_INSECURE.
+func (c *Config) OTLPLogsGRPCEndpoint() (target string, insecure bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.otlpLogsEndpoint == "" {
+		return c.otlpLogsAgentEndpoint(otlpDefaultGRPCPort)
+	}
+	// otlpLogsEndpoint is validated to parse as a URL.
+	u, _ := url.Parse(c.otlpLogsEndpoint)
+	return cmp.Or(u.Host, u.Path), u.Scheme != "" && u.Scheme != URLSchemeHTTPS
+}
+
+// otlpLogsAgentEndpoint returns the agent host with the given port: the agent
+// URL host, then DD_AGENT_HOST, then localhost. c.mu must be held.
+func (c *Config) otlpLogsAgentEndpoint(port string) (endpoint string, insecure bool) {
+	if u := c.agentURL; u != nil && u.Hostname() != "" {
+		return net.JoinHostPort(u.Hostname(), port), u.Scheme == URLSchemeHTTP || u.Scheme == URLSchemeUnix
+	}
+	return net.JoinHostPort(cmp.Or(c.agentHost, internal.DefaultAgentHostname), port), true
+}
+
+// OTLPLogsHeaders returns a copy of the resolved OTLP logs headers.
+func (c *Config) OTLPLogsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpLogsHeaders)
+}
+
+// OTLPLogsTimeout returns the OTLP logs export timeout.
+func (c *Config) OTLPLogsTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsTimeout
+}
+
 func (c *Config) OTelSemanticsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1787,7 +1866,7 @@ func (c *Config) ResolveOTelSemanticsConfig() {
 		return
 	}
 	if c.otlpTraceURLDerivedFromAgent {
-		c.otlpTraceURL = resolveOTLPTraceURL("", resolveOTLPEndpoint(c.agentURL, ""))
+		c.otlpTraceURL = resolveOTLPSignalURL("", resolveOTLPEndpoint(c.agentURL, ""), otlpTracesPath, false)
 	}
 	c.disableAutomaticPeerService()
 }
@@ -2031,6 +2110,27 @@ func (c *Config) RuntimeMetricsGRPCEndpoint() (endpoint string, insecure bool) {
 	return c.runtimeMetricsGRPCEndpoint, c.runtimeMetricsInsecure
 }
 
+// RuntimeMetricsHTTPURL returns the URL the HTTP runtime metrics exporter posts to.
+func (c *Config) RuntimeMetricsHTTPURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return (&url.URL{Scheme: otlpScheme(c.runtimeMetricsInsecure), Host: c.runtimeMetricsHTTPEndpoint, Path: c.runtimeMetricsHTTPPath}).String()
+}
+
+// RuntimeMetricsGRPCURL returns the URL of the gRPC runtime metrics exporter target.
+func (c *Config) RuntimeMetricsGRPCURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return otlpScheme(c.runtimeMetricsInsecure) + "://" + c.runtimeMetricsGRPCEndpoint
+}
+
+func otlpScheme(insecure bool) string {
+	if insecure {
+		return URLSchemeHTTP
+	}
+	return URLSchemeHTTPS
+}
+
 func (c *Config) RuntimeMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -2226,6 +2326,14 @@ func (c *Config) FeatureFlagsEnabled() (enabled, explicit bool) {
 		return false, false
 	}
 	return *c.featureFlagsEnabled, true
+}
+
+// FlagEvalTelemetryOptOutEnabled returns
+// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
+func (c *Config) FlagEvalTelemetryOptOutEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.flagEvalTelemetryOptOutEnabled
 }
 
 // FeatureFlagsConfigurationSource returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE and whether

@@ -25,6 +25,28 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
+func TestPrintedDuration(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		target   string
+		duration string
+		want     string
+	}{
+		{name: "zero", target: "FuzzParallelDuration", duration: "0.00", want: "0.00"},
+		{name: "negative zero", target: "FuzzParallelDuration", duration: "-0.00", want: "0.00"},
+		{name: "positive", target: "FuzzParallelDuration", duration: "1.23", want: "1.23"},
+		{name: "negative nonzero", target: "FuzzParallelDuration", duration: "-0.01", want: "-0.01"},
+		{name: "seed", target: "FuzzParallelDuration/seed#0", duration: "0.01", want: "0.01"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output := fmt.Sprintf("--- PASS: %s (%ss)\n", tc.target, tc.duration)
+			if got := printedDuration(t, output, tc.target); got != tc.want {
+				t.Errorf("printed duration = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFixtureChildProcess(t *testing.T) {
 	switch os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") {
 	case "command-exit":
