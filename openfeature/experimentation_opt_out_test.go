@@ -7,7 +7,7 @@ package openfeature
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -101,7 +101,7 @@ func TestExperimentationOptOutAllocations(t *testing.T) {
 
 func TestExperimentationOptOutIndependentTelemetry(t *testing.T) {
 	for _, suppressTelemetry := range []bool{false, true} {
-		t.Run(fmt.Sprint(suppressTelemetry), func(t *testing.T) {
+		t.Run(strconv.FormatBool(suppressTelemetry), func(t *testing.T) {
 			h := newOptOutHarness(t, ProviderConfig{
 				ExperimentationOptOutMode:                ExperimentationOptOutImmediate,
 				EnableEvaluationTelemetryOptOutParameter: new(true),
@@ -160,7 +160,7 @@ func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 100 {
 		wg.Go(func() {
-			attrs := of.FlattenedContext{of.TargetingKey: fmt.Sprint(i)}
+			attrs := of.FlattenedContext{of.TargetingKey: strconv.Itoa(i)}
 			baseline := evaluateFlag(f, false, attrs, time.Now(), false)
 			eligible := h.provider.BooleanEvaluation(context.Background(), "experiment", false, attrs)
 			assert.Equal(t, baseline.VariantKey, eligible.Variant)
