@@ -166,7 +166,7 @@ func TestUFCObserveFullEvaluationDataParsing(t *testing.T) {
 		raw := `{"format":"SERVER","observeFullEvaluationData":true,"environment":{"name":"Staging"},` +
 			`"flags":{"f":{"key":"f","enabled":true,"variationType":"STRING",` +
 			`"variations":{"on":{"key":"on","value":"v"}},` +
-			`"allocations":[{"key":"a","rules":[],"splits":[{"variationKey":"on","shards":[]}]}]}}}`
+			`"allocations":[{"key":"a","doLog":true,"rules":[],"splits":[{"variationKey":"on","shards":[]}]}]}}}`
 		var config universalFlagsConfiguration
 		if err := json.Unmarshal([]byte(raw), &config); err != nil {
 			t.Fatalf("unmarshal failed: %v", err)

@@ -33,7 +33,8 @@ func createTestConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "allocation1",
+						Key:   "allocation1",
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -72,7 +73,8 @@ func createTestConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "allocation1",
+						Key:   "allocation1",
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -111,7 +113,8 @@ func createTestConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "allocation1",
+						Key:   "allocation1",
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -150,7 +153,8 @@ func createTestConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "allocation1",
+						Key:   "allocation1",
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -201,7 +205,8 @@ func createTestConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "allocation1",
+						Key:   "allocation1",
+						DoLog: new(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
