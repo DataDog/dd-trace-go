@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
+	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -993,9 +994,9 @@ func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) 
 			return
 		}
 
-		// The literal response verifies that malformed backend records are
-		// dropped at ingress. Both empty IDs must result in one local log and
-		// neither record may reach the Dataset.
+		// The literal response verifies that ingress drops malformed backend
+		// records. Both empty IDs must result in one local log. Neither record
+		// reaches the Dataset.
 		const recordsResponse = `{
 			"data": [
 				{"id": "record-1", "type": "dataset_records", "attributes": {"input": "valid"}},
@@ -1035,7 +1036,19 @@ func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) 
 	logs := tp.Logs()
 	require.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "llmobs: backend returned dataset records without IDs; discarding malformed records")
-	assert.Empty(t, rt.LogMessages(), "Pull is a caller request path and must not report to Error Tracking")
+
+	// The WAFManager GC cleanup in appsec is a process-wide safety net. A WAFManager that an
+	// earlier test in this binary dropped can trigger this cleanup during the capture window of
+	// this test. The Pull path does not produce that report. Exclude this message, so that the
+	// assertion fails only for reports that Pull produced.
+	var reported []string
+	for _, msg := range rt.LogMessages() {
+		if msg.Message == appsecconfig.WAFManagerLeakedMessage {
+			continue
+		}
+		reported = append(reported, msg.Message)
+	}
+	assert.Empty(t, reported, "Pull is a caller request path and must not report to Error Tracking")
 }
 
 func TestDatasetRecordIteration(t *testing.T) {
