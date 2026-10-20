@@ -74,17 +74,25 @@ func asClient(c Client) *client {
 	return nil
 }
 
-// StartApp starts the telemetry client with the given client send the app-started telemetry and sets it as the global (*client)
-// then calls client.Flush on the client asynchronously.
-func StartApp(client Client) {
+// StartApp sends the app-started telemetry with the given client, installs
+// the client in the global slot, and then calls client.Flush on the client
+// asynchronously. It reports whether this call installed the client.
+//
+// StartApp never closes the passed client. When it reports false, the caller
+// keeps ownership of the client: another client holds the global slot, a
+// concurrent stop invalidated this attempt, or telemetry is disabled. Close
+// a rejected client, so the periodic ticker that NewClient started stops.
+// Keep a rejected client open only when another StartApp call installed the
+// same client: the global lifecycle owns that client.
+func StartApp(client Client) bool {
 	if Disabled() {
-		return
+		return false
 	}
 
 	attempt, empty := prepareStartApp()
 	if !empty {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
-		return
+		return false
 	}
 
 	finishOwnsRegistration := false
@@ -101,14 +109,16 @@ func StartApp(client Client) {
 		done = c.markStartFlushPending()
 		if done == nil {
 			log.Debug("telemetry: StartApp called multiple times, ignoring")
-			return
+			return false
 		}
 	}
 
 	finishOwnsRegistration = true
 	if !finishStartApp(client, c, done, attempt) {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
+		return false
 	}
+	return true
 }
 
 // prepareStartApp admits a start only while the global slot is empty. It

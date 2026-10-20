@@ -614,7 +614,8 @@ func (c *startAppRaceClient) Close() error {
 // TestConcurrentStartAppDifferentClientsInstallsOnlyWinner deterministically
 // drives two StartApp calls past the initial empty-slot check. Exactly one
 // caller may install, activate, and flush its client; the loser must neither
-// replace the winner nor close either client.
+// replace the winner nor close either client. Only the installing caller
+// reports true.
 func TestConcurrentStartAppDifferentClientsInstallsOnlyWinner(t *testing.T) {
 	telemetryEnabledOnce = sync.Once{}
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
@@ -643,8 +644,9 @@ func TestConcurrentStartAppDifferentClientsInstallsOnlyWinner(t *testing.T) {
 	}()
 
 	var started sync.WaitGroup
-	started.Go(func() { StartApp(first) })
-	started.Go(func() { StartApp(second) })
+	var firstInstalled, secondInstalled atomic.Bool
+	started.Go(func() { firstInstalled.Store(StartApp(first)) })
+	started.Go(func() { secondInstalled.Store(StartApp(second)) })
 	for range 2 {
 		select {
 		case <-arrived:
@@ -657,11 +659,66 @@ func TestConcurrentStartAppDifferentClientsInstallsOnlyWinner(t *testing.T) {
 
 	installed := GlobalClient()
 	require.True(t, installed == first || installed == second)
+	require.Equal(t, installed == first, firstInstalled.Load(),
+		"only the StartApp call that installed the client may report true")
+	require.Equal(t, installed == second, secondInstalled.Load(),
+		"only the StartApp call that installed the client may report true")
 	require.Eventually(t, func() bool {
 		return first.flushes.Load()+second.flushes.Load() == 1
 	}, 5*time.Second, 10*time.Millisecond, "exactly one StartApp caller must flush")
 	assert.Zero(t, first.closes.Load(), "StartApp closed the first client")
 	assert.Zero(t, second.closes.Load(), "StartApp closed the second client")
+}
+
+// TestStartAppReportsRejectedDistinctClient covers the ownership contract of
+// the StartApp return value. A rejected distinct client reports false, and
+// the caller can then close it: Close stops the periodic ticker that
+// NewClient started and returns without waiting on a startup flush, because
+// the rejection completed the unused startup marker.
+func TestStartAppReportsRejectedDistinctClient(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	SwapClient(nil)
+	t.Cleanup(func() { SwapClient(nil) })
+
+	newConcreteClient := func() *client {
+		tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+		config := defaultConfig(ClientConfig{})
+		config.AgentURL = "http://localhost:8126"
+		config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+		c, err := newClient(tracerConfig, config)
+		require.NoError(t, err)
+		c.writer = &internal.RecordWriter{}
+		return c
+	}
+
+	winner := newConcreteClient()
+	loser := newConcreteClient()
+	t.Cleanup(func() {
+		_ = winner.Close()
+		_ = loser.Close()
+	})
+
+	require.True(t, StartApp(winner), "the installing StartApp call must report true")
+	require.False(t, StartApp(loser), "a rejected distinct client must report false")
+	require.Same(t, winner, GlobalClient())
+
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		loser.Close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return on the rejected client")
+	}
+	select {
+	case <-loser.flushTicker.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not stop the rejected client's ticker")
+	}
 }
 
 // TestConcurrentStartAppSingleClientKeepsFlushWorking verifies that two
@@ -696,15 +753,20 @@ func TestConcurrentStartAppSingleClientKeepsFlushWorking(t *testing.T) {
 
 	// Race two installations of the same client.
 	var barrier, started sync.WaitGroup
+	var installedReports atomic.Int32
 	barrier.Add(1)
 	for range 2 {
 		started.Go(func() {
 			barrier.Wait()
-			StartApp(c)
+			if StartApp(c) {
+				installedReports.Add(1)
+			}
 		})
 	}
 	barrier.Done()
 	started.Wait()
+	require.Equal(t, int32(1), installedReports.Load(),
+		"exactly one same-client StartApp call must report installation")
 
 	// The flush of the winning installation finishes: the client either
 	// already cleared its pending channel or the pending channel is closed.

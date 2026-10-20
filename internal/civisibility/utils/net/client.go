@@ -219,7 +219,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return
 			}
-			telemetry.StartApp(client)
+			if telemetry.StartApp(client) {
+				return
+			}
+			// Another product installed its telemetry client first, or a
+			// concurrent stop invalidated this start. CI Visibility keeps
+			// ownership of the rejected client and closes it, so its periodic
+			// ticker stops.
+			client.Close()
 		})
 	}
 
