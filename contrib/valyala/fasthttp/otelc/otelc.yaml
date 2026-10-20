@@ -3,14 +3,9 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# otelc port of ../orchestrion.yml.
-#
-# The rules run in fasthttp itself rather than through a hook. A hook compiles
-# against the real fasthttp, where DD_Instrumented does not exist, and the check
-# on that field is what keeps a server from being wrapped twice.
-
-# Aspect fasthttp.Server. Exported so that frameworks built on fasthttp, such as
-# Fiber, can set it and keep this integration off their server.
+# Adds DD_Instrumented to fasthttp.Server. It is exported so that frameworks
+# built on fasthttp, such as Fiber, can set it and keep this integration off
+# their server.
 fasthttp_server_instrumented_field:
   target: github.com/valyala/fasthttp
   where:
@@ -21,8 +16,8 @@ fasthttp_server_instrumented_field:
           - name: DD_Instrumented
             type: bool
 
-# The inject-declarations half of aspect fasthttp.Server: the linkname
-# declaration of the contrib's wrapper.
+# Adds to fasthttp a linkname declaration of the contrib's handler wrapper,
+# which fasthttp_server_serve calls.
 fasthttp_server_wrap_handler_link:
   target: github.com/valyala/fasthttp
   do:
@@ -30,9 +25,11 @@ fasthttp_server_wrap_handler_link:
         file: link.go
         path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
 
-# Aspect Serve. ListenAndServe, ServeTLS and the other start methods all call
-# Serve, so this covers them too. The flag keeps a server served on several
-# listeners from being wrapped more than once.
+# Wraps the server's handler at the top of Server.Serve. ListenAndServe,
+# ServeTLS and the other start methods all call Serve, so this covers them too.
+# DD_Instrumented keeps a server served on several listeners from being wrapped
+# more than once. The code runs inside fasthttp, because a hook compiles against
+# the unmodified Server and cannot read DD_Instrumented.
 fasthttp_server_serve:
   target: github.com/valyala/fasthttp
   where:
