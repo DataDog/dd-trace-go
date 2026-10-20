@@ -41,11 +41,11 @@ func warnRawDebugData(warned *atomic.Bool) {
 		return
 	}
 	defer recoverDebugLogging()
-	log.Warn("openfeature: debug logging is enabled, so feature flag logs include raw evaluation data (targeting keys, evaluation context attributes, flag values, and default values) that may contain personal or sensitive information. Unset DD_TRACE_DEBUG when you no longer need it.") //errtrack:ignore user debug configuration
+	log.Warn("openfeature: debug logging is enabled, so feature flag logs include raw evaluation data (targeting keys, evaluation context attributes, flag values, and default values) that may contain personal or sensitive information. Disable the debug logging setting that enabled it (DD_TRACE_DEBUG, OTEL_LOG_LEVEL, or tracer.WithDebugMode) when you no longer need it.") //errtrack:ignore user debug configuration
 }
 
 // logResolution logs what the provider resolved for a flag under
-// DD_TRACE_DEBUG, with the default value and the effective evaluation context
+// debug logging, with the default value and the effective evaluation context
 // it resolved against. The application does not always receive the resolved
 // value: debugLoggingHook logs any failure the SDK reports afterwards. It
 // checks the log level before boxing detail.Value or reading flatCtx, so
@@ -95,7 +95,7 @@ func splitFlattenedContext(flatCtx of.FlattenedContext) (targetingKey any, attri
 	return targetingKey, attributes
 }
 
-// debugLoggingHook logs every evaluation failure under DD_TRACE_DEBUG, with
+// debugLoggingHook logs every evaluation failure when debug logging is enabled, with
 // the evaluation's default value and effective evaluation context. The
 // provider logs its resolution itself, in logResolution: the SDK passes
 // Finally hooks the provider's resolution even when an application After hook
@@ -141,7 +141,7 @@ func recoverDebugLogging() {
 }
 
 // formatDebugValue renders a flag value or context for a debug log line, in
-// full: DD_TRACE_DEBUG exposes raw evaluation data so a customer can explain a
+// full: debug logging exposes raw evaluation data so a customer can explain a
 // result. Scalars are rendered directly and anything else as JSON.
 func formatDebugValue(v any) string {
 	switch val := v.(type) {

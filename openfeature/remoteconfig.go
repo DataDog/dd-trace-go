@@ -15,7 +15,6 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -104,7 +103,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 		// Agent; config_env is the one the delivered configuration names.
 		logOnboarding("remote_config configuration %q applied successfully (%d flag(s), %d rejected, sdk_env=%s, config_env=%s, created_at=%s)",
 			path, len(config.Flags), len(config.invalidFlags),
-			cmp.Or(internalconfig.Get().Env(), "unset"), cmp.Or(config.Environment.Name, "unset"),
+			cmp.Or(remoteconfig.ActiveEnv(), "unset"), cmp.Or(config.Environment.Name, "unset"),
 			formatCreatedAt(config.CreatedAt))
 		logRejectedFlags(fmt.Sprintf("remote_config configuration %q", path), &config)
 	}
