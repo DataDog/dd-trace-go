@@ -23,9 +23,17 @@ import (
 func TestCustomerExposureHooksShareDecision(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
-	for _, send := range []bool{true, false} {
-		t.Run(strconv.FormatBool(send), func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(send))
+	tests := []struct {
+		name                  string
+		datadogLoggingEnabled bool
+		wantDatadogExposures  int
+	}{
+		{name: "datadog_and_customer", datadogLoggingEnabled: true, wantDatadogExposures: 2},
+		{name: "customer_only", datadogLoggingEnabled: false, wantDatadogExposures: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(tt.datadogLoggingEnabled))
 			h := newOptOutHarness(t, ProviderConfig{})
 			var first, second []ExposureEvaluation
 			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { first = append(first, e) }))
@@ -47,43 +55,97 @@ func TestCustomerExposureHooksShareDecision(t *testing.T) {
 			assert.False(t, first[1].ShouldSend())
 			assert.True(t, first[1].IsCacheHit())
 			assert.True(t, first[2].ShouldSend())
-			want := 0
-			if send {
-				want = 2
-			}
-			h.assertCounts(t, 3, want, 3)
+			h.assertCounts(t, 3, tt.wantDatadogExposures, 3)
 		})
 	}
 }
 
-func TestCustomerExposureHookChangesAndNonExposures(t *testing.T) {
+func TestCustomerExposureHookSerialIDChanges(t *testing.T) {
 	h := newOptOutHarness(t, ProviderConfig{})
 	var rows []ExposureEvaluation
 	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
 	allocation := h.provider.configuration.Flags["experiment"].Allocations[0]
-	for _, serial := range []*uint32{nil, new(uint32(0)), new(uint32(42)), new(uint32(0)), nil} {
-		allocation.Splits[0].SerialID = serial
-		h.evaluate(t, "athlete", nil)
-		h.evaluate(t, "athlete", nil)
+	tests := []struct {
+		name     string
+		serialID *uint32
+	}{
+		{name: "initial_absent", serialID: nil},
+		{name: "absent_to_zero", serialID: new(uint32(0))},
+		{name: "zero_to_42", serialID: new(uint32(42))},
+		{name: "42_to_zero", serialID: new(uint32(0))},
+		{name: "zero_to_absent", serialID: nil},
 	}
-	for i, row := range rows {
-		assert.Equal(t, i%2 == 0, row.ShouldSend(), "observation %d", i)
+	// These ordered cases share a cache to verify each serial ID transition.
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows = nil
+			allocation.Splits[0].SerialID = tt.serialID
+			h.evaluate(t, "athlete", nil)
+			h.evaluate(t, "athlete", nil)
+			require.Len(t, rows, 2)
+			assert.True(t, rows[0].ShouldSend())
+			assert.False(t, rows[0].IsCacheHit())
+			assert.False(t, rows[1].ShouldSend())
+			assert.True(t, rows[1].IsCacheHit())
+		})
 	}
-	allocation.DoLog = new(false)
-	h.evaluate(t, "athlete", nil)
-	assert.False(t, rows[len(rows)-1].IsExposure())
-	assert.False(t, rows[len(rows)-1].ShouldSend())
-	assert.False(t, rows[len(rows)-1].IsCacheHit())
-	_, err := h.client.StringValue(context.Background(), "experiment", "default", of.NewEvaluationContext("athlete", nil))
-	require.Error(t, err)
-	_, err = h.client.BooleanValue(context.Background(), "missing", false, of.NewEvaluationContext("athlete", nil))
-	require.Error(t, err)
-	require.Len(t, rows, 13, "Finally callbacks include provider errors")
-	for _, row := range rows[11:] {
-		assert.False(t, row.IsExposure())
-		assert.False(t, row.IsCacheHit())
-		assert.False(t, row.ShouldSend())
-		assert.NotEmpty(t, row.Details.ErrorCode)
+}
+
+func TestCustomerExposureHookNonExposures(t *testing.T) {
+	tests := []struct {
+		name          string
+		doLog         bool
+		evaluate      func(*of.Client) error
+		wantErrorCode of.ErrorCode
+	}{
+		{
+			name:  "do_log_false",
+			doLog: false,
+			evaluate: func(client *of.Client) error {
+				_, err := client.BooleanValue(context.Background(), "experiment", false, of.NewEvaluationContext("athlete", nil))
+				return err
+			},
+		},
+		{
+			name:  "type_mismatch",
+			doLog: true,
+			evaluate: func(client *of.Client) error {
+				_, err := client.StringValue(context.Background(), "experiment", "default", of.NewEvaluationContext("athlete", nil))
+				return err
+			},
+			wantErrorCode: of.TypeMismatchCode,
+		},
+		{
+			name:  "missing_flag",
+			doLog: true,
+			evaluate: func(client *of.Client) error {
+				_, err := client.BooleanValue(context.Background(), "missing", false, of.NewEvaluationContext("athlete", nil))
+				return err
+			},
+			wantErrorCode: of.FlagNotFoundCode,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			h.provider.configuration.Flags["experiment"].Allocations[0].DoLog = new(tt.doLog)
+			var rows []ExposureEvaluation
+			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+
+			err := tt.evaluate(h.client)
+			if tt.wantErrorCode != "" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Len(t, rows, 1, "Finally callbacks include non-exposures and provider errors")
+			assert.Equal(t, tt.wantErrorCode, rows[0].Details.ErrorCode)
+			assert.False(t, rows[0].IsExposure())
+			assert.False(t, rows[0].IsCacheHit())
+			assert.False(t, rows[0].ShouldSend())
+			h.provider.exposureWriter.flush()
+			assert.Empty(t, h.sink.exposures)
+		})
 	}
 }
 
@@ -96,9 +158,17 @@ func (rejectExposureResultHook) After(context.Context, of.HookContext, of.Interf
 func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
-	for _, send := range []bool{true, false} {
-		t.Run(strconv.FormatBool(send), func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(send))
+	tests := []struct {
+		name                  string
+		datadogLoggingEnabled bool
+		wantDatadogExposures  int
+	}{
+		{name: "datadog_and_customer", datadogLoggingEnabled: true, wantDatadogExposures: 1},
+		{name: "customer_only", datadogLoggingEnabled: false, wantDatadogExposures: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", strconv.FormatBool(tt.datadogLoggingEnabled))
 			h := newOptOutHarness(t, ProviderConfig{})
 			var rows []ExposureEvaluation
 			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
@@ -124,11 +194,7 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			assert.False(t, rows[2].ShouldSend())
 			assert.True(t, rows[2].IsCacheHit())
 			h.provider.exposureWriter.flush()
-			want := 0
-			if send {
-				want = 1
-			}
-			assert.Len(t, h.sink.exposures, want)
+			assert.Len(t, h.sink.exposures, tt.wantDatadogExposures)
 		})
 	}
 }
