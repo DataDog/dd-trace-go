@@ -3,14 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# otelc port of ../orchestrion.yml.
-#
-# Everything runs inside httprouter itself, as in orchestrion: a hook compiles
-# against the unmodified Router and cannot read the injected __dd_config field.
-# The injected code compiles under httprouter's go directive (go 1.7), so it
-# calls the non generic tracing.BeforeHandleRouter.
-
-# Aspect Router.__dd_config, the struct field.
+# Adds the per-router tracing config to httprouter.Router.
 router_config_field:
   target: github.com/julienschmidt/httprouter
   where:
@@ -23,8 +16,8 @@ router_config_field:
   imports:
     __dd_httprouter_tracing: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing
 
-# Aspect Router.__dd_config, the declarations: the Router and Param wrappers
-# and __dd_init, copied from router_decls.go.
+# Adds the Router and Param wrappers and __dd_init to httprouter, copied from
+# router_decls.go.
 router_decls:
   target: github.com/julienschmidt/httprouter
   do:
@@ -32,7 +25,11 @@ router_decls:
         file: router_decls.go
         path: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 
-# Aspect Router.ServeHTTP.
+# Traces the request at the top of Router.ServeHTTP, and returns early when it
+# was already handled, for example blocked by AppSec. The code runs inside
+# httprouter, because a hook compiles against the unmodified Router and cannot
+# read __dd_config. It compiles under httprouter's go directive (go 1.7), so it
+# calls the non generic BeforeHandleRouter.
 router_serve_http:
   target: github.com/julienschmidt/httprouter
   where:
