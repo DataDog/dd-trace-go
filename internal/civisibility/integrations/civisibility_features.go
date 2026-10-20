@@ -8,6 +8,8 @@ package integrations
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,12 +20,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
 	DefaultFlakyRetryCount      = 5
 	DefaultFlakyTotalRetryCount = 1_000
+
+	// maxDynamicFlakyRetryCount matches the per-bucket limit used by dd-trace-py.
+	maxDynamicFlakyRetryCount = 20
 )
 
 type (
@@ -32,6 +39,10 @@ type (
 		RetryCount               int64
 		TotalRetryCount          int64
 		RemainingTotalRetryCount int64
+		// DynamicRetryCounts replaces RetryCount when DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED is set and is nil otherwise.
+		// Entry i is the retry count for a test whose first execution falls in duration bucket i: under 5s, 10s, 30s,
+		// 5m, and slower. Every entry is at least 1.
+		DynamicRetryCounts *[5]int64
 	}
 
 	searchCommitsResponse struct {
@@ -76,6 +87,11 @@ var (
 
 	// ciVisibilitySettings contains the CI Visibility settings for this session
 	ciVisibilitySettings net.SettingsResponseData
+
+	// ciVisibilityBackendSlowTestRetries keeps the backend EFD slow test retries (5s, 10s, 30s, 5m) from before
+	// DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES caps them. Dynamic automatic test retries use them because
+	// that cap only limits EFD.
+	ciVisibilityBackendSlowTestRetries [4]int
 
 	// ciVisibilityKnownTests contains the CI Visibility Known Tests data for this session
 	ciVisibilityKnownTests net.KnownTestsResponseData
@@ -198,6 +214,7 @@ func ensureSettingsInitialization(serviceName string) {
 		applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings)
 		earlyFlakeDetectionMaxRetries := internal.IntEnv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, -1)
 		slowTestRetries := &ciSettings.EarlyFlakeDetection.SlowTestRetries
+		ciVisibilityBackendSlowTestRetries = [4]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM}
 		slowTestRetries.FiveS = capEarlyFlakeDetectionRetries(slowTestRetries.FiveS, earlyFlakeDetectionMaxRetries)
 		slowTestRetries.TenS = capEarlyFlakeDetectionRetries(slowTestRetries.TenS, earlyFlakeDetectionMaxRetries)
 		slowTestRetries.ThirtyS = capEarlyFlakeDetectionRetries(slowTestRetries.ThirtyS, earlyFlakeDetectionMaxRetries)
@@ -291,6 +308,44 @@ func applyFlakyRetryEnabledEnvironmentOverride(ciSettings *net.SettingsResponseD
 	ciSettings.FlakyTestRetriesEnabled = enabled
 }
 
+// dynamicFlakyRetryCounts returns the duration-based retry counts, or nil when dynamic automatic test retries are
+// disabled, and records the dynamic_atr_retries.enabled metric. Without a valid DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS
+// value, the counts follow the backend slow test retries with a minimum of 1, so no bucket loses automatic retries.
+// That includes tests slower than five minutes, which EFD never retries.
+func dynamicFlakyRetryCounts(slowTestRetries [4]int) *[5]int64 {
+	if !internal.BoolEnv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, false) {
+		return nil
+	}
+	value := env.Get(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable)
+	counts, custom := parseDynamicFlakyRetryCounts(value)
+	if !custom {
+		if value != "" {
+			log.Warn("civisibility: ignoring %s=%q, expected five comma-separated integers from 1 to %d", constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, value, maxDynamicFlakyRetryCount) //errtrack:ignore invalid user configuration
+		}
+		counts = [5]int64{1, 1, 1, 1, 1}
+		for i, retries := range slowTestRetries {
+			counts[i] = max(int64(retries), 1)
+		}
+	}
+	telemetry.DynamicATRRetriesEnabled(custom)
+	log.Debug("civisibility: dynamic automatic test retries enabled [retryCounts: %d]", counts)
+	return &counts
+}
+
+// parseDynamicFlakyRetryCounts parses exactly five comma-separated integers from 1 to maxDynamicFlakyRetryCount.
+func parseDynamicFlakyRetryCounts(value string) (counts [5]int64, ok bool) {
+	n := 0
+	for field := range strings.SplitSeq(value, ",") {
+		count, err := strconv.ParseInt(strings.TrimSpace(field), 10, 64)
+		if n == len(counts) || err != nil || count < 1 || count > maxDynamicFlakyRetryCount {
+			return counts, false
+		}
+		counts[n] = count
+		n++
+	}
+	return counts, n == len(counts)
+}
+
 func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.SettingsResponseData) {
 	if ciSettings == nil {
 		return
@@ -380,6 +435,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				RetryCount:               retryCount,
 				TotalRetryCount:          totalRetriesCount,
 				RemainingTotalRetryCount: totalRetriesCount,
+				DynamicRetryCounts:       dynamicFlakyRetryCounts(ciVisibilityBackendSlowTestRetries),
 			}
 			log.Debug("civisibility: automatic test retries enabled [retryCount: %d, totalRetryCount: %d]", retryCount, totalRetriesCount)
 		}

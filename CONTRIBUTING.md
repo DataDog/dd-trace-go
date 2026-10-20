@@ -408,6 +408,10 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 `DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
 
+#### Duration-based automatic test retries
+
+`DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED=true` makes automatic test retries pick each test's retry count from the duration of its first execution, and `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` is ignored. It has no effect unless automatic test retries are enabled, and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` still caps the session. The durations use the Early Flake Detection buckets: under 5s, under 10s, under 30s, under 5m, and slower. By default each bucket takes the backend's Early Flake Detection slow test retries, with a minimum of one retry; tests slower than five minutes get one. `DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES` only limits Early Flake Detection and does not change these counts. `DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS` sets the five counts directly as comma-separated integers from 1 to 20, in bucket order, for example `3,2,1,1,1`. An empty value is the same as unset; any other value logs a warning and keeps the backend counts.
+
 #### Code coverage report flags
 
 `DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.

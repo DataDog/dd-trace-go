@@ -57,6 +57,14 @@ const (
 	// CIVisibilityTotalFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for the entire session.
 	CIVisibilityTotalFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT"
 
+	// CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable makes automatic test retries pick each test's retry count
+	// from the duration of its first execution instead of DD_CIVISIBILITY_FLAKY_RETRY_COUNT.
+	CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED"
+
+	// CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable overrides the dynamic retry counts with five comma-separated
+	// integers from 1 to 20, one for each duration bucket: under 5s, 10s, 30s, 5m, and slower.
+	CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS"
+
 	// CIVisibilityRetryExecutionModeEnvironmentVariable selects how retry attempts are executed.
 	// Supported values are "in_process" and "process". The default is "in_process".
 	CIVisibilityRetryExecutionModeEnvironmentVariable = "DD_CIVISIBILITY_RETRY_EXECUTION_MODE"

@@ -102,7 +102,7 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 
 	// Automatic flaky tests retries are set to the configured value.
 	if execMeta.isFlakyTestRetriesEnabled {
-		return integrations.GetFlakyRetriesSettings().RetryCount
+		return flakyRetryCountForDuration(duration)
 	}
 
 	// No retries
@@ -111,17 +111,39 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 
 func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
 	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-	secs := duration.Seconds()
-	if secs < 5 {
-		return int64(slowTestRetries.FiveS), true
-	} else if secs < 10 {
-		return int64(slowTestRetries.TenS), true
-	} else if secs < 30 {
-		return int64(slowTestRetries.ThirtyS), true
-	} else if duration.Minutes() < 5 {
-		return int64(slowTestRetries.FiveM), true
+	retryCounts := [...]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM}
+	if bucket := retryDurationBucket(duration); bucket < len(retryCounts) {
+		return int64(retryCounts[bucket]), true
 	}
 	return 0, false
+}
+
+// flakyRetryCountForDuration returns the automatic test retries count for a test whose first execution took
+// duration. Dynamic retry counts replace the flat DD_CIVISIBILITY_FLAKY_RETRY_COUNT value when configured.
+func flakyRetryCountForDuration(duration time.Duration) int64 {
+	flakyRetries := integrations.GetFlakyRetriesSettings()
+	if counts := flakyRetries.DynamicRetryCounts; counts != nil {
+		return counts[retryDurationBucket(duration)]
+	}
+	return flakyRetries.RetryCount
+}
+
+// retryDurationBucket returns the EFD slow test retries bucket for a test duration, which dynamic automatic test
+// retries share. The upper bounds stay exclusive as in the original EFD code; dd-trace-py uses inclusive ones, but
+// matching it would change EFD bucketing.
+func retryDurationBucket(duration time.Duration) int {
+	switch {
+	case duration < 5*time.Second:
+		return 0
+	case duration < 10*time.Second:
+		return 1
+	case duration < 30*time.Second:
+		return 2
+	case duration < 5*time.Minute:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {
