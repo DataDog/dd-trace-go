@@ -14,6 +14,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -202,6 +203,11 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	}
 	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		// Kratos marks only calls for which its middleware actually started a
+		// span. Consume the marker so downstream calls are traced normally.
+		if ctx.Value(instrumentation.PackageGoKratosV3) == ext.SpanKindClient+":"+method {
+			return invoker(context.WithValue(ctx, instrumentation.PackageGoKratosV3, false), method, req, reply, cc, opts...)
+		}
 		if _, ok := cfg.untracedMethods[method]; ok {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
