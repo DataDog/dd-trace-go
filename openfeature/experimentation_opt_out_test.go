@@ -231,14 +231,57 @@ func TestExperimentationOptOutIndependentTelemetry(t *testing.T) {
 }
 
 func TestExperimentationOptOutInvalidContext(t *testing.T) {
-	h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate})
-	result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
-		of.NewEvaluationContext("subject", map[string]any{experimentationOptOutAtAttribute: true}))
-	require.Error(t, err)
-	assert.False(t, result.Value)
-	assert.Equal(t, of.InvalidContextCode, result.ErrorCode)
-	h.provider.exposureWriter.flush()
-	assert.Empty(t, h.sink.exposures)
+	for _, flagCase := range []struct {
+		name  string
+		doLog bool
+	}{
+		{"experiment", true},
+		{"ordinary", false},
+	} {
+		t.Run(flagCase.name, func(t *testing.T) {
+			for _, input := range []struct {
+				name  string
+				value any
+			}{
+				{"malformed", "private-invalid-value"},
+				{"empty", ""},
+				{"boolean true", true},
+				{"boolean false", false},
+				{"null", nil},
+				{"number", 1792411200},
+				{"object", map[string]any{"timestamp": experimentOptOutTestTime}},
+				{"array", []any{experimentOptOutTestTime}},
+			} {
+				t.Run(input.name, func(t *testing.T) {
+					h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate})
+					f := h.provider.configuration.Flags["experiment"]
+					f.Allocations[0].DoLog = new(flagCase.doLog)
+					// A matching ordinary fallback must not hide invalid context.
+					f.Allocations = append(f.Allocations, &allocation{Key: "fallback", DoLog: new(false),
+						Splits: []*split{{VariationKey: "on"}}})
+					result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
+						of.NewEvaluationContext("subject", map[string]any{experimentationOptOutAtAttribute: input.value}))
+					require.Error(t, err)
+					assert.False(t, result.Value)
+					assert.Equal(t, of.ErrorReason, result.Reason)
+					assert.Equal(t, of.InvalidContextCode, result.ErrorCode)
+					assert.Empty(t, result.Variant)
+					assert.Contains(t, result.ErrorMessage, "dd_experimentation_opt_out_at must be an RFC3339 timestamp string")
+					assert.Contains(t, result.ErrorMessage, "omit the attribute to permit experimentation")
+					assert.NotContains(t, result.ErrorMessage, "private-invalid-value")
+					h.provider.exposureWriter.flush()
+					assert.Empty(t, h.sink.exposures)
+
+					// Correcting the context restores evaluation for the same subject.
+					recovered, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
+						of.NewEvaluationContext("subject", nil))
+					require.NoError(t, err)
+					assert.True(t, recovered.Value)
+					assert.Equal(t, "allocation", recovered.FlagMetadata[metadataAllocationKey])
+				})
+			}
+		})
+	}
 }
 
 func TestExperimentationOptOutDefaultBehavior(t *testing.T) {

@@ -65,6 +65,7 @@ func (mode ExperimentationOptOutMode) excludeExperiments(attributes map[string]a
 			return true, nil
 		}
 	}
-	// Do not include the customer-supplied value in an error or treat it as opt-in.
-	return false, fmt.Errorf("%w: dd_experimentation_opt_out_at must be an RFC3339 timestamp string", errInvalidContext)
+	// Reject invalid context before allocation selection; do not infer consent from it.
+	// Do not include the customer-supplied value in the diagnostic.
+	return false, fmt.Errorf("%w: dd_experimentation_opt_out_at must be an RFC3339 timestamp string; supply a valid timestamp to opt out, or omit the attribute to permit experimentation", errInvalidContext)
 }
