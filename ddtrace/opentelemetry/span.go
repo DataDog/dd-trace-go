@@ -100,13 +100,20 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		// Set unconditionally: this feeds the OTLP status message (see convertSpanStatus)
-		// even under semantics, where error.msg is otherwise suppressed as a raw attribute.
-		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
-		if s.otelSemanticsEnabled {
+		_, hasErrorMsg := s.attributes[ext.ErrorMsg]
+		_, hasErrorType := s.attributes[ext.ErrorType]
+		_, hasErrorStack := s.attributes[ext.ErrorStack]
+		// With the DD_TRACE_OTEL_SEMANTICS_ENABLED config, error.message only feeds the
+		// OTLP status message, so it always takes the status description. Otherwise it
+		// is a regular tag, so a user-set value is kept.
+		if s.otelSemanticsEnabled || !hasErrorMsg {
+			s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		}
+		if s.otelSemanticsEnabled || hasErrorMsg || hasErrorType || hasErrorStack {
 			// Mark the span as errored directly. WithError would overwrite already
 			// populated attributes, such as error.type. Applies to all export formats:
 			// APM spans keep error=1 and error.message, without error.handling_stack.
+			// See https://github.com/DataDog/dd-trace-go/issues/3708.
 			s.DD.SetTag(ext.Error, true)
 		} else {
 			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))

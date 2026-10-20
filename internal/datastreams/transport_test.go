@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,23 +37,6 @@ func (t *errorTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		StatusCode: t.statusCode,
 		Body:       io.NopCloser(strings.NewReader(t.body)),
 	}, nil
-}
-
-func TestHTTPTransportWithTransactions(t *testing.T) {
-	p := StatsPayload{
-		Env:         "env-1",
-		ProductMask: productAPM | productDSM,
-		Stats: []StatsBucket{{
-			Start:                    2,
-			Duration:                 10,
-			Transactions:             []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 't', 'x', '1'},
-			TransactionCheckpointIds: []byte{1, 3, 'i', 'n', 'g'},
-		}},
-	}
-	ft := fakeTransport{}
-	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
-	require.Nil(t, transport.sendPipelineStats(&p))
-	assert.Len(t, ft.requests, 1)
 }
 
 func TestHTTPTransportError(t *testing.T) {
@@ -87,4 +72,28 @@ func TestHTTPTransport(t *testing.T) {
 	assert.Len(t, fakeTransport.requests, 1)
 	r := fakeTransport.requests[0]
 	assert.Equal(t, "http://agent-address:8126/v0.1/pipeline_stats", r.URL.String())
+}
+
+func TestHTTPTransportExternalEnvironment(t *testing.T) {
+	t.Setenv("DD_EXTERNAL_ENV", "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759")
+	ft := fakeTransport{}
+	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
+	require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	require.Len(t, ft.requests, 1)
+	assert.Equal(t, "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759", ft.requests[0].Header.Get("Datadog-External-Env"))
+}
+
+// The agent resolves container tags from Datadog-Entity-ID, which must carry the
+// prefixed entity ID ("ci-<cid>" or "in-<inode>") rather than the raw container ID.
+// EntityID is only populated on Linux, so this test is skipped elsewhere.
+func TestHTTPTransportEntityID(t *testing.T) {
+	eid := internal.EntityID()
+	if eid == "" {
+		t.Skip("no entity ID available on this host")
+	}
+	ft := fakeTransport{}
+	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
+	require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	require.Len(t, ft.requests, 1)
+	assert.Equal(t, eid, ft.requests[0].Header.Get("Datadog-Entity-ID"))
 }

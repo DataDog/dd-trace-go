@@ -16,3 +16,15 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestDial(t *testing.T) {
+	harness.Run(t, new(TestCaseDial))
+}
+
+func TestDialContext(t *testing.T) {
+	harness.Run(t, new(TestCaseDialContext))
+}

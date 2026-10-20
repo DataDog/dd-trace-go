@@ -120,6 +120,17 @@ func assertOTLPBoolAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key strin
 	require.Fail(t, "missing OTLP bool attribute", key)
 }
 
+func extractOTLPAttribute(t *testing.T, kvs []*otlpcommon.KeyValue, key string) *otlpcommon.KeyValue {
+	t.Helper()
+	for _, kv := range kvs {
+		if kv.Key == key {
+			return kv
+		}
+	}
+	require.FailNow(t, "missing OTLP attribute", key)
+	return nil
+}
+
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {
@@ -269,15 +280,33 @@ func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
 // ---- Resource attributes ----
 
 func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "", false)
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "datadog", m["telemetry.sdk.name"])
 	assert.Equal(t, "go", m["telemetry.sdk.language"])
 	assert.NotEmpty(t, m["telemetry.sdk.version"])
+	assert.Equal(t, "true", m[keySDKOTLPExport])
+	assert.Equal(t, "datadog", m["datadog.sdk.semantics"])
+}
+
+func TestBuildOTLPMetricsRequestOTelSemantics(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	cfg.SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+	gs := &pb.ClientGroupedStats{
+		Service:      "svc",
+		Name:         "web.request",
+		Resource:     "/users",
+		Hits:         1,
+		TopLevelHits: 1,
+		OkSummary:    encodeSketch(t, 50e6),
+	}
+	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.Len(t, rm, 1)
+	assert.Equal(t, "otel", kvAttrsToMap(rm[0].Resource.Attributes)["datadog.sdk.semantics"])
 }
 
 func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
-	res := buildMetricsResource(makePayload("my-svc", "prod", "2.1.0", nil), false, "")
+	res := buildMetricsResource(makePayload("my-svc", "prod", "2.1.0", nil), false, "", false)
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "my-svc", m["service.name"])
 	assert.Equal(t, "prod", m["deployment.environment.name"])
@@ -285,7 +314,7 @@ func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
 }
 
 func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "", false)
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "svc", m["service.name"])
 	assert.NotContains(t, m, "deployment.environment.name")
@@ -293,14 +322,14 @@ func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
 }
 
 func TestBuildMetricsResourceHostnameOmitted(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "", false)
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "host.name")
 }
 
 func TestBuildMetricsResourceProcessTags(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp,entrypoint.type:binary"
-	res := buildMetricsResource(payload, false, "")
+	res := buildMetricsResource(payload, false, "", false)
 	values := kvArrayValue(res.Attributes, "datadog.process_tags")
 	assert.ElementsMatch(t, []string{"entrypoint.name:myapp", "entrypoint.type:binary"}, values)
 }
@@ -308,12 +337,12 @@ func TestBuildMetricsResourceProcessTags(t *testing.T) {
 func TestBuildMetricsResourceRuntimeID(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.RuntimeID = "abc-123"
-	res := buildMetricsResource(payload, false, "")
+	res := buildMetricsResource(payload, false, "", false)
 	assert.Equal(t, "abc-123", kvAttrsToMap(res.Attributes)["datadog.runtime_id"])
 }
 
 func TestBuildMetricsResourceNoRuntimeIDWhenEmpty(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, "", false)
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.runtime_id")
 }
 
@@ -557,7 +586,7 @@ func TestDataPointCountEqualsBucketCountSum(t *testing.T) {
 }
 
 func TestBuildMetricsResourceHostnamePresent(t *testing.T) {
-	res := buildMetricsResource(makePayload("svc", "", "", nil), true, "myhost")
+	res := buildMetricsResource(makePayload("svc", "", "", nil), true, "myhost", false)
 	assert.Equal(t, "myhost", kvAttrsToMap(res.Attributes)["host.name"])
 }
 

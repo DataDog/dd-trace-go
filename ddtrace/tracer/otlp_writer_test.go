@@ -33,6 +33,13 @@ type testOTLPServer struct {
 	*httptest.Server
 	mu       sync.Mutex
 	payloads [][]byte
+	// discard makes the handler drain request bodies without retaining them, for
+	// tests that never inspect the payloads. Retaining them keeps one
+	// ~payloadSizeLimit-sized buffer alive per flush for the whole test, so peak
+	// RSS scales with the number of flushes rather than with the writer's
+	// in-flight window.
+	discard   atomic.Bool
+	discarded atomic.Int32
 	// failCount controls how many requests return 500 before succeeding.
 	failCount int32
 }
@@ -42,6 +49,12 @@ func newTestOTLPServer() *testOTLPServer {
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if remaining := atomic.AddInt32(&s.failCount, -1); remaining >= 0 {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if s.discard.Load() {
+			_, _ = io.Copy(io.Discard, r.Body)
+			s.discarded.Add(1)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -168,6 +181,30 @@ func TestOTLPWriterFlush(t *testing.T) {
 	assert.Equal(t, version.Tag, scope.Version)
 
 	assert.Equal(t, 2, len(rs[0].ScopeSpans[0].Spans))
+}
+
+func TestOTLPWriterSignalHeadersReplaceGeneric(t *testing.T) {
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
+
+	cfg, err := newTestConfig(func(c *config) {
+		c.ddTransport = &simpleTransport{}
+	})
+	require.NoError(t, err)
+	w := newOTLPTraceWriter(cfg)
+	w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
+	w.flush()
+	w.wait()
+
+	assert.Equal(t, "signal", gotHeaders.Get("Authorization"))
+	assert.Empty(t, gotHeaders.Values("X-Generic"))
 }
 
 func TestOTLPWriterFlushClearsSpans(t *testing.T) {
@@ -363,35 +400,42 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 // panics with "Add called concurrently with Wait" once a Wait call observes a
 // zero counter at the same instant a new flush starts one.
 func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
+	// This test was a memory bomb under -tags=deadlock: peak RSS ranged from
+	// 0.50GB to 13.70GB across identical runs. Retaining every payload, allowing
+	// 100 in-flight sends, and letting adders run until the waits finished made
+	// the amount of work depend on how slowly the test ran.
 	srv := newTestOTLPServer()
+	srv.discard.Store(true)
 	defer srv.Close()
 	w := newTestOTLPWriter(t, srv)
+	w.climit = make(chan struct{}, 4)
 
 	const numAdders = 20
-	stop := make(chan struct{})
+	// Reuse the source string; each flush still serializes a full-sized payload.
+	bigData := strings.Repeat("X", payloadSizeLimit/4)
+	jobs := make(chan struct{})
 	var adders sync.WaitGroup
 	for range numAdders {
 		adders.Go(func() {
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
+			for range jobs {
 				bigSpan := newSpan("op", "svc", "res", randUint64(), randUint64(), 0)
-				bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit/4))
+				bigSpan.meta.Set("big", bigData)
 				w.add([]*Span{bigSpan})
 			}
 		})
 	}
 
+	// Pace bounded work through the waits, rather than letting adders exhaust
+	// their iteration budget before the first wait starts.
 	for range 200 {
+		jobs <- struct{}{}
 		w.wait()
 	}
-
-	close(stop)
+	sentDuringWaits := srv.discarded.Load()
+	close(jobs)
 	adders.Wait()
 	w.stop()
+	require.Positive(t, sentDuringWaits, "no payloads were sent during the wait loop")
 }
 
 func TestOTLPWriterBuffSizeTracking(t *testing.T) {

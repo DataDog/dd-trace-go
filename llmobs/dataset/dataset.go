@@ -330,7 +330,12 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 	}
 
 	records := make([]*Record, 0, len(recordsResp))
+	missingRecordID := false
 	for _, rec := range recordsResp {
+		if rec.ID == "" {
+			missingRecordID = true
+			continue
+		}
 		records = append(records, &Record{
 			id:             rec.ID,
 			Input:          rec.Input,
@@ -338,6 +343,9 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			Metadata:       rec.Metadata,
 			version:        rec.Version,
 		})
+	}
+	if missingRecordID {
+		log.Error("llmobs: backend returned dataset records without IDs; discarding malformed records") //errtrack:ignore caller request path; malformed records are logged locally only
 	}
 	// When pulling a specific historical version, report that version so that
 	// experiment.Run registers the run against the correct dataset snapshot
@@ -395,18 +403,18 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range updating dataset record", index)
+		log.Warn("llmobs: index %d out of range updating dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 	if update.Input == nil && update.Metadata == nil && update.ExpectedOutput == nil {
-		log.Warn("llmobs: invalid dataset update (no changes)")
+		log.Warn("llmobs: invalid dataset update (no changes)") //errtrack:ignore invalid caller update
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
@@ -431,14 +439,14 @@ func (d *Dataset) Delete(index int) {
 	defer d.mu.Unlock()
 
 	if index < 0 || index >= len(d.records) {
-		log.Warn("llmobs: index %d out of range deleting dataset record", index)
+		log.Warn("llmobs: index %d out of range deleting dataset record", index) //errtrack:ignore invalid caller index
 		return
 	}
 
 	d.initialize()
 	rec := d.records[index]
 	if rec.id == "" {
-		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index)
+		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index) //errtrack:ignore internal SDK invariant; Pull discards malformed records and Append assigns IDs
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
