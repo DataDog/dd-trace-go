@@ -97,6 +97,7 @@
 - Git operations are serialized to avoid repository lock contention, and telemetry logs command timings plus categorized exit codes to monitor flaky git environments.
 - Instrumentation leans on `unsafe.Pointer` and reflection to interpose on testing internals, a delicate strategy mitigated by fallback logic and version checks. Helper utilities (`reflections.go`) centralize offsets so new Go releases require updates in a single place.
 - Coverage and impacted test features rely on asynchronous git uploads; close actions ensure goroutines finish before process exit.
+- Swallowed SDK payload-serialization defects in the CI log and coverage writers retain local error logging and reach Error Tracking only as aggregated writer-flush diagnostics, never as a report for each payload item.
 - Network layer supports agentless uploads with API key validation and on-the-fly compression, while also accommodating Datadog agent EVP proxy over HTTP or Unix sockets.
 - `orchestrion.yml` indicates support for compile-time rewriting, hinting at hybrid instrumentation strategies (manual wrappers plus bytecode injection).
 - Logging pipeline mirrors test span IDs and includes service/host tags, but is guarded behind stable-config flag to avoid unexpected log emission.
