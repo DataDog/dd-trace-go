@@ -222,7 +222,9 @@ func (w *exposureWriter) start() {
 		for {
 			select {
 			case <-w.ticker.C:
-				w.flush()
+				if n, err := w.flush(); err != nil {
+					logOnboarding("dropped %d exposure event(s) after failed delivery: %s", n, err.Error())
+				}
 			case <-w.stopChan:
 				return
 			}
@@ -274,12 +276,14 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 	return true, true
 }
 
-// flush sends all buffered exposure events to the agent
-func (w *exposureWriter) flush() {
+// flush sends all buffered exposure events to the agent. It returns how many
+// events it attempted to send and the delivery error; events are dropped, not
+// requeued, when delivery fails.
+func (w *exposureWriter) flush() (int, error) {
 	w.mu.Lock()
 	if len(w.buffer) == 0 || w.stopped {
 		w.mu.Unlock()
-		return
+		return 0, nil
 	}
 
 	// Move buffer to local variable and create new buffer
@@ -289,14 +293,16 @@ func (w *exposureWriter) flush() {
 	w.mu.Unlock()
 
 	// Send to agent
-	if err := w.sendToAgent(exposurePayload{
+	err := w.sendToAgent(exposurePayload{
 		Context:   w.context,
 		Exposures: events,
-	}); err != nil {
-		log.Error("openfeature: failed to send exposure events: %v", err.Error()) //errtrack:ignore remote request failure
+	})
+	if err != nil {
+		log.Error("openfeature: failed to send exposure events, dropping them: %v", err.Error()) //errtrack:ignore remote request failure
 	} else {
 		log.Debug("openfeature: successfully sent %d exposure events", len(events))
 	}
+	return len(events), err
 }
 
 // sendToAgent sends the exposure payload to the Datadog Agent via EVP proxy

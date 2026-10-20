@@ -387,20 +387,27 @@
 // so they can be filtered from other tracer output. It covers:
 //
 //   - The selected configuration source, or that feature flagging is disabled
-//   - Each Agentless poll attempt and its outcome: the HTTP status or the
-//     transport error, plus any retry delay
-//   - Each configuration applied, with its flag count, how many flags were
-//     rejected as invalid, and its createdAt (and, for Agentless, the
-//     effective DD_ENV and ETag)
+//   - Each Agentless poll attempt and its outcome: the HTTP status, the
+//     transport error, or the reason a response was malformed, plus any retry
+//     delay
+//   - Each configuration applied, with its flag count, each flag rejected as
+//     invalid and why, its createdAt, the SDK's DD_ENV (sdk_env), and the
+//     environment the configuration names (config_env). For Agentless, it
+//     also logs the ETag and the environment requested from the endpoint
+//     (requested_env): a custom endpoint never receives DD_ENV.
 //   - Initialization start and its outcome, with the failure reason
 //   - Lifecycle changes: recovery after a failed initialization, configuration
-//     becoming unavailable, and shutdown
-//   - Every flag the provider resolves, with its value, variant, reason,
-//     allocation, and error
-//   - Every evaluation failure, with the evaluation's default value. This
-//     includes failures the provider never sees, such as evaluating before it
-//     is ready, and an application hook returning an error after the provider
-//     resolved the flag
+//     becoming unavailable, and shutdown, including whether pending exposure
+//     events were sent or dropped
+//   - Every flag the provider resolves, with its value, the default value,
+//     variant, reason, allocation, error, and the evaluation context it
+//     resolved against: the targeting key and the other attributes
+//   - Every evaluation failure, with the evaluation's default value and
+//     context. This includes failures the provider never sees, such as
+//     evaluating before it is ready, and an application hook returning an
+//     error after the provider resolved the flag
+//   - Each exposure event queued for delivery, or skipped with the reason,
+//     and each batch dropped after failed delivery
 //
 // A failure line does not say which value the application received, since
 // that depends on how the flag was evaluated. Typed evaluations and
@@ -412,13 +419,14 @@
 // telemetry.
 //
 // Credentials and the endpoint's path and query are never logged; only the
-// endpoint's scheme and host are logged. Onboarding lines never include the
-// evaluation's targeting key or context attributes, but an error returned by
-// an application hook is logged with its message as is: if your hook puts
-// targeting data in an error message, it appears in the debug log. The
-// exposure tracking debug line, which is not an onboarding line, includes the
-// targeting key. Scalar flag values are logged directly and other values as
-// JSON, truncated to 256 bytes. A value that cannot be encoded, including a
+// endpoint's scheme and host are logged. Debug logging is meant to explain an
+// evaluation result, so it logs the raw evaluation inputs and outputs: the
+// targeting key, context attributes, and flag values, in full. Enable it only
+// where these may appear in your logs. Each provider logs a one-time warning
+// about this, at construction or, if debug logging is enabled later, before
+// its first such line. An error returned by an application
+// hook is logged with its message as is. Scalar values are logged directly
+// and other values as JSON. A value that cannot be encoded, including a
 // default value whose MarshalJSON method fails or panics, is logged as
 // <unserializable> without affecting the evaluation. When debug logging is
 // off, evaluations skip formatting these details.
