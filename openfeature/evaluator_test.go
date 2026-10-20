@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	of "github.com/open-feature/go-sdk/openfeature"
 
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
@@ -522,9 +524,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						}
 						t.Run(capability, func(t *testing.T) {
 							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
-							if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", expected.Value) {
-								t.Errorf("value: got %v, want %v", result.Value, expected.Value)
-							}
+							assert.Equal(t, expected.Value, result.Value, "capability result value")
 							if result.Reason != of.Reason(expected.Reason) {
 								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
 							}

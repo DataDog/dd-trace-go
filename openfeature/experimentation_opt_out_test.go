@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strconv"
 	"sync"
@@ -34,6 +35,10 @@ func TestExperimentationOptOutInput(t *testing.T) {
 		{"timestamp", map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}, true, false},
 		{"fractional seconds", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T12:00:00.123456789Z"}, true, false},
 		{"offset", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T08:00:00-04:00"}, true, false},
+		{"maximum offset", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T08:00:00+23:59"}, true, false},
+		{"unknown zero offset", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T08:00:00-00:00"}, true, false},
+		{"long fraction", map[string]any{experimentationOptOutAtAttribute: "2026-10-19T08:00:00.123456789123Z"}, true, false},
+		{"leap day", map[string]any{experimentationOptOutAtAttribute: "2024-02-29T08:00:00Z"}, true, false},
 		{"future is not a schedule", map[string]any{experimentationOptOutAtAttribute: "2099-01-01T00:00:00Z"}, true, false},
 		{"empty", map[string]any{experimentationOptOutAtAttribute: ""}, false, true},
 		{"invalid", map[string]any{experimentationOptOutAtAttribute: "private-invalid-value"}, false, true},
@@ -70,6 +75,36 @@ func TestExperimentationOptOutInvalidMode(t *testing.T) {
 			p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
 			require.ErrorContains(t, err, "unsupported experimentation opt-out mode")
 			assert.Nil(t, p)
+		})
+	}
+}
+
+func TestExperimentationOptOutTimestampMatchesAllocationStartAt(t *testing.T) {
+	for _, stamp := range []string{
+		experimentOptOutTestTime,
+		"2026-10-19T08:00:00-04:00",
+		"2026-10-19T08:00:00.123456789Z",
+		"2026-10-19T8:00:00Z",
+		"2026-10-19T08:00:00,1Z",
+		"2026-10-19T08:00:00+24:00",
+		"2026-10-19T08:00:00+00:60",
+		"2026-02-30T08:00:00Z",
+		"2026-10-19",
+		"2026-10-19T08:00:00",
+		"not-a-timestamp",
+		"",
+	} {
+		t.Run(stamp, func(t *testing.T) {
+			var a allocation
+			allocationErr := json.Unmarshal([]byte(`{"startAt":`+strconv.Quote(stamp)+`}`), &a)
+			exclude, optOutErr := ExperimentationOptOutImmediate.excludeExperiments(
+				map[string]any{experimentationOptOutAtAttribute: stamp},
+			)
+			assert.Equal(t, allocationErr == nil, optOutErr == nil, "use the existing allocation timestamp contract")
+			assert.Equal(t, allocationErr == nil, exclude)
+			if optOutErr != nil {
+				assert.ErrorIs(t, optOutErr, errInvalidContext)
+			}
 		})
 	}
 }

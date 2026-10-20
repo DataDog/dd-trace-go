@@ -133,6 +133,7 @@
 // Without an explicit override, an unsupported environment value returns an error
 // from NewDatadogProvider. Unsupported enum values also return an error.
 // Immediate mode accepts an RFC3339 timestamp string, including fractional seconds.
+// Timestamp parsing follows the same rules as allocation startAt and endAt values.
 // Any valid timestamp activates exclusion immediately, regardless of its date.
 // Omit the attribute to permit experimentation. Null, empty, or malformed values
 // return the application default with INVALID_CONTEXT, including for ordinary flags.
