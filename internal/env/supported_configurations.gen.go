@@ -251,6 +251,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_NEGRONI_ANALYTICS_ENABLED":                                      {},
 	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP":                                {},
 	"DD_TRACE_OPENSEARCH_ANALYTICS_ENABLED":                                   {},
+	"DD_TRACE_OTEL_ENABLED":                                                   {},
 	"DD_TRACE_OTEL_SEMANTICS_ENABLED":                                         {},
 	"DD_TRACE_PARTIAL_FLUSH_ENABLED":                                          {},
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                        {},
