@@ -3,15 +3,8 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# otelc port of ../orchestrion.yml.
-#
-# Like orchestrion, the rules rewrite mux.Router itself, so every router is
-# traced, subrouters and routers built in dependencies included. The tracing
-# code runs inside github.com/gorilla/mux, because it keeps per-router state in
-# a field added to Router, and a hook compiles against the unmodified Router
-# and cannot read that field.
-
-# Aspect Router.__dd_config, inject-declarations part.
+# Adds the tracing code to gorilla/mux, copied from router.go: the per-router
+# config type and Router.__dd_serveHTTP.
 router_declarations:
   target: github.com/gorilla/mux
   do:
@@ -19,7 +12,7 @@ router_declarations:
         file: router.go
         path: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2
 
-# Aspect Router.__dd_config, add-struct-field part.
+# Adds the per-router tracing config to mux.Router.
 router_config_field:
   target: github.com/gorilla/mux
   where:
@@ -30,7 +23,11 @@ router_config_field:
           - name: __dd_config
             type: __dd_routerConfig
 
-# Aspect Router.ServeHTTP.
+# Calls Router.__dd_serveHTTP at the top of ServeHTTP. When it traced and
+# served the request, ServeHTTP returns; otherwise ServeHTTP serves it as usual.
+# Every router is traced this way, subrouters and routers built in dependencies
+# included. The code runs inside gorilla/mux, because a hook compiles against
+# the unmodified Router and cannot read __dd_config.
 router_serve_http:
   target: github.com/gorilla/mux
   where:
