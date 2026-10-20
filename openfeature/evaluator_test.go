@@ -419,6 +419,11 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	fixtureDir := "ffe-system-test-data"
+	type fixtureResult struct {
+		Value     any    `json:"value"`
+		Reason    string `json:"reason"`
+		ErrorCode string `json:"errorCode"`
+	}
 
 	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
 	if err != nil {
@@ -435,6 +440,14 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatalf("set provider: %v", err)
 	}
 	client := of.NewClient("fixture-test")
+	immediateProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
+	})
+	// Reuse the configuration without starting telemetry workers for capability checks.
+	immediateProvider.configuration = &cfg
+	capabilityProviders := map[string]*DatadogProvider{
+		"experimentationOptOutImmediate": immediateProvider,
+	}
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -451,15 +464,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var cases []struct {
-				Flag         string         `json:"flag"`
-				DefaultValue any            `json:"defaultValue"`
-				TargetingKey *string        `json:"targetingKey"`
-				Attributes   map[string]any `json:"attributes"`
-				Result       struct {
-					Value     any    `json:"value"`
-					Reason    string `json:"reason"`
-					ErrorCode string `json:"errorCode"`
-				} `json:"result"`
+				Flag         string                   `json:"flag"`
+				DefaultValue any                      `json:"defaultValue"`
+				TargetingKey *string                  `json:"targetingKey"`
+				Attributes   map[string]any           `json:"attributes"`
+				Result       fixtureResult            `json:"result"`
+				Capabilities map[string]fixtureResult `json:"capabilities"`
 			}
 			if err := json.Unmarshal(data, &cases); err != nil {
 				t.Fatalf("parse error: %v", err)
@@ -496,6 +506,24 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
 							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
 						}
+					}
+					for capability, expected := range tc.Capabilities {
+						p, supported := capabilityProviders[capability]
+						if !supported {
+							continue
+						}
+						t.Run(capability, func(t *testing.T) {
+							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+							if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", expected.Value) {
+								t.Errorf("value: got %v, want %v", result.Value, expected.Value)
+							}
+							if result.Reason != of.Reason(expected.Reason) {
+								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
+							}
+							if code := result.ResolutionDetail().ErrorCode; code != of.ErrorCode(expected.ErrorCode) {
+								t.Errorf("error code: got %q, want %q", code, expected.ErrorCode)
+							}
+						})
 					}
 				})
 			}
