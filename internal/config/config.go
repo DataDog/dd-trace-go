@@ -318,6 +318,9 @@ type Config struct {
 	// flagEvalTelemetryOptOutEnabled is
 	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
 	flagEvalTelemetryOptOutEnabled bool
+	// featureFlagsExperimentationOptOutMode is kept raw so the provider can
+	// reject unsupported values after applying its programmatic override.
+	featureFlagsExperimentationOptOutMode string
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
 	// to tell a blank value apart from an unrecognized one.
@@ -589,6 +592,7 @@ func loadConfig() *Config {
 		cfg.featureFlagsEnabled = &featureFlagsEnabled
 	}
 	cfg.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
+	cfg.featureFlagsExperimentationOptOutMode = p.GetString("DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE", "disabled")
 	featureFlagsSource, featureFlagsSourceOrigin := p.GetStringWithOrigin("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
 	cfg.featureFlagsConfigurationSource = featureFlagsSource
 	cfg.featureFlagsConfigurationSourceSet = featureFlagsSourceOrigin != telemetry.OriginDefault
@@ -2334,6 +2338,14 @@ func (c *Config) FlagEvalTelemetryOptOutEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.flagEvalTelemetryOptOutEnabled
+}
+
+// FeatureFlagsExperimentationOptOutMode returns DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE.
+// The provider validates the value after applying its programmatic override.
+func (c *Config) FeatureFlagsExperimentationOptOutMode() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.featureFlagsExperimentationOptOutMode
 }
 
 // FeatureFlagsConfigurationSource returns DD_FEATURE_FLAGS_CONFIGURATION_SOURCE and whether

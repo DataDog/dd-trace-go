@@ -7,10 +7,13 @@ package openfeature
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
@@ -61,12 +64,84 @@ func TestExperimentationOptOutInvalidMode(t *testing.T) {
 		mode ExperimentationOptOutMode
 	}{
 		{"negative", -1},
-		{"unknown", 2},
+		{"unknown", 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
 			require.ErrorContains(t, err, "unsupported experimentation opt-out mode")
 			assert.Nil(t, p)
+		})
+	}
+}
+
+func TestExperimentationOptOutConfiguration(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() {
+		internalconfig.SetUseFreshConfig(false)
+		internalconfig.CreateNew()
+	})
+	backend := newFakeUFCBackend(t)
+	t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", backend.server.URL)
+
+	for _, tc := range []struct {
+		name string
+		env  *string
+		mode ExperimentationOptOutMode
+		want ExperimentationOptOutMode
+		err  bool
+	}{
+		{name: "unset", want: ExperimentationOptOutDisabled},
+		{name: "empty", env: new(""), want: ExperimentationOptOutDisabled},
+		{name: "whitespace", env: new(" \t"), want: ExperimentationOptOutDisabled},
+		{name: "disabled", env: new("disabled"), want: ExperimentationOptOutDisabled},
+		{name: "immediate", env: new("immediate"), want: ExperimentationOptOutImmediate},
+		{name: "normalized immediate", env: new(" IMMEDIATE "), want: ExperimentationOptOutImmediate},
+		{name: "unsupported environment", env: new("private-invalid-value"), err: true},
+		{name: "explicit disabled", mode: ExperimentationOptOutDisabled, want: ExperimentationOptOutDisabled},
+		{name: "explicit immediate", mode: ExperimentationOptOutImmediate, want: ExperimentationOptOutImmediate},
+		{name: "disabled overrides environment", env: new("immediate"), mode: ExperimentationOptOutDisabled, want: ExperimentationOptOutDisabled},
+		{name: "immediate overrides environment", env: new("disabled"), mode: ExperimentationOptOutImmediate, want: ExperimentationOptOutImmediate},
+		{name: "disabled overrides invalid environment", env: new("private-invalid-value"), mode: ExperimentationOptOutDisabled, want: ExperimentationOptOutDisabled},
+		{name: "immediate overrides invalid environment", env: new("private-invalid-value"), mode: ExperimentationOptOutImmediate, want: ExperimentationOptOutImmediate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const key = "DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE"
+			t.Setenv(key, "")
+			if tc.env == nil {
+				require.NoError(t, os.Unsetenv(key))
+			} else {
+				t.Setenv(key, *tc.env)
+			}
+			provider, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
+			if tc.err {
+				require.ErrorContains(t, err, key+" must be disabled or immediate")
+				assert.NotContains(t, err.Error(), "private-invalid-value")
+				assert.Nil(t, provider)
+				return
+			}
+			require.NoError(t, err)
+			p := provider.(*DatadogProvider)
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(t, p.ShutdownWithContext(ctx))
+			})
+			assert.Equal(t, tc.want, p.experimentationOptOutMode)
+
+			// An existing provider keeps its resolved setting if central configuration changes.
+			t.Setenv(key, "immediate")
+			if tc.want == ExperimentationOptOutImmediate {
+				t.Setenv(key, "disabled")
+			}
+			internalconfig.CreateNew()
+			assert.Equal(t, tc.want, p.experimentationOptOutMode)
+			exclude, err := p.experimentationOptOutMode.excludeExperiments(map[string]any{
+				experimentationOptOutAtAttribute: experimentOptOutTestTime,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want == ExperimentationOptOutImmediate, exclude)
 		})
 	}
 }

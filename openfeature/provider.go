@@ -54,8 +54,10 @@ func init() {
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
 	// ExperimentationOptOutMode controls how the provider uses the
-	// dd_experimentation_opt_out_at context parameter. The zero value disables
-	// experimentation opt-out. Evaluation telemetry is controlled separately.
+	// dd_experimentation_opt_out_at context parameter. The zero value uses
+	// DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE, which defaults to disabled.
+	// Explicit Disabled or Immediate values override the environment setting.
+	// The provider resolves the mode at construction. Evaluation telemetry is separate.
 	ExperimentationOptOutMode ExperimentationOptOutMode
 
 	// EnableEvaluationTelemetryOptOutParameter enables the per-evaluation
@@ -151,13 +153,14 @@ type DatadogProvider struct {
 // subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
 // attachment. If the default client is the one at fault, please call tracer.Start before
 // creating the provider.
-// Unsupported ExperimentationOptOutMode values also return an error.
+// Unsupported experimentation opt-out modes return an error, including invalid
+// DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE values when no override is supplied.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	switch config.ExperimentationOptOutMode {
-	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate:
-	default:
-		return nil, fmt.Errorf("openfeature: unsupported experimentation opt-out mode: %d", config.ExperimentationOptOutMode)
+	mode, err := config.ExperimentationOptOutMode.resolve()
+	if err != nil {
+		return nil, err
 	}
+	config.ExperimentationOptOutMode = mode
 
 	settings := internalffe.ResolveSettings(internalconfig.Get())
 	if settings.LegacyKeyDecided {

@@ -7,16 +7,23 @@ package openfeature
 
 import (
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // ExperimentationOptOutMode controls per-subject exclusion from experimentation.
 type ExperimentationOptOutMode int
 
 const (
+	// ExperimentationOptOutDefault uses DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE.
+	// If the setting is absent or empty, experimentation opt-out is disabled.
+	ExperimentationOptOutDefault ExperimentationOptOutMode = iota
 	// ExperimentationOptOutDisabled ignores dd_experimentation_opt_out_at.
-	// This is the default mode.
-	ExperimentationOptOutDisabled ExperimentationOptOutMode = iota
+	// It overrides the environment setting.
+	ExperimentationOptOutDisabled
 	// ExperimentationOptOutImmediate skips exposure-logging allocations when
 	// dd_experimentation_opt_out_at contains an RFC3339 timestamp string.
 	// It applies on each evaluation, including to experiments already in progress.
@@ -26,8 +33,26 @@ const (
 
 const experimentationOptOutAtAttribute = "dd_experimentation_opt_out_at"
 
+func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, error) {
+	switch mode {
+	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate:
+		return mode, nil
+	case ExperimentationOptOutDefault:
+		switch strings.ToLower(strings.TrimSpace(internalconfig.Get().FeatureFlagsExperimentationOptOutMode())) {
+		case "", "disabled":
+			return ExperimentationOptOutDisabled, nil
+		case "immediate":
+			return ExperimentationOptOutImmediate, nil
+		default:
+			return mode, errortrace.New("openfeature: DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE must be disabled or immediate")
+		}
+	default:
+		return mode, fmt.Errorf("openfeature: unsupported experimentation opt-out mode: %d", mode)
+	}
+}
+
 func (mode ExperimentationOptOutMode) excludeExperiments(attributes map[string]any) (bool, error) {
-	if mode == ExperimentationOptOutDisabled {
+	if mode != ExperimentationOptOutImmediate {
 		return false, nil
 	}
 	value, present := attributes[experimentationOptOutAtAttribute]

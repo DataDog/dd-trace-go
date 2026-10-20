@@ -113,11 +113,10 @@
 //
 // # Experimentation Opt-Out
 //
-// Enable immediate exclusion separately from evaluation telemetry opt-out:
+// Set DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE=immediate before SDK initialization.
+// This enables immediate exclusion separately from evaluation telemetry opt-out:
 //
-//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
-//	    ExperimentationOptOutMode: ddopenfeature.ExperimentationOptOutImmediate,
-//	})
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
 //	// Handle err and register the provider before evaluating flags.
 //	attributes := map[string]any{}
 //	// OptOutAt is a customer-owned *time.Time. Nil means not opted out.
@@ -127,7 +126,12 @@
 //	value, err := client.BooleanValue(ctx, "new-feature", false,
 //	    of.NewEvaluationContext(user.ID, attributes))
 //
-// The default mode, ExperimentationOptOutDisabled, ignores the parameter.
+// The zero value, ExperimentationOptOutDefault, uses the environment setting.
+// An unset or empty setting defaults to disabled, which ignores the parameter.
+// Explicit ExperimentationOptOutDisabled and ExperimentationOptOutImmediate values
+// override the environment setting. The provider resolves the mode at construction.
+// Without an explicit override, an unsupported environment value returns an error
+// from NewDatadogProvider. Unsupported enum values also return an error.
 // Immediate mode accepts an RFC3339 timestamp string, including fractional seconds.
 // Any valid timestamp activates exclusion immediately, regardless of its date.
 // Omit the attribute to permit experimentation. Null, empty, or malformed values
@@ -340,6 +344,11 @@
 //     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
 //     parameter. This setting does not globally disable evaluation telemetry.
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
+//
+//   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
+//     "immediate" to enable the dd_experimentation_opt_out_at context parameter.
+//     Explicit ProviderConfig.ExperimentationOptOutMode values other than Default
+//     override this setting. Unsupported values return a provider-construction error.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by
