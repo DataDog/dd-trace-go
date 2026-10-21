@@ -128,6 +128,8 @@
 // enqueueRow is application code, not a Datadog API. The callback runs on the
 // evaluation goroutine and must support concurrent calls. Callback panics do not
 // affect flag results or Datadog exposure logging.
+// Treat Details.Value as read-only. JSON maps and slices can share provider state.
+// Copy these values before modification or background processing.
 //
 // IsExposure reports successful resolution of an allocation with doLog enabled.
 // IsCacheHit identifies repeats. ShouldSend selects new or changed exposures.
@@ -171,6 +173,9 @@
 // OpenFeature Go v1.18.0 can omit error details when a Before hook fails or the
 // provider is not ready. Such callbacks have no sendable exposure. Its evaluation
 // details API can also retain stale error fields after an After-hook failure.
+// In that case, returned flag metadata can contain __dd_exposure_after_error.
+// This temporary internal marker is not a supported application API. Customer
+// callbacks receive the rejection message in Details.ErrorMessage instead.
 //
 // Calling provider resolution methods directly does not run hooks. Register
 // customer hooks on the client or evaluation, and retain the provider's hooks.
@@ -416,6 +421,11 @@
 //     parameter. This setting does not globally disable evaluation telemetry.
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
+//   - DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED: Default "true". Set to
+//     "false" to disable only Datadog exposure delivery. The provider snapshots
+//     this setting at construction. Customer hooks and exposure deduplication
+//     remain active. Evaluation telemetry and flag values are unchanged.
+//
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by
 //     Init, and by InitWithContext when the caller's context carries no deadline
@@ -468,7 +478,7 @@
 // implements an LRU (Least Recently Used) cache for deduplication:
 //
 //   - Cache key: combination of flag key and subject ID
-//   - Cache value: allocation key and variant
+//   - Cache value: allocation key, variant, and optional split serial ID
 //   - Capacity: 65536 entries (2^16, ~6.5MB max memory)
 //
 // Deduplication behavior:
@@ -477,6 +487,8 @@
 //   - Different subjects evaluating the same flag: 1 exposure per subject
 //   - Same subject with variant change (A→B→A): 3 exposures (each change tracked)
 //   - Same subject with allocation change: new exposure generated
+//   - Same subject with split serial ID change: new exposure generated
+//   - Serial ID zero is distinct from an absent serial ID
 //
 // The cache uses LRU eviction when capacity is reached, ensuring recently active
 // flag/subject combinations remain cached while older entries are evicted.

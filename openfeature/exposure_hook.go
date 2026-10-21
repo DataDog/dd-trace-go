@@ -45,12 +45,12 @@ func (h *exposureHook) After(_ context.Context, ctx of.HookContext, details of.I
 	return nil
 }
 
-func (h *exposureHook) Error(_ context.Context, ctx of.HookContext, _ error, _ of.HookHints) {
+func (h *exposureHook) Error(_ context.Context, ctx of.HookContext, err error, _ of.HookHints) {
 	if !h.supports(ctx) {
 		return
 	}
 	if h.evaluationMetadata != nil {
-		h.evaluationMetadata[metadataExposureAfterErrorKey] = true
+		h.evaluationMetadata[metadataExposureAfterErrorKey] = err.Error()
 	}
 }
 
@@ -70,11 +70,11 @@ func (h *exposureHook) supports(ctx of.HookContext) bool {
 const metadataExposureAfterErrorKey = "__dd_exposure_after_error"
 
 func exposureFinalDetails(ctx of.HookContext, details of.InterfaceEvaluationDetails) of.InterfaceEvaluationDetails {
-	if failed, _ := details.FlagMetadata[metadataExposureAfterErrorKey].(bool); failed && details.ErrorCode == "" {
+	if message, failed := details.FlagMetadata[metadataExposureAfterErrorKey].(string); failed && details.ErrorCode == "" {
 		details.Value = ctx.DefaultValue()
 		details.Reason = of.ErrorReason
 		details.ErrorCode = of.GeneralCode
-		details.ErrorMessage = "after hook failed"
+		details.ErrorMessage = message
 	}
 	return details
 }
@@ -207,6 +207,8 @@ func (e ExposureEvaluation) ShouldSend() bool {
 // non-exposures and cache hits. Register it with an OpenFeature client or evaluation,
 // not by replacing the provider's hooks. The callback runs synchronously: enqueue
 // copied scalar fields for background delivery. It can run concurrently.
+// Treat Details.Value as read-only. JSON maps and slices can share provider state;
+// copy them before modification or background processing.
 //
 // Like the Datadog logger, this hook runs in the Finally stage. Failed evaluations
 // never have a sendable exposure and do not consume the deduplication cache.

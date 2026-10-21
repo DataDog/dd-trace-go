@@ -318,8 +318,8 @@ type Config struct {
 	// flagEvalTelemetryOptOutEnabled is
 	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED.
 	flagEvalTelemetryOptOutEnabled bool
-	// Disabling Datadog exposure delivery preserves customer hooks,
-	// exposure deduplication, and evaluation telemetry.
+	// DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED controls Datadog exposure
+	// delivery, without disabling customer hooks, deduplication, or evaluation telemetry.
 	featureFlagsExposuresDatadogLoggingEnabled bool
 	// featureFlagsConfigurationSource is DD_FEATURE_FLAGS_CONFIGURATION_SOURCE, kept raw:
 	// trimming, casing and validity are resolved by openfeature.resolveSource, which needs
@@ -2340,7 +2340,7 @@ func (c *Config) FlagEvalTelemetryOptOutEnabled() bool {
 	return c.flagEvalTelemetryOptOutEnabled
 }
 
-// FeatureFlagsExposuresDatadogLoggingEnabled reports whether exposures go to Datadog.
+// FeatureFlagsExposuresDatadogLoggingEnabled returns DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED.
 func (c *Config) FeatureFlagsExposuresDatadogLoggingEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

@@ -188,15 +188,22 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			} else {
 				options = append(options, of.WithHooks(rejectingHook))
 			}
-			value, err := h.client.BooleanValue(context.Background(), "experiment", false,
+			details, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
 				of.NewEvaluationContext("athlete", nil), options...)
 			require.Error(t, err)
-			assert.False(t, value)
+			assert.False(t, details.Value)
+			// OpenFeature v1.18.0 returns stale details after an After rejection.
+			// TODO(open-feature/go-sdk#623): Require final error details after upgrading.
+			assert.Equal(t, of.StaticReason, details.Reason)
+			assert.Empty(t, details.ErrorCode)
+			assert.Empty(t, details.ErrorMessage)
+			assert.Equal(t, "on", details.Variant)
+			assert.Equal(t, err.Error(), details.FlagMetadata[metadataExposureAfterErrorKey])
 			require.Len(t, rows, 1)
 			assert.Equal(t, false, rows[0].Details.Value)
 			assert.Equal(t, of.GeneralCode, rows[0].Details.ErrorCode)
 			assert.Equal(t, of.ErrorReason, rows[0].Details.Reason)
-			assert.Equal(t, "after hook failed", rows[0].Details.ErrorMessage)
+			assert.Equal(t, err.Error(), rows[0].Details.ErrorMessage)
 			assert.NotContains(t, rows[0].Details.FlagMetadata, metadataExposureAfterErrorKey)
 			assert.False(t, rows[0].IsExposure())
 			assert.False(t, rows[0].ShouldSend())
@@ -253,6 +260,13 @@ func TestCustomerExposureHookNestedFailures(t *testing.T) {
 			assert.Equal(t, tt.rejectOuter, err != nil)
 			assert.Equal(t, !tt.rejectOuter, value)
 			require.Len(t, rows, 2)
+			if tt.rejectInner {
+				assert.Equal(t, "after hook: application rejected the flag result", rows[0].Details.ErrorMessage)
+				assert.Empty(t, rows[1].Details.ErrorMessage)
+			} else {
+				assert.Empty(t, rows[0].Details.ErrorMessage)
+				assert.Equal(t, "after hook: outer evaluation rejected", rows[1].Details.ErrorMessage)
+			}
 			assert.Equal(t, !tt.rejectInner, rows[0].ShouldSend())
 			assert.Equal(t, !tt.rejectOuter, rows[1].ShouldSend())
 			assert.False(t, rows[0].IsCacheHit())
