@@ -47,7 +47,7 @@ func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, erro
 			return mode, errortrace.New("openfeature: DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE must be disabled or immediate")
 		}
 	default:
-		return mode, fmt.Errorf("openfeature: unsupported experimentation opt-out mode: %d", mode)
+		return mode, errortrace.Errorf("openfeature: unsupported experimentation opt-out mode: %d", mode)
 	}
 }
 
