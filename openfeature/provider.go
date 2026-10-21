@@ -624,7 +624,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if hasExposureWriter {
 			switch {
 			case flushErr != nil:
-				logOnboarding("shutdown dropped %d pending exposure event(s): final delivery failed: %s", flushed, flushErr.Error())
+				log.Error("openfeature: failed to send %d pending exposure events at shutdown, dropping them: %v", flushed, flushErr.Error()) //errtrack:ignore remote request failure
 			case flushed == 0:
 				logOnboarding("shutdown found no pending exposure events to flush")
 			default:
@@ -632,7 +632,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			}
 		}
 		if metricsErr != nil {
-			logOnboarding("flag evaluation metrics did not shut down cleanly: %s", metricsErr.Error())
+			log.Warn("openfeature: flag evaluation metrics did not shut down cleanly: %s", metricsErr.Error()) //errtrack:ignore remote request failure
 		}
 		done <- err
 	}()

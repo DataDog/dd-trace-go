@@ -8,6 +8,7 @@ package openfeature
 import (
 	"cmp"
 	"container/list"
+	"errors"
 	"os"
 	"sync"
 	"time"
@@ -213,7 +214,7 @@ func (w *exposureWriter) start() {
 			select {
 			case <-w.ticker.C:
 				if n, err := w.flush(); err != nil {
-					logOnboarding("dropped %d exposure event(s) after failed delivery: %s", n, err.Error())
+					log.Error("openfeature: failed to send %d exposure events, dropping them: %v", n, err.Error()) //errtrack:ignore remote request failure
 				}
 			case <-w.stopChan:
 				return
@@ -267,13 +268,18 @@ func (w *exposureWriter) append(event exposureEvent) exposureAppendResult {
 }
 
 // flush sends all buffered exposure events to the agent. It returns how many
-// events it attempted to send and the delivery error; events are dropped, not
-// requeued, when delivery fails.
+// events were pending and, if they were not delivered, why; events are
+// dropped, not requeued, when delivery fails. Callers log the outcome.
 func (w *exposureWriter) flush() (int, error) {
 	w.mu.Lock()
-	if len(w.buffer) == 0 || w.stopped {
+	if len(w.buffer) == 0 {
 		w.mu.Unlock()
 		return 0, nil
+	}
+	if w.stopped {
+		n := len(w.buffer)
+		w.mu.Unlock()
+		return n, errors.New("exposure writer already stopped")
 	}
 
 	// Move buffer to local variable and create new buffer
@@ -286,11 +292,6 @@ func (w *exposureWriter) flush() (int, error) {
 		Context:   w.context,
 		Exposures: events,
 	})
-	if err != nil {
-		log.Error("openfeature: failed to send exposure events, dropping them: %v", err.Error()) //errtrack:ignore remote request failure
-	} else {
-		log.Debug("openfeature: successfully sent %d exposure events", len(events))
-	}
 	return len(events), err
 }
 

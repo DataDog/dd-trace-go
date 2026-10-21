@@ -776,30 +776,33 @@ func TestExposure_DebugLogs(t *testing.T) {
 		shutdown(t, p)
 		expose(p, "user-2")
 
-		logger.assertContains(t, `openfeature: queued exposure event for flag "my-flag" (allocation=alloc-1, variant=on, subject=user-1)`)
-		logger.assertContains(t, `openfeature: skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag "my-flag" (subject=user-1)`)
+		logger.assertContains(t, `openfeature: queued exposure event for flag "my-flag" (allocation="alloc-1", variant="on", subject="user-1")`)
+		logger.assertContains(t, `openfeature: skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag "my-flag" (subject="user-1")`)
 		logger.assertContains(t, "openfeature: shutdown sent 1 pending exposure event(s)")
 		logger.assertContains(t, `openfeature: skipping exposure event (exposure writer stopped) for flag "my-flag"`)
 	})
 
+	// Failed deliveries are errors, logged whether or not debug logging is on.
 	t.Run("dropped at shutdown when delivery fails", func(t *testing.T) {
-		logger := withLogLevel(t, log.LevelDebug)
+		logger := withLogLevel(t, log.LevelWarn)
 		p := newProvider(t, http.StatusInternalServerError)
 		expose(p, "user-1")
 		shutdown(t, p)
+		log.Flush() // log.Error is aggregated until flushed
 
-		logger.assertContains(t, "openfeature: shutdown dropped 1 pending exposure event(s): final delivery failed: ")
+		logger.assertContains(t, "openfeature: failed to send 1 pending exposure events at shutdown, dropping them: ")
 	})
 
 	t.Run("dropped by a periodic flush when delivery fails", func(t *testing.T) {
-		logger := withLogLevel(t, log.LevelDebug)
+		logger := withLogLevel(t, log.LevelWarn)
 		p := newProvider(t, http.StatusInternalServerError)
 		p.exposureWriter.flushInterval = time.Millisecond
 		p.exposureWriter.start()
 		expose(p, "user-1")
 
 		assert.Eventually(t, func() bool {
-			return logger.countContaining("openfeature: dropped 1 exposure event(s) after failed delivery: ") > 0
+			log.Flush() // log.Error is aggregated until flushed
+			return logger.countContaining("openfeature: failed to send 1 exposure events, dropping them: ") > 0
 		}, 5*time.Second, 5*time.Millisecond)
 		shutdown(t, p)
 	})
@@ -1051,6 +1054,21 @@ func TestLifecycle_DebugLogsReleaseProviderLock(t *testing.T) {
 	logger.assertLoggedWithoutLock(t, "shutdown found no pending exposure events")
 }
 
+func TestShutdown_WarnsWhenMetricsShutdownFails(t *testing.T) {
+	logger := withLogLevel(t, log.LevelWarn)
+	p := newDatadogProvider(ProviderConfig{})
+	m, _ := setupTestMetrics(t)
+	// A meter provider fails a second shutdown.
+	require.NoError(t, m.shutdown(context.Background()))
+	p.flagEvalMetricsHook = newFlagEvalMetricsHook(m)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.ShutdownWithContext(ctx))
+
+	logger.assertContains(t, "openfeature: flag evaluation metrics did not shut down cleanly: ")
+}
+
 type panickingLogger struct{}
 
 func (panickingLogger) Log(string) { panic("logger failure") }
@@ -1074,6 +1092,17 @@ func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
 	})
 }
 
+func TestFlattenContext_ContainsLoggerPanics(t *testing.T) {
+	logger := withPanickingOnboardingLogger(t)
+
+	var flat map[string]any
+	require.NotPanics(t, func() {
+		flat = flattenContext(map[string]any{"country": "US", "unsupported": struct{}{}})
+	})
+	assert.Equal(t, map[string]any{"country": "US"}, flat)
+	logger.assertContains(t, `openfeature: skipping unsupported attribute type for key "unsupported": struct {}`)
+}
+
 // The onboarding diagnostics share the package prefix with older logs, so
 // identify them by message rather than failing unrelated writer diagnostics.
 func isOnboardingLog(msg string) bool {
@@ -1095,9 +1124,8 @@ func isOnboardingLog(msg string) bool {
 		"evaluating flag ",
 		"queued exposure event ",
 		"skipping exposure event ",
-		"dropped ",
+		"skipping unsupported attribute type ",
 		"shutdown ",
-		"flag evaluation metrics did not shut down",
 	}, func(prefix string) bool { return strings.HasPrefix(message, prefix) })
 }
 
