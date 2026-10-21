@@ -472,7 +472,6 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/magiconair/properties",
 		"github.com/mailru/easyjson",
 		"github.com/mark3labs/mcp-go",
-		"github.com/matryer/moq",
 		"github.com/mattn/go-colorable",
 		"github.com/mattn/go-isatty",
 		"github.com/mattn/go-runewidth",

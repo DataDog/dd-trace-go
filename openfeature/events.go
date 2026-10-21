@@ -5,9 +5,7 @@
 
 package openfeature
 
-import (
-	"github.com/open-feature/go-sdk/openfeature"
-)
+import "github.com/open-feature/go-sdk/openfeature"
 
 var _ openfeature.EventHandler = (*DatadogProvider)(nil)
 
@@ -20,30 +18,58 @@ func (p *DatadogProvider) EventChannel() <-chan openfeature.Event {
 	return p.eventCh
 }
 
-// emitFirstOrChangeEvent maps a configuration update to a lifecycle event.
-// Called under p.mu from updateConfiguration.
-func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfiguration) {
+// readinessChange is a readiness transition that updateConfiguration logs
+// once p.mu is released.
+type readinessChange int
+
+const (
+	readinessUnchanged readinessChange = iota
+	readinessStale
+	readinessRecovered
+)
+
+func (c readinessChange) logDebug() {
+	switch c {
+	case readinessStale:
+		logOnboarding("provider is stale: configuration is unavailable; evaluations return their default values until configuration arrives")
+	case readinessRecovered:
+		logOnboarding("provider recovered: configuration received, provider is ready")
+	}
+}
+
+// emitFirstOrChangeEvent maps a configuration update to a lifecycle event and
+// returns the readiness change to log. Called under p.mu from setConfiguration.
+func (p *DatadogProvider) emitFirstOrChangeEvent(config *universalFlagsConfiguration) readinessChange {
 	switch {
 	case config == nil:
+		change := readinessUnchanged
+		if p.ready {
+			change = readinessStale
+		}
 		p.ready = false
 		p.emitEvent(openfeature.Event{EventType: openfeature.ProviderStale, ProviderEventDetails: openfeature.ProviderEventDetails{
 			Message: "configuration is unavailable",
 		}})
+		return change
 	case !p.ready:
 		p.ready = true
 		if !p.initialReadyHandoffComplete {
 			// The SDK emits its own ProviderReady when Init returns, so
 			// emitting the first transition here fires handlers twice.
 			p.initialReadyHandoffComplete = true
-			return
+			return readinessUnchanged
 		}
+		// Init already returned (timed out or canceled), or configuration
+		// had been removed: this is a recovery the customer should see.
 		p.emitEvent(openfeature.Event{EventType: openfeature.ProviderReady, ProviderEventDetails: openfeature.ProviderEventDetails{
 			Message: "configuration received",
 		}})
+		return readinessRecovered
 	default:
 		p.emitEvent(openfeature.Event{EventType: openfeature.ProviderConfigChange, ProviderEventDetails: openfeature.ProviderEventDetails{
 			Message: "configuration updated",
 		}})
+		return readinessUnchanged
 	}
 }
 
