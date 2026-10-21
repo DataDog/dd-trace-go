@@ -56,7 +56,7 @@ type ProviderConfig struct {
 	// ExperimentationOptOutMode controls how the provider uses the
 	// dd_experimentation_opt_out_at context parameter. The zero value uses
 	// DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE, which defaults to disabled.
-	// Explicit Disabled or Immediate values override the environment setting.
+	// An explicit non-default mode overrides the environment setting.
 	// The provider resolves the mode at construction. Evaluation telemetry is separate.
 	ExperimentationOptOutMode ExperimentationOptOutMode
 
@@ -879,13 +879,13 @@ func (p *DatadogProvider) evaluate(
 	// cannot change the value stamped on the result.
 	observeFullEvaluationData = config.ObserveFullEvaluationData
 
-	excludeExperiments, err := p.experimentationOptOutMode.excludeExperiments(flatCtx)
+	exclusion, err := p.experimentationOptOutMode.exclusion(flatCtx)
 	if err != nil {
 		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
 	}
 
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, excludeExperiments)
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.

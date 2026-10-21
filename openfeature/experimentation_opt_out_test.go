@@ -48,17 +48,17 @@ func TestExperimentationOptOutInput(t *testing.T) {
 		{"time object", map[string]any{experimentationOptOutAtAttribute: time.Now()}, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			exclude, err := ExperimentationOptOutImmediate.excludeExperiments(tc.attributes)
-			assert.Equal(t, tc.exclude, exclude)
+			exclude, err := ExperimentationOptOutImmediate.exclusion(tc.attributes)
+			assert.Equal(t, tc.exclude, exclude.mode == ExperimentationOptOutImmediate)
 			if tc.invalid {
 				require.ErrorIs(t, err, errInvalidContext)
 				assert.NotContains(t, err.Error(), "private-invalid-value")
 			} else {
 				require.NoError(t, err)
 			}
-			exclude, err = ExperimentationOptOutDisabled.excludeExperiments(tc.attributes)
+			exclude, err = ExperimentationOptOutDisabled.exclusion(tc.attributes)
 			require.NoError(t, err)
-			assert.False(t, exclude)
+			assert.Equal(t, experimentationExclusion{}, exclude)
 		})
 	}
 }
@@ -69,7 +69,7 @@ func TestExperimentationOptOutInvalidMode(t *testing.T) {
 		mode ExperimentationOptOutMode
 	}{
 		{"negative", -1},
-		{"unknown", 3},
+		{"unknown", 99},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
@@ -97,11 +97,11 @@ func TestExperimentationOptOutTimestampMatchesAllocationStartAt(t *testing.T) {
 		t.Run(stamp, func(t *testing.T) {
 			var a allocation
 			allocationErr := json.Unmarshal([]byte(`{"startAt":`+strconv.Quote(stamp)+`}`), &a)
-			exclude, optOutErr := ExperimentationOptOutImmediate.excludeExperiments(
+			exclude, optOutErr := ExperimentationOptOutImmediate.exclusion(
 				map[string]any{experimentationOptOutAtAttribute: stamp},
 			)
 			assert.Equal(t, allocationErr == nil, optOutErr == nil, "use the existing allocation timestamp contract")
-			assert.Equal(t, allocationErr == nil, exclude)
+			assert.Equal(t, allocationErr == nil, exclude.mode == ExperimentationOptOutImmediate)
 			if optOutErr != nil {
 				assert.ErrorIs(t, optOutErr, errInvalidContext)
 			}
@@ -133,6 +133,13 @@ func TestExperimentationOptOutConfiguration(t *testing.T) {
 		{name: "disabled", env: new("disabled"), want: ExperimentationOptOutDisabled},
 		{name: "immediate", env: new("immediate"), want: ExperimentationOptOutImmediate},
 		{name: "normalized immediate", env: new(" IMMEDIATE "), want: ExperimentationOptOutImmediate},
+		{name: "future experiments", env: new("future_experiments_only"), want: ExperimentationOptOutFutureExperimentsOnly},
+		{name: "normalized future experiments", env: new(" FUTURE_EXPERIMENTS_ONLY "), want: ExperimentationOptOutFutureExperimentsOnly},
+		{name: "explicit future experiments", mode: ExperimentationOptOutFutureExperimentsOnly, want: ExperimentationOptOutFutureExperimentsOnly},
+		{name: "future overrides immediate", env: new("immediate"), mode: ExperimentationOptOutFutureExperimentsOnly, want: ExperimentationOptOutFutureExperimentsOnly},
+		{name: "immediate overrides future", env: new("future_experiments_only"), mode: ExperimentationOptOutImmediate, want: ExperimentationOptOutImmediate},
+		{name: "disabled overrides future", env: new("future_experiments_only"), mode: ExperimentationOptOutDisabled, want: ExperimentationOptOutDisabled},
+		{name: "future overrides invalid", env: new("private-invalid-value"), mode: ExperimentationOptOutFutureExperimentsOnly, want: ExperimentationOptOutFutureExperimentsOnly},
 		{name: "unsupported environment", env: new("private-invalid-value"), err: true},
 		{name: "explicit disabled", mode: ExperimentationOptOutDisabled, want: ExperimentationOptOutDisabled},
 		{name: "explicit immediate", mode: ExperimentationOptOutImmediate, want: ExperimentationOptOutImmediate},
@@ -151,7 +158,7 @@ func TestExperimentationOptOutConfiguration(t *testing.T) {
 			}
 			provider, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
 			if tc.err {
-				require.ErrorContains(t, err, key+" must be disabled or immediate")
+				require.ErrorContains(t, err, key+" must be disabled, immediate, or future_experiments_only")
 				assert.NotContains(t, err.Error(), "private-invalid-value")
 				assert.Nil(t, provider)
 				return
@@ -172,11 +179,11 @@ func TestExperimentationOptOutConfiguration(t *testing.T) {
 			}
 			internalconfig.CreateNew()
 			assert.Equal(t, tc.want, p.experimentationOptOutMode)
-			exclude, err := p.experimentationOptOutMode.excludeExperiments(map[string]any{
+			exclude, err := p.experimentationOptOutMode.exclusion(map[string]any{
 				experimentationOptOutAtAttribute: experimentOptOutTestTime,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, tc.want == ExperimentationOptOutImmediate, exclude)
+			assert.Equal(t, tc.want != ExperimentationOptOutDisabled, exclude.mode != ExperimentationOptOutDefault)
 		})
 	}
 }
@@ -329,6 +336,7 @@ func TestExperimentationOptOutDefaultBehavior(t *testing.T) {
 		{name: "unset mode ignores timestamp", attributes: map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}},
 		{name: "unset mode ignores invalid timestamp", attributes: map[string]any{experimentationOptOutAtAttribute: "invalid"}},
 		{name: "immediate mode without attribute", config: ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutImmediate}},
+		{name: "future mode without attribute", config: ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newOptOutHarness(t, tc.config)
@@ -351,7 +359,7 @@ func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {
 	for i := range 100 {
 		wg.Go(func() {
 			attrs := of.FlattenedContext{of.TargetingKey: strconv.Itoa(i)}
-			baseline := evaluateFlag(f, false, attrs, time.Now(), false)
+			baseline := evaluateFlag(f, false, attrs, time.Now(), experimentationExclusion{})
 			assert.Contains(t, []string{"on", "off"}, baseline.VariantKey)
 			variants[i] = baseline.VariantKey
 			eligible := h.provider.BooleanEvaluation(context.Background(), "experiment", false, attrs)

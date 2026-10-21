@@ -403,7 +403,7 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 				},
 			}
 
-			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now(), false)
+			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now(), experimentationExclusion{})
 
 			if result.Reason != of.ErrorReason {
 				t.Errorf("expected ErrorReason, got %s", result.Reason)
@@ -448,8 +448,14 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	t.Cleanup(immediateProvider.Shutdown)
 	// Reuse the configuration without starting telemetry workers for capability checks.
 	immediateProvider.configuration = &cfg
+	futureProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly,
+	})
+	t.Cleanup(futureProvider.Shutdown)
+	futureProvider.configuration = &cfg
 	capabilityProviders := map[string]*DatadogProvider{
-		"experimentationOptOutImmediate": immediateProvider,
+		"experimentationOptOutImmediate":             immediateProvider,
+		"experimentationOptOutFutureExperimentsOnly": futureProvider,
 	}
 	capabilityCases := make(map[string]int)
 
@@ -496,7 +502,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now(), false)
+					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now(), experimentationExclusion{})
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)

@@ -128,13 +128,13 @@
 //
 // The zero value, ExperimentationOptOutDefault, uses the environment setting.
 // An unset or empty setting defaults to disabled, which ignores the parameter.
-// Explicit ExperimentationOptOutDisabled and ExperimentationOptOutImmediate values
-// override the environment setting. The provider resolves the mode at construction.
+// Any explicit non-default mode overrides the environment setting.
+// The provider resolves the mode at construction.
 // Without an explicit override, an unsupported environment value returns an error
 // from NewDatadogProvider. Unsupported enum values also return an error.
-// Immediate mode accepts an RFC3339 timestamp string, including fractional seconds.
+// Both enabled modes accept an RFC3339 timestamp string, including fractional seconds.
 // Timestamp parsing follows the same rules as allocation startAt and endAt values.
-// Any valid timestamp activates exclusion immediately, regardless of its date.
+// In immediate mode, any valid timestamp excludes immediately, regardless of its date.
 // Omit the attribute to permit experimentation. Null, empty, or malformed values
 // return the application default with INVALID_CONTEXT, including for ordinary flags.
 // The SDK validates the attribute before selecting any allocation. It does not infer
@@ -155,6 +155,27 @@
 // experiment analysis. Customers must account for that change in their analysis.
 // No withdrawal event is emitted. Evaluation telemetry remains enabled unless separately
 // suppressed with the evaluation telemetry opt-out parameter.
+//
+// To continue older experiments, set the environment value to "future_experiments_only"
+// or configure ExperimentationOptOutFutureExperimentsOnly. Use the same subject attribute.
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    ExperimentationOptOutMode: ddopenfeature.ExperimentationOptOutFutureExperimentsOnly,
+//	})
+//
+// This mode skips exposure-logging allocations activated at or after the supplied
+// cutoff. Allocations without randomizationActivatedAt are also skipped. Older
+// allocations continue normal evaluation and exposure logging. Ordinary feature
+// allocations remain eligible. The comparison uses instants, including timezone
+// offsets and fractional seconds, not configuration refresh time or allocation schedules.
+//
+// The cutoff is not an enrollment record: an older experiment can still assign a
+// subject for the first time. Configuration edits do not freeze targeting or values.
+// Holdouts use the same activation cutoff. A future cutoff does not schedule exclusion;
+// it permits allocations activated before that cutoff. Remove the attribute to opt back in.
+//
+// This mode requires activation metadata from the configuration producer. Legacy
+// allocations without it are skipped for opted-out subjects, not treated as older.
 //
 // # Flag Configuration
 //
@@ -398,7 +419,8 @@
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
-//     "immediate" to enable the dd_experimentation_opt_out_at context parameter.
+//     "immediate" or "future_experiments_only" to enable the
+//     dd_experimentation_opt_out_at context parameter.
 //     Explicit ProviderConfig.ExperimentationOptOutMode values other than Default
 //     override this setting. Unsupported values return a provider-construction error.
 //

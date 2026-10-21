@@ -139,6 +139,9 @@ type allocation struct {
 	StartAt *time.Time `json:"startAt,omitempty"`
 	// EndAt is the optional end time for this allocation (RFC 3339)
 	EndAt *time.Time `json:"endAt,omitempty"`
+	// RandomizationActivatedAt identifies when randomization first became active.
+	// It is independent of scheduling and configuration edits. Nil means unknown.
+	RandomizationActivatedAt *time.Time `json:"randomizationActivatedAt,omitempty"`
 	// Splits define how to distribute traffic among variants
 	Splits []*split `json:"splits"`
 	// DoLog indicates whether to log events for this allocation (defaults to true)
