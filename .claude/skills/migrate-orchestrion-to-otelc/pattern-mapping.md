@@ -11,7 +11,7 @@ in `references.md`.
 | `append-args` | `wrap_call` with `append_args`, plus `variadic_type` when the matched call spreads a slice |
 | `replace-function` | paired before/after hooks: the before-hook calls the drop-in, keeps its result with `SetData` and calls `SetSkipCall(true)`; the after-hook writes it with `SetReturnVal`. Guard re-entrancy if the drop-in calls the target again |
 | `prepend-statements` in a `function-body` | `inject_hooks`, or `inject_code` when the code must run in-package |
-| `add-struct-field` | `add_struct_fields`. A hook cannot read the new field (see below) |
+| `add-struct-field` | `add_struct_fields`, when the field is read in-package. A hook cannot read the new field, so for a hook keep the state in a side table instead (see below) |
 | `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
 | `inject-declarations` | `add_file`: a Go file with `//go:build ignore` in the rules module, copied into the target package at build time. It can declare types, functions, methods on the target's types, and a `//go:linkname` to an unexported contrib function. Nothing is needed when the declaration only linked a hook, since otelc links hooks itself. For `package main`, see `feature-gaps.md` |
@@ -74,8 +74,13 @@ its unexported ones, and not fields added by `add_struct_fields`. For either, wr
 accessor's return value, or read the field in-package with `inject_code`
 (`transport_round_trip_tracer_internal` in `contrib/net/http/otelc/otelc.yaml`).
 
-When the aspect injects more than a few statements around an added field, as router and server
-aspects do, move the whole template into the target package instead of a hook:
+Prefer a hook with the per-object state in a side table: a `sync.Map` keyed by
+`weak.Make(obj)`, so the object can still be freed. `LoadOrStore` keeps one value per object, also
+when two goroutines race. This replaces an added field such as an
+"already wrapped" flag or a per-router config, and lets the hook call the contrib directly.
+
+Run the code in-package only when the hook cannot do the job, for example when it must read an
+unexported field. Then move the whole template into the target package:
 
 - `add_struct_fields` adds the field.
 - `add_file` adds the template as a function or as a method on the target type, together with any
