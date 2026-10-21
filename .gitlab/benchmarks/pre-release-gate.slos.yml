@@ -10,11 +10,6 @@
 #
 # DO NOT EDIT MANUALLY - Regenerate using:
 #   benchmark_analyzer generate slos --help
-#
-# Additions 2026-10-20 (APMSP-4104): agg_http_req_duration_p50/p95 on the four
-# normal_operation scenarios, generated with T = 5.0% tight (p95 on
-# go-stable-profile-trace-asm: loose mean + 3σ), raw values, max across
-# pipelines 145728587, 145699750, 145697843.
 experiments:
   - name: Run SLO breach check
     steps:
@@ -26,16 +21,16 @@ experiments:
           - name: normal_operation_cgo-cpu-bound/go-oldstable-profile-trace-asm
             thresholds:
               - agg_http_req_duration_p99 < 1.5 ms
-              - agg_http_req_duration_p50 < 0.60839419 ms
-              - agg_http_req_duration_p95 < 0.77247244 ms
+              - agg_http_req_duration_p50 < 0.61 ms
+              - agg_http_req_duration_p95 < 0.77 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-profile-trace-asm
             thresholds:
               - throughput > 60 op/s
           - name: normal_operation_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
               - agg_http_req_duration_p99 < 1.5 ms
-              - agg_http_req_duration_p50 < 0.2119421 ms
-              - agg_http_req_duration_p95 < 0.26473841 ms
+              - agg_http_req_duration_p50 < 0.21 ms
+              - agg_http_req_duration_p95 < 0.26 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
               - throughput > 60 op/s
@@ -43,16 +38,16 @@ experiments:
           - name: normal_operation_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
               - agg_http_req_duration_p99 < 1.5 ms
-              - agg_http_req_duration_p50 < 0.61195152 ms
-              - agg_http_req_duration_p95 < 0.90194073 ms
+              - agg_http_req_duration_p50 < 0.61 ms
+              - agg_http_req_duration_p95 < 0.9 ms
           - name: high_load_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
               - throughput > 60 op/s
           - name: normal_operation_cgo-cpu-bound/go-stable-only-trace
             thresholds:
               - agg_http_req_duration_p99 < 1.5 ms
-              - agg_http_req_duration_p50 < 0.22009108 ms
-              - agg_http_req_duration_p95 < 0.26479564 ms
+              - agg_http_req_duration_p50 < 0.22 ms
+              - agg_http_req_duration_p95 < 0.26 ms
           - name: high_load_cgo-cpu-bound/go-stable-only-trace
             thresholds:
               - throughput > 60 op/s
