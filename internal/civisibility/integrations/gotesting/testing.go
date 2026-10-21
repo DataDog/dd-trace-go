@@ -8,6 +8,7 @@ package gotesting
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"reflect"
@@ -432,6 +433,10 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		retireTestingMInstrumentation(m, claim)
 		releaseHookEpoch()
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
+		var closeOptions []integrations.TestSessionCloseOption
+		if claim.instrumentedAllWorkloads() {
+			closeOptions = append(closeOptions, integrations.WithTestSessionSkipIfEmpty())
+		}
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
@@ -448,7 +453,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 				uploadFinalCoverageReport(settings)
 			}
 			if err != nil || !publishCoverage {
-				session.Close(exitCode)
+				session.Close(exitCode, closeOptions...)
 				coverage.CleanupRuntimeCoverageSnapshot()
 				integrations.ExitCiVisibility()
 				if deferredTerminalPanic != nil {
@@ -470,7 +475,7 @@ func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWr
 		}
 
 		// Close the session and return the exit code.
-		session.Close(exitCode)
+		session.Close(exitCode, closeOptions...)
 		coverage.CleanupRuntimeCoverageSnapshot()
 
 		// Finalize CI Visibility
@@ -491,6 +496,27 @@ func recordTestingMDeferredDisposition(claim *testingMInstrumentationClaim, summ
 	claim.deferredFailure = true
 	claim.stickyExitCode = mergeDeferredProcessRetryExitCode(claim.stickyExitCode, true)
 	claim.failfastLatched = claim.failfastLatched || summary.failfast
+}
+
+// instrumentedAllWorkloads reports whether every workload that testing.M.Run
+// could execute was wrapped to create a module, so a session that closes
+// without modules ran nothing. Benchmarks are wrapped only when os.Args selects
+// them, but TestMain or a flag callback can set test.bench too. Unwrapped
+// benchmarks count as possibly run if the flag has a value or was ever set,
+// since a later flag.Set may have cleared it.
+func (c *testingMInstrumentationClaim) instrumentedAllWorkloads() bool {
+	if c.testDescriptors == nil || c.fuzzDescriptors == nil || c.exampleDescriptors == nil {
+		return false
+	}
+	if c.benchmarkDescriptors != nil {
+		return true
+	}
+	if bench := flag.Lookup("test.bench"); bench == nil || bench.Value.String() != "" {
+		return false
+	}
+	benchSet := false
+	flag.Visit(func(f *flag.Flag) { benchSet = benchSet || f.Name == "test.bench" })
+	return !benchSet
 }
 
 func retiredTestingMDisposition(claim *testingMInstrumentationClaim) (bool, testingMFinalizer) {
