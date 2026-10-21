@@ -348,13 +348,14 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	return pollOutcomeSuccess, 0
 }
 
-// requestedEnv describes the dd_env query parameter the poller sends. A
-// custom endpoint never receives it, so the configuration it serves need not
-// match DD_ENV.
+// requestedEnv describes the dd_env query parameter the poller sends. The
+// poller never adds it to a custom endpoint, but the URL may carry its own, so
+// what such an endpoint receives is unknown and the configuration it serves
+// need not match DD_ENV.
 func (s *agentlessSource) requestedEnv() string {
 	switch {
 	case !s.managed:
-		return "none (custom endpoint)"
+		return "custom endpoint (not set by SDK)"
 	case s.env == "":
 		return "none"
 	default:
