@@ -19,10 +19,10 @@ import (
 // lifecycle subtracts from the native duration of a testing.F.
 //
 // Go 1.23 through 1.27 measure fRunner's elapsed time with the
-// QueryPerformanceCounter (highPrecisionTime, testing_windows.go), while
+// QueryPerformanceCounter (highPrecisionTime in testing_windows.go), while
 // completeParallelSubtestsWithState measures the wait with time.Since. On
 // Windows, time.Since reads the interrupt-time clock, which advances only on
-// timer interrupts; that clock can lead the counter by up to one interrupt
+// timer interrupts. That clock can lead the counter by up to one interrupt
 // period. Cap the subtraction at the elapsed counter time that fRunner will
 // add, or the clock skew drives the compensated duration below zero.
 func capFuzzParallelSeedsWait(f *testing.F, wait time.Duration) time.Duration {
@@ -54,8 +54,9 @@ func capFuzzParallelSeedsWait(f *testing.F, wait time.Duration) time.Duration {
 	if now < startedCounter {
 		return wait
 	}
-	// Match the conversion of testing's highPrecisionTime, including its
-	// truncation, so the cap compares against exactly what fRunner adds.
+	// Match the conversion that testing applies to highPrecisionTime. Match
+	// its truncation too, so the cap compares against exactly what fRunner
+	// adds.
 	hi, lo := bits.Mul64(uint64(now-startedCounter), uint64(time.Second)/uint64(time.Nanosecond))
 	elapsed, _ := bits.Div64(hi, lo, uint64(frequency))
 	if nativeElapsed := time.Duration(elapsed); wait > nativeElapsed {

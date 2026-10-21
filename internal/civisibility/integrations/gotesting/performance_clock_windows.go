@@ -14,7 +14,7 @@ import (
 )
 
 // Go 1.23 through 1.27 measure testing durations with the
-// QueryPerformanceCounter (highPrecisionTime, testing_windows.go). The
+// QueryPerformanceCounter (highPrecisionTime in testing_windows.go). The
 // helpers below read the same counter, so native duration accounting stays on
 // the clock that testing uses. Go 1.28 drops highPrecisionTime and measures
 // testing durations with time.Now on every platform.

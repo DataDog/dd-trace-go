@@ -111,7 +111,7 @@ func (q *fuzzEventQueue) drain(nativeFinished bool) {
 // nativeResult reads Go's stored result, never Failed's process-wide race check.
 // Fatal shutdown can read an active root's already-propagated seed failure, but
 // must not read duration: Go writes it without holding common.mu.
-// durationRead reports whether the native duration field was read; a read
+// durationRead reports whether the native duration field was read. A read
 // duration of zero is a valid native result, unlike an unreadable one.
 func (e *fuzzTestEvent) nativeResult(nativeFinished bool) (failed, skipped bool, duration time.Duration, durationRead bool) {
 	var t *testing.T

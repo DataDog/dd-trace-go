@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// Outside Windows, testing's highPrecisionTime is time.Time, so the wait that
-// completeParallelSubtestsWithState measures with time.Since and fRunner's
+// testing's highPrecisionTime is a time.Time outside Windows, so the wait
+// that completeParallelSubtestsWithState measures with time.Since and fRunner's
 // duration accumulator share one clock. The subtraction needs no skew guard.
 func capFuzzParallelSeedsWait(_ *testing.F, wait time.Duration) time.Duration {
 	return wait
