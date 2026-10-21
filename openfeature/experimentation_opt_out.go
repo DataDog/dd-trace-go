@@ -83,6 +83,9 @@ func (mode ExperimentationOptOutMode) exclusion(attributes map[string]any) (expe
 }
 
 func (exclusion experimentationExclusion) excludes(a *allocation) bool {
+	if exclusion.mode != ExperimentationOptOutImmediate && exclusion.mode != ExperimentationOptOutFutureExperimentsOnly {
+		return false
+	}
 	if a.DoLog != nil && !*a.DoLog {
 		return false
 	}

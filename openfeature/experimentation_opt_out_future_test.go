@@ -148,6 +148,8 @@ func TestExperimentationOptOutFutureActivationParsing(t *testing.T) {
 		{"empty", ",\"randomizationActivatedAt\":\"\"", false, false},
 		{"number", ",\"randomizationActivatedAt\":123", false, false},
 		{"boolean", ",\"randomizationActivatedAt\":true", false, false},
+		{"array", ",\"randomizationActivatedAt\":[]", false, false},
+		{"object", ",\"randomizationActivatedAt\":{}", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var config universalFlagsConfiguration
@@ -165,8 +167,20 @@ func TestExperimentationOptOutFutureActivationParsing(t *testing.T) {
 				assert.Equal(t, tc.unknown, config.Flags["test"].Allocations[0].RandomizationActivatedAt == nil)
 			} else {
 				require.NotContains(t, config.Flags, "test")
-				result := evaluateConfiguredFlag(&config, "test", false, nil, time.Now(), experimentationExclusion{})
-				assert.ErrorIs(t, result.Error, errParseError)
+				for _, mode := range []ExperimentationOptOutMode{
+					ExperimentationOptOutDisabled,
+					ExperimentationOptOutImmediate,
+					ExperimentationOptOutFutureExperimentsOnly,
+				} {
+					exclusion, err := mode.exclusion(map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime})
+					require.NoError(t, err)
+					result := evaluateConfiguredFlag(&config, "test", false, nil, time.Now(), exclusion)
+					assert.ErrorIs(t, result.Error, errParseError)
+					assert.Equal(t, false, result.Value)
+					neighbor := evaluateConfiguredFlag(&config, "neighbor", false, nil, time.Now(), exclusion)
+					assert.NoError(t, neighbor.Error)
+					assert.Equal(t, true, neighbor.Value)
+				}
 			}
 		})
 	}

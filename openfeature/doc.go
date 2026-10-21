@@ -166,7 +166,10 @@
 // This mode skips exposure-logging allocations activated at or after the supplied
 // cutoff. Allocations without randomizationActivatedAt are also skipped. Older
 // allocations continue normal evaluation and exposure logging. Ordinary feature
-// allocations remain eligible. The comparison uses instants, including timezone
+// allocations remain eligible. A malformed randomizationActivatedAt rejects the
+// affected flag for every subject, even when opt-out is disabled. Evaluation returns
+// the application's default with PARSE_ERROR, as with malformed startAt or endAt.
+// Other valid flags remain available. The comparison uses instants, including timezone
 // offsets and fractional seconds, not configuration refresh time or allocation schedules.
 //
 // The cutoff is not an enrollment record: an older experiment can still assign a
