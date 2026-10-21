@@ -14,8 +14,9 @@ variables:
   # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
-  # Known flaky benchmarks
-  FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
+  # No benchmarks are quarantined. Match no scenario names.
+  # See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/7223313012/Flaky+Benchmarks+Monitoring for more details.
+  FLAKY_BENCHMARKS_REGEX: "^$"
 
 # Paths that can move a number in the BENCHMARKS lists below.
 #
@@ -44,6 +45,7 @@ variables:
     - openfeature/**/*
     - contrib/net/http/**/*
     - contrib/graphql-go/graphql/**/*
+    - contrib/gofiber/fiber.v2/**/*
     - contrib/go-redis/redis/**/*
     - contrib/redis/rueidis/**/*
     - contrib/valkey-io/valkey-go/**/*
@@ -108,7 +110,7 @@ variables:
 microbenchmarks-1:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkAgentTraceWriter|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
+    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkAgentTraceWriter|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlushInMemory|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-1"
@@ -124,14 +126,14 @@ microbenchmarks-2:
 microbenchmarks-3:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations|BenchmarkLLMObsExportSubmitSpans"
+    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations|BenchmarkLLMObsExportSubmitSpans|BenchmarkFiberMiddleware"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-3"
 
 pr-performance-gates:
   stage: microbenchmarks
-  needs: [microbenchmarks-1, microbenchmarks-2]
+  needs: [microbenchmarks-1, microbenchmarks-2, microbenchmarks-3]
   rules: *benchmark-rules
   tags:
     - "arch:amd64"

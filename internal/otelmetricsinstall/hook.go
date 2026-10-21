@@ -12,9 +12,10 @@ package otelmetricsinstall
 import "context"
 
 // StartHook is called by tracer.Start() to install the global OTel meter
-// provider and begin collecting Go runtime metrics.
+// provider and begin collecting Go runtime metrics. It reports whether the
+// provider in use is the one it installed.
 // Nil unless ddtrace/opentelemetry/metric has been imported.
-var StartHook func(ctx context.Context) error
+var StartHook func(ctx context.Context) (installed bool, err error)
 
 // ShutdownHook is called by tracer.Stop() to flush and shut down the global
 // OTel MeterProvider installed by StartHook.

@@ -21,6 +21,10 @@ func TestClientGoroutine(t *testing.T) {
 	harness.Run(t, new(TestCaseClientGoroutine))
 }
 
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestFuncHandler(t *testing.T) {
 	harness.Run(t, new(TestCaseFuncHandler))
 }
@@ -39,6 +43,10 @@ func TestHandlerIsNil(t *testing.T) {
 
 func TestIssue400(t *testing.T) {
 	harness.Run(t, new(TestCaseIssue400))
+}
+
+func TestSSRF(t *testing.T) {
+	harness.Run(t, new(TestCaseSSRF))
 }
 
 func TestServeMuxHandler(t *testing.T) {

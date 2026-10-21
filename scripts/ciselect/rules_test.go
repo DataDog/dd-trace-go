@@ -71,15 +71,17 @@ var classifyCases = []classifyCase{
 		wantAll: true,
 	},
 	{
-		name:    "the orchestrion integration suite is not core",
-		files:   []string{"internal/orchestrion/_integration/gin/gin.go"},
-		want:    []string{"orchestrion"},
-		notWant: []string{"system-tests", "parametric-tests"},
+		name:  "the orchestrion integration suite is not core",
+		files: []string{"internal/orchestrion/_integration/gin/gin.go"},
+		want:  []string{"orchestrion"},
+		// The suite is its own module that no shipped code imports; the benchmark
+		// apps do not consume it, so benchmark-apps stays off for it.
+		notWant: []string{"system-tests", "parametric-tests", "benchmark-apps"},
 	},
 	{
 		name:    "an aspect file needs orchestrion and regeneration only",
 		files:   []string{"contrib/gin-gonic/gin/orchestrion.yml"},
-		want:    []string{"orchestrion", "generate"},
+		want:    []string{"orchestrion", "benchmark-apps", "generate"},
 		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
@@ -90,7 +92,13 @@ var classifyCases = []classifyCase{
 		name:    "the orchestrion workflow is a workflow, not an aspect file",
 		files:   []string{".github/workflows/orchestrion.yml"},
 		want:    []string{"orchestrion", "static-actions"},
-		notWant: []string{"generate", "pull-request-tests", "system-tests"},
+		notWant: []string{"benchmark-apps", "generate", "pull-request-tests", "system-tests"},
+	},
+	{
+		name:    "the benchmark apps workflow owns its gate",
+		files:   []string{".github/workflows/benchmark-apps.yml"},
+		want:    []string{"benchmark-apps", "static-actions"},
+		notWant: []string{"generate", "orchestrion", "pull-request-tests", "system-tests"},
 	},
 	{
 		// The gitlink has no trailing slash and no children, so the
@@ -129,17 +137,19 @@ var classifyCases = []classifyCase{
 	{
 		// orchestrion.yml pre-pulls the pinned images from this module's
 		// docker-compose.yaml, so it is the one submodule that keeps that gate.
+		// The benchmark apps do not consume testcontainers, so benchmark-apps
+		// deliberately stays off here despite the orchestrion gate.
 		name:    "the testcontainers module keeps the orchestrion gate",
 		files:   []string{"instrumentation/testutils/containers/images/docker-compose.yaml"},
 		want:    []string{"orchestrion", "pull-request-tests"},
-		notWant: []string{"system-tests", "parametric-tests"},
+		notWant: []string{"system-tests", "parametric-tests", "benchmark-apps"},
 	},
 	{
 		// Referenced only by smoke-tests.yml, which has no pull_request trigger.
 		name:    "a submodule no pull-request workflow builds needs only hygiene",
 		files:   []string{"internal/setup-smoke-test/main.go"},
 		want:    []string{"static-lint", "generate"},
-		notWant: []string{"pull-request-tests", "system-tests", "orchestrion"},
+		notWant: []string{"pull-request-tests", "system-tests", "orchestrion", "benchmark-apps"},
 	},
 	{
 		// ci_test_core.sh runs this module's tests, so pull-request-tests must stay on.
@@ -161,7 +171,7 @@ var classifyCases = []classifyCase{
 		name:    "the traceproftest module stays hygiene-only",
 		files:   []string{"internal/traceprof/traceproftest/testapp/test_app.go"},
 		want:    []string{"static-lint", "generate"},
-		notWant: []string{"pull-request-tests", "system-tests", "orchestrion"},
+		notWant: []string{"pull-request-tests", "system-tests", "orchestrion", "benchmark-apps"},
 	},
 	{
 		// profiler/orchestrion.yml is an injected aspect, so orchestrion runs.
@@ -170,14 +180,17 @@ var classifyCases = []classifyCase{
 		// wrong trim in the other.
 		name:    "profiler keeps the orchestrion gate",
 		files:   []string{"profiler/profiler.go"},
-		want:    []string{"pull-request-tests", "orchestrion", "static-lint"},
+		want:    []string{"pull-request-tests", "orchestrion", "benchmark-apps", "static-lint"},
 		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
-		// crashtracker/orchestrion.yml is an injected aspect too.
+		// crashtracker/orchestrion.yml is an injected aspect too, and the package
+		// itself is blank-imported by orchestrion/all/v2's tool file. The benchmark
+		// apps must resolve that package from a published tag, which is what the
+		// benchmark-apps gate verifies.
 		name:    "crashtracker keeps the orchestrion gate",
 		files:   []string{"crashtracker/crashtracker.go"},
-		want:    []string{"pull-request-tests", "orchestrion", "static-lint"},
+		want:    []string{"pull-request-tests", "orchestrion", "benchmark-apps", "static-lint"},
 		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
@@ -198,10 +211,12 @@ var classifyCases = []classifyCase{
 	{
 		// The public orchestrion/ package is not the aspect-only component:
 		// it holds real root-module code, so it keeps unit tests as well as
-		// the orchestrion gate.
+		// the orchestrion gate. The benchmark apps build against
+		// orchestrion/all/v2 resolved from the module proxy, so that gate is
+		// on here too.
 		name:    "the public orchestrion package keeps both gates",
 		files:   []string{"orchestrion/orchestrion.go"},
-		want:    []string{"pull-request-tests", "orchestrion", "static-lint"},
+		want:    []string{"pull-request-tests", "orchestrion", "benchmark-apps", "static-lint"},
 		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
@@ -256,6 +271,16 @@ var classifyCases = []classifyCase{
 		name:    "a contrib go.mod does not escalate the whole repo",
 		files:   []string{"contrib/gin-gonic/gin/go.mod"},
 		want:    []string{"pull-request-tests"},
+		notWant: []string{"parametric-tests"},
+	},
+	{
+		// The benchmark apps resolve every contrib module from published tags
+		// through orchestrion/all/v2, so a contrib change needs the benchmark
+		// apps build check. A new nested module without a published tag is
+		// exactly what that check exists to catch.
+		name:    "a contrib change needs the benchmark apps build",
+		files:   []string{"contrib/cloudevents/sdk-go.v2/cloudevents.go"},
+		want:    []string{"benchmark-apps"},
 		notWant: []string{"parametric-tests"},
 	},
 	{

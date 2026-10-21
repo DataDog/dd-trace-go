@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	_ "unsafe" // Needed for the private tracer bootstrap entry point.
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -83,9 +84,12 @@ var (
 func EnsureCiVisibilityInitialization() {
 	internalCiVisibilityInitialization(func(opts []tracer.StartOption) {
 		// Initialize the tracer.
-		tracer.Start(opts...)
+		startCIVisibility(opts...)
 	})
 }
+
+//go:linkname startCIVisibility github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.startCIVisibility
+func startCIVisibility(opts ...tracer.StartOption) error
 
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {

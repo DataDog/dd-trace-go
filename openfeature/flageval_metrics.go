@@ -67,6 +67,18 @@ type flagEvalMetrics struct {
 	counter       otelmetric.Int64Counter
 }
 
+type flagEvalMeterProviderError struct {
+	err error
+}
+
+func (e *flagEvalMeterProviderError) Error() string {
+	return "failed to create meter provider: " + e.err.Error()
+}
+
+func (e *flagEvalMeterProviderError) Unwrap() error {
+	return e.err
+}
+
 // newFlagEvalMetrics creates a new metrics tracker.
 // It creates an internal MeterProvider using dd-trace-go's OTel metrics support.
 // If DD_METRICS_OTEL_ENABLED is not true, the provider is a noop and
@@ -76,7 +88,7 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 		ddmetric.WithExportInterval(10 * time.Second),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create meter provider: %w", err)
+		return nil, &flagEvalMeterProviderError{err: err}
 	}
 
 	meter := mp.Meter(meterName)
