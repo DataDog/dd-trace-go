@@ -78,7 +78,7 @@ func (h *exposureHook) Finally(
 	}
 
 	// Check if we should log this exposure
-	if !h.shouldLog(flagEvaluationDetails.FlagMetadata) {
+	if !(ExposureEvaluation{Details: flagEvaluationDetails}).IsExposure() {
 		log.Debug("openfeature: skipping exposure event (doLog=false) for flag %q", hookContext.FlagKey())
 		return
 	}
@@ -125,13 +125,14 @@ func (h *exposureHook) Finally(
 			Attributes: subjectAttrs, // Flattened, primitive-only attributes
 		},
 		SerialID: serialID,
+		Features: splitFeatureValues(flagEvaluationDetails.FlagMetadata, metadataExposureFeaturePrefix),
 	}
 
 	// Send to writer for buffering and eventual flushing
 	// Decide once for all destinations. Customer hooks run after provider hooks
 	// and read this stamp without consuming another cache entry.
-	isNew := h.writer.append(event)
-	if flagEvaluationDetails.FlagMetadata != nil {
+	isNew, known := h.writer.appendWithDecision(event)
+	if known {
 		flagEvaluationDetails.FlagMetadata[metadataExposureCacheHitKey] = !isNew
 	}
 
@@ -147,6 +148,13 @@ const metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
 type ExposureEvaluation struct {
 	Context of.EvaluationContext
 	Details of.InterfaceEvaluationDetails
+}
+
+// Features returns split metadata routed to customer hooks. The returned map is
+// independent of the evaluation and other callbacks. Values are strings, booleans,
+// or float64 numbers. An evaluation without hook features returns nil.
+func (e ExposureEvaluation) Features() map[string]any {
+	return splitFeatureValues(e.Details.FlagMetadata, metadataHookFeaturePrefix)
 }
 
 // IsExposure reports whether the result selected an exposure-logging allocation.
@@ -207,29 +215,6 @@ func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of
 	details.FlagMetadata = maps.Clone(details.FlagMetadata)
 	delete(details.FlagMetadata, metadataExposureAfterErrorKey)
 	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
-}
-
-// shouldLog checks if the exposure should be logged based on the doLog metadata flag
-func (h *exposureHook) shouldLog(metadata of.FlagMetadata) bool {
-	if metadata == nil {
-		// Default to true if no metadata present
-		return true
-	}
-
-	doLog, ok := metadata[metadataDoLogKey]
-	if !ok {
-		// Default to true if doLog not specified
-		return true
-	}
-
-	// Check if it's a boolean
-	doLogBool, ok := doLog.(bool)
-	if !ok {
-		log.Debug("openfeature: doLog metadata is not a boolean, defaulting to true")
-		return true
-	}
-
-	return doLogBool
 }
 
 // getSerialID extracts the split serial ID from flag metadata

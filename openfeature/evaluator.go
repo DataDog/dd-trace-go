@@ -113,6 +113,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			if split.SerialID != nil {
 				metadata[metadataSplitSerialIDKey] = *split.SerialID
 			}
+			split.Features.addMetadata(metadata)
 
 			// Determine reason:
 			//   rules matched                         → TARGETING_MATCH

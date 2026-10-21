@@ -144,6 +144,7 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
+	featuresKey    string
 	// observeFullEvaluationData keeps consent-on and consent-off traffic in separate buckets.
 	// When false, contextKey is always empty (enforced in add) — the key must only carry
 	// dimensions that survive serialization, or one context field would inflate cardinality
@@ -164,6 +165,7 @@ type evaluationDegradedKey struct {
 	allocationKey  string
 	runtimeDefault bool
 	errorMessage   string
+	featuresKey    string
 }
 
 // evaluationEntry holds per-window counts and time bounds for one aggregation bucket.
@@ -176,6 +178,7 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+	features     map[string]any
 	// observeFullEvaluationData drives serialization: raw targeting_key + context, or hashed
 	// key with no context. Duplicates the key field on purpose — add AND-folds it, so any
 	// drift from the key still forces the whole bucket to the privacy-protected path.
@@ -244,6 +247,7 @@ type flagEvalLoggingEvent struct {
 	Allocation      *flagEvalAllocation   `json:"allocation,omitempty"`
 	Error           *flagEvalError        `json:"error,omitempty"`
 	Context         *flagEvalEventContext `json:"context,omitempty"`
+	Features        map[string]any        `json:"features,omitempty"`
 }
 
 // flagEvalFlag holds the flag key.
@@ -343,6 +347,7 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
+	features       map[string]any
 	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
 	// metadata. Read only from there — never from live configuration.
 	observeFullEvaluationData bool
@@ -599,6 +604,7 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 		FirstEvaluation: e.firstEvaluation,
 		LastEvaluation:  e.lastEvaluation,
 		EvaluationCount: e.count,
+		Features:        e.features,
 	}
 }
 
@@ -1167,6 +1173,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		errorMessage:              d.errorMessage,
 		targetingKey:              d.targetingKey,
 		contextKey:                canonicalContextKey(contextAttrs),
+		featuresKey:               canonicalContextKey(d.features),
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
 
@@ -1212,6 +1219,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		runtimeDefault:            d.runtimeDefault,
 		targetingKey:              d.targetingKey,
 		contextAttrs:              contextAttrs,
+		features:                  d.features,
 		errorMessage:              d.errorMessage,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
@@ -1231,6 +1239,7 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 		allocationKey:  d.allocationKey,
 		runtimeDefault: d.runtimeDefault,
 		errorMessage:   d.errorMessage,
+		featuresKey:    canonicalContextKey(d.features),
 	}
 
 	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the
@@ -1254,6 +1263,7 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 	e := newEvaluationEntry(evaluationTimeMs)
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
+	e.features = d.features
 	a.degraded[degKey] = e
 }
 
@@ -1433,6 +1443,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,
+		features:                  evaluationFeatureValues(details.FlagMetadata),
 		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }

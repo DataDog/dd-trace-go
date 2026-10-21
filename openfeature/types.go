@@ -212,8 +212,9 @@ type split struct {
 	// All shards must match for the split to apply (AND logic)
 	Shards []*shard `json:"shards"`
 	// VariationKey is the key of the variation to return if this split matches
-	VariationKey string  `json:"variationKey"`
-	SerialID     *uint32 `json:"serialId,omitempty"`
+	VariationKey string        `json:"variationKey"`
+	SerialID     *uint32       `json:"serialId,omitempty"`
+	Features     splitFeatures `json:"features,omitempty"`
 }
 
 // shard defines a portion of traffic using consistent hashing.

@@ -50,6 +50,7 @@ type exposureEvent struct {
 	Variant    exposureVariant    `json:"variant"`
 	Subject    exposureSubject    `json:"subject"`
 	SerialID   *uint32            `json:"serial_id,omitempty"`
+	Features   map[string]any     `json:"features,omitempty"`
 }
 
 // exposureAllocation represents allocation information in an exposure event
@@ -226,11 +227,17 @@ func (w *exposureWriter) start() {
 
 // append adds an exposure event to the buffer with deduplication
 func (w *exposureWriter) append(event exposureEvent) bool {
+	added, _ := w.appendWithDecision(event)
+	return added
+}
+
+// appendWithDecision distinguishes a duplicate from an unavailable cache decision.
+func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.stopped {
-		return false
+		return false, false
 	}
 
 	// Create cache key and value from event
@@ -250,13 +257,13 @@ func (w *exposureWriter) append(event exposureEvent) bool {
 	// Check deduplication cache - returns true if this is a new or changed entry
 	if !w.cache.add(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
-		return false
+		return false, true
 	}
 
 	if !w.disableDatadogLogging {
 		w.buffer = append(w.buffer, event)
 	}
-	return true
+	return true, true
 }
 
 // flush sends all buffered exposure events to the agent

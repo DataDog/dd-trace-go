@@ -333,3 +333,44 @@ func TestExposureEvaluationRequiresExplicitCacheDecision(t *testing.T) {
 	assert.False(t, e.ShouldSend())
 	assert.False(t, e.IsCacheHit())
 }
+
+func TestStoppedWriterDoesNotReportCacheHit(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.exposureWriter.stop()
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+	h.evaluate(t, "subject", nil)
+	require.Len(t, rows, 1)
+	assert.True(t, rows[0].IsExposure())
+	assert.False(t, rows[0].IsCacheHit())
+	assert.False(t, rows[0].ShouldSend())
+	assert.NotContains(t, rows[0].Details.FlagMetadata, metadataExposureCacheHitKey)
+}
+
+func TestExposureDestinationsShareEligibility(t *testing.T) {
+	tests := []struct {
+		name    string
+		variant string
+		doLog   any
+	}{
+		{"empty_variant", "", true},
+		{"missing_do_log", "on", nil},
+		{"malformed_do_log", "on", "true"},
+		{"disabled", "on", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			details := of.InterfaceEvaluationDetails{EvaluationDetails: of.EvaluationDetails{
+				FlagKey: "experiment",
+				ResolutionDetail: of.ResolutionDetail{Variant: tt.variant, FlagMetadata: of.FlagMetadata{
+					metadataAllocationKey: "allocation", metadataDoLogKey: tt.doLog,
+				}},
+			}}
+			newExposureHook(h.provider.exposureWriter).Finally(context.Background(), of.HookContext{}, details, of.HookHints{})
+			assert.False(t, (ExposureEvaluation{Details: details}).IsExposure())
+			assert.NotContains(t, details.FlagMetadata, metadataExposureCacheHitKey)
+			assert.Empty(t, h.provider.exposureWriter.buffer)
+		})
+	}
+}

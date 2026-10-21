@@ -122,7 +122,7 @@
 //	    // Copy the fields into your own background queue. Do not block here.
 //	    enqueueRow(e.Details.FlagKey, e.Context.TargetingKey(), e.Details.Variant,
 //	        e.Details.FlagMetadata["dd.allocation.key"],
-//	        e.Details.FlagMetadata["__dd_split_serial_id"])
+//	        e.Details.FlagMetadata["__dd_split_serial_id"], e.Features())
 //	}))
 //
 // enqueueRow is application code, not a Datadog API. The callback runs on the
@@ -139,6 +139,17 @@
 // retries, and shutdown. Use IsExposure with customer-owned deduplication when
 // independent delivery guarantees are required.
 //
+// Features returns scalar metadata from the selected split's HOOK destination.
+// For example, a holdout can supply holdout.key and holdout.assignment_group.
+// EXPOSURE and EVALUATION destinations add features to the corresponding Datadog
+// events, not to Features(). Each destination receives only its configured fields.
+// Features are configuration metadata, not subject attributes. Evaluation events
+// retain them when subject-data collection is disabled. Different evaluation
+// feature values use separate aggregation buckets.
+//
+// Go retains its existing dd.allocation.key metadata name. Java uses allocationKey.
+// Both providers expose __dd_split_serial_id and __dd_feature.<key> metadata.
+//
 // Set DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false before SDK
 // initialization for customer-only exposure logging. The default is true.
 // The provider snapshots this setting at construction. The cache and customer
@@ -149,6 +160,10 @@
 // include errors, non-exposures and repeats. A failed evaluation never has a
 // sendable exposure and does not consume the cache. The next successful
 // evaluation can therefore emit an exposure.
+//
+// OpenFeature Go v1.18.0 can omit error details when a Before hook fails or the
+// provider is not ready. Such callbacks have no sendable exposure. Its evaluation
+// details API can also retain stale error fields after an After-hook failure.
 //
 // Calling provider resolution methods directly does not run hooks. Register
 // customer hooks on the client or evaluation, and retain the provider's hooks.
