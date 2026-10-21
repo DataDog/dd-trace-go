@@ -62,9 +62,10 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			if marshalErr != nil {
 				instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
 			}
+			_, redact := ctx.Value(redactToolOutputKey{}).(struct{})
 			var outputText string
 			if result != nil {
-				if _, redact := ctx.Value(redactToolOutputKey{}).(struct{}); redact {
+				if redact {
 					outputText = "[REDACTED]"
 				} else {
 					resultJSON, marshalErr := json.Marshal(result)
@@ -89,7 +90,7 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			if err != nil {
 				toolSpan.Finish(llmobs.WithError(err))
 			} else if result != nil && result.IsError {
-				toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+				toolSpan.Finish(llmobs.WithError(toolResultError(result, redact)))
 			} else {
 				toolSpan.Finish()
 			}
@@ -99,6 +100,26 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 
 		return result, err
 	}
+}
+
+// toolResultError uses the result's first text content as the error message,
+// unless the tool output is redacted.
+func toolResultError(result *mcp.CallToolResult, redact bool) error {
+	if !redact {
+		for _, c := range result.Content {
+			switch tc := c.(type) {
+			case mcp.TextContent:
+				if tc.Text != "" {
+					return errors.New(tc.Text)
+				}
+			case *mcp.TextContent:
+				if tc != nil && tc.Text != "" {
+					return errors.New(tc.Text)
+				}
+			}
+		}
+	}
+	return errors.New("tool resulted in an error")
 }
 
 func newHooks() *hooks {
