@@ -380,7 +380,8 @@
 //
 // Set DD_TRACE_DEBUG=true and call tracer.Start before creating the provider
 // to log, at debug level, each step of its setup and every flag evaluation.
-// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). The provider
+// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). Setting
+// OTEL_LOG_LEVEL=debug also enables these logs. The provider
 // does not change the shared log level. Enabling debug logging after provider
 // construction also enables subsequent evaluation logs.
 // Every such line starts with "openfeature:",

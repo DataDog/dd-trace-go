@@ -163,13 +163,13 @@ func (h *exposureHook) Finally(
 	case !known:
 		logOnboarding("skipping exposure event (exposure writer stopped) for flag %q", hookContext.FlagKey())
 	case !isNew:
-		logOnboarding("skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag %q (subject=%s)",
+		logOnboarding("skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag %q (subject=%q)",
 			hookContext.FlagKey(), targetingKey)
 	case !h.writer.datadogLoggingEnabled:
-		logOnboarding("recorded exposure event for flag %q without queuing it for Datadog, which has exposure logging disabled (allocation=%s, variant=%s, subject=%s)",
+		logOnboarding("recorded exposure event for flag %q without queuing it for Datadog, which has exposure logging disabled (allocation=%q, variant=%q, subject=%q)",
 			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 	default:
-		logOnboarding("queued exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
+		logOnboarding("queued exposure event for flag %q (allocation=%q, variant=%q, subject=%q)",
 			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 	}
 }
