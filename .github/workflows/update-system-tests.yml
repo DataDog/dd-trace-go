@@ -66,6 +66,12 @@ jobs:
           PATTERN: '(system-tests.yml@)(\S+)(\s+# Automated:.*)'
           REF: ${{ steps.system-test-ref.outputs.commit }}
 
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/system-tests.yml"
+          PATTERN: '(\s+ref:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
       - run: git diff --color=always
 
       - name: Get GitHub Token via dd-octo-sts
@@ -83,10 +89,10 @@ jobs:
         with:
           token: ${{ steps.generate-token.outputs.token }}
           branch: auto-generate/update-system-tests
-          title: '[🤖] Update System Tests'
+          title: 'chore(tests): Update System Tests [🤖]'
           base: main
           labels: changelog/no-changelog
-          commit-message: "[🤖] Update System Tests: ${{github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          commit-message: "Update System Tests: ${{github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           delete-branch: true
           sign-commits: true
           add-paths: |

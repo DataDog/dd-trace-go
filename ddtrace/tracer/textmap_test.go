@@ -2871,6 +2871,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)
@@ -2888,6 +2889,7 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)

@@ -50,7 +50,7 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 	var contentType string
 	var err error
 
-	// e.protocol is validated at config load time (validateOTLPProtocol) to be exactly
+	// e.protocol is validated at config load time to be exactly
 	// "http/json" or "http/protobuf", so the else branch below is not an independent
 	// default — it's the only other value config can hand us.
 	if e.protocol == "http/json" {

@@ -231,18 +231,18 @@ func TestAgentlessSource_ETagNotAdvancedOnParseFailure(t *testing.T) {
 		applied = append(applied, c)
 	})
 
-	outer, _ := src.pollOnce() // valid: applies configuration and stores the ETag
+	outer, _ := src.pollOnce(1) // valid: applies configuration and stores the ETag
 	require.Equal(t, pollOutcomeSuccess, outer)
 	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
 
-	outer, _ = src.pollOnce() // malformed_with_etag: must not advance the ETag
+	outer, _ = src.pollOnce(1) // malformed_with_etag: must not advance the ETag
 	require.Equal(t, pollOutcomeStop, outer)
 	assert.Equal(t, fakeUFCBackendETag, src.currentETag(), "a malformed payload must never be acknowledged as received")
 
 	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the third request must still carry the ETag from the first, valid response")
 
-	outer, _ = src.pollOnce() // not_modified: confirms the server still recognizes that ETag
+	outer, _ = src.pollOnce(1) // not_modified: confirms the server still recognizes that ETag
 	require.Equal(t, pollOutcomeSuccess, outer)
 
 	mu.Lock()
@@ -261,12 +261,12 @@ func TestAgentlessSource_ETagAnd304(t *testing.T) {
 
 	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	outer, _ := src.pollOnce()
+	outer, _ := src.pollOnce(1)
 	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Empty(t, lastIfNoneMatch, "the first request must not carry an ETag")
 
-	outer, _ = src.pollOnce()
+	outer, _ = src.pollOnce(1)
 	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ = backend.status()
 	assert.Equal(t, fakeUFCBackendETag, lastIfNoneMatch, "the second request must carry the ETag stored from the first")
@@ -283,15 +283,15 @@ func TestAgentlessSource_BlankETagClears(t *testing.T) {
 
 	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-	outer, _ := src.pollOnce() // valid: stores the ETag
+	outer, _ := src.pollOnce(1) // valid: stores the ETag
 	require.Equal(t, pollOutcomeSuccess, outer)
 	assert.Equal(t, fakeUFCBackendETag, src.currentETag())
 
-	outer, _ = src.pollOnce() // valid_no_etag: must clear the held ETag
+	outer, _ = src.pollOnce(1) // valid_no_etag: must clear the held ETag
 	require.Equal(t, pollOutcomeSuccess, outer)
 	assert.Empty(t, src.currentETag(), "a blank ETag response must clear the held ETag")
 
-	outer, _ = src.pollOnce() // valid: confirms the cleared ETag reached the request
+	outer, _ = src.pollOnce(1) // valid: confirms the cleared ETag reached the request
 	require.Equal(t, pollOutcomeSuccess, outer)
 	_, _, lastIfNoneMatch, _ := backend.status()
 	assert.Empty(t, lastIfNoneMatch, "the third request must not carry an ETag, since the second response cleared it")
@@ -359,7 +359,7 @@ func TestAgentlessSource_PollOnceReturnsRetryAfter(t *testing.T) {
 	// wait out its full context timeout for a doneCh that a never-started run
 	// loop can never close.
 	src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
-	outcome, retryAfter := src.pollOnce()
+	outcome, retryAfter := src.pollOnce(1)
 	assert.Equal(t, pollOutcomeRetryable, outcome)
 	assert.Equal(t, 2*time.Second, retryAfter)
 }

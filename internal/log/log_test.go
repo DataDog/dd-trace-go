@@ -129,6 +129,12 @@ func TestLog(t *testing.T) {
 		assert.Equal(t, msg("WARN", "message 1"), tp.Lines()[0])
 	})
 
+	t.Run("Info", func(t *testing.T) {
+		tp.Reset()
+		Info("message %d", 1)
+		assert.Equal(t, msg("INFO", "message 1"), tp.Lines()[0])
+	})
+
 	t.Run("Debug", func(t *testing.T) {
 		t.Run("on", func(t *testing.T) {
 			tp.Reset()
@@ -201,6 +207,67 @@ func TestLog(t *testing.T) {
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
+}
+
+func TestLevelThreshold(t *testing.T) {
+	defer func(old Logger) { UseLogger(old) }(logger)
+	defer SetLevel(GetLevel())
+	defer func(old time.Duration) { errrate = old }(errrate)
+	errrate = 0 // print errors immediately instead of aggregating them
+	tp := &testLogger{}
+	UseLogger(tp)
+
+	for _, tc := range []struct {
+		threshold Level
+		want      []string
+	}{
+		{threshold: LevelDebug, want: []string{"DEBUG", "INFO", "WARN", "ERROR"}},
+		{threshold: LevelInfo, want: []string{"INFO", "WARN", "ERROR"}},
+		{threshold: LevelWarn, want: []string{"WARN", "ERROR"}},
+		{threshold: LevelError, want: []string{"ERROR"}},
+	} {
+		t.Run(tc.threshold.String(), func(t *testing.T) {
+			tp.Reset()
+			SetLevel(tc.threshold)
+			Debug("message")
+			Info("message")
+			Warn("message")
+			Error("message")
+
+			var got []string
+			for _, line := range tp.Lines() {
+				for _, lvl := range []string{"DEBUG", "INFO", "WARN", "ERROR"} {
+					if strings.HasPrefix(line, msg(lvl, "message")) {
+						got = append(got, lvl)
+					}
+				}
+			}
+			assert.Equal(t, tc.want, got)
+			for _, lvl := range []Level{LevelDebug, LevelInfo, LevelWarn, LevelError} {
+				assert.Equal(t, lvl >= tc.threshold, Enabled(lvl), lvl.String())
+			}
+		})
+	}
+}
+
+func TestParseLevel(t *testing.T) {
+	for in, want := range map[string]Level{
+		"debug":   LevelDebug,
+		"DeBuG":   LevelDebug,
+		"info":    LevelInfo,
+		" warn ":  LevelWarn,
+		"WARN":    LevelWarn,
+		"error":   LevelError,
+		"ERROR\n": LevelError,
+	} {
+		lvl, ok := ParseLevel(in)
+		assert.True(t, ok, in)
+		assert.Equal(t, want, lvl, in)
+	}
+	for _, in := range []string{"", "warning", "trace", "none", "not-a-log-level"} {
+		_, ok := ParseLevel(in)
+		assert.False(t, ok, in)
+	}
 }
 
 func TestRecordLoggerIgnore(t *testing.T) {
@@ -285,5 +352,27 @@ func BenchmarkLog(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		Warn("test")
+	}
+}
+
+type panickingLogger struct{}
+
+func (panickingLogger) Log(string) { panic("logger failure") }
+
+// TestPanickingLoggerReleasesLock pins that a Logger panic recovered by the
+// caller leaves the logger lock free, so UseLogger cannot block forever.
+func TestPanickingLoggerReleasesLock(t *testing.T) {
+	undo := UseLogger(panickingLogger{})
+	assert.Panics(t, func() { Warn("boom") })
+
+	done := make(chan struct{})
+	go func() {
+		undo()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a panicking Logger left the logger lock held")
 	}
 }

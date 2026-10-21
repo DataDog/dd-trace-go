@@ -77,6 +77,9 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 	}
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
+	for addr := range cfg.DisabledAddresses {
+		delete(cfg.SupportedAddresses, addr)
+	}
 
 	feature := &Feature{
 		handle:              newHandle,
@@ -178,7 +181,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 }
 
 func (*Feature) String() string {
-	return "Web Application Firewall"
+	return listener.FeatureWAF
 }
 
 func (waf *Feature) Stop() {

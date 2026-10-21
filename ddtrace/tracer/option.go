@@ -62,6 +62,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/cloudevents/sdk-go/v2":               {"CloudEvents SDK v2", false},
 	"github.com/confluentinc/confluent-kafka-go":     {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2":  {"Kafka (confluent) v2", false},
+	"connectrpc.com/connect":                         {"Connect RPC", false},
 	"database/sql":                                   {"SQL", false},
 	"github.com/dimfeld/httptreemux/v5":              {"HTTP Treemux", false},
 	"github.com/elastic/go-elasticsearch/v6":         {"Elasticsearch v6", false},
@@ -206,6 +207,10 @@ type config struct {
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
+
+	// otelMeterProviderInstalled reports whether OTel runtime metrics are
+	// exported by the MeterProvider the tracer installed.
+	otelMeterProviderInstalled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -319,9 +324,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
-	}
+	// Always apply the level, so that restarting without one restores the default.
+	log.SetLevel(c.internalConfig.LogLevel())
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
 		// Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
@@ -1328,6 +1332,18 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
+	}
+}
+
+// WithDataStreamsIntakeBufferSize sets the number of slots in the Data Streams
+// Monitoring processor's input ring buffer. Once full, new checkpoints and
+// Kafka offsets overwrite the oldest unread ones, so raising this value
+// trades memory for tolerance to bursts or a slow agent. This can also be
+// configured by setting DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. Non-positive
+// values are ignored.
+func WithDataStreamsIntakeBufferSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
 	}
 }
 
