@@ -10,6 +10,7 @@ import (
 	"encoding/xml"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"strings"
 	"testing"
@@ -104,6 +105,29 @@ func (tc *TestCaseResponse) Run(_ context.Context, t *testing.T) {
 	body, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, `<hello who="world"></hello>`, string(body))
+}
+
+// TestCaseResponseNilRequest is a regression test for render methods called on a [gin.Context]
+// that has no [http.Request], as created by [gin.CreateTestContext]. The instrumentation woven
+// into these methods must not dereference the nil request.
+type TestCaseResponseNilRequest struct{}
+
+func (*TestCaseResponseNilRequest) Setup(context.Context, *testing.T) {}
+
+func (*TestCaseResponseNilRequest) Run(_ context.Context, t *testing.T) {
+	gin.SetMode(gin.ReleaseMode) // Silence start-up logging
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	require.Nil(t, c.Request)
+
+	c.JSON(http.StatusCreated, Payload{Who: "world"})
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.Equal(t, `{"hello":"world"}`, w.Body.String())
+}
+
+func (*TestCaseResponseNilRequest) ExpectedTraces() trace.Traces {
+	return nil
 }
 
 func (tc *TestCaseResponse) ExpectedTraces() trace.Traces {

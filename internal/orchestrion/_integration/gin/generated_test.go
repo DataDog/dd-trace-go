@@ -20,3 +20,7 @@ func TestBase(t *testing.T) {
 func TestResponse(t *testing.T) {
 	harness.Run(t, new(TestCaseResponse))
 }
+
+func TestResponseNilRequest(t *testing.T) {
+	harness.Run(t, new(TestCaseResponseNilRequest))
+}
