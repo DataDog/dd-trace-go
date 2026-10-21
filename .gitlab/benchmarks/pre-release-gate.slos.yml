@@ -10,6 +10,11 @@
 #
 # DO NOT EDIT MANUALLY - Regenerate using:
 #   benchmark_analyzer generate slos --help
+#
+# Additions 2026-10-20 (APMSP-4104): agg_http_req_duration_p50/p95 on the four
+# normal_operation scenarios, generated with T = 5.0% tight (p95 on
+# go-stable-profile-trace-asm: loose mean + 3σ), raw values, max across
+# pipelines 145728587, 145699750, 145697843.
 experiments:
   - name: Run SLO breach check
     steps:
