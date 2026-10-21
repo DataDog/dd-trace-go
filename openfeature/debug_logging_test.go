@@ -360,7 +360,7 @@ func TestAgentlessSource_DebugLogs(t *testing.T) {
 		logger.assertContains(t, "openfeature: agentless configuration poll attempt 1/3 returned HTTP 200")
 		// A custom endpoint never receives DD_ENV, so the configuration's
 		// environment can differ from the SDK's.
-		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, sdk_env=staging, requested_env=none (custom endpoint), config_env=Test, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
+		logger.assertContains(t, `openfeature: agentless configuration applied successfully (0 flag(s), 0 rejected, sdk_env=staging, requested_env=custom endpoint (not set by SDK), config_env=Test, created_at=2024-04-17T19:40:53.716Z, etag="ufc-v1")`)
 	})
 
 	t.Run("applied configuration without DD_ENV", func(t *testing.T) {
@@ -844,7 +844,7 @@ func TestAgentlessSource_RequestedEnvironment(t *testing.T) {
 		env     string
 		want    string
 	}{
-		{"custom endpoint never sends dd_env", false, "production", "none (custom endpoint)"},
+		{"custom endpoint is not given dd_env by the SDK", false, "production", "custom endpoint (not set by SDK)"},
 		{"managed endpoint without DD_ENV", true, "", "none"},
 		{"managed endpoint", true, "production", "production"},
 	} {
@@ -881,7 +881,7 @@ func TestRejectedFlags_DebugLogs(t *testing.T) {
 
 		newDebugAgentlessSource(t, srv.URL).poll()
 
-		logger.assertContains(t, `agentless configuration applied successfully (1 flag(s), 1 rejected, sdk_env=staging, requested_env=none (custom endpoint), config_env=Test, created_at=2026-10-01T12:00:00Z, etag="v7")`)
+		logger.assertContains(t, `agentless configuration applied successfully (1 flag(s), 1 rejected, sdk_env=staging, requested_env=custom endpoint (not set by SDK), config_env=Test, created_at=2026-10-01T12:00:00Z, etag="v7")`)
 		logger.assertContains(t, `openfeature: agentless configuration rejected flag "bad-flag": `)
 		assert.Zero(t, logger.countContaining(`rejected flag "good-flag"`))
 	})
