@@ -111,9 +111,15 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 
 func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
 	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-	retryCounts := [...]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM}
-	if bucket := retryDurationBucket(duration); bucket < len(retryCounts) {
-		return int64(retryCounts[bucket]), true
+	secs := duration.Seconds()
+	if secs < 5 {
+		return int64(slowTestRetries.FiveS), true
+	} else if secs < 10 {
+		return int64(slowTestRetries.TenS), true
+	} else if secs < 30 {
+		return int64(slowTestRetries.ThirtyS), true
+	} else if duration.Minutes() < 5 {
+		return int64(slowTestRetries.FiveM), true
 	}
 	return 0, false
 }
@@ -123,23 +129,23 @@ func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, du
 func flakyRetryCountForDuration(duration time.Duration) int64 {
 	flakyRetries := integrations.GetFlakyRetriesSettings()
 	if counts := flakyRetries.DynamicRetryCounts; counts != nil {
-		return counts[retryDurationBucket(duration)]
+		return counts[dynamicRetryDurationBucket(duration)]
 	}
 	return flakyRetries.RetryCount
 }
 
-// retryDurationBucket returns the EFD slow test retries bucket for a test duration, which dynamic automatic test
-// retries share. The upper bounds stay exclusive as in the original EFD code; dd-trace-py uses inclusive ones, but
-// matching it would change EFD bucketing.
-func retryDurationBucket(duration time.Duration) int {
+// dynamicRetryDurationBucket returns the dynamic automatic test retries bucket for the duration of a test's first
+// execution. The buckets are the EFD ones in efdRetryCountForDuration, but with inclusive upper bounds, so a first
+// execution of exactly 5s is in the first bucket.
+func dynamicRetryDurationBucket(duration time.Duration) int {
 	switch {
-	case duration < 5*time.Second:
+	case duration <= 5*time.Second:
 		return 0
-	case duration < 10*time.Second:
+	case duration <= 10*time.Second:
 		return 1
-	case duration < 30*time.Second:
+	case duration <= 30*time.Second:
 		return 2
-	case duration < 5*time.Minute:
+	case duration <= 5*time.Minute:
 		return 3
 	default:
 		return 4

@@ -264,7 +264,7 @@ func TestEnsureAdditionalFeaturesInitializationDynamicFlakyRetryCountsIgnoreEFDC
 	ensureAdditionalFeaturesInitialization("service")
 
 	assert.Equal(t, 1, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveS)
-	assert.Equal(t, &[5]int64{4, 1, 2, 1, 1}, ciVisibilityFlakyRetriesSettings.DynamicRetryCounts)
+	assert.Equal(t, &[5]int64{4, 5, 2, 2, 1}, ciVisibilityFlakyRetriesSettings.DynamicRetryCounts)
 }
 
 func TestDynamicFlakyRetryCounts(t *testing.T) {
@@ -280,9 +280,9 @@ func TestDynamicFlakyRetryCounts(t *testing.T) {
 		wantMetric *telemetrytest.MetricKey
 	}{
 		{name: "disabled ignores buckets", buckets: "3,2,1,1,1"},
-		{name: "slow test retries", enabled: "true", wantCounts: &[5]int64{4, 1, 2, 1, 1}, wantMetric: &enabledMetric},
+		{name: "slow test retries", enabled: "true", wantCounts: &[5]int64{4, 5, 2, 2, 1}, wantMetric: &enabledMetric},
 		{name: "custom buckets", enabled: "1", buckets: " 3, 2,1,1 ,20", wantCounts: &[5]int64{3, 2, 1, 1, 20}, wantMetric: &customBucketsMetric},
-		{name: "invalid buckets", enabled: "true", buckets: "3,2,1,1,21", wantCounts: &[5]int64{4, 1, 2, 1, 1}, wantMetric: &enabledMetric},
+		{name: "invalid buckets", enabled: "true", buckets: "3,2,1,1,21", wantCounts: &[5]int64{4, 5, 2, 2, 1}, wantMetric: &enabledMetric},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -301,6 +301,14 @@ func TestDynamicFlakyRetryCounts(t *testing.T) {
 			assert.Equal(t, 1.0, recorder.Metrics[*tt.wantMetric].Get())
 		})
 	}
+}
+
+func TestDynamicFlakyRetryCountsWithoutSlowTestRetries(t *testing.T) {
+	defer coretelemetry.MockClient(new(telemetrytest.RecordClient))()
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, "")
+
+	assert.Equal(t, &[5]int64{10, 5, 3, 2, 1}, dynamicFlakyRetryCounts([4]int{}))
 }
 
 func TestParseDynamicFlakyRetryCounts(t *testing.T) {

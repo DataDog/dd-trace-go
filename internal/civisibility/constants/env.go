@@ -62,7 +62,7 @@ const (
 	CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED"
 
 	// CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable overrides the dynamic retry counts with five comma-separated
-	// integers from 1 to 20, one for each duration bucket: under 5s, 10s, 30s, 5m, and slower.
+	// integers from 1 to 20, one for each duration bucket: up to 5s, 10s, 30s, 5m, and slower.
 	CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS"
 
 	// CIVisibilityRetryExecutionModeEnvironmentVariable selects how retry attempts are executed.

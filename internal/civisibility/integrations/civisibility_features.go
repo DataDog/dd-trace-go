@@ -40,7 +40,7 @@ type (
 		TotalRetryCount          int64
 		RemainingTotalRetryCount int64
 		// DynamicRetryCounts replaces RetryCount when DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED is set and is nil otherwise.
-		// Entry i is the retry count for a test whose first execution falls in duration bucket i: under 5s, 10s, 30s,
+		// Entry i is the retry count for a test whose first execution falls in duration bucket i: up to 5s, 10s, 30s,
 		// 5m, and slower. Every entry is at least 1.
 		DynamicRetryCounts *[5]int64
 	}
@@ -310,8 +310,8 @@ func applyFlakyRetryEnabledEnvironmentOverride(ciSettings *net.SettingsResponseD
 
 // dynamicFlakyRetryCounts returns the duration-based retry counts, or nil when dynamic automatic test retries are
 // disabled, and records the dynamic_atr_retries.enabled metric. Without a valid DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS
-// value, the counts follow the backend slow test retries with a minimum of 1, so no bucket loses automatic retries.
-// That includes tests slower than five minutes, which EFD never retries.
+// value, the counts follow the backend slow test retries, and buckets the backend leaves empty or at zero use the
+// defaults 10, 5, 3, and 2. Tests slower than five minutes, which EFD never retries, get one retry.
 func dynamicFlakyRetryCounts(slowTestRetries [4]int) *[5]int64 {
 	if !internal.BoolEnv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, false) {
 		return nil
@@ -322,9 +322,11 @@ func dynamicFlakyRetryCounts(slowTestRetries [4]int) *[5]int64 {
 		if value != "" {
 			log.Warn("civisibility: ignoring %s=%q, expected five comma-separated integers from 1 to %d", constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, value, maxDynamicFlakyRetryCount) //errtrack:ignore invalid user configuration
 		}
-		counts = [5]int64{1, 1, 1, 1, 1}
+		counts = [5]int64{10, 5, 3, 2, 1}
 		for i, retries := range slowTestRetries {
-			counts[i] = max(int64(retries), 1)
+			if retries > 0 {
+				counts[i] = int64(retries)
+			}
 		}
 	}
 	telemetry.DynamicATRRetriesEnabled(custom)
