@@ -13,10 +13,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The testing package measures durations with the QueryPerformanceCounter
-// (highPrecisionTime, testing_windows.go). The shared helpers below read the
-// same counter, so native duration accounting stays on the clock that testing
-// uses.
+// Go 1.23 through 1.27 measure testing durations with the
+// QueryPerformanceCounter (highPrecisionTime, testing_windows.go). The
+// helpers below read the same counter, so native duration accounting stays on
+// the clock that testing uses. Go 1.28 drops highPrecisionTime and measures
+// testing durations with time.Now on every platform.
+// TODO: drop these helpers, and the layout checks that select them, once Go
+// 1.27 falls out of support.
 var (
 	performanceClockKernel32  = windows.NewLazySystemDLL("kernel32.dll")
 	performanceClockCounter   = performanceClockKernel32.NewProc("QueryPerformanceCounter")

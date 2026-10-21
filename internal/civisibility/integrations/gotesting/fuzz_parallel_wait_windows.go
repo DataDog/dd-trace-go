@@ -18,7 +18,8 @@ import (
 // capFuzzParallelSeedsWait bounds the parallel-seed wait that the fuzz root
 // lifecycle subtracts from the native duration of a testing.F.
 //
-// fRunner adds elapsed time measured with the QueryPerformanceCounter, while
+// Go 1.23 through 1.27 measure fRunner's elapsed time with the
+// QueryPerformanceCounter (highPrecisionTime, testing_windows.go), while
 // completeParallelSubtestsWithState measures the wait with time.Since. On
 // Windows, time.Since reads the interrupt-time clock, which advances only on
 // timer interrupts; that clock can lead the counter by up to one interrupt
@@ -34,13 +35,19 @@ func capFuzzParallelSeedsWait(f *testing.F, wait time.Duration) time.Duration {
 	if base == nil || !field.available {
 		return wait
 	}
+	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		// Go 1.28+ measures testing durations with time.Now on Windows too,
+		// so the wait and fRunner's accumulator already share one clock.
+		return wait
+	}
+	started := value.FieldByName("now")
+	if !started.IsValid() || !started.CanAddr() || started.Kind() != reflect.Int64 {
+		return wait
+	}
 	now, counterOK := performanceClockValue(performanceClockCounter)
 	frequency, frequencyOK := performanceClockValue(performanceClockFrequency)
 	if !counterOK || !frequencyOK || frequency <= 0 {
-		return wait
-	}
-	started := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem().FieldByName("now")
-	if !started.IsValid() || !started.CanAddr() || started.Kind() != reflect.Int64 {
 		return wait
 	}
 	startedCounter := started.Int()

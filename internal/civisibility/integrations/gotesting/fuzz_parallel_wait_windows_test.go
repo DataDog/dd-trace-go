@@ -32,6 +32,9 @@ func setFuzzPerformanceStart(t *testing.T, f *testing.F, counter int64) {
 }
 
 func TestCompleteFuzzParallelSeedsCapsWaitByNativeElapsed(t *testing.T) {
+	if getTestingInternalsLayout().common.start.typ == reflect.TypeFor[time.Time]() {
+		t.Skip("Go 1.28+ keeps testing.common.start as time.Time on Windows; the wait and fRunner share one clock")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		f := &testing.F{}
 		fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f)))
