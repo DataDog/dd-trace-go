@@ -23,27 +23,48 @@ type exposureHook struct {
 	of.UnimplementedHook
 	writer             *exposureWriter
 	evaluationMetadata of.FlagMetadata
+	warnUnsupported    *sync.Once
 }
 
 // newExposureHook creates a new exposure tracking hook with the given writer
 func newExposureHook(writer *exposureWriter) *exposureHook {
 	return &exposureHook{
-		writer: writer,
+		writer:          writer,
+		warnUnsupported: new(sync.Once),
 	}
 }
 
 // TODO(open-feature/go-sdk#623): Remove the After/Error bridge and per-evaluation
 // hook allocation after upgrading to a release with corrected Finally details.
 // The metadata map belongs to this evaluation, not to the exposure cache.
-func (h *exposureHook) After(_ context.Context, _ of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) error {
+func (h *exposureHook) After(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) error {
+	if !h.supports(ctx) {
+		return nil
+	}
 	h.evaluationMetadata = details.FlagMetadata
 	return nil
 }
 
-func (h *exposureHook) Error(context.Context, of.HookContext, error, of.HookHints) {
+func (h *exposureHook) Error(_ context.Context, ctx of.HookContext, _ error, _ of.HookHints) {
+	if !h.supports(ctx) {
+		return
+	}
 	if h.evaluationMetadata != nil {
 		h.evaluationMetadata[metadataExposureAfterErrorKey] = true
 	}
+}
+
+// MultiProvider retains child hooks and completes them before outer After hooks.
+// Guard every stage before accessing bridge state or consuming the cache.
+// TODO: Enable composed providers once their hooks observe the final outcome.
+func (h *exposureHook) supports(ctx of.HookContext) bool {
+	if ctx.ProviderMetadata().Name == datadogProviderName {
+		return true
+	}
+	h.warnUnsupported.Do(func() {
+		log.Warn("openfeature: exposure delivery requires a directly registered Datadog provider; exposures are disabled for composed providers") //errtrack:ignore unsupported provider composition
+	})
+	return false
 }
 
 const metadataExposureAfterErrorKey = "__dd_exposure_after_error"
@@ -66,6 +87,9 @@ func (h *exposureHook) Finally(
 	flagEvaluationDetails of.InterfaceEvaluationDetails,
 	_ of.HookHints,
 ) {
+	if !h.supports(hookContext) {
+		return
+	}
 	flagEvaluationDetails = exposureFinalDetails(hookContext, flagEvaluationDetails)
 	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
 		return
@@ -187,10 +211,13 @@ func (e ExposureEvaluation) ShouldSend() bool {
 // Like the Datadog logger, this hook runs in the Finally stage. Failed evaluations
 // never have a sendable exposure and do not consume the deduplication cache.
 // A callback panic is recovered and does not change the flag result.
+// Callbacks require a directly registered Datadog provider. They are disabled
+// under MultiProvider, whose child hooks do not observe the final evaluation outcome.
 type ExposureHook struct {
 	of.UnimplementedHook
-	callback func(ExposureEvaluation)
-	warnOnce sync.Once
+	callback        func(ExposureEvaluation)
+	warnOnce        sync.Once
+	warnUnsupported sync.Once
 }
 
 // NewExposureHook creates an exposure-aware customer hook. A nil callback is a no-op.
@@ -201,6 +228,12 @@ func NewExposureHook(callback func(ExposureEvaluation)) *ExposureHook {
 // Finally invokes the callback with the shared exposure decision.
 func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) {
 	if h.callback == nil {
+		return
+	}
+	if ctx.ProviderMetadata().Name != datadogProviderName {
+		h.warnUnsupported.Do(func() {
+			log.Warn("openfeature: customer exposure callbacks require a directly registered Datadog provider; callbacks are disabled for composed providers") //errtrack:ignore unsupported provider composition
+		})
 		return
 	}
 	defer func() {

@@ -761,12 +761,12 @@ func (p *DatadogProvider) ObjectEvaluation(
 
 // Hooks returns hooks for one evaluation.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	// OpenFeature calls Hooks once per evaluation. Keep the temporary After/Error
-	// bridge isolated across concurrent and nested calls. See go-sdk#623.
+	// Direct OpenFeature clients call Hooks once per evaluation. Composed providers
+	// are guarded in the hook because they can retain this instance. See go-sdk#623.
 	hooks := slices.Clone(p.hooks)
 	for i, hook := range hooks {
 		if exposure, ok := hook.(*exposureHook); ok {
-			hooks[i] = newExposureHook(exposure.writer)
+			hooks[i] = &exposureHook{writer: exposure.writer, warnUnsupported: exposure.warnUnsupported}
 		}
 	}
 	return hooks

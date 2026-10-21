@@ -156,10 +156,17 @@
 // hooks remain active when it is false. Evaluation events, metrics, span
 // enrichment, and flag values are unchanged.
 //
-// Exposure hooks run in Finally, after all application After hooks. Callbacks
+// Register the Datadog provider directly with OpenFeature. Exposure hooks run
+// in Finally, after all application After hooks. Callbacks
 // include errors, non-exposures and repeats. A failed evaluation never has a
 // sendable exposure and does not consume the cache. The next successful
 // evaluation can therefore emit an exposure.
+//
+// MultiProvider is not supported for exposure delivery. Its child hooks finish
+// before outer application hooks can reject the result. Under MultiProvider,
+// Datadog exposure delivery, customer exposure callbacks, and exposure cache
+// updates are disabled with a warning. Flag evaluation remains unchanged.
+// Custom provider wrappers are also outside this exposure-hook contract.
 //
 // OpenFeature Go v1.18.0 can omit error details when a Before hook fails or the
 // provider is not ready. Such callbacks have no sendable exposure. Its evaluation

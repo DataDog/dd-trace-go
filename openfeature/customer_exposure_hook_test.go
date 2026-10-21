@@ -162,9 +162,12 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 		name                  string
 		datadogLoggingEnabled bool
 		wantDatadogExposures  int
+		clientHook            bool
 	}{
 		{name: "datadog_and_customer", datadogLoggingEnabled: true, wantDatadogExposures: 1},
 		{name: "customer_only", datadogLoggingEnabled: false, wantDatadogExposures: 0},
+		{name: "client_hook_datadog_and_customer", datadogLoggingEnabled: true, wantDatadogExposures: 1, clientHook: true},
+		{name: "client_hook_customer_only", datadogLoggingEnabled: false, wantDatadogExposures: 0, clientHook: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,8 +175,21 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			h := newOptOutHarness(t, ProviderConfig{})
 			var rows []ExposureEvaluation
 			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+			reject := true
+			rejectingHook := optOutTestHook{after: func(context.Context, of.HookContext) error {
+				if reject {
+					return errors.New("application rejected the flag result")
+				}
+				return nil
+			}}
+			var options []of.Option
+			if tt.clientHook {
+				h.client.AddHooks(rejectingHook)
+			} else {
+				options = append(options, of.WithHooks(rejectingHook))
+			}
 			value, err := h.client.BooleanValue(context.Background(), "experiment", false,
-				of.NewEvaluationContext("athlete", nil), of.WithHooks(rejectExposureResultHook{}))
+				of.NewEvaluationContext("athlete", nil), options...)
 			require.Error(t, err)
 			assert.False(t, value)
 			require.Len(t, rows, 1)
@@ -188,6 +204,7 @@ func TestCustomerExposureHookAfterFailureDoesNotConsumeCache(t *testing.T) {
 			h.provider.exposureWriter.flush()
 			assert.Empty(t, h.sink.exposures)
 
+			reject = false
 			h.evaluate(t, "athlete", nil)
 			h.evaluate(t, "athlete", nil)
 			require.Len(t, rows, 3)
@@ -367,7 +384,9 @@ func TestExposureDestinationsShareEligibility(t *testing.T) {
 					metadataAllocationKey: "allocation", metadataDoLogKey: tt.doLog,
 				}},
 			}}
-			newExposureHook(h.provider.exposureWriter).Finally(context.Background(), of.HookContext{}, details, of.HookHints{})
+			hookContext := of.NewHookContext("experiment", of.Boolean, false, of.ClientMetadata{},
+				h.provider.Metadata(), of.NewEvaluationContext("subject", nil))
+			newExposureHook(h.provider.exposureWriter).Finally(context.Background(), hookContext, details, of.HookHints{})
 			assert.False(t, (ExposureEvaluation{Details: details}).IsExposure())
 			assert.NotContains(t, details.FlagMetadata, metadataExposureCacheHitKey)
 			assert.Empty(t, h.provider.exposureWriter.buffer)

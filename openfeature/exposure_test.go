@@ -634,7 +634,7 @@ func TestExposureHook_Finally(t *testing.T) {
 				of.Boolean,
 				false,
 				of.ClientMetadata{},
-				of.Metadata{},
+				of.Metadata{Name: datadogProviderName},
 				evalCtx,
 			)
 
@@ -706,7 +706,7 @@ func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 		of.Boolean,
 		false,
 		of.ClientMetadata{},
-		of.Metadata{},
+		of.Metadata{Name: datadogProviderName},
 		evalCtx,
 	)
 
@@ -768,7 +768,7 @@ func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
 		of.Boolean,
 		false,
 		of.ClientMetadata{},
-		of.Metadata{},
+		of.Metadata{Name: datadogProviderName},
 		evalCtx,
 	)
 
