@@ -278,6 +278,53 @@
 // Errors are returned through the OpenFeature ResolutionDetail, and the default
 // value is returned when errors occur.
 //
+// # Debug Logging
+//
+// Set DD_TRACE_DEBUG=true and call tracer.Start before creating the provider
+// to log, at debug level, each step of its setup and every flag evaluation.
+// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). The provider
+// does not change the shared log level. Enabling debug logging after provider
+// construction also enables subsequent evaluation logs.
+// Every such line starts with "openfeature:",
+// so they can be filtered from other tracer output. It covers:
+//
+//   - The selected configuration source, or that feature flagging is disabled
+//   - Each Agentless poll attempt and its outcome: the HTTP status or the
+//     transport error, plus any retry delay
+//   - Each configuration applied, with its flag count, how many flags were
+//     rejected as invalid, and its createdAt (and, for Agentless, the
+//     effective DD_ENV and ETag)
+//   - Initialization start and its outcome, with the failure reason
+//   - Lifecycle changes: recovery after a failed initialization, configuration
+//     becoming unavailable, and shutdown
+//   - Every flag the provider resolves, with its value, variant, reason,
+//     allocation, and error
+//   - Every evaluation failure, with the evaluation's default value. This
+//     includes failures the provider never sees, such as evaluating before it
+//     is ready, and an application hook returning an error after the provider
+//     resolved the flag
+//
+// A failure line does not say which value the application received, since
+// that depends on how the flag was evaluated. Typed evaluations and
+// ObjectValue return the default value. ObjectValueDetails keeps the resolved
+// value after an After hook fails, and a multi-provider may return the
+// resolved value or another provider's result.
+//
+// Initialization-failure diagnostics are local logs and do not report errors to
+// telemetry.
+//
+// Credentials and the endpoint's path and query are never logged; only the
+// endpoint's scheme and host are logged. Onboarding lines never include the
+// evaluation's targeting key or context attributes, but an error returned by
+// an application hook is logged with its message as is: if your hook puts
+// targeting data in an error message, it appears in the debug log. The
+// exposure tracking debug line, which is not an onboarding line, includes the
+// targeting key. Scalar flag values are logged directly and other values as
+// JSON, truncated to 256 bytes. A value that cannot be encoded, including a
+// default value whose MarshalJSON method fails or panics, is logged as
+// <unserializable> without affecting the evaluation. When debug logging is
+// off, evaluations skip formatting these details.
+//
 // # Thread Safety
 //
 // The provider is fully thread-safe and can handle concurrent flag evaluations
