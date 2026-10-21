@@ -809,6 +809,8 @@ func (p *DatadogProvider) ObjectEvaluation(
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
 	// Direct OpenFeature clients call Hooks once per evaluation. Composed providers
 	// are guarded in the hook because they can retain this instance. See go-sdk#623.
+	// The slice copy and bridge add two allocations with the default four hooks.
+	// BenchmarkExposureHooks measures this cost until the bridge can be removed.
 	hooks := slices.Clone(p.hooks)
 	for i, hook := range hooks {
 		if exposure, ok := hook.(*exposureHook); ok {

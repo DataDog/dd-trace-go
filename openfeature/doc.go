@@ -148,6 +148,9 @@
 // Features are configuration metadata, not subject attributes. Evaluation events
 // retain them when subject-data collection is disabled. Different evaluation
 // feature values use separate aggregation buckets.
+// Go retains at most 256 unique features per split. Keys and string values must
+// fit within 256 UTF-8 bytes. Invalid entries are skipped, not truncated, with a
+// debug diagnostic. These metadata limits do not change the flag's value.
 //
 // Go retains its existing dd.allocation.key metadata name. Java uses allocationKey.
 // Both providers expose __dd_split_serial_id and __dd_feature.<key> metadata.

@@ -177,7 +177,7 @@ type exposureWriter struct {
 	stopChan      chan struct{}
 	stopped       bool
 	// Keep the cache active when only the customer records exposures.
-	disableDatadogLogging bool
+	datadogLoggingEnabled bool
 }
 
 // newExposureWriter creates a new exposure writer with the given configuration
@@ -194,7 +194,7 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 		flushInterval:         cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
 		evp:                   evp,
 		stopChan:              make(chan struct{}),
-		disableDatadogLogging: !internalconfig.Get().FeatureFlagsExposuresDatadogLoggingEnabled(),
+		datadogLoggingEnabled: internalconfig.Get().FeatureFlagsExposuresDatadogLoggingEnabled(),
 		context: exposureContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
 			Version: env.Get("DD_VERSION"),
@@ -260,7 +260,7 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 		return false, true
 	}
 
-	if !w.disableDatadogLogging {
+	if w.datadogLoggingEnabled {
 		w.buffer = append(w.buffer, event)
 	}
 	return true, true

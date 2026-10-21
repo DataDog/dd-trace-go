@@ -168,8 +168,9 @@ func TestLRUCache_SerialIDZeroIsNotAbsent(t *testing.T) {
 
 func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(defaultExposureCacheCapacity),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
 	}
 
 	event := exposureEvent{
@@ -402,8 +403,9 @@ func TestLRUCache_SingleCapacity(t *testing.T) {
 func TestExposureWriter_ConcurrentAppend(t *testing.T) {
 	// Create a writer with a mock/nil HTTP client (we only care about the cache behavior)
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 
 	const numGoroutines = 100
@@ -455,8 +457,9 @@ func TestExposureWriter_ConcurrentAppend(t *testing.T) {
 
 func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 
 	const numGoroutines = 50
@@ -620,8 +623,9 @@ func TestExposureHook_Finally(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a writer to capture events
 			writer := &exposureWriter{
-				buffer: make([]exposureEvent, 0, 256),
-				cache:  newExposureLRUCache(1000),
+				datadogLoggingEnabled: true,
+				buffer:                make([]exposureEvent, 0, 256),
+				cache:                 newExposureLRUCache(1000),
 			}
 			hook := newExposureHook(writer)
 
@@ -690,8 +694,9 @@ func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	// This test specifically verifies that exposures with empty targeting keys
 	// but with attributes are correctly logged (server-side evaluations)
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 	hook := newExposureHook(writer)
 
@@ -753,8 +758,9 @@ func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 
 func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 	hook := newExposureHook(writer)
 

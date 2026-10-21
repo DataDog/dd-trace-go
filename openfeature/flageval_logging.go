@@ -1154,14 +1154,14 @@ func envelopeFraming(envelope []byte) (opener, closer []byte) {
 // follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
 func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// Enforce the consent-off invariant for every caller: no context on the wire → no context
 	// in the key (see evaluationAggregationKey).
 	if !d.observeFullEvaluationData {
 		contextAttrs = nil
 	}
+	// These maps belong to the queued observation and are immutable here.
+	// Canonicalize before taking the lock, and reuse the feature key in both tiers.
+	featuresKey := canonicalContextKey(d.features)
 
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
@@ -1173,9 +1173,11 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		errorMessage:              d.errorMessage,
 		targetingKey:              d.targetingKey,
 		contextKey:                canonicalContextKey(contextAttrs),
-		featuresKey:               canonicalContextKey(d.features),
+		featuresKey:               featuresKey,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
@@ -1191,7 +1193,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	// Check per-flag cap.
 	if a.perFlagFull[d.flagKey] >= a.perFlagCap {
 		// perFlagCap exceeded — route to degraded tier.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1207,7 +1209,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		// cardinality at the target scale. The per-flag attempt counter was
 		// already incremented above; once it reaches perFlagCap this flag routes through
 		// addToDegraded directly as well.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1232,14 +1234,14 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 // sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
 // scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
-func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
+func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, featuresKey string, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:        d.flagKey,
 		variant:        d.variant,
 		allocationKey:  d.allocationKey,
 		runtimeDefault: d.runtimeDefault,
 		errorMessage:   d.errorMessage,
-		featuresKey:    canonicalContextKey(d.features),
+		featuresKey:    featuresKey,
 	}
 
 	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the

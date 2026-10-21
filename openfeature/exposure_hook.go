@@ -67,8 +67,6 @@ func (h *exposureHook) supports(ctx of.HookContext) bool {
 	return false
 }
 
-const metadataExposureAfterErrorKey = "__dd_exposure_after_error"
-
 func exposureFinalDetails(ctx of.HookContext, details of.InterfaceEvaluationDetails) of.InterfaceEvaluationDetails {
 	if message, failed := details.FlagMetadata[metadataExposureAfterErrorKey].(string); failed && details.ErrorCode == "" {
 		details.Value = ctx.DefaultValue()
@@ -163,8 +161,6 @@ func (h *exposureHook) Finally(
 	log.Debug("openfeature: recorded exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
 		hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 }
-
-const metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
 
 // ExposureEvaluation describes a completed evaluation. Its cache decision
 // is shared with Datadog's default exposure hook, even when Datadog logging is disabled.

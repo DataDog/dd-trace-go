@@ -16,9 +16,15 @@ import (
 )
 
 const (
-	metadataHookFeaturePrefix        = "__dd_feature."
-	metadataExposureFeaturePrefix    = "__dd_exposure_feature."
-	metadataEvaluationFeaturePrefix  = "__dd_evaluation_feature."
+	// These SDK metadata prefixes match Java's DDEvaluator. Event writers strip
+	// the prefix; the original feature key appears in the event's features map.
+	// metadataHookFeaturePrefix routes HOOK features to customer callbacks.
+	metadataHookFeaturePrefix = "__dd_feature."
+	// metadataExposureFeaturePrefix routes EXPOSURE features to Datadog exposures.
+	metadataExposureFeaturePrefix = "__dd_exposure_feature."
+	// metadataEvaluationFeaturePrefix routes EVALUATION features to evaluation events.
+	metadataEvaluationFeaturePrefix = "__dd_evaluation_feature."
+	// metadataHasEvaluationFeaturesKey avoids scanning metadata without EVALUATION features.
 	metadataHasEvaluationFeaturesKey = "__dd_has_evaluation_features"
 )
 
@@ -29,6 +35,7 @@ type splitFeature struct {
 	Destinations []string `json:"destinations"`
 }
 
+// splitFeatures contains the first valid entry for each key after decoding.
 type splitFeatures []splitFeature
 
 // UnmarshalJSON ignores malformed features without rejecting the flag.
@@ -36,20 +43,39 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 	*f = nil
 	var entries []json.RawMessage
 	if err := json.Unmarshal(data, &entries); err != nil {
+		log.Debug("openfeature: ignoring malformed split features: expected an array")
 		return nil
 	}
-	for _, entry := range entries {
+	seenKeys := make(map[string]struct{})
+	for i, entry := range entries {
+		// Bound metadata retained for evaluation and telemetry. Do not truncate keys
+		// or values: truncation can merge distinct analysis dimensions.
+		if len(*f) >= maxContextFields {
+			log.Debug("openfeature: ignoring remaining split features: entry limit reached")
+			break
+		}
 		var raw struct {
 			Key          string `json:"key"`
 			Value        any    `json:"value"`
 			Destinations []any  `json:"destinations"`
 		}
-		if err := json.Unmarshal(entry, &raw); err != nil || raw.Key == "" {
+		if err := json.Unmarshal(entry, &raw); err != nil {
+			log.Debug("openfeature: ignoring malformed split feature entry %d: invalid fields", i)
 			continue
 		}
-		switch raw.Value.(type) {
-		case string, bool, float64:
+		if raw.Key == "" || len(raw.Key) > maxFieldLength {
+			log.Debug("openfeature: ignoring malformed split feature entry %d: invalid key length", i)
+			continue
+		}
+		switch value := raw.Value.(type) {
+		case string:
+			if len(value) > maxFieldLength {
+				log.Debug("openfeature: ignoring malformed split feature entry %d: string value too long", i)
+				continue
+			}
+		case bool, float64:
 		default:
+			log.Debug("openfeature: ignoring malformed split feature entry %d: expected a scalar value", i)
 			continue
 		}
 		var destinations []string
@@ -58,9 +84,15 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 				destinations = append(destinations, destination)
 			}
 		}
-		if len(destinations) > 0 {
-			*f = append(*f, splitFeature{raw.Key, raw.Value, destinations})
+		if len(destinations) == 0 {
+			log.Debug("openfeature: ignoring malformed split feature entry %d: no destinations", i)
+			continue
 		}
+		if _, duplicate := seenKeys[raw.Key]; duplicate {
+			continue
+		}
+		seenKeys[raw.Key] = struct{}{}
+		*f = append(*f, splitFeature{raw.Key, raw.Value, destinations})
 	}
 	return nil
 }
@@ -69,12 +101,7 @@ func (f splitFeatures) addMetadata(metadata of.FlagMetadata) {
 	if len(f) == 0 {
 		return
 	}
-	seen := make(map[string]struct{}, len(f))
 	for _, feature := range f {
-		if _, duplicate := seen[feature.Key]; duplicate {
-			continue
-		}
-		seen[feature.Key] = struct{}{}
 		for _, destination := range feature.Destinations {
 			var prefix string
 			switch destination {
@@ -94,20 +121,22 @@ func (f splitFeatures) addMetadata(metadata of.FlagMetadata) {
 	}
 }
 
-var unknownFeatureDestinations = struct {
-	sync.Mutex
-	names map[string]struct{}
-}{names: make(map[string]struct{})}
+type warnedFeatureDestinations struct {
+	mu    sync.Mutex
+	names map[string]struct{} // +checklocks:mu
+}
+
+var unknownFeatureDestinations = warnedFeatureDestinations{names: make(map[string]struct{})}
 
 func warnUnknownFeatureDestination(destination string) {
-	unknownFeatureDestinations.Lock()
+	unknownFeatureDestinations.mu.Lock()
 	_, warned := unknownFeatureDestinations.names[destination]
 	if warned || len(unknownFeatureDestinations.names) >= 64 {
-		unknownFeatureDestinations.Unlock()
+		unknownFeatureDestinations.mu.Unlock()
 		return
 	}
 	unknownFeatureDestinations.names[destination] = struct{}{}
-	unknownFeatureDestinations.Unlock()
+	unknownFeatureDestinations.mu.Unlock()
 	log.Warn("openfeature: ignoring unknown feature destination %q", destination) //errtrack:ignore configuration compatibility
 }
 
