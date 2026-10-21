@@ -1,0 +1,46 @@
+name: gomod-cache-retention
+
+# Prunes old seed versions from GHCR. Keeps the newest N versions plus whatever
+# is tagged gomod-latest. Uses the REST API so the protection of gomod-latest
+# is explicit. Defaults to a dry run.
+
+on:
+  schedule:
+    - cron: '43 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  prune:
+    if: github.repository == 'DataDog/dd-trace-go'
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORG: DataDog
+      PKG: dd-trace-go-gomod
+      KEEP: '10'
+      DRY_RUN: ${{ inputs.dry-run || 'false' }}
+    steps:
+      - name: Prune old versions (never deletes the version tagged gomod-latest)
+        run: |
+          set -euo pipefail
+          gh api --paginate "/orgs/$ORG/packages/container/$PKG/versions?per_page=100" \
+            --jq '.[] | [ (.id|tostring), .updated_at, ((.metadata.container.tags // []) | join(",")) ] | @tsv' \
+            | sort -t$'\t' -k2,2r > versions.tsv
+          n=0
+          while IFS=$'\t' read -r id updated tags; do
+            case ",$tags," in *,gomod-latest,*) echo "keep $id (gomod-latest)"; continue;; esac
+            n=$((n + 1))
+            if [ "$n" -le "$KEEP" ]; then echo "keep $id ($updated $tags)"; continue; fi
+            echo "delete $id ($updated tags=[$tags])"
+            if [ "$DRY_RUN" != "true" ]; then
+              gh api -X DELETE "/orgs/$ORG/packages/container/$PKG/versions/$id"
+            fi
+          done < versions.tsv

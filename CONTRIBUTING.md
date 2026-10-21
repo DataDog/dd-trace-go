@@ -98,6 +98,14 @@ Our CI pipeline includes several automated checks:
 - **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
 - **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
 
+#### Module Download Cache Workflow
+
+The gomod-cache subsystem stores the Go module download cache in GitHub Container Registry (GHCR). CI jobs restore that cache instead of pulling every dependency from `proxy.golang.org`. The consumer action and its workflows live in [`.github/actions/gomod-cache`](./.github/actions/gomod-cache/action.yml), and the action header documents the full design.
+
+- **Publish** (`gomod-cache-publish.yml`): builds the cache and pushes it to GHCR. Runs on `main` only, on a schedule, or by hand. The workflow writes to the registry only for new or updated `go.sum` entries.
+- **Consume** (`.github/actions/gomod-cache`): restores the cache. Attempts to retrieve dependencies in the following order: exact cache tag, `gomod-latest`, `proxy.golang.org`. The `GOMOD_GHCR` repository variable gates the step in CI and acts as the rollback switch.
+- **Retention** (`gomod-cache-retention.yml`): deletes old cache versions and keeps `gomod-latest`.
+
 ### Which checks run on a pull request
 
 Most workflows only run when a change could plausibly affect them. Two mechanisms
@@ -484,6 +492,8 @@ make generate
 ```
 
 This is neccessary because dd-trace-go is a multi-module repository.
+
+An upgrade changes `go.sum`, so the module download cache has no exact match for your branch yet. CI restores the previous `gomod-latest` cache for the unchanged modules and fetches the upgraded versions from `proxy.golang.org` on each run. After your PR merges, `main` republishes the cache, and later PRs get an exact cache hit. See the [Module Download Cache Workflow](#module-download-cache-workflow).
 
 ### Benchmarks
 

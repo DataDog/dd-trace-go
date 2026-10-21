@@ -1,0 +1,131 @@
+# The gomod-cache subsystem stores the Go module download cache in GitHub
+# Container Registry (GHCR). CI jobs restore that cache instead of pulling
+# every dependency from proxy.golang.org. The subsystem stops a network
+# failure on the public proxy from failing a CI job.
+#
+# The term "seed" means one uncompressed tar of the cache/download directory.
+#
+# Files:
+#   gomod-key.sh                 Prints the cache tag. Both sides run it.
+#   action.yml                   This file. Restores the seed.
+#   ../../workflows/gomod-cache-publish.yml    Builds and pushes the seed.
+#   ../../workflows/gomod-cache-shadow.yml     Verifies the seed on 3 images.
+#   ../../workflows/gomod-cache-retention.yml  Deletes old seeds.
+#
+# The cache tag:
+#   gomod-key.sh hashes the git blob IDs and paths of every go.sum, go.work,
+#   and go.work.sum file. The script uses blob IDs, not file bytes, so a
+#   Windows checkout that converts line endings cannot change the tag. The
+#   publish side and the consume side compute the same tag.
+#
+# Resolution order (restore mode):
+#   1. Exact tag hit. The build needs no network.
+#   2. gomod-latest hit. The seed serves the unchanged modules. go fetches the
+#      new module versions from the proxy.
+#   3. Full miss. The action warns. go uses proxy.golang.org as it does today.
+#   The action never fails the job. Set mode: off to disable it.
+#
+# Security invariant: go.sum is the source of truth.
+#   The seed is an accelerator. go.sum decides correctness. The tar omits
+#   .ziphash files on purpose. Without a .ziphash file, go re-hashes each
+#   restored zip against go.sum before it extracts the zip. A tampered zip
+#   fails the checksum and the job stops. There is no fallback to the network
+#   on a checksum failure, so a corrupt seed fails closed.
+#   Do not ship .ziphash files. When the zip and its .ziphash both exist and
+#   go.sum lists the module, go trusts the .ziphash and skips the content
+#   check. A tampered zip with a matching .ziphash file then passes the check.
+#
+# Concurrency invariant: the seed never changes the build output.
+#   Module versions are immutable and content-addressed. Two seeds cannot
+#   disagree about the content of one version. The seed changes only how many
+#   bytes a job downloads, never which bytes it builds. A merge to main can
+#   move gomod-latest while another pull request runs CI. That move is safe: an
+#   exact tag hit ignores gomod-latest, and the fallback still verifies every
+#   module against the pull request's own go.sum.
+name: gomod-cache
+description: >-
+  Restore the Go module download cache from a GHCR seed so builds do not
+  depend on proxy.golang.org. Resolution order: exact tag -> gomod-latest ->
+  proxy.golang.org. The action never fails the job.
+inputs:
+  mode:
+    description: >-
+      restore (default): extract the seed into GOMODCACHE/cache/download, so an
+      exact hit needs no network. off: do nothing (rollback switch).
+    default: restore
+  image:
+    description: GHCR repository that holds the seed.
+    default: ghcr.io/datadog/dd-trace-go-gomod
+  oras-version:
+    description: ORAS CLI version to install.
+    default: '1.3.4'
+outputs:
+  source:
+    description: Where the cache came from — exact | latest | none | off.
+    value: ${{ steps.restore.outputs.source }}
+runs:
+  using: composite
+  steps:
+    - name: Install ORAS
+      if: inputs.mode != 'off'
+      uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      with:
+        version: ${{ inputs.oras-version }}
+
+    - name: Restore module cache seed
+      id: restore
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+
+        if [ "$MODE" = "off" ]; then
+          echo "source=off" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Convert Windows paths to POSIX form for the git-bash tools below.
+        posix() {
+          if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi
+        }
+
+        start=$(date +%s)
+        tag=$("$GITHUB_ACTION_PATH/gomod-key.sh" | sed -n 's/^tag=//p')
+        dl="$(posix "$RUNNER_TEMP")/gomod-seed"
+        rm -rf "$dl" "$dl.err"; mkdir -p "$dl"
+
+        # Try the exact tag first (zero-network build), then gomod-latest
+        # (delta is re-verified against go.sum as it downloads).
+        source=none
+        for ref in "$IMAGE:$tag" "$IMAGE:gomod-latest"; do
+          for attempt in 1 2; do
+            if oras pull --no-tty "$ref" -o "$dl" >/dev/null 2>"$dl.err"; then
+              [ "$ref" = "$IMAGE:$tag" ] && source=exact || source=latest
+              break 2
+            fi
+            # A missing tag is terminal for this ref; a transient error retries.
+            if grep -qiE 'not found|manifest unknown|denied' "$dl.err"; then break; fi
+            sleep 5
+          done
+        done
+
+        if [ "$source" = none ] || [ ! -f "$dl/gomod.tar" ]; then
+          echo "::warning title=gomod-cache::no seed restored ($(tr '\n' ' ' < "$dl.err" 2>/dev/null || true)); using proxy.golang.org"
+          echo "source=none" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # GNU tar keeps existing files with --skip-old-files; bsdtar uses -k.
+        if tar --version 2>/dev/null | grep -q GNU; then keep=--skip-old-files; else keep=-k; fi
+
+        dest="$(posix "$(go env GOMODCACHE)")/cache/download"
+        mkdir -p "$dest"
+        tar "$keep" -xf "$dl/gomod.tar" -C "$dest"
+        rm -rf "$dl" "$dl.err"
+
+        secs=$(( $(date +%s) - start ))
+        echo "source=$source" >> "$GITHUB_OUTPUT"
+        echo "::notice title=gomod-cache::source=$source mode=$MODE tag=$tag restore_seconds=$secs"
+        echo "| gomod-cache | $source | $MODE | ${secs}s |" >> "$GITHUB_STEP_SUMMARY"

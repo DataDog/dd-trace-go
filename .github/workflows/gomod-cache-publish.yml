@@ -1,0 +1,164 @@
+name: gomod-cache-publish
+
+# Builds the Go module download cache and pushes it to GHCR as a single
+# uncompressed tar, tagged by a hash of every go.sum/go.work file. Runs only
+# on main, on a schedule (to recreate a tag that retention removed), or by
+# hand. Writes to the registry ONLY when the content is new.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/go.sum'
+      - '**/go.mod'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/workflows/gomod-cache-publish.yml'
+      - '.github/actions/gomod-cache/**'
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Re-seed and overwrite the exact tag even if it already exists'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: gomod-cache-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'DataDog/dd-trace-go' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/datadog/dd-trace-go-gomod
+      ARTIFACT_TYPE: application/vnd.datadoghq.gomodcache.v1
+      GOFLAGS: -modcacherw
+      GOPROXY: https://proxy.golang.org,direct
+      GOSUMDB: sum.golang.org
+      FORCE: ${{ inputs.force || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: 1.3.4
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Compute key and check for an existing seed
+        id: key
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/actions/gomod-cache/gomod-key.sh" >> "$GITHUB_OUTPUT"
+          tag=$(sed -n 's/^tag=//p' "$GITHUB_OUTPUT" | tail -1)
+          if oras manifest fetch --descriptor "$IMAGE:$tag" >/dev/null 2>&1 && [ "$FORCE" != "true" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=gomod-cache::$IMAGE:$tag already exists; skipping seed"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Seed module download cache in a fresh GOMODCACHE
+        if: steps.key.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          # Make sure no checksum or proxy bypass is active while seeding.
+          unset GONOSUMDB GONOSUMCHECK GOPRIVATE GONOPROXY GOINSECURE
+          export GOMODCACHE="$RUNNER_TEMP/gomodcache"
+          rm -rf "$GOMODCACHE"; mkdir -p "$GOMODCACHE"
+          echo "GOMODCACHE=$GOMODCACHE" >> "$GITHUB_ENV"
+
+          # 1) Every module standalone, so jobs that run with GOWORK=off are covered.
+          git ls-files -- ':(glob)**/go.mod' | grep -v '/testdata/' | while read -r gomod; do
+            dir=$(dirname "$gomod")
+            echo "::group::go mod download all ($dir)"
+            ( cd "$dir" && GOWORK=off go mod download all )
+            echo "::endgroup::"
+          done
+
+          # 2) Workspace view, plus a completeness proof: vendoring must
+          #    succeed with the network disabled.
+          if [ -f go.work ]; then
+            echo "::group::workspace go mod download"
+            go mod download
+            echo "::endgroup::"
+            echo "::group::GOPROXY=off go work vendor (offline completeness check)"
+            GOPROXY=off go work vendor -o "$RUNNER_TEMP/vendor-check"
+            rm -rf "$RUNNER_TEMP/vendor-check"
+            echo "::endgroup::"
+          fi
+
+      - name: Pack cache/download into a deterministic uncompressed tar
+        if: steps.key.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          cd "$GOMODCACHE/cache/download"
+          # Ship only zip/mod/info/list. Never ship:
+          #   .ziphash  -> its absence forces a re-hash against go.sum on restore
+          #   .lock/.partial/.tmp, the sumdb cache, toolchain zips, extracted tree
+          find . -type f \( -name '*.zip' -o -name '*.mod' -o -name '*.info' -o -name list \) \
+               -not -path './sumdb/*' -not -path './golang.org/toolchain/*' -print0 \
+            | LC_ALL=C sort -z \
+            | tar --null -T - --no-recursion --format=pax \
+                  --pax-option=delete=atime,delete=ctime \
+                  --owner=0 --group=0 --numeric-owner --mode='u+rw,go+r' \
+                  --mtime='2000-01-01 00:00:00Z' \
+                  -cf "$RUNNER_TEMP/gomod.tar"
+          ls -l "$RUNNER_TEMP/gomod.tar"
+          {
+            echo "### gomod seed"
+            echo "- tag: \`${{ steps.key.outputs.tag }}\`"
+            echo "- tar size: $(du -h "$RUNNER_TEMP/gomod.tar" | cut -f1)"
+            echo "- zips: $(find . -name '*.zip' | wc -l)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the exact tag (with retries)
+        if: steps.key.outputs.exists != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.key.outputs.tag }}"
+          for attempt in 1 2 3; do
+            if oras push --no-tty "$IMAGE:$tag" \
+                 --artifact-type "$ARTIFACT_TYPE" \
+                 --annotation "org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go" \
+                 --annotation "org.opencontainers.image.revision=$GITHUB_SHA" \
+                 --annotation "org.opencontainers.image.description=Go module download cache (cache/download) for DataDog/dd-trace-go" \
+                 "gomod.tar:application/vnd.oci.image.layer.v1.tar"; then
+              exit 0
+            fi
+            echo "push attempt $attempt failed; backing off"; sleep $((attempt * 30))
+          done
+          exit 1
+
+      - name: Move gomod-latest only if the digest changed
+        run: |
+          set -euo pipefail
+          tag="${{ steps.key.outputs.tag }}"
+          want=$(oras resolve "$IMAGE:$tag")
+          have=$(oras resolve "$IMAGE:gomod-latest" 2>/dev/null || echo none)
+          if [ "$want" != "$have" ]; then
+            oras tag "$IMAGE:$tag" gomod-latest
+            echo "::notice title=gomod-cache::gomod-latest -> $tag ($want)"
+          else
+            echo "gomod-latest already at $want"
+          fi

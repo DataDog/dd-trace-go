@@ -1,0 +1,64 @@
+name: gomod-cache-shadow
+
+# POC verification. Restores the GHCR seed and proves it fixes network flakes:
+# on an exact hit, `GOPROXY=off go mod download` must succeed with zero network
+# access. Runs on all three runner images. Changes no existing job and is safe
+# to leave enabled while the approach is evaluated.
+
+on:
+  schedule:
+    - cron: '7 */6 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/gomod-cache-shadow.yml'
+      - '.github/actions/gomod-cache/**'
+
+permissions:
+  contents: read
+
+jobs:
+  shadow:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      GOFLAGS: -modcacherw
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - id: gomod
+        uses: ./.github/actions/gomod-cache
+        with:
+          mode: restore
+
+      - name: Offline completeness and timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          t0=$(date +%s)
+          if [ "${{ steps.gomod.outputs.source }}" = "exact" ]; then
+            # The core proof: a real build step with the network disabled.
+            echo "exact hit -> verifying zero-network download"
+            GOPROXY=off go mod download
+            if [ -f go.work ]; then
+              GOPROXY=off go work vendor -o "$RUNNER_TEMP/v"
+              rm -rf "$RUNNER_TEMP/v"
+            fi
+            echo "OFFLINE_OK=1"
+          else
+            # No exact seed yet: measure how much we still pull from the proxy.
+            echo "source=${{ steps.gomod.outputs.source }} -> measuring proxy fetches"
+            go mod download -x 2>&1 | grep -c '# get https://proxy.golang.org' || true
+          fi
+          echo "| ${{ matrix.os }} | source=${{ steps.gomod.outputs.source }} | mod-download=$(( $(date +%s) - t0 ))s |" >> "$GITHUB_STEP_SUMMARY"
