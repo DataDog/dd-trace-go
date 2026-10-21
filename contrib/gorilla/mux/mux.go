@@ -9,8 +9,6 @@ package mux // import "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 import (
 	"net/http"
 
-	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -90,16 +88,30 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	req = req.WithContext(traceMark(req.Context(), r.Router))
-	if r.config.ignoreRequest(req) {
-		r.Router.ServeHTTP(w, req)
+	tw, treq, afterHandle, handled := r.BeforeHandle(w, req)
+	defer afterHandle()
+	if handled {
 		return
+	}
+	r.Router.ServeHTTP(tw, treq)
+}
+
+// BeforeHandle starts tracing req, which r is about to serve. It returns the
+// traced http.ResponseWriter and http.Request to serve the request with, and an
+// afterHandle function to call once the request is served. When handled is
+// true, AppSec already responded and the request must not be served.
+//
+// [Router.ServeHTTP] calls it around the underlying router. The otelc hooks
+// call it around a mux.Router.ServeHTTP they do not own.
+func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http.ResponseWriter, treq *http.Request, afterHandle func(), handled bool) {
+	if r.config.ignoreRequest(req) {
+		return w, req, func() {}, false
 	}
 	var (
 		match mux.RouteMatch
 		route string
 	)
-	spanopts := options.Expand(r.config.spanOpts, 0, 2)
+	spanopts := options.Expand(r.config.spanOpts, 0, 3)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
@@ -112,7 +124,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.config.resourceNamer != nil {
 		resource = r.config.resourceNamer(r, req)
 	}
-	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
+	if resource == "" && r.config.otelEnabled {
+		// What httptrace.TraceAndServe names the span when Resource is empty.
+		spanopts = append([]tracer.StartSpanOption{tracer.ResourceName(instrhttptrace.ServerSpanName(req.Method, route))}, spanopts...)
+	}
+	return instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
 		Framework:            "github.com/gorilla/mux",
 		Service:              r.config.serviceName,
 		ServiceSource:        r.config.serviceSource,
@@ -125,7 +141,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		RouteSet:             true,
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
-	})
+	}, w, req)
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP

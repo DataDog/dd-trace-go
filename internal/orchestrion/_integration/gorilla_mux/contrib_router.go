@@ -30,7 +30,9 @@ func (tc *TestCaseContribRouter) Setup(_ context.Context, t *testing.T) {
 	if !otelc.Enabled() {
 		t.Skip("orchestrion reports two gorilla/mux spans for a router wrapped with the contrib")
 	}
-	router := muxtrace.NewRouter()
+	router := muxtrace.NewRouter(muxtrace.WithIgnoreRequest(func(req *http.Request) bool {
+		return req.URL.Path == "/contrib/ignored"
+	}))
 	router.HandleFunc("/contrib/{id}", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -38,9 +40,12 @@ func (tc *TestCaseContribRouter) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseContribRouter) Run(ctx context.Context, t *testing.T) {
-	rec := httptest.NewRecorder()
-	tc.handler.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/contrib/42", nil))
-	require.Equal(t, http.StatusOK, rec.Code)
+	// The ignored request must not be traced by the hook either.
+	for _, path := range []string{"/contrib/42", "/contrib/ignored"} {
+		rec := httptest.NewRecorder()
+		tc.handler.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
 }
 
 func (*TestCaseContribRouter) ExpectedSpanCount() int {

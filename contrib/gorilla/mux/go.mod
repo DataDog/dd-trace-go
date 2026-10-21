@@ -3,7 +3,6 @@ module github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.11.1
@@ -81,8 +80,6 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 

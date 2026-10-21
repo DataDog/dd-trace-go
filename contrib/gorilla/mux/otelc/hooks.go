@@ -10,6 +10,7 @@ package otelc
 
 import (
 	"net/http"
+	"runtime"
 	"sync"
 	"weak"
 
@@ -19,25 +20,54 @@ import (
 	muxtrace "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 )
 
-// routers holds the contrib router that traces each mux.Router, built the
-// first time the router serves a request. Weak keys let a router be freed once
-// nothing else uses it.
-var routers sync.Map // weak.Pointer[mux.Router] -> *muxtrace.Router
+// configs holds the contrib configuration of each mux.Router, built the first
+// time the router serves a request. The values hold no reference to their
+// router, and an entry is deleted once its router is freed.
+var configs sync.Map // weak.Pointer[mux.Router] -> *muxtrace.Router with a nil Router
 
-// BeforeServeHTTP serves the request through the contrib, which traces it, and
-// skips the original call. The contrib calls ServeHTTP back with the request
-// marked for this router, and that call goes through unchanged. A router the
-// application wrapped with the contrib itself is marked the same way, so it is
-// traced once.
+// contribRouter returns the contrib router that traces r.
+//
+// A call before the contrib's init panics in WrapRouter. The hook trampoline
+// recovers it and the request is served untraced. Nothing is stored, so the
+// next request builds the configuration again.
+func contribRouter(r *mux.Router) *muxtrace.Router {
+	key := weak.Make(r)
+	cfg, ok := configs.Load(key)
+	if !ok {
+		var loaded bool
+		cfg, loaded = configs.LoadOrStore(key, muxtrace.WrapRouter(nil))
+		if !loaded {
+			runtime.AddCleanup(r, func(key weak.Pointer[mux.Router]) { configs.Delete(key) }, key)
+		}
+	}
+	traced := *cfg.(*muxtrace.Router)
+	traced.Router = r
+	return &traced
+}
+
+// BeforeServeHTTP starts the span for a request r serves and passes the traced
+// http.ResponseWriter and http.Request on to the original call. The handlers
+// run in that call, outside the hook. A router the application wrapped with
+// the contrib marks the requests it serves, and they are left alone.
 func BeforeServeHTTP(ictx hook.HookContext, r *mux.Router, w http.ResponseWriter, req *http.Request) {
 	if r == nil || req == nil || muxtrace.TraceMarked(req.Context(), r) {
 		return
 	}
-	key := weak.Make(r)
-	traced, ok := routers.Load(key)
-	if !ok {
-		traced, _ = routers.LoadOrStore(key, muxtrace.WrapRouter(r))
+	tw, treq, afterHandle, handled := contribRouter(r).BeforeHandle(w, req)
+	ictx.SetData(afterHandle)
+	if handled {
+		ictx.SetSkipCall(true)
+		return
 	}
-	traced.(*muxtrace.Router).ServeHTTP(w, req)
-	ictx.SetSkipCall(true)
+	// Parameter 0 is the receiver.
+	ictx.SetParam(1, tw)
+	ictx.SetParam(2, treq)
+}
+
+// AfterServeHTTP finishes the span BeforeServeHTTP started. It also runs when a
+// handler panics, and the panic goes on to the caller.
+func AfterServeHTTP(ictx hook.HookContext) {
+	if afterHandle, ok := ictx.GetData().(func()); ok {
+		afterHandle()
+	}
 }

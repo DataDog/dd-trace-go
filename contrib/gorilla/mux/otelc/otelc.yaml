@@ -14,4 +14,19 @@ router_serve_http:
   do:
     - inject_hooks:
         before: BeforeServeHTTP
+        after: AfterServeHTTP
         path: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2
+
+# Marks the requests a router wrapped with the contrib serves, ignored ones
+# included, so the hook above leaves them alone. It lives here and not in the
+# contrib so a plain build does not pay for it.
+contrib_router_mark:
+  target: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $req := .FuncArgument 1 -}}
+          {{ $req }} = {{ $req }}.WithContext(traceMark({{ $req }}.Context(), {{ .Receiver }}.Router))
