@@ -166,11 +166,15 @@
 // This mode skips exposure-logging allocations activated at or after the supplied
 // cutoff. Allocations without randomizationActivatedAt are also skipped. Older
 // allocations continue normal evaluation and exposure logging. Ordinary feature
-// allocations remain eligible. A malformed randomizationActivatedAt rejects the
-// affected flag for every subject, even when opt-out is disabled. Evaluation returns
-// the application's default with PARSE_ERROR, as with malformed startAt or endAt.
-// Other valid flags remain available. The comparison uses instants, including timezone
-// offsets and fractional seconds, not configuration refresh time or allocation schedules.
+// allocations remain eligible. A malformed randomizationActivatedAt returns the
+// application's default with PARSE_ERROR for the affected flag only in future mode
+// with a valid opt-out timestamp, including when the malformed allocation is unreachable.
+// Disabled mode, immediate mode, and subjects without the attribute ignore invalid
+// activation metadata. Missing or null activation remains distinct and skips the
+// experiment in future mode. Other valid flags remain available. Malformed startAt
+// or endAt still rejects the affected flag in every mode. The comparison uses instants,
+// including timezone offsets and fractional seconds, not configuration refresh time
+// or allocation schedules.
 //
 // The cutoff is not an enrollment record: an older experiment can still assign a
 // subject for the first time. Configuration edits do not freeze targeting or values.

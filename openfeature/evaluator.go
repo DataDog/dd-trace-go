@@ -165,6 +165,13 @@ func evaluateConfiguredFlag(
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
 	if exists {
+		if exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
+			}
+		}
 		return evaluateFlag(flag, defaultValue, context, now, exclusion)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {

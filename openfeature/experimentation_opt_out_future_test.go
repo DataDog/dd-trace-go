@@ -8,6 +8,7 @@ package openfeature
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -138,51 +139,122 @@ func TestExperimentationOptOutFutureActivationParsing(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		raw     string
-		valid   bool
-		unknown bool
+		invalid bool
 	}{
-		{"missing", "", true, true},
-		{"null", ",\"randomizationActivatedAt\":null", true, true},
-		{"timestamp", ",\"randomizationActivatedAt\":\"2026-10-01T12:00:00Z\"", true, false},
-		{"malformed", ",\"randomizationActivatedAt\":\"invalid\"", false, false},
-		{"empty", ",\"randomizationActivatedAt\":\"\"", false, false},
-		{"number", ",\"randomizationActivatedAt\":123", false, false},
-		{"boolean", ",\"randomizationActivatedAt\":true", false, false},
-		{"array", ",\"randomizationActivatedAt\":[]", false, false},
-		{"object", ",\"randomizationActivatedAt\":{}", false, false},
+		{"missing", "", false},
+		{"null", `,"randomizationActivatedAt":null`, false},
+		{"timestamp", `,"randomizationActivatedAt":"2026-10-01T12:00:00Z"`, false},
+		{"malformed", `,"randomizationActivatedAt":"invalid"`, true},
+		{"empty", `,"randomizationActivatedAt":""`, true},
+		{"number", `,"randomizationActivatedAt":123`, true},
+		{"boolean", `,"randomizationActivatedAt":true`, true},
+		{"array", `,"randomizationActivatedAt":[]`, true},
+		{"object", `,"randomizationActivatedAt":{}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, doLog := range []bool{false, true} {
+				for _, unreachable := range []bool{false, true} {
+					t.Run(fmt.Sprintf("doLog=%t/unreachable=%t", doLog, unreachable), func(t *testing.T) {
+						// An ordinary allocation either precedes the tested allocation
+						// (making it unreachable) or provides its normal fallback.
+						tested := `{"key":"a","doLog":` + strconv.FormatBool(doLog) + `,"splits":[{"variationKey":"on","shards":[]}]` + tc.raw + `}`
+						ordinary := `{"key":"ordinary","doLog":false,"splits":[{"variationKey":"off","shards":[]}]}`
+						allocations := tested + "," + ordinary
+						if unreachable {
+							allocations = ordinary + "," + tested
+						}
+						var config universalFlagsConfiguration
+						require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","flags":{
+							"test":{"key":"test","enabled":true,"variationType":"BOOLEAN",
+							"variations":{"on":{"key":"on","value":true},"off":{"key":"off","value":false}},
+							"allocations":[`+allocations+`]},
+							"neighbor":{"key":"neighbor","enabled":true,"variationType":"BOOLEAN",
+							"variations":{"on":{"key":"on","value":true}},
+							"allocations":[{"key":"a","doLog":false,"splits":[{"variationKey":"on","shards":[]}]}]}
+						}}`), &config))
+						require.Contains(t, config.Flags, "test", "activation alone must not quarantine the flag at decode time")
+						for _, mode := range []ExperimentationOptOutMode{
+							ExperimentationOptOutDisabled, ExperimentationOptOutImmediate, ExperimentationOptOutFutureExperimentsOnly,
+						} {
+							for _, optedOut := range []bool{false, true} {
+								t.Run(fmt.Sprintf("mode=%d/optedOut=%t", mode, optedOut), func(t *testing.T) {
+									attrs := map[string]any{}
+									if optedOut {
+										attrs[experimentationOptOutAtAttribute] = experimentOptOutTestTime
+									}
+									exclusion, err := mode.exclusion(attrs)
+									require.NoError(t, err)
+									result := evaluateConfiguredFlag(&config, "test", "default", attrs, time.Now(), exclusion)
+									if mode == ExperimentationOptOutFutureExperimentsOnly && optedOut && tc.invalid {
+										assert.ErrorIs(t, result.Error, errParseError)
+										assert.Equal(t, "default", result.Value)
+									} else {
+										require.NoError(t, result.Error)
+										want := !unreachable
+										if optedOut && doLog && (mode == ExperimentationOptOutImmediate ||
+											(mode == ExperimentationOptOutFutureExperimentsOnly && tc.name != "timestamp")) {
+											want = false
+										}
+										assert.Equal(t, want, result.Value)
+									}
+									neighbor := evaluateConfiguredFlag(&config, "neighbor", false, attrs, time.Now(), exclusion)
+									assert.NoError(t, neighbor.Error)
+									assert.Equal(t, true, neighbor.Value)
+								})
+							}
+						}
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestExperimentationOptOutActivationDoesNotRelaxSchedules(t *testing.T) {
+	for _, field := range []string{"startAt", "endAt"} {
+		t.Run(field, func(t *testing.T) {
 			var config universalFlagsConfiguration
 			require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","flags":{
 				"test":{"key":"test","enabled":true,"variationType":"BOOLEAN",
 				"variations":{"on":{"key":"on","value":true}},
-				"allocations":[{"key":"a","doLog":true,"splits":[{"variationKey":"on","shards":[]}]`+tc.raw+`}]},
-				"neighbor":{"key":"neighbor","enabled":true,"variationType":"BOOLEAN",
-				"variations":{"on":{"key":"on","value":true}},
-				"allocations":[{"key":"a","doLog":false,"splits":[{"variationKey":"on","shards":[]}]}]}
+				"allocations":[{"key":"a","doLog":true,"splits":[{"variationKey":"on","shards":[]}],
+				"randomizationActivatedAt":"invalid","`+field+`":"invalid"}]}
 			}}`), &config))
-			assert.Contains(t, config.Flags, "neighbor")
-			if tc.valid {
-				require.Contains(t, config.Flags, "test")
-				assert.Equal(t, tc.unknown, config.Flags["test"].Allocations[0].RandomizationActivatedAt == nil)
-			} else {
-				require.NotContains(t, config.Flags, "test")
-				for _, mode := range []ExperimentationOptOutMode{
-					ExperimentationOptOutDisabled,
-					ExperimentationOptOutImmediate,
-					ExperimentationOptOutFutureExperimentsOnly,
-				} {
-					exclusion, err := mode.exclusion(map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime})
-					require.NoError(t, err)
-					result := evaluateConfiguredFlag(&config, "test", false, nil, time.Now(), exclusion)
-					assert.ErrorIs(t, result.Error, errParseError)
-					assert.Equal(t, false, result.Value)
-					neighbor := evaluateConfiguredFlag(&config, "neighbor", false, nil, time.Now(), exclusion)
-					assert.NoError(t, neighbor.Error)
-					assert.Equal(t, true, neighbor.Value)
-				}
+			for _, mode := range []ExperimentationOptOutMode{
+				ExperimentationOptOutDisabled, ExperimentationOptOutImmediate, ExperimentationOptOutFutureExperimentsOnly,
+			} {
+				exclusion, err := mode.exclusion(map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime})
+				require.NoError(t, err)
+				result := evaluateConfiguredFlag(&config, "test", false, nil, time.Now(), exclusion)
+				assert.ErrorIs(t, result.Error, errParseError)
 			}
 		})
+	}
+}
+
+func TestExperimentationOptOutActivationValidityRefresh(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly})
+	for _, activation := range []string{`"invalid"`, `"2026-10-01T12:00:00Z"`, `null`, `"invalid"`} {
+		data := []byte(`{"format":"SERVER","flags":{
+			"test":{"key":"test","enabled":true,"variationType":"BOOLEAN",
+			"variations":{"on":{"key":"on","value":true}},
+			"allocations":[{"key":"same-key","doLog":true,"splits":[{"variationKey":"on","shards":[]}],
+			"randomizationActivatedAt":` + activation + `}]}
+		}}`)
+		status := processConfigUpdate(h.provider, "activation-validity", data)
+		require.Empty(t, status.Error)
+		result, err := h.client.BooleanValueDetails(context.Background(), "test", false,
+			of.NewEvaluationContext("subject", map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}))
+		if activation == `"invalid"` {
+			require.Error(t, err)
+			assert.Equal(t, of.ParseErrorCode, result.ErrorCode)
+		} else {
+			require.NoError(t, err)
+			assert.Equal(t, activation != `null`, result.Value)
+		}
+		baseline, err := h.client.BooleanValueDetails(context.Background(), "test", false, of.NewEvaluationContext("subject", nil))
+		require.NoError(t, err)
+		assert.True(t, baseline.Value, "absent cutoff must ignore activation validity after every refresh")
 	}
 }
 
