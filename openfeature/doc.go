@@ -178,8 +178,10 @@
 //
 // The cutoff is not an enrollment record: an older experiment can still assign a
 // subject for the first time. Configuration edits do not freeze targeting or values.
-// Holdouts use the same activation cutoff. A future cutoff does not schedule exclusion;
-// it permits allocations activated before that cutoff. Remove the attribute to opt back in.
+// Holdouts use the same activation cutoff. Supply the time the subject opted out.
+// A later cutoff keeps experiments activated before that later time eligible,
+// including experiments started after the subject opted out. Targeting and schedules
+// still apply. Remove the attribute to opt back in.
 //
 // This mode requires activation metadata from the configuration producer. Legacy
 // allocations without it are skipped for opted-out subjects, not treated as older.
