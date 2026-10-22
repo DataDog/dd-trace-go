@@ -42,6 +42,9 @@ func Locate(goCommand, moduleDir string) string {
 func ModuleVersion(goCommand, moduleDir string) (string, error) {
 	cmd := exec.Command(goCommand, "list", "-m", "-f", "{{.Version}}", "github.com/DataDog/orchestrion")
 	cmd.Dir = moduleDir
+	// The fixture module is not part of go.work, so GOWORK=off keeps the go
+	// command in module mode. Workspace mode would resolve @latest instead of
+	// the go.mod pin, and every CI binary would fail the version match.
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	output, err := cmd.Output()
 	if err != nil {
