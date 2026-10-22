@@ -77,7 +77,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 		return nil, firstSketchDecodeErr
 	}
 
-	resource := buildMetricsResource(payload, cfg.ReportHostname(), cfg.Hostname())
+	resource := buildMetricsResource(payload, cfg.ReportHostname(), cfg.Hostname(), cfg.OTelSemanticsEnabled())
 
 	scopeMetrics := []*otlpmetrics.ScopeMetrics{
 		{
@@ -105,8 +105,8 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 }
 
 // buildMetricsResource builds the OTLP Resource.
-func buildMetricsResource(payload *pb.ClientStatsPayload, reportHostname bool, hostname string) *otlpresource.Resource {
-	attrs := buildBaseResourceAttrs(payload.Service, payload.Version, payload.Env)
+func buildMetricsResource(payload *pb.ClientStatsPayload, reportHostname bool, hostname string, otelSemantics bool) *otlpresource.Resource {
+	attrs := buildBaseResourceAttrs(payload.Service, payload.Version, payload.Env, otelSemantics)
 	if reportHostname && hostname != "" {
 		attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 	}

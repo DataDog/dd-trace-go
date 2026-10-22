@@ -184,6 +184,25 @@ func TestOTLPMetricsExporterCustomHeaders(t *testing.T) {
 	assert.Equal(t, "my-value", gotHeader)
 }
 
+func TestOTLPMetricsExporterSignalHeadersReplaceGeneric(t *testing.T) {
+	var gotHeaders http.Header
+	hdrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(hdrSrv.Close)
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", hdrSrv.URL+"/v1/metrics")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "authorization=signal")
+
+	exp := newOTLPMetricsExporter(internalconfig.CreateNew())
+	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
+	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
+
+	assert.Equal(t, "signal", gotHeaders.Get("Authorization"))
+	assert.Empty(t, gotHeaders.Values("X-Generic"))
+}
+
 // ---- config integration ----
 
 func TestOTLPMetricsProtocolDefaultIsProtobuf(t *testing.T) {

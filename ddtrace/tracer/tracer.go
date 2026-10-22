@@ -17,6 +17,7 @@ import (
 	rt "runtime/trace"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -248,11 +249,16 @@ func reportInitTime(start time.Time) {
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	return start(false, opts...)
+}
+
+func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
 
+	opts = startOptionsForCIVisibilityLifecycle(opts, ciVisibilityBootstrap)
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -271,7 +277,7 @@ func Start(opts ...StartOption) error {
 	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
-	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
+	setGlobalTracerWithCIVisibility(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -287,17 +293,25 @@ func Start(opts ...StartOption) error {
 	}
 
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
+		if err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
 		}
+		t.config.otelMeterProviderInstalled = installed
 	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
+		} else if isRuntimeMetricsAlreadyStarted(err) {
+			// Another component (e.g. an application framework calling
+			// runtimemetrics.Start) owns the process-wide emitter. This is a
+			// configuration conflict rather than a tracer failure.
+			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
 		}
@@ -330,6 +344,15 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// isRuntimeMetricsAlreadyStarted reports whether err is the error returned by
+// runtimemetrics.NewEmitter when another emitter is already running. The
+// library (go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d)
+// returns an unexported errors.New value without a sentinel, so the message is
+// matched.
+func isRuntimeMetricsAlreadyStarted(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "runtimemetrics has already been started")
 }
 
 // buildLLMObsConfig assembles the llmobsconfig.Config used to start LLMObs,
@@ -457,7 +480,7 @@ func Stop() {
 	defer startStopMu.Unlock()
 
 	llmobs.Stop()
-	setGlobalTracer(&NoopTracer{})
+	stopGlobalTracerPreservingCIVisibility()
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }
@@ -552,6 +575,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// and log-to-stdout are selected ahead of OTLP, and those writers do not serialize
 	// native span events, so they must keep events string-tagged.
 	var otlpExportMode bool
+	var supportsOTLPSpanMetrics bool
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
@@ -562,13 +586,16 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 		otlpExportMode = true
+		supportsOTLPSpanMetrics = true
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
+		supportsOTLPSpanMetrics = true
 	}
 	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient,
+			datastreams.WithQueueSize(c.internalConfig.DataStreamsIntakeBufferSize()))
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -578,11 +605,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	useOTLPSpanMetrics := c.internalConfig.OTLPSpanMetricsEnabled()
+	skipStats := c.internalConfig.OTLPExportMode()
+	if c.internalConfig.OTelSemanticsEnabled() {
+		useOTLPSpanMetrics = useOTLPSpanMetrics && supportsOTLPSpanMetrics
+		skipStats = otlpExportMode
+	}
 	var sc statsConcentrator
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
+	if useOTLPSpanMetrics {
 		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
-	} else if c.internalConfig.OTLPExportMode() {
+	} else if skipStats {
 		sc = &noopConcentrator{}
 	} else {
 		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
@@ -974,8 +1007,15 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // +checklocksignore — Initialization time, span not yet shared.
-func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) *Span {
+// It returns the started span, whether the span is the root of its trace, and
+// the service name of the parent span ("" when there is no parent).
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
 	var opts StartSpanConfig
+	// A caller passing N options is our best cheap signal for how many
+	// Tag-family options it might include; Tag uses this to size Tags on
+	// its first write instead of starting unsized and rehashing once the
+	// tag count grows past a small map's initial capacity.
+	opts.tagsHint = len(options)
 	for _, fn := range options {
 		if fn == nil {
 			continue
@@ -1066,8 +1106,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.setMetaInit("language", "go")
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	span.pprofCtxRestore = pprofContext
-	// setTags takes s.mu internally. Tags may override service name
-	// (ServiceName option), so the top-level check below runs after.
+	// setTags takes s.mu internally. Tags may override the service name
+	// (ServiceName option), so the span service must not be compared with the
+	// parent service until every mutation has been applied.
 	span.setTags(opts.Tags)
 	// The span snapshot is populated by tracer.StartSpan once all
 	// env/version/service-mapping mutations have been applied, so we
@@ -1076,26 +1117,55 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// sync until then.
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
+		// The root span of the trace is always a local root (top-level) span.
+		markTopLevel(span)
 	}
-	if isRootSpan || parentService != span.service {
-		// The span is the local root span.
-		span.setMetricInit(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.metrics, keyMeasured)
+	// The child top-level decision is deferred to StartSpan: the service name
+	// may still change there (default service, global tags, service mapping),
+	// and the span is a local root span only if its final service differs from
+	// its parent's. See https://github.com/DataDog/dd-trace-go/issues/5487.
+	return span, isRootSpan, parentService
+}
+
+// markTopLevel marks the span as a local root (top-level) span. It sets
+// _dd.top_level and removes the redundant _dd.measured tag, because every
+// top-level span is measured.
+// +checklocksignore — Initialization time, span not yet shared.
+func markTopLevel(s *Span) {
+	s.setMetricInit(keyTopLevel, 1)
+	// all top level spans are measured. So the measured tag is redundant.
+	delete(s.metrics, keyMeasured)
+}
+
+// markChildTopLevel marks a child span as top-level when its service differs
+// from its parent's service. StartSpan runs this decision after applying every
+// service mutation (default service, global tags, service mapping). The mock
+// tracer applies none of them, so it linknames this function to run the same
+// decision on the services from the span options alone.
+// +checklocksignore — Initialization time, span not yet shared.
+func markChildTopLevel(s *Span, isRootSpan bool, parentService string) {
+	if !isRootSpan && parentService != s.service {
+		markTopLevel(s)
 	}
-	return span
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-// +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
+	return t.startSpan(operationName, "", options...)
+}
+
+// +checklocksignore — Initialization time, span not yet returned to caller.
+func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options ...StartSpanOption) *Span {
 	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
-	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	span, isRootSpan, parentService := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	if ciVisibilityTracerType != "" {
+		setCIVisibilityTracerType(span, ciVisibilityTracerType)
+	}
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName
@@ -1132,6 +1202,19 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Publish the resolved service to the context snapshot before the sampler
+	// runs. A custom Sampler may synchronously start a child span that reads
+	// this span's snapshot in spanStart; without this write the child would
+	// still see the empty, pre-default service of its parent and falsely
+	// compare services. The full snapshot is synced again at the end of
+	// StartSpan, after the pprof labels have been applied.
+	span.context.setSpanSnapshotService(span.service, span.serviceSource)
+	// Every service mutation (default service, service tags, global tags,
+	// service mapping) has been applied above, so the span service can now be
+	// compared with its parent's: a child span that ends up in a different
+	// service is the local root span (service entry point) of that service.
+	// See https://github.com/DataDog/dd-trace-go/issues/5487.
+	markChildTopLevel(span, isRootSpan, parentService)
 	// Apply the pprof labels before t.sample: a custom Sampler receives the span
 	// and may publish it to another goroutine, after which writing span fields
 	// here would race with that goroutine (e.g. SetTag or Finish).

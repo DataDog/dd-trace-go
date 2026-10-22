@@ -83,6 +83,34 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry Opt-Out
+//
+// Applications can enable a per-evaluation telemetry opt-out parameter:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EnableEvaluationTelemetryOptOutParameter: new(true),
+//	})
+//	// Handle err and register provider with OpenFeature before evaluating flags.
+//	evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+//	    "dd_evaluation_telemetry_opt_out": true,
+//	})
+//	value, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//
+// Alternatively, set DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED=true
+// before SDK initialization and leave EnableEvaluationTelemetryOptOutParameter nil.
+// An explicit new(true) or new(false) option overrides the environment setting.
+// Activation defaults to false. The provider copies the resolved value at construction.
+// When enabled, only boolean true in the final merged context suppresses new
+// evaluation events, evaluation metrics, and automatic flag span enrichment.
+// Missing values, false, null, strings, and numbers preserve existing behavior.
+// The provider reads the parameter on every evaluation. It does not remember a
+// subject's decision. Supply the parameter before each evaluation, either in its
+// evaluation context or in the transaction context passed to that evaluation.
+// Do not change a global or shared client context for individual server requests.
+// The attribute remains available to targeting rules and exposure reporting.
+// Flag values, experiment exposures, exposure deduplication, application hooks,
+// and previously queued telemetry are unchanged.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:
@@ -186,6 +214,53 @@
 // Errors are returned through the OpenFeature ResolutionDetail, and the default
 // value is returned when errors occur.
 //
+// # Debug Logging
+//
+// Set DD_TRACE_DEBUG=true and call tracer.Start before creating the provider
+// to log, at debug level, each step of its setup and every flag evaluation.
+// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). The provider
+// does not change the shared log level. Enabling debug logging after provider
+// construction also enables subsequent evaluation logs.
+// Every such line starts with "openfeature:",
+// so they can be filtered from other tracer output. It covers:
+//
+//   - The selected configuration source, or that feature flagging is disabled
+//   - Each Agentless poll attempt and its outcome: the HTTP status or the
+//     transport error, plus any retry delay
+//   - Each configuration applied, with its flag count, how many flags were
+//     rejected as invalid, and its createdAt (and, for Agentless, the
+//     effective DD_ENV and ETag)
+//   - Initialization start and its outcome, with the failure reason
+//   - Lifecycle changes: recovery after a failed initialization, configuration
+//     becoming unavailable, and shutdown
+//   - Every flag the provider resolves, with its value, variant, reason,
+//     allocation, and error
+//   - Every evaluation failure, with the evaluation's default value. This
+//     includes failures the provider never sees, such as evaluating before it
+//     is ready, and an application hook returning an error after the provider
+//     resolved the flag
+//
+// A failure line does not say which value the application received, since
+// that depends on how the flag was evaluated. Typed evaluations and
+// ObjectValue return the default value. ObjectValueDetails keeps the resolved
+// value after an After hook fails, and a multi-provider may return the
+// resolved value or another provider's result.
+//
+// Initialization-failure diagnostics are local logs and do not report errors to
+// telemetry.
+//
+// Credentials and the endpoint's path and query are never logged; only the
+// endpoint's scheme and host are logged. Onboarding lines never include the
+// evaluation's targeting key or context attributes, but an error returned by
+// an application hook is logged with its message as is: if your hook puts
+// targeting data in an error message, it appears in the debug log. The
+// exposure tracking debug line, which is not an onboarding line, includes the
+// targeting key. Scalar flag values are logged directly and other values as
+// JSON, truncated to 256 bytes. A value that cannot be encoded, including a
+// default value whose MarshalJSON method fails or panics, is logged as
+// <unserializable> without affecting the evaluation. When debug logging is
+// off, evaluations skip formatting these details.
+//
 // # Thread Safety
 //
 // The provider is fully thread-safe and can handle concurrent flag evaluations
@@ -271,6 +346,11 @@
 //     "true", enables span enrichment — feature flag evaluation details are
 //     recorded as tags on the active trace's root span. Default: false. Note:
 //     the added span tags may affect APM billing.
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
+//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
+//     parameter. This setting does not globally disable evaluation telemetry.
+//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by

@@ -300,6 +300,55 @@ func TestBatch(t *testing.T) {
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
 }
 
+// TestBatchQuerySpanDurations asserts that each batched query's span duration
+// reflects the time spent on that query, not on the query queued before it. pgx
+// reports a batch query only once its result is read, so the wait for a slow query
+// must be attributed to that query's span rather than to its predecessor's.
+func TestBatchQuerySpanDurations(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceBatch(true))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+
+	pool, err := NewPool(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	// The second query streams a large result set, so reading its rows takes
+	// meaningfully longer than reading the first query's result. pgx reports each
+	// batch query only once its result is consumed, so the read time must be
+	// attributed to the slow query's own span rather than to the fast query queued
+	// before it.
+	const slowQuery = `SELECT * FROM generate_series(1, 3000000)`
+	batch := &pgx.Batch{}
+	batch.Queue(`SELECT 1`)
+	batch.Queue(slowQuery)
+
+	br := pool.SendBatch(ctx, batch)
+	_, err = br.Exec() // SELECT 1: its result is available at the first flush
+	require.NoError(t, err)
+	rows, err := br.Query() // large result: reading the rows streams for a while
+	require.NoError(t, err)
+	for rows.Next() {
+	}
+	require.NoError(t, rows.Err())
+	rows.Close()
+	require.NoError(t, br.Close())
+
+	parent.Finish()
+
+	spans := mt.FinishedSpans()
+	fast := findBatchQuery(t, spans, "SELECT 1")
+	slow := findBatchQuery(t, spans, slowQuery)
+
+	assert.Greater(t, slow.Duration(), fast.Duration(),
+		"the streaming query's span should carry its own read time, not the fast query queued before it")
+	assert.GreaterOrEqual(t, slow.Duration(), 20*time.Millisecond,
+		"the streaming query's span should reflect the time spent reading its rows")
+}
+
 // TestConcurrentBatchRace asserts that concurrent batches executing on different
 // pool connections do not race on shared pgxTracer state. Run with -race.
 // Regression test for https://github.com/DataDog/dd-trace-go/issues/4668.
@@ -493,6 +542,55 @@ func TestWrapTracer(t *testing.T) {
 	}
 }
 
+// The WithTrace* options control the spans of this package, not the hooks of a wrapped
+// tracer. pgx and pgxpool find each hook by one type assertion on the tracer they hold, so a
+// hook that skips its delegation removes that hook from every tracer beneath it.
+func TestWrapTracerForwardsWithTracingDisabled(t *testing.T) {
+	testCases := []struct {
+		name           string
+		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		wantHooks      int
+	}{
+		{
+			name: "pool",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgxpool.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.ConnConfig.Tracer = prev
+				return newPoolCreator(cfg, tracingAllDisabled()...)
+			},
+			wantHooks: 14,
+		},
+		{
+			name: "conn",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgx.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.Tracer = prev
+				return newConnCreator(cfg, nil, tracingAllDisabled()...)
+			},
+			wantHooks: 11, // 14 - 3 pool tracer hooks
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			prevTracer := &pgxMockTracer{
+				called: make(map[string]bool),
+			}
+			runAllOperations(t, tc.newConnCreator(t, prevTracer))
+
+			assert.Len(t, prevTracer.called, tc.wantHooks, "some hook(s) on the previous tracer were not called")
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, "parent", spans[0].OperationName())
+		})
+	}
+}
+
 func TestNewConnInfo(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		assert.Equal(t, connInfo{}, newConnInfo(nil))
@@ -606,6 +704,17 @@ func TestPoolBeforeConnectTags(t *testing.T) {
 		assert.Equal(t, float64(5432), query.Tag(ext.NetworkDestinationPort))
 		assert.Equal(t, "postgres", query.Tag(ext.DBUser))
 	})
+}
+
+func findBatchQuery(t *testing.T, spans []*mocktracer.Span, resource string) *mocktracer.Span {
+	t.Helper()
+	for _, s := range spans {
+		if s.OperationName() == "pgx.batch.query" && s.Tag(ext.ResourceName) == resource {
+			return s
+		}
+	}
+	t.Fatalf("no pgx.batch.query span with resource %q found in %d spans", resource, len(spans))
+	return nil
 }
 
 func findSpan(t *testing.T, spans []*mocktracer.Span, operationName string) *mocktracer.Span {
