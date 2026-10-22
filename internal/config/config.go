@@ -427,7 +427,7 @@ func loadConfig() *Config {
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
 	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
-	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, provider.ParseDDMap)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.otelSDKDisabled = p.GetBool("OTEL_SDK_DISABLED", false)
@@ -435,7 +435,7 @@ func loadConfig() *Config {
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, provider.ParseDDMap)
 	cfg.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
 	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
@@ -510,7 +510,7 @@ func loadConfig() *Config {
 		cfg.traceProtocolOverridesOTLP = true
 	}
 	otlpGenericEndpoints := []string{p.GetStringWithValidator("OTEL_EXPORTER_OTLP_ENDPOINT", "", isURL)}
-	otlpGenericHeaders := p.GetMapWithParser("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
+	otlpGenericHeaders := p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, parseOTLPHeaders)
 	otlpGenericProtocols := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_PROTOCOL")
 	for _, v := range otlpGenericProtocols {
 		if v != "" && !supportsOTLPProtocol(otlpMetricsProtocols)(v) && !supportsOTLPProtocol(otlpLogsProtocols)(v) {
@@ -521,7 +521,7 @@ func loadConfig() *Config {
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, genericEndpoint)
 	cfg.otlpTraceURL = resolveOTLPSignalURL(tracesEndpoint, cfg.otlpEndpoint, otlpTracesPath, false)
 	cfg.otlpTraceURLDerivedFromAgent = tracesEndpoint == "" && genericEndpoint == ""
-	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders)))
+	cfg.otlpTraceHeaders = buildOTLPTraceHeaders(resolveOTLPHeaders(otlpGenericHeaders, p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, parseOTLPHeaders)))
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
@@ -540,7 +540,7 @@ func loadConfig() *Config {
 	warnOTLPMetrics := cfg.OTLPSpanMetricsEnabled()
 	metricsEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isOTLPHTTPURL, warnOTLPMetrics)
 	cfg.otlpMetricsURL = resolveOTLPSignalURL(metricsEndpoint, resolveOTLPEndpoint(cfg.agentURL, genericEndpoint), otlpMetricsPath, false)
-	cfg.otlpMetricsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpMetricsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, parseOTLPHeaders))
 	cfg.otlpMetricsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpMetricsProtocols), warnOTLPMetrics))
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	envP := provider.NewEnvironment()
@@ -562,7 +562,7 @@ func loadConfig() *Config {
 	if cfg.otlpLogsEndpoint != "" {
 		cfg.otlpLogsHTTPURL = resolveOTLPSignalURL(logsEndpoint, genericEndpoint, otlpLogsPath, true)
 	}
-	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMapWithParser("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
+	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMap("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
 	cfg.otlpLogsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpLogsProtocols), cfg.logsOTelEnabled))
 	logsTimeout := p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds(), func(v int64) bool { return v >= 0 })
 	cfg.otlpLogsTimeout = time.Duration(p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", logsTimeout, func(v int64) bool { return v >= 0 })) * time.Millisecond
