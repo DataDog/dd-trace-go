@@ -62,6 +62,11 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
 	orchestrionPath := orchtool.Locate("go", fixtureDir)
+	if orchestrionPath == "" {
+		t.Log("no PATH orchestrion binary matches the pin; using the go run fallback")
+	} else {
+		t.Logf("using the pinned orchestrion binary %s", orchestrionPath)
+	}
 
 	for _, test := range []struct {
 		name              string

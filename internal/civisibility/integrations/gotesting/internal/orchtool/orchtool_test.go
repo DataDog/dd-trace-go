@@ -6,7 +6,9 @@
 package orchtool
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -56,6 +58,7 @@ func TestParseVersion(t *testing.T) {
 	}{
 		{output: "orchestrion v1.9.0\n", want: "v1.9.0"},
 		{output: "orchestrion v1.13.0-rc.1\n", want: "v1.13.0-rc.1"},
+		{output: "orchestrion\r\n", want: ""},
 		{output: "orchestrion\n", want: ""},
 		{output: "v0.0.0\n", want: "v0.0.0"},
 		{output: "", want: ""},
@@ -89,20 +92,55 @@ func TestBinaryVersionFailsForAMissingBinary(t *testing.T) {
 	}
 }
 
-func TestLocateMatchesThePinnedVersion(t *testing.T) {
-	path := Locate("go", orchestrionFixtureModule)
-	if path == "" {
-		t.Skip("no orchestrion binary on PATH reports the fixture pin")
+// fakeOrchestrion writes fake orchestrion binaries for both script platforms
+// into dir: a `#!/bin/sh` script named orchestrion for Unix hosts, and an
+// orchestrion.bat for Windows hosts, which exec.LookPath resolves through
+// PATHEXT. Both report the given version. Put dir first on PATH to make the
+// fake the binary Locate finds.
+func fakeOrchestrion(t *testing.T, dir, version string) {
+	t.Helper()
+	script := "#!/bin/sh\necho 'orchestrion " + version + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "orchestrion"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake orchestrion: %v", err)
 	}
-	got, err := BinaryVersion(path)
-	if err != nil {
-		t.Fatalf("BinaryVersion(%q): %v", path, err)
+	batch := "@echo off\necho orchestrion " + version + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "orchestrion.bat"), []byte(batch), 0o755); err != nil {
+		t.Fatalf("write fake orchestrion.bat: %v", err)
 	}
-	want, err := ModuleVersion("go", orchestrionFixtureModule)
+}
+
+// fakeOrchestrionPath returns the path of the fake binary that LookPath
+// resolves on the host running the test.
+func fakeOrchestrionPath(dir string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, "orchestrion.bat")
+	}
+	return filepath.Join(dir, "orchestrion")
+}
+
+func prependPath(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestLocateSelectsABinaryThatReportsThePinnedVersion(t *testing.T) {
+	pinned, err := ModuleVersion("go", orchestrionFixtureModule)
 	if err != nil {
 		t.Fatalf("ModuleVersion: %v", err)
 	}
-	if got != want {
-		t.Fatalf("Locate returned %q reporting %q, want a binary reporting %q", path, got, want)
+	dir := t.TempDir()
+	fakeOrchestrion(t, dir, pinned)
+	prependPath(t, dir)
+	if got := Locate("go", orchestrionFixtureModule); got != fakeOrchestrionPath(dir) {
+		t.Fatalf("Locate = %q, want the fake binary at the pinned version %s", got, pinned)
+	}
+}
+
+func TestLocateRejectsABinaryThatReportsADifferentVersion(t *testing.T) {
+	dir := t.TempDir()
+	fakeOrchestrion(t, dir, "v0.0.0-mismatch")
+	prependPath(t, dir)
+	if got := Locate("go", orchestrionFixtureModule); got != "" {
+		t.Fatalf("Locate = %q, want no binary: a version mismatch makes orchestrion exit 255", got)
 	}
 }

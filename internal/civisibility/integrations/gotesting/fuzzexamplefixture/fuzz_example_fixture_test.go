@@ -46,7 +46,14 @@ var fixtureScenarios = []string{
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	goCommand := fixtureGoCommand()
+	// The orchestrion-mode app builds inside the itrbackfill orchestrion
+	// module, so that module's go.mod pin governs this fixture too.
 	orchestrionPath := orchtool.Locate(goCommand, filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"))
+	if orchestrionPath == "" {
+		t.Log("no PATH orchestrion binary matches the pin; using the go run fallback")
+	} else {
+		t.Logf("using the pinned orchestrion binary %s", orchestrionPath)
+	}
 	// Reuse the runner's build cache; fixtureEnv isolates CI Visibility state.
 	goCache := goEnv(t, "GOCACHE")
 	goModCache := goEnv(t, "GOMODCACHE")
