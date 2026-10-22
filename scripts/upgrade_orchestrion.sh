@@ -31,7 +31,9 @@ for dir in ${ORCHESTRION_DIRS}; do
   fi
 
   CURRENT_VERSION=""
-  if ! CURRENT_VERSION="$(cd "$module_dir" && go list -m github.com/DataDog/orchestrion 2> /dev/null | awk '{print $2}')"; then
+  # The fixture module is not part of go.work, so GOWORK=off keeps this read in
+  # module mode: workspace mode resolves @latest instead of the go.mod pin.
+  if ! CURRENT_VERSION="$(cd "$module_dir" && GOWORK=off go list -m github.com/DataDog/orchestrion 2> /dev/null | awk '{print $2}')"; then
     CURRENT_VERSION=""
   fi
 
@@ -65,6 +67,9 @@ for dir in ${ORCHESTRION_DIRS}; do
   (
     echo "Upgrading Orchestrion in ${dir}"
     cd "$module_dir"
+    # GOWORK=off keeps the upgrade in module mode for modules outside go.work
+    # (see the version read above).
+    export GOWORK=off
     go get "github.com/DataDog/orchestrion@${ORCHESTRION_VERSION}"
     go mod tidy
     go mod verify
