@@ -153,19 +153,23 @@ type DatadogProvider struct {
 // subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
 // attachment. If the default client is the one at fault, please call tracer.Start before
 // creating the provider.
-// Unsupported experimentation opt-out modes return an error, including invalid
-// DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE values when no override is supplied.
+// When flagging is enabled, unsupported experimentation opt-out modes return an error,
+// including invalid DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE values when no
+// override is supplied. Disabled flagging returns a NoopProvider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
-	mode, err := config.ExperimentationOptOutMode.resolve()
-	if err != nil {
-		return nil, err
-	}
-	config.ExperimentationOptOutMode = mode
-
 	cfg := internalconfig.Get()
 	settings := internalffe.ResolveSettings(cfg)
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
+	}
+
+	// Disabled flagging takes precedence over opt-out configuration validation.
+	if settings.Source != internalffe.SourceDisabled {
+		mode, err := config.ExperimentationOptOutMode.resolve()
+		if err != nil {
+			return nil, err
+		}
+		config.ExperimentationOptOutMode = mode
 	}
 
 	switch settings.Source {
