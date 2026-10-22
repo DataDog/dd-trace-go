@@ -255,6 +255,9 @@ func newDatadogProviderWithSourceAndEVP(
 
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
+	if !writer.datadogLoggingEnabled {
+		log.Info("openfeature: Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+	}
 
 	// Create exposure hook
 	exposureLoggingHook := newExposureHook(writer)
@@ -807,6 +810,8 @@ func (p *DatadogProvider) ObjectEvaluation(
 
 // Hooks returns hooks for one evaluation.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
+	// TODO(open-feature/go-sdk#623): Return the shared hooks when go.mod requires
+	// the fixed release and the After/Error bridge can be removed.
 	// Direct OpenFeature clients call Hooks once per evaluation. Composed providers
 	// are guarded in the hook because they can retain this instance. See go-sdk#623.
 	// The slice copy and bridge add two allocations with the default four hooks.

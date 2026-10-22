@@ -6,14 +6,18 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/isolated"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,9 +86,9 @@ func TestSplitFeatureLimits(t *testing.T) {
 	assert.Equal(t, features[2:5], parsed[:3])
 	assert.Equal(t, fmt.Sprintf("feature%d", maxContextFields-4), parsed[len(parsed)-1].Key)
 	metadata := of.FlagMetadata{}
-	parsed.addMetadata(metadata)
-	assert.Equal(t, boundary, evaluationFeatureValues(metadata)[boundary])
-	assert.Equal(t, "status_quo", splitFeatureValues(metadata, metadataExposureFeaturePrefix)["holdout.assignment_group"])
+	maps.Copy(metadata, (&split{Features: parsed}).featureMetadata())
+	assert.Equal(t, boundary, decodedFeatureValues(metadata, metadataEvaluationFeaturesKey)[boundary])
+	assert.Equal(t, "status_quo", decodedFeatureValues(metadata, metadataExposureFeaturesKey)["holdout.assignment_group"])
 	assert.Equal(t, 2, logger.countContaining("ignoring malformed split feature entry"))
 	assert.Equal(t, 1, logger.countContaining("entry limit reached"))
 
@@ -125,7 +129,7 @@ func TestMalformedSplitFeaturesLogAtParseTime(t *testing.T) {
 	assert.Equal(t, 4, logger.countContaining("ignoring malformed split feature entry"))
 	assert.Zero(t, logger.countContaining("secret"), "diagnostics must not disclose feature contents")
 	for range 2 {
-		parsed.addMetadata(of.FlagMetadata{})
+		(&split{Features: parsed}).featureMetadata()
 	}
 	assert.Equal(t, 4, logger.countContaining("ignoring malformed split feature entry"))
 }
@@ -171,17 +175,17 @@ func TestSplitFeatureRouting(t *testing.T) {
 	require.NoError(t, err)
 	var parsed splitFeatures
 	require.NoError(t, json.Unmarshal(encoded, &parsed))
-	parsed.addMetadata(metadata)
+	maps.Copy(metadata, (&split{Features: parsed}).featureMetadata())
 	e := ExposureEvaluation{Details: of.InterfaceEvaluationDetails{EvaluationDetails: of.EvaluationDetails{
 		ResolutionDetail: of.ResolutionDetail{FlagMetadata: metadata},
 	}}}
 	assert.Equal(t, map[string]any{"holdout.key": "q3", "holdout.assignment_group": "status_quo", "shared": true}, e.Features())
-	assert.Equal(t, map[string]any{"shared": true, "exposure": float64(2)}, splitFeatureValues(metadata, metadataExposureFeaturePrefix))
-	assert.Equal(t, map[string]any{"shared": true, "evaluation": "all_shipped"}, evaluationFeatureValues(metadata))
+	assert.Equal(t, map[string]any{"shared": true, "exposure": float64(2)}, decodedFeatureValues(metadata, metadataExposureFeaturesKey))
+	assert.Equal(t, map[string]any{"shared": true, "evaluation": "all_shipped"}, decodedFeatureValues(metadata, metadataEvaluationFeaturesKey))
 	e.Features()["holdout.key"] = "customer edit"
 	assert.Equal(t, "q3", e.Features()["holdout.key"])
 	assert.Nil(t, (ExposureEvaluation{}).Features())
-	assert.Nil(t, evaluationFeatureValues(of.FlagMetadata{metadataEvaluationFeaturePrefix + "x": "v"}))
+	assert.Nil(t, decodedFeatureValues(of.FlagMetadata{"__dd_evaluation_feature.x": "v"}, metadataEvaluationFeaturesKey))
 }
 
 func TestSplitFeaturesDeliveredByProvider(t *testing.T) {
@@ -224,7 +228,7 @@ func TestEvaluationAggregationIncludesFeatures(t *testing.T) {
 				}
 				d := evalDetails{flagKey: "flag", variant: "on", allocationKey: "allocation", targetingKey: "subject", observeFullEvaluationData: fullData}
 				for _, group := range []string{"status_quo", "status_quo", "all_shipped"} {
-					d.features = map[string]any{"holdout.assignment_group": group}
+					d.featuresKey = encodeFeatureValues(map[string]any{"holdout.assignment_group": group})
 					w.aggregator.add(d, map[string]any{"country": "FR"}, 100)
 				}
 				events := w.buildFlushEvents(200)
@@ -257,11 +261,13 @@ func BenchmarkSplitFeatureRouting(b *testing.B) {
 			for i := range features {
 				features[i] = splitFeature{fmt.Sprintf("feature%d", i), true, []string{"HOOK", "EXPOSURE", "EVALUATION"}}
 			}
+			s := &split{Features: features}
+			s.featureMetadata() // compile outside the timed loop
 			b.ReportAllocs()
 			for b.Loop() {
 				metadata := of.FlagMetadata{}
-				features.addMetadata(metadata)
-				_ = evaluationFeatureValues(metadata)
+				maps.Copy(metadata, s.featureMetadata())
+				_ = featureValuesKey(metadata, metadataEvaluationFeaturesKey)
 			}
 		})
 	}
@@ -274,13 +280,202 @@ func BenchmarkFeatureAggregation(b *testing.B) {
 			if degraded {
 				w.aggregator.globalCap = 0
 			}
-			d := evalDetails{flagKey: "flag", variant: "on", allocationKey: "allocation", targetingKey: "subject", features: make(map[string]any)}
+			d := evalDetails{flagKey: "flag", variant: "on", allocationKey: "allocation", targetingKey: "subject"}
+			features := make(map[string]any)
 			for i := range 64 {
-				d.features[fmt.Sprintf("feature%d", i)] = "all_shipped"
+				features[fmt.Sprintf("feature%d", i)] = "all_shipped"
 			}
+			d.featuresKey = encodeFeatureValues(features)
 			b.ReportAllocs()
 			for b.Loop() {
 				w.aggregator.add(d, nil, 100)
+			}
+		})
+	}
+}
+
+// Decode only in tests; production writers share these maps per flush window.
+func decodedFeatureValues(metadata of.FlagMetadata, key string) map[string]any {
+	var cache featureValuesCache
+	return cache.values(featureValuesKey(metadata, key))
+}
+
+func TestCompiledSplitFeaturesConcurrentIsolation(t *testing.T) {
+	s := &split{Features: splitFeatures{
+		{"holdout.key", "q3", []string{"HOOK"}},
+		{"shared", true, []string{"HOOK", "EXPOSURE", "EVALUATION"}},
+	}}
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Go(func() {
+			metadata := of.FlagMetadata{}
+			maps.Copy(metadata, s.featureMetadata())
+			for _, value := range metadata {
+				switch value.(type) {
+				case string, bool, float64:
+				default:
+					t.Errorf("non-scalar feature metadata: %T", value)
+				}
+			}
+			metadata[metadataHookFeaturePrefix+"holdout.key"] = "customer edit"
+			metadata[metadataEvaluationFeaturesKey] = "customer edit"
+		})
+	}
+	wg.Wait()
+	metadata := of.FlagMetadata{}
+	maps.Copy(metadata, s.featureMetadata())
+	assert.Equal(t, "q3", metadata[metadataHookFeaturePrefix+"holdout.key"])
+	assert.Equal(t, map[string]any{"shared": true}, decodedFeatureValues(metadata, metadataEvaluationFeaturesKey))
+}
+
+func TestSplitFeatureSnapshotsSurviveConfigurationChange(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	allocation := h.provider.configuration.Flags["experiment"].Allocations[0]
+	makeSplit := func(group string) *split {
+		return &split{VariationKey: "on", Features: splitFeatures{
+			{"group", group, []string{"HOOK", "EXPOSURE", "EVALUATION"}},
+		}}
+	}
+	allocation.Splits[0] = makeSplit("old")
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) {
+		rows = append(rows, e)
+		e.Features()["group"] = "customer edit"
+		e.Details.FlagMetadata[metadataExposureFeaturesKey] = "customer edit"
+		e.Details.FlagMetadata[metadataEvaluationFeaturesKey] = "customer edit"
+	}))
+	h.evaluate(t, "first-subject", nil)
+	// Replace the split before draining either writer. Old queued evaluations must
+	// retain the old feature snapshot, independently of the live configuration.
+	allocation.Splits[0] = makeSplit("new")
+	h.evaluate(t, "second-subject", nil)
+	h.provider.exposureWriter.flush()
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	require.Len(t, h.sink.exposures, 2)
+	assert.Equal(t, "old", h.sink.exposures[0].Features["group"])
+	assert.Equal(t, "new", h.sink.exposures[1].Features["group"])
+	require.Len(t, h.sink.events, 2)
+	groups := make(map[string]int64)
+	for _, event := range h.sink.events {
+		groups[event.Features["group"].(string)] += event.EvaluationCount
+	}
+	assert.Equal(t, map[string]int64{"old": 1, "new": 1}, groups)
+	assert.Equal(t, "old", rows[0].Features()["group"])
+	assert.Equal(t, "new", rows[1].Features()["group"])
+}
+
+func TestFeatureMapsSharedOnlyWithinFlushWindow(t *testing.T) {
+	for _, degraded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("degraded=%t", degraded), func(t *testing.T) {
+			w := newFlagEvalLoggingWriter(ProviderConfig{})
+			if degraded {
+				w.aggregator.globalCap = 0
+				w.aggregator.degradedCap = 2
+			} else {
+				w.aggregator.globalCap = 2
+				w.aggregator.degradedCap = 0
+			}
+			key := encodeFeatureValues(map[string]any{"shared": true})
+			for _, flag := range []string{"first", "second"} {
+				w.aggregator.add(evalDetails{flagKey: flag, featuresKey: key}, nil, 100)
+			}
+			// A dropped observation must not grow the per-window feature cache.
+			w.aggregator.add(evalDetails{flagKey: "overflow", featuresKey: `{"other":true}`}, nil, 100)
+			assert.Len(t, w.aggregator.featureValues, 1)
+			events := w.buildFlushEvents(200)
+			require.Len(t, events, 2)
+			assert.Equal(t, reflect.ValueOf(events[0].Features).Pointer(), reflect.ValueOf(events[1].Features).Pointer(), "buckets share the immutable map")
+			assert.Empty(t, w.aggregator.featureValues)
+			w.aggregator.add(evalDetails{flagKey: "next-window", featuresKey: key}, nil, 300)
+			next := w.buildFlushEvents(400)
+			require.Len(t, next, 1)
+			assert.NotEqual(t, reflect.ValueOf(events[0].Features).Pointer(), reflect.ValueOf(next[0].Features).Pointer())
+			assert.Equal(t, events[0].Features, next[0].Features)
+		})
+	}
+
+	h := newOptOutHarness(t, ProviderConfig{})
+	w := h.provider.exposureWriter
+	key := encodeFeatureValues(map[string]any{"shared": true})
+	for _, subject := range []string{"first", "second"} {
+		assert.True(t, w.append(exposureEvent{Subject: exposureSubject{ID: subject}, featuresKey: key}))
+	}
+	require.Len(t, w.buffer, 2)
+	assert.Equal(t, reflect.ValueOf(w.buffer[0].Features).Pointer(), reflect.ValueOf(w.buffer[1].Features).Pointer())
+	assert.Len(t, w.featureValues, 1)
+	assert.False(t, w.append(exposureEvent{Subject: exposureSubject{ID: "first"}, featuresKey: `{"other":true}`}))
+	assert.Len(t, w.featureValues, 1, "cache hits do not decode or retain more feature maps")
+	w.flush()
+	assert.Empty(t, w.featureValues)
+}
+
+func TestFeatureEncodingCanonicalAndScalar(t *testing.T) {
+	first := splitFeatures{{"a", true, []string{"EVALUATION"}}, {"b", "1", []string{"EVALUATION"}}}.compile()
+	second := splitFeatures{{"b", "1", []string{"EVALUATION"}}, {"a", true, []string{"EVALUATION"}}}.compile()
+	assert.Equal(t, first.metadata[metadataEvaluationFeaturesKey], second.metadata[metadataEvaluationFeaturesKey])
+	keys := make(map[string]bool)
+	for _, value := range []any{true, "true", float64(1), "1", "a\nb=c", `"a":true`} {
+		key := encodeFeatureValues(map[string]any{"key": value})
+		assert.False(t, keys[key], "different scalar types and delimiters cannot alias")
+		keys[key] = true
+	}
+	var cache featureValuesCache
+	assert.Nil(t, cache.values("invalid"))
+	assert.Equal(t, map[string]any{"scalar": true}, cache.values(`{"scalar":true,"object":{},"array":[],"null":null}`))
+}
+
+// BenchmarkClientSplitFeatures includes the real client, provider hooks and a
+// synchronous queue drain. Repeated subjects exercise exposure cache hits without
+// letting a full evaluation queue turn the benchmark into its overflow fast path.
+func BenchmarkClientSplitFeatures(b *testing.B) {
+	for _, tc := range []struct {
+		name     string
+		features bool
+		customer bool
+	}{
+		{name: "none"},
+		{name: "two", features: true},
+		{name: "two_with_customer", features: true, customer: true},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			p := newDatadogProvider(ProviderConfig{})
+			p.configuration = createTestConfig()
+			if tc.features {
+				p.configuration.Flags["bool-flag"].Allocations[0].Splits[0].Features = splitFeatures{
+					{"holdout.key", "q3", []string{"HOOK"}},
+					{"shared", true, []string{"HOOK", "EXPOSURE", "EVALUATION"}},
+				}
+			}
+			api := isolated.NewAPI()
+			require.NoError(b, api.SetProviderAndWait(context.Background(), p))
+			b.Cleanup(func() { _ = api.Shutdown(context.Background()) })
+			client := api.NewClient()
+			if tc.customer {
+				client.AddHooks(NewExposureHook(func(e ExposureEvaluation) {
+					if e.ShouldSend() {
+						_ = e.Features()
+					}
+				}))
+			}
+			ctx := context.Background()
+			ec := of.NewEvaluationContext("subject", map[string]any{"country": "US"})
+			evaluate := func() {
+				_, err := client.BooleanValue(ctx, "bool-flag", false, ec)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if w := p.flagEvalLoggingWriter; w != nil {
+					select {
+					case event := <-w.events:
+						w.aggregator.add(event.d, event.contextAttrs, event.evaluationTimeMs)
+					default:
+					}
+				}
+			}
+			evaluate()
+			b.ReportAllocs()
+			for b.Loop() {
+				evaluate()
 			}
 		})
 	}

@@ -214,14 +214,15 @@ func newEvaluationEntry(evaluationTimeMs int64) *evaluationEntry {
 
 // flagEvalLoggingAggregator holds the two-tier aggregation maps (full → degraded → drop).
 type flagEvalLoggingAggregator struct {
-	mu          sync.Mutex
-	full        map[evaluationAggregationKey]*evaluationEntry
-	degraded    map[evaluationDegradedKey]*evaluationEntry
-	perFlagFull map[string]int // flagKey → count of full-fidelity entries for this flag
-	globalCount int
-	globalCap   int
-	perFlagCap  int
-	degradedCap int
+	mu            sync.Mutex
+	full          map[evaluationAggregationKey]*evaluationEntry
+	degraded      map[evaluationDegradedKey]*evaluationEntry
+	perFlagFull   map[string]int // flagKey → count of full-fidelity entries for this flag
+	globalCount   int
+	globalCap     int
+	perFlagCap    int
+	degradedCap   int
+	featureValues featureValuesCache // shared immutable maps for this flush window
 	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
 	// exceeded degradedCap. It is the observable signal that legitimate counts are being
 	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
@@ -347,7 +348,7 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
-	features       map[string]any
+	featuresKey    string // canonical JSON prepared on the configuration split
 	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
 	// metadata. Read only from there — never from live configuration.
 	observeFullEvaluationData bool
@@ -534,6 +535,7 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	w.aggregator.full = make(map[evaluationAggregationKey]*evaluationEntry)
 	w.aggregator.degraded = make(map[evaluationDegradedKey]*evaluationEntry)
 	w.aggregator.perFlagFull = make(map[string]int)
+	w.aggregator.featureValues = nil
 	w.aggregator.globalCount = 0
 	w.aggregator.droppedDegradedOverflow = 0
 
@@ -1159,9 +1161,9 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	if !d.observeFullEvaluationData {
 		contextAttrs = nil
 	}
-	// These maps belong to the queued observation and are immutable here.
-	// Canonicalize before taking the lock, and reuse the feature key in both tiers.
-	featuresKey := canonicalContextKey(d.features)
+	// Reuse the split's immutable feature encoding in both tiers. Decode once per
+	// distinct feature set in this flush window, only if a new bucket is admitted.
+	featuresKey := d.featuresKey
 
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
@@ -1221,7 +1223,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		runtimeDefault:            d.runtimeDefault,
 		targetingKey:              d.targetingKey,
 		contextAttrs:              contextAttrs,
-		features:                  d.features,
+		features:                  a.featureValues.values(featuresKey),
 		errorMessage:              d.errorMessage,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
@@ -1265,7 +1267,7 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, featuresKey str
 	e := newEvaluationEntry(evaluationTimeMs)
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
-	e.features = d.features
+	e.features = a.featureValues.values(featuresKey)
 	a.degraded[degKey] = e
 }
 
@@ -1445,7 +1447,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,
-		features:                  evaluationFeatureValues(details.FlagMetadata),
+		featuresKey:               featureValuesKey(details.FlagMetadata, metadataEvaluationFeaturesKey),
 		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }

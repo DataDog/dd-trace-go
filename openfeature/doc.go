@@ -120,14 +120,18 @@
 //	        return
 //	    }
 //	    // Copy the fields into your own background queue. Do not block here.
+//	    allocation, _ := e.AllocationKey()
+//	    serialID, hasSerialID := e.SplitSerialID()
 //	    enqueueRow(e.Details.FlagKey, e.Context.TargetingKey(), e.Details.Variant,
-//	        e.Details.FlagMetadata["dd.allocation.key"],
-//	        e.Details.FlagMetadata["__dd_split_serial_id"], e.Features())
+//	        allocation, serialID, hasSerialID, e.Features())
 //	}))
 //
 // enqueueRow is application code, not a Datadog API. The callback runs on the
 // evaluation goroutine and must support concurrent calls. Callback panics do not
 // affect flag results or Datadog exposure logging.
+// Create the hook once and reuse it, including when passing it to of.WithHooks
+// on individual evaluations. Each hook warns on its first callback panic and
+// logs later panics at debug level with the flag key.
 // Treat Details.Value as read-only. JSON maps and slices can share provider state.
 // Copy these values before modification or background processing.
 //
@@ -136,7 +140,6 @@
 // The cache compares allocation, variant, and optional serial ID for each flag
 // and subject. Serial ID zero is distinct from an absent serial ID. All customer
 // hooks receive the same decision; one hook cannot consume another's exposure.
-// The decision is also available as __dd_exposure_cache_hit in flag metadata.
 // A cache hit does not confirm successful delivery. Customers own queueing,
 // retries, and shutdown. Use IsExposure with customer-owned deduplication when
 // independent delivery guarantees are required.
@@ -144,7 +147,9 @@
 // Features returns scalar metadata from the selected split's HOOK destination.
 // For example, a holdout can supply holdout.key and holdout.assignment_group.
 // EXPOSURE and EVALUATION destinations add features to the corresponding Datadog
-// events, not to Features(). Each destination receives only its configured fields.
+// events, not to Features(). Destination filtering applies to these events and
+// Features(); raw Details.FlagMetadata can contain internal fields for other
+// destinations. It is not a destination-isolation boundary.
 // Features are configuration metadata, not subject attributes. Evaluation events
 // retain them when subject-data collection is disabled. Different evaluation
 // feature values use separate aggregation buckets.
@@ -163,25 +168,32 @@
 //
 // Register the Datadog provider directly with OpenFeature. Exposure hooks run
 // in Finally, after all application After hooks. Callbacks
-// include errors, non-exposures and repeats. A failed evaluation never has a
-// sendable exposure and does not consume the cache. The next successful
-// evaluation can therefore emit an exposure.
+// include errors, non-exposures and repeats. Evaluations with reported errors
+// have no sendable exposure and do not consume the cache.
+// OpenFeature v1.18.0 propagates application After-hook panics but still runs
+// Finally without invoking Error hooks; those evaluations can still consume
+// the cache and send an exposure. After hooks should return errors to reject a
+// result, allowing the next successful evaluation to emit an exposure.
 //
 // MultiProvider is not supported for exposure delivery. Its child hooks finish
 // before outer application hooks can reject the result. Under MultiProvider,
 // Datadog exposure delivery, customer exposure callbacks, and exposure cache
 // updates are disabled with a warning. Flag evaluation remains unchanged.
+// Upgrade behavior change: earlier versions attempted Datadog exposure delivery
+// under MultiProvider. Register the Datadog provider directly to retain delivery.
 // Custom provider wrappers are also outside this exposure-hook contract.
 //
-// OpenFeature Go v1.18.0 can omit error details when a Before hook fails or the
-// provider is not ready. Such callbacks have no sendable exposure. Its evaluation
-// details API can also retain stale error fields after an After-hook failure.
+// OpenFeature Go v1.18.0 can provide zero-value Finally details when a Before hook
+// fails or the provider is not ready, even though evaluation returns an error.
+// Such callbacks have no sendable exposure. Its evaluation details API can also
+// retain success-looking reason, variant, and empty error fields after an After
+// hook returns an error, even though the caller receives the default and an error.
 // In that case, returned flag metadata can contain __dd_exposure_after_error.
 // This temporary internal marker is not a supported application API. Customer
 // callbacks receive the rejection message in Details.ErrorMessage instead.
 //
 // Calling provider resolution methods directly does not run hooks. Register
-// customer hooks on the client or evaluation, and retain the provider's hooks.
+// customer hooks on the API, client, or evaluation, and retain the provider's hooks.
 //
 // # Flag Configuration
 //

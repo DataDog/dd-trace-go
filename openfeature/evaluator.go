@@ -9,6 +9,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,7 +41,7 @@ const (
 	metadataDoLogKey         = "__dd_do_log"
 	metadataSplitSerialIDKey = "__dd_split_serial_id"
 	// metadataExposureAfterErrorKey carries an After failure to the Finally bridge.
-	// Remove with the bridge after open-feature/go-sdk#623.
+	// TODO(open-feature/go-sdk#623): Remove when go.mod requires the fixed SDK release.
 	metadataExposureAfterErrorKey = "__dd_exposure_after_error"
 	// metadataExposureCacheHitKey carries the shared cache decision to customer hooks.
 	metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
@@ -104,9 +105,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Three keys set here plus two stamped by DatadogProvider.evaluate.
-			// Split features add keys for each destination and an evaluation-feature gate.
-			metadata := make(map[string]any, 5)
+			// Reserve the split's HOOK keys and scalar event-feature snapshots, plus
+			// allocation/serial/doLog, two provider stamps and the exposure decision.
+			features := split.featureMetadata()
+			metadata := make(map[string]any, 6+len(features))
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
@@ -119,7 +121,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			if split.SerialID != nil {
 				metadata[metadataSplitSerialIDKey] = *split.SerialID
 			}
-			split.Features.addMetadata(metadata)
+			maps.Copy(metadata, features)
 
 			// Determine reason:
 			//   rules matched                         → TARGETING_MATCH

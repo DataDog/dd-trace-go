@@ -7,17 +7,22 @@ package openfeature
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/isolated"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
 
 func TestCustomerExposureHooksShareDecision(t *testing.T) {
@@ -406,4 +411,197 @@ func TestExposureDestinationsShareEligibility(t *testing.T) {
 			assert.Empty(t, h.provider.exposureWriter.buffer)
 		})
 	}
+}
+
+func TestCustomerExposureHookCancellation(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		name := "after_resolution"
+		if before {
+			name = "before_resolution"
+		}
+		t.Run(name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			var rows []ExposureEvaluation
+			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if before {
+				cancel()
+			}
+			hook := optOutTestHook{after: func(context.Context, of.HookContext) error { cancel(); return nil }}
+			value, err := h.client.BooleanValue(ctx, "experiment", false, of.NewEvaluationContext("subject", nil), of.WithHooks(hook))
+			assert.Equal(t, before, err != nil)
+			assert.Equal(t, !before, value)
+			require.Len(t, rows, 1)
+			assert.Equal(t, !before, rows[0].ShouldSend())
+			assert.Equal(t, !before, rows[0].IsExposure())
+			h.provider.exposureWriter.flush()
+			if before {
+				assert.Empty(t, h.sink.exposures)
+			} else {
+				assert.Len(t, h.sink.exposures, 1)
+			}
+			h.evaluate(t, "subject", nil)
+			require.Len(t, rows, 2)
+			assert.Equal(t, before, rows[1].ShouldSend(), "only a resolved value consumes the cache")
+			assert.Equal(t, !before, rows[1].IsCacheHit())
+		})
+	}
+}
+
+func TestCustomerExposureHookRegistrationLevels(t *testing.T) {
+	for _, customerLevel := range []string{"api", "client", "invocation"} {
+		for _, rejectionLevel := range []string{"none", "api", "client", "invocation"} {
+			t.Run(customerLevel+"/reject_"+rejectionLevel, func(t *testing.T) {
+				sink := &optOutSink{}
+				evp := newEVPClient()
+				evp.httpClient = &http.Client{Transport: sink}
+				p := newDatadogProviderWithSourceAndEVP(ProviderConfig{}, internalffe.SourceAgentless, evp)
+				var flags universalFlagsConfiguration
+				require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","environment":{"name":"test"},
+                    "flags":{"experiment":{"key":"experiment","enabled":true,"variationType":"BOOLEAN",
+                    "variations":{"on":{"key":"on","value":true}},
+                    "allocations":[{"key":"allocation","doLog":true,"splits":[{"variationKey":"on","shards":[]}]}]}}}`), &flags))
+				p.configuration = &flags
+				api := isolated.NewAPI()
+				t.Cleanup(func() { require.NoError(t, api.Shutdown(context.Background())) })
+				require.NoError(t, api.SetProviderAndWait(context.Background(), p))
+				client := api.NewClient()
+				var invocation []of.Hook
+				register := func(level string, hook of.Hook) {
+					switch level {
+					case "api":
+						api.AddHooks(hook)
+					case "client":
+						client.AddHooks(hook)
+					case "invocation":
+						invocation = append(invocation, hook)
+					}
+				}
+				var first, second []ExposureEvaluation
+				register(customerLevel, NewExposureHook(func(e ExposureEvaluation) { first = append(first, e) }))
+				register(customerLevel, NewExposureHook(func(e ExposureEvaluation) { second = append(second, e) }))
+				reject := rejectionLevel != "none"
+				register(rejectionLevel, optOutTestHook{after: func(context.Context, of.HookContext) error {
+					if reject {
+						return errors.New("application rejected the flag result")
+					}
+					return nil
+				}})
+				evaluate := func() (bool, error) {
+					return client.BooleanValue(context.Background(), "experiment", false, of.NewEvaluationContext("subject", nil), of.WithHooks(invocation...))
+				}
+				value, err := evaluate()
+				assert.Equal(t, reject, err != nil)
+				assert.Equal(t, !reject, value)
+				p.exposureWriter.flush()
+				if reject {
+					assert.Empty(t, sink.exposures)
+				}
+				reject = false
+				for range 2 {
+					value, err = evaluate()
+					require.NoError(t, err)
+					assert.True(t, value)
+				}
+				for _, rows := range [][]ExposureEvaluation{first, second} {
+					require.Len(t, rows, 3)
+					assert.Equal(t, rejectionLevel == "none", rows[0].IsExposure())
+					assert.Equal(t, rejectionLevel == "none", rows[0].ShouldSend())
+					assert.False(t, rows[0].IsCacheHit())
+					assert.Equal(t, rejectionLevel != "none", rows[1].ShouldSend())
+					assert.Equal(t, rejectionLevel == "none", rows[1].IsCacheHit())
+					assert.False(t, rows[2].ShouldSend())
+					assert.True(t, rows[2].IsCacheHit())
+				}
+				p.exposureWriter.flush()
+				assert.Len(t, sink.exposures, 1)
+			})
+		}
+	}
+}
+
+func TestExposureEvaluationAccessors(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		metadata   of.FlagMetadata
+		allocation string
+		hasKey     bool
+		serialID   uint32
+		hasSerial  bool
+	}{
+		{name: "absent"},
+		{name: "malformed", metadata: of.FlagMetadata{metadataAllocationKey: true, metadataSplitSerialIDKey: "42"}},
+		{name: "zero", metadata: of.FlagMetadata{metadataAllocationKey: "allocation", metadataSplitSerialIDKey: uint32(0)}, allocation: "allocation", hasKey: true, hasSerial: true},
+		{name: "nonzero", metadata: of.FlagMetadata{metadataAllocationKey: "allocation", metadataSplitSerialIDKey: uint32(42)}, allocation: "allocation", hasKey: true, serialID: 42, hasSerial: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := ExposureEvaluation{Details: of.InterfaceEvaluationDetails{EvaluationDetails: of.EvaluationDetails{
+				ResolutionDetail: of.ResolutionDetail{FlagMetadata: tt.metadata},
+			}}}
+			key, present := e.AllocationKey()
+			assert.Equal(t, tt.allocation, key)
+			assert.Equal(t, tt.hasKey, present)
+			serialID, present := e.SplitSerialID()
+			assert.Equal(t, tt.serialID, serialID)
+			assert.Equal(t, tt.hasSerial, present)
+		})
+	}
+}
+
+func TestCustomerExposureHookPanicLogging(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	logger := withLogLevel(t, log.LevelDebug)
+	first := NewExposureHook(func(ExposureEvaluation) { panic("private callback value") })
+	second := NewExposureHook(func(ExposureEvaluation) { panic("private callback value") })
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() {
+			value, err := h.client.BooleanValue(context.Background(), "experiment", false, of.NewEvaluationContext("subject", nil), of.WithHooks(first, second))
+			assert.NoError(t, err)
+			assert.True(t, value)
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, 2, logger.countContaining("later panics are logged at debug level"), "each independent hook warns once")
+	assert.Equal(t, 40, logger.countContaining(`customer exposure callback panicked for flag "experiment"`))
+	assert.Zero(t, logger.countContaining("private callback value"))
+}
+
+func TestCustomerExposureHookAfterPanicLimitation(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+	hook := optOutTestHook{after: func(context.Context, of.HookContext) error { panic("application panic") }}
+	// OpenFeature v1.18.0 propagates the panic but runs deferred Finally hooks
+	// without invoking Error. An application that recovers sees the consumed cache.
+	require.PanicsWithValue(t, "application panic", func() {
+		_, _ = h.client.BooleanValue(context.Background(), "experiment", false, of.NewEvaluationContext("subject", nil), of.WithHooks(hook))
+	})
+	h.evaluate(t, "subject", nil)
+	require.Len(t, rows, 2)
+	assert.True(t, rows[0].ShouldSend())
+	assert.True(t, rows[1].IsCacheHit())
+}
+
+func TestDisabledExposureDeliveryDoesNotStartWorker(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", "false")
+	logger := withLogLevel(t, log.LevelInfo)
+	h := newOptOutHarness(t, ProviderConfig{})
+	w := h.provider.exposureWriter
+	w.start()
+	assert.Nil(t, w.ticker)
+	logger.assertContains(t, "Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+	h.evaluate(t, "subject", nil)
+	h.evaluate(t, "subject", nil)
+	require.Len(t, rows, 2)
+	assert.True(t, rows[0].ShouldSend())
+	assert.True(t, rows[1].IsCacheHit())
+	h.assertCounts(t, 2, 0, 2)
+	w.stop()
+	w.stop()
 }

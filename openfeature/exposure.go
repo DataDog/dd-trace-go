@@ -44,13 +44,14 @@ const (
 // exposureEvent represents a single feature flag evaluation exposure event.
 // It matches the schema defined in exposure.json.
 type exposureEvent struct {
-	Timestamp  int64              `json:"timestamp"`
-	Allocation exposureAllocation `json:"allocation"`
-	Flag       exposureFlag       `json:"flag"`
-	Variant    exposureVariant    `json:"variant"`
-	Subject    exposureSubject    `json:"subject"`
-	SerialID   *uint32            `json:"serial_id,omitempty"`
-	Features   map[string]any     `json:"features,omitempty"`
+	Timestamp   int64              `json:"timestamp"`
+	Allocation  exposureAllocation `json:"allocation"`
+	Flag        exposureFlag       `json:"flag"`
+	Variant     exposureVariant    `json:"variant"`
+	Subject     exposureSubject    `json:"subject"`
+	SerialID    *uint32            `json:"serial_id,omitempty"`
+	Features    map[string]any     `json:"features,omitempty"`
+	featuresKey string             // immutable scalar snapshot, decoded only for buffered events
 }
 
 // exposureAllocation represents allocation information in an exposure event
@@ -176,6 +177,7 @@ type exposureWriter struct {
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       bool
+	featureValues featureValuesCache
 	// Keep the cache active when only the customer records exposures.
 	datadogLoggingEnabled bool
 }
@@ -205,6 +207,9 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 
 // start begins the periodic flushing of exposure events
 func (w *exposureWriter) start() {
+	if !w.datadogLoggingEnabled {
+		return
+	}
 	w.ticker = time.NewTicker(w.flushInterval)
 	go func() {
 		defer func() {
@@ -261,6 +266,9 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 	}
 
 	if w.datadogLoggingEnabled {
+		if event.featuresKey != "" {
+			event.Features = w.featureValues.values(event.featuresKey)
+		}
 		w.buffer = append(w.buffer, event)
 	}
 	return true, true
@@ -277,6 +285,7 @@ func (w *exposureWriter) flush() {
 	// Move buffer to local variable and create new buffer
 	events := w.buffer
 	w.buffer = make([]exposureEvent, 0, len(events)/2)
+	w.featureValues = nil
 	w.mu.Unlock()
 
 	// Send to agent

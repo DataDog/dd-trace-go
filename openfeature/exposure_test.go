@@ -756,7 +756,7 @@ func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	}
 }
 
-func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
+func TestExposureHook_Finally_ResolvedBeforeCancellation(t *testing.T) {
 	writer := &exposureWriter{
 		datadogLoggingEnabled: true,
 		buffer:                make([]exposureEvent, 0, 256),
@@ -787,6 +787,7 @@ func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
 				Variant: "enabled",
 				FlagMetadata: of.FlagMetadata{
 					metadataAllocationKey: "test-allocation",
+					metadataDoLogKey:      true,
 				},
 			},
 		},
@@ -794,8 +795,8 @@ func TestExposureHook_Finally_ContextCancelled(t *testing.T) {
 
 	hook.Finally(ctx, hookCtx, details, of.HookHints{})
 
-	// No event should be logged
-	if len(writer.buffer) != 0 {
-		t.Errorf("expected no events when context cancelled, got %d", len(writer.buffer))
+	// Successful resolution remains an exposure after cancellation.
+	if len(writer.buffer) != 1 {
+		t.Errorf("expected one event for the resolved result, got %d", len(writer.buffer))
 	}
 }

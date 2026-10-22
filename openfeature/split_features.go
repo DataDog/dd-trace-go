@@ -16,16 +16,12 @@ import (
 )
 
 const (
-	// These SDK metadata prefixes match Java's DDEvaluator. Event writers strip
-	// the prefix; the original feature key appears in the event's features map.
-	// metadataHookFeaturePrefix routes HOOK features to customer callbacks.
+	// metadataHookFeaturePrefix matches Java's DDEvaluator. Features strips it.
 	metadataHookFeaturePrefix = "__dd_feature."
-	// metadataExposureFeaturePrefix routes EXPOSURE features to Datadog exposures.
-	metadataExposureFeaturePrefix = "__dd_exposure_feature."
-	// metadataEvaluationFeaturePrefix routes EVALUATION features to evaluation events.
-	metadataEvaluationFeaturePrefix = "__dd_evaluation_feature."
-	// metadataHasEvaluationFeaturesKey avoids scanning metadata without EVALUATION features.
-	metadataHasEvaluationFeaturesKey = "__dd_has_evaluation_features"
+	// Event features cross the OpenFeature boundary as canonical JSON strings.
+	// FlagMetadata permits scalars only, so it cannot hold private maps or pointers.
+	metadataExposureFeaturesKey   = "__dd_exposure_features"
+	metadataEvaluationFeaturesKey = "__dd_evaluation_features"
 )
 
 // splitFeature is configuration metadata, not a targeting attribute.
@@ -97,28 +93,101 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (f splitFeatures) addMetadata(metadata of.FlagMetadata) {
-	if len(f) == 0 {
-		return
+// compiledSplitFeatures owns immutable, preboxed metadata. Configuration splits
+// are immutable after publication; concurrent first uses may compile equal copies.
+type compiledSplitFeatures struct {
+	metadata of.FlagMetadata
+}
+
+func (s *split) featureMetadata() of.FlagMetadata {
+	if len(s.Features) == 0 {
+		return nil
 	}
-	for _, feature := range f {
-		for _, destination := range feature.Destinations {
-			var prefix string
-			switch destination {
-			case "HOOK":
-				prefix = metadataHookFeaturePrefix
-			case "EXPOSURE":
-				prefix = metadataExposureFeaturePrefix
-			case "EVALUATION":
-				prefix = metadataEvaluationFeaturePrefix
-				metadata[metadataHasEvaluationFeaturesKey] = true
-			default:
-				warnUnknownFeatureDestination(destination)
-				continue
-			}
-			metadata[prefix+feature.Key] = feature.Value
+	c := s.compiledFeatures.Load()
+	if c == nil {
+		c = s.Features.compile()
+		if !s.compiledFeatures.CompareAndSwap(nil, c) {
+			c = s.compiledFeatures.Load()
 		}
 	}
+	return c.metadata
+}
+
+func (f splitFeatures) compile() *compiledSplitFeatures {
+	c := &compiledSplitFeatures{metadata: make(of.FlagMetadata)}
+	exposure := make(map[string]any)
+	evaluation := make(map[string]any)
+	for _, feature := range f {
+		for _, destination := range feature.Destinations {
+			switch destination {
+			case "HOOK":
+				c.metadata[metadataHookFeaturePrefix+feature.Key] = feature.Value
+			case "EXPOSURE":
+				exposure[feature.Key] = feature.Value
+			case "EVALUATION":
+				evaluation[feature.Key] = feature.Value
+			default:
+				warnUnknownFeatureDestination(destination)
+			}
+		}
+	}
+	if key := encodeFeatureValues(exposure); key != "" {
+		c.metadata[metadataExposureFeaturesKey] = key
+	}
+	if key := encodeFeatureValues(evaluation); key != "" {
+		c.metadata[metadataEvaluationFeaturesKey] = key
+	}
+	return c
+}
+
+// JSON sorts map keys and preserves the scalar types accepted by the parser.
+// The complete encoding is both the snapshot and its collision-free aggregation
+// key. Queued evaluations never have to look up a later configuration snapshot.
+func encodeFeatureValues(values map[string]any) string {
+	if len(values) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func featureValuesKey(metadata of.FlagMetadata, key string) string {
+	encoded, _ := metadata[key].(string)
+	return encoded
+}
+
+// featureValuesCache shares read-only maps across events in one flush window.
+// Writers call values only when admitting a new event/bucket, under their lock,
+// and discard the cache on flush. Its size is bounded by the retained events.
+type featureValuesCache map[string]map[string]any
+
+func (c *featureValuesCache) values(encoded string) map[string]any {
+	if encoded == "" {
+		return nil
+	}
+	if values, ok := (*c)[encoded]; ok {
+		return values
+	}
+	var values map[string]any
+	if err := json.Unmarshal([]byte(encoded), &values); err != nil {
+		return nil
+	}
+	// Application hooks can edit metadata. Keep event features scalar even then.
+	for key, value := range values {
+		switch value.(type) {
+		case string, bool, float64:
+		default:
+			delete(values, key)
+		}
+	}
+	if *c == nil {
+		*c = make(featureValuesCache)
+	}
+	(*c)[encoded] = values
+	return values
 }
 
 type warnedFeatureDestinations struct {
@@ -138,13 +207,6 @@ func warnUnknownFeatureDestination(destination string) {
 	unknownFeatureDestinations.names[destination] = struct{}{}
 	unknownFeatureDestinations.mu.Unlock()
 	log.Warn("openfeature: ignoring unknown feature destination %q", destination) //errtrack:ignore configuration compatibility
-}
-
-func evaluationFeatureValues(metadata of.FlagMetadata) map[string]any {
-	if present, _ := metadata[metadataHasEvaluationFeaturesKey].(bool); !present {
-		return nil
-	}
-	return splitFeatureValues(metadata, metadataEvaluationFeaturePrefix)
 }
 
 // splitFeatureValues returns an independent map containing only scalar values.
