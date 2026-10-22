@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -141,8 +142,21 @@ type allocation struct {
 	EndAt *time.Time `json:"endAt,omitempty"`
 	// Splits define how to distribute traffic among variants
 	Splits []*split `json:"splits"`
-	// DoLog indicates whether to log events for this allocation (defaults to true)
+	// DoLog is required in JSON and controls exposure logging for this allocation.
 	DoLog *bool `json:"doLog,omitempty"`
+}
+
+func (a *allocation) UnmarshalJSON(data []byte) error {
+	type wireAllocation allocation
+	var parsed wireAllocation
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	if parsed.DoLog == nil {
+		return errors.New("allocation.doLog is required and must be a boolean")
+	}
+	*a = allocation(parsed)
+	return nil
 }
 
 // rule represents a targeting rule containing conditions.

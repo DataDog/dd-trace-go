@@ -524,6 +524,7 @@ func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
 				"variations": {"on": {"key": "on", "value": true}},
 				"allocations": [{
 					"key": "targeted",
+					"doLog": true,
 					"rules": [{"conditions": [{
 						"attribute": "version",
 						"operator": "SEMVER_EQ",
@@ -602,6 +603,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 					"variations": {"on": {"key": "on", "value": true}},
 					"allocations": [{
 						"key": "static",
+						"doLog": true,
 						"rules": [],
 						"splits": [{"shards": [], "variationKey": "on"}]
 					}]
@@ -613,6 +615,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 					"variations": {"on": {"key": "on", "value": true}},
 					"allocations": [{
 						"key": "invalid",
+						"doLog": true,
 						"rules": [],
 						"splits": [{
 							"shards": [{"totalShards": 8192, "ranges": [null]}],

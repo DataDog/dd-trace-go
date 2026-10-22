@@ -1642,7 +1642,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	})
 
 	// no-log-flag has DoLog=false: evaluating it must never buffer an event.
-	// logged-flag has the default DoLog (true) and is the positive control:
+	// logged-flag has DoLog=true and is the positive control:
 	// without it, a regression that stopped buffering for every flag would
 	// pass this test for the wrong reason.
 	config := &universalFlagsConfiguration{
@@ -1682,6 +1682,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 				Allocations: []*allocation{
 					{
 						Key:   "logged-allocation",
+						DoLog: new(true),
 						Rules: []*rule{},
 						Splits: []*split{
 							{
@@ -1727,7 +1728,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 		t.Errorf("expected no buffered events for doLog=false, got %d", len(buf))
 	}
 
-	// Positive control: the default-DoLog flag must still buffer and flush,
+	// Positive control: the DoLog=true flag must still buffer and flush,
 	// establishing that the transport and hook path work at all.
 	evalCtx := of.NewEvaluationContext("control-user", map[string]any{})
 	_, err = client.BooleanValue(ctx, "logged-flag", false, evalCtx)
