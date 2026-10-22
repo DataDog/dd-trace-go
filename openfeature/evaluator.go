@@ -63,7 +63,7 @@ const (
 // checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
 // second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time, exclusion experimentationExclusion) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -77,6 +77,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 
 	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
+		// Exclude before targeting or sharding, without changing eligible subjects' buckets.
+		if exclusion.active() && exclusion.excludes(allocation) {
+			continue
+		}
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
 			return evaluationResult{
@@ -165,10 +169,18 @@ func evaluateConfiguredFlag(
 	defaultValue any,
 	context map[string]any,
 	now time.Time,
+	exclusion experimentationExclusion,
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
 	if exists {
-		return evaluateFlag(flag, defaultValue, context, now)
+		if exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
+			}
+		}
+		return evaluateFlag(flag, defaultValue, context, now, exclusion)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
 		return evaluationResult{

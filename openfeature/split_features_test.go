@@ -95,9 +95,9 @@ func TestSplitFeatureLimits(t *testing.T) {
 	// Metadata rejection must not change the selected variant or doLog.
 	h := newOptOutHarness(t, ProviderConfig{})
 	allocation := h.provider.configuration.Flags["experiment"].Allocations[0]
-	before := evaluateFlag(h.provider.configuration.Flags["experiment"], false, map[string]any{}, time.Now())
+	before := evaluateFlag(h.provider.configuration.Flags["experiment"], false, map[string]any{}, time.Now(), experimentationExclusion{})
 	allocation.Splits[0].Features = parsed
-	after := evaluateFlag(h.provider.configuration.Flags["experiment"], false, map[string]any{}, time.Now())
+	after := evaluateFlag(h.provider.configuration.Flags["experiment"], false, map[string]any{}, time.Now(), experimentationExclusion{})
 	assert.Equal(t, before.Value, after.Value)
 	assert.Equal(t, before.VariantKey, after.VariantKey)
 	assert.Equal(t, before.Metadata[metadataDoLogKey], after.Metadata[metadataDoLogKey])
