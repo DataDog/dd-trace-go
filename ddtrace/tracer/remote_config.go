@@ -281,12 +281,12 @@ func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
 	if cfg.Get() {
 		log.Info("Dynamic Instrumentation starting through Remote Config update")
 		if err := t.startDynamicInstrumentationRCSubscriptions(); err != nil {
-			reportDynamicInstrumentationStartError(err)
+			telemetrylog.LogAndReportError("failed to start Dynamic Instrumentation subscriptions", err)
 		}
 	} else {
 		log.Info("Dynamic Instrumentation stopping through Remote Config update")
 		if err := t.stopDynamicInstrumentationRCSubscriptions(); err != nil {
-			reportDynamicInstrumentationStopError(err)
+			telemetrylog.LogAndReportError("failed to stop Dynamic Instrumentation subscriptions", err)
 		}
 	}
 }
@@ -356,14 +356,6 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	}
 
 	return nil
-}
-
-func reportDynamicInstrumentationStartError(err error) {
-	telemetrylog.LogAndReportError("failed to start Dynamic Instrumentation subscriptions", err)
-}
-
-func reportDynamicInstrumentationStopError(err error) {
-	telemetrylog.LogAndReportError("failed to stop Dynamic Instrumentation subscriptions", err)
 }
 
 func reportOpenFeatureSubscriptionError(err error) {

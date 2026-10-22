@@ -58,20 +58,41 @@ func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(
 }
 
 func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+	t.Cleanup(remoteconfig.Reset)
+
 	localLogs := useLocalLogCapture(t)
 	client, capture := telemetrytest.NewCapturingClient(t)
 	defer client.Close()
 	defer telemetry.MockClient(client)()
 
-	reportDynamicInstrumentationStartError(errors.New("start failed"))
-	reportDynamicInstrumentationStopError(errors.New("stop failed"))
+	tr, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+	require.NoError(t, err)
+	defer stop()
+
+	// The remote config client is not started, so the Dynamic Instrumentation
+	// enable path fails when its subscriptions are attempted.
+	enabled := true
+	tr.handleDynamicInstrumentationEnabledRC(&enabled)
+
+	// A stale token makes the disable path fail when it unsubscribes. The
+	// enable path left both real tokens at zero because the subscriptions
+	// never started.
+	tr.dynInstSubscriptions.mu.Lock()
+	tr.dynInstSubscriptions.ldSubscriptionToken = 1
+	tr.dynInstSubscriptions.mu.Unlock()
+	disabled := false
+	tr.handleDynamicInstrumentationEnabledRC(&disabled)
+
 	reportOpenFeatureSubscriptionError(errors.New("subscribe failed"))
+
 	client.Flush()
 	log.Flush()
 
-	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "failed to start Dynamic Instrumentation subscriptions: start failed")
-	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "failed to stop Dynamic Instrumentation subscriptions: stop failed")
-	assert.Contains(t, strings.Join(localLogs.Logs(), "\n"), "openfeature: failed to subscribe to Remote Config: subscribe failed")
+	localLogMessages := strings.Join(localLogs.Logs(), "\n")
+	assert.Contains(t, localLogMessages, "failed to start Dynamic Instrumentation subscriptions: remote config client not started")
+	assert.Contains(t, localLogMessages, "failed to stop Dynamic Instrumentation subscriptions: remote config client not started")
+	assert.Contains(t, localLogMessages, "openfeature: failed to subscribe to Remote Config: subscribe failed")
 
 	logs := capture.LogMessages()
 	require.Len(t, logs, 3)
@@ -92,17 +113,23 @@ func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
 		}
 	}
 
-	for message, callSite := range map[string]string{
-		"failed to start Dynamic Instrumentation subscriptions": "reportDynamicInstrumentationStartError",
-		"failed to stop Dynamic Instrumentation subscriptions":  "reportDynamicInstrumentationStopError",
-		"openfeature: failed to subscribe to Remote Config":     "reportOpenFeatureSubscriptionError",
+	// The error type per message: the enable path joins the two subscription
+	// errors, the disable path wraps the single unsubscribe error, and the
+	// OpenFeature site receives a plain error.
+	for message, expected := range map[string]struct {
+		callSite string
+		errType  string
+	}{
+		"failed to start Dynamic Instrumentation subscriptions": {"handleDynamicInstrumentationEnabledRC", "errors.joinError"},
+		"failed to stop Dynamic Instrumentation subscriptions":  {"handleDynamicInstrumentationEnabledRC", "errors.errorString"},
+		"openfeature: failed to subscribe to Remote Config":     {"reportOpenFeatureSubscriptionError", "errors.errorString"},
 	} {
 		entry, ok := messages[message]
 		require.True(t, ok, "missing telemetry report for %q", message)
 		assert.Equal(t, "ERROR", entry.level)
 		assert.Equal(t, uint32(1), entry.count)
-		assert.Contains(t, entry.message, "error.error_type=errors.errorString")
+		assert.Contains(t, entry.message, "error.error_type="+expected.errType)
 		assert.Contains(t, entry.stackTrace, "remote_config.go")
-		assert.Contains(t, entry.stackTrace, callSite)
+		assert.Contains(t, entry.stackTrace, expected.callSite)
 	}
 }
