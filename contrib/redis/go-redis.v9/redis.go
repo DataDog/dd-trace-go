@@ -150,10 +150,13 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
 		raw := cmd.String()
+		// Preserve the formatted command's casing and first-word resource, but
+		// allow argument-free generic commands whose String contains no space.
+		resource, _, _ := strings.Cut(raw, " ")
 		length := strings.Count(raw, " ")
 		p := ddh.params
 		tags := map[string]any{
-			ext.ResourceName:    cmd.Name(),
+			ext.ResourceName:    resource,
 			"redis.args_length": strconv.Itoa(length),
 		}
 		if !p.config.skipRaw {
