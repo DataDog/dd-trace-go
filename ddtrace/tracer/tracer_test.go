@@ -2777,25 +2777,52 @@ func BenchmarkStartSpan(b *testing.B) {
 // using the plain Tag/ServiceName/ResourceName option API, and it crosses
 // Go's small-map (8-bucket) growth threshold, making it a baseline for
 // evaluating future changes to how spanStart/Tag size the per-span tag map.
+//
+// The child cases pin the overcount trade-off of spanStart's len(options)
+// hint: StartSpanFromContext appends ChildOf and withContext after the
+// caller's options, so 7 and 8 Tag options reach spanStart as 9 and 10.
+// The hint presizes the tag map past the real entry count, and since 7 and
+// 8 entries fit an unsized map's initial group, these cases pay the
+// presized allocation without a rehash to avoid. They show the cost of
+// that accepted trade-off next to the 9-tag win.
 func BenchmarkStartSpanManyTags(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
-	assert.Nil(b, err)
-	defer stop()
-
-	b.ResetTimer()
-	for b.Loop() {
-		tracer.StartSpan("valkey.command",
-			Tag("component", "valkey-io/valkey-go"),
-			Tag("span.kind", "client"),
-			Tag("db.system", "valkey"),
-			Tag("out.host", "127.0.0.1"),
-			Tag("out.port", "6379"),
-			Tag("out.db", "0"),
-			Tag("resource.name", "GET"),
-			Tag("db.user", "default"),
-			Tag("valkey.raw_command", "GET foo"),
-		)
+	tags := []StartSpanOption{
+		Tag("component", "valkey-io/valkey-go"),
+		Tag("span.kind", "client"),
+		Tag("db.system", "valkey"),
+		Tag("out.host", "127.0.0.1"),
+		Tag("out.port", "6379"),
+		Tag("out.db", "0"),
+		Tag("resource.name", "GET"),
+		Tag("db.user", "default"),
+		Tag("valkey.raw_command", "GET foo"),
 	}
+
+	b.Run("9-tags", func(b *testing.B) {
+		tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+		assert.Nil(b, err)
+		defer stop()
+
+		b.ResetTimer()
+		for b.Loop() {
+			tracer.StartSpan("valkey.command", tags...)
+		}
+	})
+
+	child := func(b *testing.B, n int) {
+		tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+		assert.Nil(b, err)
+		defer stop()
+		parent := tracer.StartSpan("valkey.client")
+		ctx := ContextWithSpan(context.Background(), parent)
+
+		b.ResetTimer()
+		for b.Loop() {
+			StartSpanFromContext(ctx, "valkey.command", tags[:n]...)
+		}
+	}
+	b.Run("7-tags-child", func(b *testing.B) { child(b, 7) })
+	b.Run("8-tags-child", func(b *testing.B) { child(b, 8) })
 }
 
 func BenchmarkStartSpanConcurrent(b *testing.B) {
