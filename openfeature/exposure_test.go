@@ -200,6 +200,27 @@ func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	}
 }
 
+// TestExposureWriter_FlushReportsEventsStrandedByStop pins that flush reports
+// events left in a stopped writer's buffer as undelivered, not as nothing
+// pending, so shutdown does not drop them silently.
+func TestExposureWriter_FlushReportsEventsStrandedByStop(t *testing.T) {
+	writer := &exposureWriter{
+		buffer:   make([]exposureEvent, 0, 256),
+		cache:    newExposureLRUCache(defaultExposureCacheCapacity),
+		stopChan: make(chan struct{}),
+	}
+	if n, err := writer.flush(); n != 0 || err != nil {
+		t.Fatalf("flush of an empty writer = (%d, %v), want (0, nil)", n, err)
+	}
+
+	writer.append(exposureEvent{Flag: exposureFlag{Key: "test-flag"}, Subject: exposureSubject{ID: "user-123"}})
+	writer.stop()
+
+	if n, err := writer.flush(); n != 1 || err == nil {
+		t.Fatalf("flush of a stopped writer with a buffered event = (%d, %v), want (1, error)", n, err)
+	}
+}
+
 func TestExposureEvent_SerialIDWireShape(t *testing.T) {
 	api := jsoniter.Config{}.Froze()
 

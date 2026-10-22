@@ -58,7 +58,10 @@ type agentlessSource struct {
 	apiKey string
 	// env is the effective DD_ENV, logged so a customer can spot an
 	// environment mismatch between the SDK and their flag configuration.
-	env            string
+	env string
+	// managed reports whether endpoint is the Datadog-hosted one, the only
+	// one that receives env as dd_env.
+	managed        bool
 	pollInterval   time.Duration
 	requestTimeout time.Duration
 	httpClient     *http.Client
@@ -91,6 +94,7 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 		endpoint:       endpoint.url,
 		apiKey:         apiKey,
 		env:            settings.Env,
+		managed:        endpoint.managed,
 		pollInterval:   settings.PollInterval,
 		requestTimeout: settings.RequestTimeout,
 		// We build our own transport rather than use http.DefaultTransport so
@@ -323,6 +327,8 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 
 	config, err := parseUFCEnvelope(body)
 	if err != nil {
+		// Unlike the warning below, this fires on every malformed response.
+		logOnboarding("agentless configuration poll attempt %d/%d returned malformed configuration: %s; keeping the last known configuration", attempt, maxPollAttempts, err.Error())
 		if s.warnOnce("config-parse") {
 			reportMalformedAgentlessConfiguration(err)
 		}
@@ -333,11 +339,28 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	s.apply(config)
 	s.setETag(etag)
 	if log.DebugEnabled() {
-		logOnboarding("agentless configuration applied successfully (%d flag(s), %d rejected, env=%s, created_at=%s, etag=%s)",
+		logOnboarding("agentless configuration applied successfully (%d flag(s), %d rejected, sdk_env=%s, requested_env=%s, config_env=%s, created_at=%s, etag=%s)",
 			len(config.Flags), len(config.invalidFlags),
-			cmp.Or(s.env, "unset"), formatCreatedAt(config.CreatedAt), cmp.Or(etag, "none"))
+			cmp.Or(s.env, "unset"), s.requestedEnv(), cmp.Or(config.Environment.Name, "unset"),
+			formatCreatedAt(config.CreatedAt), cmp.Or(etag, "none"))
+		logRejectedFlags("agentless configuration", config)
 	}
 	return pollOutcomeSuccess, 0
+}
+
+// requestedEnv describes the dd_env query parameter the poller sends. The
+// poller never adds it to a custom endpoint, but the URL may carry its own, so
+// what such an endpoint receives is unknown and the configuration it serves
+// need not match DD_ENV.
+func (s *agentlessSource) requestedEnv() string {
+	switch {
+	case !s.managed:
+		return "custom endpoint (not set by SDK)"
+	case s.env == "":
+		return "none"
+	default:
+		return s.env
+	}
 }
 
 func (s *agentlessSource) currentETag() string {

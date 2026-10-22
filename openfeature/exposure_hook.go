@@ -48,14 +48,14 @@ func (h *exposureHook) After(
 
 	// Check if we should log this exposure
 	if !h.shouldLog(flagEvaluationDetails.FlagMetadata) {
-		log.Debug("openfeature: skipping exposure event (doLog=false) for flag %q", hookContext.FlagKey())
+		logOnboarding("skipping exposure event (doLog=false) for flag %q", hookContext.FlagKey())
 		return nil
 	}
 
 	// Get allocation key from metadata
 	allocationKey, ok := h.getAllocationKey(flagEvaluationDetails.FlagMetadata)
 	if !ok {
-		log.Debug("openfeature: skipping exposure event (no allocation key) for flag %q", hookContext.FlagKey())
+		logOnboarding("skipping exposure event (no allocation key) for flag %q", hookContext.FlagKey())
 		return nil
 	}
 
@@ -97,10 +97,22 @@ func (h *exposureHook) After(
 	}
 
 	// Send to writer for buffering and eventual flushing
-	h.writer.append(event)
-
-	log.Debug("openfeature: recorded exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
-		hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
+	result := h.writer.append(event)
+	// Checked first: duplicates are the common case, and boxing the
+	// arguments would allocate on every evaluation while debug logging is off.
+	if !log.DebugEnabled() {
+		return nil
+	}
+	switch result {
+	case exposureQueued:
+		logOnboarding("queued exposure event for flag %q (allocation=%q, variant=%q, subject=%q)",
+			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
+	case exposureDuplicate:
+		logOnboarding("skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag %q (subject=%q)",
+			hookContext.FlagKey(), targetingKey)
+	case exposureWriterStopped:
+		logOnboarding("skipping exposure event (exposure writer stopped) for flag %q", hookContext.FlagKey())
+	}
 
 	return nil
 }

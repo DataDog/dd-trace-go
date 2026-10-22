@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // flattenRecursive recursively flattens nested attributes into a single-level map
@@ -89,7 +87,7 @@ func flattenRecursive(prefix string, value any, result map[string]any) {
 	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
 		result[prefix] = value
 	default:
-		log.Debug("openfeature: skipping unsupported attribute type for key %q: %T", prefix, value)
+		logOnboarding("skipping unsupported attribute type for key %q: %T", prefix, value)
 	}
 }
 
