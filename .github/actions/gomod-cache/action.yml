@@ -100,7 +100,8 @@ runs:
         # (delta is re-verified against go.sum as it downloads).
         source=none
         for ref in "$IMAGE:$tag" "$IMAGE:gomod-latest"; do
-          for attempt in 1 2; do
+          rm -rf "$dl"; mkdir -p "$dl"
+          for ((i=1; i<=5; i++)); do
             if oras pull --no-tty "$ref" -o "$dl" >/dev/null 2>"$dl.err"; then
               [ "$ref" = "$IMAGE:$tag" ] && source=exact || source=latest
               break 2
@@ -120,9 +121,15 @@ runs:
         # GNU tar keeps existing files with --skip-old-files; bsdtar uses -k.
         if tar --version 2>/dev/null | grep -q GNU; then keep=--skip-old-files; else keep=-k; fi
 
+        # On fail, warn and fall back to proxy.golang.org.
         dest="$(posix "$(go env GOMODCACHE)")/cache/download"
         mkdir -p "$dest"
-        tar "$keep" -xf "$dl/gomod.tar" -C "$dest"
+        if ! tar "$keep" -xf "$dl/gomod.tar" -C "$dest"; then
+          echo "::warning title=gomod-cache::seed extract failed; using proxy.golang.org"
+          rm -rf "$dl" "$dl.err"
+          echo "source=none" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         rm -rf "$dl" "$dl.err"
 
         secs=$(( $(date +%s) - start ))

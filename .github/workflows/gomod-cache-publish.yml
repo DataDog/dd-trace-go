@@ -95,13 +95,13 @@ jobs:
             echo "::endgroup::"
           done
 
-          # 2) Workspace view, plus a completeness proof: vendoring must
-          #    succeed with the network disabled.
+          # 2) Workspace view, plus a partial completeness proof: vendoring the
+          #    workspace must succeed with the network disabled.
           if [ -f go.work ]; then
             echo "::group::workspace go mod download"
             go mod download
             echo "::endgroup::"
-            echo "::group::GOPROXY=off go work vendor (offline completeness check)"
+            echo "::group::GOPROXY=off go work vendor (workspace offline check)"
             GOPROXY=off go work vendor -o "$RUNNER_TEMP/vendor-check"
             rm -rf "$RUNNER_TEMP/vendor-check"
             echo "::endgroup::"

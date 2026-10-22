@@ -2,7 +2,8 @@ name: gomod-cache-retention
 
 # Prunes old seed versions from GHCR. Keeps the newest N versions plus whatever
 # is tagged gomod-latest. Uses the REST API so the protection of gomod-latest
-# is explicit. Defaults to a dry run.
+# is explicit. The scheduled run prunes for real. Only a manual run defaults to
+# a dry run. Toggle the dry-run input to delete on a manual run.
 
 on:
   schedule:
