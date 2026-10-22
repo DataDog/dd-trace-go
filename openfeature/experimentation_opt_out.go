@@ -30,6 +30,11 @@ const (
 	// It applies on each evaluation, including to experiments already in progress.
 	// The timestamp records the customer's preference; it does not schedule exclusion.
 	ExperimentationOptOutImmediate
+	// ExperimentationOptOutFutureExperimentsOnly skips exposure-logging allocations
+	// activated at or after dd_experimentation_opt_out_at. Allocations without
+	// activation metadata are also skipped. Older allocations evaluate normally.
+	// This is an activation cutoff, not a record of the subject's prior enrollment.
+	ExperimentationOptOutFutureExperimentsOnly
 )
 
 const experimentationOptOutAtAttribute = "dd_experimentation_opt_out_at"
@@ -43,6 +48,8 @@ func (mode ExperimentationOptOutMode) String() string {
 		return "disabled"
 	case ExperimentationOptOutImmediate:
 		return "immediate"
+	case ExperimentationOptOutFutureExperimentsOnly:
+		return "future_experiments_only"
 	default:
 		return "ExperimentationOptOutMode(" + strconv.Itoa(int(mode)) + ")"
 	}
@@ -50,7 +57,7 @@ func (mode ExperimentationOptOutMode) String() string {
 
 func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, error) {
 	switch mode {
-	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate:
+	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate, ExperimentationOptOutFutureExperimentsOnly:
 		return mode, nil
 	case ExperimentationOptOutDefault:
 		switch strings.ToLower(strings.TrimSpace(internalconfig.Get().FeatureFlagsExperimentationOptOutMode())) {
@@ -58,30 +65,61 @@ func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, erro
 			return ExperimentationOptOutDisabled, nil
 		case "immediate":
 			return ExperimentationOptOutImmediate, nil
+		case "future_experiments_only":
+			return ExperimentationOptOutFutureExperimentsOnly, nil
 		default:
-			return mode, errortrace.New("openfeature: DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE must be disabled or immediate")
+			return mode, errortrace.New("openfeature: DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE must be disabled, immediate, or future_experiments_only")
 		}
 	default:
 		return mode, errortrace.Errorf("openfeature: unsupported experimentation opt-out mode: %s", mode)
 	}
 }
 
-func (mode ExperimentationOptOutMode) excludeExperiments(attributes map[string]any) (bool, error) {
-	if mode != ExperimentationOptOutImmediate {
-		return false, nil
+type experimentationExclusion struct {
+	mode   ExperimentationOptOutMode
+	cutoff time.Time
+}
+
+func (mode ExperimentationOptOutMode) exclusion(attributes map[string]any) (experimentationExclusion, error) {
+	if mode != ExperimentationOptOutImmediate && mode != ExperimentationOptOutFutureExperimentsOnly {
+		return experimentationExclusion{}, nil
 	}
 	value, present := attributes[experimentationOptOutAtAttribute]
 	if !present {
-		return false, nil
+		return experimentationExclusion{}, nil
 	}
 	stamp, ok := value.(string)
 	if ok {
-		if _, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
-			return true, nil
+		if cutoff, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+			return experimentationExclusion{mode: mode, cutoff: cutoff}, nil
 		}
 	}
 	// Reject invalid context before allocation selection; do not infer consent from it.
-	return false, errInvalidExperimentationOptOutAt
+	return experimentationExclusion{}, errInvalidExperimentationOptOutAt
+}
+
+// active reports whether a valid subject timestamp enabled an exclusion mode.
+func (exclusion experimentationExclusion) active() bool {
+	return exclusion.mode != ExperimentationOptOutDefault
+}
+
+func (exclusion experimentationExclusion) excludes(a *allocation) bool {
+	if exclusion.mode != ExperimentationOptOutImmediate && exclusion.mode != ExperimentationOptOutFutureExperimentsOnly {
+		return false
+	}
+	// A nil doLog logs exposures, matching evaluateFlag's metadata default.
+	if a.DoLog != nil && !*a.DoLog {
+		return false
+	}
+	switch exclusion.mode {
+	case ExperimentationOptOutImmediate:
+		return true
+	case ExperimentationOptOutFutureExperimentsOnly:
+		// Unknown activation must not qualify an allocation as older.
+		return a.RandomizationActivatedAt == nil || !a.RandomizationActivatedAt.Before(exclusion.cutoff)
+	default:
+		return false
+	}
 }
 
 // Build the diagnostic once, without the customer-supplied value.
