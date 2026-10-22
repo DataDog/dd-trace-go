@@ -793,6 +793,10 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 		}
 		out[key] = string(v)
 	case fmt.Stringer:
+		// A typed nil pointer may have a value-receiver String method that panics.
+		if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer && rv.IsNil() {
+			return
+		}
 		s := v.String()
 		if len(s) > maxFieldLength {
 			mask.add(bitMaxValueLength)

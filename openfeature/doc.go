@@ -83,6 +83,112 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry Opt-Out
+//
+// Applications can enable a per-evaluation telemetry opt-out parameter:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EnableEvaluationTelemetryOptOutParameter: new(true),
+//	})
+//	// Handle err and register provider with OpenFeature before evaluating flags.
+//	evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+//	    "dd_evaluation_telemetry_opt_out": true,
+//	})
+//	value, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
+//
+// Alternatively, set DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED=true
+// before SDK initialization and leave EnableEvaluationTelemetryOptOutParameter nil.
+// An explicit new(true) or new(false) option overrides the environment setting.
+// Activation defaults to false. The provider copies the resolved value at construction.
+// When enabled, only boolean true in the final merged context suppresses new
+// evaluation events, evaluation metrics, and automatic flag span enrichment.
+// Missing values, false, null, strings, and numbers preserve existing behavior.
+// The provider reads the parameter on every evaluation. It does not remember a
+// subject's decision. Supply the parameter before each evaluation, either in its
+// evaluation context or in the transaction context passed to that evaluation.
+// Do not change a global or shared client context for individual server requests.
+// The attribute remains available to targeting rules and exposure reporting.
+// Flag values, experiment exposures, exposure deduplication, application hooks,
+// and previously queued telemetry are unchanged.
+//
+// # Experimentation Opt-Out
+//
+// Set DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE=immediate before SDK initialization.
+// This enables immediate exclusion separately from evaluation telemetry opt-out:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
+//	// Handle err and register the provider before evaluating flags.
+//	attributes := map[string]any{}
+//	// OptOutAt is a customer-owned *time.Time. Nil means not opted out.
+//	if user.OptOutAt != nil {
+//	    attributes["dd_experimentation_opt_out_at"] = user.OptOutAt.UTC().Format(time.RFC3339Nano)
+//	}
+//	value, err := client.BooleanValue(ctx, "new-feature", false,
+//	    of.NewEvaluationContext(user.ID, attributes))
+//
+// The zero value, ExperimentationOptOutDefault, uses the environment setting.
+// An unset or empty setting defaults to disabled, which ignores the parameter.
+// Any explicit non-default mode overrides the environment setting.
+// The provider resolves the mode at construction.
+// Without an explicit override, an unsupported environment value returns an error
+// from NewDatadogProvider. Unsupported enum values also return an error.
+// Both enabled modes accept an RFC3339 timestamp string, including fractional seconds.
+// Timestamp parsing follows the same rules as allocation startAt and endAt values.
+// In immediate mode, any valid timestamp excludes immediately, regardless of its date.
+// Omit the attribute to permit experimentation. Null, empty, or malformed values
+// return the application default with INVALID_CONTEXT, including for ordinary flags.
+// With a ready provider and valid targeting key, the SDK validates the attribute
+// before flag lookup, so invalid input takes precedence over FLAG_NOT_FOUND.
+// It does not infer a preference from invalid input or continue to an ordinary fallback.
+// Check the evaluation error to detect integration mistakes immediately. Supply a
+// valid timestamp to opt out, or omit the attribute to permit experimentation.
+// Supply the attribute on each evaluation. The SDK does not persist preference history.
+//
+// Immediate mode skips allocations whose doLog value is true or omitted, before
+// targeting and randomization. This includes experiments enrolling 100% of subjects
+// and exposure-logging holdouts. It continues through ordinary doLog=false allocations
+// in order. If none match, it returns the application's default, not a forced control variant.
+// Eligible subjects retain their existing hash buckets; exclusion does not rebalance them.
+//
+// Winner rollouts with doLog=true are also skipped. Ordinary delivery requires a
+// matching doLog=false allocation in the configuration received by the SDK.
+// Immediate withdrawal can change an enrolled subject's experience without notifying
+// experiment analysis. Customers must account for that change in their analysis.
+// No withdrawal event is emitted. Evaluation telemetry remains enabled unless separately
+// suppressed with the evaluation telemetry opt-out parameter.
+//
+// To continue older experiments, set the environment value to "future_experiments_only"
+// or configure ExperimentationOptOutFutureExperimentsOnly. Use the same subject attribute.
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    ExperimentationOptOutMode: ddopenfeature.ExperimentationOptOutFutureExperimentsOnly,
+//	})
+//
+// This mode skips exposure-logging allocations activated at or after the supplied
+// cutoff. Allocations without randomizationActivatedAt are also skipped. Older
+// allocations continue normal evaluation and exposure logging. Ordinary feature
+// allocations remain eligible. A malformed randomizationActivatedAt returns the
+// application's default with PARSE_ERROR for the affected flag only in future mode
+// with a valid opt-out timestamp, including when the malformed allocation is unreachable.
+// Disabled mode, immediate mode, and subjects without the attribute ignore invalid
+// activation metadata. Missing or null activation remains distinct and skips the
+// experiment in future mode. Other valid flags remain available. Malformed startAt
+// or endAt still rejects the affected flag in every mode. The comparison uses instants,
+// including timezone offsets and fractional seconds, not configuration refresh time
+// or allocation schedules.
+//
+// The cutoff is not an enrollment record: an older experiment can still assign a
+// subject for the first time. Configuration edits do not freeze targeting or values.
+// Holdouts use the same activation cutoff. Supply the time the subject opted out.
+// A later cutoff keeps experiments activated before that later time eligible,
+// including experiments started after the subject opted out. Targeting and schedules
+// still apply. Remove the attribute to opt back in.
+//
+// This mode requires activation metadata from the configuration producer. Legacy
+// allocations without it are skipped for opted-out subjects, not treated as older.
+// Until the producer supplies it, this mode behaves like immediate for
+// exposure-logging allocations.
+//
 // # Flag Configuration
 //
 // Feature flags are configured through Datadog Remote Config and include:
@@ -271,6 +377,17 @@
 //     "true", enables span enrichment — feature flag evaluation details are
 //     recorded as tags on the active trace's root span. Default: false. Note:
 //     the added span tags may affect APM billing.
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
+//     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
+//     parameter. This setting does not globally disable evaluation telemetry.
+//     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
+//
+//   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
+//     "immediate" or "future_experiments_only" to enable the
+//     dd_experimentation_opt_out_at context parameter.
+//     Explicit ProviderConfig.ExperimentationOptOutMode values other than Default
+//     override this setting. Unsupported values return a provider-construction error.
 //
 //   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS: Timeout in
 //     milliseconds to wait for the first configuration before returning. Used by

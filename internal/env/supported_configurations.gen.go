@@ -90,6 +90,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS":   {},
 	"DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS": {},
 	"DD_FEATURE_FLAGS_ENABLED":                                                {},
+	"DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED":       {},
+	"DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE":                           {},
 	"DD_FLAGGING_EVALUATION_COUNTS_ENABLED":                                   {},
 	"DD_GIT_BRANCH":                                                           {},
 	"DD_GIT_COMMIT_AUTHOR_DATE":                                               {},
