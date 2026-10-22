@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -267,6 +268,9 @@ func newDatadogProviderWithSourceAndEVP(
 ) *DatadogProvider {
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
+	if !writer.datadogLoggingEnabled {
+		log.Info("openfeature: Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+	}
 
 	// Create exposure hook
 	exposureLoggingHook := newExposureHook(writer)
@@ -776,10 +780,21 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the provider's hooks, built once during Init.
-// Returns p.hooks directly to avoid per-evaluation allocations.
+// Hooks returns hooks for one evaluation.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	return p.hooks
+	// TODO(open-feature/go-sdk#623): Return the shared hooks when go.mod requires
+	// the fixed release and the After/Error bridge can be removed.
+	// Direct OpenFeature clients call Hooks once per evaluation. Composed providers
+	// are guarded in the hook because they can retain this instance. See go-sdk#623.
+	// The slice copy and bridge add two allocations with the default four hooks.
+	// BenchmarkExposureHooks measures this cost until the bridge can be removed.
+	hooks := slices.Clone(p.hooks)
+	for i, hook := range hooks {
+		if exposure, ok := hook.(*exposureHook); ok {
+			hooks[i] = &exposureHook{writer: exposure.writer, warnUnsupported: exposure.warnUnsupported}
+		}
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
