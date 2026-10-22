@@ -111,6 +111,90 @@
 // Flag values, experiment exposures, exposure deduplication, application hooks,
 // and previously queued telemetry are unchanged.
 //
+// # Customer Exposure Hooks
+//
+// Register a customer callback with the OpenFeature client:
+//
+//	client.AddHooks(ddopenfeature.NewExposureHook(func(e ddopenfeature.ExposureEvaluation) {
+//	    if !e.ShouldSend() {
+//	        return
+//	    }
+//	    // Copy the fields into your own background queue. Do not block here.
+//	    allocation, _ := e.AllocationKey()
+//	    serialID, hasSerialID := e.SplitSerialID()
+//	    enqueueRow(e.Details.FlagKey, e.Context.TargetingKey(), e.Details.Variant,
+//	        allocation, serialID, hasSerialID, e.Features())
+//	}))
+//
+// enqueueRow is application code, not a Datadog API. The callback runs on the
+// evaluation goroutine and must support concurrent calls. Callback panics do not
+// affect flag results or Datadog exposure logging.
+// Create the hook once and reuse it, including when passing it to of.WithHooks
+// on individual evaluations. Each hook warns on its first callback panic and
+// logs later panics at debug level with the flag key.
+// Treat Details.Value as read-only. JSON maps and slices can share provider state.
+// Copy these values before modification or background processing.
+//
+// IsExposure reports successful resolution of an allocation with doLog enabled.
+// IsCacheHit identifies repeats. ShouldSend selects new or changed exposures.
+// The cache compares allocation, variant, and optional serial ID for each flag
+// and subject. Serial ID zero is distinct from an absent serial ID. All customer
+// hooks receive the same decision; one hook cannot consume another's exposure.
+// A cache hit does not confirm successful delivery. Customers own queueing,
+// retries, and shutdown. Use IsExposure with customer-owned deduplication when
+// independent delivery guarantees are required.
+//
+// Features returns scalar metadata from the selected split's HOOK destination.
+// For example, a holdout can supply holdout.key and holdout.assignment_group.
+// EXPOSURE and EVALUATION destinations add features to the corresponding Datadog
+// events, not to Features(). Destination filtering applies to these events and
+// Features(); raw Details.FlagMetadata can contain internal fields for other
+// destinations. It is not a destination-isolation boundary.
+// Features are configuration metadata, not subject attributes. Evaluation events
+// retain them when subject-data collection is disabled. Different evaluation
+// feature values use separate aggregation buckets.
+// Go retains at most 256 unique features per split. Keys and string values must
+// fit within 256 UTF-8 bytes. Invalid entries are skipped, not truncated, with a
+// debug diagnostic. These metadata limits do not change the flag's value.
+//
+// Go retains its existing dd.allocation.key metadata name. Java uses allocationKey.
+// Both providers expose __dd_split_serial_id and __dd_feature.<key> metadata.
+//
+// Set DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false before SDK
+// initialization for customer-only exposure logging. The default is true.
+// The provider snapshots this setting at construction. The cache and customer
+// hooks remain active when it is false. Evaluation events, metrics, span
+// enrichment, and flag values are unchanged.
+//
+// Register the Datadog provider directly with OpenFeature. Exposure hooks run
+// in Finally, after all application After hooks. Callbacks
+// include errors, non-exposures and repeats. Evaluations with reported errors
+// have no sendable exposure and do not consume the cache.
+// OpenFeature v1.18.0 propagates application After-hook panics but still runs
+// Finally without invoking Error hooks; those evaluations can still consume
+// the cache and send an exposure. After hooks should return errors to reject a
+// result, allowing the next successful evaluation to emit an exposure.
+//
+// MultiProvider is not supported for exposure delivery. Its child hooks finish
+// before outer application hooks can reject the result. Under MultiProvider,
+// Datadog exposure delivery, customer exposure callbacks, and exposure cache
+// updates are disabled with a warning. Flag evaluation remains unchanged.
+// Upgrade behavior change: earlier versions attempted Datadog exposure delivery
+// under MultiProvider. Register the Datadog provider directly to retain delivery.
+// Custom provider wrappers are also outside this exposure-hook contract.
+//
+// OpenFeature Go v1.18.0 can provide zero-value Finally details when a Before hook
+// fails or the provider is not ready, even though evaluation returns an error.
+// Such callbacks have no sendable exposure. Its evaluation details API can also
+// retain success-looking reason, variant, and empty error fields after an After
+// hook returns an error, even though the caller receives the default and an error.
+// In that case, returned flag metadata can contain __dd_exposure_after_error.
+// This temporary internal marker is not a supported application API. Customer
+// callbacks receive the rejection message in Details.ErrorMessage instead.
+//
+// Calling provider resolution methods directly does not run hooks. Register
+// customer hooks on the API, client, or evaluation, and retain the provider's hooks.
+//
 // # Experimentation Opt-Out
 //
 // Set DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE=immediate before SDK initialization.
@@ -430,6 +514,11 @@
 //     parameter. This setting does not globally disable evaluation telemetry.
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
+//   - DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED: Default "true". Set to
+//     "false" to disable only Datadog exposure delivery. The provider snapshots
+//     this setting at construction. Customer hooks and exposure deduplication
+//     remain active. Evaluation telemetry and flag values are unchanged.
+//
 //   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
 //     "immediate" or "future_experiments_only" to enable the
 //     dd_experimentation_opt_out_at context parameter.
@@ -488,7 +577,7 @@
 // implements an LRU (Least Recently Used) cache for deduplication:
 //
 //   - Cache key: combination of flag key and subject ID
-//   - Cache value: allocation key and variant
+//   - Cache value: allocation key, variant, and optional split serial ID
 //   - Capacity: 65536 entries (2^16, ~6.5MB max memory)
 //
 // Deduplication behavior:
@@ -497,6 +586,8 @@
 //   - Different subjects evaluating the same flag: 1 exposure per subject
 //   - Same subject with variant change (A→B→A): 3 exposures (each change tracked)
 //   - Same subject with allocation change: new exposure generated
+//   - Same subject with split serial ID change: new exposure generated
+//   - Serial ID zero is distinct from an absent serial ID
 //
 // The cache uses LRU eviction when capacity is reached, ensuring recently active
 // flag/subject combinations remain cached while older entries are evicted.

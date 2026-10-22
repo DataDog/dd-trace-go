@@ -591,6 +591,13 @@
         "default": "disabled"
       }
     ],
+    "DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
       {
         "implementation": "A",

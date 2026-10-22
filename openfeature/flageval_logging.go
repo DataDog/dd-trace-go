@@ -144,6 +144,7 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
+	featuresKey    string
 	// observeFullEvaluationData keeps consent-on and consent-off traffic in separate buckets.
 	// When false, contextKey is always empty (enforced in add) — the key must only carry
 	// dimensions that survive serialization, or one context field would inflate cardinality
@@ -164,6 +165,7 @@ type evaluationDegradedKey struct {
 	allocationKey  string
 	runtimeDefault bool
 	errorMessage   string
+	featuresKey    string
 }
 
 // evaluationEntry holds per-window counts and time bounds for one aggregation bucket.
@@ -176,6 +178,7 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+	features     map[string]any
 	// observeFullEvaluationData drives serialization: raw targeting_key + context, or hashed
 	// key with no context. Duplicates the key field on purpose — add AND-folds it, so any
 	// drift from the key still forces the whole bucket to the privacy-protected path.
@@ -211,14 +214,15 @@ func newEvaluationEntry(evaluationTimeMs int64) *evaluationEntry {
 
 // flagEvalLoggingAggregator holds the two-tier aggregation maps (full → degraded → drop).
 type flagEvalLoggingAggregator struct {
-	mu          sync.Mutex
-	full        map[evaluationAggregationKey]*evaluationEntry
-	degraded    map[evaluationDegradedKey]*evaluationEntry
-	perFlagFull map[string]int // flagKey → count of full-fidelity entries for this flag
-	globalCount int
-	globalCap   int
-	perFlagCap  int
-	degradedCap int
+	mu            sync.Mutex
+	full          map[evaluationAggregationKey]*evaluationEntry
+	degraded      map[evaluationDegradedKey]*evaluationEntry
+	perFlagFull   map[string]int // flagKey → count of full-fidelity entries for this flag
+	globalCount   int
+	globalCap     int
+	perFlagCap    int
+	degradedCap   int
+	featureValues featureValuesCache // shared immutable maps for this flush window
 	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
 	// exceeded degradedCap. It is the observable signal that legitimate counts are being
 	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
@@ -244,6 +248,7 @@ type flagEvalLoggingEvent struct {
 	Allocation      *flagEvalAllocation   `json:"allocation,omitempty"`
 	Error           *flagEvalError        `json:"error,omitempty"`
 	Context         *flagEvalEventContext `json:"context,omitempty"`
+	Features        map[string]any        `json:"features,omitempty"`
 }
 
 // flagEvalFlag holds the flag key.
@@ -343,6 +348,7 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
+	featuresKey    string // canonical JSON prepared on the configuration split
 	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
 	// metadata. Read only from there — never from live configuration.
 	observeFullEvaluationData bool
@@ -529,6 +535,7 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	w.aggregator.full = make(map[evaluationAggregationKey]*evaluationEntry)
 	w.aggregator.degraded = make(map[evaluationDegradedKey]*evaluationEntry)
 	w.aggregator.perFlagFull = make(map[string]int)
+	w.aggregator.featureValues = nil
 	w.aggregator.globalCount = 0
 	w.aggregator.droppedDegradedOverflow = 0
 
@@ -599,6 +606,7 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 		FirstEvaluation: e.firstEvaluation,
 		LastEvaluation:  e.lastEvaluation,
 		EvaluationCount: e.count,
+		Features:        e.features,
 	}
 }
 
@@ -1152,14 +1160,14 @@ func envelopeFraming(envelope []byte) (opener, closer []byte) {
 // follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
 func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// Enforce the consent-off invariant for every caller: no context on the wire → no context
 	// in the key (see evaluationAggregationKey).
 	if !d.observeFullEvaluationData {
 		contextAttrs = nil
 	}
+	// Reuse the split's immutable feature encoding in both tiers. Decode once per
+	// distinct feature set in this flush window, only if a new bucket is admitted.
+	featuresKey := d.featuresKey
 
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
@@ -1171,8 +1179,11 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		errorMessage:              d.errorMessage,
 		targetingKey:              d.targetingKey,
 		contextKey:                canonicalContextKey(contextAttrs),
+		featuresKey:               featuresKey,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
@@ -1188,7 +1199,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	// Check per-flag cap.
 	if a.perFlagFull[d.flagKey] >= a.perFlagCap {
 		// perFlagCap exceeded — route to degraded tier.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1204,7 +1215,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		// cardinality at the target scale. The per-flag attempt counter was
 		// already incremented above; once it reaches perFlagCap this flag routes through
 		// addToDegraded directly as well.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1216,6 +1227,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		runtimeDefault:            d.runtimeDefault,
 		targetingKey:              d.targetingKey,
 		contextAttrs:              contextAttrs,
+		features:                  a.featureValues.values(featuresKey),
 		errorMessage:              d.errorMessage,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
@@ -1228,13 +1240,14 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 // sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
 // scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
-func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
+func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, featuresKey string, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:        d.flagKey,
 		variant:        d.variant,
 		allocationKey:  d.allocationKey,
 		runtimeDefault: d.runtimeDefault,
 		errorMessage:   d.errorMessage,
+		featuresKey:    featuresKey,
 	}
 
 	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the
@@ -1258,6 +1271,7 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 	e := newEvaluationEntry(evaluationTimeMs)
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
+	e.features = a.featureValues.values(featuresKey)
 	a.degraded[degKey] = e
 }
 
@@ -1437,6 +1451,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,
+		featuresKey:               featureValuesKey(details.FlagMetadata, metadataEvaluationFeaturesKey),
 		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }
