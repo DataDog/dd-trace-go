@@ -137,8 +137,9 @@
 // In immediate mode, any valid timestamp excludes immediately, regardless of its date.
 // Omit the attribute to permit experimentation. Null, empty, or malformed values
 // return the application default with INVALID_CONTEXT, including for ordinary flags.
-// The SDK validates the attribute before selecting any allocation. It does not infer
-// a preference from invalid input or continue to an ordinary fallback.
+// With a ready provider and valid targeting key, the SDK validates the attribute
+// before flag lookup, so invalid input takes precedence over FLAG_NOT_FOUND.
+// It does not infer a preference from invalid input or continue to an ordinary fallback.
 // Check the evaluation error to detect integration mistakes immediately. Supply a
 // valid timestamp to opt out, or omit the attribute to permit experimentation.
 // Supply the attribute on each evaluation. The SDK does not persist preference history.
@@ -185,6 +186,8 @@
 //
 // This mode requires activation metadata from the configuration producer. Legacy
 // allocations without it are skipped for opted-out subjects, not treated as older.
+// Until the producer supplies it, this mode behaves like immediate for
+// exposure-logging allocations.
 //
 // # Flag Configuration
 //

@@ -72,7 +72,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
 		// Exclude before targeting or sharding, without changing eligible subjects' buckets.
-		if exclusion.mode != ExperimentationOptOutDefault && exclusion.excludes(allocation) {
+		if exclusion.active() && exclusion.excludes(allocation) {
 			continue
 		}
 		split, matched, err := evaluateAllocation(allocation, context, now)

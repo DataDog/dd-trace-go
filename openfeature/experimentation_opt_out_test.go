@@ -64,6 +64,10 @@ func TestExperimentationOptOutInput(t *testing.T) {
 }
 
 func TestExperimentationOptOutInvalidMode(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	t.Setenv("DD_FEATURE_FLAGS_ENABLED", "true")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
 	for _, tc := range []struct {
 		name string
 		mode ExperimentationOptOutMode
@@ -92,6 +96,11 @@ func TestExperimentationOptOutTimestampMatchesAllocationStartAt(t *testing.T) {
 		"2026-10-19",
 		"2026-10-19T08:00:00",
 		"not-a-timestamp",
+		"2026-10-19t08:00:00z",
+		" 2026-10-19T08:00:00Z",
+		"2026-10-19T08:00:00Z\n",
+		"2026-10-19T24:00:00Z",
+		"2026-12-31T23:59:60Z",
 		"",
 	} {
 		t.Run(stamp, func(t *testing.T) {
@@ -183,7 +192,7 @@ func TestExperimentationOptOutConfiguration(t *testing.T) {
 				experimentationOptOutAtAttribute: experimentOptOutTestTime,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, tc.want != ExperimentationOptOutDisabled, exclude.mode != ExperimentationOptOutDefault)
+			assert.Equal(t, tc.want != ExperimentationOptOutDisabled, exclude.active())
 		})
 	}
 }
@@ -379,4 +388,54 @@ func TestExperimentationOptOutPreservesEligibleBuckets(t *testing.T) {
 	wg.Wait()
 	assert.Contains(t, variants, "on")
 	assert.Contains(t, variants, "off")
+}
+
+func TestExperimentationOptOutDisabledProviderWinsOverInvalidMode(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	for _, tc := range []struct{ name, enabled, source, legacy string }{
+		{"kill switch", "false", "remote_config", "true"},
+		{"offline", "true", "offline", "true"},
+		{"unrecognized source", "true", "unknown", "true"},
+		{"legacy disabled", "", "", "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for key, value := range map[string]string{"DD_FEATURE_FLAGS_ENABLED": tc.enabled, "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE": tc.source, "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": tc.legacy} {
+				t.Setenv(key, value)
+				if value == "" {
+					require.NoError(t, os.Unsetenv(key))
+				}
+			}
+			t.Setenv("DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE", "immediat")
+			for _, mode := range []ExperimentationOptOutMode{ExperimentationOptOutDefault, -1} {
+				p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: mode})
+				require.NoError(t, err)
+				assert.IsType(t, &of.NoopProvider{}, p)
+			}
+		})
+	}
+}
+
+func TestExperimentationOptOutModeString(t *testing.T) {
+	for _, tc := range []struct {
+		mode ExperimentationOptOutMode
+		want string
+	}{
+		{ExperimentationOptOutDefault, "default"}, {ExperimentationOptOutDisabled, "disabled"},
+		{ExperimentationOptOutImmediate, "immediate"}, {-1, "ExperimentationOptOutMode(-1)"}, {99, "ExperimentationOptOutMode(99)"},
+		{ExperimentationOptOutFutureExperimentsOnly, "future_experiments_only"},
+	} {
+		assert.Equal(t, tc.want, tc.mode.String())
+	}
+}
+
+func TestExperimentationOptOutInvalidErrorReused(t *testing.T) {
+	for _, mode := range []ExperimentationOptOutMode{ExperimentationOptOutImmediate, ExperimentationOptOutFutureExperimentsOnly} {
+		for _, value := range []any{"private-invalid-value", nil, 42} {
+			_, err := mode.exclusion(map[string]any{experimentationOptOutAtAttribute: value})
+			require.Same(t, errInvalidExperimentationOptOutAt, err)
+			require.ErrorIs(t, err, errInvalidContext)
+			require.NotContains(t, err.Error(), "private-invalid-value")
+		}
+	}
 }

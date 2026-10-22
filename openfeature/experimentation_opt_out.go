@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,22 @@ const (
 
 const experimentationOptOutAtAttribute = "dd_experimentation_opt_out_at"
 
+// String returns a readable name for mode.
+func (mode ExperimentationOptOutMode) String() string {
+	switch mode {
+	case ExperimentationOptOutDefault:
+		return "default"
+	case ExperimentationOptOutDisabled:
+		return "disabled"
+	case ExperimentationOptOutImmediate:
+		return "immediate"
+	case ExperimentationOptOutFutureExperimentsOnly:
+		return "future_experiments_only"
+	default:
+		return "ExperimentationOptOutMode(" + strconv.Itoa(int(mode)) + ")"
+	}
+}
+
 func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, error) {
 	switch mode {
 	case ExperimentationOptOutDisabled, ExperimentationOptOutImmediate, ExperimentationOptOutFutureExperimentsOnly:
@@ -54,7 +71,7 @@ func (mode ExperimentationOptOutMode) resolve() (ExperimentationOptOutMode, erro
 			return mode, errortrace.New("openfeature: DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE must be disabled, immediate, or future_experiments_only")
 		}
 	default:
-		return mode, errortrace.Errorf("openfeature: unsupported experimentation opt-out mode: %d", mode)
+		return mode, errortrace.Errorf("openfeature: unsupported experimentation opt-out mode: %s", mode)
 	}
 }
 
@@ -78,8 +95,12 @@ func (mode ExperimentationOptOutMode) exclusion(attributes map[string]any) (expe
 		}
 	}
 	// Reject invalid context before allocation selection; do not infer consent from it.
-	// Do not include the customer-supplied value in the diagnostic.
-	return experimentationExclusion{}, fmt.Errorf("%w: dd_experimentation_opt_out_at must be an RFC3339 timestamp string; supply a valid timestamp to opt out, or omit the attribute to permit experimentation", errInvalidContext)
+	return experimentationExclusion{}, errInvalidExperimentationOptOutAt
+}
+
+// active reports whether a valid subject timestamp enabled an exclusion mode.
+func (exclusion experimentationExclusion) active() bool {
+	return exclusion.mode != ExperimentationOptOutDefault
 }
 
 func (exclusion experimentationExclusion) excludes(a *allocation) bool {
@@ -100,3 +121,6 @@ func (exclusion experimentationExclusion) excludes(a *allocation) bool {
 		return false
 	}
 }
+
+// Build the diagnostic once, without the customer-supplied value.
+var errInvalidExperimentationOptOutAt = fmt.Errorf("%w: dd_experimentation_opt_out_at must be an RFC3339 timestamp string; supply a valid timestamp to opt out, or omit the attribute to permit experimentation", errInvalidContext)

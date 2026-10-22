@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,33 +86,56 @@ func TestExperimentationOptOutFutureTelemetryIndependence(t *testing.T) {
 
 func TestExperimentationOptOutFutureConfigurationRefresh(t *testing.T) {
 	h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly})
-	old := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	h.provider.configuration.Flags["experiment"].Allocations[0].RandomizationActivatedAt = &old
+	cutoff, err := time.Parse(time.RFC3339Nano, experimentOptOutTestTime)
+	require.NoError(t, err)
+	old := cutoff.AddDate(0, 0, -1)
 	attrs := map[string]any{experimentationOptOutAtAttribute: experimentOptOutTestTime}
-	h.evaluate(t, "subject", attrs)
-
-	// A later configuration date and an edited schedule do not create a new run.
+	// Build independent payloads; every change reaches the provider through Remote Config.
 	data, err := json.Marshal(h.provider.configuration)
 	require.NoError(t, err)
-	var refreshed universalFlagsConfiguration
-	require.NoError(t, json.Unmarshal(data, &refreshed))
-	refreshed.CreatedAt = old.AddDate(1, 0, 0)
-	refreshed.Flags["experiment"].Allocations[0].StartAt = new(old.AddDate(-1, 0, 0))
-	h.provider.mu.Lock()
-	h.provider.configuration = &refreshed
-	h.provider.mu.Unlock()
-	h.evaluate(t, "subject", attrs)
+	var config universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal(data, &config))
+	for _, step := range []struct {
+		name         string
+		activation   *time.Time
+		included     bool
+		editSchedule bool
+		exposures    int
+	}{
+		{"unknown", nil, false, false, 0},
+		{"older", &old, true, false, 1},
+		{"schedule and configuration date", &old, true, true, 1},
+		{"equal", &cutoff, false, false, 1},
+		{"nanosecond before", new(cutoff.Add(-time.Nanosecond)), true, false, 1},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			config.Flags["experiment"].Allocations[0].RandomizationActivatedAt = step.activation
+			if step.editSchedule {
+				// Neither a later configuration date nor an edited schedule creates a new run.
+				config.CreatedAt = old.AddDate(1, 0, 0)
+				config.Flags["experiment"].Allocations[0].StartAt = new(old.AddDate(-1, 0, 0))
+			}
+			payload, err := json.Marshal(&config)
+			require.NoError(t, err)
+			status := processConfigUpdate(h.provider, "datadog/2/FFE_FLAGS/config/config", payload)
+			require.Equal(t, state.ApplyStateAcknowledged, status.State, status.Error)
+			result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false,
+				of.NewEvaluationContext("subject", attrs))
+			require.NoError(t, err)
+			assert.Equal(t, step.included, result.Value)
+			if step.included {
+				assert.Equal(t, "allocation", result.FlagMetadata[metadataAllocationKey])
+				assert.Equal(t, "on", result.Variant)
+			} else {
+				assert.Equal(t, of.DefaultReason, result.Reason)
+			}
+			h.provider.exposureWriter.flush()
+			assert.Len(t, h.sink.exposures, step.exposures, "same allocation and variant deduplicate after refresh and re-inclusion")
+		})
+	}
 	h.evaluate(t, "new-subject", attrs)
-
-	// A new allocation has its own activation timestamp.
-	refreshed.Flags["experiment"].Allocations[0].Key = "new-allocation"
-	refreshed.Flags["experiment"].Allocations[0].RandomizationActivatedAt = new(old.AddDate(0, 1, 0))
-	result, err := h.client.BooleanValueDetails(context.Background(), "experiment", false, of.NewEvaluationContext("subject", attrs))
-	require.NoError(t, err)
-	assert.False(t, result.Value)
-	assert.Equal(t, of.DefaultReason, result.Reason)
 	h.provider.exposureWriter.flush()
-	assert.Len(t, h.sink.exposures, 2, "refresh did not create a new exposure for the existing subject")
+	assert.Len(t, h.sink.exposures, 2, "a new subject still emits an exposure")
 }
 
 func TestExperimentationOptOutFutureInput(t *testing.T) {

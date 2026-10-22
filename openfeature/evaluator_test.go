@@ -458,6 +458,18 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		"experimentationOptOutFutureExperimentsOnly": futureProvider,
 	}
 	capabilityCases := make(map[string]int)
+	// Minimums pin each semantic family independently; additional cases are welcome.
+	// A global capability count can hide a missing family behind another file.
+	requiredFamilies := map[string]map[string]int{
+		"test-case-experimentation-opt-out.json": {
+			"experimentationOptOutImmediate":             26,
+			"experimentationOptOutFutureExperimentsOnly": 26,
+		},
+		"test-case-experimentation-opt-out-future.json": {
+			"experimentationOptOutFutureExperimentsOnly": 16,
+		},
+	}
+	familyCases := make(map[string]map[string]int)
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -484,9 +496,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 			t.Fatalf("parse %s: %v", file, err)
 		}
 		// Count discovered cases, not selected subtests, so -run filters remain usable.
+		counts := make(map[string]int)
+		familyCases[filepath.Base(file)] = counts
 		for _, tc := range cases {
 			for capability := range tc.Capabilities {
 				capabilityCases[capability]++
+				counts[capability]++
 			}
 		}
 		t.Run(filepath.Base(file), func(t *testing.T) {
@@ -542,6 +557,13 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				})
 			}
 		})
+	}
+	for family, minimums := range requiredFamilies {
+		for capability, minimum := range minimums {
+			if count := familyCases[family][capability]; count < minimum {
+				t.Errorf("canonical fixture family %q has %d cases for capability %q; require at least %d", family, count, capability, minimum)
+			}
+		}
 	}
 	for capability := range capabilityProviders {
 		if capabilityCases[capability] == 0 {
