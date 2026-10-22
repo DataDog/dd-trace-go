@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,61 @@ func TestSkipRaw(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
+}
+
+// Stop before network I/O so this covers resource extraction independently of
+// Redis availability, including applications which have not started a tracer.
+type stopProcessHook struct {
+	err error
+}
+
+func (h stopProcessHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h stopProcessHook) ProcessHook(redis.ProcessHook) redis.ProcessHook {
+	return func(context.Context, redis.Cmder) error { return h.err }
+}
+func (h stopProcessHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+func TestGenericArgumentFreeCommands(t *testing.T) {
+	for _, tracing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tracing=%t", tracing), func(t *testing.T) {
+			var mt mocktracer.Tracer
+			if tracing {
+				mt = mocktracer.Start()
+				defer mt.Stop()
+			}
+			for _, cluster := range []bool{false, true} {
+				for _, skipRaw := range []bool{false, true} {
+					for _, command := range []string{"PING", "TIME", "FLUSHALL"} {
+						t.Run(fmt.Sprintf("cluster=%t/skipRaw=%t/%s", cluster, skipRaw, command), func(t *testing.T) {
+							var client redis.UniversalClient
+							if cluster {
+								client = redis.NewClusterClient(&redis.ClusterOptions{Addrs: []string{"127.0.0.1:0"}})
+							} else {
+								client = redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})
+							}
+							t.Cleanup(func() { require.NoError(t, client.Close()) })
+							WrapClient(client, WithSkipRawCommand(skipRaw))
+							stopped := errors.New("stopped before network I/O")
+							client.AddHook(stopProcessHook{err: stopped})
+							require.NotPanics(t, func() {
+								require.ErrorIs(t, client.Do(context.Background(), command).Err(), stopped)
+							})
+							if tracing {
+								spans := mt.FinishedSpans()
+								require.Len(t, spans, 1)
+								assert.Equal(t, strings.ToLower(command), spans[0].Tag(ext.ResourceName))
+								_, rawPresent := spans[0].Tags()["redis.raw_command"]
+								assert.Equal(t, !skipRaw, rawPresent)
+								mt.Reset()
+							}
+						})
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestClientEvalSha(t *testing.T) {

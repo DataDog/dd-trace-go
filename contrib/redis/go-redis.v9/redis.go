@@ -153,7 +153,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		length := strings.Count(raw, " ")
 		p := ddh.params
 		tags := map[string]any{
-			ext.ResourceName:    raw[:strings.IndexByte(raw, ' ')],
+			ext.ResourceName:    cmd.Name(),
 			"redis.args_length": strconv.Itoa(length),
 		}
 		if !p.config.skipRaw {
