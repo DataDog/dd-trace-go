@@ -21,12 +21,21 @@ import (
 )
 
 //go:linkname spanStart github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.spanStart
-func spanStart(operationName string, sharedAttrs unsafe.Pointer, poolEnabled bool, options ...tracer.StartSpanOption) *tracer.Span
+func spanStart(operationName string, sharedAttrs unsafe.Pointer, poolEnabled bool, options ...tracer.StartSpanOption) (sp *tracer.Span, isRootSpan bool, parentService string)
+
+//go:linkname markChildTopLevel github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.markChildTopLevel
+func markChildTopLevel(sp *tracer.Span, isRootSpan bool, parentService string)
 
 func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
-	return spanStart(operationName, nil, false, func(c *tracer.StartSpanConfig) {
+	sp, isRootSpan, parentService := spanStart(operationName, nil, false, func(c *tracer.StartSpanConfig) {
 		*c = *cfg
 	})
+	// The mock tracer applies none of the service mutations that
+	// tracer.StartSpan performs (default service, global tags, service
+	// mapping), so the top-level decision runs on the service from the span
+	// options alone.
+	markChildTopLevel(sp, isRootSpan, parentService)
+	return sp
 }
 
 type Span struct {
