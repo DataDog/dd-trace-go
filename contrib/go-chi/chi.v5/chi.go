@@ -9,6 +9,7 @@ package chi // import "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
 import (
 	"math"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -71,7 +72,14 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
+			rctx := chi.RouteContext(r.Context())
+			routePattern := rctx.RoutePattern()
+			if cfg.otelEnabled && unmatchedSubrouter(rctx) {
+				routePattern = ""
+			}
+			if routePattern != "" || !cfg.otelEnabled {
+				routePattern = cfg.modifyResourceName(routePattern)
+			}
 			if routePattern != "" || !cfg.otelEnabled {
 				span.SetTag(ext.HTTPRoute, routePattern)
 			}
@@ -97,4 +105,37 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}
+}
+
+// unmatchedSubrouter checks whether routing stopped at a Chi mount instead of an
+// endpoint. Inspect the recorded patterns so middleware path rewrites are respected.
+func unmatchedSubrouter(rctx *chi.Context) bool {
+	if rctx == nil || rctx.Routes == nil || len(rctx.RoutePatterns) == 0 {
+		return false
+	}
+	last := rctx.RoutePatterns[len(rctx.RoutePatterns)-1]
+	// Mount registers /prefix, /prefix/, and /prefix/*. Ordinary endpoints
+	// cannot be incomplete mounts and need no further lookup.
+	if !strings.HasSuffix(last, "/*") && rctx.RoutePath != "/" {
+		return false
+	}
+	routes := rctx.Routes
+	for _, pattern := range rctx.RoutePatterns {
+		var subroutes chi.Routes
+		for _, route := range routes.Routes() {
+			if route.Pattern == pattern {
+				subroutes = route.SubRoutes
+				break
+			}
+			// Chi omits a mount's /prefix and /prefix/ aliases from Routes().
+			if strings.HasSuffix(route.Pattern, "/*") && strings.TrimSuffix(route.Pattern, "/*") == strings.TrimSuffix(pattern, "/") {
+				subroutes = route.SubRoutes
+			}
+		}
+		if subroutes == nil {
+			return false
+		}
+		routes = subroutes
+	}
+	return true
 }

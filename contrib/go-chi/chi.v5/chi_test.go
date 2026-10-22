@@ -6,6 +6,7 @@
 package chi
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -724,7 +726,7 @@ func TestOTelSemanticsHTTPEndpoint(t *testing.T) {
 
 	t.Run("matched route", func(t *testing.T) {
 		matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK)
-	assert.Equal(t, "/users/{id}", matched.Tag(ext.HTTPEndpoint))
+		assert.Equal(t, "/users/{id}", matched.Tag(ext.HTTPEndpoint))
 	})
 
 	t.Run("unmatched route", func(t *testing.T) {
@@ -736,8 +738,8 @@ func TestOTelSemanticsHTTPEndpoint(t *testing.T) {
 	t.Run("always simplified", func(t *testing.T) {
 		// Registered before t.Setenv so that it runs after the env var is restored.
 		t.Cleanup(httptrace.ResetCfg)
-	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", "true")
-	httptrace.ResetCfg()
+		t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", "true")
+		httptrace.ResetCfg()
 
 		span := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK)
 		assert.Equal(t, "/users/alice", span.Tag(ext.HTTPEndpoint))
@@ -749,18 +751,120 @@ func TestOTelSemanticsFinalRoutePattern(t *testing.T) {
 
 	var initialResource any
 	span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/api/users/123", http.StatusOK, "", "", func(router chi.Router) {
-	router.Route("/api", func(r chi.Router) {
-		r.Get("/users/{id}", func(_ http.ResponseWriter, req *http.Request) {
+		router.Route("/api", func(r chi.Router) {
+			r.Get("/users/{id}", func(_ http.ResponseWriter, req *http.Request) {
 				inFlight, ok := tracer.SpanFromContext(req.Context())
-			require.True(t, ok)
+				require.True(t, ok)
 				initialResource = mocktracer.MockSpan(inFlight).Tag(ext.ResourceName)
+			})
 		})
-	})
 	})
 
 	assert.Equal(t, "GET", initialResource)
 	assert.Equal(t, "/api/users/{id}", span.Tag(ext.HTTPRoute))
 	assert.Equal(t, "GET /api/users/{id}", span.Tag(ext.ResourceName))
+}
+
+func TestSubrouterRoutePatterns(t *testing.T) {
+	for _, semantics := range []struct {
+		name  string
+		value string
+		otel  bool
+	}{
+		{name: "otel", value: "true", otel: true},
+		{name: "datadog", value: "false"},
+	} {
+		t.Run(semantics.name, func(t *testing.T) {
+			setChiHTTPConfig(t, semantics.value)
+			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
+			httptrace.ResetCfg()
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			for _, tt := range []struct {
+				// Request: method defaults to GET, mws are registered after Middleware.
+				name   string
+				method string
+				target string
+				mws    chi.Middlewares
+
+				// Expectations. wantRouteMatch reports whether Chi resolved a concrete
+				// endpoint rather than stopping at a mount, which is what OTel semantics
+				// requires before tagging http.route; Datadog semantics tags wantRoute
+				// either way. wantEndpoint defaults to target and only applies when
+				// there is no route match.
+				wantStatus     int
+				wantRoute      string
+				wantRouteMatch bool
+				wantEndpoint   string
+			}{
+				{name: "matched", target: "/api/users/123", wantStatus: http.StatusOK, wantRoute: "/api/users/{id}", wantRouteMatch: true},
+				{name: "not found", target: "/api/missing", wantStatus: http.StatusNotFound, wantRoute: "/api/*"},
+				{name: "mount root", target: "/api", wantStatus: http.StatusNotFound, wantRoute: "/api"},
+				{name: "mount root with slash", target: "/api/", wantStatus: http.StatusNotFound, wantRoute: "/api", wantEndpoint: "/api"},
+				{name: "nested matched", target: "/api/v1/users/123", wantStatus: http.StatusOK, wantRoute: "/api/v1/users/{id}", wantRouteMatch: true},
+				{name: "handler returns 404", target: "/api/not-found", wantStatus: http.StatusNotFound, wantRoute: "/api/not-found", wantRouteMatch: true},
+				{name: "wildcard route", target: "/api/files/readme", wantStatus: http.StatusOK, wantRoute: "/api/files/*", wantRouteMatch: true},
+				{name: "mounted handler", target: "/static/missing", wantStatus: http.StatusNotFound, wantRoute: "/static/*", wantRouteMatch: true},
+				{name: "mounted handler root", target: "/static", wantStatus: http.StatusNotFound, wantRoute: "/static", wantRouteMatch: true},
+				{name: "matched child root", target: "/rooted", wantStatus: http.StatusOK, wantRoute: "/rooted", wantRouteMatch: true},
+				{name: "root mount not found", target: "/", wantStatus: http.StatusNotFound, wantRoute: "/*"},
+				{name: "rewritten matched path", target: "/api/users/123/", mws: chi.Middlewares{middleware.StripSlashes}, wantStatus: http.StatusOK, wantRoute: "/api/users/{id}", wantRouteMatch: true},
+				{name: "rewritten not found", target: "/api/missing/", mws: chi.Middlewares{middleware.StripSlashes}, wantStatus: http.StatusNotFound, wantRoute: "/api/*", wantEndpoint: "/api/missing"},
+				{name: "effective routing method", method: http.MethodHead, target: "/api/users/123", mws: chi.Middlewares{middleware.GetHead}, wantStatus: http.StatusOK, wantRoute: "/api/users/{id}", wantRouteMatch: true},
+				{name: "custom not found", target: "/custom/missing", wantStatus: http.StatusOK, wantRoute: "/custom/*"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					mt.Reset()
+					method := cmp.Or(tt.method, http.MethodGet)
+					w := httptest.NewRecorder()
+					newSubrouterTestRouter(t, tt.mws...).ServeHTTP(w, httptest.NewRequest(method, tt.target, nil))
+					assert.Equal(t, tt.wantStatus, w.Code)
+
+					spans := mt.FinishedSpans()
+					require.Len(t, spans, 1)
+					span := spans[0]
+					if semantics.otel && !tt.wantRouteMatch {
+						assert.NotContains(t, span.Tags(), ext.HTTPRoute)
+						assert.Equal(t, method, span.Tag(ext.ResourceName))
+						assert.Equal(t, cmp.Or(tt.wantEndpoint, tt.target), span.Tag(ext.HTTPEndpoint))
+					} else {
+						assert.Equal(t, tt.wantRoute, span.Tag(ext.HTTPRoute))
+						assert.Equal(t, method+" "+tt.wantRoute, span.Tag(ext.ResourceName))
+						if semantics.otel {
+							assert.Equal(t, tt.wantRoute, span.Tag(ext.HTTPEndpoint))
+						} else {
+							assert.NotContains(t, span.Tags(), ext.HTTPEndpoint)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestOTelSemanticsUnmatchedResourceCustomization(t *testing.T) {
+	setChiHTTPConfig(t, "true")
+	for _, tt := range []struct {
+		name         string
+		opts         []Option
+		wantResource string
+	}{
+		{name: "route modifier", wantResource: "GET"},
+		{name: "custom resource", opts: []Option{WithResourceNamer(func(*http.Request) string { return "custom-resource" })}, wantResource: "custom-resource"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := append(tt.opts[:len(tt.opts):len(tt.opts)], WithModifyResourceName(func(string) string { return "/modified" }))
+			span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/api/missing", http.StatusOK, "", "", func(router chi.Router) {
+				router.Route("/api", func(r chi.Router) {
+					r.Get("/users/{id}", func(http.ResponseWriter, *http.Request) {})
+				})
+			}, opts...)
+			assert.NotContains(t, span.Tags(), ext.HTTPRoute)
+			assert.Equal(t, tt.wantResource, span.Tag(ext.ResourceName))
+		})
+	}
 }
 
 func TestOTelSemanticsStatus(t *testing.T) {
@@ -811,9 +915,9 @@ func TestOTelSemanticsContextPropagation(t *testing.T) {
 
 	var handlerSpan *tracer.Span
 	span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, "", "", func(router chi.Router) {
-	router.Get("/users/{id}", func(_ http.ResponseWriter, r *http.Request) {
-		handlerSpan, _ = tracer.SpanFromContext(r.Context())
-	})
+		router.Get("/users/{id}", func(_ http.ResponseWriter, r *http.Request) {
+			handlerSpan, _ = tracer.SpanFromContext(r.Context())
+		})
 	})
 
 	require.NotNil(t, handlerSpan)
@@ -851,6 +955,38 @@ func TestOTelSemanticsAppSecRouteParams(t *testing.T) {
 	require.Truef(t, ok, "span tags: %#v", spans[0].Tags())
 	assert.Contains(t, event, "server.request.path_params")
 	assert.Contains(t, event, "appscan_fingerprint")
+}
+
+// newSubrouterTestRouter builds the route tree shared by the TestSubrouterRoutePatterns
+// cases. mws are registered after Middleware, so they observe the traced request.
+func newSubrouterTestRouter(t *testing.T, mws ...func(http.Handler) http.Handler) chi.Router {
+	t.Helper()
+	registerUsers := func(r chi.Router) {
+		r.Get("/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+			assert.NotEmpty(t, chi.URLParam(r, "id"))
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	router.Use(mws...)
+	router.Route("/api", func(r chi.Router) {
+		registerUsers(r)
+		r.Route("/v1", registerUsers)
+		r.Get("/not-found", http.NotFound)
+		r.Get("/files/*", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	})
+	router.Mount("/static", http.HandlerFunc(http.NotFound))
+	router.Route("/rooted", func(r chi.Router) {
+		r.Get("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	})
+	router.Route("/", registerUsers)
+	router.Route("/custom", func(r chi.Router) {
+		registerUsers(r)
+		r.NotFound(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	})
+	return router
 }
 
 func traceChiRequest(t *testing.T, method, target string, status int, opts ...Option) *mocktracer.Span {
