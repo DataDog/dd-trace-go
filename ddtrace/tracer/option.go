@@ -1413,7 +1413,15 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]any{}
+			// Go maps preallocate group storage only for a hint above 8,
+			// the runtime's group width. At or below 8, an unsized make is
+			// allocation-identical and keeps the compiler's makemap_small
+			// fast path, so presizing would only add call overhead.
+			if cfg.tagsHint > 8 {
+				cfg.Tags = make(map[string]any, cfg.tagsHint)
+			} else {
+				cfg.Tags = make(map[string]any)
+			}
 		}
 		cfg.Tags[k] = v
 	}
