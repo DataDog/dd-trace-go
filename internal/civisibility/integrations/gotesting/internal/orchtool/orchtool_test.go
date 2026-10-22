@@ -6,10 +6,15 @@
 package orchtool
 
 import (
-	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
+
+// orchestrionFixtureModule is the nested module whose go.mod pins the
+// orchestrion version the fixture tests drive.
+var orchestrionFixtureModule = filepath.Join("..", "..", "fixtures", "itrbackfill", "orchestrion")
 
 func TestCommandUsesThePathBinary(t *testing.T) {
 	executable, args := Command("/ci/orchestrion", "go", "go", "test", "-c", "-o", "app.test")
@@ -44,12 +49,60 @@ func TestCommandDoesNotModifyInputArgs(t *testing.T) {
 	}
 }
 
-func TestLocate(t *testing.T) {
-	path := Locate()
-	if path == "" {
-		t.Skip("no orchestrion binary on PATH")
+func TestParseVersion(t *testing.T) {
+	tests := []struct {
+		output string
+		want   string
+	}{
+		{output: "orchestrion v1.9.0\n", want: "v1.9.0"},
+		{output: "orchestrion v1.13.0-rc.1\n", want: "v1.13.0-rc.1"},
+		{output: "orchestrion\n", want: ""},
+		{output: "v0.0.0\n", want: "v0.0.0"},
+		{output: "", want: ""},
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Locate returned %q, which is not readable: %v", path, err)
+	for _, test := range tests {
+		if got := parseVersion([]byte(test.output)); got != test.want {
+			t.Errorf("parseVersion(%q) = %q, want %q", test.output, got, test.want)
+		}
+	}
+}
+
+func TestModuleVersionReportsTheFixturePin(t *testing.T) {
+	version, err := ModuleVersion("go", orchestrionFixtureModule)
+	if err != nil {
+		t.Fatalf("ModuleVersion: %v", err)
+	}
+	if !strings.HasPrefix(version, "v") || len(version) < 2 || version[1] < '0' || version[1] > '9' {
+		t.Fatalf("ModuleVersion = %q, want a v-prefixed semantic version", version)
+	}
+}
+
+func TestModuleVersionFailsOutsideAModule(t *testing.T) {
+	if _, err := ModuleVersion("go", t.TempDir()); err == nil {
+		t.Fatal("ModuleVersion must fail in a directory without a go.mod")
+	}
+}
+
+func TestBinaryVersionFailsForAMissingBinary(t *testing.T) {
+	if _, err := BinaryVersion("/does/not/exist"); err == nil {
+		t.Fatal("BinaryVersion must fail for a missing binary")
+	}
+}
+
+func TestLocateMatchesThePinnedVersion(t *testing.T) {
+	path := Locate("go", orchestrionFixtureModule)
+	if path == "" {
+		t.Skip("no orchestrion binary on PATH reports the fixture pin")
+	}
+	got, err := BinaryVersion(path)
+	if err != nil {
+		t.Fatalf("BinaryVersion(%q): %v", path, err)
+	}
+	want, err := ModuleVersion("go", orchestrionFixtureModule)
+	if err != nil {
+		t.Fatalf("ModuleVersion: %v", err)
+	}
+	if got != want {
+		t.Fatalf("Locate returned %q reporting %q, want a binary reporting %q", path, got, want)
 	}
 }
