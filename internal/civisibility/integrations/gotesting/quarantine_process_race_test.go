@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/subtesthelper"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
@@ -81,7 +82,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
-	testifySuite := suite + "/quarantinedRaceTestifySuite"
+	testifyModule := reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath()
+	testifySuite := "callback.go/TestifySuite"
 	itrEnabled := scenario == "foreign-suite"
 	var itrData []net.SkippableResponseDataAttributes
 	if itrEnabled {
@@ -199,6 +201,17 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
 				}},
+				"callback.go": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+					"TestQuarantinedRaceImportedRootFixture/discovery/root": properties(true),
+					"TestQuarantinedRaceImportedRootFixture/discovery/root/disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+					"TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+				}},
+			}},
+			testifyModule: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
 				}},
@@ -433,6 +446,27 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		child := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/parent/child", 2)
 		checkSpansByTagValue(child, constants.TestIsAttempToFix, "true", 2)
 		checkSpansByTagValue(child, constants.TestIsRetry, "true", 1)
+		helperDisabled := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled", 1)
+		checkSpansByTagValue(helperDisabled, constants.TestModule, module, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestStatus, constants.TestStatusSkip, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestIsDisabled, "true", 1)
+		helperChild := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/parent/helper-child", 2)
+		checkSpansByTagValue(helperChild, constants.TestModule, module, 2)
+		checkSpansByTagValue(helperChild, constants.TestIsRetry, "true", 1)
+		checkSpansByTagValue(helperChild, constants.TestSourceFile, "internal/civisibility/integrations/gotesting/fixtures/subtesthelper/callback.go", 2)
+		os.Exit(0)
+	case "imported-root":
+		for _, name := range []string{"root", "root/child", "root/disabled"} {
+			events := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceImportedRootFixture/discovery/"+name, 2)
+			checkSpansByTagValue(events, constants.TestModule, module, 2)
+			if name == "root/disabled" {
+				checkSpansByTagValue(events, constants.TestIsDisabled, "true", 2)
+				checkSpansByTagValue(events, constants.TestStatus, constants.TestStatusSkip, 2)
+			} else {
+				checkSpansByTagValue(events, constants.TestIsAttempToFix, "true", 2)
+				checkSpansByTagValue(events, constants.TestIsQuarantined, "true", 2)
+			}
+		}
 		os.Exit(0)
 	case "ancestor-atf":
 		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorATFFixture/child", 2)
@@ -529,12 +563,19 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			checkSpansByTagValue(root, ext.ErrorType, "test_panic", 0)
 		}
 		os.Exit(0)
-	case "testify-source":
+	case "testify-source", "testify-identity-without-method":
 		if readPID("testify-source") == parentPID {
 			panic("Testify method did not run in the isolated child")
 		}
 		testifySpans := checkSpansByResourceName(spans, testifySuite+".TestQuarantinedRaceTestifyFixture/TestSource", 1)
-		method := runtime.FuncForPC(reflect.ValueOf((*quarantinedRaceTestifySuite).TestSource).Pointer())
+		checkSpansByTagValue(testifySpans, constants.TestModule, testifyModule, 1)
+		if scenario == "testify-identity-without-method" {
+			if source := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceFile)); !strings.HasSuffix(source, "quarantine_process_race_test.go") {
+				panic(fmt.Sprintf("Testify callback source file = %s", source))
+			}
+			os.Exit(0)
+		}
+		method := runtime.FuncForPC(reflect.ValueOf((*subtesthelper.TestifySuite).TestSource).Pointer())
 		_, sourceLine := method.FileLine(method.Entry())
 		if got := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceStartLine)); got != strconv.Itoa(sourceLine) {
 			panic(fmt.Sprintf("Testify source line = %s, want method line %d", got, sourceLine))
@@ -857,6 +898,10 @@ func TestQuarantinedRacePreservesDescendantSuiteEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "foreign-suite", "^TestQuarantinedRaceForeignSuiteFixture$")
 }
 
+func TestQuarantinedRaceImportedRootModuleEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "imported-root", "^TestQuarantinedRaceImportedRootFixture$")
+}
+
 func TestQuarantinedRacePreservesAncestorATFMetadataEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "ancestor-atf", "^TestQuarantinedRaceAncestorATFFixture$")
 }
@@ -875,6 +920,10 @@ func TestQuarantinedRaceAncestorPanicEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "testify-source", "^TestQuarantinedRaceTestifyFixture$")
+}
+
+func TestQuarantinedRaceTestifyIdentityWithoutMethodEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "testify-identity-without-method", "^TestQuarantinedRaceTestifyFixture$")
 }
 
 func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArgs ...string) {
@@ -1465,22 +1514,26 @@ func TestQuarantinedRaceAncestorFailureFixture(t *testing.T) {
 	}
 }
 
-type quarantinedRaceTestifySuite struct {
-	t *testing.T
-}
-
-func (s *quarantinedRaceTestifySuite) TestSource() {
-	writeQuarantinedRaceIsolationPID(s.t, "testify-source")
-}
-
 func TestQuarantinedRaceTestifyFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
 	}
-	suite := &quarantinedRaceTestifySuite{}
+	suite := &subtesthelper.TestifySuite{OnTest: func(t *testing.T) {
+		writeQuarantinedRaceIsolationPID(t, "testify-source")
+	}}
 	instrumentTestifySuiteRun(t, suite)
+	if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "testify-identity-without-method" {
+		parent := reflect.ValueOf(t).UnsafePointer()
+		tests, ok := getTestifyTestsByParentT(parent)
+		require.True(t, ok)
+		for i := range tests {
+			tests[i].methodFunc = nil
+		}
+		setTestifyTestsByParentT(parent, tests)
+	}
 	t.Run("TestSource", instrumentTestingTFunc(func(t *testing.T) {
-		suite.t = t
+		require.Equal(t, reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath(), getTestMetadata(t).identity.ModuleName)
+		suite.T = t
 		suite.TestSource()
 	}))
 }
@@ -1593,13 +1646,29 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
+		t.Run("helper-disabled", instrumentTestingTFunc(subtesthelper.Disabled))
 		t.Run("itr", instrumentTestingTFunc(quarantinedRaceForeignSuiteITRCallback))
 		t.Run("parent", instrumentTestingTFunc(quarantinedRaceForeignSuiteParentCallback))
 	}))
 }
 
+func TestQuarantinedRaceImportedRootFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("discovery", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("root", instrumentTestingTFunc(subtesthelper.Root(instrumentTestingTFunc, func(t *testing.T) {
+			require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", getTestMetadata(t).identity.ModuleName)
+			if !isProcessRetryChild() {
+				triggerQuarantinedRaceFixture()
+			}
+		})))
+	}))
+}
+
 func quarantinedRaceForeignSuiteParentCallback(t *testing.T) {
 	t.Run("child", instrumentTestingTFunc(quarantinedRaceHomeSuiteCallback))
+	t.Run("helper-child", instrumentTestingTFunc(subtesthelper.Pass))
 }
 
 func TestQuarantinedRaceParallelDeniedFixture(t *testing.T) {

@@ -167,27 +167,47 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	}
 	go func() {
 		spans := make(map[uint64]*tracer.Span)
+		var pendingMsg *sarama.ProducerMessage
+		var pendingSpan *tracer.Span
 		defer close(wrapped.input)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {
+			var inputFromCaller <-chan *sarama.ProducerMessage
+			var inputToSarama chan<- *sarama.ProducerMessage
+			// Nil channels disable select cases. Keep pending sends in this select so
+			// result handling can unblock Sarama instead of deadlocking the wrapper.
+			if pendingMsg == nil {
+				inputFromCaller = wrapped.input
+			} else {
+				inputToSarama = p.Input()
+			}
 			select {
-			case msg := <-wrapped.input:
+			case msg := <-inputFromCaller:
 				span := startProducerSpan(cfg, spanCfg, saramaConfig.Version, msg)
 				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
-				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
 					spans[spanID] = span
-				} else {
+				}
+				pendingMsg = msg
+				pendingSpan = span
+			// Send the pending message without blocking result handling.
+			case inputToSarama <- pendingMsg:
+				if !saramaConfig.Producer.Return.Successes {
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					span.Finish()
+					pendingSpan.Finish()
 				}
+				pendingMsg = nil
+				pendingSpan = nil
 			case msg, ok := <-p.Successes():
 				if !ok {
-					// producer was closed, so exit
+					// The producer closed before it accepted the pending message.
+					if pendingSpan != nil {
+						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
+					}
 					return
 				}
 				if cfg.dataStreamsEnabled {
@@ -204,7 +224,10 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
 				if !ok {
-					// producer was closed
+					// The producer closed before it accepted the pending message.
+					if pendingSpan != nil {
+						pendingSpan.Finish(tracer.WithError(sarama.ErrShuttingDown))
+					}
 					return
 				}
 				if spanctx, spanFound := getProducerSpanContext(err.Msg); spanFound {

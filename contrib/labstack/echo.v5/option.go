@@ -150,6 +150,11 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) OptionFn {
 
 // WithErrorTranslator sets a function to translate Go errors into echo Errors.
 // This is used for extracting the HTTP response status code.
+//
+// fn only needs to cover error types whose status echo itself cannot resolve.
+// When it returns false or a zero Code, the status is taken from
+// [echo.ResolveResponseStatus] ([echo.HTTPStatusCoder], else 500), unless the
+// response is already committed.
 func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) OptionFn {
 	return func(cfg *config) {
 		cfg.translateError = fn

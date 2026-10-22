@@ -202,6 +202,17 @@ func (c *Collector) MetricCount() int {
 	return len(c.metrics)
 }
 
+// Metrics returns a copy of all collected evaluation metrics, in arrival order.
+// Use it when a metric has no distinguishing label and must be addressed
+// positionally. Call after [tracer.Flush].
+func (c *Collector) Metrics() []LLMObsMetric {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]LLMObsMetric, len(c.metrics))
+	copy(out, c.metrics)
+	return out
+}
+
 // SetSpanResponseDelay makes the collector sleep for d before responding to
 // each span-batch request, simulating a slow transport. Use it to exercise
 // flush timing behaviour (e.g. that FlushSync blocks until the send completes).
