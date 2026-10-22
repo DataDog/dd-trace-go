@@ -109,16 +109,24 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 	return 0
 }
 
+// Upper bounds of the slow test retries duration buckets. EFD treats them as exclusive and dynamic automatic test
+// retries as inclusive.
+const (
+	bucketBoundFiveS   = 5 * time.Second
+	bucketBoundTenS    = 10 * time.Second
+	bucketBoundThirtyS = 30 * time.Second
+	bucketBoundFiveM   = 5 * time.Minute
+)
+
 func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
 	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-	secs := duration.Seconds()
-	if secs < 5 {
+	if duration < bucketBoundFiveS {
 		return int64(slowTestRetries.FiveS), true
-	} else if secs < 10 {
+	} else if duration < bucketBoundTenS {
 		return int64(slowTestRetries.TenS), true
-	} else if secs < 30 {
+	} else if duration < bucketBoundThirtyS {
 		return int64(slowTestRetries.ThirtyS), true
-	} else if duration.Minutes() < 5 {
+	} else if duration < bucketBoundFiveM {
 		return int64(slowTestRetries.FiveM), true
 	}
 	return 0, false
@@ -139,13 +147,13 @@ func flakyRetryCountForDuration(duration time.Duration) int64 {
 // execution of exactly 5s is in the first bucket.
 func dynamicRetryDurationBucket(duration time.Duration) int {
 	switch {
-	case duration <= 5*time.Second:
+	case duration <= bucketBoundFiveS:
 		return 0
-	case duration <= 10*time.Second:
+	case duration <= bucketBoundTenS:
 		return 1
-	case duration <= 30*time.Second:
+	case duration <= bucketBoundThirtyS:
 		return 2
-	case duration <= 5*time.Minute:
+	case duration <= bucketBoundFiveM:
 		return 3
 	default:
 		return 4
