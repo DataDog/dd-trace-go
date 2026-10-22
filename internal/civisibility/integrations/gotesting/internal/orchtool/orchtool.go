@@ -7,17 +7,77 @@
 // drive it in subprocesses.
 package orchtool
 
-import "os/exec"
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+)
 
-// Locate returns the path of an orchestrion binary on PATH. It returns the
-// empty string when none is installed. CI installs the orchestrion version
-// pinned by the orchestrion fixture module to GOPATH/bin before the tests run.
-func Locate() string {
+// Locate returns the path of an orchestrion binary on PATH that reports the
+// version required by the module at moduleDir. It returns the empty string
+// when no such binary is installed.
+//
+// A binary with a different version refuses to instrument the module and
+// exits with status 255, so an unrelated install (a workflow's binary, a
+// developer's local one) must not shadow the pinned version.
+func Locate(goCommand, moduleDir string) string {
 	path, err := exec.LookPath("orchestrion")
 	if err != nil {
 		return ""
 	}
+	want, err := ModuleVersion(goCommand, moduleDir)
+	if err != nil {
+		return ""
+	}
+	got, err := BinaryVersion(path)
+	if err != nil || got != want {
+		return ""
+	}
 	return path
+}
+
+// ModuleVersion returns the orchestrion version that the module at moduleDir
+// requires. The module's go.mod pins the version.
+func ModuleVersion(goCommand, moduleDir string) (string, error) {
+	cmd := exec.Command(goCommand, "list", "-m", "-f", "{{.Version}}", "github.com/DataDog/orchestrion")
+	cmd.Dir = moduleDir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	version := parseVersion(output)
+	if version == "" {
+		return "", fmt.Errorf("no orchestrion version in %s", moduleDir)
+	}
+	return version, nil
+}
+
+// BinaryVersion returns the version that the orchestrion binary at path
+// reports for itself.
+func BinaryVersion(path string) (string, error) {
+	output, err := exec.Command(path, "version").Output()
+	if err != nil {
+		return "", err
+	}
+	version := parseVersion(output)
+	if version == "" {
+		return "", fmt.Errorf("no orchestrion version in the output of %s version", path)
+	}
+	return version, nil
+}
+
+// parseVersion returns the leading version token in orchestrion output, such
+// as "v1.9.0" in "orchestrion v1.9.0". It returns the empty string when the
+// output holds none.
+func parseVersion(output []byte) string {
+	for field := range strings.FieldsSeq(string(output)) {
+		if len(field) > 1 && field[0] == 'v' && field[1] >= '0' && field[1] <= '9' {
+			return field
+		}
+	}
+	return ""
 }
 
 // Command returns the executable and arguments that invoke the orchestrion CLI

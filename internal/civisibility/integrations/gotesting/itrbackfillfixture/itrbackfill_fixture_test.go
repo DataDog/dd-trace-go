@@ -61,7 +61,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
-	orchestrionPath := orchtool.Locate()
+	orchestrionPath := orchtool.Locate("go", fixtureDir)
 
 	for _, test := range []struct {
 		name              string

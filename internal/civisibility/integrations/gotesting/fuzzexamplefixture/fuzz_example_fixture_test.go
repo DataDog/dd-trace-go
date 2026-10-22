@@ -46,7 +46,7 @@ var fixtureScenarios = []string{
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	goCommand := fixtureGoCommand()
-	orchestrionPath := orchtool.Locate()
+	orchestrionPath := orchtool.Locate(goCommand, filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"))
 	// Reuse the runner's build cache; fixtureEnv isolates CI Visibility state.
 	goCache := goEnv(t, "GOCACHE")
 	goModCache := goEnv(t, "GOMODCACHE")
