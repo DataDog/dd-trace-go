@@ -71,7 +71,6 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 
 	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
-		// Match the existing exposure-logging default when doLog is omitted.
 		// Exclude before targeting or sharding, without changing eligible subjects' buckets.
 		if exclusion.mode != ExperimentationOptOutDefault && exclusion.excludes(allocation) {
 			continue

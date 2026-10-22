@@ -86,6 +86,7 @@ func (exclusion experimentationExclusion) excludes(a *allocation) bool {
 	if exclusion.mode != ExperimentationOptOutImmediate && exclusion.mode != ExperimentationOptOutFutureExperimentsOnly {
 		return false
 	}
+	// A nil doLog logs exposures, matching evaluateFlag's metadata default.
 	if a.DoLog != nil && !*a.DoLog {
 		return false
 	}
