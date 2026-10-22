@@ -130,6 +130,14 @@ func StopApp() {
 	}
 }
 
+// WaitForStartAppFlush waits until every app-started flush goroutine launched
+// by StartApp returns. An in-flight flush can park its keep-alive connection in
+// the idle pool after a caller has closed idle connections, so callers such as
+// tracer.Stop must wait first to prevent that connection from leaking.
+func WaitForStartAppFlush() {
+	startAppFlushWg.Wait()
+}
+
 var (
 	telemetryClientEnabled bool
 	telemetryEnabledOnce   sync.Once
