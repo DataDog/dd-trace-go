@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	of "github.com/open-feature/go-sdk/openfeature"
 
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
@@ -401,7 +403,7 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 				},
 			}
 
-			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now())
+			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now(), experimentationExclusion{})
 
 			if result.Reason != of.ErrorReason {
 				t.Errorf("expected ErrorReason, got %s", result.Reason)
@@ -419,6 +421,11 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	fixtureDir := "ffe-system-test-data"
+	type fixtureResult struct {
+		Value     any    `json:"value"`
+		Reason    string `json:"reason"`
+		ErrorCode string `json:"errorCode"`
+	}
 
 	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
 	if err != nil {
@@ -435,6 +442,34 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatalf("set provider: %v", err)
 	}
 	client := of.NewClient("fixture-test")
+	immediateProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
+	})
+	t.Cleanup(immediateProvider.Shutdown)
+	// Reuse the configuration without starting telemetry workers for capability checks.
+	immediateProvider.configuration = &cfg
+	futureProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly,
+	})
+	t.Cleanup(futureProvider.Shutdown)
+	futureProvider.configuration = &cfg
+	capabilityProviders := map[string]*DatadogProvider{
+		"experimentationOptOutImmediate":             immediateProvider,
+		"experimentationOptOutFutureExperimentsOnly": futureProvider,
+	}
+	capabilityCases := make(map[string]int)
+	// Minimums pin each semantic family independently; additional cases are welcome.
+	// A global capability count can hide a missing family behind another file.
+	requiredFamilies := map[string]map[string]int{
+		"test-case-experimentation-opt-out.json": {
+			"experimentationOptOutImmediate":             26,
+			"experimentationOptOutFutureExperimentsOnly": 26,
+		},
+		"test-case-experimentation-opt-out-future.json": {
+			"experimentationOptOutFutureExperimentsOnly": 16,
+		},
+	}
+	familyCases := make(map[string]map[string]int)
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -445,25 +480,31 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 
 	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cases []struct {
+			Flag         string                   `json:"flag"`
+			DefaultValue any                      `json:"defaultValue"`
+			TargetingKey *string                  `json:"targetingKey"`
+			Attributes   map[string]any           `json:"attributes"`
+			Result       fixtureResult            `json:"result"`
+			Capabilities map[string]fixtureResult `json:"capabilities"`
+		}
+		if err := json.Unmarshal(data, &cases); err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		// Count discovered cases, not selected subtests, so -run filters remain usable.
+		counts := make(map[string]int)
+		familyCases[filepath.Base(file)] = counts
+		for _, tc := range cases {
+			for capability := range tc.Capabilities {
+				capabilityCases[capability]++
+				counts[capability]++
+			}
+		}
 		t.Run(filepath.Base(file), func(t *testing.T) {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var cases []struct {
-				Flag         string         `json:"flag"`
-				DefaultValue any            `json:"defaultValue"`
-				TargetingKey *string        `json:"targetingKey"`
-				Attributes   map[string]any `json:"attributes"`
-				Result       struct {
-					Value     any    `json:"value"`
-					Reason    string `json:"reason"`
-					ErrorCode string `json:"errorCode"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal(data, &cases); err != nil {
-				t.Fatalf("parse error: %v", err)
-			}
 			for i, tc := range cases {
 				tkLabel := "<nil>"
 				if tc.TargetingKey != nil {
@@ -476,7 +517,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now())
+					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now(), experimentationExclusion{})
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
@@ -497,8 +538,36 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
 						}
 					}
+					for capability, expected := range tc.Capabilities {
+						p, supported := capabilityProviders[capability]
+						if !supported {
+							continue
+						}
+						t.Run(capability, func(t *testing.T) {
+							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+							assert.Equal(t, expected.Value, result.Value, "capability result value")
+							if result.Reason != of.Reason(expected.Reason) {
+								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
+							}
+							if code := result.ResolutionDetail().ErrorCode; code != of.ErrorCode(expected.ErrorCode) {
+								t.Errorf("error code: got %q, want %q", code, expected.ErrorCode)
+							}
+						})
+					}
 				})
 			}
 		})
+	}
+	for family, minimums := range requiredFamilies {
+		for capability, minimum := range minimums {
+			if count := familyCases[family][capability]; count < minimum {
+				t.Errorf("canonical fixture family %q has %d cases for capability %q; require at least %d", family, count, capability, minimum)
+			}
+		}
+	}
+	for capability := range capabilityProviders {
+		if capabilityCases[capability] == 0 {
+			t.Errorf("no canonical fixture cases found for supported capability %q", capability)
+		}
 	}
 }
