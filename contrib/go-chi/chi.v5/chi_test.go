@@ -620,7 +620,7 @@ func TestDatadogSemantics(t *testing.T) {
 			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
 			httptrace.ResetCfg()
 
-			matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, http.MethodGet, "/users/{id}", nil)
+			matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK)
 			assert.Equal(t, "GET /users/{id}", matched.Tag(ext.ResourceName))
 			assert.Equal(t, "/users/{id}", matched.Tag(ext.HTTPRoute))
 			assert.Equal(t, "GET", matched.Tag(ext.HTTPMethod))
@@ -631,7 +631,7 @@ func TestDatadogSemantics(t *testing.T) {
 			assert.Nil(t, matched.Tag(ext.URLPath))
 			assert.Nil(t, matched.Tag(ext.HTTPResponseStatusCode))
 
-			unmatched := traceChiRequest(t, http.MethodGet, "http://example.com/missing", http.StatusOK, "", "", nil)
+			unmatched := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/missing", http.StatusOK, http.MethodGet, "/registered", nil)
 			assert.Equal(t, "GET unknown", unmatched.Tag(ext.ResourceName))
 			assert.Contains(t, unmatched.Tags(), ext.HTTPRoute)
 			assert.Equal(t, "", unmatched.Tag(ext.HTTPRoute))
@@ -645,7 +645,7 @@ func TestOTelSemantics(t *testing.T) {
 	httptrace.ResetCfg()
 
 	t.Run("route and attributes", func(t *testing.T) {
-		span := traceChiRequest(t, http.MethodGet, "http://example.com:8080/users/123?password=secret&keep=value", http.StatusOK, http.MethodGet, "/users/{id}", nil,
+		span := traceChiRequest(t, http.MethodGet, "http://example.com:8080/users/123?password=secret&keep=value", http.StatusOK,
 			WithService("semantic-service"),
 			WithSpanOptions(tracer.Tag("chi.custom", "value")),
 		)
@@ -678,8 +678,8 @@ func TestOTelSemantics(t *testing.T) {
 	})
 
 	t.Run("route is invariant across parameters", func(t *testing.T) {
-		first := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, http.MethodGet, "/users/{id}", nil)
-		second := traceChiRequest(t, http.MethodGet, "http://example.com/users/456", http.StatusOK, http.MethodGet, "/users/{id}", nil)
+		first := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK)
+		second := traceChiRequest(t, http.MethodGet, "http://example.com/users/456", http.StatusOK)
 		assert.Equal(t, "GET /users/{id}", first.Tag(ext.ResourceName))
 		assert.Equal(t, first.Tag(ext.ResourceName), second.Tag(ext.ResourceName))
 	})
@@ -703,7 +703,7 @@ func TestOTelSemantics(t *testing.T) {
 		{name: "unknown method", method: "PROPFIND", target: "http://example.com/users/123", routeMethod: http.MethodGet, route: "/users/{id}", wantResource: "HTTP", wantMethod: "_OTHER", wantOriginal: "PROPFIND", wantPath: "/users/123", wantStatus: "405"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			span := traceChiRequest(t, tt.method, tt.target, http.StatusOK, tt.routeMethod, tt.route, nil)
+			span := traceChiRequestWithRoute(t, tt.method, tt.target, http.StatusOK, tt.routeMethod, tt.route, nil)
 			assert.Equal(t, tt.wantResource, span.Tag(ext.ResourceName))
 			assert.Equal(t, tt.wantRoute, span.Tag(ext.HTTPRoute))
 			if tt.wantRoute == nil {
@@ -722,42 +722,45 @@ func TestOTelSemanticsHTTPEndpoint(t *testing.T) {
 	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
 	httptrace.ResetCfg()
 
-	matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK, http.MethodGet, "/users/{id}", nil)
+	t.Run("matched route", func(t *testing.T) {
+		matched := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK)
 	assert.Equal(t, "/users/{id}", matched.Tag(ext.HTTPEndpoint))
+	})
 
+	t.Run("unmatched route", func(t *testing.T) {
+		unmatched := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/no_such_route_xyz", http.StatusOK, http.MethodGet, "/registered", nil)
+		assert.Equal(t, "GET", unmatched.Tag(ext.ResourceName))
+		assert.Equal(t, "/no_such_route_xyz", unmatched.Tag(ext.HTTPEndpoint))
+	})
+
+	t.Run("always simplified", func(t *testing.T) {
+		// Registered before t.Setenv so that it runs after the env var is restored.
+		t.Cleanup(httptrace.ResetCfg)
 	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", "true")
 	httptrace.ResetCfg()
-	alwaysSimplified := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK, http.MethodGet, "/users/{id}", nil)
-	assert.Equal(t, "/users/alice", alwaysSimplified.Tag(ext.HTTPEndpoint))
 
-	unmatched := traceChiRequest(t, http.MethodGet, "http://example.com/no_such_route_xyz", http.StatusOK, http.MethodGet, "/registered", nil)
-	assert.Equal(t, "GET", unmatched.Tag(ext.ResourceName))
-	assert.NotContains(t, unmatched.Tags(), ext.HTTPRoute)
-	assert.Equal(t, "/no_such_route_xyz", unmatched.Tag(ext.HTTPEndpoint))
+		span := traceChiRequest(t, http.MethodGet, "http://example.com/users/alice", http.StatusOK)
+		assert.Equal(t, "/users/alice", span.Tag(ext.HTTPEndpoint))
+	})
 }
 
 func TestOTelSemanticsFinalRoutePattern(t *testing.T) {
 	setChiHTTPConfig(t, "true")
-	mt := mocktracer.Start()
-	defer mt.Stop()
 
 	var initialResource any
-	router := chi.NewRouter()
-	router.Use(Middleware())
+	span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/api/users/123", http.StatusOK, "", "", func(router chi.Router) {
 	router.Route("/api", func(r chi.Router) {
 		r.Get("/users/{id}", func(_ http.ResponseWriter, req *http.Request) {
-			span, ok := tracer.SpanFromContext(req.Context())
+				inFlight, ok := tracer.SpanFromContext(req.Context())
 			require.True(t, ok)
-			initialResource = mocktracer.MockSpan(span).Tag(ext.ResourceName)
+				initialResource = mocktracer.MockSpan(inFlight).Tag(ext.ResourceName)
 		})
 	})
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/users/123", nil))
+	})
 
 	assert.Equal(t, "GET", initialResource)
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, "/api/users/{id}", spans[0].Tag(ext.HTTPRoute))
-	assert.Equal(t, "GET /api/users/{id}", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "/api/users/{id}", span.Tag(ext.HTTPRoute))
+	assert.Equal(t, "GET /api/users/{id}", span.Tag(ext.ResourceName))
 }
 
 func TestOTelSemanticsStatus(t *testing.T) {
@@ -781,7 +784,7 @@ func TestOTelSemanticsStatus(t *testing.T) {
 			if tt.isStatusError != nil {
 				opts = append(opts, WithStatusCheck(tt.isStatusError))
 			}
-			span := traceChiRequest(t, http.MethodGet, "http://example.com/status", tt.status, http.MethodGet, "/status", nil, opts...)
+			span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/status", tt.status, http.MethodGet, "/status", nil, opts...)
 			assert.Equal(t, tt.wantErrorType, span.Tag(ext.ErrorType))
 		})
 	}
@@ -790,13 +793,13 @@ func TestOTelSemanticsStatus(t *testing.T) {
 func TestOTelSemanticsResourceCustomization(t *testing.T) {
 	setChiHTTPConfig(t, "true")
 
-	modified := traceChiRequest(t, http.MethodGet, "http://example.com/users/123/", http.StatusOK, http.MethodGet, "/users/{id}/", nil,
+	modified := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/users/123/", http.StatusOK, http.MethodGet, "/users/{id}/", nil,
 		WithModifyResourceName(func(string) string { return "/modified/{id}" }),
 	)
 	assert.Equal(t, "/modified/{id}", modified.Tag(ext.HTTPRoute))
 	assert.Equal(t, "GET /modified/{id}", modified.Tag(ext.ResourceName))
 
-	custom := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, http.MethodGet, "/users/{id}", nil,
+	custom := traceChiRequest(t, http.MethodGet, "http://example.com/users/123", http.StatusOK,
 		WithResourceNamer(func(*http.Request) string { return "custom-resource" }),
 	)
 	assert.Equal(t, "/users/{id}", custom.Tag(ext.HTTPRoute))
@@ -805,21 +808,16 @@ func TestOTelSemanticsResourceCustomization(t *testing.T) {
 
 func TestOTelSemanticsContextPropagation(t *testing.T) {
 	setChiHTTPConfig(t, "true")
-	mt := mocktracer.Start()
-	defer mt.Stop()
 
 	var handlerSpan *tracer.Span
-	router := chi.NewRouter()
-	router.Use(Middleware())
+	span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/users/123", http.StatusOK, "", "", func(router chi.Router) {
 	router.Get("/users/{id}", func(_ http.ResponseWriter, r *http.Request) {
 		handlerSpan, _ = tracer.SpanFromContext(r.Context())
 	})
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users/123", nil))
+	})
 
 	require.NotNil(t, handlerSpan)
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, "GET /users/{id}", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "GET /users/{id}", span.Tag(ext.ResourceName))
 }
 
 func TestOTelSemanticsAppSecRouteParams(t *testing.T) {
@@ -855,20 +853,28 @@ func TestOTelSemanticsAppSecRouteParams(t *testing.T) {
 	assert.Contains(t, event, "appscan_fingerprint")
 }
 
-func traceChiRequest(t *testing.T, method, target string, status int, routeMethod, route string, handler http.HandlerFunc, opts ...Option) *mocktracer.Span {
+func traceChiRequest(t *testing.T, method, target string, status int, opts ...Option) *mocktracer.Span {
+	t.Helper()
+	return traceChiRequestWithRoute(t, method, target, status, method, "/users/{id}", nil, opts...)
+}
+
+// traceChiRequestWithRoute serves target through a router carrying Middleware(opts...).
+// configure registers routes before route is registered, and route may be empty when
+// configure already registers everything the case needs.
+func traceChiRequestWithRoute(t *testing.T, method, target string, status int, routeMethod, route string, configure func(chi.Router), opts ...Option) *mocktracer.Span {
 	t.Helper()
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	router := chi.NewRouter()
 	router.Use(Middleware(opts...))
+	if configure != nil {
+		configure(router)
+	}
 	if route != "" {
-		if handler == nil {
-			handler = func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }
-		}
-		router.MethodFunc(routeMethod, route, handler)
-	} else {
-		router.Get("/registered", func(http.ResponseWriter, *http.Request) {})
+		router.MethodFunc(routeMethod, route, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		})
 	}
 
 	req := httptest.NewRequest(method, target, nil)
