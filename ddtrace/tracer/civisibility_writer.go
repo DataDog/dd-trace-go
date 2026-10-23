@@ -6,12 +6,17 @@
 package tracer
 
 import (
+	"errors"
 	"io"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrycommon "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -35,6 +40,15 @@ type ciVisibilityTraceWriter struct {
 	payload *ciVisibilityPayload // Encodes and buffers events in msgpack format.
 	climit  chan struct{}        // Limits the number of concurrent outgoing connections.
 	wg      sync.WaitGroup       // Waits for all uploads to finish.
+
+	// encodeFailures counts per-event msgpack encode failures and encodeErr
+	// holds the first one. add() runs on the per-event path, where a
+	// ReportError would capture a stack trace for every failed event, so the
+	// failures are aggregated here and reported once at a flush or stop
+	// boundary — see reportEncodeFailures.
+	encodeFailures atomic.Uint64
+	encodeErr      atomic.Pointer[error]
+	encodeReported atomic.Bool
 }
 
 // newCiVisibilityTraceWriter creates a new instance of ciVisibilityTraceWriter.
@@ -67,7 +81,9 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 		cvEvent := getCiVisibilityEvent(s)
 		size, err := w.payload.push(cvEvent)
 		if err != nil {
-			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error()) //errtrack:ignore per-event serialization path
+			w.encodeFailures.Add(1)
+			w.encodeErr.CompareAndSwap(nil, &err)
+			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error()) //errtrack:ignore per-event path; aggregated by reportEncodeFailures at the flush boundary
 		}
 		if size > agentlessPayloadSizeLimit {
 			w.flush()
@@ -89,6 +105,9 @@ func (w *ciVisibilityTraceWriter) wait() { w.wg.Wait() }
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.
 func (w *ciVisibilityTraceWriter) flush() {
+	// Report before the empty-payload early return: a writer whose every event
+	// failed to encode holds zero items and must still surface the defect.
+	w.reportEncodeFailures()
 	if w.payload.stats().itemCount == 0 {
 		return
 	}
@@ -134,13 +153,51 @@ func (w *ciVisibilityTraceWriter) flush() {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error()) //errtrack:ignore agent or network failure
+			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error()) //errtrack:ignore payload, agent, or network failure; the final drop below reports payload construction errors
 			p.reset()
 			time.Sleep(retryInterval)
 		}
-		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error()) //errtrack:ignore agent or network failure already reported as a count
+		reportCIVisibilitySendError(err, count)
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
+}
+
+// reportCIVisibilitySendError handles the final swallow point of the flush
+// goroutine, where a payload that exhausted its send attempts is dropped for
+// good. A payload construction failure (ciVisibilityPayloadError from
+// ciVisibilityTransport.send) is an SDK serialization defect, so it is
+// reported to Error Tracking; agent, network, and filesystem failures are
+// customer-environment conditions and stay local-only — the dropped count is
+// already surfaced through telemetry.EndpointPayloadDropped.
+func reportCIVisibilitySendError(err error, count int) {
+	if payloadErr, ok := errors.AsType[*ciVisibilityPayloadError](err); ok {
+		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error()) //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("Error building CI Visibility payload", payloadErr.err)
+	} else {
+		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error()) //errtrack:ignore agent or network failure already reported as a count
+	}
+}
+
+// reportEncodeFailures reports the aggregated per-event msgpack encode
+// failure once per writer lifetime, at a flush or stop boundary. A ReportError
+// in add() would capture a stack trace for every failed event; the aggregate
+// keeps the Error Tracking count per process instead of per event.
+func (w *ciVisibilityTraceWriter) reportEncodeFailures() {
+	if w.encodeReported.Load() {
+		return
+	}
+	count := w.encodeFailures.Load()
+	err := w.encodeErr.Load()
+	if count == 0 || err == nil {
+		return
+	}
+	if w.encodeReported.CompareAndSwap(false, true) {
+		telemetrylog.ReportError(
+			"Error encoding CI Visibility events",
+			*err,
+			telemetrycommon.WithTags([]string{"events:" + strconv.FormatUint(count, 10)}),
+		)
+	}
 }
 
 // closeCIVisibilityResponseBody drains and closes a body returned by ddTransport.send.
