@@ -7,7 +7,7 @@ package telemetrytest
 import (
 	"encoding/json"
 	"fmt"
-	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +21,12 @@ type contribPkg struct {
 	Name       string
 	Imports    []string
 	Dir        string
+	Module     *contribModule
+}
+
+type contribModule struct {
+	Path string
+	Dir  string
 }
 
 var InstrumentationImport = "github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -31,64 +37,65 @@ func (p *contribPkg) hasInstrumentationImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("..", "..", "..", "contrib"))
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
-		if filepath.Base(path) != "go.mod" {
-			return nil
-		}
-		if strings.Contains(path, "integration_tests") ||
-			strings.Contains(path, fmt.Sprintf("%ctest%c", os.PathSeparator, os.PathSeparator)) {
-			return nil
-		}
-		// otelc hook modules call into the contrib, which loads telemetry itself.
-		if filepath.Base(filepath.Dir(path)) == "otelc" {
-			return nil
-		}
-		rErr := testTelemetryEnabled(t, filepath.Dir(path))
-		if rErr != nil {
-			return fmt.Errorf("path: %s, err: %w", path, rErr)
-		}
-		return nil
-	})
+
+	// One workspace-wide go list replaces one go list per contrib module: each
+	// per-module invocation reloaded the whole workspace module graph, which
+	// dominated this test's runtime.
+	cmd := exec.Command("go", "list", "-json", "github.com/DataDog/dd-trace-go/contrib/...")
+	cmd.Dir = root
+	body, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func testTelemetryEnabled(t *testing.T, contribPath string) error {
-	t.Helper()
-	t.Log(contribPath)
-	pwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = os.Chdir(pwd)
-	}()
-	if err = os.Chdir(contribPath); err != nil {
-		return err
-	}
-	body, err := exec.Command("go", "list", "-json", "./...").Output()
-	if err != nil {
-		t.Log(string(body))
-		return err
 	}
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
 		var out contribPkg
-		err := stream.Decode(&out)
-		if err != nil {
-			return err
+		if err := stream.Decode(&out); err != nil {
+			t.Fatal(err)
 		}
 		packages = append(packages, out)
 	}
+
+	modules := make(map[string][]contribPkg)
+	for _, pkg := range packages {
+		if pkg.Module == nil || pkg.Module.Dir == "" {
+			continue
+		}
+		modules[pkg.Module.Dir] = append(modules[pkg.Module.Dir], pkg)
+	}
+	for _, moduleDir := range slices.Sorted(maps.Keys(modules)) {
+		if skipContribModule(moduleDir) {
+			continue
+		}
+		if rErr := testTelemetryEnabled(t, moduleDir, modules[moduleDir]); rErr != nil {
+			t.Fatalf("path: %s, err: %v", moduleDir, rErr)
+		}
+	}
+}
+
+// skipContribModule reports whether the module at moduleDir leaves the
+// telemetry check below. Its rules mirror the module walk this test used
+// before the single go list replaced it.
+func skipContribModule(moduleDir string) bool {
+	if strings.Contains(moduleDir, "integration_tests") ||
+		strings.Contains(moduleDir, fmt.Sprintf("%ctest%c", os.PathSeparator, os.PathSeparator)) {
+		return true
+	}
+	// otelc hook modules call into the contrib, which loads telemetry itself.
+	return filepath.Base(moduleDir) == "otelc"
+}
+
+func testTelemetryEnabled(t *testing.T, contribPath string, packages []contribPkg) error {
+	t.Helper()
+	t.Log(contribPath)
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
