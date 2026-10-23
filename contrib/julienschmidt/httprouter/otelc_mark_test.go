@@ -29,20 +29,6 @@ func TestTraceMark(t *testing.T) {
 	assert.False(t, TraceMarked(ctx, nil))
 }
 
-// TestServeHTTPMarksItsOwnRouter is what the otelc hook relies on. The hook
-// fires on httprouter.Router.ServeHTTP, which Router.ServeHTTP calls, and lets
-// the call through when the request is marked for that router. Without the
-// mark, a router wrapped with this package would get a second span.
-func TestServeHTTPMarksItsOwnRouter(t *testing.T) {
-	router := New()
-	var marked bool
-	router.GET("/ping", func(_ http.ResponseWriter, req *http.Request, _ httprouter.Params) {
-		marked = TraceMarked(req.Context(), router.Router)
-	})
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/ping", nil))
-	assert.True(t, marked)
-}
-
 func TestWrapRouter(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()

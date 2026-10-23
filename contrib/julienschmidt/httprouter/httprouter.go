@@ -43,13 +43,23 @@ func WrapRouter(router *httprouter.Router, opts ...RouterOption) *Router {
 
 // ServeHTTP implements [http.Handler].
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	req = req.WithContext(traceMark(req.Context(), r.Router))
-	tw, treq, afterHandle, handled := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
+	tw, treq, afterHandle, handled := r.BeforeHandle(w, req)
 	defer afterHandle()
 	if handled {
 		return
 	}
 	r.Router.ServeHTTP(tw, treq)
+}
+
+// BeforeHandle starts tracing req, which r is about to serve. It returns the
+// traced http.ResponseWriter and http.Request to serve the request with, and an
+// afterHandle function to call once the request is served. When handled is
+// true, AppSec already responded and the request must not be served.
+//
+// [Router.ServeHTTP] calls it around the underlying router. The otelc hooks
+// call it around an httprouter.Router.ServeHTTP they do not own.
+func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http.ResponseWriter, treq *http.Request, afterHandle func(), handled bool) {
+	return tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
 }
 
 type wRouter struct {

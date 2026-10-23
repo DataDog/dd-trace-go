@@ -13,7 +13,8 @@ import (
 
 type traceMarkKey struct{}
 
-// traceMark tags ctx as a request this package serves through router.
+// traceMark tags ctx as a request this package serves through router. Only
+// otelc builds call it, from code the otelc rules add to [Router.ServeHTTP].
 func traceMark(ctx context.Context, router *httprouter.Router) context.Context {
 	return context.WithValue(ctx, traceMarkKey{}, router)
 }
@@ -22,7 +23,8 @@ func traceMark(ctx context.Context, router *httprouter.Router) context.Context {
 // through router.
 //
 // The otelc rules hook httprouter.Router.ServeHTTP, which [Router.ServeHTTP]
-// calls itself. The mark tells those two apart, so a router wrapped with this
+// calls itself, and mark the requests [Router.ServeHTTP] serves. The mark tells
+// those two apart, so a router wrapped with this
 // package is traced once in an otelc build rather than twice. A different
 // router, such as one used as a handler of this one, is not marked.
 func TraceMarked(ctx context.Context, router *httprouter.Router) bool {
