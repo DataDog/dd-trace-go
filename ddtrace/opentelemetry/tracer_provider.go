@@ -53,6 +53,8 @@ type TracerProvider struct {
 	tracer              *oteltracer
 	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
+	// bridge is true for the provider of the Orchestrion OpenTelemetry API bridge. It does not own the Datadog tracer.
+	bridge bool
 }
 
 // NewTracerProvider returns an instance of an OpenTelemetry TracerProvider,
@@ -83,6 +85,9 @@ func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
 func (p *TracerProvider) Shutdown() error {
+	if p.bridge {
+		return nil
+	}
 	p.Once.Do(func() {
 		tracer.Stop()
 		atomic.StoreUint32(&p.stopped, 1)

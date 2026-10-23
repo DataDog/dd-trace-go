@@ -2160,3 +2160,16 @@ func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
 	errorStack, _ := getMeta(sp, "error.stack")
 	assert.Equal(t, "boom", errorStack)
 }
+
+func TestSpanFinished(t *testing.T) {
+	assert.True(t, spanFinished(nil))
+
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	s := tracer.StartSpan("op")
+	assert.False(t, spanFinished(s))
+	s.Finish()
+	assert.True(t, spanFinished(s))
+}

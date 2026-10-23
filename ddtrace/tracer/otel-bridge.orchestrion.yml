@@ -1,0 +1,50 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/otel-bridge
+  description: |-
+    Keeps borrowed OpenTelemetry views of Datadog spans safe with the span pool.
+
+aspects:
+  # The OpenTelemetry bridge gets the span from the context snapshot. Record the
+  # owner of each span context when the span starts, before the span is shared.
+  - id: OTel span owner
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+        - function-call: newSpanContext
+    advice:
+      - wrap-expression:
+          template: |-
+            spanContextWithOwner({{ . }}, {{ (index .AST.Args 0).Copy }})
+
+  # A span that an OpenTelemetry view pinned must not go back to the pool: the
+  # view can still write to it. Exactly one compare-and-swap wins between the
+  # pin and the release.
+  - id: OTel pooled release
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+        - function-body:
+            function:
+              - name: releaseSpans
+    advice:
+      - prepend-statements:
+          template: |-
+            if {{ .Function.Argument 0 }} {
+              for _, s := range {{ .Function.Argument 1 }} {
+                if sc := s.context; sc != nil &&
+                  !sc.bridgeState.CompareAndSwap(0, 2) {
+                  continue
+                }
+                s.clear()
+                spanPool.Put(s)
+              }
+              return
+            }
