@@ -87,7 +87,10 @@ require (
 
 require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev // indirect
 
-require github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
+)
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
@@ -97,6 +100,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/gindep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -126,7 +130,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev // indirect
@@ -541,3 +545,7 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 => ../../../contrib/gin-gonic/gin/otelc
+
+replace example.com/gindep => ./internal/gindep
