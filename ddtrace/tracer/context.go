@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 // activeSpanContextKey is a context key for the snapshotted SpanContext.
@@ -123,6 +124,26 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
+// contextWithSpan works like [ContextWithSpan], but Orchestrion does not weave it, so it does not
+// push s onto the goroutine-local stack. startSpanFromContextNoGLS uses it. ContextWithSpan keeps
+// its own copy of this body: a call from the woven ContextWithSpan would add cost on the hot
+// path. Keep the two bodies the same.
+func contextWithSpan(ctx context.Context, s *Span) context.Context {
+	if ctx == nil {
+		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()") //errtrack:ignore caller passed a nil context
+		ctx = context.Background()
+	}
+	// s and its SpanContext snapshot are carried by a single spanCtx node (see
+	// above) rather than two chained context.WithValue calls.
+	var snapshot *SpanContext
+	if s != nil {
+		// Snapshot the SpanContext so it survives span pool recycling.
+		snapshot = s.Context()
+	}
+	newCtx := &spanCtx{Context: ctx, span: s, snapshot: snapshot}
+	return contextWithPropagatedLLMSpan(newCtx, s)
+}
+
 func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context {
 	if s == nil {
 		return ctx
@@ -206,6 +227,28 @@ func spanContextSnapshot(ctx context.Context) *SpanContext {
 	return sc
 }
 
+// parentFromContextNoGLS returns the span context that an OpenTelemetry span uses as its
+// parent when ctx carries a Datadog span. It prefers the snapshot that ContextWithSpan stored,
+// which the Orchestrion goroutine-local stack never stores. It reads a span that an integration
+// put in ctx in another way only when the goroutine-local stack is not active, because the
+// lookup can then not return a span from that stack. It is used by
+// github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry via go:linkname.
+func parentFromContextNoGLS(ctx context.Context) (*SpanContext, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	if sc := spanContextSnapshot(ctx); sc != nil {
+		return sc, true
+	}
+	if orchestrion.GLSActive() {
+		return nil, false
+	}
+	if s, ok := ctx.Value(internal.ActiveSpanKey).(*Span); ok && s != nil {
+		return s.Context(), true
+	}
+	return nil, false
+}
+
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // was placed in ctx by [ContextWithSpan], it is used as the parent of the resulting span even if
 // the ChildOf option is passed. An active span discovered any other way — notably through
@@ -217,6 +260,23 @@ func spanContextSnapshot(ctx context.Context) *SpanContext {
 // [Extract] returns when propagation is disabled. Such a call still gets the discovered parent.
 // +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
+	s, ctx := startSpanFromContext(ctx, operationName, opts...)
+	return s, ContextWithSpan(ctx, s)
+}
+
+// startSpanFromContextNoGLS works like StartSpanFromContext, but the span is only in the returned
+// context. Orchestrion does not put it on the goroutine-local stack. It is used by
+// github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry via go:linkname: an OpenTelemetry span is
+// only active in the context that Start returns.
+func startSpanFromContextNoGLS(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
+	s, ctx := startSpanFromContext(ctx, operationName, opts...)
+	return s, contextWithSpan(ctx, s)
+}
+
+// startSpanFromContext starts the span for [StartSpanFromContext]. It returns the span and the
+// context to which the caller adds the span.
+// +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
+func startSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
 	// we will add at least 1, at most 2 items
 	optsLocal := options.Expand(opts, 0, 2)
@@ -239,5 +299,5 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if s != nil && s.pprofCtxActive != nil {
 		ctx = s.pprofCtxActive
 	}
-	return s, ContextWithSpan(ctx, s)
+	return s, ctx
 }

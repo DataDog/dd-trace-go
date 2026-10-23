@@ -35,3 +35,7 @@ func Enabled() bool {
 func glsActive() bool {
 	return enabled || otelc.Enabled()
 }
+
+// GLSActive reports whether this build has the goroutine-local storage woven in, under
+// orchestrion or otelc.
+func GLSActive() bool { return glsActive() }

@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
+	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -23,6 +24,12 @@ import (
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
+
+//go:linkname startSpanFromContextNoGLS github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.startSpanFromContextNoGLS
+func startSpanFromContextNoGLS(ctx context.Context, operationName string, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context)
+
+//go:linkname parentFromContextNoGLS github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.parentFromContextNoGLS
+func parentFromContextNoGLS(ctx context.Context) (*tracer.SpanContext, bool)
 
 var telemetryTags = []string{"integration_name:otel"}
 
@@ -40,10 +47,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// OTel name is akin to resource name in Datadog
 	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
-		if s, ok := tracer.SpanFromContext(ctx); ok {
-			// if the span originates from the Datadog tracer,
-			// inherit given span context as a parent
-			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
+		// The OpenTelemetry API finds the parent only through the context. The lookup does not read
+		// the Orchestrion goroutine-local stack.
+		if sc, ok := parentFromContextNoGLS(ctx); ok {
+			// The parent is a Datadog span.
+			ddopts = append(ddopts, tracer.ChildOf(sc))
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
@@ -103,8 +111,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// StartSpanFromContext from choosing its own. It is used for its context handling:
 	// the caller's context becomes the span's context, which keeps the application's
 	// pprof labels on the goroutine, and the context it returns carries this span's
-	// profiling labels to its children.
-	s, ctx := tracer.StartSpanFromContext(tracer.ContextWithSpan(ctx, nil), spanName, ddopts...)
+	// profiling labels to its children. The span is not put on the Orchestrion goroutine-local
+	// stack: an OpenTelemetry span is only active in the context that Start returns.
+	s, ctx := startSpanFromContextNoGLS(tracer.ContextWithSpan(ctx, nil), spanName, ddopts...)
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
 	mergedBag, ddBag := mergeBaggageFromContext(ctx)

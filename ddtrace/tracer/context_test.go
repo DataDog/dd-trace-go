@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -71,6 +72,95 @@ func TestSpanContextSnapshot(t *testing.T) {
 	assert.Nil(t, spanContextSnapshot(ContextWithSpan(ctx, nil)))
 }
 
+func TestParentFromContextNoGLS(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	t.Run("nil context", func(t *testing.T) {
+		sc, ok := parentFromContextNoGLS(nil)
+		assert.False(t, ok)
+		assert.Nil(t, sc)
+	})
+	t.Run("span in context", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		sc, ok := parentFromContextNoGLS(ContextWithSpan(context.Background(), s))
+		assert.True(t, ok)
+		assert.Same(t, s.Context(), sc)
+	})
+	t.Run("detached context", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := ContextWithSpan(context.Background(), s)
+		sc, ok := parentFromContextNoGLS(ContextWithSpan(ctx, nil))
+		assert.False(t, ok)
+		assert.Nil(t, sc)
+	})
+	t.Run("span under the raw key only", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := context.WithValue(context.Background(), internal.ActiveSpanKey, s)
+		sc, ok := parentFromContextNoGLS(ctx)
+		// A build without the goroutine-local stack keeps the behavior of main: the span
+		// an integration put in ctx under the raw key counts as a parent. With the stack
+		// active, the raw-key lookup can read that stack, so it must not run.
+		if orchestrion.GLSActive() {
+			assert.False(t, ok)
+			assert.Nil(t, sc)
+		} else {
+			assert.True(t, ok)
+			assert.Same(t, s.Context(), sc)
+		}
+	})
+	t.Run("span under the raw key with the goroutine-local stack active", func(t *testing.T) {
+		defer orchestrion.MockGLS()()
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := context.WithValue(context.Background(), internal.ActiveSpanKey, s)
+		sc, ok := parentFromContextNoGLS(ctx)
+		assert.False(t, ok)
+		assert.Nil(t, sc)
+	})
+}
+
+// TestParentFromContextNoGLSSkipsWrappedContext pins the no-GLS parent lookup against
+// a context that Orchestrion wrapped. The goroutine-local stack holds a span that
+// nobody passed in the context. SpanFromContext keeps the fallback for Datadog
+// code. parentFromContextNoGLS must not read the stack through the wrapper. It
+// must still choose a span that ContextWithSpan put in the explicit chain.
+func TestParentFromContextNoGLSSkipsWrappedContext(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	defer orchestrion.MockGLS()()
+
+	s := StartSpan("test.span")
+	s2 := StartSpan("test.span.explicit")
+
+	// Push s on the goroutine-local stack. Nobody puts it in the context.
+	orchestrion.CtxWithValue(context.Background(), internal.ActiveSpanKey, s)
+
+	ctx := orchestrion.WrapContext(context.Background())
+
+	got, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Same(t, s, got)
+
+	sc, ok := parentFromContextNoGLS(ctx)
+	assert.False(t, ok)
+	assert.Nil(t, sc)
+
+	ctx2 := ContextWithSpan(ctx, s2)
+	sc, ok = parentFromContextNoGLS(ctx2)
+	assert.True(t, ok)
+	assert.Same(t, s2.Context(), sc)
+
+	s.Finish()
+	s2.Finish()
+}
+
 func TestStartSpanFromContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
@@ -99,6 +189,23 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("http.request", got.name)
 	assert.Equal("gin", got.service)
 	assert.Equal("/", got.resource)
+}
+
+func TestStartSpanFromContextNoGLS(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
+	defer stop()
+
+	parent, ctx := startSpanFromContextNoGLS(context.Background(), "parent")
+	got, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Same(t, parent, got)
+
+	child, _ := StartSpanFromContext(ctx, "child")
+	assert.Equal(t, parent.spanID, child.parentID)
+	assert.Equal(t, parent.traceID, child.traceID)
+	child.Finish()
+	parent.Finish()
 }
 
 func TestStartSpanFromContextDefault(t *testing.T) {
