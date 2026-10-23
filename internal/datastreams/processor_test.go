@@ -351,6 +351,44 @@ func TestSetCheckpoint(t *testing.T) {
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
+func TestSetCheckpointDoesNotMutateEdgeTags(t *testing.T) {
+	newTestProcessor := func() *Processor {
+		return &Processor{
+			hashCache:  newHashCache(),
+			stopped:    1,
+			in:         newFastQueue(defaultQueueSize),
+			service:    "service-1",
+			env:        "env",
+			timeSource: time.Now,
+		}
+	}
+	unsorted := func() []string { return []string{"type:kafka", "topic:t", "direction:out"} }
+
+	t.Run("caller slice keeps its order", func(t *testing.T) {
+		edgeTags := unsorted()
+		pathway, _ := PathwayFromContext(newTestProcessor().SetCheckpoint(context.Background(), edgeTags...))
+		assert.Equal(t, unsorted(), edgeTags)
+
+		sorted := unsorted()
+		sort.Strings(sorted)
+		want, _ := PathwayFromContext(newTestProcessor().SetCheckpoint(context.Background(), sorted...))
+		assert.Equal(t, want.GetHash(), pathway.GetHash(), "hash must not depend on edge-tag order")
+	})
+
+	t.Run("shared slice across goroutines", func(t *testing.T) {
+		// Run with -race: each goroutine misses its own cache, so every call reaches nodeHash with the same slice.
+		edgeTags := unsorted()
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				newTestProcessor().SetCheckpoint(context.Background(), edgeTags...)
+			})
+		}
+		wg.Wait()
+		assert.Equal(t, unsorted(), edgeTags)
+	})
+}
+
 func TestSetCheckpointProcessTags(t *testing.T) {
 	processtags.Reload()
 	pTags := processtags.GlobalTags().Slice()
