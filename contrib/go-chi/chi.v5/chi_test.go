@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -855,7 +856,7 @@ func TestOTelSemanticsUnmatchedResourceCustomization(t *testing.T) {
 		{name: "custom resource", opts: []Option{WithResourceNamer(func(*http.Request) string { return "custom-resource" })}, wantResource: "custom-resource"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := append(tt.opts[:len(tt.opts):len(tt.opts)], WithModifyResourceName(func(string) string { return "/modified" }))
+			opts := append(slices.Clip(tt.opts), WithModifyResourceName(func(string) string { return "/modified" }))
 			span := traceChiRequestWithRoute(t, http.MethodGet, "http://example.com/api/missing", http.StatusOK, "", "", func(router chi.Router) {
 				router.Route("/api", func(r chi.Router) {
 					r.Get("/users/{id}", func(http.ResponseWriter, *http.Request) {})
