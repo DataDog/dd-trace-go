@@ -1,5 +1,5 @@
 _v: 1
-name: aws/datadog-lambda-go
+name: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go
 display_name: Datadog Lambda Library for Go
 description: Instruments AWS Lambda handler invocations with distributed tracing, trace-context propagation, enhanced metrics,
   custom distribution metric submission, optional X-Ray trace merging, and optional propagation-carrier stripping.
