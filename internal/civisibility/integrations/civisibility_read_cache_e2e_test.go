@@ -40,13 +40,14 @@ func TestReadCacheSharesBootstrapAcrossGoTestPackages(t *testing.T) {
 	homeDir := t.TempDir()
 	outputDir := t.TempDir()
 	moduleCacheDir := readCacheE2EGoEnv(t, "GOMODCACHE")
+	buildCacheDir := readCacheE2EGoEnv(t, "GOCACHE")
 
 	cmd := exec.Command("go", "test", "-mod=mod", "-count=1", "-p=2", "./...")
 	cmd.Dir = moduleDir
 	cmd.Env = readCacheE2EEnv(os.Environ(), []readCacheE2EEnvVar{
 		{Name: "HOME", Value: homeDir},
 		{Name: "XDG_CACHE_HOME", Value: filepath.Join(homeDir, "xdg-cache")},
-		{Name: "GOCACHE", Value: filepath.Join(t.TempDir(), "go-build")},
+		{Name: "GOCACHE", Value: buildCacheDir},
 		{Name: "GOMODCACHE", Value: moduleCacheDir},
 		{Name: "GOWORK", Value: "off"},
 		{Name: "GOFLAGS", Value: ""},
