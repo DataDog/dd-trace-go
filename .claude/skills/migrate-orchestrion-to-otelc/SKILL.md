@@ -31,8 +31,12 @@ For each behaviour difference you think you found, in this order:
 
 Instrumentation can only be tested in an otelc or orchestrion build, so tests for it go in
 `_integration/<name>/`. A `contrib/<name>` unit test with `mocktracer` only covers contrib code the
-port adds or changes, such as state exported for the hooks. Check that each test fails when you
-break what it guards.
+port adds or changes, such as state exported for the hooks. A hook's own logic can be unit tested
+in its module with `hooktest.NewMockHookContext` from `go.opentelemetry.io/otelc/pkg/hook/hooktest`
+and a helper that calls the hooks the way the trampolines do: before, then the original call
+unless `IsSkipCall`, then the after hook in a `defer` (`serve` in
+`contrib/gorilla/mux/otelc/hooks_test.go`).
+Check that each test fails when you break what it guards.
 
 ## Validation
 
@@ -202,16 +206,10 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
   new goroutines. When there is no such value, put `//otelc:ignore` above the contrib's call. It
   skips every hook on that goroutine for the whole statement, other integrations' too, and does
   not reach goroutines the call starts.
-- Reuse the contrib from the hook instead of copying the orchestrion template, which is usually a
-  copy of the contrib that has drifted from it. For a router or a server, a before hook on its
-  `ServeHTTP` or `Serve` gets the contrib's wrapper for that object, calls it, and skips the
-  original call. If the contrib can only build its wrapper around a new object, add a `Wrap`
-  function that takes an existing one, and make the constructor call it.
-- The contrib's wrapper calls the hooked method again, so the hook fires on its own call. The
-  same runtime guard as above stops it: the contrib marks the request it serves with the object,
-  and the hook lets a marked call through. That also gives one span, not two, for an object the
-  application wrapped with the contrib itself. Test that case with an exact span count. If
-  orchestrion still reports two spans there, skip the test under orchestrion and say why. when the targets are in the same file and
+- A hook must not run application code. otelc recovers a panic in a hook and then runs the
+  original call, so the code runs twice and the panic never reaches the caller. For routers and
+  servers, see "Routers and servers" in `pattern-mapping.md`.
+- Rules whose targets do the same thing share one hook when the targets are in the same file and
   have the same signature. otelc emits a hook's `//go:linkname` stub once per target file, so
   targets in different files of one package need separate hook names, which delegate to a shared
   helper; a shared name there fails with `redeclared in this block`. If a library release moves a
@@ -220,6 +218,8 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
 - Do not declare `...any` for a variadic parameter. otelc keeps the target's element type in the
   stub, so the hook reads a garbage slice with a green build. If the element is a func type the
   hook cannot name, declare `_ ...func()` and never read it (every func value is one pointer).
+- For a method, `GetParam` and `SetParam` count the receiver as parameter 0, so the first argument
+  is 1. A wrong index fails at run time only, when the type assertion in the trampoline panics.
 - On a generic target function, `GetParam`, `SetParam`, `GetReturnVal` and `SetReturnVal` are
   panicking stubs, so even a hook that only reads an argument fails. Use `inject_code` instead
   (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1280).
@@ -230,11 +230,14 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
   module and the contrib are initialized. Queue those calls in package variables with no
   initializer and replay them from the hook module's `init()`
   (`contrib/database/sql/otelc/hooks.go`).
+- A hook that builds state lazily must not keep a failed build. When a call comes before the
+  contrib's `init`, the build panics and the trampoline recovers it. `sync.Once` and
+  `sync.OnceValue` would then never retry, or replay the panic on every call, and the object stays
+  untraced. Store the state only after the build returns, for example with `LoadOrStore`.
 - Every hook call allocates: the trampoline builds a `HookContext` holding pointers to the
   parameters, and it escapes. On a hot path in our own code, prefer `inject_code`. On a library's
   per-request method, a hook that reuses the contrib is usually worth it, but benchmark it under
-  otelc against the alternative before deciding. For gorilla/mux it added about 4% and 11
-  allocations to a traced request, with the hook running twice per request.
+  otelc against the alternative before deciding.
 
 ### Rules
 
@@ -287,6 +290,7 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
 
 Do not copy rule syntax or API signatures into these docs; link the source in `references.md`.
 
-- `pattern-mapping.md`: Orchestrion aspect patterns to the otelc rule that reproduces them.
+- `pattern-mapping.md`: Orchestrion aspect patterns to the otelc rule that reproduces them, and
+  how to hook a router or a server.
 - `feature-gaps.md`: Orchestrion constructs otelc cannot reproduce (stop-and-flag cases).
 - `references.md`: sources of truth for Orchestrion and otelc.
