@@ -5,6 +5,7 @@
 package telemetrytest
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -25,8 +26,7 @@ type contribPkg struct {
 }
 
 type contribModule struct {
-	Path string
-	Dir  string
+	Dir string
 }
 
 var InstrumentationImport = "github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -47,12 +47,18 @@ func TestTelemetryEnabled(t *testing.T) {
 
 	// One workspace-wide go list replaces one go list per contrib module: each
 	// per-module invocation reloaded the whole workspace module graph, which
-	// dominated this test's runtime.
+	// dominated this test's runtime. The pattern resolves only through the
+	// workspace: the root module is github.com/DataDog/dd-trace-go/v2, so
+	// module mode (GOWORK=off, a missing go.work) matches no contrib
+	// packages and the guards below fail the test instead of passing it
+	// vacuously.
 	cmd := exec.Command("go", "list", "-json", "github.com/DataDog/dd-trace-go/contrib/...")
 	cmd.Dir = root
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	body, err := cmd.Output()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("go list contrib packages: %v\n%s", err, stderr.String())
 	}
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
@@ -63,6 +69,9 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		packages = append(packages, out)
 	}
+	if len(packages) == 0 {
+		t.Fatal("go list github.com/DataDog/dd-trace-go/contrib/... matched no packages; is the workspace (go.work) active?")
+	}
 
 	modules := make(map[string][]contribPkg)
 	for _, pkg := range packages {
@@ -70,6 +79,11 @@ func TestTelemetryEnabled(t *testing.T) {
 			continue
 		}
 		modules[pkg.Module.Dir] = append(modules[pkg.Module.Dir], pkg)
+	}
+	// database/sql is a long-stable module. Its absence means workspace
+	// resolution drifted, not that the module moved.
+	if _, ok := modules[filepath.Join(root, "contrib", "database", "sql")]; !ok {
+		t.Fatalf("the database/sql contrib module is missing from the go list result; is the workspace (go.work) current?")
 	}
 	for _, moduleDir := range slices.Sorted(maps.Keys(modules)) {
 		if skipContribModule(moduleDir) {
