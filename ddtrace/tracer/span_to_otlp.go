@@ -87,6 +87,7 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg.OTLPSpanMetricsEnabled() {
 		attrs = append(attrs, otlpKeyValue("_dd.stats_computed", otlpStringValue("true")))
 	}
+	otelSemantics := cfg.OTelSemanticsEnabled()
 	globalTags := cfg.GlobalTags()
 	for _, key := range slices.Sorted(maps.Keys(globalTags)) {
 		value, ok := globalTags[key].(string)
@@ -95,6 +96,18 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 		}
 		if _, ok := ignoredGlobalTags[strings.ToLower(key)]; ok {
 			continue
+		}
+		if otelSemantics {
+			// Encoded as integers on spans; keep them there rather than
+			// exporting them as resource strings.
+			if _, ok := otelIntMetricKeys[key]; ok {
+				continue
+			}
+			// Omitted from spans under OTel semantics; don't reintroduce them
+			// on the resource.
+			if _, ok := ddOnlyAttributeKeys[key]; ok {
+				continue
+			}
 		}
 		attrs = append(attrs, otlpKeyValue(key, otlpStringValue(value)))
 	}

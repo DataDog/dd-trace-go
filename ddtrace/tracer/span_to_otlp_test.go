@@ -105,6 +105,45 @@ func TestBuildResource(t *testing.T) {
 		assert.Equal(t, "true", keyValuesToMap(buildResource(cfg).Attributes)["_dd.stats_computed"])
 	})
 
+	t.Run("otel semantics keeps integer keys on spans", func(t *testing.T) {
+		for _, otelSemantics := range []bool{true, false} {
+			cfg := internalconfig.CreateNew()
+			cfg.SetOTelSemanticsEnabled(otelSemantics, internalconfig.OriginCode)
+			cfg.SetGlobalTag(ext.ServerPort, "8080", internalconfig.OriginCode)
+			resource := buildResource(cfg)
+
+			s := newBasicSpan("op")
+			s.meta = tinternal.NewSpanMetaFromMap(map[string]string{ext.ServerPort: "8080"})
+			spanAttrs := keyValuesToMap(convertSpanAttributes(s, "", otelSemantics, resourceStringAttrs(resource)))
+			resourceAttrs := keyValuesToMap(resource.Attributes)
+			if otelSemantics {
+				assert.NotContains(t, resourceAttrs, ext.ServerPort)
+				assert.Equal(t, int64(8080), spanAttrs[ext.ServerPort])
+			} else {
+				assert.Equal(t, "8080", resourceAttrs[ext.ServerPort])
+				assert.NotContains(t, spanAttrs, ext.ServerPort)
+			}
+		}
+	})
+
+	t.Run("otel semantics omits datadog-only keys", func(t *testing.T) {
+		for _, otelSemantics := range []bool{true, false} {
+			cfg := internalconfig.CreateNew()
+			cfg.SetOTelSemanticsEnabled(otelSemantics, internalconfig.OriginCode)
+			for _, k := range []string{ext.SpanKind, ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack} {
+				cfg.SetGlobalTag(k, "v", internalconfig.OriginCode)
+			}
+			attrs := keyValuesToMap(buildResource(cfg).Attributes)
+			for _, k := range []string{ext.SpanKind, ext.ErrorMsg, ext.ErrorStack, ext.ErrorHandlingStack} {
+				if otelSemantics {
+					assert.NotContains(t, attrs, k)
+				} else {
+					assert.Equal(t, "v", attrs[k])
+				}
+			}
+		}
+	})
+
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
 		cfg := internalconfig.CreateNew()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)
