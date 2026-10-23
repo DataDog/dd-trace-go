@@ -88,6 +88,7 @@ jobs:
           go-version: "1.26.4"
           workload: otelc-matrix
           cache-provider: github-cache
+          cache: "false"
       - name: Compute Matrix
         id: matrix
         run: |-

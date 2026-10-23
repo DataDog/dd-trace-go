@@ -1,6 +1,10 @@
 name: Main Branch and Release Tests
 
 on:
+  # Manual dispatch re-seeds the default-branch caches by hand, for
+  # example after a Go patch release changed every cache key; only
+  # seed-set keys save (the setup-go action's seed input).
+  workflow_dispatch: # manually
   push:
     branches:
       - release-v*

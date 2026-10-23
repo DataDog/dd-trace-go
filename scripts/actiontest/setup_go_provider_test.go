@@ -160,6 +160,8 @@ func TestSetupGoObservationGitHubCache(t *testing.T) {
 		"MATCHED_KEY":       "",
 		"RESTORE_SOURCE":    "",
 		"DEP_MATCH":         "",
+		"SEED_KEY":          "",
+		"SAVE_RESOLVED":     "",
 	})
 	if record["provider"] != "github-cache" {
 		t.Errorf("provider = %v, want github-cache", record["provider"])
@@ -188,6 +190,8 @@ func TestSetupGoObservationCloudxRestored(t *testing.T) {
 		"MATCHED_KEY":    "",
 		"RESTORE_SOURCE": "",
 		"DEP_MATCH":      "",
+		"SEED_KEY":       "",
+		"SAVE_RESOLVED":  "",
 	}
 	for _, restored := range []string{"true", "false"} {
 		env := map[string]string{"RESTORED": restored}

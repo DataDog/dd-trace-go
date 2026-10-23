@@ -162,6 +162,8 @@ func TestSetupGoObservationRestoreSourceFields(t *testing.T) {
 		"MATCHED_KEY":       matchedKeyFixture("main"),
 		"RESTORE_SOURCE":    "default",
 		"DEP_MATCH":         "true",
+		"SEED_KEY":          "true",
+		"SAVE_RESOLVED":     "false",
 	})
 	entry := setupGoRestore(t, record)
 	for key, want := range map[string]string{
@@ -192,6 +194,8 @@ func TestSetupGoObservationOmitsRestoreSourceWithoutProvider(t *testing.T) {
 		"MATCHED_KEY":       "",
 		"RESTORE_SOURCE":    "",
 		"DEP_MATCH":         "",
+		"SEED_KEY":          "",
+		"SAVE_RESOLVED":     "",
 	})
 	entry := setupGoRestore(t, record)
 	for _, key := range []string{"cache_matched_key", "restore_source", "dep_match", "restored"} {
@@ -228,5 +232,171 @@ func TestSetupGoExposesRestoreSourceOutputs(t *testing.T) {
 		if out.Value != wantStep {
 			t.Errorf("output %s = %q, want %q", name, out.Value, wantStep)
 		}
+	}
+}
+
+// ---- save policy (seed input resolution) ----
+
+// resolveSavePolicy runs the setup-go "Resolve save policy" step with the
+// given environment and returns the save output.
+func resolveSavePolicy(t *testing.T, env map[string]string) string {
+	t.Helper()
+	base := map[string]string{
+		"SEED":           "false",
+		"EVENT":          "pull_request",
+		"REF":            "refs/pull/5570/merge",
+		"DEFAULT_BRANCH": "main",
+	}
+	maps.Copy(base, env)
+	written, out, err := runSetupGoStep(t, setupGoStep(t, "Resolve save policy"), base)
+	if err != nil {
+		t.Fatalf("save-policy step failed: %v\n%s", err, out)
+	}
+	value, ok := strings.CutPrefix(strings.TrimSpace(written), "save=")
+	if !ok {
+		t.Fatalf("GITHUB_OUTPUT has no save= line: %q", written)
+	}
+	return value
+}
+
+// TestSetupGoSavePolicyTruthTable covers every event x ref x seed
+// combination that decides whether a run may save a seed entry.
+func TestSetupGoSavePolicyTruthTable(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "nightly schedule with a seed key saves",
+			env:  map[string]string{"SEED": "true", "EVENT": "schedule", "REF": "refs/heads/main"},
+			want: "true",
+		},
+		{
+			name: "nightly schedule without a seed key restores only",
+			env:  map[string]string{"SEED": "false", "EVENT": "schedule", "REF": "refs/heads/main"},
+			want: "false",
+		},
+		{
+			name: "manual dispatch on the default branch with a seed key saves",
+			env:  map[string]string{"SEED": "true", "EVENT": "workflow_dispatch", "REF": "refs/heads/main"},
+			want: "true",
+		},
+		{
+			name: "manual dispatch on a feature branch never saves",
+			env:  map[string]string{"SEED": "true", "EVENT": "workflow_dispatch", "REF": "refs/heads/feature"},
+			want: "false",
+		},
+		{
+			name: "manual dispatch against a non-default main-named branch",
+			env: map[string]string{"SEED": "true", "EVENT": "workflow_dispatch",
+				"REF": "refs/heads/main", "DEFAULT_BRANCH": "develop"},
+			want: "false",
+		},
+		{
+			name: "a pull request with a seed key restores only",
+			env:  map[string]string{"SEED": "true", "EVENT": "pull_request", "REF": "refs/pull/5570/merge"},
+			want: "false",
+		},
+		{
+			name: "a merge-queue push with a seed key restores only",
+			env: map[string]string{"SEED": "true", "EVENT": "push",
+				"REF": "refs/heads/mq-working-branch-x"},
+			want: "false",
+		},
+		{
+			name: "a release push with a seed key restores only",
+			env:  map[string]string{"SEED": "true", "EVENT": "push", "REF": "refs/tags/v2.11.0"},
+			want: "false",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveSavePolicy(t, tc.env); got != tc.want {
+				t.Errorf("save = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSetupGoObservationSeedFields: the observation carries the seed-key
+// membership and the resolved save mode for the payload's tags.
+func TestSetupGoObservationSeedFields(t *testing.T) {
+	record := observationRecord(t, map[string]string{
+		"PROVIDER":          "cloudx",
+		"WORKLOAD":          "multi-os",
+		"REQUESTED_VERSION": "1.27",
+		"RESOLVED_VERSION":  "1.27.2",
+		"CACHE_ENABLED":     "true",
+		"SETUP_OUTCOME":     "success",
+		"SETUP_CACHE_HIT":   "false",
+		"RESTORED":          "false",
+		"MATCHED_KEY":       "",
+		"RESTORE_SOURCE":    "none",
+		"DEP_MATCH":         "false",
+		"SEED_KEY":          "true",
+		"SAVE_RESOLVED":     "false",
+	})
+	entry := setupGoRestore(t, record)
+	if entry["seed_key"] != "true" || entry["save"] != "false" {
+		t.Errorf("seed_key/save = %v/%v, want true/false (PR run of a seed-set key)", entry["seed_key"], entry["save"])
+	}
+}
+
+// TestSetupGoExposesSaveOutput pins the action-level save output wiring.
+func TestSetupGoExposesSaveOutput(t *testing.T) {
+	raw, err := os.ReadFile(setupGoAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action struct {
+		Outputs map[string]struct {
+			Value string `yaml:"value"`
+		} `yaml:"outputs"`
+	}
+	if err := yaml.Unmarshal(raw, &action); err != nil {
+		t.Fatal(err)
+	}
+	out, ok := action.Outputs["save"]
+	if !ok {
+		t.Fatal("setup-go action lacks the save output")
+	}
+	if out.Value != "${{ steps.save-policy.outputs.save }}" {
+		t.Errorf("save output = %q", out.Value)
+	}
+}
+
+// TestSetupGoSavePolicyRunsBeforeProvider: the cloudx step consumes the
+// save output, so the policy must resolve first or a seed run passes an
+// empty save and never writes its entry.
+func TestSetupGoSavePolicyRunsBeforeProvider(t *testing.T) {
+	raw, err := os.ReadFile(setupGoAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action struct {
+		Runs struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+			} `yaml:"steps"`
+		} `yaml:"runs"`
+	}
+	if err := yaml.Unmarshal(raw, &action); err != nil {
+		t.Fatal(err)
+	}
+	policy, provider := -1, -1
+	for i, s := range action.Runs.Steps {
+		switch s.Name {
+		case "Resolve save policy":
+			policy = i
+		case "Isolate and refresh Go build caches":
+			provider = i
+		}
+	}
+	if policy == -1 || provider == -1 {
+		t.Fatalf("steps not found: policy=%d provider=%d", policy, provider)
+	}
+	if policy > provider {
+		t.Errorf("Resolve save policy (step %d) runs after the provider (step %d)", policy, provider)
 	}
 }
