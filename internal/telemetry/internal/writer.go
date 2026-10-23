@@ -72,6 +72,10 @@ type Writer interface {
 	// It returns a non-empty [EndpointRequestResult] slice and a nil error if the payload was sent successfully.
 	// Otherwise, the error is a call to [errors.Join] on all errors that occurred.
 	Flush(transport.Payload) ([]EndpointRequestResult, error)
+	// Cancel aborts every in-flight request and makes every later request
+	// fail. Use when the caller must not wait for the writer's requests to
+	// finish, such as a shutdown bound that expired.
+	Cancel()
 }
 
 // EndpointRequestResult is returned by the Flush method of the Writer interface.
@@ -94,6 +98,10 @@ type writer struct {
 	bodyMu     sync.Mutex
 	httpClient *http.Client
 	endpoints  []*http.Request
+	// ctx is the base context of every request. Cancel aborts all in-flight
+	// requests at once, because each request carries ctx.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type WriterConfig struct {
@@ -130,11 +138,14 @@ func NewWriter(config WriterConfig) (Writer, error) {
 	for i, endpoint := range config.Endpoints {
 		endpoints[i] = preBakeRequest(body, endpoint)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 
 	return &writer{
 		body:       body,
 		httpClient: config.HTTPClient,
 		endpoints:  endpoints,
+		ctx:        ctx,
+		cancel:     cancel,
 	}, nil
 }
 
@@ -224,7 +235,7 @@ func (w *writer) encodePayloadForBazelFile() (body []byte, err error) {
 
 // newRequest creates a new http.Request with the given payload and the necessary headers.
 func (w *writer) newRequest(endpoint *http.Request, requestType transport.RequestType) *http.Request {
-	request := endpoint.Clone(context.Background())
+	request := endpoint.Clone(w.ctx)
 	request.Header.Set("DD-Telemetry-Request-Type", string(requestType))
 
 	pipeReader, pipeWriter := io.Pipe()
@@ -351,6 +362,11 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 	return results, err
 }
 
+// Cancel aborts every in-flight request and makes every later request fail.
+func (w *writer) Cancel() {
+	w.cancel()
+}
+
 // RecordWriter is a Writer that stores the payloads in memory. Used for testing purposes
 type RecordWriter struct {
 	mu       sync.Mutex
@@ -368,6 +384,8 @@ func (w *RecordWriter) Flush(payload transport.Payload) ([]EndpointRequestResult
 		},
 	}, nil
 }
+
+func (w *RecordWriter) Cancel() {}
 
 func (w *RecordWriter) Payloads() []transport.Payload {
 	w.mu.Lock()
