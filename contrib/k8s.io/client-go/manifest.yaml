@@ -6,6 +6,6 @@ description: Instruments Kubernetes API HTTP requests made by client-go, creatin
 packages:
 - name: k8s.io/client-go
 category:
-- http.client
+- other
 systems: []
 creation_date: '2018-08-08'
