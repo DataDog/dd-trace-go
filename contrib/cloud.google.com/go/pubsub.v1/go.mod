@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	cloud.google.com/go/pubsub v1.50.1
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.3
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.4
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.83.2
