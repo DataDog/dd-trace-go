@@ -39,9 +39,9 @@ func CheckCorpusLifecycle(t *testing.T, enabled string, corpusSize int) {
 	}
 	server := mockci.Start(net.SettingsResponseData{SubtestFeaturesEnabled: true}, nil, nil)
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureChildDeadline(fixtureChildTimeout))
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "-test.run=^FuzzCorpus$", "-test.timeout=25s")
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^FuzzCorpus$", "-test.timeout="+fixtureChildTimeout.String())
 	skippedCorpus := enabled == "skip"
 	if skippedCorpus {
 		enabled = "true"
@@ -114,7 +114,7 @@ func CheckFatalShutdown(t *testing.T, scenario string, target func(*testing.F)) 
 	}
 	server := mockci.StartWithTestManagement(settings, nil, nil, management)
 	defer server.Close()
-	args := []string{"-test.run=^" + root + "$", "-test.timeout=15s"}
+	args := []string{"-test.run=^" + root + "$", "-test.timeout=" + fixtureChildTimeout.String()}
 	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=fatal-child", "DD_FUZZ_FATAL_KIND="+scenario)
 	if strings.HasSuffix(scenario, "-error") || strings.HasSuffix(scenario, "-fatal") {
 		// Check the uninstrumented process too: cleanup Fatal replaces the
@@ -338,7 +338,7 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	}
 	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=lifecycle-child", "DD_CIVISIBILITY_ENABLED="+enabled)
 	childEnv = append(childEnv, extraEnv...)
-	output, err := runFixtureChild(binary, childEnv, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout=15s")
+	output, err := runFixtureChild(binary, childEnv, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout="+fixtureChildTimeout.String())
 	if err == nil {
 		return string(output), 0
 	}
@@ -349,10 +349,43 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	return "", -1
 }
 
+// fixtureChildTimeout is the native test budget the harness gives each child.
+// A healthy child finishes in about one second. The hosted Windows runners
+// stall fixture children for tens of seconds, and a stall consumes the
+// child's own budget, so a tight value turns a runner stall into a failure.
+const fixtureChildTimeout = time.Minute
+
+// fixtureChildGrace is the wall-clock time the harness grants beyond the
+// child's own -test.timeout. The child spends that margin printing goroutine
+// stacks and exiting after its budget expires. The harness deadline must
+// stay behind the child's own timeout: when it fires first, the harness kills
+// the child and the run reports the cancellation instead of the child's result.
+const fixtureChildGrace = 45 * time.Second
+
+// fixtureChildDeadline returns the harness deadline for a child that runs
+// with the given native -test.timeout budget.
+func fixtureChildDeadline(childTimeout time.Duration) time.Duration {
+	return childTimeout + fixtureChildGrace
+}
+
+// fixtureChildHarnessTimeout returns the runFixtureChild deadline for the
+// child's arguments. It follows the child's own -test.timeout when the flag
+// is present. A child without the flag runs under the grace budget alone.
+func fixtureChildHarnessTimeout(args []string) time.Duration {
+	for _, arg := range args {
+		if value, ok := strings.CutPrefix(arg, "-test.timeout="); ok {
+			if child, err := time.ParseDuration(value); err == nil {
+				return fixtureChildDeadline(child)
+			}
+		}
+	}
+	return fixtureChildGrace
+}
+
 // Each invocation owns its deadline: the CI-disabled reference run must not
 // consume the CI-enabled child's budget.
 func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureChildHarnessTimeout(args))
 	defer cancel()
 	cacheRoot, err := os.MkdirTemp("", "dd-trace-go-fuzz-child-")
 	if err != nil {
