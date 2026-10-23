@@ -161,6 +161,13 @@ type cacheAgg struct {
 	unknown  int
 	saveErrs int
 	post     []float64
+	// restoreSources counts restores per restore source
+	// (exact/default/branch/none); empty for records that predate the
+	// restore-source field.
+	restoreSources map[string]int
+	// disagreements counts setup_go restores whose matched key and
+	// restored cross-check contradict each other.
+	disagreements int
 }
 
 // nonExact counts restores that were neither exact hits nor
@@ -222,6 +229,15 @@ func perfValues(records []jobObservation) perfSplit {
 				case "unknown":
 					agg.unknown++
 				}
+				if r.RestoreSource != "" {
+					if agg.restoreSources == nil {
+						agg.restoreSources = map[string]int{}
+					}
+					agg.restoreSources[r.RestoreSource]++
+				}
+				if r.Disagreement {
+					agg.disagreements++
+				}
 			}
 			for _, s := range rec.Cache.Saves {
 				if s == "error" || s == "conflict" {
@@ -252,7 +268,45 @@ type cacheRow struct {
 	baseSaveErrs, baseNoObs int
 	candRestores, candNonExact, candUnknown,
 	candSaveErrs, candNoObs int
-	basePostP50, candPostP50 *float64
+	basePostP50, candPostP50   *float64
+	baseSource, candSource     string
+	baseDisagree, candDisagree int
+}
+
+// summarizeRestoreSources renders a stratum's restore-source counts in a
+// fixed order as "exact:1 default:3 branch:1 none:2", omitting absent
+// sources. Empty when no restore carried the field (records collected
+// before the restore-source telemetry existed).
+func summarizeRestoreSources(sources map[string]int) string {
+	if len(sources) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, name := range []string{"exact", "default", "branch", "none"} {
+		if n, ok := sources[name]; ok {
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			fmt.Fprintf(&b, "%s:%d", name, n)
+		}
+	}
+	// Unknown source names keep their (sorted) place after the known ones.
+	others := make([]string, 0, len(sources))
+	for name := range sources {
+		switch name {
+		case "exact", "default", "branch", "none":
+		default:
+			others = append(others, name)
+		}
+	}
+	slices.Sort(others)
+	for _, name := range others {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%s:%d", name, sources[name])
+	}
+	return b.String()
 }
 
 func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
@@ -278,6 +332,8 @@ func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
 			row.baseSaveErrs = a.saveErrs
 			row.baseNoObs = a.noObs
 			row.basePostP50 = median(a.post)
+			row.baseSource = summarizeRestoreSources(a.restoreSources)
+			row.baseDisagree = a.disagreements
 		}
 		if a := cand.cache[k]; a != nil {
 			row.candRestores = a.restores
@@ -286,6 +342,8 @@ func cacheBehaviorRows(base, cand perfSplit) []cacheRow {
 			row.candSaveErrs = a.saveErrs
 			row.candNoObs = a.noObs
 			row.candPostP50 = median(a.post)
+			row.candSource = summarizeRestoreSources(a.restoreSources)
+			row.candDisagree = a.disagreements
 		}
 		rows = append(rows, row)
 	}
@@ -579,8 +637,10 @@ func writeComparisonCSV(dir string, rows []comparisonRow,
 		"candidate_p50_s", "candidate_p95_s",
 		"baseline_restore_non_exact", "baseline_restore_unknown",
 		"baseline_save_errors", "baseline_no_observation", "baseline_post_p50_s",
+		"baseline_restore_source", "baseline_restore_disagreements",
 		"candidate_restore_non_exact", "candidate_restore_unknown",
 		"candidate_save_errors", "candidate_no_observation", "candidate_post_p50_s",
+		"candidate_restore_source", "candidate_restore_disagreements",
 		"excluded")
 	for _, row := range rows {
 		c := cacheByStratum[row.stratum]
@@ -591,8 +651,10 @@ func writeComparisonCSV(dir string, rows []comparisonRow,
 			fmtSeconds(row.candP50), fmtSeconds(row.candP95),
 			strconv.Itoa(c.baseNonExact), strconv.Itoa(c.baseUnknown),
 			strconv.Itoa(c.baseSaveErrs), strconv.Itoa(c.baseNoObs), fmtSeconds(c.basePostP50),
+			c.baseSource, strconv.Itoa(c.baseDisagree),
 			strconv.Itoa(c.candNonExact), strconv.Itoa(c.candUnknown),
 			strconv.Itoa(c.candSaveErrs), strconv.Itoa(c.candNoObs), fmtSeconds(c.candPostP50),
+			c.candSource, strconv.Itoa(c.candDisagree),
 			row.excluded)
 	}
 	w.write("")
@@ -667,15 +729,22 @@ func renderReport(d reportData) string {
 	b.WriteString("classifications, save errors, and post-phase p50 from the\n")
 	b.WriteString("successful first attempts of each stratum. \"no observation\"\n")
 	b.WriteString("counts jobs without a cache-observation record: their\n")
-	b.WriteString("restores are missing evidence, not zero restores.\n\n")
-	b.WriteString("| workflow | job | runner | restores b (non-exact/unknown) | restores c | save errors b/c | no observation b/c | post p50 b/c |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("restores are missing evidence, not zero restores. Restore\n")
+	b.WriteString("source counts (exact/default/branch/none, `default` marking a\n")
+	b.WriteString("default-branch fallback restore) are empty for windows collected\n")
+	b.WriteString("before the field existed; \"key≠restored\" counts restores whose\n")
+	b.WriteString("matched key and restored cross-check disagree — evidence of a\n")
+	b.WriteString("provider defect, never a normal outcome.\n\n")
+	b.WriteString("| workflow | job | runner | restores b (non-exact/unknown) | restores c | restore source b/c | key≠restored b/c | save errors b/c | no observation b/c | post p50 b/c |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, row := range d.cacheRows {
 		s := row.stratum
-		fmt.Fprintf(&b, "| %s | %s | %s | %d (%d/%d) | %d (%d/%d) | %d/%d | %d/%d | %s/%s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %s | %d (%d/%d) | %d (%d/%d) | %s/%s | %d/%d | %d/%d | %d/%d | %s/%s |\n",
 			s.workflow, s.job, s.runner,
 			row.baseRestores, row.baseNonExact, row.baseUnknown,
 			row.candRestores, row.candNonExact, row.candUnknown,
+			cellOrDash(row.baseSource), cellOrDash(row.candSource),
+			row.baseDisagree, row.candDisagree,
 			row.baseSaveErrs, row.candSaveErrs,
 			row.baseNoObs, row.candNoObs,
 			fmtSeconds(row.basePostP50), fmtSeconds(row.candPostP50))
@@ -707,4 +776,13 @@ func pct(v *float64) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%.1f", *v*100)
+}
+
+// cellOrDash renders an empty report cell as a dash so the Markdown table
+// keeps its column count when a window has no restore-source evidence.
+func cellOrDash(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
 }

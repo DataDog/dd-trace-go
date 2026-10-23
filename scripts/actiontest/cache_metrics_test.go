@@ -217,3 +217,50 @@ func TestPayloadSizeSeries(t *testing.T) {
 		}
 	})
 }
+
+func TestPayloadSeedTagsOnSetupGoOnly(t *testing.T) {
+	// The setup_go entry carries the restore-source fields, so its series
+	// carries the tags; the tools entry in the same merged record carries
+	// a matched key but no restore-source evidence, so it must not.
+	restores := []map[string]any{
+		restore(map[string]any{
+			"cache_hit":         "false",
+			"cache_matched_key": "go-cache-Windows-X64-ddtg-cx1-multi-os-x-1.27.2-main-h-1",
+			"restore_source":    "default",
+			"dep_match":         "true",
+		}),
+		{
+			"name":              "tools",
+			"enabled":           "true",
+			"outcome":           "success",
+			"cache_hit":         "true",
+			"cache_matched_key": "Linux-X64-go-1.27.2-tools-d4bfd7eb5342b83995581b2c2ce57bb146e8d0a05d9d08001b3f70c26a26cd72",
+		},
+	}
+	all := runPayload(t, observation("cloudx", restores...), false)
+	var setup, tools []series
+	for _, s := range all {
+		switch s.tag("cache_name:") {
+		case "setup_go":
+			setup = append(setup, s)
+		case "tools":
+			tools = append(tools, s)
+		}
+	}
+	if len(setup) != 1 || len(tools) != 1 {
+		t.Fatalf("series = setup_go:%d tools:%d, want 1 each", len(setup), len(tools))
+	}
+	if got := setup[0].tag("restore_source:"); got != "default" {
+		t.Errorf("setup_go restore_source tag = %q, want default", got)
+	}
+	if got := setup[0].tag("dep_match:"); got != "true" {
+		t.Errorf("setup_go dep_match tag = %q, want true", got)
+	}
+	for _, s := range tools {
+		for _, tag := range s.Tags {
+			if strings.HasPrefix(tag, "restore_source:") || strings.HasPrefix(tag, "dep_match:") {
+				t.Errorf("tools series carries %q: %v", tag, s.Tags)
+			}
+		}
+	}
+}
