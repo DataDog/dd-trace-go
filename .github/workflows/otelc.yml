@@ -51,6 +51,10 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/labstack/echo.v4
+    contrib/labstack/echo.v4/otelc
+    contrib/labstack/echo.v5
+    contrib/labstack/echo.v5/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -64,6 +68,8 @@ env:
     redigo
     grpc
     99designs.gqlgen
+    echo.v4
+    echo.v5
 
 jobs:
   go-versions-matrix:
