@@ -22,10 +22,15 @@ aspects:
       - add-struct-field:
           name: __dd_confmap
           type: "*ConfigMap"
+      - add-struct-field:
+          name: __dd_clusterIDFetchStop
+          type: "__dd_stopFunc"
       - inject-declarations:
           imports:
+            context: context
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            time: time
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion2
@@ -191,6 +196,29 @@ aspects:
               return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
             }
 
+            func __dd_startClusterIDFetch(tr *kafkatrace.Tracer, admin *AdminClient) func() {
+              ctx, cancel := context.WithCancel(context.Background())
+              done := make(chan struct{})
+              go func() {
+                defer close(done)
+                defer admin.Close()
+                ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+                defer cancel()
+                clusterID, err := admin.ClusterID(ctx)
+                if err != nil {
+                  if ctx.Err() != context.Canceled {
+                    __dd_instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+                  }
+                  return
+                }
+                tr.SetClusterID(clusterID)
+              }()
+              return func() {
+                cancel()
+                <-done
+              }
+            }
+
             func __dd_initConsumer(c *Consumer) {
               if c.__dd_tracer != nil {
                 return
@@ -200,6 +228,14 @@ aspects:
                 opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
               }
               c.__dd_tracer = __dd_newKafkaTracer(opts...)
+              if c.__dd_tracer.DSMEnabled() {
+                admin, err := NewAdminClientFromConsumer(c)
+                if err != nil {
+                  __dd_instr.Logger().Warn("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
+                } else {
+                  c.__dd_clusterIDFetchStop = __dd_startClusterIDFetch(c.__dd_tracer, admin)
+                }
+              }
               // TODO: accessing c.events here might break if the library renames this variable...
               c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
             }
@@ -209,6 +245,14 @@ aspects:
                 return
               }
               p.__dd_tracer = __dd_newKafkaTracer()
+              if p.__dd_tracer.DSMEnabled() {
+                admin, err := NewAdminClientFromProducer(p)
+                if err != nil {
+                  __dd_instr.Logger().Warn("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
+                } else {
+                  p.__dd_clusterIDFetchStop = __dd_startClusterIDFetch(p.__dd_tracer, admin)
+                }
+              }
               // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
               p.__dd_events = p.events
               p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
@@ -220,6 +264,7 @@ aspects:
             type __dd_eventChan = chan Event
             type __dd_messageChan = chan *Message
             type __dd_kafkaTracer = kafkatrace.Tracer
+            type __dd_stopFunc = func()
 
   ## Trace Consumer ##
   - id: NewConsumer
@@ -257,6 +302,10 @@ aspects:
           template: |-
             {{- $c := .Function.Receiver -}}
             __dd_initConsumer({{ $c }})
+            if {{ $c }}.__dd_clusterIDFetchStop != nil {
+              {{ $c }}.__dd_clusterIDFetchStop()
+              {{ $c }}.__dd_clusterIDFetchStop = nil
+            }
             defer func() {
               if {{ $c }}.__dd_events == nil && {{ $c }}.__dd_tracer.PrevSpan != nil {
                 {{ $c }}.__dd_tracer.PrevSpan.Finish()
@@ -378,6 +427,23 @@ aspects:
 
   ## Trace Producer ##
 
+  - id: NewProducer
+    join-point:
+      all-of:
+        - import-path: github.com/confluentinc/confluent-kafka-go/v2/kafka
+        - function-body:
+            function:
+              - name: NewProducer
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $p := .Function.Result 0 -}}
+            defer func() {
+              if {{ $p }} != nil {
+                __dd_initProducer({{ $p }})
+              }
+            }()
+
   - id: Producer
     join-point:
       struct-definition: github.com/confluentinc/confluent-kafka-go/v2/kafka.Producer
@@ -391,6 +457,9 @@ aspects:
       - add-struct-field:
           name: __dd_produceChannel
           type: "__dd_messageChan"
+      - add-struct-field:
+          name: __dd_clusterIDFetchStop
+          type: "__dd_stopFunc"
 
   - id: Producer.Events
     join-point:
@@ -435,6 +504,10 @@ aspects:
           template: |-
             {{- $p := .Function.Receiver -}}
             __dd_initProducer({{ $p }})
+            if {{ $p }}.__dd_clusterIDFetchStop != nil {
+              {{ $p }}.__dd_clusterIDFetchStop()
+              {{ $p }}.__dd_clusterIDFetchStop = nil
+            }
             close({{ $p }}.__dd_produceChannel)
 
   - id: Producer.Produce
