@@ -82,7 +82,11 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 		size, err := w.payload.push(cvEvent)
 		if err != nil {
 			w.encodeFailures.Add(1)
-			w.encodeErr.CompareAndSwap(nil, &err)
+			// firstErr keeps err addressable only on this branch. Taking &err
+			// above the branch instead would make every event's err escape to the
+			// heap, even when the encode succeeds.
+			firstErr := err
+			w.encodeErr.CompareAndSwap(nil, &firstErr)
 			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error()) //errtrack:ignore per-event path; aggregated by reportEncodeFailures at the flush boundary
 		}
 		if size > agentlessPayloadSizeLimit {
