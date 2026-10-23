@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -80,10 +81,38 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		modules[pkg.Module.Dir] = append(modules[pkg.Module.Dir], pkg)
 	}
-	// database/sql is a long-stable module. Its absence means workspace
-	// resolution drifted, not that the module moved.
-	if _, ok := modules[filepath.Join(root, "contrib", "database", "sql")]; !ok {
-		t.Fatalf("the database/sql contrib module is missing from the go list result; is the workspace (go.work) current?")
+	// The workspace pattern only sees modules in go.work's use list. Compare
+	// against the go.mod files on disk, so a module missing from go.work
+	// cannot silently leave the checked set.
+	eligible := make(map[string]struct{})
+	err = filepath.WalkDir(filepath.Join(root, "contrib"), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Name() != "go.mod" {
+			return nil
+		}
+		moduleDir := filepath.Dir(path)
+		if skipContribModule(moduleDir) {
+			return nil
+		}
+		eligible[moduleDir] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for moduleDir := range modules {
+		if skipContribModule(moduleDir) {
+			continue
+		}
+		if _, ok := eligible[moduleDir]; !ok {
+			t.Fatalf("go list returned a contrib module with no go.mod on disk: %s", moduleDir)
+		}
+		delete(eligible, moduleDir)
+	}
+	if missing := slices.Sorted(maps.Keys(eligible)); len(missing) > 0 {
+		t.Fatalf("contrib modules missing from the workspace go list (add them to go.work?): %v", missing)
 	}
 	for _, moduleDir := range slices.Sorted(maps.Keys(modules)) {
 		if skipContribModule(moduleDir) {
