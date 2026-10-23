@@ -282,8 +282,12 @@ func Start(config ClientConfig) error {
 
 // Stop ends the poll loop, waits for the goroutine to exit (up to the HTTP
 // timeout, since a poll may be in flight), then clears the singleton so a later
-// Start() is fresh. On wait timeout it clears anyway (a restart could briefly
-// overlap the in-flight poll). Noop if not running.
+// Start() is fresh. On wait timeout it clears anyway, and a restart can overlap
+// the poll still running. That happens when RC callbacks, which the HTTP timeout
+// doesn't bound, outlast the wait, or when the RC HTTP client has no timeout
+// (e.g. DD_TRACE_AGENT_TIMEOUT=0 over TCP, or tracer.WithHTTPClient given a
+// client without one): the wait is then 1s and the poll has no deadline, so the
+// overlap is unbounded. Noop if not running.
 func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
@@ -314,13 +318,15 @@ func Stop() {
 	started = false
 }
 
-// Reset destroys the client instance.
+// Reset destroys the client instance. It signals the poll goroutine to stop
+// but does not wait for it to exit. Stop() waits, though only up to its timeout
+// (see Stop), so prefer it before re-starting.
 // To be used only in tests to reset the state of the client.
 func Reset() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
-	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
+	// Signal the goroutine to exit (safe even if never started).
 	if client != nil {
 		client.stopOnce.Do(func() { close(client.stop) })
 	}
