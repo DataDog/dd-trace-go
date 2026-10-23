@@ -387,5 +387,5 @@ func TestResolvedTrimpathSourceFileMatchesCodeOwners(t *testing.T) {
 	match, found := codeOwners.Match("/" + sourcePath.RelativePath)
 	require.True(t, found)
 	assert.Equal(t, "services/foo/foo_test.go", sourcePath.RelativePath)
-	assert.Equal(t, "[\"@team/foo\"]", match.GetOwnersString())
+	assert.Equal(t, "[\"@team/foo\"]", match.Tag())
 }
