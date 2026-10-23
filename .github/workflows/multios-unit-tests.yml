@@ -76,6 +76,11 @@ jobs:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
+
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils

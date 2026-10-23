@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/internal/orchtool"
 )
 
 const (
@@ -45,6 +47,14 @@ var fixtureScenarios = []string{
 
 func TestFuzzAndExampleFixture(t *testing.T) {
 	goCommand := fixtureGoCommand()
+	// The orchestrion-mode app builds inside the itrbackfill orchestrion
+	// module, so that module's go.mod pin governs this fixture too.
+	orchestrionPath := orchtool.Locate(goCommand, filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"))
+	if orchestrionPath == "" {
+		t.Log("no PATH orchestrion binary matches the pin; using the go run fallback")
+	} else {
+		t.Logf("using the pinned orchestrion binary %s", orchestrionPath)
+	}
 	// Reuse the runner's build cache; fixtureEnv isolates CI Visibility state.
 	goCache := goEnv(t, "GOCACHE")
 	goModCache := goEnv(t, "GOMODCACHE")
@@ -56,8 +66,8 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 			binaryName += ".exe"
 		}
 		binaryPath := filepath.Join(t.TempDir(), binaryName)
-		buildDir, buildArgs := fixtureBuildCommand(mode, binaryPath)
-		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), goCommand, buildArgs...)
+		buildDir, buildExec, buildArgs := fixtureBuildCommand(goCommand, orchestrionPath, mode, binaryPath)
+		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), buildExec, buildArgs...)
 
 		for _, scenario := range fixtureScenarios {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
@@ -105,14 +115,14 @@ func TestFixtureGoCommandAndModes(t *testing.T) {
 	}
 }
 
-func fixtureBuildCommand(mode, binaryPath string) (string, []string) {
+func fixtureBuildCommand(goCommand, orchestrionPath, mode, binaryPath string) (string, string, []string) {
 	if mode == "orchestrion" {
-		return filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"), []string{
-			"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go", "test", "-c", "-mod=readonly",
-			"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample",
-		}
+		executable, args := orchtool.Command(orchestrionPath, goCommand,
+			"go", "test", "-c", "-mod=readonly",
+			"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample")
+		return filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"), executable, args
 	}
-	return filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"), []string{
+	return filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"), goCommand, []string{
 		"test", "-c", "-mod=readonly", "-o", binaryPath, ".",
 	}
 }
@@ -182,32 +192,52 @@ func runFixtureCommand(t *testing.T, timeout time.Duration, dir string, env []st
 
 func TestFixtureBuildCommands(t *testing.T) {
 	binaryPath := filepath.Join("tmp", "fuzzexample.test")
+	orchestrionArgs := []string{
+		"go", "test", "-c", "-mod=readonly",
+		"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample",
+	}
 	tests := []struct {
-		mode     string
-		wantDir  string
-		wantArgs []string
+		name            string
+		mode            string
+		orchestrionPath string
+		wantDir         string
+		wantExec        string
+		wantArgs        []string
 	}{
 		{
-			mode:    "manual",
-			wantDir: filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"),
+			name:            "manual",
+			mode:            "manual",
+			orchestrionPath: "/ci/orchestrion",
+			wantDir:         filepath.Join("..", "fixtures", "itrbackfill", "fuzzexample", "app"),
+			wantExec:        "go",
 			wantArgs: []string{
 				"test", "-c", "-mod=readonly", "-o", binaryPath, ".",
 			},
 		},
 		{
-			mode:    "orchestrion",
-			wantDir: filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"),
-			wantArgs: []string{
-				"run", "-mod=readonly", "github.com/DataDog/orchestrion", "go", "test", "-c", "-mod=readonly",
-				"-tags=fuzzexamplefixture", "-o", binaryPath, "./fuzzexample",
-			},
+			name:            "orchestrion with a binary on PATH",
+			mode:            "orchestrion",
+			orchestrionPath: "/ci/orchestrion",
+			wantDir:         filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"),
+			wantExec:        "/ci/orchestrion",
+			wantArgs:        slices.Clone(orchestrionArgs),
+		},
+		{
+			name:     "orchestrion falls back to go run",
+			mode:     "orchestrion",
+			wantDir:  filepath.Join("..", "fixtures", "itrbackfill", "orchestrion"),
+			wantExec: "go",
+			wantArgs: append([]string{"run", "-mod=readonly", "github.com/DataDog/orchestrion"}, orchestrionArgs...),
 		},
 	}
 	for _, test := range tests {
-		t.Run(test.mode, func(t *testing.T) {
-			dir, args := fixtureBuildCommand(test.mode, binaryPath)
+		t.Run(test.name, func(t *testing.T) {
+			dir, executable, args := fixtureBuildCommand("go", test.orchestrionPath, test.mode, binaryPath)
 			if dir != test.wantDir {
 				t.Errorf("build dir = %q, want %q", dir, test.wantDir)
+			}
+			if executable != test.wantExec {
+				t.Errorf("build executable = %q, want %q", executable, test.wantExec)
 			}
 			if !slices.Equal(args, test.wantArgs) {
 				t.Errorf("build args = %q, want %q", args, test.wantArgs)

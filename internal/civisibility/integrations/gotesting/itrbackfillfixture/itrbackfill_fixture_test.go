@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/internal/orchtool"
 )
 
 func TestITRCoverageBackfillManualFixture(t *testing.T) {
@@ -59,6 +61,12 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
+	orchestrionPath := orchtool.Locate("go", fixtureDir)
+	if orchestrionPath == "" {
+		t.Log("no PATH orchestrion binary matches the pin; using the go run fallback")
+	} else {
+		t.Logf("using the pinned orchestrion binary %s", orchestrionPath)
+	}
 
 	for _, test := range []struct {
 		name              string
@@ -96,7 +104,6 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var profile string
 			args := []string{
-				"go", "run", "-mod=readonly", "github.com/DataDog/orchestrion",
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=" + test.coverMode, "-coverpkg", "./...",
 				"-count=1",
@@ -106,7 +113,8 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				args = append(args, "-coverprofile", profile)
 			}
 			args = append(args, test.extraTestArgs...)
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, args...)
+			executable, orchestrionArgs := orchtool.Command(orchestrionPath, "go", args...)
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, executable, orchestrionArgs...)
 			if test.withProfile && !test.skipProfileAssert {
 				profilePaths := test.profilePaths
 				if len(profilePaths) == 0 {
@@ -128,10 +136,10 @@ func sharedFixtureGoCache(t *testing.T) string {
 	return goCache
 }
 
-func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, args ...string) string {
+func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, executable string, args ...string) string {
 	t.Helper()
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.Command(executable, args...)
 	cmd.Dir = fixtureDir
 	cmd.Env = isolatedFixtureEnv(t, scenario, goCache)
 	cmd.Env = append(cmd.Env, extraEnv...)
