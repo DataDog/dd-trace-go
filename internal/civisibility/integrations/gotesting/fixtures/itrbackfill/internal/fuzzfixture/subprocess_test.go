@@ -150,8 +150,7 @@ func TestFixtureChildCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "TestFixtureChildProcess") {
 		t.Fatalf("cancellation lost: %v: %s", err, output.String())
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		t.Fatalf("cancellation can be mistaken for an expected exit: %v", err)
 	}
 	if cmd.ProcessState == nil || !strings.Contains(output.String(), "FIXTURE_CHILD_READY") {
