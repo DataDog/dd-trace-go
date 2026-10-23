@@ -19,6 +19,13 @@
 //	yourCode(ctx)
 //	sp.End()
 //
+// When the application is built with Orchestrion (https://github.com/DataDog/orchestrion) and
+// DD_TRACE_OTEL_ENABLED is true, this package also links the OpenTelemetry API to the spans
+// that Datadog integrations create:
+// trace.SpanFromContext returns the active Datadog span, and the OpenTelemetry global tracer
+// creates spans with the Datadog tracer until the application calls otel.SetTracerProvider.
+// Calling End on a span from trace.SpanFromContext finishes it, as the OpenTelemetry API specifies.
+//
 // Not every feature provided by OpenTelemetry is supported with this wrapper today, and any new API methods
 // added to the OpenTelemetry API will default to being a no-op until implemented by this library. See the
 // OpenTelemetry package docs for more details: https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
