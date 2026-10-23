@@ -207,6 +207,10 @@ type config struct {
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
+
+	// otelMeterProviderInstalled reports whether OTel runtime metrics are
+	// exported by the MeterProvider the tracer installed.
+	otelMeterProviderInstalled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -1331,6 +1335,18 @@ func WithStatsComputation(enabled bool) StartOption {
 	}
 }
 
+// WithDataStreamsIntakeBufferSize sets the number of slots in the Data Streams
+// Monitoring processor's input ring buffer. Once full, new checkpoints and
+// Kafka offsets overwrite the oldest unread ones, so raising this value
+// trades memory for tolerance to bursts or a slow agent. This can also be
+// configured by setting DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. Non-positive
+// values are ignored.
+func WithDataStreamsIntakeBufferSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
+	}
+}
+
 // WithStatsAdditionalTags configures additional tag keys to extract from spans
 // and use as extra aggregation dimensions for client-side stats. For example,
 // setting tags to []string{"region", "tenant_id"} will cause stats to be
@@ -1397,7 +1413,15 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]any{}
+			// Go maps preallocate group storage only for a hint above 8,
+			// the runtime's group width. At or below 8, an unsized make is
+			// allocation-identical and keeps the compiler's makemap_small
+			// fast path, so presizing would only add call overhead.
+			if cfg.tagsHint > 8 {
+				cfg.Tags = make(map[string]any, cfg.tagsHint)
+			} else {
+				cfg.Tags = make(map[string]any)
+			}
 		}
 		cfg.Tags[k] = v
 	}

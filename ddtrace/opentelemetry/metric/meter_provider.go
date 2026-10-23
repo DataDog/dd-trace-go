@@ -34,11 +34,12 @@ const (
 var installedProvider *metric.MeterProvider
 
 func init() {
-	otelmetricsinstall.StartHook = func(ctx context.Context) error {
-		if err := installGlobal(); err != nil {
-			return err
+	otelmetricsinstall.StartHook = func(ctx context.Context) (bool, error) {
+		installed, err := installGlobal()
+		if err != nil {
+			return false, err
 		}
-		return startGoRuntimeMetrics(ctx)
+		return installed, startGoRuntimeMetrics(ctx)
 	}
 	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
 		p := installedProvider
@@ -52,20 +53,21 @@ func init() {
 	}
 }
 
-// installGlobal installs a DD-configured MeterProvider as the OTel global.
+// installGlobal installs a DD-configured MeterProvider as the OTel global and
+// reports whether that provider is the global one.
 // Called only from StartHook after the tracer has already verified that metrics
 // should be enabled — no further enablement checks are needed here.
-func installGlobal(opts ...Option) error {
+func installGlobal(opts ...Option) (bool, error) {
 	// Already installed by us.
 	if installedProvider != nil {
-		return nil
+		return true, nil
 	}
 	// Don't replace a real OTel SDK MeterProvider the user installed themselves.
 	// The OTel global defaults to a delegating provider (not a real SDK) that
 	// silently drops metrics; we only skip installation if a real SDK provider
 	// is already in place.
 	if _, ok := otel.GetMeterProvider().(*metric.MeterProvider); ok {
-		return nil
+		return false, nil
 	}
 	allOpts := append(opts,
 		optionFunc(func(cfg *config) {
@@ -75,16 +77,16 @@ func installGlobal(opts ...Option) error {
 	)
 	mp, err := NewMeterProvider(allOpts...)
 	if err != nil {
-		return err
+		return false, err
 	}
 	sdkMP, ok := mp.(*metric.MeterProvider)
 	if !ok {
 		// metrics were disabled by the time NewMeterProvider ran; nothing to install.
-		return nil
+		return false, nil
 	}
 	otel.SetMeterProvider(sdkMP)
 	installedProvider = sdkMP
-	return nil
+	return true, nil
 }
 
 // NewMeterProvider creates a new MeterProvider configured with Datadog-specific settings:
