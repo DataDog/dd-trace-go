@@ -130,7 +130,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev // indirect
