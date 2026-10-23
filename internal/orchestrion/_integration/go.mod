@@ -148,7 +148,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev // indirect
@@ -541,3 +541,11 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev // indirect
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
+
+require example.com/httprouterdep v0.0.0-00010101000000-000000000000
+
+replace example.com/httprouterdep => ./internal/httprouterdep

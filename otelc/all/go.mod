@@ -21,6 +21,8 @@ require (
 	github.com/99designs/gqlgen v0.17.97 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev // indirect
+	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
 	golang.org/x/net v0.61.0 // indirect
@@ -134,3 +136,9 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../contrib/julienschmidt/httprouter/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../contrib/julienschmidt/httprouter

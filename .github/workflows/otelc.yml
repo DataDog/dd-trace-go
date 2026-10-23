@@ -47,6 +47,8 @@ env:
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
     contrib/go-chi/chi.v5/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -61,6 +63,7 @@ env:
     sql
     chi
     chi.v5
+    julienschmidt_httprouter
     redigo
     grpc
     99designs.gqlgen
