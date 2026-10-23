@@ -135,13 +135,21 @@ func goTipCommand(command string) bool {
 }
 
 func TestGoTipCommand(t *testing.T) {
-	for _, command := range []string{"", "go", "gotip", filepath.Join("custom", "gotip"), "gotip.exe", filepath.Join("custom toolchain", "go")} {
-		t.Run(command, func(t *testing.T) {
-			t.Setenv("GO_CMD", command)
-			base := filepath.Base(command)
-			want := base == "gotip" || base == "gotip.exe"
-			if got := goTipCommand(os.Getenv("GO_CMD")); got != want {
-				t.Fatalf("Go tip detection for %q = %v, want %v", command, got, want)
+	for _, test := range []struct {
+		command string
+		want    bool
+	}{
+		{command: "", want: false},
+		{command: "go", want: false},
+		{command: "gotip", want: true},
+		{command: filepath.Join("custom", "gotip"), want: true},
+		{command: "gotip.exe", want: true},
+		{command: filepath.Join("custom toolchain", "go"), want: false},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			t.Setenv("GO_CMD", test.command)
+			if got := goTipCommand(os.Getenv("GO_CMD")); got != test.want {
+				t.Fatalf("Go tip detection for %q = %v, want %v", test.command, got, test.want)
 			}
 		})
 	}

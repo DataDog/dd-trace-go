@@ -19,6 +19,10 @@ import (
 // orchestrion version the fixture tests drive.
 var orchestrionFixtureModule = filepath.Join("..", "..", "fixtures", "itrbackfill", "orchestrion")
 
+// repositoryRoot is the checkout root that holds the canonical orchestrion
+// version in .orchestrion-version.
+var repositoryRoot = filepath.Join("..", "..", "..", "..", "..", "..")
+
 func TestCommandUsesThePathBinary(t *testing.T) {
 	executable, args := Command("/ci/orchestrion", "go", "go", "test", "-c", "-o", "app.test")
 	if executable != "/ci/orchestrion" {
@@ -78,6 +82,21 @@ func TestModuleVersionReportsTheFixturePin(t *testing.T) {
 	}
 	if !strings.HasPrefix(version, "v") || len(version) < 2 || version[1] < '0' || version[1] > '9' {
 		t.Fatalf("ModuleVersion = %q, want a v-prefixed semantic version", version)
+	}
+}
+
+func TestFixturePinMatchesTheCanonicalOrchestrionVersion(t *testing.T) {
+	pin, err := ModuleVersion("go", orchestrionFixtureModule)
+	if err != nil {
+		t.Fatalf("ModuleVersion: %v", err)
+	}
+	versionFile := filepath.Join(repositoryRoot, ".orchestrion-version")
+	canonical, err := os.ReadFile(versionFile)
+	if err != nil {
+		t.Fatalf("read %s: %v", versionFile, err)
+	}
+	if got, want := pin, strings.TrimSpace(string(canonical)); got != want {
+		t.Fatalf("the fixture module %s pins orchestrion %s but .orchestrion-version holds %s; run make upgrade/orchestrion to move the pin with the canonical version", filepath.Join(orchestrionFixtureModule, "go.mod"), got, want)
 	}
 }
 
