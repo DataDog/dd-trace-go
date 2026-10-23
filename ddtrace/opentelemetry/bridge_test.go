@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 	_ "unsafe" // for go:linkname
@@ -384,6 +385,62 @@ func TestBorrowedSpanSetStatusOkClearsError(t *testing.T) {
 	spans := flushedSpans(t, payloads)
 	require.Len(t, spans["dd.op"], 1)
 	assert.Equal(t, 0.0, spans["dd.op"][0]["error"])
+}
+
+func TestBorrowedSpanStatusOkWinsAcrossViews(t *testing.T) {
+	_, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	ddSpan, ctx, b1 := borrowDatadogSpan(t)
+	// Each trace.SpanFromContext call creates a new view of the same Datadog span.
+	b2, ok := bridgeSpanFromContext(ctx, nil)
+	require.True(t, ok)
+	require.NotSame(t, b1, b2)
+	b1.SetStatus(otelcodes.Ok, "")
+	b2.SetStatus(otelcodes.Error, "boom")
+	ddSpan.Finish()
+
+	spans := flushedSpans(t, payloads)
+	require.Len(t, spans["dd.op"], 1)
+	s := spans["dd.op"][0]
+	meta, ok := s["meta"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 0.0, s["error"])
+	assert.NotContains(t, meta, "error.message")
+}
+
+func TestBorrowedSpanStatusConcurrentOkWins(t *testing.T) {
+	_, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	for range 200 {
+		ddSpan, ctx, b := borrowDatadogSpan(t)
+		// Each trace.SpanFromContext call creates a new view of the same Datadog span.
+		b2, ok := bridgeSpanFromContext(ctx, nil)
+		require.True(t, ok)
+		require.NotSame(t, b, b2)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			b.SetStatus(otelcodes.Error, "boom")
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			b2.SetStatus(otelcodes.Ok, "")
+		}()
+		close(start)
+		wg.Wait()
+		ddSpan.Finish()
+
+		// flushedSpans reads one payload. Flush in each iteration so that each payload holds one span.
+		spans := flushedSpans(t, payloads)
+		require.Len(t, spans["dd.op"], 1)
+		assert.Equal(t, 0.0, spans["dd.op"][0]["error"])
+	}
 }
 
 func TestBorrowedSpanTracerProviderIsGlobal(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
@@ -77,6 +78,65 @@ func TestOTelBorrowAfterRelease(t *testing.T) {
 	got, sc := borrowSpanFromContext(ctx, nil)
 	assert.Nil(t, got)
 	assert.Nil(t, sc)
+}
+
+// TestBorrowedStatusState checks the status precedence of a borrowed span through the state of
+// the span context: Ok stays in effect over a later Error, a context that is not pinned changes
+// nothing, and a finished span changes nothing.
+func TestBorrowedStatusState(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	s := StartSpan("op")
+	spanContextWithOwner(s.Context(), s)
+	ctx := ContextWithSpan(context.Background(), s)
+	_, sc := borrowSpanFromContext(ctx, nil)
+	require.NotNil(t, sc)
+
+	// An error sets the error state and records the message. The span context stays pinned.
+	setBorrowedStatus(sc, false, "boom")
+	assert.Equal(t, uint32(bridgePinned), sc.bridgeState.Load())
+	s.mu.RLock()
+	assert.Equal(t, int32(1), s.error)
+	v, _ := s.meta.Get(ext.ErrorMsg)
+	s.mu.RUnlock()
+	assert.Equal(t, "boom", v)
+
+	// Ok has the highest precedence: it clears the error and records the Ok state.
+	setBorrowedStatus(sc, true, "")
+	assert.Equal(t, uint32(bridgePinnedOK), sc.bridgeState.Load())
+	s.mu.RLock()
+	assert.Equal(t, int32(0), s.error)
+	s.mu.RUnlock()
+
+	// A later Error does not change a span context that already has Ok.
+	setBorrowedStatus(sc, false, "again")
+	assert.Equal(t, uint32(bridgePinnedOK), sc.bridgeState.Load())
+	s.mu.RLock()
+	assert.Equal(t, int32(0), s.error)
+	v, _ = s.meta.Get(ext.ErrorMsg)
+	s.mu.RUnlock()
+	assert.NotEqual(t, "again", v)
+
+	s.Finish()
+
+	// A finished span changes nothing, also when its span context has the Ok state.
+	setBorrowedStatus(sc, false, "late")
+	s.mu.RLock()
+	assert.Equal(t, int32(0), s.error)
+	s.mu.RUnlock()
+
+	// A span context that is not pinned changes nothing.
+	other := StartSpan("op")
+	defer other.Finish()
+	spanContextWithOwner(other.Context(), other)
+	setBorrowedStatus(other.Context(), false, "boom")
+	other.mu.RLock()
+	assert.Equal(t, int32(0), other.error)
+	v, _ = other.meta.Get(ext.ErrorMsg)
+	other.mu.RUnlock()
+	assert.NotEqual(t, "boom", v)
 }
 
 // The release tests below call releaseSpans on spans that they do not finish. A finished span
