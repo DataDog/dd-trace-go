@@ -224,7 +224,9 @@ func (w *exposureWriter) start() {
 			select {
 			case <-w.ticker.C:
 				if n, err := w.flush(); err != nil {
-					log.Error("openfeature: failed to send %d exposure events, dropping them: %v", n, err.Error()) //errtrack:ignore remote request failure
+					containLoggerPanic(func() {
+						log.Error("openfeature: failed to send %d exposure events, dropping them: %v", n, err.Error()) //errtrack:ignore remote request failure
+					})
 				}
 			case <-w.stopChan:
 				return

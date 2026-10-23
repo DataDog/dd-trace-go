@@ -1069,6 +1069,51 @@ func TestShutdown_WarnsWhenMetricsShutdownFails(t *testing.T) {
 	logger.assertContains(t, "openfeature: flag evaluation metrics did not shut down cleanly: ")
 }
 
+// Shutdown logs from its own goroutine, where a panic from the application
+// logger cannot be recovered by the caller and would terminate the process.
+func TestShutdown_ContainsLoggerPanics(t *testing.T) {
+	withLogLevel(t, log.LevelWarn)
+	p := newDatadogProvider(ProviderConfig{})
+	m, _ := setupTestMetrics(t)
+	// A meter provider fails a second shutdown, so shutdown logs a warning.
+	require.NoError(t, m.shutdown(context.Background()))
+	p.flagEvalMetricsHook = newFlagEvalMetricsHook(m)
+	t.Cleanup(log.UseLogger(panickingLogger{}))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.ShutdownWithContext(ctx))
+}
+
+// Unlike TestAgentlessPoll_ContainsLoggerPanics, every line panics, including
+// pre-existing warnings: the poll loop logs them on its own goroutine, where a
+// panicking application logger would terminate the process.
+func TestAgentlessPollLoop_ContainsLoggerPanics(t *testing.T) {
+	withLogLevel(t, log.LevelWarn)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	src, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: srv.URL,
+		PollInterval:     time.Hour,
+		RequestTimeout:   2 * time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	src.retryDelay = func(int) time.Duration { return 0 }
+	t.Cleanup(log.UseLogger(panickingLogger{}))
+
+	src.start()
+	// Attempts run in sequence, so a second request means the first
+	// attempt's warning was logged.
+	require.Eventually(t, func() bool { return requests.Load() >= 2 }, 5*time.Second, time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, src.Stop(ctx))
+}
+
 type panickingLogger struct{}
 
 func (panickingLogger) Log(string) { panic("logger failure") }

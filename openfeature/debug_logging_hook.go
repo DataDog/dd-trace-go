@@ -140,6 +140,14 @@ func recoverDebugLogging() {
 	_ = recover()
 }
 
+// containLoggerPanic runs a log call on a goroutine the provider owns, where a
+// panicking application logger would otherwise terminate the process. The
+// caller passes a closure so log.Warn and log.Error keep constant messages.
+func containLoggerPanic(logf func()) {
+	defer recoverDebugLogging()
+	logf()
+}
+
 // formatDebugValue renders a flag value or context for a debug log line, in
 // full: debug logging exposes raw evaluation data so a customer can explain a
 // result. Scalars are rendered directly and anything else as JSON.
