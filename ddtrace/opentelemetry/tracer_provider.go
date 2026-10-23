@@ -38,6 +38,8 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -59,8 +61,18 @@ type TracerProvider struct {
 // and initializes the Datadog Tracer with the provided start options.
 // This TracerProvider only supports a singleton tracer, and repeated calls to
 // the Tracer() method will return the same instance each time.
+//
+// NewTracerProvider also prepends DatadogPropagator to the global OTel
+// TextMapPropagator so that Datadog-specific extraction behavior (including
+// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT) is applied alongside any propagators
+// the caller has already registered.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	tracer.Start(opts...)
+	// Prepend DatadogPropagator to whatever propagator is already set so that
+	// Datadog header extraction (tracer.Extract) runs before W3C extraction.
+	// This mirrors what Java, Ruby, and .NET Datadog tracers do automatically.
+	existing := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(DatadogPropagator{}, existing))
 	p := &TracerProvider{}
 	t := &oteltracer{
 		DD:                   internal.GetGlobalTracer[tracer.Tracer](),
