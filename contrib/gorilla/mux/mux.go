@@ -125,7 +125,7 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		resource = r.config.resourceNamer(r, req)
 	}
 	if resource == "" && r.config.otelEnabled {
-		// What httptrace.TraceAndServe names the span when Resource is empty.
+		// Under OpenTelemetry semantics the span is named after the method and route, as in the other HTTP integrations.
 		spanopts = append([]tracer.StartSpanOption{tracer.ResourceName(instrhttptrace.ServerSpanName(req.Method, route))}, spanopts...)
 	}
 	return instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
