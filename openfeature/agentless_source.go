@@ -224,7 +224,9 @@ const (
 // Retry-After to honor on the next attempt; it is zero unless the response
 // carried one.
 func reportMalformedAgentlessConfiguration(err error) {
-	log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error()) //errtrack:ignore reported by ReportError below
+	containLoggerPanic(func() {
+		log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error()) //errtrack:ignore reported by ReportError below
+	})
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
 }
 
@@ -248,7 +250,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
 	if err != nil {
 		if s.warnOnce("request-build") {
-			log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err)) //errtrack:ignore invalid user endpoint configuration
+			containLoggerPanic(func() {
+				log.Warn("openfeature: agentless: failed to build request: %s", sanitizeTransportError(err)) //errtrack:ignore invalid user endpoint configuration
+			})
 		}
 		return pollOutcomeStop, 0
 	}
@@ -273,7 +277,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		// Unlike the warning below, this fires on every failure, not just the first.
 		logOnboarding("agentless configuration poll attempt %d/%d failed: %s", attempt, maxPollAttempts, sanitizeTransportError(err))
 		if s.warnOnce("http-transport") {
-			log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err)) //errtrack:ignore remote request failure
+			containLoggerPanic(func() {
+				log.Warn("openfeature: agentless: request failed: %s", sanitizeTransportError(err)) //errtrack:ignore remote request failure
+			})
 		}
 		return pollOutcomeRetryable, 0
 	}
@@ -292,7 +298,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		return pollOutcomeSuccess, 0
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if s.warnOnce("authentication") {
-			log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode) //errtrack:ignore invalid user authentication
+			containLoggerPanic(func() {
+				log.Warn("openfeature: agentless: received status %d, verify endpoint authentication", resp.StatusCode) //errtrack:ignore invalid user authentication
+			})
 		}
 		return pollOutcomeStop, 0
 	case http.StatusOK:
@@ -300,12 +308,16 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	default:
 		if isRetryablePollStatus(resp.StatusCode) {
 			if s.warnOnce("http-status-retryable") {
-				log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode) //errtrack:ignore remote service response
+				containLoggerPanic(func() {
+					log.Warn("openfeature: agentless: received retryable status %d", resp.StatusCode) //errtrack:ignore remote service response
+				})
 			}
 			return pollOutcomeRetryable, retryAfterDuration(resp.Header)
 		}
 		if s.warnOnce("http-status-unexpected") {
-			log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode) //errtrack:ignore remote service response
+			containLoggerPanic(func() {
+				log.Warn("openfeature: agentless: received unexpected status %d", resp.StatusCode) //errtrack:ignore remote service response
+			})
 		}
 		return pollOutcomeStop, 0
 	}
@@ -315,12 +327,16 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		if errors.Is(err, errResponseTooLarge) {
 			// Retrying cannot help: the same oversized body would come back.
 			if s.warnOnce("size") {
-				log.Warn("openfeature: agentless: response exceeds the %d byte limit; keeping the last known configuration", maxResponseBodyBytes) //errtrack:ignore remote payload capacity limit
+				containLoggerPanic(func() {
+					log.Warn("openfeature: agentless: response exceeds the %d byte limit; keeping the last known configuration", maxResponseBodyBytes) //errtrack:ignore remote payload capacity limit
+				})
 			}
 			return pollOutcomeStop, 0
 		}
 		if s.warnOnce("http-body") {
-			log.Warn("openfeature: agentless: failed to read response body: %v", err.Error()) //errtrack:ignore remote response transport failure
+			containLoggerPanic(func() {
+				log.Warn("openfeature: agentless: failed to read response body: %v", err.Error()) //errtrack:ignore remote response transport failure
+			})
 		}
 		return pollOutcomeRetryable, 0
 	}

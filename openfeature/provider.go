@@ -594,7 +594,9 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
 				// The outer select can still report success on this path, so
 				// without this a truncated teardown would be invisible.
-				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
+				containLoggerPanic(func() {
+					log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
+				})
 			} else {
 				logOnboarding("agentless configuration source stopped")
 			}
@@ -624,7 +626,9 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if hasExposureWriter {
 			switch {
 			case flushErr != nil:
-				log.Error("openfeature: failed to send %d pending exposure events at shutdown, dropping them: %v", flushed, flushErr.Error()) //errtrack:ignore remote request failure
+				containLoggerPanic(func() {
+					log.Error("openfeature: failed to send %d pending exposure events at shutdown, dropping them: %v", flushed, flushErr.Error()) //errtrack:ignore remote request failure
+				})
 			case flushed == 0:
 				logOnboarding("shutdown found no pending exposure events to flush")
 			default:
@@ -632,7 +636,9 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			}
 		}
 		if metricsErr != nil {
-			log.Warn("openfeature: flag evaluation metrics did not shut down cleanly: %s", metricsErr.Error()) //errtrack:ignore remote request failure
+			containLoggerPanic(func() {
+				log.Warn("openfeature: flag evaluation metrics did not shut down cleanly: %s", metricsErr.Error()) //errtrack:ignore remote request failure
+			})
 		}
 		done <- err
 	}()
