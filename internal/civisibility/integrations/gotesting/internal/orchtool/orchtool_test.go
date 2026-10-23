@@ -6,6 +6,7 @@
 package orchtool
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -92,28 +93,34 @@ func TestBinaryVersionFailsForAMissingBinary(t *testing.T) {
 	}
 }
 
-// fakeOrchestrion writes fake orchestrion binaries for both script platforms
-// into dir: a `#!/bin/sh` script named orchestrion for Unix hosts, and an
-// orchestrion.bat for Windows hosts, which exec.LookPath resolves through
-// PATHEXT. Both report the given version. Put dir first on PATH to make the
-// fake the binary Locate finds.
+// fakeOrchestrion copies the test binary into dir under the file name that
+// LookPath resolves for orchestrion. The copy reports the given version
+// through TestMain. A copy of the test binary is a native executable on
+// every host, so the fake never depends on script execution. Put dir first
+// on PATH to make the fake the binary Locate finds.
 func fakeOrchestrion(t *testing.T, dir, version string) {
 	t.Helper()
-	script := "#!/bin/sh\necho 'orchestrion " + version + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "orchestrion"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake orchestrion: %v", err)
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate the test binary: %v", err)
 	}
-	batch := "@echo off\necho orchestrion " + version + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "orchestrion.bat"), []byte(batch), 0o755); err != nil {
-		t.Fatalf("write fake orchestrion.bat: %v", err)
+	fake, err := os.ReadFile(testBinary)
+	if err != nil {
+		t.Fatalf("read the test binary %s: %v", testBinary, err)
 	}
+	if err := os.WriteFile(fakeOrchestrionPath(dir), fake, 0o755); err != nil {
+		t.Fatalf("write the fake orchestrion binary: %v", err)
+	}
+	// BinaryVersion inherits the parent environment, so TestMain reads this
+	// variable when it runs the copy.
+	t.Setenv(fakeOrchestrionVersionEnv, version)
 }
 
 // fakeOrchestrionPath returns the path of the fake binary that LookPath
 // resolves on the host running the test.
 func fakeOrchestrionPath(dir string) string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(dir, "orchestrion.bat")
+		return filepath.Join(dir, "orchestrion.exe")
 	}
 	return filepath.Join(dir, "orchestrion")
 }
@@ -143,4 +150,21 @@ func TestLocateRejectsABinaryThatReportsADifferentVersion(t *testing.T) {
 	if got := Locate("go", orchestrionFixtureModule); got != "" {
 		t.Fatalf("Locate = %q, want no binary: a version mismatch makes orchestrion exit 255", got)
 	}
+}
+
+// fakeOrchestrionVersionEnv holds the version that the fake orchestrion
+// binary reports. TestMain reads it, so a copy of the test binary can stand
+// in for the CLI.
+const fakeOrchestrionVersionEnv = "DD_TEST_FAKE_ORCHESTRION_VERSION"
+
+// TestMain turns the test binary into the fake orchestrion binary. When
+// fakeOrchestrionVersionEnv is set, the binary reports that version and
+// exits before the test framework runs, so the copy answers `version` like
+// the CLI does.
+func TestMain(m *testing.M) {
+	if version := os.Getenv(fakeOrchestrionVersionEnv); version != "" {
+		fmt.Printf("orchestrion %s\n", version)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
 }
