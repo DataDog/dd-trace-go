@@ -1547,7 +1547,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	// tracer, so all spans from both tracers end up on tracer1's worker.
 	setGlobalTracer(tracer1)
 
-	count := payloadQueueSize / 3
+	count := internalconfig.DefaultPayloadQueueSize / 3
 
 	for range count {
 		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
@@ -2145,7 +2145,7 @@ func TestTracerRace(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	total := payloadQueueSize / 3
+	total := cap(tracer.out) / 3
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -2250,7 +2250,7 @@ func TestWorker(t *testing.T) {
 		assert.Nil(t, err)
 		defer stop()
 
-		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		n := cap(tracer.out) * 10 // put more traces than the chan size, on purpose
 		for range n {
 			root := tracer.newRootSpan("pylons.request", "pylons", "/")
 			child := tracer.newChildSpan("redis.command", root)
@@ -2260,7 +2260,7 @@ func TestWorker(t *testing.T) {
 
 		flush(-1)
 		synctest.Wait() // wait for writer to process the tick and flush queued traces
-		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+		assert.GreaterOrEqual(t, transport.Len(), cap(tracer.out))
 	})
 }
 
@@ -2319,11 +2319,11 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize * 2
+	many := cap(tracer.out) * 2
 	for i := range many {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
-	assert.Len(tracer.out, payloadQueueSize)
+	assert.Len(tracer.out, cap(tracer.out))
 	log.Flush()
 	assert.True(len(tp.Logs()) >= 1)
 }
