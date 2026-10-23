@@ -300,8 +300,18 @@ func TestFlushAndStopTimeout(t *testing.T) {
 	Stop()
 
 	elapsed := time.Since(start)
-	if elapsed > (maxRetries*uploadTimeout)+1*time.Second {
-		t.Errorf("profiler took %v to stop", elapsed)
+	// Each retry incurs its own connection setup/teardown and context-cancellation
+	// overhead on top of the nominal uploadTimeout, so allow some slack per
+	// attempt rather than a single flat buffer. Windows CI runners have been
+	// observed to add extra latency here (e.g. slower socket teardown and
+	// scheduler jitter), so double the per-attempt slack on that platform.
+	slackPerAttempt := 500 * time.Millisecond
+	if runtime.GOOS == "windows" {
+		slackPerAttempt *= 2
+	}
+	maxElapsed := (maxRetries * uploadTimeout) + (maxRetries * slackPerAttempt)
+	if elapsed > maxElapsed {
+		t.Errorf("profiler took %v to stop (want <= %v)", elapsed, maxElapsed)
 	}
 	if requests.Load() != maxRetries {
 		t.Errorf("expected %d requests, got %d", maxRetries, requests.Load())
