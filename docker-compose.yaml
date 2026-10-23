@@ -77,7 +77,7 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -242,7 +242,7 @@ services:
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine@sha256:9e4de012dc607573052061c0bcb38abc775e1dd59b24e7ac38d1892842094aaf
+    image: memcached:1.6-alpine@sha256:6d687bc26426d092694743054fc674fc54d3c161fefa1ad20b54192f8580a8c1
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
       interval: 5s
