@@ -97,6 +97,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -142,7 +143,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.13.0-dev // indirect
@@ -541,3 +542,9 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev // indirect
+
+replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
+
+replace example.com/gorillamuxdep => ./internal/gorillamuxdep

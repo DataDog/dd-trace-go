@@ -51,6 +51,8 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/gorilla/mux
+    contrib/gorilla/mux/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -63,6 +65,7 @@ env:
     chi.v5
     redigo
     grpc
+    gorilla_mux
     99designs.gqlgen
 
 jobs:
