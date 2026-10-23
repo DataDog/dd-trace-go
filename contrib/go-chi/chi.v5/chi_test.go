@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -841,6 +842,71 @@ func TestSubrouterRoutePatterns(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+// countingRouter reports how many times the middleware rebuilt the route table
+// while resolving unmatched subrouters.
+type countingRouter struct {
+	chi.Router
+	calls atomic.Int64
+}
+
+func (r *countingRouter) Routes() []chi.Route {
+	r.calls.Add(1)
+	return r.Router.Routes()
+}
+
+// countRoutesCalls registers mw on router behind a wrapper that swaps in a
+// counting view of the route table.
+func countRoutesCalls(router chi.Router, mw func(http.Handler) http.Handler) *countingRouter {
+	counted := &countingRouter{Router: router}
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			chi.RouteContext(r.Context()).Routes = counted
+			next.ServeHTTP(w, r)
+		})
+	}, mw)
+	return counted
+}
+
+func TestSubrouterRouteCache(t *testing.T) {
+	setChiHTTPConfig(t, "true")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// Both routers record the pattern chain "/*" for /missing but disagree on
+	// whether it is an endpoint, so a cache shared between them would mistag one.
+	mw := Middleware()
+	handler := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }
+	wildcard := chi.NewRouter()
+	wildcardCalls := countRoutesCalls(wildcard, mw)
+	wildcard.Get("/*", handler)
+	mounted := chi.NewRouter()
+	mountedCalls := countRoutesCalls(mounted, mw)
+	mounted.Route("/", func(r chi.Router) { r.Get("/registered", handler) })
+
+	for _, tt := range []struct {
+		name         string
+		router       chi.Router
+		calls        *countingRouter
+		wantRoute    any
+		wantResource string
+	}{
+		{name: "wildcard endpoint", router: wildcard, calls: wildcardCalls, wantRoute: "/*", wantResource: "GET /*"},
+		{name: "unmatched mount", router: mounted, calls: mountedCalls, wantResource: "GET"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for range 2 {
+				mt.Reset()
+				tt.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/missing", nil))
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				assert.Equal(t, tt.wantRoute, spans[0].Tag(ext.HTTPRoute))
+				assert.Equal(t, tt.wantResource, spans[0].Tag(ext.ResourceName))
+			}
+			assert.Equal(t, int64(1), tt.calls.calls.Load(), "a warm request must not rebuild the route table")
 		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 
@@ -42,6 +43,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
+		// Maintain a cache of recorded pattern chain -> unmatched.
+		// The cache is scoped to this handler because a
+		// chain is only meaningful relative to the router that recorded it.
+		var subrouterCache sync.Map
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
@@ -74,7 +79,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			rctx := chi.RouteContext(r.Context())
 			routePattern := rctx.RoutePattern()
-			if cfg.otelEnabled && unmatchedSubrouter(rctx) {
+			if cfg.otelEnabled && unmatchedSubrouter(rctx, &subrouterCache) {
 				routePattern = ""
 			}
 			if routePattern != "" || !cfg.otelEnabled {
@@ -109,7 +114,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 // unmatchedSubrouter checks whether routing stopped at a Chi mount instead of an
 // endpoint. Inspect the recorded patterns so middleware path rewrites are respected.
-func unmatchedSubrouter(rctx *chi.Context) bool {
+// The answer is cached: resolving it calls Routes(), which rebuilds the router's
+// whole route table, and catch-all patterns reach this on every request.
+func unmatchedSubrouter(rctx *chi.Context, cache *sync.Map) bool {
 	if rctx == nil || rctx.Routes == nil || len(rctx.RoutePatterns) == 0 {
 		return false
 	}
@@ -119,6 +126,16 @@ func unmatchedSubrouter(rctx *chi.Context) bool {
 	if !strings.HasSuffix(last, "/*") && rctx.RoutePath != "/" {
 		return false
 	}
+	// Key on the entire chain, joining the individual patterns with NUL
+	// (which route patterns never contain) to distinguish between an otherwise
+	// identical pattern with different chains.
+	// E.g. ["/api", "/*"] and ["/api/*"]
+	const patternSep = "\x00"
+	key := strings.Join(rctx.RoutePatterns, patternSep)
+	if unmatched, ok := cache.Load(key); ok {
+		return unmatched.(bool)
+	}
+	unmatched := true
 	routes := rctx.Routes
 	for _, pattern := range rctx.RoutePatterns {
 		var subroutes chi.Routes
@@ -133,9 +150,11 @@ func unmatchedSubrouter(rctx *chi.Context) bool {
 			}
 		}
 		if subroutes == nil {
-			return false
+			unmatched = false
+			break
 		}
 		routes = subroutes
 	}
-	return true
+	cache.Store(key, unmatched)
+	return unmatched
 }
