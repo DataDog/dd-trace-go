@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -63,6 +64,47 @@ func TestBuildResource(t *testing.T) {
 		}
 	})
 
+	t.Run("global tags", func(t *testing.T) {
+		cfg := internalconfig.CreateNew()
+		cfg.SetServiceName("svc", internalconfig.OriginCode)
+		for k, v := range map[string]any{
+			"team":            "core",
+			"k8s.pod.name":    "pod-1",
+			"service":         "other",
+			"env":             "prod",
+			"version":         "1.0",
+			"service.name":    "user-svc",
+			"ENV":             "staging",
+			"service.version": "2.0",
+			"sampling.rate":   0.5,
+		} {
+			cfg.SetGlobalTag(k, v, internalconfig.OriginCode)
+		}
+
+		r := buildResource(cfg)
+		attrs := keyValuesToMap(r.Attributes)
+		assert.Equal(t, "core", attrs["team"])
+		assert.Equal(t, "pod-1", attrs["k8s.pod.name"])
+		assert.Equal(t, "svc", attrs["service.name"], "global tags don't override tracer-written attributes")
+		for _, k := range []string{"service", "env", "ENV", "version", "service.version", "sampling.rate"} {
+			assert.NotContains(t, attrs, k, "ignored (case-insensitively) and non-string tags are skipped")
+		}
+
+		var tagKeys []string
+		for _, kv := range r.Attributes {
+			if kv.Key == "team" || kv.Key == "k8s.pod.name" {
+				tagKeys = append(tagKeys, kv.Key)
+			}
+		}
+		assert.Equal(t, []string{"k8s.pod.name", "team"}, tagKeys, "global tags are sorted")
+	})
+
+	t.Run("stats computed", func(t *testing.T) {
+		cfg := internalconfig.CreateNew()
+		cfg.SetOTLPSpanMetricsEnabled(true, internalconfig.OriginCode)
+		assert.Equal(t, "true", keyValuesToMap(buildResource(cfg).Attributes)["_dd.stats_computed"])
+	})
+
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
 		cfg := internalconfig.CreateNew()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)
@@ -88,7 +130,7 @@ func TestConvertSpan(t *testing.T) {
 	s.error = 1
 	s.meta.Set(ext.ErrorMsg, "something failed")
 
-	otlp := convertSpan(s, "svc", false)
+	otlp := convertSpan(s, "svc", false, nil)
 	require.NotNil(t, otlp)
 
 	// DD resource → OTLP name (spec: "resource field must be encoded as the OTLP span's name field")
@@ -125,7 +167,7 @@ func TestConvertSpanExportsHTTPStatusErrorsWithoutStatusDescription(t *testing.T
 	s.meta.Set("http.response.status_code", "500")
 	s.meta.Set(ext.ErrorType, "500")
 
-	otlp := convertSpan(s, "svc", true)
+	otlp := convertSpan(s, "svc", true, nil)
 	require.NotNil(t, otlp)
 	assert.Equal(t, "POST", otlp.Name)
 	assert.Equal(t, otlptrace.Span_SPAN_KIND_CLIENT, otlp.Kind)
@@ -146,7 +188,7 @@ func TestConvertSpanPreservesIndependentHTTPErrorStatusDescription(t *testing.T)
 	s.meta.Set(ext.ErrorType, "500")
 	s.meta.Set(ext.ErrorMsg, "upstream rejected request")
 
-	otlp := convertSpan(s, "svc", true)
+	otlp := convertSpan(s, "svc", true, nil)
 	require.NotNil(t, otlp)
 	assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, otlp.Status.Code)
 	assert.Equal(t, "upstream rejected request", otlp.Status.Message)
@@ -158,7 +200,7 @@ func TestConvertSpanPreservesStatusDescriptionForTransportErrors(t *testing.T) {
 	s.meta.Set(ext.ErrorType, "net.OpError")
 	s.meta.Set(ext.ErrorMsg, "connection refused")
 
-	otlp := convertSpan(s, "svc", true)
+	otlp := convertSpan(s, "svc", true, nil)
 	require.NotNil(t, otlp)
 	assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, otlp.Status.Code)
 	assert.Equal(t, "connection refused", otlp.Status.Message)
@@ -167,14 +209,14 @@ func TestConvertSpanPreservesStatusDescriptionForTransportErrors(t *testing.T) {
 func TestConvertSpanParentSpanId(t *testing.T) {
 	t.Run("set when parent_id is non-zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 50)
-		otlp := convertSpan(s, "svc", false)
+		otlp := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlp.ParentSpanId)
 		assert.Equal(t, uint64(50), binary.BigEndian.Uint64(otlp.ParentSpanId))
 	})
 
 	t.Run("omitted when parent_id is zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 0)
-		otlp := convertSpan(s, "svc", false)
+		otlp := convertSpan(s, "svc", false, nil)
 		assert.Nil(t, otlp.ParentSpanId, "ParentSpanId must be omitted for root spans")
 	})
 }
@@ -193,7 +235,7 @@ func TestConvertSpanFiltersUnsampled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newSpan("op", "svc", "res", 1, 1, 0)
 			s.context.setSamplingPriority(tt.priority, samplernames.Unknown)
-			result := convertSpan(s, "svc", false)
+			result := convertSpan(s, "svc", false, nil)
 			if tt.wantNil {
 				assert.Nil(t, result)
 			} else {
@@ -206,14 +248,14 @@ func TestConvertSpanFiltersUnsampled(t *testing.T) {
 func TestConvertSpanPriorityUnset(t *testing.T) {
 	s := newSpan("op", "svc", "res", 1, 1, 0)
 	// priority is not set — span should be included (not dropped)
-	result := convertSpan(s, "", false)
+	result := convertSpan(s, "", false, nil)
 	assert.NotNil(t, result)
 }
 
 func TestConvertSpanServiceNameOverride(t *testing.T) {
 	t.Run("same as default - no service.name attribute", func(t *testing.T) {
 		s := newSpan("op", "my-service", "res", 1, 1, 0)
-		otlp := convertSpan(s, "my-service", false)
+		otlp := convertSpan(s, "my-service", false, nil)
 		require.NotNil(t, otlp)
 		attrs := keyValuesToMap(otlp.Attributes)
 		_, hasServiceName := attrs["service.name"]
@@ -222,7 +264,7 @@ func TestConvertSpanServiceNameOverride(t *testing.T) {
 
 	t.Run("different from default - service.name attribute added", func(t *testing.T) {
 		s := newSpan("op", "other-service", "res", 1, 1, 0)
-		otlp := convertSpan(s, "my-service", false)
+		otlp := convertSpan(s, "my-service", false, nil)
 		require.NotNil(t, otlp)
 		attrs := keyValuesToMap(otlp.Attributes)
 		assert.Equal(t, "other-service", attrs["service.name"])
@@ -270,12 +312,37 @@ func TestConvertSpanStatus(t *testing.T) {
 	})
 }
 
+func TestResourceStringAttrs(t *testing.T) {
+	r := &otlpresource.Resource{Attributes: []*otlpcommon.KeyValue{
+		otlpKeyValue("team", otlpStringValue("core")),
+		otlpKeyValue("count", otlpIntValue(3)),
+	}}
+	assert.Equal(t, map[string]string{"team": "core"}, resourceStringAttrs(r))
+}
+
+func TestConvertSpanAttributesSkipsResourceAttrs(t *testing.T) {
+	s := newBasicSpan("op")
+	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{
+		"team":   "core",
+		"region": "eu1",
+		"tag":    "val",
+	})
+	s.metrics = map[string]float64{"shard": 3}
+	resourceAttrs := map[string]string{"team": "core", "region": "us1", "shard": "3"}
+
+	m := keyValuesToMap(convertSpanAttributes(s, "", false, resourceAttrs))
+	assert.NotContains(t, m, "team", "tags carried by the resource with the same value are not repeated")
+	assert.Equal(t, "eu1", m["region"], "span values that differ from the resource are kept")
+	assert.Equal(t, "val", m["tag"])
+	assert.Equal(t, 3.0, m["shard"], "metrics keep their type on the span")
+}
+
 func TestConvertSpanAttributes(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val", "env": "test"})
 	s.metrics = map[string]float64{"count": 10, "rate": 0.5}
 
-	attrs := convertSpanAttributes(s, "", false)
+	attrs := convertSpanAttributes(s, "", false, nil)
 	m := keyValuesToMap(attrs)
 	assert.Equal(t, "val", m["tag"])
 	assert.Equal(t, "test", m["env"])
@@ -299,7 +366,7 @@ func TestConvertSpanAttributesIntEncoding(t *testing.T) {
 		"custom.metric":             1.5,
 	}
 
-	m := keyValuesToMap(convertSpanAttributes(s, "", false))
+	m := keyValuesToMap(convertSpanAttributes(s, "", false, nil))
 
 	assert.Equal(t, int64(200), m["http.response.status_code"])
 	assert.Equal(t, int64(8080), m["server.port"])
@@ -323,7 +390,7 @@ func TestConvertSpanAttributesEncodesSemanticIntegerMetadataAsOTLPIntegers(t *te
 		"server.port":               9443,
 	}
 
-	attrs := convertSpanAttributes(s, "", true)
+	attrs := convertSpanAttributes(s, "", true, nil)
 	m := keyValuesToMap(attrs)
 	assert.Equal(t, int64(500), m["http.response.status_code"])
 	assert.Equal(t, int64(8443), m["server.port"])
@@ -338,7 +405,7 @@ func TestConvertSpanAttributesEncodesSemanticIntegerMetadataAsOTLPIntegers(t *te
 
 	legacySpan := newBasicSpan("op")
 	legacySpan.meta.Set("http.response.status_code", "500")
-	legacy := keyValuesToMap(convertSpanAttributes(legacySpan, "", false))
+	legacy := keyValuesToMap(convertSpanAttributes(legacySpan, "", false, nil))
 	assert.Equal(t, "500", legacy["http.response.status_code"], "legacy metadata remains a string")
 }
 
@@ -356,7 +423,7 @@ func TestConvertSpanAttributesOtelSemantics(t *testing.T) {
 		ext.ErrorHandlingStack: "goroutine 1 ...",
 		ext.SpanKind:           ext.SpanKindServer,
 	})
-	m := keyValuesToMap(convertSpanAttributes(s, "", true))
+	m := keyValuesToMap(convertSpanAttributes(s, "", true, nil))
 
 	// DD-only span-identity, error message/stack, and span.kind attributes are suppressed.
 	for _, k := range []string{
@@ -381,7 +448,7 @@ func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.
 			s.SetTag(key, i+1)
 		}
 
-		m := keyValuesToMap(convertSpanAttributes(s, "", true))
+		m := keyValuesToMap(convertSpanAttributes(s, "", true, nil))
 		for _, key := range keys {
 			assert.NotContains(t, m, key)
 		}
@@ -395,7 +462,7 @@ func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.
 			s.metrics[key] = float64(i + 1)
 		}
 
-		m := keyValuesToMap(convertSpanAttributes(s, "", true))
+		m := keyValuesToMap(convertSpanAttributes(s, "", true, nil))
 		for _, key := range keys {
 			assert.NotContains(t, m, key)
 		}
@@ -407,7 +474,7 @@ func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.
 			s.SetTag(key, i+1)
 		}
 
-		m := keyValuesToMap(convertSpanAttributes(s, "", false))
+		m := keyValuesToMap(convertSpanAttributes(s, "", false, nil))
 		for i, key := range keys {
 			assert.Equal(t, float64(i+1), m[key])
 		}
@@ -422,7 +489,7 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 		"simple": map[string]string{"x": "y"},
 	}
 
-	attrs := convertSpanAttributes(s, "", false)
+	attrs := convertSpanAttributes(s, "", false, nil)
 
 	var nestedKV, simpleKV *otlpcommon.KeyValue
 	for _, kv := range attrs {
@@ -453,7 +520,7 @@ func TestConvertSpanAttributesMaxLimit(t *testing.T) {
 		s.meta.Set(fmt.Sprintf("key-%d", i), "val")
 	}
 
-	attrs := convertSpanAttributes(s, "other-service", false)
+	attrs := convertSpanAttributes(s, "other-service", false, nil)
 	assert.LessOrEqual(t, len(attrs), maxAttributesCount)
 }
 
@@ -464,7 +531,7 @@ func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 	}
 	s.metrics = map[string]float64{"should-be-dropped": 1.0}
 
-	attrs := convertSpanAttributes(s, "", false)
+	attrs := convertSpanAttributes(s, "", false, nil)
 	m := keyValuesToMap(attrs)
 
 	assert.Equal(t, "op", m["operation.name"], "operation.name should always be present")
@@ -477,7 +544,7 @@ func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 func TestConvertSpanAttributesServiceNameOverride(t *testing.T) {
 	t.Run("same as default - no attribute", func(t *testing.T) {
 		s := newSpan("op", "my-service", "res", 1, 1, 0)
-		attrs := convertSpanAttributes(s, "my-service", false)
+		attrs := convertSpanAttributes(s, "my-service", false, nil)
 		m := keyValuesToMap(attrs)
 		_, hasServiceName := m["service.name"]
 		assert.False(t, hasServiceName, "service.name attribute should be absent when it matches the default")
@@ -485,7 +552,7 @@ func TestConvertSpanAttributesServiceNameOverride(t *testing.T) {
 
 	t.Run("different from default - attribute added", func(t *testing.T) {
 		s := newSpan("op", "other-service", "res", 1, 1, 0)
-		attrs := convertSpanAttributes(s, "my-service", false)
+		attrs := convertSpanAttributes(s, "my-service", false, nil)
 		m := keyValuesToMap(attrs)
 		assert.Equal(t, "other-service", m["service.name"])
 	})
@@ -609,7 +676,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 		// the live context; the foreign vendor is preserved.
 		setPropagatingTag(s.context, tracestateHeader, "dd=s:1;o:stale,othervendor=abc")
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		assert.Equal(t, "dd=s:2;o:rum;p:0000000000000001;t.dm:-4,othervendor=abc", otlpSpan.TraceState)
 		assert.Equal(t, otlpTraceFlagSampled, otlpSpan.Flags)
@@ -619,7 +686,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
 		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		// A locally-started span now carries a regenerated dd= member, matching
 		// what wire injection would emit.
@@ -630,7 +697,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
 		s.context.trace = nil
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		assert.Empty(t, otlpSpan.TraceState)
 	})
@@ -643,7 +710,7 @@ func TestConvertSpanTraceStateOtel(t *testing.T) {
 		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 		s.context.trace.setOtelProbability(tid, 0.1)
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		assert.Contains(t, otlpSpan.TraceState, "ot=rv:ef284ace7a91e1;th:e6666666666668")
 		assert.Equal(t, otlpTraceFlagSampled, otlpSpan.Flags)
@@ -654,7 +721,7 @@ func TestConvertSpanTraceStateOtel(t *testing.T) {
 		s.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
 		s.context.trace.setOtelUpstream(0xabcdef1234567, true, 0, false, "")
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		assert.Contains(t, otlpSpan.TraceState, "ot=rv:0abcdef1234567")
 	})
@@ -666,7 +733,7 @@ func TestConvertSpanTraceStateOtel(t *testing.T) {
 		// re-emitted; only foreign vendors survive.
 		setPropagatingTag(s.context, tracestateHeader, "dd=s:1,ot=garbage,othervendor=abc")
 
-		otlpSpan := convertSpan(s, "svc", false)
+		otlpSpan := convertSpan(s, "svc", false, nil)
 		require.NotNil(t, otlpSpan)
 		assert.NotContains(t, otlpSpan.TraceState, "ot=")
 		assert.Contains(t, otlpSpan.TraceState, "othervendor=abc")

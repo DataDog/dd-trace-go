@@ -24,7 +24,7 @@ func TestConvertSpanOTelSemanticHTTPServer(t *testing.T) {
 	s.meta.Set(ext.ErrorType, "500")
 	s.metrics[ext.ServerPort] = 8443
 
-	otlp := convertSpan(s, "svc", true)
+	otlp := convertSpan(s, "svc", true, nil)
 	require.NotNil(t, otlp)
 	assert.Equal(t, "GET /users/{id}", otlp.Name)
 	assert.Equal(t, otlptrace.Span_SPAN_KIND_SERVER, otlp.Kind)
