@@ -1399,6 +1399,16 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 // SpanContext and is inherited by every span in the trace, so a key that is left
 // alone keeps whatever a predecessor wrote and would misattribute this request —
 // the same hazard the propagating tags handle with unsetPropagatingTag.
+//
+// On overflow these items are not privileged over the caller's. The baggage
+// injector stops at the first item exceeding either cap (textmap.go:1902 for the
+// 64-item limit, :1914 for 8192 bytes) and drops every item after it; because
+// ForeachBaggageItem ranges over a map, where that cut lands is not deterministic,
+// so an oversized caller baggage set can lose the caller's own items as readily as
+// these. dd-trace-py avoids that by appending its items last to an insertion-ordered
+// dict, a guarantee Go's map iteration cannot provide. Accepted rather than worked
+// around: the llmobs.* footprint is 6 items and roughly 200 bytes, so a collision
+// needs a caller already close to the limit.
 func setLLMObsBaggage(spanCtx *SpanContext, llmSpan *illmobs.Span) {
 	agentSpanID := llmSpan.PropagatedParentAgentSpanID()
 	var agentName string
