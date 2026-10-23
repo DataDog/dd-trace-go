@@ -34,6 +34,13 @@ type (
 const (
 	defaultRulesPath     = "ASM_DD/default"
 	obfuscatorConfigPath = "obfuscator/config"
+
+	// WAFManagerLeakedMessage is the warning that the WAFManager GC cleanup reports when the runtime
+	// collects a WAFManager without a call to [WAFManager.Close]. The GC cleanup is a process-wide
+	// safety net. The runtime can run this cleanup during any garbage collection, even during the
+	// telemetry capture window of an unrelated subsystem. Tests that assert that a code path does
+	// not report to Error Tracking must exclude this message explicitly.
+	WAFManagerLeakedMessage = "WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!"
 )
 
 // NewWAFManager creates a new [WAFManager] with the provided [config.ObfuscatorConfig] and initial
@@ -48,8 +55,8 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 		return nil, err
 	}
 	if err := addObfuscatorConfig(builder, obfuscator); err != nil {
-		// The builder owns a native allocation and the GC cleanup below is not attached yet, so it
-		// must be closed explicitly on every early-return path to avoid leaking it.
+		// The builder owns a native allocation. The GC cleanup attaches only after this branch.
+		// Every early-return path must close the builder, or the native allocation leaks.
 		builder.Close()
 		return nil, err
 	}
@@ -65,11 +72,10 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 		return nil, err
 	}
 
-	// Attach a [runtime.Cleanup] to close the builder when the [WAFManager] is
-	// garbage collected, in case [WAFManager.Close] was not called explicitly by
-	// the user.
+	// Attach a [runtime.Cleanup] to close the builder when the runtime collects the
+	// [WAFManager] without a call to [WAFManager.Close].
 	mgr.cleanup = runtime.AddCleanup(mgr, func(b *libddwaf.Builder) {
-		telemetrylog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
+		telemetrylog.Warn(WAFManagerLeakedMessage)
 		b.Close()
 	}, builder)
 
@@ -124,15 +130,20 @@ func (m *WAFManager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Note: The call to [libddwaf.Builder.Close] is safe to make multiple times.
+	// [libddwaf.Builder.Close] is safe to call multiple times.
 	m.builder.Close()
 	m.rulesVersion = ""
 
-	// Cancel the Cleanup function to avoid wasting resources & emitting a log
-	// message when the [WAFManager] was correctly closed manually. This is safe
-	// to call multiple times, granted these cannot be concurrent as we hold the
-	// mutex when reaching this point.
+	// Stop the cleanup so that the runtime does not waste resources and does not emit
+	// WAFManagerLeakedMessage after a correct manual close. Stop is safe to call multiple times
+	// because Close holds the mutex here, so concurrent calls cannot occur.
 	m.cleanup.Stop()
+	// [runtime.Cleanup.Stop] cannot cancel a cleanup that the runtime already queued. The runtime
+	// guarantees cancellation only when the pointer that [runtime.AddCleanup] received stays
+	// reachable across the Stop call. The deferred unlock keeps m reachable through the return of
+	// this function. [runtime.KeepAlive] makes that requirement explicit, so this code does not
+	// depend on the liveness analysis of the compiler.
+	runtime.KeepAlive(m)
 }
 
 // RemoveConfig removes a configuration from the receiving [WAFManager].
