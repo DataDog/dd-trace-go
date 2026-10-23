@@ -228,6 +228,32 @@ func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
 	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
 }
 
+// TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError pins the fix for
+// reporting body-read failures to Error Tracking: a 200 response whose body
+// is interrupted (connection reset mid-stream) is a transport failure, not a
+// malformed agent response, so fetchAgentFeatures must not classify it as
+// agentFeaturesDecodeError — only a JSON-parse failure on the fully read
+// body may be reported.
+func TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		// Partial JSON, then drop the connection mid-body.
+		w.Write([]byte(`{"endpoints":["/v0.6/st`))
+		panic(http.ErrAbortHandler)
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	_, err = fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.Error(t, err)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr),
+		"an interrupted body read is a transport failure and must not be reported as a decode error")
+}
+
 func TestFetchAgentFeaturesCancellationIsNotDecodeError(t *testing.T) {
 	headersSent := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

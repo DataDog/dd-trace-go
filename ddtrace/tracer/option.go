@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/binary"
@@ -619,10 +620,16 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		} `json:"config"`
 	}
 	var info infoResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return agentFeatures{}, err
-		}
+	// Read the response body before parsing it. A body read can fail mid-stream
+	// (connection reset, truncated response, cancellation), and those failures
+	// are transport errors, not malformed agent responses — they must stay
+	// local-only rather than reach Error Tracking as agentFeaturesDecodeError.
+	// Parsing the buffered bytes can then only fail for protocol reasons.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return agentFeatures{}, fmt.Errorf("reading features: %w", err)
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&info); err != nil {
 		return agentFeatures{}, &agentFeaturesDecodeError{err: err}
 	}
 	var features agentFeatures
