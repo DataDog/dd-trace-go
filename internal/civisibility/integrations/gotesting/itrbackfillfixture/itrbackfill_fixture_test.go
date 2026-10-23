@@ -54,7 +54,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 }
 
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
-	if os.Getenv("GO_CMD") == "gotip" {
+	if goTipCommand(os.Getenv("GO_CMD")) {
 		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
 	}
 
@@ -121,6 +121,35 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}
 				}
 				assertProfileContainsPositiveCounts(t, profile, profilePaths...)
+			}
+		})
+	}
+}
+
+// goTipCommand reports whether the Go command runs a Go tip toolchain. The
+// sibling fuzzexamplefixture detects gotip the same way, so a path form such
+// as /usr/local/bin/gotip does not slip past the guard.
+func goTipCommand(command string) bool {
+	base := filepath.Base(command)
+	return base == "gotip" || base == "gotip.exe"
+}
+
+func TestGoTipCommand(t *testing.T) {
+	for _, test := range []struct {
+		command string
+		want    bool
+	}{
+		{command: "", want: false},
+		{command: "go", want: false},
+		{command: "gotip", want: true},
+		{command: filepath.Join("custom", "gotip"), want: true},
+		{command: "gotip.exe", want: true},
+		{command: filepath.Join("custom toolchain", "go"), want: false},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			t.Setenv("GO_CMD", test.command)
+			if got := goTipCommand(os.Getenv("GO_CMD")); got != test.want {
+				t.Fatalf("Go tip detection for %q = %v, want %v", test.command, got, test.want)
 			}
 		})
 	}
