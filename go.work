@@ -82,6 +82,7 @@ use (
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
+	./contrib/valyala/fasthttp/otelc
 	./instrumentation/internal/namingschematest
 	./instrumentation/internal/validationtest
 	./instrumentation/testutils/containers

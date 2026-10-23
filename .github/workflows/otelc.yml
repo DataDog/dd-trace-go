@@ -53,6 +53,8 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/valyala/fasthttp
+    contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -67,6 +69,7 @@ env:
     redigo
     grpc
     99designs.gqlgen
+    valyala_fasthttp
 
 jobs:
   go-versions-matrix:

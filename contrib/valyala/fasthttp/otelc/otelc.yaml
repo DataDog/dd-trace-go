@@ -1,0 +1,30 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps the server's handler with the contrib's tracing the first time
+# Server.Serve runs. ListenAndServe, ServeTLS and the other start methods all
+# call Serve, so this covers them too. Servers passed to SkipServer, such as
+# Fiber's, are left alone.
+fasthttp_server_serve:
+  target: github.com/valyala/fasthttp
+  where:
+    func: Serve
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServe
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
+
+# Same as above for a connection served with Server.ServeConn, which does not
+# call Serve. Fiber's app.Test serves this way.
+fasthttp_server_serve_conn:
+  target: github.com/valyala/fasthttp
+  where:
+    func: ServeConn
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServeConn
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2

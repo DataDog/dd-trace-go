@@ -16,3 +16,15 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestServeConn(t *testing.T) {
+	harness.Run(t, new(TestCaseServeConn))
+}
+
+func TestServeTwice(t *testing.T) {
+	harness.Run(t, new(TestCaseServeTwice))
+}
