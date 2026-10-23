@@ -769,6 +769,96 @@ func TestLLMObsBaggagePropagation(t *testing.T) {
 	})
 }
 
+func TestLLMObsBaggageReadPath(t *testing.T) {
+	isAPMHeader := func(k string) bool {
+		return strings.HasPrefix(k, "x-datadog-") || k == "traceparent" || k == "tracestate"
+	}
+	isBaggageHeader := func(k string) bool { return k == "baggage" }
+
+	// run makes one traced request through an intermediary that drops the headers
+	// matched by drop, and returns the upstream workflow span alongside the
+	// downstream tool span the server produced.
+	run := func(t *testing.T, drop func(string) bool) (upstreamTraceID, upstreamSpanID string, downstream *llmobstest.LLMObsSpan) {
+		t.Helper()
+		_, coll, ll := testTracer(t)
+
+		inner := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
+			tool.Finish(llmobs.FinishSpanConfig{})
+			w.WriteHeader(http.StatusOK)
+		})
+		srv, cl := testClientServerDropping(t, inner, drop)
+
+		func() {
+			span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "client_workflow", llmobs.StartSpanConfig{SessionID: "sess-read"})
+			defer span.Finish(llmobs.FinishSpanConfig{})
+			upstreamTraceID, upstreamSpanID = span.TraceID(), span.SpanID()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+		}()
+		tracer.Flush()
+
+		return upstreamTraceID, upstreamSpanID, coll.RequireSpan(t, "server_tool")
+	}
+
+	t.Run("joins-the-trace-when-apm-headers-are-stripped", func(t *testing.T) {
+		// The scenario this whole change exists for: an intermediary drops the APM
+		// trace headers so each service re-roots its own APM trace. Baggage survives,
+		// so the LLMObs trace must still join up.
+		traceID, spanID, tool := run(t, isAPMHeader)
+
+		assert.Equal(t, traceID, tool.TraceID, "LLMObs trace must continue across the stripped hop")
+		assert.Equal(t, spanID, tool.ParentID, "downstream span must parent to the upstream LLMObs span")
+		assert.Equal(t, "sess-read", tool.SessionID, "session must be inherited from baggage")
+	})
+
+	t.Run("still-joins-when-only-the-tags-survive", func(t *testing.T) {
+		// Backwards compatibility: a peer on an older SDK sends no baggage at all.
+		// The legacy _dd.p.llmobs_* tags must still be honoured.
+		traceID, spanID, tool := run(t, isBaggageHeader)
+
+		assert.Equal(t, traceID, tool.TraceID, "tag carrier must still work when baggage is absent")
+		assert.Equal(t, spanID, tool.ParentID)
+		assert.Equal(t, "sess-read", tool.SessionID)
+	})
+
+	t.Run("starts-a-fresh-trace-when-both-carriers-are-absent", func(t *testing.T) {
+		// With neither carrier there is genuinely nothing to inherit, and the
+		// downstream service is a real root. Dropping the gate must not invent a parent.
+		traceID, _, tool := run(t, func(k string) bool { return isAPMHeader(k) || isBaggageHeader(k) })
+
+		assert.NotEqual(t, traceID, tool.TraceID, "with no propagation the downstream span must start its own trace")
+		assert.Equal(t, llmobs.DefaultParentID, tool.ParentID, "a root LLMObs span must carry the root sentinel, not an inherited parent")
+	})
+}
+
+// testClientServerDropping is testClientServer with a header filter in front of the
+// tracing middleware, simulating an intermediary that removes propagation headers
+// in transit.
+func testClientServerDropping(t *testing.T, h http.Handler, drop func(string) bool) (*httptest.Server, *http.Client) {
+	wh := traceHandler(h)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var dropped []string
+		for k := range req.Header {
+			if drop(strings.ToLower(k)) {
+				dropped = append(dropped, k)
+			}
+		}
+		for _, k := range dropped {
+			req.Header.Del(k)
+		}
+		wh.ServeHTTP(w, req)
+	}))
+	cl := traceClient(srv.Client())
+	t.Cleanup(srv.Close)
+
+	return srv, cl
+}
+
 func TestCollectorSpanFieldCompatibility(t *testing.T) {
 	var duration int64 = 123
 	var status string = "ok"
