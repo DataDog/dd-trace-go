@@ -5,6 +5,22 @@
 
 // Package aws provides functions to trace aws/aws-sdk-go-v2 (https://github.com/aws/aws-sdk-go-v2).
 //
+// # Trace context injection
+//
+// These environment variables control whether the integration writes the Datadog trace context
+// into the requests of each service:
+//
+//   - DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED controls PutRecord and PutRecords.
+//   - DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED controls PutEvents.
+//   - DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED controls SendMessage and SendMessageBatch.
+//   - DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED controls Publish and PublishBatch.
+//
+// All default to true. Set them before tracer initialization and middleware installation. Existing
+// middleware does not reload values after tracer restarts.
+//
+// False skips new "_datadog" writes, not existing metadata. Spans, the SQS tag and the local Data
+// Streams checkpoint remain. Consumers relying on those writes lose fresh trace and pathway context.
+//
 // Usage Example:
 //
 //	import (
