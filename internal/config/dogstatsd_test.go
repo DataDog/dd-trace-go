@@ -118,6 +118,11 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 			agentStatsdPort: 9876,
 			expected:        "custom:9999",
 		},
+		{
+			name:     "user-addr-udp",
+			userAddr: "udp://custom:9999",
+			expected: "custom:9999",
+		},
 		// Agent-reported port used as fallback when env host is set but no env port.
 		{
 			name:            "host-env+agent-port",
@@ -145,11 +150,45 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 			socketPath:      socketPath,
 			expected:        "unix://" + socketPath,
 		},
-		// DD_DOGSTATSD_URL: TCP host:port form.
+		// DD_DOGSTATSD_URL: UDP host:port form.
 		{
-			name:     "url-env-tcp",
+			name:     "url-env-host-port",
 			env:      map[string]string{"DD_DOGSTATSD_URL": "myhost:9999"},
 			expected: "myhost:9999",
+		},
+		// DD_DOGSTATSD_URL: udp:// form, as documented by datadog-go.
+		{
+			name:     "url-env-udp",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://myhost:9999"},
+			expected: "myhost:9999",
+		},
+		{
+			name:     "url-env-udp-no-port",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://myhost"},
+			expected: "myhost:8125",
+		},
+		{
+			name:     "url-env-udp-ipv6",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://[2001:db8::1]:9999"},
+			expected: "[2001:db8::1]:9999",
+		},
+		{
+			name:     "url-env-udp-ipv6-no-port",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://[2001:db8::1]"},
+			expected: "[2001:db8::1]:8125",
+		},
+		// A udp:// address without a host falls back to localhost.
+		{
+			name:     "url-env-udp-no-host",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://:9999"},
+			expected: "localhost:9999",
+		},
+		// An unparseable udp:// address loses only its scheme, so the statsd
+		// client reports the bad address.
+		{
+			name:     "url-env-udp-invalid",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "udp://myhost:port"},
+			expected: "myhost:port",
 		},
 		// DD_DOGSTATSD_URL: unix socket form.
 		{
@@ -170,12 +209,26 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 			agentStatsdPort: 9876,
 			expected:        "unix://" + socketPath,
 		},
-		// DD_DOGSTATSD_URL (tcp) blocks agent-reported port override.
+		// DD_DOGSTATSD_URL (host:port) blocks agent-reported port override.
 		{
-			name:            "url-env-tcp+agent-port",
+			name:            "url-env-host-port+agent-port",
 			env:             map[string]string{"DD_DOGSTATSD_URL": "myhost:9999"},
 			agentStatsdPort: 9876,
 			expected:        "myhost:9999",
+		},
+		// DD_DOGSTATSD_URL (udp) blocks agent-reported port override, even
+		// when the port was defaulted.
+		{
+			name:            "url-env-udp+agent-port",
+			env:             map[string]string{"DD_DOGSTATSD_URL": "udp://myhost:9999"},
+			agentStatsdPort: 9876,
+			expected:        "myhost:9999",
+		},
+		{
+			name:            "url-env-udp-no-port+agent-port",
+			env:             map[string]string{"DD_DOGSTATSD_URL": "udp://myhost"},
+			agentStatsdPort: 9876,
+			expected:        "myhost:8125",
 		},
 	}
 

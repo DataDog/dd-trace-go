@@ -343,7 +343,7 @@ func detectUDSURL() *url.URL {
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
 // Precedence: addr (DD_DOGSTATSD_URL) > host/port (DD_DOGSTATSD_HOST/PORT) >
 // UDS auto-discovery > agentHost:DefaultStatsdPort. The returned URL is
-// always complete: host+port for TCP, or unix scheme + path for UDS.
+// always complete: host+port for UDP, or unix scheme + path for UDS.
 func initialDogstatsdURL(addr, host, port, agentHost, socketPath string) *url.URL {
 	if addr != "" {
 		return parseDogstatsdAddr(addr)
@@ -370,7 +370,9 @@ func initialDogstatsdURL(addr, host, port, agentHost, socketPath string) *url.UR
 	return &url.URL{Host: net.JoinHostPort(host, DefaultStatsdPort)}
 }
 
-// parseDogstatsdAddr accepts "host:port" or "unix:///path/to/socket".
+// parseDogstatsdAddr accepts "host:port", "udp://host[:port]" or
+// "unix:///path/to/socket". As in datadog-go, a udp:// address without a port
+// uses DefaultStatsdPort. udp:// addresses are returned in the host:port form.
 func parseDogstatsdAddr(addr string) *url.URL {
 	if strings.HasPrefix(addr, "unix://") {
 		if u, err := url.Parse(addr); err == nil {
@@ -378,6 +380,22 @@ func parseDogstatsdAddr(addr string) *url.URL {
 		} else {
 			log.Warn("Failed to parse DogStatsD unix address %q: %s", addr, err) //errtrack:ignore invalid user configuration
 		}
+	}
+	if hostPort, ok := strings.CutPrefix(addr, "udp://"); ok {
+		u, err := url.Parse(addr)
+		if err != nil {
+			log.Warn("Failed to parse DogStatsD udp address %q: %s", addr, err)
+			return &url.URL{Host: hostPort}
+		}
+		host, port := u.Hostname(), u.Port()
+		if host == "" {
+			log.Warn("DogStatsD udp address %q has no host, using %s", addr, internal.DefaultAgentHostname)
+			host = internal.DefaultAgentHostname
+		}
+		if port == "" {
+			port = DefaultStatsdPort
+		}
+		return &url.URL{Host: net.JoinHostPort(host, port)}
 	}
 	return &url.URL{Host: addr}
 }
