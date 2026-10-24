@@ -271,4 +271,4 @@
 // dependency and no Remote Config capability advertised. See the openfeature package's
 // documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
 // selection rules.
-package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+package tracer
