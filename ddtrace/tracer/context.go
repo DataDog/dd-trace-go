@@ -131,40 +131,56 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	// Fast path: peek at the two required tags before allocating.
+	// Fast path: peek at the two required values before allocating.
 	// Most spans carry no LLMObs propagation, so we skip the heap allocation on that hot path.
 	if s.context == nil || s.context.trace == nil {
 		return ctx
 	}
-	if s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" ||
-		s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID) == "" {
+	// Resolved once here and handed to propagatedLLMSpan rather than looked up
+	// again, since deciding whether any propagation is present already requires them.
+	parentID := llmObsPropagatedValue(s.context, baggageKeyLLMObsParentID, keyPropagatedLLMObsParentID)
+	traceID := llmObsPropagatedValue(s.context, baggageKeyLLMObsTraceID, keyPropagatedLLMObsTraceID)
+	if parentID == "" || traceID == "" {
 		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpanFromTags(s))
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpan(s.context, parentID, traceID))
 }
 
-// propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
-// This is used during distributed tracing to set the correct parent span for the current span.
-func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
-	propagatedLLMObs := &illmobs.PropagatedLLMSpan{}
-	if s.context == nil || s.context.trace == nil {
-		return propagatedLLMObs
+// llmObsPropagatedValue reads one propagated LLMObs value, preferring the W3C
+// baggage carrier over the legacy _dd.p.llmobs_* propagating tag.
+//
+// Baggage wins because it is the carrier that survives a hop which drops the APM
+// trace headers; the tag is absent in exactly the case the baggage copy exists to
+// cover. When both are present they hold the same value, since the write side
+// populates them together.
+//
+// spanCtx and spanCtx.trace must be non-nil; callers check that before the first
+// lookup so the hot path bails without touching either carrier.
+func llmObsPropagatedValue(spanCtx *SpanContext, baggageKey, tagKey string) string {
+	if v := spanCtx.baggageItem(baggageKey); v != "" {
+		return v
 	}
-	if parentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentID); parentID != "" {
-		propagatedLLMObs.SpanID = parentID
+	return spanCtx.trace.propagatingTag(tagKey)
+}
+
+// propagatedLLMSpan assembles the LLMObs propagation carried by an inbound request,
+// reading from baggage first and the legacy propagating tags second. It is used
+// during distributed tracing to set the correct parent span for the current span.
+//
+// parentID and traceID are supplied by the caller, which has already resolved them
+// to decide whether there is any propagation to assemble at all.
+func propagatedLLMSpan(spanCtx *SpanContext, parentID, traceID string) *illmobs.PropagatedLLMSpan {
+	propagatedLLMObs := &illmobs.PropagatedLLMSpan{
+		SpanID:    parentID,
+		TraceID:   traceID,
+		MLApp:     llmObsPropagatedValue(spanCtx, baggageKeyLLMObsMLApp, keyPropagatedLLMObsMLAPP),
+		SessionID: llmObsPropagatedValue(spanCtx, baggageKeyLLMObsSessionID, keyPropagatedLLMObsSessionID),
 	}
-	if mlApp := s.context.trace.propagatingTag(keyPropagatedLLMObsMLAPP); mlApp != "" {
-		propagatedLLMObs.MLApp = mlApp
-	}
-	if trID := s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID); trID != "" {
-		propagatedLLMObs.TraceID = trID
-	}
-	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
-		propagatedLLMObs.SessionID = sessionID
-	}
-	if parentAgentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); parentAgentID != "" {
-		propagatedLLMObs.ParentAgentSpanID = parentAgentID
-		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentName)
+	// The name is only meaningful alongside the span ID, and the write side may send
+	// an id-only attribution, so it is read only once an agent span ID is present.
+	if agentSpanID := llmObsPropagatedValue(spanCtx, baggageKeyLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentSpanID); agentSpanID != "" {
+		propagatedLLMObs.ParentAgentSpanID = agentSpanID
+		propagatedLLMObs.ParentAgentName = llmObsPropagatedValue(spanCtx, baggageKeyLLMObsParentAgentName, keyPropagatedLLMObsParentAgentName)
 	}
 	return propagatedLLMObs
 }

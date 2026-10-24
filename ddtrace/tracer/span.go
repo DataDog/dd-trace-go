@@ -1388,6 +1388,62 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
 	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+	setLLMObsBaggage(spanCtx, llmSpan)
+}
+
+// setLLMObsBaggage mirrors the active LLMObs span's distributed context into the
+// W3C baggage carrier, in addition to the _dd.p.llmobs_* propagating tags written
+// above. Nothing is removed from the tag carrier; this is an additive second copy.
+//
+// Every key is set or removed on each call, never skipped. Baggage lives on the
+// SpanContext and is inherited by every span in the trace, so a key that is left
+// alone keeps whatever a predecessor wrote and would misattribute this request —
+// the same hazard the propagating tags handle with unsetPropagatingTag.
+//
+// On overflow these items are not privileged over the caller's. The baggage
+// injector stops at the first item exceeding either cap (textmap.go:1902 for the
+// 64-item limit, :1914 for 8192 bytes) and drops every item after it; because
+// ForeachBaggageItem ranges over a map, where that cut lands is not deterministic,
+// so an oversized caller baggage set can lose the caller's own items as readily as
+// these. dd-trace-py avoids that by appending its items last to an insertion-ordered
+// dict, a guarantee Go's map iteration cannot provide. Accepted rather than worked
+// around: the llmobs.* footprint is 6 items and roughly 200 bytes, so a collision
+// needs a caller already close to the limit.
+func setLLMObsBaggage(spanCtx *SpanContext, llmSpan *illmobs.Span) {
+	agentSpanID := llmSpan.PropagatedParentAgentSpanID()
+	var agentName string
+	if agentSpanID != "" {
+		// setPropagatingParentAgentTags may drop the name to stay inside the
+		// x-datadog-tags and tracestate budgets. Baggage has its own, far larger
+		// budget, so it carries the name independently rather than inheriting
+		// that decision — only a wire-safety check and a length cap apply.
+		if name := llmSpan.PropagatedParentAgentName(); illmobs.AgentNameWireSafe(name) {
+			if len(name) > baggageLLMObsAgentNameMaxLen {
+				// AgentNameWireSafe admits printable ASCII only, so every byte is
+				// one rune and slicing cannot split a multi-byte character.
+				name = name[:baggageLLMObsAgentNameMaxLen]
+			}
+			agentName = name
+		}
+	}
+
+	// A fixed-size array keeps this off the heap while still making the
+	// "every key, every call" invariant checkable at a glance.
+	items := [...]struct{ key, value string }{
+		{baggageKeyLLMObsParentID, llmSpan.SpanID()},
+		{baggageKeyLLMObsTraceID, llmSpan.TraceID()},
+		{baggageKeyLLMObsMLApp, llmSpan.MLApp()},
+		{baggageKeyLLMObsSessionID, llmSpan.SessionID()},
+		{baggageKeyLLMObsParentAgentSpanID, agentSpanID},
+		{baggageKeyLLMObsParentAgentName, agentName},
+	}
+	for _, item := range items {
+		if item.value == "" {
+			spanCtx.removeBaggageItem(item.key)
+			continue
+		}
+		spanCtx.setBaggageItem(item.key, item.value)
+	}
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
@@ -1508,6 +1564,25 @@ const (
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"
+)
+
+// LLMObs distributed context is mirrored into the W3C baggage carrier under a
+// reserved llmobs.* namespace, alongside the _dd.p.llmobs_* propagating tags
+// above. Baggage is injected and extracted independently of APM trace identity,
+// so this copy survives a hop that drops the APM trace headers. The key names
+// are a cross-SDK contract and must match the other tracers.
+const (
+	baggageKeyLLMObsParentID          = "llmobs.parent_id"
+	baggageKeyLLMObsTraceID           = "llmobs.trace_id"
+	baggageKeyLLMObsMLApp             = "llmobs.ml_app"
+	baggageKeyLLMObsSessionID         = "llmobs.session_id"
+	baggageKeyLLMObsParentAgentSpanID = "llmobs.parent_agent_span_id"
+	baggageKeyLLMObsParentAgentName   = "llmobs.parent_agent_name"
+
+	// baggageLLMObsAgentNameMaxLen caps the parent-agent name, the only
+	// arbitrary-length LLMObs value, so one long name cannot consume the
+	// caller's baggage budget.
+	baggageLLMObsAgentNameMaxLen = 512
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
