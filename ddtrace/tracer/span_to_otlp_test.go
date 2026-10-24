@@ -144,6 +144,18 @@ func TestBuildResource(t *testing.T) {
 		}
 	})
 
+	t.Run("span field keys ignored", func(t *testing.T) {
+		cfg := internalconfig.CreateNew()
+		keys := []string{ext.SpanName, ext.ResourceName, ext.SpanType, ext.Error, ext.ErrorNoStackTrace}
+		for _, k := range keys {
+			cfg.SetGlobalTag(k, "v", internalconfig.OriginCode)
+		}
+		attrs := keyValuesToMap(buildResource(cfg).Attributes)
+		for _, k := range keys {
+			assert.NotContains(t, attrs, k, "the tracer turns %s into a span field, so spans never carry it", k)
+		}
+	})
+
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
 		cfg := internalconfig.CreateNew()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)

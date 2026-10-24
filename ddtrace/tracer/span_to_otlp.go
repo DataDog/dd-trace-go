@@ -71,6 +71,13 @@ var ignoredGlobalTags = map[string]struct{}{
 	"datadog.sdk.semantics":       {},
 	keySDKOTLPExport:              {},
 	"_dd.stats_computed":          {},
+	// The tracer turns these into span fields or the error flag, so spans
+	// never carry them as tags.
+	ext.SpanName:          {},
+	ext.ResourceName:      {},
+	ext.SpanType:          {},
+	ext.Error:             {},
+	ext.ErrorNoStackTrace: {},
 }
 
 // buildResource constructs the OTLP Resource from resolved tracer configuration.
