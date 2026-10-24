@@ -20,7 +20,7 @@ import (
 func TestLLMObsPropagatedValue(t *testing.T) {
 	for _, tt := range []struct {
 		name       string
-		baggageVal string // "" meansbaggage key is absent
+		baggageVal string // "" means baggage key is absent
 		tagVal     string // "" means propagating tag is absent
 		want       string
 	}{
@@ -47,11 +47,10 @@ func TestLLMObsPropagatedValue(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			//Build a SpanContext carrying only what this row calls for
 			sc := &SpanContext{trace: &trace{}}
 			if tt.baggageVal != "" {
 				sc.baggage = map[string]string{baggageKeyLLMObsParentID: tt.baggageVal}
-				sc.hasBaggage = 1 //baggageItem() short-circuits without this.
+				sc.hasBaggage = 1 
 			}
 			if tt.tagVal != "" {
 				sc.trace.setPropagatingTag(keyPropagatedLLMObsParentID, tt.tagVal)
