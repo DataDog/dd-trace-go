@@ -17,6 +17,51 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestLLMObsPropagatedValue(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		baggageVal string // "" meansbaggage key is absent
+		tagVal     string // "" means propagating tag is absent
+		want       string
+	}{
+		{
+			name:       "baggage is preferred - the one nothing currently pins",
+			baggageVal: "from-baggage",
+			tagVal:     "from-tag",
+			want:       "from-baggage",
+		}, {
+			name:       "the legacy tag still works",
+			baggageVal: "",
+			tagVal:     "from-tag",
+			want:       "from-tag",
+		}, {
+			name:       "baggage alone is enough - the stripped header case",
+			baggageVal: "from-baggage",
+			tagVal:     "",
+			want:       "from-baggage",
+		}, {
+			name:       "nothing propagated -> empty",
+			baggageVal: "",
+			tagVal:     "",
+			want:       "",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			//Build a SpanContext carrying only what this row calls for
+			sc := &SpanContext{trace: &trace{}}
+			if tt.baggageVal != "" {
+				sc.baggage = map[string]string{baggageKeyLLMObsParentID: tt.baggageVal}
+				sc.hasBaggage = 1 //baggageItem() short-circuits without this.
+			}
+			if tt.tagVal != "" {
+				sc.trace.setPropagatingTag(keyPropagatedLLMObsParentID, tt.tagVal)
+			}
+			got := llmObsPropagatedValue(sc, baggageKeyLLMObsParentID, keyPropagatedLLMObsParentID)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestContextWithSpan(t *testing.T) {
 	t.Run("OK", func(t *testing.T) {
 		want := &Span{spanID: 123}
