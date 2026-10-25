@@ -66,6 +66,15 @@ func newTreeNode() *treeNode {
 // addEndpoints adds zero or more endpoints to the tree.
 func (t *Tree) addEndpoints(es ...*Endpoint) error {
 	for _, e := range es {
+		// Compile the path matcher once, at tree-build time, so that Get never
+		// writes to the shared Endpoint while serving concurrent requests.
+		pathMatcher, err := regexp.Compile(e.PathRegex)
+		if err != nil {
+			instr.Logger().Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
+			continue
+		}
+		e.pathMatcher = pathMatcher
+
 		prefix := e.PathTemplate
 		if idx := strings.IndexByte(prefix, '{'); idx >= 0 {
 			prefix = prefix[:idx]
@@ -91,12 +100,7 @@ func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (*Endpoi
 	endpoints := t.root.getLongestPrefixMatch(segments)
 	for _, e := range endpoints {
 		if e.pathMatcher == nil {
-			pathMatcher, err := regexp.Compile(e.PathRegex)
-			if err != nil {
-				instr.Logger().Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
-				continue
-			}
-			e.pathMatcher = pathMatcher
+			continue
 		}
 		if e.pathMatcher.MatchString(httpPath) {
 			return e, true
