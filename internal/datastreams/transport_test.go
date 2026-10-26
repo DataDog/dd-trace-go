@@ -7,9 +7,12 @@ package datastreams
 
 import (
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -96,4 +99,33 @@ func TestHTTPTransportEntityID(t *testing.T) {
 	require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
 	require.Len(t, ft.requests, 1)
 	assert.Equal(t, eid, ft.requests[0].Header.Get("Datadog-Entity-ID"))
+}
+
+func TestHTTPTransportReusesConnection(t *testing.T) {
+	var newConns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"acknowledged":true,"error":""}`))
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	client := &http.Client{Transport: &http.Transport{}}
+	defer client.CloseIdleConnections()
+	transport := newHTTPTransport(agentURL, client)
+
+	const flushes = 5
+	for range flushes {
+		require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	}
+	assert.Equal(t, int32(1), newConns.Load(), "each pipeline_stats flush should reuse the keep-alive connection to the agent")
 }

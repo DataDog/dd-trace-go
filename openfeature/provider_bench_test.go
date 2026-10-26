@@ -84,6 +84,41 @@ func BenchmarkBooleanEvaluation(b *testing.B) {
 	}
 }
 
+func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
+	provider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
+	})
+	config := createTestConfig()
+	f := config.Flags["bool-flag"]
+	f.Allocations[0].DoLog = new(true)
+	f.Allocations[0].Splits[0].VariationKey = "off"
+	f.Allocations = append(f.Allocations, &allocation{
+		Key:    "ordinary",
+		DoLog:  new(false),
+		Splits: []*split{{VariationKey: "on"}},
+	})
+	provider.updateConfiguration(config)
+
+	ctx := context.Background()
+	flatCtx := openfeature.FlattenedContext{
+		"targetingKey":                   "user-123",
+		"country":                        "US",
+		experimentationOptOutAtAttribute: experimentOptOutTestTime,
+	}
+
+	result := provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+	require.Equal(b, openfeature.ResolutionError{}, result.ResolutionError)
+	require.True(b, result.Value)
+	require.Equal(b, "ordinary", result.FlagMetadata[metadataAllocationKey])
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+	}
+}
+
 // BenchmarkStringEvaluation benchmarks string flag evaluation
 func BenchmarkStringEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
