@@ -1,0 +1,173 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Like orchestrion, these rules wrap the result of each sarama constructor call
+# with the contrib, in every package of the build, dependencies included,
+# except sarama and the contrib. function_call only matches qualified calls, so
+# sarama's own calls are never rewritten. That keeps the async producer that
+# sarama's sync producer constructors build, and type assert to their own type,
+# unwrapped. The contrib's tests build sarama values and wrap them, so
+# rewriting those would trace them twice and import the contrib into itself.
+#
+# The rewritten file imports the contrib, so the contrib is initialized before
+# a call from a package-level variable or an init function.
+#
+# The producer rules read the config from the call's own arguments, or from
+# the client for the FromClient constructors, where orchestrion passes the
+# enclosing function's *sarama.Config argument or nil. A nil config reaches
+# the contrib as nil in both tools.
+#
+# TODO: wrap_call rejects a replace template without the original call
+# ({{ . }}), so the producer templates keep it in a branch that never runs.
+# They evaluate each argument once, into typed variables so a nil argument
+# compiles. Remove the branch once wrap_call can replace a call outright.
+
+sarama_new_consumer:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewConsumer
+  do:
+    - wrap_call:
+        replace: |-
+          (func(c sarama.Consumer, err error) (sarama.Consumer, error) {
+            if c != nil {
+              c = saramatrace.WrapConsumer(c)
+            }
+            return c, err
+          })({{ . }})
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+
+sarama_new_consumer_from_client:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewConsumerFromClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(c sarama.Consumer, err error) (sarama.Consumer, error) {
+            if c != nil {
+              c = saramatrace.WrapConsumer(c)
+            }
+            return c, err
+          })({{ . }})
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+
+sarama_new_sync_producer:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewSyncProducer
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (sarama.SyncProducer, error) {
+            if false {
+              return {{ . }}
+            }
+            var __dd_addrs []string = {{ .CallArgument 0 }}
+            var __dd_cfg *sarama.Config = {{ .CallArgument 1 }}
+            __dd_p, __dd_err := sarama.NewSyncProducer(__dd_addrs, __dd_cfg)
+            if __dd_p != nil {
+              __dd_p = saramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
+            }
+            return __dd_p, __dd_err
+          })()
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+
+sarama_new_sync_producer_from_client:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewSyncProducerFromClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (sarama.SyncProducer, error) {
+            if false {
+              return {{ . }}
+            }
+            var __dd_client sarama.Client = {{ .CallArgument 0 }}
+            __dd_p, __dd_err := sarama.NewSyncProducerFromClient(__dd_client)
+            if __dd_p != nil {
+              __dd_p = saramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
+            }
+            return __dd_p, __dd_err
+          })()
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+
+sarama_new_async_producer:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewAsyncProducer
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (sarama.AsyncProducer, error) {
+            if false {
+              return {{ . }}
+            }
+            var __dd_addrs []string = {{ .CallArgument 0 }}
+            var __dd_cfg *sarama.Config = {{ .CallArgument 1 }}
+            __dd_p, __dd_err := sarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
+            if __dd_p != nil {
+              __dd_p = saramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
+            }
+            return __dd_p, __dd_err
+          })()
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+
+sarama_new_async_producer_from_client:
+  target:
+    - "**"
+    - not: "github.com/IBM/sarama"
+    - not: "github.com/IBM/sarama/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/**"
+  where:
+    function_call: github.com/IBM/sarama.NewAsyncProducerFromClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (sarama.AsyncProducer, error) {
+            if false {
+              return {{ . }}
+            }
+            var __dd_client sarama.Client = {{ .CallArgument 0 }}
+            __dd_p, __dd_err := sarama.NewAsyncProducerFromClient(__dd_client)
+            if __dd_p != nil {
+              __dd_p = saramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
+            }
+            return __dd_p, __dd_err
+          })()
+  imports:
+    sarama: github.com/IBM/sarama
+    saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
