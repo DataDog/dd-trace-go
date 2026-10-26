@@ -1889,7 +1889,7 @@ func TestOTLPExportModeSpanEvents(t *testing.T) {
 	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
 
 	// convertSpan emits a native OTLP event carrying its attributes.
-	otlp := convertSpan(s, "svc", false)
+	otlp := convertSpan(s, "svc", false, nil)
 	assert.Len(otlp.Events, 1)
 	assert.Equal("exception", otlp.Events[0].Name)
 	assert.NotEmpty(otlp.Events[0].Attributes)
