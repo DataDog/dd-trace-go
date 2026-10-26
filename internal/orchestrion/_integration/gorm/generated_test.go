@@ -16,3 +16,19 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestContribOpen(t *testing.T) {
+	harness.Run(t, new(TestCaseContribOpen))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPluginConfig(t *testing.T) {
+	harness.Run(t, new(TestCasePluginConfig))
+}
+
+func TestSpanCount(t *testing.T) {
+	harness.Run(t, new(TestCaseSpanCount))
+}
