@@ -24,3 +24,7 @@ func TestNested(t *testing.T) {
 func TestSpanPool(t *testing.T) {
 	harness.Run(t, new(TestCaseSpanPool))
 }
+
+func TestStatusPrecedence(t *testing.T) {
+	harness.Run(t, new(TestCaseStatusPrecedence))
+}

@@ -5,7 +5,11 @@
 
 package tracer
 
-import "context"
+import (
+	"context"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+)
 
 // These functions are used by github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry via
 // go:linkname. Native code paths of the tracer do not call them.
@@ -14,6 +18,7 @@ const (
 	bridgeOpen     = 0
 	bridgePinned   = 1
 	bridgeReleased = 2
+	bridgePinnedOK = 3
 )
 
 // spanContextWithOwner records s as the owner of sc and returns sc. The woven spanStart calls it
@@ -44,7 +49,7 @@ func borrowSpanFromContext(ctx context.Context, exclude *Span) (*Span, *SpanCont
 	}
 	// Most lookups find the span already pinned. The load avoids an atomic write for them.
 	switch sc.bridgeState.Load() {
-	case bridgePinned:
+	case bridgePinned, bridgePinnedOK:
 	case bridgeOpen:
 		if !sc.bridgeState.CompareAndSwap(bridgeOpen, bridgePinned) && sc.bridgeState.Load() == bridgeReleased {
 			return nil, nil
@@ -53,4 +58,34 @@ func borrowSpanFromContext(ctx context.Context, exclude *Span) (*Span, *SpanCont
 		return nil, nil
 	}
 	return sc.bridgeOwner, sc
+}
+
+// setBorrowedStatus sets the error state of the span of sc for an OpenTelemetry view. Ok has the
+// highest precedence in OpenTelemetry: after ok, an error does not change the span. The span
+// lock makes the precedence check and the change one step, also for separate views and
+// concurrent calls. The function does nothing when sc is not pinned or the span finished.
+func setBorrowedStatus(sc *SpanContext, ok bool, description string) {
+	if st := sc.bridgeState.Load(); st != bridgePinned && st != bridgePinnedOK {
+		return
+	}
+	s := sc.bridgeOwner
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		return
+	}
+	if ok {
+		sc.bridgeState.Store(bridgePinnedOK)
+		s.setTagLocked(ext.Error, false)
+		// Ok removes the whole error, also the message that an earlier Error wrote.
+		s.meta.Delete(ext.ErrorMsg)
+		return
+	}
+	if sc.bridgeState.Load() == bridgePinnedOK {
+		return
+	}
+	if description != "" {
+		s.setTagLocked(ext.ErrorMsg, description)
+	}
+	s.setTagLocked(ext.Error, true)
 }
