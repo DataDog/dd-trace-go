@@ -1387,6 +1387,18 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	} else {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
+	// The sampling decision is trace-scoped too: unset it for an undecided span so a
+	// sibling's decision can't leak downstream. A keep at rate 1 is not propagated:
+	// downstream spans without a decision are kept anyway, and the dd tracestate member
+	// is capped at 256 bytes, so these tags would crowd out the parent-agent name.
+	if decision := llmSpan.SamplingDecision(); decision != "" &&
+		(decision != illmobs.SamplingDecisionKeep || llmSpan.SampleRate() != "1") {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, llmSpan.SampleRate())
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, decision)
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSampleRate)
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSamplingDecision)
+	}
 	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
 }
 
@@ -1500,6 +1512,10 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsSampleRate contains the rate the LLMObs trace was sampled at.
+	keyPropagatedLLMObsSampleRate = "_dd.p.llmobs_sr"
+	// keyPropagatedLLMObsSamplingDecision contains the LLMObs trace sampling decision ("1" keep, "0" drop).
+	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
 	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
 	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"

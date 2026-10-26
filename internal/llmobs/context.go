@@ -28,6 +28,11 @@ type PropagatedLLMSpan struct {
 	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
 	// across process boundaries. Empty when there is no agent ancestor.
 	ParentAgentSpanID string
+	// SampleRate is the rate the trace was sampled at by the upstream LLMObs root.
+	SampleRate string
+	// SamplingDecision is the upstream LLMObs root's sampling decision.
+	// Empty when the upstream SDK did not propagate one.
+	SamplingDecision string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.

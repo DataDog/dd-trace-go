@@ -6,6 +6,7 @@
 package config
 
 import (
+	"math"
 	"net/url"
 	"os"
 	"reflect"
@@ -2566,6 +2567,7 @@ func TestLLMObsEnvVars(t *testing.T) {
 		assert.Empty(t, cfg.LLMObsMLApp())
 		assert.Empty(t, cfg.LLMObsProjectName())
 		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+		assert.Equal(t, 1.0, cfg.LLMObsSampleRate())
 	})
 
 	t.Run("loads from env vars", func(t *testing.T) {
@@ -2576,8 +2578,10 @@ func TestLLMObsEnvVars(t *testing.T) {
 		t.Setenv("DD_LLMOBS_ML_APP", "my-app")
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "my-project")
 		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+		t.Setenv("DD_LLMOBS_SAMPLE_RATE", "0.25")
 
 		cfg := Get()
+		assert.Equal(t, 0.25, cfg.LLMObsSampleRate())
 		assert.True(t, cfg.LLMObsEnabled())
 		assert.Equal(t, "my-app", cfg.LLMObsMLApp())
 		assert.Equal(t, "my-project", cfg.LLMObsProjectName())
@@ -2606,6 +2610,29 @@ func TestLLMObsEnvVars(t *testing.T) {
 		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "garbage")
 		cfg := Get()
 		assert.Nil(t, cfg.LLMObsAgentlessEnabled())
+	})
+}
+
+func TestLLMObsSampleRate(t *testing.T) {
+	for _, v := range []string{"-0.1", "1.5", "NaN", "not-a-number"} {
+		t.Run("invalid env value "+v+" falls back to 1", func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			t.Setenv("DD_LLMOBS_SAMPLE_RATE", v)
+			assert.Equal(t, 1.0, Get().LLMObsSampleRate())
+		})
+	}
+
+	t.Run("setter ignores values outside [0, 1]", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		cfg.SetLLMObsSampleRate(0, telemetry.OriginCode)
+		assert.Equal(t, 0.0, cfg.LLMObsSampleRate())
+		for _, v := range []float64{-1, 1.01, math.NaN()} {
+			cfg.SetLLMObsSampleRate(v, telemetry.OriginCode)
+			assert.Equal(t, 0.0, cfg.LLMObsSampleRate(), "value %v should be ignored", v)
+		}
 	})
 }
 

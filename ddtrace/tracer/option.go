@@ -1674,6 +1674,17 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	}
 }
 
+// WithLLMObsSampleRate sets the proportion of LLM Observability traces to keep, between 0 and 1 (inclusive).
+// The keep/drop decision is made once on the root LLM Observability span, inherited by its descendants and
+// propagated to downstream services. Every span is still submitted with the decision attached, so token and cost
+// metrics stay accurate; Datadog discards the content of dropped traces. Values outside [0, 1] are ignored.
+// The default is 1. This is equivalent to the DD_LLMOBS_SAMPLE_RATE environment variable.
+func WithLLMObsSampleRate(rate float64) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetLLMObsSampleRate(rate, telemetry.OriginCode, internalconfig.ProductTracer)
+	}
+}
+
 // withLLMObsInProcessTransport sets the LLMObs test base URL and injects an
 // in-process RoundTripper so that no real network activity occurs during LLMObs
 // test requests. testBaseURL is used only for URL path construction.
