@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: 73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: db6e40eb51c2bcf5dfbf9b716f44ebfe11ec2a84 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -474,7 +474,7 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@db6e40eb51c2bcf5dfbf9b716f44ebfe11ec2a84 # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
@@ -484,7 +484,7 @@ jobs:
       _system_tests_dev_mode: true
       push_to_test_optimization: true
       desired_execution_time: 300
-      ref: 73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+      ref: db6e40eb51c2bcf5dfbf9b716f44ebfe11ec2a84 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests

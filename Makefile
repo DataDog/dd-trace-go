@@ -33,7 +33,7 @@ tools-install/checkmake: ## Install checkmake binary for Makefile linting
 		if [ "$$ARCH" = "x86_64" ]; then ARCH="amd64"; fi; \
 		if [ "$$ARCH" = "aarch64" ]; then ARCH="arm64"; fi; \
 		BINARY="checkmake-$$CHECKMAKE_VERSION.$$OS.$$ARCH"; \
-		if curl -sSfL -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
+		if curl -sSfL --retry 5 --retry-delay 2 --retry-connrefused -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
 			chmod +x $(BIN)/checkmake; \
 			echo "checkmake $$CHECKMAKE_VERSION installed from pre-built binary"; \
 		else \
