@@ -1,0 +1,35 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Like orchestrion, this rewrites every options.Client() call site into
+# options.Client().SetMonitor(mongotrace.NewMonitor()), in every package of the
+# build, dependencies and the driver itself included. A later SetMonitor from
+# the application replaces the contrib's monitor, as under orchestrion, so a
+# client traced by hand still gets one span per command.
+#
+# FIXME: a monitor the application sets on one ClientOptions is lost when
+# those options are merged with a later plain options.Client(), because the
+# rewritten call carries the contrib's monitor and the last monitor wins.
+# Orchestrion behaves the same.
+#
+# This is a call-site rule and not a hook on options.Client for two reasons.
+# The rewritten package imports the contrib, so a package-level
+# "var opts = options.Client()" runs after the contrib's init. And the driver
+# calls Client() unqualified inside MergeClientOptions, which a hook would
+# instrument and orchestrion does not.
+#
+# The contrib is excluded because its tests call options.Client(), and wrapping
+# those would import the contrib into itself.
+mongo_v2_client:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/**"
+  where:
+    function_call: go.mongodb.org/mongo-driver/v2/mongo/options.Client
+  do:
+    - wrap_call:
+        replace: "{{ . }}.SetMonitor(mongotrace.NewMonitor())"
+  imports:
+    mongotrace: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo
