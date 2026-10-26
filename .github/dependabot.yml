@@ -2,6 +2,12 @@
 
 version: 2
 
+# Private-registry declarations
+registries:
+  datadog-agent:
+    type: docker-registry
+    url: https://registry.datadoghq.com
+
 updates:
   # Git submodules — keeps canonical external test fixtures current.
   - package-ecosystem: "gitsubmodule"
@@ -68,6 +74,9 @@ updates:
     directories:
       - "/"
       - "/internal/apps"
+    # The root stack pulls registry.datadoghq.com/agent. Allow that host.
+    registries:
+      - datadog-agent
     schedule:
       interval: "weekly"
       day: "monday"
@@ -128,6 +137,9 @@ updates:
     directories:
       - "/.github/testservices"
       - "/instrumentation/testutils/containers/images"
+    # The testservices stack pulls registry.datadoghq.com/agent. Allow that host.
+    registries:
+      - datadog-agent
     schedule:
       interval: "weekly"
       day: "monday"
