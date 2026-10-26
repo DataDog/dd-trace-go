@@ -138,6 +138,9 @@ is inert and everything falls back to plain `context.Context`.
 
 - Starting a span pushes it onto the current goroutine's GLS (woven into the tracer's
   `ContextWithSpan`).
+- An OpenTelemetry span that the bridge starts is not pushed onto the goroutine-local stack. So
+  log correlation (trace_id and span_id) needs a context that carries the span: pass the context
+  that Start returns.
 - `tracer.SpanFromContext` reads the GLS when the explicit context chain has no active span (woven
   into `SpanFromContext`). This lets a span created upstream be found downstream even across call
   sites that do not pass a context, which is what makes auto-instrumentation work without editing

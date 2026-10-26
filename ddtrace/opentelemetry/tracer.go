@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
+	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -23,6 +24,12 @@ import (
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
+
+//go:linkname startSpanFromContextNoGLS github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.startSpanFromContextNoGLS
+func startSpanFromContextNoGLS(ctx context.Context, operationName string, cfg *tracer.StartSpanConfig) (*tracer.Span, context.Context)
+
+//go:linkname parentFromContextNoGLS github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.parentFromContextNoGLS
+func parentFromContextNoGLS(ctx context.Context) (*tracer.SpanContext, bool)
 
 var telemetryTags = []string{"integration_name:otel"}
 
@@ -42,40 +49,49 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		return noop.NewTracerProvider().Tracer("").Start(ctx, spanName, opts...)
 	}
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
+	// The start options are written into cfg directly instead of through option functions.
+	// An option slice that crosses the bodyless linkname declaration of
+	// startSpanFromContextNoGLS escapes to the heap, which costs one allocation per span.
+	// The start-option tags and the span attributes stay separate maps, as they were
+	// when the Tag option built the start tags and cfg.Tags held the attributes.
+	var cfg tracer.StartSpanConfig
 	// OTel name is akin to resource name in Datadog
-	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
+	cfg.Tags = map[string]any{ext.ResourceName: spanName}
 	if !ssConfig.NewRoot() {
-		if s, ok := tracer.SpanFromContext(ctx); ok {
-			// if the span originates from the Datadog tracer,
-			// inherit given span context as a parent
-			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
+		// The OpenTelemetry API finds the parent only through the context. The lookup does not read
+		// the Orchestrion goroutine-local stack.
+		if sc, ok := parentFromContextNoGLS(ctx); ok {
+			// The parent is a Datadog span.
+			cfg.Parent = sc
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
-			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})))
+			cfg.Parent = tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
-		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
+		cfg.StartTime = ssConfig.Timestamp()
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
-		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
+		cfg.Tags[ext.SpanKind] = k.String()
 	}
 	telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Submit(1.0)
-	var cfg tracer.StartSpanConfig
-	cfg.Tags = make(map[string]any)
+	var attrCfg tracer.StartSpanConfig
+	attrCfg.Tags = make(map[string]any)
 	if opts, ok := spanOptionsFromContext(ctx); ok {
-		ddopts = append(ddopts, opts...)
+		// Each option configures the started span and the attribute map, as it did when it
+		// was appended to the start options and run against the attribute config.
 		for _, o := range opts {
 			o(&cfg)
+			o(&attrCfg)
 		}
 	}
 	for _, attr := range ssConfig.Attributes() {
 		k := string(attr.Key)
-		if _, ok := cfg.Tags[k]; ok {
+		if _, ok := attrCfg.Tags[k]; ok {
 			continue
 		}
-		cfg.Tags[k] = attr.Value.AsInterface()
+		attrCfg.Tags[k] = attr.Value.AsInterface()
 	}
 	// Add provide OTel Span Links to the underlying Datadog span.
 	if len(ssConfig.Links()) > 0 {
@@ -98,18 +114,19 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 				Flags: uint32(link.SpanContext.TraceFlags()) | (1 << 31),
 			})
 		}
-		ddopts = append(ddopts, tracer.WithSpanLinks(links))
+		cfg.SpanLinks = append(cfg.SpanLinks, links...)
 	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
 	//
 	// The parent is decided above, so detach any ambient Datadog span to keep
-	// StartSpanFromContext from choosing its own. It is used for its context handling:
+	// startSpanFromContextNoGLS from choosing its own. It is used for its context handling:
 	// the caller's context becomes the span's context, which keeps the application's
 	// pprof labels on the goroutine, and the context it returns carries this span's
-	// profiling labels to its children.
-	s, ctx := tracer.StartSpanFromContext(tracer.ContextWithSpan(ctx, nil), spanName, ddopts...)
+	// profiling labels to its children. The span is not put on the Orchestrion goroutine-local
+	// stack: an OpenTelemetry span is only active in the context that Start returns.
+	s, ctx := startSpanFromContextNoGLS(tracer.ContextWithSpan(ctx, nil), spanName, &cfg)
 
 	// Merge baggage from otel and dd, update Datadog baggage, and update the context.
 	mergedBag, ddBag := mergeBaggageFromContext(ctx)
@@ -120,13 +137,13 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		DD:                   s,
 		oteltracer:           t,
 		spanKind:             ssConfig.SpanKind(),
-		attributes:           cfg.Tags,
+		attributes:           attrCfg.Tags,
 		otelSemanticsEnabled: t.otelSemanticsEnabled,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
 	// Wrap the span in the OpenTelemetry context to propagate span context values.
-	// StartSpanFromContext already put the Datadog span on the context.
+	// startSpanFromContextNoGLS already put the Datadog span on the context.
 	ctx = oteltrace.ContextWithSpan(ctx, os)
 	return ctx, os
 }

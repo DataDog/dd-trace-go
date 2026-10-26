@@ -17,8 +17,20 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestContextOnly(t *testing.T) {
+	harness.Run(t, new(TestCaseContextOnly))
+}
+
 func TestNested(t *testing.T) {
 	harness.Run(t, new(TestCaseNested))
+}
+
+func TestNotActive(t *testing.T) {
+	harness.Run(t, new(TestCaseNotActive))
+}
+
+func TestRawKeyParent(t *testing.T) {
+	harness.Run(t, new(TestCaseRawKeyParent))
 }
 
 func TestSpanPool(t *testing.T) {

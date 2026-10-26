@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -71,6 +73,156 @@ func TestSpanContextSnapshot(t *testing.T) {
 	assert.Nil(t, spanContextSnapshot(ContextWithSpan(ctx, nil)))
 }
 
+func TestParentFromContextNoGLS(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	t.Run("nil context", func(t *testing.T) {
+		sc, ok := parentFromContextNoGLS(nil)
+		assert.False(t, ok)
+		assert.Nil(t, sc)
+	})
+	t.Run("span in context", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		sc, ok := parentFromContextNoGLS(ContextWithSpan(context.Background(), s))
+		assert.True(t, ok)
+		assert.Same(t, s.Context(), sc)
+	})
+	t.Run("detached context", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := ContextWithSpan(context.Background(), s)
+		sc, ok := parentFromContextNoGLS(ContextWithSpan(ctx, nil))
+		assert.False(t, ok)
+		assert.Nil(t, sc)
+	})
+	t.Run("span under the raw key only", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := context.WithValue(context.Background(), internal.ActiveSpanKey, s)
+		sc, ok := parentFromContextNoGLS(ctx)
+		assert.True(t, ok)
+		assert.Same(t, s.Context(), sc)
+	})
+	t.Run("span under the raw key with the goroutine-local stack active", func(t *testing.T) {
+		defer orchestrion.MockGLS()()
+		s := StartSpan("op")
+		defer s.Finish()
+		ctx := context.WithValue(context.Background(), internal.ActiveSpanKey, s)
+		sc, ok := parentFromContextNoGLS(ctx)
+		assert.True(t, ok)
+		assert.Same(t, s.Context(), sc)
+	})
+	t.Run("span under the raw key in a context that orchestrion wrapped", func(t *testing.T) {
+		defer orchestrion.MockGLS()()
+		s := StartSpan("op")
+		defer s.Finish()
+		rawCtx := context.WithValue(context.Background(), internal.ActiveSpanKey, s)
+		sc, ok := parentFromContextNoGLS(orchestrion.WrapContext(rawCtx))
+		assert.True(t, ok)
+		assert.Same(t, s.Context(), sc)
+	})
+	t.Run("snapshot wins over the raw key", func(t *testing.T) {
+		s := StartSpan("op")
+		defer s.Finish()
+		raw := StartSpan("raw")
+		defer raw.Finish()
+		ctx := context.WithValue(ContextWithSpan(context.Background(), s), internal.ActiveSpanKey, raw)
+		sc, ok := parentFromContextNoGLS(ctx)
+		assert.True(t, ok)
+		// The snapshot is preferred because it survives span pool reuse.
+		assert.Same(t, s.Context(), sc)
+	})
+}
+
+// TestParentFromContextNoGLSSkipsWrappedContext pins the no-GLS parent lookup against
+// a context that Orchestrion wrapped. The goroutine-local stack holds a span that
+// nobody passed in the context. SpanFromContext keeps the fallback for Datadog
+// code. parentFromContextNoGLS must not read the stack through the wrapper. It
+// must still choose a span that ContextWithSpan put in the explicit chain.
+func TestParentFromContextNoGLSSkipsWrappedContext(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	defer orchestrion.MockGLS()()
+
+	s := StartSpan("test.span")
+	s2 := StartSpan("test.span.explicit")
+
+	// Push s on the goroutine-local stack. Nobody puts it in the context.
+	orchestrion.CtxWithValue(context.Background(), internal.ActiveSpanKey, s)
+
+	ctx := orchestrion.WrapContext(context.Background())
+
+	got, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Same(t, s, got)
+
+	sc, ok := parentFromContextNoGLS(ctx)
+	assert.False(t, ok)
+	assert.Nil(t, sc)
+
+	ctx2 := ContextWithSpan(ctx, s2)
+	sc, ok = parentFromContextNoGLS(ctx2)
+	assert.True(t, ok)
+	assert.Same(t, s2.Context(), sc)
+
+	s.Finish()
+	s2.Finish()
+}
+
+// TestContextWithSpanBodiesMatch pins the duplication in context.go: contextWithSpan
+// repeats the body of ContextWithSpan because a call from the woven ContextWithSpan
+// would add cost on the hot path. The test compares the two bodies through the three
+// lookups that read the result, so a change to one body without the other fails.
+func TestContextWithSpanBodiesMatch(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	type ctxView struct {
+		span            *Span
+		spanFound       bool
+		snapshot        *SpanContext
+		propagated      *illmobs.PropagatedLLMSpan
+		propagatedFound bool
+	}
+	view := func(ctx context.Context) ctxView {
+		s, ok := SpanFromContext(ctx)
+		p, pok := illmobs.PropagatedLLMSpanFromContext(ctx)
+		return ctxView{span: s, spanFound: ok, snapshot: spanContextSnapshot(ctx), propagated: p, propagatedFound: pok}
+	}
+
+	live := StartSpan("op")
+	defer live.Finish()
+
+	tagged := StartSpan("op.llmobs")
+	defer tagged.Finish()
+	tagged.Context().trace.setPropagatingTag(keyPropagatedLLMObsParentID, "123")
+	tagged.Context().trace.setPropagatingTag(keyPropagatedLLMObsTraceID, "456")
+
+	parentCtx := ContextWithSpan(context.Background(), live)
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		span *Span
+	}{
+		{"nil context", nil, live},
+		{"nil span detaches a context that holds a span", parentCtx, nil},
+		{"live span", context.Background(), live},
+		{"span whose trace carries the llmobs propagation tags", context.Background(), tagged},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, view(ContextWithSpan(tc.ctx, tc.span)), view(contextWithSpan(tc.ctx, tc.span)))
+		})
+	}
+}
+
 func TestStartSpanFromContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
@@ -99,6 +251,23 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("http.request", got.name)
 	assert.Equal("gin", got.service)
 	assert.Equal("/", got.resource)
+}
+
+func TestStartSpanFromContextNoGLS(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
+	defer stop()
+
+	parent, ctx := startSpanFromContextNoGLS(context.Background(), "parent", nil)
+	got, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Same(t, parent, got)
+
+	child, _ := StartSpanFromContext(ctx, "child")
+	assert.Equal(t, parent.spanID, child.parentID)
+	assert.Equal(t, parent.traceID, child.traceID)
+	child.Finish()
+	parent.Finish()
 }
 
 func TestStartSpanFromContextDefault(t *testing.T) {

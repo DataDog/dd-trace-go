@@ -42,6 +42,21 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 	return context.WithValue(WrapContext(parent), key, val)
 }
 
+// ExplicitValue returns ctx.Value(key), but contexts that this package wraps do not fall back to the
+// goroutine-local stack. So the result is a value that the context chain carries. Code that must not
+// take a value from the goroutine-local stack, such as the parent lookup of the OpenTelemetry API,
+// uses it.
+func ExplicitValue(ctx context.Context, key any) any {
+	if !glsActive() {
+		return ctx.Value(key)
+	}
+	s := getDDContextStack()
+	prev := s.explicitOnly
+	s.explicitOnly = true
+	defer func() { s.explicitOnly = prev }()
+	return ctx.Value(key)
+}
+
 // CtxWithScopedValue is [CtxWithValue] with a matching scope exit: it pushes val
 // under key and returns the derived context along with a cleanup that removes
 // the entry this call pushed, plus anything still stacked above it.
@@ -398,7 +413,11 @@ func (g *glsContext) Value(key any) any {
 		return val
 	}
 
-	if val := getDDContextStack().Peek(key); val != nil {
+	s := getDDContextStack()
+	if s.explicitOnly {
+		return nil
+	}
+	if val := s.Peek(key); val != nil {
 		return val
 	}
 

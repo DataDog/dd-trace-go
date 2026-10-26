@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -31,6 +32,28 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
+
+// TestStartParentFromRawKeyContext pins the behavior that a build without the
+// goroutine-local stack keeps: a Datadog span that an integration put in the
+// context under the raw active-span key, without ContextWithSpan, becomes the
+// parent of an OpenTelemetry span started from that context.
+func TestStartParentFromRawKeyContext(t *testing.T) {
+	tp, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	s := tracer.StartSpan("op")
+	ctx := context.WithValue(context.Background(), sharedinternal.ActiveSpanKey, s)
+	_, child := tp.Tracer("").Start(ctx, "child")
+	child.End()
+	s.Finish()
+
+	spans := flushedSpans(t, payloads)
+	require.Len(t, spans["op"], 1)
+	require.Len(t, spans["child"], 1)
+	parent, kid := spans["op"][0], spans["child"][0]
+	assert.Equal(t, parent["span_id"], kid["parent_id"])
+	assert.Equal(t, parent["trace_id"], kid["trace_id"])
+}
 
 func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
@@ -403,6 +426,23 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	b.Run("otel_api", func(b *testing.B) {
 		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.oldOp)
+			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
+			sp.SetName(testData.newOp)
+			sp.End()
+		}
+	})
+
+	b.Run("otel_api_with_parent", func(b *testing.B) {
+		// The parent stays open: every Start in the loop must select it as parent through
+		// the context. Partial flush sends the finished children, so the trace stays below
+		// its span limit.
+		tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv), tracer.WithPartialFlushing(1000))
+		defer tp.Shutdown()
+		tr := tp.Tracer("")
+		pctx, parent := tr.Start(context.Background(), "parent")
+		defer parent.End()
+		for b.Loop() {
+			_, sp := tr.Start(pctx, testData.oldOp)
 			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
 			sp.SetName(testData.newOp)
 			sp.End()

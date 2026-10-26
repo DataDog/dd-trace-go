@@ -66,6 +66,9 @@ type contextStack struct {
 	// token is 1 and 0 is free to mean "no scope" — what Push returns when it
 	// pushed nothing, and a value PopScope never matches.
 	next uint64
+	// explicitOnly is set while ExplicitValue runs, so glsContext skips the
+	// goroutine-local fallback for that lookup.
+	explicitOnly bool
 }
 
 // getDDContextStack is a main way to access the GLS slot of runtime.g inserted by orchestrion. This function should not be

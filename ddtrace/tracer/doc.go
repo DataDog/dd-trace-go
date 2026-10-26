@@ -209,6 +209,9 @@
 // span, but spans that the global tracer starts take the Datadog span as parent.
 // With the span pool on, a span that trace.SpanFromContext returned does not go
 // back to the pool.
+// An OpenTelemetry span is active only in the context that Start returns. Start(context.Background())
+// begins a new trace. An open OpenTelemetry span does not become the parent of spans that do not
+// carry it in their context.
 //
 // # OpenTelemetry Semantic Conventions
 //

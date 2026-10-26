@@ -667,3 +667,50 @@ func TestGLSSweepKeepsASurvivingEntrysExit(t *testing.T) {
 		"the lower B outlived its own exit: sweeping the upper B cleared the cell whose exit "+
 			"named the lower one, so B's finish removed nothing")
 }
+
+// TestExplicitValue pins the lookup that never reads the goroutine-local stack.
+// Code that must not take a value from the stack, such as the parent lookup of
+// the OpenTelemetry API, uses it.
+func TestExplicitValue(t *testing.T) {
+	t.Run("stack value is not returned", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		getDDContextStack().Push(key("k"), "stack", nil, nil)
+		ctx := WrapContext(context.Background())
+
+		require.Equal(t, "stack", ctx.Value(key("k")),
+			"a plain Value falls back to the goroutine-local stack")
+		require.Nil(t, ExplicitValue(ctx, key("k")),
+			"ExplicitValue must not take a value from the goroutine-local stack")
+	})
+
+	t.Run("explicit value is returned", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		getDDContextStack().Push(key("k"), "stack", nil, nil)
+		ctx := context.WithValue(WrapContext(context.Background()), key("k"), "explicit")
+
+		require.Equal(t, "explicit", ExplicitValue(ctx, key("k")),
+			"ExplicitValue must return a value that the context chain carries")
+	})
+
+	t.Run("the flag is restored after the lookup", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		getDDContextStack().Push(key("k"), "stack", nil, nil)
+		ctx := WrapContext(context.Background())
+
+		require.Nil(t, ExplicitValue(ctx, key("k")))
+		require.Equal(t, "stack", ctx.Value(key("k")),
+			"a plain Value after ExplicitValue must fall back to the stack again")
+	})
+
+	t.Run("without GLS it equals Value", func(t *testing.T) {
+		require.False(t, glsActive(), "this subtest needs the GLS disabled")
+
+		type plainKey struct{}
+		withValue := context.WithValue(context.Background(), plainKey{}, "explicit")
+		require.Equal(t, withValue.Value(plainKey{}), ExplicitValue(withValue, plainKey{}))
+		require.Equal(t, context.Background().Value(plainKey{}), ExplicitValue(context.Background(), plainKey{}))
+	})
+}
