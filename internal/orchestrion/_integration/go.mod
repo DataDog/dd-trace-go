@@ -92,6 +92,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
 )
 
 require (
@@ -102,6 +104,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -552,3 +555,9 @@ replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 => ../../../c
 replace example.com/saramadep => ./internal/saramadep
 
 replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 => ../../../contrib/Shopify/sarama/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../../../contrib/labstack/echo.v4/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
+
+replace example.com/echodep => ./internal/echodep

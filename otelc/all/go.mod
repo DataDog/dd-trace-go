@@ -25,6 +25,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev // indirect
 	github.com/IBM/sarama v1.44.0 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -40,9 +42,16 @@ require (
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
+	github.com/labstack/echo/v4 v4.15.3 // indirect
+	github.com/labstack/echo/v5 v5.2.0 // indirect
+	github.com/labstack/gommon v0.5.0 // indirect
+	github.com/mattn/go-colorable v0.1.16 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
@@ -68,6 +77,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -164,3 +175,11 @@ replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../contrib/IB
 replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 => ../../contrib/Shopify/sarama/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../contrib/Shopify/sarama
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../../contrib/labstack/echo.v4/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../contrib/labstack/echo.v4
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../contrib/labstack/echo.v5/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5
