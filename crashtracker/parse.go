@@ -352,7 +352,7 @@ func capThreads(threads []Thread) []Thread {
 			kept = append(kept, t)
 		}
 	}
-	log.Warn("crashtracker: report truncated from %d to %d goroutines", len(threads), len(kept))
+	log.Warn("crashtracker: report truncated from %d to %d goroutines", len(threads), len(kept)) //errtrack:ignore expected payload capacity limit
 	return kept
 }
 

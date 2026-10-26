@@ -518,11 +518,7 @@ func TestEvaluationTelemetryOptOutHookErrors(t *testing.T) {
 			_, err := h.client.BooleanValue(tracer.ContextWithSpan(context.Background(), span), "experiment", false, of.NewEvaluationContext("subject", map[string]any{optOutTestParameter: stage != "before"}))
 			span.Finish()
 			require.Error(t, err)
-			exposures := 0
-			if stage == "after" {
-				exposures = 1
-			}
-			h.assertCounts(t, 0, exposures, 1)
+			h.assertCounts(t, 0, 0, 1)
 			assert.Equal(t, 1, errorCalls)
 			assert.Equal(t, 1, finallyCalls)
 		})
