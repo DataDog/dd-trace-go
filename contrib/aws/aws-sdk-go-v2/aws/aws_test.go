@@ -1779,3 +1779,63 @@ func TestRedactURLQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestTracedOnce(t *testing.T) {
+	autoInstrumented := func(cfg *aws.Config) { cfg.APIOptions = APIOptionsWithTracing(cfg.APIOptions) }
+	user := func(service string) func(cfg *aws.Config) {
+		return func(cfg *aws.Config) { AppendMiddleware(cfg, WithService(service)) }
+	}
+
+	tests := []struct {
+		name    string
+		apply   []func(*aws.Config)
+		service string
+	}{
+		{name: "auto-instrumented", apply: []func(*aws.Config){autoInstrumented}, service: "aws.SQS"},
+		{name: "auto-instrumented twice", apply: []func(*aws.Config){autoInstrumented, autoInstrumented}, service: "aws.SQS"},
+		{name: "auto-instrumented then user", apply: []func(*aws.Config){autoInstrumented, user("first")}, service: "first"},
+		{name: "user then auto-instrumented", apply: []func(*aws.Config){user("first"), autoInstrumented}, service: "first"},
+		{name: "user twice", apply: []func(*aws.Config){user("first"), user("second")}, service: "first"},
+		{name: "auto-instrumented then users", apply: []func(*aws.Config){autoInstrumented, user("first"), user("second")}, service: "first"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(200)
+			defer server.Close()
+
+			awsCfg := aws.Config{
+				Region:       "eu-west-1",
+				Credentials:  aws.AnonymousCredentials{},
+				BaseEndpoint: aws.String(server.URL),
+			}
+			for _, apply := range tt.apply {
+				apply(&awsCfg)
+			}
+
+			_, err := sqs.NewFromConfig(awsCfg).ListQueues(context.Background(), &sqs.ListQueuesInput{})
+			require.NoError(t, err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.service, spans[0].Tag(ext.ServiceName))
+		})
+	}
+}
+
+func TestAPIOptionsWithTracingCopies(t *testing.T) {
+	noop := func(*middleware.Stack) error { return nil }
+	opts := make([]func(*middleware.Stack) error, 1, 10)
+	opts[0] = noop
+
+	traced := APIOptionsWithTracing(opts)
+	require.Greater(t, len(traced), len(opts))
+
+	// Appending to the caller's slice must not overwrite the traced one.
+	_ = append(opts, nil)
+	for i, fn := range traced {
+		assert.NotNil(t, fn, "option %d", i)
+	}
+}

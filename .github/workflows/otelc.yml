@@ -39,6 +39,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -64,6 +66,7 @@ env:
     redigo
     grpc
     99designs.gqlgen
+    aws.v2
 
 jobs:
   go-versions-matrix:

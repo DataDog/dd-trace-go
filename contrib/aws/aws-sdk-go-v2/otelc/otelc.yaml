@@ -1,0 +1,82 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../aws/orchestrion.yml.
+#
+# Like orchestrion, the rules rewrite every aws.Config built in the build,
+# dependencies included, so config.LoadDefaultConfig is traced through the
+# literal it builds internally. The rewritten package imports the contrib, so
+# the rules skip the packages the contrib imports (the aws package and its
+# subpackages, and the service clients), which would create an import cycle.
+# They also skip the contrib, whose own tests build configs.
+#
+# APIOptionsWithTracing rather than AppendMiddleware: when the application
+# also calls AppendMiddleware or awsconfig.WithDataDogTracer on the same
+# config, the stack keeps one copy of the middleware, the one with the
+# application's options. Two copies would report two spans per request.
+
+# Aspect Config and *Config (struct literals). Covers both T{} and &T{}. A
+# literal that sets APIOptions has it wrapped, one that does not gets it set.
+config_literal:
+  target:
+    - "**"
+    - not: "github.com/aws/aws-sdk-go-v2/aws/**"
+    - not: "github.com/aws/aws-sdk-go-v2/service/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/**"
+  where:
+    struct_literal: github.com/aws/aws-sdk-go-v2/aws.Config
+  do:
+    - set_fields:
+        field:
+          - name: APIOptions
+            wrap: "awstrace.APIOptionsWithTracing({{ . }})"
+            value: "awstrace.APIOptionsWithTracing(nil)"
+  imports:
+    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+
+# Aspect *Config (aws.NewConfig). A call-site rewrite rather than a hook on
+# NewConfig: the rewritten package imports the contrib, so the contrib is
+# initialized before a config built in a package-level variable. A hook creates
+# no import edge and can run before the contrib's init.
+new_config:
+  target:
+    - "**"
+    - not: "github.com/aws/aws-sdk-go-v2/aws/**"
+    - not: "github.com/aws/aws-sdk-go-v2/service/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/**"
+  where:
+    function_call: github.com/aws/aws-sdk-go-v2/aws.NewConfig
+  do:
+    - wrap_call:
+        replace: |-
+          (func(cfg *aws.Config) *aws.Config {
+            cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
+            return cfg
+          })({{ . }})
+  imports:
+    aws: github.com/aws/aws-sdk-go-v2/aws
+    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+
+# config.LoadDefaultConfig replaces the APIOptions that config_literal set with
+# the ones from its options (config.WithAPIOptions, or a LoadOptionsFunc that
+# sets LoadOptions.APIOptions), which drops the middleware. getAPIOptions is
+# where it reads them, so the middleware is added to its result, and only when
+# the options set some. This is the plain function, not the LoadOptions method
+# of the same name. inject_code rather than a hook, for the same init order
+# reason as new_config.
+load_options_api_options:
+  target: github.com/aws/aws-sdk-go-v2/config
+  where:
+    func: getAPIOptions
+  do:
+    - inject_code:
+        raw: |-
+          defer func() {
+            if {{ .FuncReturn 1 }} && {{ .FuncReturn 2 }} == nil {
+              {{ .FuncReturn 0 }} = awstrace.APIOptionsWithTracing({{ .FuncReturn 0 }})
+            }
+          }()
+  imports:
+    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws

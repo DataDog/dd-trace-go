@@ -21,7 +21,7 @@ aspects:
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg aws.Config) (aws.Config) {
-              awstrace.AppendMiddleware(&cfg)
+              cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
               return cfg
             }({{ . }})
 
@@ -39,6 +39,28 @@ aspects:
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg *aws.Config) (*aws.Config) {
-              awstrace.AppendMiddleware(cfg)
+              cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
               return cfg
             }({{ . }})
+
+  # config.LoadDefaultConfig replaces the APIOptions of the literal above with
+  # the ones from its options, which drops the middleware. getAPIOptions is
+  # where it reads them, so the middleware is added to its result.
+  - id: config.getAPIOptions
+    join-point:
+      all-of:
+        - import-path: github.com/aws/aws-sdk-go-v2/config
+        - function-body:
+            function:
+              - name: getAPIOptions
+              - receiver: false
+    advice:
+      - prepend-statements:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+          template: |-
+            defer func() {
+              if {{ .Function.Result 1 }} && {{ .Function.Result 2 }} == nil {
+                {{ .Function.Result 0 }} = awstrace.APIOptionsWithTracing({{ .Function.Result 0 }})
+              }
+            }()
