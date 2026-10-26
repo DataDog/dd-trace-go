@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	pappsec "github.com/DataDog/dd-trace-go/v2/appsec"
@@ -729,4 +730,34 @@ func TestAppSecDispatchesCustomHTTPErrorHandler(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, res.StatusCode)
 	require.Equal(t, wantBody, string(body), "response must be rendered by the user's HTTPErrorHandler")
 	require.GreaterOrEqual(t, called, 1, "custom HTTPErrorHandler must be invoked at least once")
+}
+
+// TestAppSecRequestLocalHandler checks that the AppSec wrapper the middleware
+// adds to the handler stays local to each request. echo builds the middleware chain once, so all requests share the handler it returns. Adding it to the
+// shared handler makes concurrent requests race on it, which -race reports.
+func TestAppSecRequestLocalHandler(t *testing.T) {
+	testutils.StartAppSec(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	e := Wrap(echo.New())
+	e.GET("/:param", func(c *echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	})
+	srv := httptest.NewServer(e)
+	defer srv.Close()
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() {
+			res, err := srv.Client().Get(srv.URL + "/hello")
+			if !assert.NoError(t, err) {
+				return
+			}
+			defer res.Body.Close()
+			assert.Equal(t, http.StatusOK, res.StatusCode)
+		})
+	}
+	wg.Wait()
+	assert.Len(t, mt.FinishedSpans(), 50)
 }
