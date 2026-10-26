@@ -93,6 +93,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.13.0-dev // indirect
 )
 
@@ -104,6 +106,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -558,3 +561,9 @@ replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 => ../../../contrib/go-redis/redis.v7/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2 => ../../../contrib/go-redis/redis.v8/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../../../contrib/labstack/echo.v4/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
+
+replace example.com/echodep => ./internal/echodep

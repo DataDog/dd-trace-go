@@ -59,6 +59,10 @@ env:
     contrib/go-redis/redis.v8/otelc
     contrib/redis/go-redis.v9
     contrib/redis/go-redis.v9/otelc
+    contrib/labstack/echo.v4
+    contrib/labstack/echo.v4/otelc
+    contrib/labstack/echo.v5
+    contrib/labstack/echo.v5/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -76,6 +80,8 @@ env:
     go-redis.v7
     go-redis.v8
     go-redis.v9
+    echo.v4
+    echo.v5
 
 jobs:
   go-versions-matrix:

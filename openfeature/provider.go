@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ var (
 	errParseError          = errors.New("parse error")
 	errNoConfiguration     = errors.New("no configuration loaded")
 	errTargetingKeyMissing = errors.New("targeting key missing")
+	errInvalidContext      = errors.New("invalid context")
 )
 
 const (
@@ -52,6 +54,13 @@ func init() {
 
 // ProviderConfig contains configuration options for the Datadog OpenFeature provider
 type ProviderConfig struct {
+	// ExperimentationOptOutMode controls how the provider uses the
+	// dd_experimentation_opt_out_at context parameter. The zero value uses
+	// DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE, which defaults to disabled.
+	// An explicit non-default mode overrides the environment setting.
+	// The provider resolves the mode at construction. Evaluation telemetry is separate.
+	ExperimentationOptOutMode ExperimentationOptOutMode
+
 	// EnableEvaluationTelemetryOptOutParameter enables the per-evaluation
 	// dd_evaluation_telemetry_opt_out context parameter. Only boolean true
 	// suppresses evaluation events, evaluation metrics, and automatic span
@@ -75,6 +84,8 @@ type ProviderConfig struct {
 // using configuration received from Datadog, either via Remote Config or
 // Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
+	experimentationOptOutMode ExperimentationOptOutMode
+
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
@@ -143,11 +154,23 @@ type DatadogProvider struct {
 // subscription exists), a conflicting existing FFE_FLAGS subscription, or callback
 // attachment. If the default client is the one at fault, please call tracer.Start before
 // creating the provider.
+// When flagging is enabled, unsupported experimentation opt-out modes return an error,
+// including invalid DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE values when no
+// override is supplied. Disabled flagging returns a NoopProvider.
 func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	cfg := internalconfig.Get()
 	settings := internalffe.ResolveSettings(cfg)
 	if settings.LegacyKeyDecided {
 		warnLegacyFlaggingProviderOnce()
+	}
+
+	// Disabled flagging takes precedence over opt-out configuration validation.
+	if settings.Source != internalffe.SourceDisabled {
+		mode, err := config.ExperimentationOptOutMode.resolve()
+		if err != nil {
+			return nil, err
+		}
+		config.ExperimentationOptOutMode = mode
 	}
 
 	switch settings.Source {
@@ -254,6 +277,9 @@ func newDatadogProviderWithSourceAndEVP(
 
 	// Create exposure writer
 	writer := newExposureWriterWithEVP(config, evp)
+	if !writer.datadogLoggingEnabled {
+		log.Info("openfeature: Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+	}
 
 	// Create exposure hook
 	exposureLoggingHook := newExposureHook(writer)
@@ -302,6 +328,7 @@ func newDatadogProviderWithSourceAndEVP(
 	hooks = append(hooks, newDebugLoggingHook())
 
 	p := &DatadogProvider{
+		experimentationOptOutMode: config.ExperimentationOptOutMode,
 		metadata: openfeature.Metadata{
 			Name: datadogProviderName,
 		},
@@ -804,10 +831,21 @@ func (p *DatadogProvider) ObjectEvaluation(
 	return detail
 }
 
-// Hooks returns the provider's hooks, built once during construction.
-// Returns p.hooks directly to avoid per-evaluation allocations.
+// Hooks returns hooks for one evaluation.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	return p.hooks
+	// TODO(open-feature/go-sdk#623): Return the shared hooks when go.mod requires
+	// the fixed release and the After/Error bridge can be removed.
+	// Direct OpenFeature clients call Hooks once per evaluation. Composed providers
+	// are guarded in the hook because they can retain this instance. See go-sdk#623.
+	// The slice copy and bridge add two allocations with the default four hooks.
+	// BenchmarkExposureHooks measures this cost until the bridge can be removed.
+	hooks := slices.Clone(p.hooks)
+	for i, hook := range hooks {
+		if exposure, ok := hook.(*exposureHook); ok {
+			hooks[i] = &exposureHook{writer: exposure.writer, warnUnsupported: exposure.warnUnsupported}
+		}
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
@@ -860,8 +898,13 @@ func (p *DatadogProvider) evaluate(
 	// cannot change the value stamped on the result.
 	observeFullEvaluationData = config.ObserveFullEvaluationData
 
+	exclusion, err := p.experimentationOptOutMode.exclusion(flatCtx)
+	if err != nil {
+		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
+	}
+
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow)
+	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.
@@ -885,6 +928,8 @@ func toResolutionError(err error) openfeature.ResolutionError {
 		return openfeature.NewProviderNotReadyResolutionError(errMsg)
 	case errors.Is(err, errTargetingKeyMissing):
 		return openfeature.NewTargetingKeyMissingResolutionError(errMsg)
+	case errors.Is(err, errInvalidContext):
+		return openfeature.NewInvalidContextResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}

@@ -12,21 +12,7 @@ import (
 	"reflect"
 	"time"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
-
-var (
-	retryAttemptKernel32                  = windows.NewLazySystemDLL("kernel32.dll")
-	retryAttemptQueryPerformanceCounter   = retryAttemptKernel32.NewProc("QueryPerformanceCounter")
-	retryAttemptQueryPerformanceFrequency = retryAttemptKernel32.NewProc("QueryPerformanceFrequency")
-)
-
-func retryAttemptPerformanceValue(proc *windows.LazyProc) (int64, bool) {
-	var value int64
-	ok, _, _ := proc.Call(uintptr(unsafe.Pointer(&value)))
-	return value, ok != 0
-}
 
 func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 	if base == nil || !field.available {
@@ -38,7 +24,7 @@ func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 		value.Set(reflect.ValueOf(time.Now()))
 		return
 	}
-	counter, ok := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
+	counter, ok := performanceClockValue(performanceClockCounter)
 	if !ok {
 		return
 	}
@@ -58,8 +44,8 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 		*fieldPtr[time.Duration](base, layout.common.duration) += time.Since(value.Interface().(time.Time))
 		return
 	}
-	now, counterOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
-	frequency, frequencyOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceFrequency)
+	now, counterOK := performanceClockValue(performanceClockCounter)
+	frequency, frequencyOK := performanceClockValue(performanceClockFrequency)
 	if !counterOK || !frequencyOK || frequency <= 0 {
 		return
 	}
