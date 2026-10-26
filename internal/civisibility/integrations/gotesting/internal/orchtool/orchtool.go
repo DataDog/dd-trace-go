@@ -7,80 +7,30 @@
 // drive it in subprocesses.
 package orchtool
 
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-)
+import "os"
 
-// Locate returns the path of an orchestrion binary on PATH that reports the
-// version required by the module at moduleDir. It returns the empty string
-// when no such binary is installed.
+// OrchestrionBinEnv carries the path of the orchestrion binary that the CI
+// install action builds for the fixture tests. It has no DD_ prefix on
+// purpose: it is a test-harness variable, not a tracer configuration, so it
+// must stay out of the supported-configurations list.
+const OrchestrionBinEnv = "ORCHESTRION_FIXTURE_BIN"
+
+// Locate returns the path of the orchestrion binary exported through
+// OrchestrionBinEnv, or the empty string when the variable is unset. CI's
+// install action (.github/actions/install-orchestrion) exports the binary it
+// builds inside the fixture module, so the binary resolves the same
+// dependencies that the `go run` fallback resolves.
 //
-// A binary with a different version refuses to instrument the module and
-// exits with status 255, so an unrelated install (a workflow's binary, a
-// developer's local one) must not shadow the pinned version.
-func Locate(goCommand, moduleDir string) string {
-	path, err := exec.LookPath("orchestrion")
-	if err != nil {
-		return ""
-	}
-	want, err := ModuleVersion(goCommand, moduleDir)
-	if err != nil {
-		return ""
-	}
-	got, err := BinaryVersion(path)
-	if err != nil || got != want {
-		return ""
-	}
-	return path
-}
-
-// ModuleVersion returns the orchestrion version that the module at moduleDir
-// requires. The module's go.mod pins the version.
-func ModuleVersion(goCommand, moduleDir string) (string, error) {
-	cmd := exec.Command(goCommand, "list", "-m", "-f", "{{.Version}}", "github.com/DataDog/orchestrion")
-	cmd.Dir = moduleDir
-	// The fixture module is not part of go.work, so GOWORK=off keeps the go
-	// command in module mode. Workspace mode would resolve @latest instead of
-	// the go.mod pin, and every CI binary would fail the version match.
-	cmd.Env = append(os.Environ(), "GOWORK=off")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	version := parseVersion(output)
-	if version == "" {
-		return "", fmt.Errorf("no orchestrion version in %s", moduleDir)
-	}
-	return version, nil
-}
-
-// BinaryVersion returns the version that the orchestrion binary at path
-// reports for itself.
-func BinaryVersion(path string) (string, error) {
-	output, err := exec.Command(path, "version").Output()
-	if err != nil {
-		return "", err
-	}
-	version := parseVersion(output)
-	if version == "" {
-		return "", fmt.Errorf("no orchestrion version in the output of %s version", path)
-	}
-	return version, nil
-}
-
-// parseVersion returns the leading version token in orchestrion output, such
-// as "v1.9.0" in "orchestrion v1.9.0". It returns the empty string when the
-// output holds none.
-func parseVersion(output []byte) string {
-	for field := range strings.FieldsSeq(string(output)) {
-		if len(field) > 1 && field[0] == 'v' && field[1] >= '0' && field[1] <= '9' {
-			return field
-		}
-	}
-	return ""
+// The binary is never resolved from PATH. An orchestrion binary installed
+// outside the fixture module can report the pinned version and still fail to
+// build the module: a standalone install resolves older x/tools than the
+// fixture module does, and older x/tools cannot read the export data that a
+// newer Go toolchain writes.
+func Locate() string {
+	// internal/env reads supported tracer configurations only, and this
+	// CI-internal variable is not one.
+	//nolint:forbidigo
+	return os.Getenv(OrchestrionBinEnv)
 }
 
 // Command returns the executable and arguments that invoke the orchestrion CLI
