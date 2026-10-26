@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	connectrpc.com/connect v1.16.2
-	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.5
+	github.com/DataDog/dd-trace-go/v2 v2.12.0-rc.6
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 )
