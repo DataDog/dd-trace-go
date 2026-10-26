@@ -124,8 +124,8 @@ func TestFixtureChildExit(t *testing.T) {
 	for _, scenario := range []string{"command-exit", "command-success"} {
 		output, err := runFixtureChild(binary, append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO="+scenario), "-test.run=^TestFixtureChildProcess$")
 		if scenario == "command-exit" {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 17 {
+			exit, ok := errors.AsType[*exec.ExitError](err)
+			if !ok || exit.ExitCode() != 17 {
 				t.Fatalf("exit=%v, want 17: %s", err, output)
 			}
 		} else if err != nil || !strings.Contains(string(output), "FIXTURE_CHILD_SUCCESS") {
