@@ -1,0 +1,54 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The rules rewrite the redis.NewClient and redis.NewFailoverClient call sites
+# in every package of the build, dependencies included, except go-redis and the
+# go-redis contrib. The contrib's WrapClient only takes a *redis.Client, so
+# Cluster, Ring and universal clients are not traced.
+#
+# A hook on the constructor definitions would look more natural, but it creates
+# no import edge, so a client built in a package-level variable could reach the
+# contrib before its init runs.
+#
+# The contrib calls redis.NewClient itself, and wrapping that call would import
+# the contrib into itself.
+
+new_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/**"
+  where:
+    function_call: github.com/go-redis/redis.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.Client {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2
+
+new_failover_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/**"
+  where:
+    function_call: github.com/go-redis/redis.NewFailoverClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.Client {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2

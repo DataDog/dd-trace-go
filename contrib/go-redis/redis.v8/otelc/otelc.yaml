@@ -1,0 +1,138 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The rules rewrite the call sites of every go-redis client constructor whose
+# result the contrib's WrapClient accepts, in every package of the build,
+# dependencies included, except go-redis and the go-redis contrib.
+#
+# go-redis also calls its own constructors, for example for Ring shards,
+# Cluster nodes and NewUniversalClient. Those calls are inside go-redis, so they
+# are not rewritten and each client is traced once, at the level the
+# application created it. A hook on the constructor definitions would fire for
+# them too and trace each command twice. A hook also creates no import edge, so
+# a client built in a package-level variable could reach the contrib before its
+# init runs.
+#
+# FIXME: when the application sets RingOptions.NewClient or
+# ClusterOptions.NewClient to a function that calls redis.NewClient, that
+# call is rewritten too, so the shard or node client and the Ring or Cluster
+# are both wrapped and each command reports two spans.
+#
+# The contrib calls redis.NewClient itself, and wrapping that call would import
+# the contrib into itself.
+
+new_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.Client {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+
+new_failover_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewFailoverClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.Client {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+
+new_cluster_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewClusterClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.ClusterClient {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+
+new_failover_cluster_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewFailoverClusterClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.ClusterClient {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+
+new_ring:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewRing
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *redis.Ring {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+
+new_universal_client:
+  target:
+    - "**"
+    - not: "github.com/go-redis/redis/v8/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/**"
+  where:
+    function_call: github.com/go-redis/redis/v8.NewUniversalClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() redis.UniversalClient {
+            client := {{ . }}
+            redistrace.WrapClient(client)
+            return client
+          })()
+  imports:
+    redis: github.com/go-redis/redis/v8
+    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
