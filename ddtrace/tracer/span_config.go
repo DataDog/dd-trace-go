@@ -16,6 +16,9 @@ type StartSpanOption func(cfg *StartSpanConfig)
 // StartSpanConfig holds the configuration for starting a new span. It is usually passed
 // around by reference to one or more StartSpanOption functions which shape it into its
 // final form.
+//
+// Construct StartSpanConfig using keyed fields (StartSpanConfig{Tags: ...}); unkeyed
+// literals are not supported and do not compile from other packages.
 type StartSpanConfig struct {
 	// Parent holds the SpanContext that should be used as a parent for the
 	// new span. If nil, implementations should return a root span.
@@ -39,12 +42,24 @@ type StartSpanConfig struct {
 
 	// SpanLink represents a causal relationship between two spans. A span can have multiple links.
 	SpanLinks []SpanLink
+
+	// tagsHint is a capacity hint for Tags, set by spanStart and
+	// NewStartSpanConfig from the number of options they apply, so the first
+	// Tag-family write can size the map instead of starting unsized and
+	// rehashing once a caller passes several individual Tag options. Hints
+	// of 8 or less still leave Tags unsized: Go maps preallocate nothing
+	// below 9, so Tag only consults hints above 8.
+	tagsHint int
 }
 
 // NewStartSpanConfig allows to build a base config struct. It accepts the same options as StartSpan.
 // It's useful to reduce the number of operations in any hot path and update it for request/operation specifics.
 func NewStartSpanConfig(opts ...StartSpanOption) *StartSpanConfig {
 	cfg := new(StartSpanConfig)
+	// Mirror spanStart: len(opts) is the only cheap hint available for how
+	// many Tag-family writes the list holds, and the first Tag option
+	// consumes it when it sizes Tags.
+	cfg.tagsHint = len(opts)
 	for _, fn := range opts {
 		fn(cfg)
 	}

@@ -420,6 +420,9 @@ const (
 	maxPollInterval = 5 * time.Millisecond
 )
 
+// stopDrainTimeout bounds how long Stop waits for in-flight pushes to land.
+const stopDrainTimeout = 100 * time.Millisecond
+
 // sendToAgentStalling wraps sendToAgent, marking the reader as stalled on
 // the agent call for the duration of the (synchronous) HTTP request, since
 // the queue isn't drained while it's in flight.
@@ -434,7 +437,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
 		case <-p.stop:
-			// drop in flight payloads on the input channel
+			p.in.drain(time.Now().Add(stopDrainTimeout), p.processInput)
 			p.sendToAgentStalling(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		case now := <-tick:

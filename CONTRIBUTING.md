@@ -406,7 +406,11 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 #### Overriding automatic test retries
 
-`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
+`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5, ignored when duration-based retries are enabled; see below) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
+
+#### Duration-based automatic test retries
+
+`DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED=true` makes automatic test retries pick each test's retry count from the duration of its first execution, and `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` is ignored. It has no effect unless automatic test retries are enabled, and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` still caps the session. The durations use the Early Flake Detection buckets, but with inclusive upper bounds: up to 5s, up to 10s, up to 30s, up to 5m, and slower. By default each bucket takes the backend's Early Flake Detection slow test retries; buckets the backend leaves empty or at zero use 10, 5, 3, and 2, and tests slower than five minutes get one retry. `DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES` only limits Early Flake Detection and does not change these counts. `DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS` sets the five counts directly as comma-separated integers from 1 to 20, in bucket order, for example `3,2,1,1,1`. An empty value is the same as unset; any other invalid value logs a warning and falls back to the counts above.
 
 #### Code coverage report flags
 
