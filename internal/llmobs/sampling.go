@@ -36,6 +36,11 @@ type samplingDecision struct {
 // given APM trace ID (hex encoded) is kept at the given rate.
 func rootSamplingDecision(apmTraceID string, rate float64) samplingDecision {
 	d := samplingDecision{rate: formatSampleRate(rate), decision: SamplingDecisionDrop}
+	// Decide at the rate that is reported, not the configured one: the wire format keeps
+	// 6 decimal digits, and the backend extrapolates from the reported rate.
+	if applied, err := strconv.ParseFloat(d.rate, 64); err == nil {
+		rate = applied
+	}
 	if sampledByRate(lower64TraceID(apmTraceID), rate) {
 		d.decision = SamplingDecisionKeep
 	}

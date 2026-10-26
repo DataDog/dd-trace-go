@@ -1149,9 +1149,6 @@ const (
 	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
 	// kept from an incoming tracestate, per the W3C recommendation.
 	tracestateMemberMaxSize = 512
-	// tracestateHeaderReserve is the byte budget consumed by the fixed dd= prefix
-	// (e.g. "dd=s:1;p:<16-hex-chars>") before any t.* tag entries are written.
-	tracestateHeaderReserve = 28
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1418,6 +1415,63 @@ func isValidIDCaseInsensitive(id string) bool {
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
+// llmobsTracestatePriority lists the LLMObs propagating tags in the order they claim
+// space in the 256-byte dd= tracestate member. Map iteration would otherwise drop an
+// arbitrary tag when the member is full; this way the optional agent attribution goes
+// first, and the trace linkage and sampling decision go last. Tags in one group are
+// written together or not at all, so a decision never travels without its rate.
+// x-datadog-tags is unaffected and carries every tag.
+var llmobsTracestatePriority = [][]string{
+	{keyPropagatedLLMObsParentID},
+	{keyPropagatedLLMObsTraceID},
+	{keyPropagatedLLMObsSamplingDecision, keyPropagatedLLMObsSampleRate},
+	{keyPropagatedLLMObsMLAPP},
+	{keyPropagatedLLMObsSessionID},
+	{keyPropagatedLLMObsParentAgentSpanID},
+	{keyPropagatedLLMObsParentAgentName},
+}
+
+// isLLMObsPropagatingTag reports whether k is written by appendLLMObsTracestateTags.
+// Other _dd.p.llmobs_* tags (e.g. from a newer upstream SDK) keep the default handling.
+func isLLMObsPropagatingTag(k string) bool {
+	switch k {
+	case keyPropagatedLLMObsParentID, keyPropagatedLLMObsTraceID,
+		keyPropagatedLLMObsSamplingDecision, keyPropagatedLLMObsSampleRate,
+		keyPropagatedLLMObsMLAPP, keyPropagatedLLMObsSessionID,
+		keyPropagatedLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentName:
+		return true
+	}
+	return false
+}
+
+// appendLLMObsTracestateTags appends the LLMObs propagating tags to a dd= tracestate
+// member in priority order, skipping any group that no longer fits.
+func appendLLMObsTracestateTags(b *strings.Builder, tags map[string]string) {
+	for _, group := range llmobsTracestatePriority {
+		var entries [2]struct{ key, value string }
+		n, size := 0, 0
+		for _, k := range group {
+			v, ok := tags[k]
+			if !ok {
+				continue
+			}
+			entries[n].key = sanitizeTagKey(k[len("_dd.p."):])
+			entries[n].value = sanitizeTagValue(v)
+			size += len(entries[n].key) + len(entries[n].value) + 4
+			n++
+		}
+		if n == 0 || b.Len()+size > tracestateDDMaxSize {
+			continue
+		}
+		for _, e := range entries[:n] {
+			b.WriteString(";t.")
+			b.WriteString(e.key)
+			b.WriteString(":")
+			b.WriteString(e.value)
+		}
+	}
+}
+
 func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	var b strings.Builder
 
@@ -1445,7 +1499,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	}
 
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
-		if !strings.HasPrefix(k, "_dd.p.") {
+		if !strings.HasPrefix(k, "_dd.p.") || isLLMObsPropagatingTag(k) {
 			return true
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
@@ -1461,6 +1515,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(value)
 		return true
 	})
+	appendLLMObsTracestateTags(&b, ctx.trace.loadPropagatingTags())
 	// Emit the OpenTelemetry `ot=` member as the second list-member (right
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
 	// tracestate can't truncate them. An inherited value may be rv-only or

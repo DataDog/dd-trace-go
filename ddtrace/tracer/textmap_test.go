@@ -4044,3 +4044,62 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 		fanOutInject(t, spanCtx)
 	})
 }
+
+func TestComposeTracestateLLMObsPriority(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request")
+	defer root.Finish()
+	ctx := root.Context()
+	ctx.traceID = traceIDFrom64Bits(1)
+	ctx.spanID = 2
+
+	// More LLMObs context than fits in the 256-byte dd= member.
+	ctx.trace.replacePropagatingTags(map[string]string{
+		keyDecisionMaker:                     "-0",
+		keyPropagatedLLMObsParentID:          "12345678901234567890",
+		keyPropagatedLLMObsTraceID:           "6578a1b200000000a3ce929d0e0e4736",
+		keyPropagatedLLMObsSampleRate:        "0.5",
+		keyPropagatedLLMObsSamplingDecision:  "0",
+		keyPropagatedLLMObsMLAPP:             "a-fairly-long-ml-app-name",
+		keyPropagatedLLMObsSessionID:         "a-session-id-of-some-length",
+		keyPropagatedLLMObsParentAgentSpanID: "98765432109876543210",
+		keyPropagatedLLMObsParentAgentName:   "an-agent-name",
+	})
+
+	// Map iteration order is random; the outcome must not be.
+	for range 50 {
+		dd, _, _ := strings.Cut(composeTracestate(ctx, 1, ""), ",")
+		assert.LessOrEqual(t, len(dd), tracestateDDMaxSize)
+		for _, want := range []string{
+			"t.dm:-0",
+			"t.llmobs_parent_id:12345678901234567890",
+			"t.llmobs_trace_id:6578a1b200000000a3ce929d0e0e4736",
+			"t.llmobs_sd:0",
+			"t.llmobs_sr:0.5",
+			"t.llmobs_ml_app:a-fairly-long-ml-app-name",
+			"t.llmobs_sid:a-session-id-of-some-length",
+		} {
+			assert.Contains(t, dd, want)
+		}
+		assert.NotContains(t, dd, "t.llmobs_pagent_span_id:", "agent attribution gives way first")
+		assert.NotContains(t, dd, "t.llmobs_pagent_name:")
+	}
+}
+
+func TestAppendLLMObsTracestateTagsKeepsSamplingPairTogether(t *testing.T) {
+	var b strings.Builder
+	// Leave 20 bytes: enough for the ml_app entry (18) but not the sr+sd pair (30).
+	b.WriteString(strings.Repeat("x", tracestateDDMaxSize-20))
+	appendLLMObsTracestateTags(&b, map[string]string{
+		keyPropagatedLLMObsSampleRate:       "0.5",
+		keyPropagatedLLMObsSamplingDecision: "0",
+		keyPropagatedLLMObsMLAPP:            "x",
+	})
+	out := b.String()
+	assert.NotContains(t, out, "llmobs_sd")
+	assert.NotContains(t, out, "llmobs_sr")
+	assert.Contains(t, out, ";t.llmobs_ml_app:x")
+	assert.LessOrEqual(t, len(out), tracestateDDMaxSize)
+}

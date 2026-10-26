@@ -6,6 +6,7 @@
 package llmobs
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,4 +75,23 @@ func TestRootSamplingDecision(t *testing.T) {
 	assert.Equal(t, samplingDecision{rate: "1", decision: SamplingDecisionKeep}, rootSamplingDecision(traceID, 1))
 	assert.Equal(t, samplingDecision{rate: "0", decision: SamplingDecisionDrop}, rootSamplingDecision(traceID, 0))
 	assert.Equal(t, samplingDecision{rate: "0.5", decision: SamplingDecisionDrop}, rootSamplingDecision(traceID, 0.5))
+}
+
+func TestRootSamplingDecisionUsesReportedRate(t *testing.T) {
+	// 0.0000001 is reported as "0", so it must also drop: a kept trace reported at rate 0
+	// would break the backend's extrapolation.
+	for i := range uint64(10000) {
+		d := rootSamplingDecision(strconv.FormatUint(i, 16), 0.0000001)
+		assert.Equal(t, samplingDecision{rate: "0", decision: SamplingDecisionDrop}, d)
+	}
+	// 0.1234567 is reported as "0.123457" and decided at that rate.
+	for _, id := range []string{"0000000000000001", "6513270e269e0d37", "d23f0824128b2f33"} {
+		d := rootSamplingDecision(id, 0.1234567)
+		assert.Equal(t, "0.123457", d.rate)
+		want := SamplingDecisionDrop
+		if sampledByRate(lower64TraceID(id), 0.123457) {
+			want = SamplingDecisionKeep
+		}
+		assert.Equal(t, want, d.decision, id)
+	}
 }

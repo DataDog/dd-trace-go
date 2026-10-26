@@ -1388,11 +1388,8 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
 	// The sampling decision is trace-scoped too: unset it for an undecided span so a
-	// sibling's decision can't leak downstream. A keep at rate 1 is not propagated:
-	// downstream spans without a decision are kept anyway, and the dd tracestate member
-	// is capped at 256 bytes, so these tags would crowd out the parent-agent name.
-	if decision := llmSpan.SamplingDecision(); decision != "" &&
-		(decision != illmobs.SamplingDecisionKeep || llmSpan.SampleRate() != "1") {
+	// sibling's decision can't leak downstream.
+	if decision := llmSpan.SamplingDecision(); decision != "" {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, llmSpan.SampleRate())
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, decision)
 	} else {
@@ -1416,23 +1413,21 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			return
 		}
-		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
-		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+		// Only propagate the name when it fits within the x-datadog-tags budget. The dd=
+		// tracestate member is budgeted at injection time (see appendLLMObsTracestateTags),
+		// where the name is the first LLMObs tag to give way.
+		used := spanCtx.trace.propagatingTagsHeaderLen()
 		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
 		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
 			used += 27
-			tsUsed += 23
 		}
 		var nameXTagsLen int
 		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
 			nameXTagsLen = used - len(prior) + len(name)
-			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
 		} else {
 			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
 		}
-		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
-		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)

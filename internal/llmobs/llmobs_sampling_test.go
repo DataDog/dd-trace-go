@@ -133,9 +133,7 @@ func TestSampling(t *testing.T) {
 		assert.Empty(t, s.DDAttributes.SamplingDecision)
 	})
 
-	t.Run("distributed-keep-at-rate-one-is-not-propagated", func(t *testing.T) {
-		// The default decision is what downstream spans assume without one, so it stays off
-		// the wire to leave tracestate room for the parent-agent name.
+	t.Run("distributed-keep-is-propagated-alongside-agent-name", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 
 		var datadogTags string
@@ -160,12 +158,56 @@ func TestSampling(t *testing.T) {
 		client.Finish(llmobs.FinishSpanConfig{})
 		tracer.Flush()
 
-		assert.NotContains(t, datadogTags, "_dd.p.llmobs_sr=")
-		assert.NotContains(t, datadogTags, "_dd.p.llmobs_sd=")
+		assert.Contains(t, datadogTags, "_dd.p.llmobs_sr=1")
+		assert.Contains(t, datadogTags, "_dd.p.llmobs_sd=1")
 		assert.Contains(t, datadogTags, "_dd.p.llmobs_pagent_name=client_agent")
 
-		assert.Equal(t, llmobs.SamplingDecisionKeep, coll.RequireSpan(t, "client_agent").DDAttributes.SamplingDecision)
-		assert.Empty(t, coll.RequireSpan(t, "server-tool").DDAttributes.SamplingDecision)
+		server := coll.RequireSpan(t, "server-tool")
+		assert.Equal(t, "1", server.DDAttributes.SampleRate)
+		assert.Equal(t, llmobs.SamplingDecisionKeep, server.DDAttributes.SamplingDecision)
+	})
+
+	t.Run("w3c-only-keeps-linkage-session-and-decision", func(t *testing.T) {
+		// tracestate's dd= member is capped at 256 bytes. When the LLMObs tags don't all fit,
+		// the agent attribution must give way, never the trace linkage, session or decision.
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "tracecontext")
+		_, coll, ll := testTracer(t, tracer.WithLLMObsSampleRate(0))
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			name := "server-" + req.URL.Query().Get("i")
+			server, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, name, llmobs.StartSpanConfig{})
+			server.Finish(llmobs.FinishSpanConfig{})
+			w.Write([]byte("ok"))
+		})
+		srv := httptest.NewServer(traceHandler(h))
+		defer srv.Close()
+
+		// Repeat: tag order in the propagating-tag map is random, so a budget bug is flaky.
+		const requests = 20
+		for i := range requests {
+			client, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client-"+strconv.Itoa(i), llmobs.StartSpanConfig{SessionID: "distributed-session"})
+			apmSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client.request")
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"?i="+strconv.Itoa(i), nil)
+			require.NoError(t, err)
+			require.NoError(t, tracer.Inject(apmSpan.Context(), tracer.HTTPHeadersCarrier(req.Header)))
+			require.Empty(t, req.Header.Get("x-datadog-tags"), "only W3C headers should be injected")
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			_ = resp.Body.Close()
+			apmSpan.Finish()
+			client.Finish(llmobs.FinishSpanConfig{})
+		}
+		tracer.Flush()
+
+		for i := range requests {
+			client := coll.RequireSpan(t, "client-"+strconv.Itoa(i))
+			server := coll.RequireSpan(t, "server-"+strconv.Itoa(i))
+			assert.Equal(t, client.SpanID, server.ParentID, "server span should continue the client's LLMObs trace")
+			assert.Equal(t, client.TraceID, server.TraceID)
+			assert.Equal(t, "distributed-session", server.SessionID)
+			assert.Equal(t, "0", server.DDAttributes.SampleRate)
+			assert.Equal(t, llmobs.SamplingDecisionDrop, server.DDAttributes.SamplingDecision)
+		}
 	})
 
 	t.Run("distributed-trace-carries-the-decision", func(t *testing.T) {

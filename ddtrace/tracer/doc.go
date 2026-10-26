@@ -71,6 +71,17 @@
 // OTLP, the same ot= member is carried on the span's trace_state and the W3C sampled
 // trace-flag is set, so the export matches what wire propagation would emit.
 //
+// LLM Observability traces are sampled separately, with WithLLMObsSampleRate or the
+// DD_LLMOBS_SAMPLE_RATE environment variable (between 0 and 1, default 1). The keep/drop
+// decision is made once on the root LLM Observability span from the trace ID, inherited
+// by its descendants, and propagated to downstream services in the _dd.p.llmobs_sr and
+// _dd.p.llmobs_sd tags; a downstream service honors the decision it receives. Spans are
+// never dropped by the tracer: every span is submitted with its decision, so token and
+// cost metrics cover all traffic while Datadog discards the content of dropped traces.
+// LLM Observability sampling does not affect APM trace sampling.
+//
+//	tracer.Start(tracer.WithLLMObsEnabled(true), tracer.WithLLMObsSampleRate(0.1))
+//
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started
 // with no parent will begin a new trace. See the function documentation for details
