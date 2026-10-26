@@ -1,0 +1,103 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Like orchestrion, these rules replace calls to the pgx constructors with the
+# contrib's, in every package of the build, dependencies included, except pgx,
+# pgxpool and the contrib. pgxpool opens each connection with
+# pgx.ConnectConfig, and the contrib calls the pgx constructors after it
+# installs its tracer, so leaving those calls alone traces each connection and
+# pool once. Calls inside pgx are never rewritten, so pgx.Connect and
+# pgxpool.New each need their own rule.
+#
+# The rewritten file imports the contrib, so the contrib is initialized before
+# a call from a package-level variable or an init function.
+#
+# TODO: wrap_call rejects a replace template without the original call
+# ({{ . }}), so each template keeps it in a branch that never runs. Remove the
+# branch once wrap_call can replace a call outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+pgx_connect:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5.Connect
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*pgx.Conn, error) {
+            if false {
+              return {{ . }}
+            }
+            return pgxtrace.Connect({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })()
+  imports:
+    pgx: github.com/jackc/pgx/v5
+    pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgx_connect_config:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5.ConnectConfig
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*pgx.Conn, error) {
+            if false {
+              return {{ . }}
+            }
+            return pgxtrace.ConnectConfig({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })()
+  imports:
+    pgx: github.com/jackc/pgx/v5
+    pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgxpool_new:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5/pgxpool.New
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*pgxpool.Pool, error) {
+            if false {
+              return {{ . }}
+            }
+            return pgxtrace.NewPool({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })()
+  imports:
+    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgxpool_new_with_config:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5/pgxpool.NewWithConfig
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*pgxpool.Pool, error) {
+            if false {
+              return {{ . }}
+            }
+            return pgxtrace.NewPoolWithConfig({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })()
+  imports:
+    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2

@@ -26,5 +26,6 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
 )
