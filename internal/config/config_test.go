@@ -2780,6 +2780,46 @@ func TestFlagEvalTelemetryOptOutEnabled(t *testing.T) {
 	}
 }
 
+func TestFeatureFlagsExposuresDatadogLoggingEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExposuresDatadogLoggingEnabled())
+		})
+	}
+}
+
+func TestFeatureFlagsExperimentationOptOutMode(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value *string
+		want  string
+	}{
+		{"unset", nil, "disabled"},
+		{"empty", new(""), "disabled"},
+		{"disabled", new("disabled"), "disabled"},
+		{"immediate", new("immediate"), "immediate"},
+		{"normalization deferred to provider", new(" IMMEDIATE "), " IMMEDIATE "},
+		{"validation deferred to provider", new("unsupported"), "unsupported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const key = "DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE"
+			t.Setenv(key, "")
+			if tc.value == nil {
+				require.NoError(t, os.Unsetenv(key))
+			} else {
+				t.Setenv(key, *tc.value)
+			}
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExperimentationOptOutMode())
+		})
+	}
+}
+
 func TestFeatureFlagsConfigurationSource(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()
