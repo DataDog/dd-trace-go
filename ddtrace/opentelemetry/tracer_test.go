@@ -331,6 +331,32 @@ func TestShutdownOnce(t *testing.T) {
 	assert.Equal(oteltrace.ContextWithSpan(context.Background(), noop.Span{}), ctx)
 }
 
+// TestTracerProviderReportsTracingAPI verifies that the startup log of the
+// tracer started by NewTracerProvider reports the tracing API bridge as
+// DD_TRACE_OTEL_ENABLED, and that a tracer started after Shutdown does not.
+func TestTracerProviderReportsTracingAPI(t *testing.T) {
+	testLog := new(log.RecordLogger)
+	defer log.UseLogger(testLog)()
+	startupLog := func() string {
+		var startupLog string
+		for _, l := range testLog.Logs() {
+			if strings.Contains(l, "DATADOG TRACER CONFIGURATION") {
+				startupLog = l
+			}
+		}
+		return startupLog
+	}
+
+	tp := NewTracerProvider()
+	assert.Contains(t, startupLog(), `"DD_TRACE_OTEL_ENABLED":true`)
+	require.NoError(t, tp.Shutdown())
+
+	testLog.Reset()
+	require.NoError(t, tracer.Start())
+	defer tracer.Stop()
+	assert.Contains(t, startupLog(), `"DD_TRACE_OTEL_ENABLED":false`)
+}
+
 func TestSpanTelemetry(t *testing.T) {
 	telemetryClient := new(telemetrytest.RecordClient)
 	defer telemetry.MockClient(telemetryClient)()

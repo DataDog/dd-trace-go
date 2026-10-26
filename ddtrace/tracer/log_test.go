@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -23,7 +24,7 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 
 // otelStartupFieldsRegexp matches the optional OpenTelemetry startup fields
 // without asserting their presence or values; system-tests cover them.
-const otelStartupFieldsRegexp = `(,"(?:OTEL_ENABLED|DD_METRICS_OTEL_ENABLED|DD_LOGS_OTEL_ENABLED|DD_TRACE_OTEL_SEMANTICS_ENABLED|` +
+const otelStartupFieldsRegexp = `(,"(?:OTEL_ENABLED|DD_TRACE_OTEL_ENABLED|DD_METRICS_OTEL_ENABLED|DD_LOGS_OTEL_ENABLED|DD_TRACE_OTEL_SEMANTICS_ENABLED|` +
 	`OTEL_TRACES_EXPORTER|OTEL_EXPORTER_OTLP_TRACES_ENDPOINT|OTEL_EXPORTER_OTLP_TRACES_PROTOCOL|OTEL_EXPORTER_OTLP_TRACES_HEADERS|` +
 	`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT|OTEL_EXPORTER_OTLP_METRICS_PROTOCOL|OTEL_EXPORTER_OTLP_METRICS_HEADERS|` +
 	`OTEL_METRIC_EXPORT_INTERVAL|OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE|` +
@@ -346,6 +347,7 @@ func TestOTelStartupInfoOTelEnabled(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		env         map[string]string
+		tracingAPI  bool
 		metrics     bool
 		spanMetrics bool
 		want        bool
@@ -358,6 +360,8 @@ func TestOTelStartupInfoOTelEnabled(t *testing.T) {
 		{name: "semantics", env: semantics, want: true},
 		{name: "semantics with tracing disabled", env: map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true", "DD_TRACE_ENABLED": "false"}},
 		{name: "semantics without OTLP traces", env: semanticsInLambda},
+		// The tracing API bridge exports nothing by itself, so it is not a signal.
+		{name: "semantics without OTLP traces with tracing API", env: semanticsInLambda, tracingAPI: true},
 		{name: "semantics without OTLP traces with OTLP metrics", env: semanticsInLambda, metrics: true, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -365,6 +369,8 @@ func TestOTelStartupInfoOTelEnabled(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
+			internal.SetOTelTracingAPIEnabled(tc.tracingAPI)
+			t.Cleanup(func() { internal.SetOTelTracingAPIEnabled(false) })
 			tr, err := newUnstartedTracer(func(c *config) {
 				c.internalConfig.SetOTLPSpanMetricsEnabled(tc.spanMetrics, internalconfig.OriginCode)
 			})
@@ -375,6 +381,7 @@ func TestOTelStartupInfoOTelEnabled(t *testing.T) {
 			var info startupInfo
 			tr.addOTelStartupInfo(&info)
 			assert.Equal(t, tc.want, info.OTelEnabled)
+			assert.Equal(t, tc.tracingAPI, info.TraceOTelEnabled)
 		})
 	}
 }

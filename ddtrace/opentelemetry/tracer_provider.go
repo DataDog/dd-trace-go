@@ -60,6 +60,8 @@ type TracerProvider struct {
 // This TracerProvider only supports a singleton tracer, and repeated calls to
 // the Tracer() method will return the same instance each time.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
+	// Set before starting the tracer so that its startup log reports the bridge.
+	internal.SetOTelTracingAPIEnabled(true)
 	tracer.Start(opts...)
 	p := &TracerProvider{}
 	t := &oteltracer{
@@ -86,6 +88,7 @@ func (p *TracerProvider) Shutdown() error {
 	p.Once.Do(func() {
 		tracer.Stop()
 		atomic.StoreUint32(&p.stopped, 1)
+		internal.SetOTelTracingAPIEnabled(false)
 	})
 	return nil
 }

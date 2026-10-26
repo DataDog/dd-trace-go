@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -92,6 +93,7 @@ type startupInfo struct {
 	// describes. Fields tagged omitempty are omitted when the setting does not
 	// apply to an effective pipeline or has no faithful equivalent.
 	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether semantics mode and at least one OTel pipeline are effective
+	TraceOTelEnabled          bool `json:"DD_TRACE_OTEL_ENABLED"`           // Whether the OTel tracing API bridge is in use
 	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
@@ -273,6 +275,9 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	if t.otlpExportMode {
 		info.OTelTracesExporter = "otlp"
 	}
+	// Go enables the OTel tracing API bridge in code, by creating a
+	// ddtrace/opentelemetry TracerProvider, rather than by reading DD_TRACE_OTEL_ENABLED.
+	info.TraceOTelEnabled = internal.OTelTracingAPIEnabled()
 	info.MetricsOTelEnabled = cfg.RuntimeMetricsOtelEnabled()
 	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
 	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
