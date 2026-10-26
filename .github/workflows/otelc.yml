@@ -43,6 +43,8 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/gin-gonic/gin
+    contrib/gin-gonic/gin/otelc
     contrib/go-chi/chi
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
@@ -65,6 +67,7 @@ env:
     otelc-autostart
     net_http
     sql
+    gin
     chi
     chi.v5
     fiber.v2
