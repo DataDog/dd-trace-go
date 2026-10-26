@@ -21,6 +21,7 @@ import (
 	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
@@ -2159,4 +2160,33 @@ func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
 	)
 	errorStack, _ := getMeta(sp, "error.stack")
 	assert.Equal(t, "boom", errorStack)
+}
+
+func TestSpanFinished(t *testing.T) {
+	assert.True(t, spanFinished(nil))
+
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	s := tracer.StartSpan("op")
+	assert.False(t, spanFinished(s))
+	s.Finish()
+	assert.True(t, spanFinished(s))
+}
+
+// A borrowed OpenTelemetry view of the span must stop recording when tracing is
+// disabled: the tracer drops the span, but the span is finished.
+func TestSpanFinishedTracingDisabled(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+	t.Cleanup(func() { internalconfig.CreateNew() })
+
+	// The span must start while tracing is on, because startSpan returns nil
+	// when tracing is already off.
+	s := tracer.StartSpan("op")
+	tracer.config.internalConfig.SetTracingEnabled(false, telemetry.OriginCode, internalconfig.ProductTracer)
+	s.Finish()
+	assert.True(t, spanFinished(s))
 }
