@@ -96,6 +96,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 
+			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() {
 				next = withAppSec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
 			}

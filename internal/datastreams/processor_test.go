@@ -6,7 +6,9 @@
 package datastreams
 
 import (
+	"compress/gzip"
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -27,6 +29,7 @@ import (
 	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -623,6 +626,116 @@ func TestReportStatsEmitsDropStallMetrics(t *testing.T) {
 	assert.Equal(t, int64(1), counts["datadog.datastreams.processor.dropped_payloads_poll_stall"])
 }
 
+// blockingCaptureTransport decodes every pipeline_stats payload it receives.
+// The first request blocks until release is closed, which holds the run
+// goroutine inside sendToAgent so the test controls exactly what is still
+// queued when Stop is called.
+type blockingCaptureTransport struct {
+	entered   chan struct{}
+	release   chan struct{}
+	firstOnce sync.Once
+
+	mu       sync.Mutex
+	payloads []StatsPayload
+}
+
+func (t *blockingCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	gz, err := gzip.NewReader(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload StatsPayload
+	if err := msgp.Decode(gz, &payload); err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	t.payloads = append(t.payloads, payload)
+	t.mu.Unlock()
+
+	t.firstOnce.Do(func() {
+		close(t.entered)
+		<-t.release
+	})
+	return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+}
+
+func TestStopSendsQueuedPoints(t *testing.T) {
+	ft := &blockingCaptureTransport{entered: make(chan struct{}), release: make(chan struct{})}
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, &http.Client{Transport: ft})
+	p.Start()
+
+	// Park the run goroutine in a slow agent request.
+	p.SetCheckpoint(context.Background(), "type:kafka", "topic:warmup")
+	flushDone := make(chan struct{})
+	go func() {
+		p.Flush()
+		close(flushDone)
+	}()
+	select {
+	case <-ft.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run goroutine never reached the agent")
+	}
+
+	// These are pushed while the reader is busy, so they are still in the
+	// queue when Stop is called.
+	const n = 50
+	for i := range n {
+		p.SetCheckpoint(context.Background(), "type:kafka", fmt.Sprintf("topic:queued-%d", i))
+		p.TrackKafkaCommitOffset("group", "queued", int32(i), int64(1000+i))
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		p.Stop()
+		close(stopDone)
+	}()
+	require.Eventually(t, func() bool {
+		select {
+		case <-p.stop:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, time.Millisecond)
+
+	close(ft.release)
+	<-flushDone
+	select {
+	case <-stopDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not return")
+	}
+
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	edgeTags := map[string]bool{}
+	backlogs := map[string]bool{}
+	for _, payload := range ft.payloads {
+		for _, bucket := range payload.Stats {
+			for _, s := range bucket.Stats {
+				for _, tag := range s.EdgeTags {
+					edgeTags[tag] = true
+				}
+			}
+			for _, b := range bucket.Backlogs {
+				backlogs[strings.Join(b.Tags, ",")] = true
+			}
+		}
+	}
+	var missingCheckpoints, missingOffsets int
+	for i := range n {
+		if !edgeTags[fmt.Sprintf("topic:queued-%d", i)] {
+			missingCheckpoints++
+		}
+		if !backlogs[fmt.Sprintf("consumer_group:group,partition:%d,topic:queued,type:kafka_commit", i)] {
+			missingOffsets++
+		}
+	}
+	assert.Zero(t, missingCheckpoints, "checkpoints queued before Stop were not sent (%d of %d missing)", missingCheckpoints, n)
+	assert.Zero(t, missingOffsets, "kafka commit offsets queued before Stop were not sent (%d of %d missing)", missingOffsets, n)
+}
+
 func BenchmarkSetCheckpoint(b *testing.B) {
 	client := &http.Client{
 		Transport: &noOpTransport{},
@@ -843,13 +956,6 @@ func BenchmarkSetCheckpointSustained(b *testing.B) {
 				}
 				wg.Wait()
 				elapsed := time.Since(start)
-				// Flush before Stop so any checkpoints still sitting in the
-				// queue when producers finished get processed rather than
-				// silently discarded: Stop's stop-case flushes only buckets
-				// already built from processed input, not the raw queue, so
-				// without this, leftover backlog would vanish without
-				// incrementing dropped and drops/op would understate loss.
-				p.Flush()
 				p.Stop()
 
 				n := pushed.Load()

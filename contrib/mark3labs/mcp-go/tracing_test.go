@@ -309,7 +309,7 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 
 	// Verify error metadata is present
 	assert.Contains(t, toolSpan.Meta, "error.message")
-	assert.Contains(t, toolSpan.Meta["error.message"], "tool resulted in an error")
+	assert.Contains(t, toolSpan.Meta["error.message"], "Validation failed")
 	assert.Contains(t, toolSpan.Meta, "error.type")
 	assert.Contains(t, toolSpan.Meta, "error.stack")
 
@@ -382,7 +382,7 @@ func TestRedactToolOutputStillReportsIsError(t *testing.T) {
 	require.Len(t, spans, 1)
 
 	toolSpan := spans[0]
-	assert.Contains(t, toolSpan.Meta, "error.message")
+	assert.Equal(t, "tool resulted in an error", toolSpan.Meta["error.message"])
 	outputMeta, ok := toolSpan.Meta["output"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "[REDACTED]", outputMeta["value"])

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -43,12 +44,14 @@ const (
 // exposureEvent represents a single feature flag evaluation exposure event.
 // It matches the schema defined in exposure.json.
 type exposureEvent struct {
-	Timestamp  int64              `json:"timestamp"`
-	Allocation exposureAllocation `json:"allocation"`
-	Flag       exposureFlag       `json:"flag"`
-	Variant    exposureVariant    `json:"variant"`
-	Subject    exposureSubject    `json:"subject"`
-	SerialID   *uint32            `json:"serial_id,omitempty"`
+	Timestamp   int64              `json:"timestamp"`
+	Allocation  exposureAllocation `json:"allocation"`
+	Flag        exposureFlag       `json:"flag"`
+	Variant     exposureVariant    `json:"variant"`
+	Subject     exposureSubject    `json:"subject"`
+	SerialID    *uint32            `json:"serial_id,omitempty"`
+	Features    map[string]any     `json:"features,omitempty"`
+	featuresKey string             // immutable scalar snapshot, decoded only for buffered events
 }
 
 // exposureAllocation represents allocation information in an exposure event
@@ -174,6 +177,9 @@ type exposureWriter struct {
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       bool
+	featureValues featureValuesCache
+	// Keep the cache active when only the customer records exposures.
+	datadogLoggingEnabled bool
 }
 
 // newExposureWriter creates a new exposure writer with the given configuration
@@ -185,11 +191,12 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 	executable, _ := os.Executable()
 
 	return &exposureWriter{
-		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
-		cache:         newExposureLRUCache(defaultExposureCacheCapacity),
-		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
-		evp:           evp,
-		stopChan:      make(chan struct{}),
+		buffer:                make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		flushInterval:         cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
+		evp:                   evp,
+		stopChan:              make(chan struct{}),
+		datadogLoggingEnabled: internalconfig.Get().FeatureFlagsExposuresDatadogLoggingEnabled(),
 		context: exposureContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
 			Version: env.Get("DD_VERSION"),
@@ -200,6 +207,9 @@ func newExposureWriterWithEVP(config ProviderConfig, evp *evpClient) *exposureWr
 
 // start begins the periodic flushing of exposure events
 func (w *exposureWriter) start() {
+	if !w.datadogLoggingEnabled {
+		return
+	}
 	w.ticker = time.NewTicker(w.flushInterval)
 	go func() {
 		defer func() {
@@ -221,12 +231,18 @@ func (w *exposureWriter) start() {
 }
 
 // append adds an exposure event to the buffer with deduplication
-func (w *exposureWriter) append(event exposureEvent) {
+func (w *exposureWriter) append(event exposureEvent) bool {
+	added, _ := w.appendWithDecision(event)
+	return added
+}
+
+// appendWithDecision distinguishes a duplicate from an unavailable cache decision.
+func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.stopped {
-		return
+		return false, false
 	}
 
 	// Create cache key and value from event
@@ -246,11 +262,16 @@ func (w *exposureWriter) append(event exposureEvent) {
 	// Check deduplication cache - returns true if this is a new or changed entry
 	if !w.cache.add(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
-		return
+		return false, true
 	}
 
-	// Append event to buffer
-	w.buffer = append(w.buffer, event)
+	if w.datadogLoggingEnabled {
+		if event.featuresKey != "" {
+			event.Features = w.featureValues.values(event.featuresKey)
+		}
+		w.buffer = append(w.buffer, event)
+	}
+	return true, true
 }
 
 // flush sends all buffered exposure events to the agent
@@ -264,6 +285,7 @@ func (w *exposureWriter) flush() {
 	// Move buffer to local variable and create new buffer
 	events := w.buffer
 	w.buffer = make([]exposureEvent, 0, len(events)/2)
+	w.featureValues = nil
 	w.mu.Unlock()
 
 	// Send to agent
