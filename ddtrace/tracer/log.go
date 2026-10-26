@@ -91,7 +91,7 @@ type startupInfo struct {
 	// Effective OpenTelemetry configuration, keyed by the configuration name it
 	// describes. Fields tagged omitempty are omitted when the setting does not
 	// apply to an effective pipeline or has no faithful equivalent.
-	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether any OTel pipeline or semantics is effective
+	OTelEnabled               bool `json:"OTEL_ENABLED"`                    // Whether semantics mode and at least one OTel pipeline are effective
 	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
@@ -282,12 +282,13 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	// An SDK MeterProvider the application installed before the tracer
 	// started exports runtime metrics with settings the tracer cannot read.
 	ownMeterProvider := metricsOTLP && t.config.otelMeterProviderInstalled
-	semantics := cfg.OTelSemanticsEnabled() && cfg.TracingEnabled()
 	// DD_LOGS_OTEL_ENABLED alone does not count: the tracer never starts the
 	// OTel logs pipeline and cannot tell whether ddtrace/opentelemetry/log is
 	// linked or started.
 	spanMetricsOTLP := t.otlpSpanMetricsEnabled()
-	info.OTelEnabled = tracesOTLP || metricsOTLP || semantics || spanMetricsOTLP
+	// Semantics mode is a requirement, not a signal. It forces OTLP trace
+	// export, so it reports true whenever tracing goes through that pipeline.
+	info.OTelEnabled = cfg.OTelSemanticsEnabled() && (tracesOTLP || metricsOTLP || spanMetricsOTLP)
 
 	if tracesOTLP {
 		info.OTLPTracesEndpoint = sanitizeOTLPEndpoint(cfg.OTLPTraceURL())

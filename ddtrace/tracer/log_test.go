@@ -336,6 +336,49 @@ func TestCommonOTLPExporterInfo(t *testing.T) {
 	}
 }
 
+// TestOTelStartupInfoOTelEnabled verifies that OTEL_ENABLED requires semantics
+// mode and at least one effective OTel pipeline.
+func TestOTelStartupInfoOTelEnabled(t *testing.T) {
+	semantics := map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true"}
+	// The log trace writer takes precedence over the OTLP one, so semantics
+	// mode runs without OTLP trace export.
+	semanticsInLambda := map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true", "AWS_LAMBDA_FUNCTION_NAME": "fn"}
+	for _, tc := range []struct {
+		name        string
+		env         map[string]string
+		metrics     bool
+		spanMetrics bool
+		want        bool
+	}{
+		{name: "no signal"},
+		{name: "OTLP traces without semantics", env: map[string]string{"OTEL_TRACES_EXPORTER": "otlp"}},
+		{name: "OTLP metrics without semantics", metrics: true},
+		{name: "OTLP span metrics without semantics", spanMetrics: true},
+		// Semantics mode forces OTLP trace export.
+		{name: "semantics", env: semantics, want: true},
+		{name: "semantics with tracing disabled", env: map[string]string{"DD_TRACE_OTEL_SEMANTICS_ENABLED": "true", "DD_TRACE_ENABLED": "false"}},
+		{name: "semantics without OTLP traces", env: semanticsInLambda},
+		{name: "semantics without OTLP traces with OTLP metrics", env: semanticsInLambda, metrics: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OTEL_TRACES_EXPORTER", "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			tr, err := newUnstartedTracer(func(c *config) {
+				c.internalConfig.SetOTLPSpanMetricsEnabled(tc.spanMetrics, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.otelRuntimeMetricsShouldBeEnabled = tc.metrics
+
+			var info startupInfo
+			tr.addOTelStartupInfo(&info)
+			assert.Equal(t, tc.want, info.OTelEnabled)
+		})
+	}
+}
+
 func TestOTelStartupInfoMetricsAndLogs(t *testing.T) {
 	t.Setenv("DD_AGENT_HOST", "agent")
 	// The MeterProvider exports over gRPC; span metrics only support HTTP and fall back to http/protobuf.
@@ -356,7 +399,6 @@ func TestOTelStartupInfoMetricsAndLogs(t *testing.T) {
 
 	var info startupInfo
 	tr.addOTelStartupInfo(&info)
-	assert.True(t, info.OTelEnabled)
 	assert.Equal(t, conflictingOTLPValue, info.OTLPMetricsEndpoint)
 	assert.Equal(t, conflictingOTLPValue, info.OTLPMetricsProtocol)
 	assert.Equal(t, map[string]string{"api-key": redactedHeaderValue}, info.OTLPMetricsHeaders)
@@ -388,7 +430,6 @@ func TestOTelStartupInfoUserMeterProvider(t *testing.T) {
 
 			var info startupInfo
 			tr.addOTelStartupInfo(&info)
-			assert.True(t, info.OTelEnabled)
 			assert.True(t, info.MetricsOTelEnabled)
 			assert.Zero(t, info.OTelMetricExportInterval)
 			assert.Empty(t, info.OTLPMetricsTemporalityPreference)
