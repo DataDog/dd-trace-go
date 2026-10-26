@@ -171,8 +171,11 @@ func executeFreshRetryAttemptIteration(execOpts *executionOptions) bool {
 			execOpts.panicExecutionMetadata = execMeta
 		}
 
-		if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
-			execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, observation.duration)
+		if currentIndex == 0 {
+			execOpts.initialDuration = observation.duration
+			if execOpts.options.postAdjustRetryCount != nil {
+				execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, observation.duration)
+			}
 		}
 		execOpts.retryCount--
 		if execOpts.options.postPerExecution != nil {
