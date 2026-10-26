@@ -23,12 +23,22 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/labstack/echo/v4 v4.15.3 // indirect
+	github.com/labstack/echo/v5 v5.2.0 // indirect
+	github.com/labstack/gommon v0.5.0 // indirect
+	github.com/mattn/go-colorable v0.1.16 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
@@ -52,6 +62,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -144,3 +156,11 @@ replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../cont
 replace github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 => ../../contrib/jackc/pgx.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 => ../../contrib/jackc/pgx.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../../contrib/labstack/echo.v4/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../contrib/labstack/echo.v4
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../contrib/labstack/echo.v5/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5

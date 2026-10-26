@@ -35,6 +35,7 @@ var fixtureScenarios = []string{
 	"test-management",
 	"active-fuzz",
 	"filtered",
+	"empty",
 	"fatal-shutdown",
 	"skip-lifecycle",
 	"parallel-duration",
@@ -150,6 +151,8 @@ func fixtureScenarioArgs(scenario, fuzzCacheDir string) []string {
 		return append(args, "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)
 	case "filtered":
 		return append(args, "-test.run=^TestNormalSelection$")
+	case "empty":
+		return append(args, "-test.run=^$")
 	default:
 		return append(args, "-test.v=true", "-test.run=^(FuzzNative|ExampleNative)")
 	}
@@ -231,6 +234,7 @@ func TestFixtureScenarioArgs(t *testing.T) {
 		{scenario: "test-management", want: append(slices.Clone(common), "-test.v=true", "-test.run=^(FuzzManaged|ExampleManaged)")},
 		{scenario: "active-fuzz", want: append(slices.Clone(common), "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)},
 		{scenario: "filtered", want: append(slices.Clone(common), "-test.run=^TestNormalSelection$")},
+		{scenario: "empty", want: append(slices.Clone(common), "-test.run=^$")},
 		{scenario: "fatal-shutdown", want: append(slices.Clone(common), "-test.run=^TestFuzzFatalShutdown$")},
 		{scenario: "skip-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzSkipLifecycle$")},
 		{scenario: "parallel-duration", want: append(slices.Clone(common), "-test.run=^TestFuzzParallelDuration$")},
