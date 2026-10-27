@@ -12,7 +12,10 @@
 //
 // Usage (in go:generate directives, chained after the generator):
 //
-//	//go:generate go run ../../scripts/add_license_headers.go <file-or-dir>...
+//	//go:generate go run ../../scripts/add_license_headers.go <dir>...
+//
+// Only directories are accepted: "go run" treats any further ".go" argument as
+// another source file of the program, so a single file cannot be passed.
 package main
 
 import (
@@ -35,7 +38,7 @@ const header = `// Unless explicitly stated otherwise all files in this reposito
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: add_license_headers <file-or-dir>...\n")
+		fmt.Fprintf(os.Stderr, "usage: add_license_headers <dir>...\n")
 		os.Exit(1)
 	}
 
@@ -49,27 +52,27 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
+		if !info.IsDir() {
+			fmt.Fprintf(os.Stderr, "error: %s is not a directory\n", arg)
+			os.Exit(1)
+		}
 		var files []string
-		if info.IsDir() {
-			err = filepath.Walk(arg, func(path string, fi os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				// Skip the same directories scripts/check_copyright.go skips.
-				if fi.IsDir() && (fi.Name() == "vendor" || fi.Name() == ".otelc-build") {
-					return filepath.SkipDir
-				}
-				if !fi.IsDir() && strings.HasSuffix(path, ".go") {
-					files = append(files, path)
-				}
-				return nil
-			})
+		err = filepath.Walk(arg, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
+				return err
 			}
-		} else {
-			files = []string{arg}
+			// Skip the same directories scripts/check_copyright.go skips.
+			if fi.IsDir() && (fi.Name() == "vendor" || fi.Name() == ".otelc-build") {
+				return filepath.SkipDir
+			}
+			if !fi.IsDir() && strings.HasSuffix(path, ".go") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
 		}
 		for _, file := range files {
 			if err := addHeader(copyrightRegexp, file); err != nil {
