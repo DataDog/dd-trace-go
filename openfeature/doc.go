@@ -408,7 +408,7 @@
 //     evaluating before it is ready, and an application hook returning an
 //     error after the provider resolved the flag
 //   - Each exposure event queued for delivery, or skipped with the reason,
-//     and each batch dropped after failed delivery
+//     and each batch sent or dropped after failed delivery
 //
 // A failure line does not say which value the application received, since
 // that depends on how the flag was evaluated. Typed evaluations and

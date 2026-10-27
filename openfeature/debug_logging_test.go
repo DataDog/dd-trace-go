@@ -782,6 +782,21 @@ func TestExposure_DebugLogs(t *testing.T) {
 		logger.assertContains(t, `openfeature: skipping exposure event (exposure writer stopped) for flag "my-flag"`)
 	})
 
+	// The cache still records exposures for customer hooks, so the line must
+	// not claim the event was queued for Datadog.
+	t.Run("recorded without queuing when Datadog exposure logging is disabled", func(t *testing.T) {
+		internalconfig.SetUseFreshConfig(true)
+		t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+		t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", "false")
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusAccepted)
+		expose(p, "user-1")
+		shutdown(t, p)
+
+		logger.assertContains(t, `openfeature: recorded exposure event for flag "my-flag" without queuing it for Datadog, which has exposure logging disabled (allocation="alloc-1", variant="on", subject="user-1")`)
+		assert.Zero(t, logger.countContaining("queued exposure event"))
+	})
+
 	// Failed deliveries are errors, logged whether or not debug logging is on.
 	t.Run("dropped at shutdown when delivery fails", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelWarn)
