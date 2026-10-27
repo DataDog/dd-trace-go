@@ -220,3 +220,28 @@ func TestInitializeListeners_payloadRunsAfterTrace(t *testing.T) {
 	_, lastIsPayload := listeners[len(listeners)-1].(*payload.Listener)
 	assert.True(t, lastIsPayload, "payload listener must be registered last")
 }
+
+func TestToPayloadConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		env      map[string]string
+		expected bool
+	}{
+		{name: "disabled by default", expected: false},
+		{name: "config field", cfg: &Config{StripInjectedContext: true}, expected: true},
+		{name: "new env var", env: map[string]string{StripContextEnabledEnvVar: "true"}, expected: true},
+		{name: "legacy env var", env: map[string]string{StripInjectedContextEnvVar: "true"}, expected: true},
+		{name: "invalid value", env: map[string]string{StripContextEnabledEnvVar: "yes"}, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(StripContextEnabledEnvVar, "")
+			t.Setenv(StripInjectedContextEnvVar, "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			assert.Equal(t, tt.expected, tt.cfg.toPayloadConfig().StripInjectedContext)
+		})
+	}
+}

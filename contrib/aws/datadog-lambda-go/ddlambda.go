@@ -106,8 +106,11 @@ const (
 	// FIPSModeEnvVar is the environment variable that determines whether to enable FIPS mode.
 	// Defaults to true in GovCloud regions and false otherwise.
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
-	// StripInjectedContextEnvVar enables stripping of injected _datadog propagation
+	// StripContextEnabledEnvVar enables stripping of injected _datadog propagation
 	// carriers from the Lambda payload before the user handler is invoked.
+	StripContextEnabledEnvVar = "DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED"
+	// StripInjectedContextEnvVar is the legacy name of StripContextEnabledEnvVar.
+	// It is still honored for backward compatibility.
 	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 
 	// DefaultSite to send API messages to.
@@ -264,7 +267,9 @@ func (cfg *Config) toPayloadConfig() payload.Config {
 		pc.StripInjectedContext = cfg.StripInjectedContext
 	}
 	if !pc.StripInjectedContext {
-		pc.StripInjectedContext, _ = strconv.ParseBool(os.Getenv(StripInjectedContextEnvVar))
+		enabled, _ := strconv.ParseBool(os.Getenv(StripContextEnabledEnvVar))
+		legacyEnabled, _ := strconv.ParseBool(os.Getenv(StripInjectedContextEnvVar))
+		pc.StripInjectedContext = enabled || legacyEnabled
 	}
 	return pc
 }
