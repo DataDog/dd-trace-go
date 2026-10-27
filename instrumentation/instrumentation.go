@@ -247,6 +247,12 @@ func (i *Instrumentation) SNSInjectDatadogAttributeEnabled() bool {
 	return internalconfig.Get().SNSInjectDatadogAttributeEnabled()
 }
 
+// SFNInjectDatadogAttributeEnabled reports whether the trace context may be injected into the
+// input of Step Functions executions.
+func (i *Instrumentation) SFNInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SFNInjectDatadogAttributeEnabled()
+}
+
 func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
 }

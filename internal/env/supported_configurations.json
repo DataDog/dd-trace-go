@@ -1892,6 +1892,13 @@
         "default": "0"
       }
     ],
+    "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",

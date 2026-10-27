@@ -163,12 +163,13 @@ type Config struct {
 	// dataStreamsIntakeBufferSize is the number of slots in the Data Streams
 	// Monitoring processor's input ring buffer.
 	dataStreamsIntakeBufferSize int
-	// injectKinesis, injectEventBridge, injectSQS and injectSNS control whether the AWS SDK
+	// injectKinesis, injectEventBridge, injectSQS, injectSNS and injectSFN control whether the AWS SDK
 	// integration writes the Datadog trace context into requests for that service.
 	injectKinesis     bool
 	injectEventBridge bool
 	injectSQS         bool
 	injectSNS         bool
+	injectSFN         bool
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -484,6 +485,7 @@ func loadConfig() *Config {
 	cfg.injectEventBridge = p.GetBool("DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
 	cfg.injectSQS = p.GetBool("DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
 	cfg.injectSNS = p.GetBool("DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.injectSFN = p.GetBool("DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
@@ -954,6 +956,14 @@ func (c *Config) SNSInjectDatadogAttributeEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.injectSNS
+}
+
+// SFNInjectDatadogAttributeEnabled reports whether the Datadog trace context may be written into
+// the input of Step Functions executions.
+func (c *Config) SFNInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectSFN
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {

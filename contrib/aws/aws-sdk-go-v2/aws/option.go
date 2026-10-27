@@ -21,6 +21,7 @@ type config struct {
 	injectEventBridge bool
 	injectSQS         bool
 	injectSNS         bool
+	injectSFN         bool
 }
 
 // Option describes options for the AWS integration.
@@ -43,6 +44,7 @@ func defaults(cfg *config) {
 	cfg.injectEventBridge = instr.EventBridgeInjectDatadogAttributeEnabled()
 	cfg.injectSQS = instr.SQSInjectDatadogAttributeEnabled()
 	cfg.injectSNS = instr.SNSInjectDatadogAttributeEnabled()
+	cfg.injectSFN = instr.SFNInjectDatadogAttributeEnabled()
 }
 
 // WithService sets the given service name for the dialled connection.

@@ -127,6 +127,9 @@ func TestInjectionSwitchKeepsDataStreamsCheckpoints(t *testing.T) {
 		"PublishBatch":     {[]string{"direction:out", "type:sns", "topic:my-topic"}, []int{firstSize, secondSize}},
 	}
 	for _, tc := range injectCases() {
+		if tc.noDSM {
+			continue
+		}
 		for _, op := range tc.ops {
 			for _, value := range []string{"true", "false"} {
 				t.Run(tc.service+"/"+op.operation+"/"+value, func(t *testing.T) {

@@ -3088,6 +3088,7 @@ func TestInjectDatadogAttributeEnabled(t *testing.T) {
 		{"eventbridge", "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).EventBridgeInjectDatadogAttributeEnabled},
 		{"sqs", "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SQSInjectDatadogAttributeEnabled},
 		{"sns", "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SNSInjectDatadogAttributeEnabled},
+		{"sfn", "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SFNInjectDatadogAttributeEnabled},
 	}
 	// Neutralize values inherited from the environment of the test process. The subtests set the
 	// one they need.

@@ -277,6 +277,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SAMPLING_RULES_FILE":                                            {},
 	"DD_TRACE_SARAMA_ANALYTICS_ENABLED":                                       {},
 	"DD_TRACE_SEND_RETRIES":                                                   {},
+	"DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED":                           {},
 	"DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED":                           {},
 	"DD_TRACE_SOURCE_HOSTNAME":                                                {},
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":                                          {},

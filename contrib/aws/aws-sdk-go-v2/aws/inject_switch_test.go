@@ -16,6 +16,7 @@ import (
 	ebtypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	kinesistypes "github.com/aws/aws-sdk-go-v2/service/kinesis/types"
+	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -39,6 +40,7 @@ type injectOp struct {
 type injectCase struct {
 	service string // matches the "aws.service" span tag
 	env     string // environment variable that disables injection
+	noDSM   bool   // the service does not record a Data Streams checkpoint
 	ops     []injectOp
 }
 
@@ -155,6 +157,27 @@ func injectCases() []injectCase {
 				}},
 			},
 		},
+		{
+			service: "SFN", env: "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", noDSM: true,
+			ops: []injectOp{
+				{operation: "StartExecution", entries: 1, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sfn.StartExecutionInput{
+						StateMachineArn: aws.String("arn:aws:states:eu-west-1:123456789012:stateMachine:my-machine"),
+						Input:           aws.String(`{"message":"hello"}`),
+					}
+					_, _ = sfn.NewFromConfig(cfg).StartExecution(ctx, in)
+					return []bool{strings.Contains(aws.ToString(in.Input), "_datadog")}
+				}},
+				{operation: "StartSyncExecution", entries: 1, run: func(ctx context.Context, cfg aws.Config) []bool {
+					in := &sfn.StartSyncExecutionInput{
+						StateMachineArn: aws.String("arn:aws:states:eu-west-1:123456789012:stateMachine:my-machine"),
+						Input:           aws.String(`{"message":"hello"}`),
+					}
+					_, _ = sfn.NewFromConfig(cfg).StartSyncExecution(ctx, in)
+					return []bool{strings.Contains(aws.ToString(in.Input), "_datadog")}
+				}},
+			},
+		},
 	}
 }
 
@@ -165,7 +188,7 @@ func reloadTracerConfig(t *testing.T) {
 	tracer.Stop()
 }
 
-// clearInjectEnv unsets the four injection switches so that a value inherited from the environment
+// clearInjectEnv unsets the injection switches so that a value inherited from the environment
 // of the test process cannot change the result, then reloads the global configuration after the
 // original environment is restored.
 func clearInjectEnv(t *testing.T) {

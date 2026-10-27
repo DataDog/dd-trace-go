@@ -14,12 +14,14 @@
 //   - DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED controls PutEvents.
 //   - DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED controls SendMessage and SendMessageBatch.
 //   - DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED controls Publish and PublishBatch.
+//   - DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED controls StartExecution and StartSyncExecution.
 //
 // All default to true. Set them before tracer initialization and middleware installation. Existing
 // middleware does not reload values after tracer restarts.
 //
 // False skips new "_datadog" writes, not existing metadata. Spans, the SQS tag and the local Data
-// Streams checkpoint remain. Consumers relying on those writes lose fresh trace and pathway context.
+// Streams checkpoint (where the service has one) remain. Consumers relying on those writes lose
+// fresh trace and pathway context.
 //
 // Usage Example:
 //

@@ -70,6 +70,7 @@ func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) 
 		sns:         snsTracer.NewEnricher(cfg.injectSNS),
 		kinesis:     kinesisTracer.NewEnricher(cfg.injectKinesis),
 		eventBridge: eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
+		sfn:         sfnTracer.NewEnricher(cfg.injectSFN),
 	}
 	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
@@ -95,6 +96,7 @@ type traceMiddleware struct {
 	sns         enricher
 	kinesis     enricher
 	eventBridge enricher
+	sfn         enricher
 }
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
@@ -168,7 +170,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "EventBridge":
 			mw.eventBridge.EnrichOperation(spanctx, span, in, operation)
 		case "SFN":
-			sfnTracer.EnrichOperation(span, in, operation)
+			mw.sfn.EnrichOperation(spanctx, span, in, operation)
 		case "DynamoDB":
 			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
