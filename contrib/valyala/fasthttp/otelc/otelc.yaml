@@ -35,6 +35,12 @@ fasthttp_server_serve_conn:
 # Before the contrib is initialized, they run the original call. fasthttp and
 # the fasthttp contrib are left out, since the hooks module imports both.
 #
+# The arguments are passed as parameters of the closure, so Go evaluates them
+# at the call site, as it does for go fasthttp.ServeConn(...) and defer
+# fasthttp.ServeConn(...). The original call, which otelc requires in the
+# template, evaluates them again, but it only runs before the contrib is
+# initialized.
+#
 # A call through a function value, such as f := fasthttp.ServeConn, is not a
 # call site this rule matches. It still uses fasthttp's pool, and only the
 # first handler on each pooled server is traced.
@@ -48,11 +54,13 @@ fasthttp_serve_conn_func:
   do:
     - wrap_call:
         replace: |-
-          func() error {
+          func(c __dd_net.Conn, h __dd_fasthttp.RequestHandler) error {
             if __dd_fasthttpotelc.Ready() {
-              return __dd_fasthttpotelc.ServeConn({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+              return __dd_fasthttpotelc.ServeConn(c, h)
             }
             return {{ . }}
-          }()
+          }({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
+    __dd_net: net
+    __dd_fasthttp: github.com/valyala/fasthttp
     __dd_fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2

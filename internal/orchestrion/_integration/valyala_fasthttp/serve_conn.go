@@ -63,6 +63,41 @@ func (*TestCaseServeConnFunc) ExpectedSpanCount() int { return 2 }
 
 func (*TestCaseServeConnFunc) ExpectedTraces() trace.Traces { return serveConnTraces(2) }
 
+// TestCaseServeConnGoDefer serves connections with go and defer statements
+// that call the package-level fasthttp.ServeConn. Go evaluates the arguments
+// at the statement, so changing conn afterwards must not change what is
+// served.
+type TestCaseServeConnGoDefer struct{}
+
+func (*TestCaseServeConnGoDefer) Setup(_ context.Context, t *testing.T) {
+	if !otelc.Enabled() {
+		t.Skip("orchestrion only instruments Server.Serve")
+	}
+}
+
+func (*TestCaseServeConnGoDefer) Run(_ context.Context, t *testing.T) {
+	serveConnOnce(t, func(c net.Conn) error {
+		conn := c
+		go fasthttp.ServeConn(conn, fastHTTPHandler) //nolint:errcheck
+		conn = nil
+		_ = conn
+		return nil
+	})
+	serveConnOnce(t, func(c net.Conn) error {
+		go func() {
+			conn := c
+			defer fasthttp.ServeConn(conn, fastHTTPHandler) //nolint:errcheck
+			conn = nil
+			_ = conn
+		}()
+		return nil
+	})
+}
+
+func (*TestCaseServeConnGoDefer) ExpectedSpanCount() int { return 2 }
+
+func (*TestCaseServeConnGoDefer) ExpectedTraces() trace.Traces { return serveConnTraces(2) }
+
 // serveConnOnce sends one request over a pipe served by serve.
 func serveConnOnce(t *testing.T, serve func(net.Conn) error) {
 	t.Helper()
