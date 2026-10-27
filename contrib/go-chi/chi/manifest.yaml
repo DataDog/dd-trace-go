@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/go-chi/chi
+display_name: chi
+description: Traces inbound chi HTTP requests through manual or Orchestrion middleware, with route-pattern resources, optional
+  App and API Protection, and optional inferred API Gateway or Pub/Sub push parent spans.
+packages:
+- name: github.com/go-chi/chi
+category:
+- http.server
+systems: []
+creation_date: '2019-03-15'

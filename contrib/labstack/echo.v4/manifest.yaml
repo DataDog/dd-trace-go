@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/labstack/echo/v4
+display_name: Echo v4
+description: Instruments inbound Echo v4 HTTP requests through Wrap or middleware (Orchestrion wraps echo.New), creating server
+  spans with distributed-context extraction, optionally inferred AWS API Gateway ingress or Google Cloud Pub/Sub push-delivery
+  spans, optional AppSec body monitoring and blocking, and registered-route API endpoint discovery.
+packages:
+- name: github.com/labstack/echo/v4
+category:
+- http.server
+systems: []
+creation_date: '2020-07-22'
