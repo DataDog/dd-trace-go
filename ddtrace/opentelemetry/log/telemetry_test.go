@@ -17,71 +17,15 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-// TestRegisterTelemetry verifies that registerTelemetry reports all expected configurations.
-func TestRegisterTelemetry(t *testing.T) {
-	t.Run("reports non-sensitive OTLP configurations and omits header values", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		t.Setenv(envOTLPTimeout, "5000")
-		t.Setenv(envOTLPHeaders, "api-key=SENTINEL_OTLP_BASE")
-		t.Setenv(envOTLPProtocol, "http/protobuf")
-		t.Setenv(envOTLPEndpoint, "http://example.com:4318")
-		t.Setenv(envOTLPLogsTimeout, "8000")
-		t.Setenv(envOTLPLogsHeaders, "log-key=SENTINEL_OTLP_LOGS")
-		t.Setenv(envOTLPLogsProtocol, "grpc")
-		t.Setenv(envOTLPLogsEndpoint, "http://logs.example.com:4317")
-
-		registerTelemetry()
-
-		// Verify generic OTLP configurations
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPTimeout, 5000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPProtocol, "http/protobuf")
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPEndpoint, "http://example.com:4318")
-
-		// Verify logs-specific configurations
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, 8000)
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsProtocol, "grpc")
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsEndpoint, "http://logs.example.com:4317")
-
-		// The OTLP header variants must not be reported in configuration telemetry, and
-		// no reported configuration value may contain a header sentinel.
-		for _, cfg := range recorder.Configuration {
-			assert.NotEqual(t, envOTLPHeaders, cfg.Name,
-				"%s should not be reported in configuration telemetry", envOTLPHeaders)
-			assert.NotEqual(t, envOTLPLogsHeaders, cfg.Name,
-				"%s should not be reported in configuration telemetry", envOTLPLogsHeaders)
-			if s, ok := cfg.Value.(string); ok {
-				assert.NotContains(t, s, "SENTINEL_OTLP",
-					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
-			}
-		}
-	})
-
-	t.Run("reports default logs timeout when env vars not set", func(t *testing.T) {
-		recorder := &telemetrytest.RecordClient{}
-		defer telemetry.MockClient(recorder)()
-
-		registerTelemetry()
-
-		telemetrytest.CheckConfig(t, recorder.Configuration, envOTLPLogsTimeout, defaultOTLPTimeoutMs)
-		for _, cfg := range recorder.Configuration {
-			if cfg.Name == envOTLPLogsTimeout {
-				assert.Equal(t, telemetry.OriginDefault, cfg.Origin)
-			}
-		}
-	})
-}
-
 // TestLogsExportTelemetry verifies that the LogsExportTelemetry struct correctly
 // tracks log record exports with different protocols and encodings.
 func TestLogsExportTelemetry(t *testing.T) {
-	t.Run("http/json", func(t *testing.T) {
+	t.Run("http/protobuf accumulated records", func(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		// Create telemetry tracker for HTTP/JSON
-		let := NewLogsExportTelemetry("http", "json")
+		// Create telemetry tracker for HTTP/protobuf
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record some log exports
 		let.RecordLogRecords(5)
@@ -92,7 +36,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -154,7 +98,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 
 		// Create a test exporter
 		testExp := &testExporter{}
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Wrap it with telemetry
 		te := &telemetryExporter{
@@ -179,7 +123,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 
@@ -200,7 +144,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		recorder := &telemetrytest.RecordClient{}
 		defer telemetry.MockClient(recorder)()
 
-		let := NewLogsExportTelemetry("http", "json")
+		let := NewLogsExportTelemetry("http", "protobuf")
 
 		// Record zero
 		let.RecordLogRecords(0)
@@ -209,7 +153,7 @@ func TestLogsExportTelemetry(t *testing.T) {
 		key := telemetrytest.MetricKey{
 			Namespace: telemetry.NamespaceTracers,
 			Name:      "otel.log_records",
-			Tags:      "encoding:json,protocol:http",
+			Tags:      "encoding:protobuf,protocol:http",
 			Kind:      "count",
 		}
 

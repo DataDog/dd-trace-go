@@ -152,6 +152,13 @@
         "default": "10485760"
       }
     ],
+    "DD_APPSEC_DISABLE_FEATURES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_APPSEC_ENABLED": [
       {
         "implementation": "A",
@@ -273,6 +280,20 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
@@ -450,6 +471,13 @@
         "default": "false"
       }
     ],
+    "DD_DATA_STREAMS_INTAKE_BUFFER_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
     "DD_DBM_PROPAGATION_MODE": [
       {
         "implementation": "A",
@@ -557,6 +585,27 @@
       }
     ],
     "DD_FEATURE_FLAGS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "disabled"
+      }
+    ],
+    "DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -694,6 +743,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "5000"
       }
     ],
     "DD_INSTRUMENTATION_INSTALL_ID": [
@@ -1311,6 +1367,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_CONNECT_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1353,6 +1416,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_ECHO_IGNORED_ROUTES": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": ""
+      }
+    ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1361,6 +1431,13 @@
       }
     ],
     "DD_TRACE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -1589,6 +1666,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_TRACE_LEVELDB_ANALYTICS_ENABLED": [
@@ -1843,6 +1927,20 @@
         "default": "0"
       }
     ],
+    "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
@@ -1869,6 +1967,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_TRACE_STARTUP_LOGS": [
@@ -2047,6 +2152,13 @@
         "sensitive": true
       }
     ],
+    "OTEL_EXPORTER_OTLP_INSECURE": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
       {
         "implementation": "A",
@@ -2064,9 +2176,9 @@
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
       {
-        "implementation": "B",
+        "implementation": "D",
         "type": "string",
-        "default": "http/json"
+        "default": "http/protobuf"
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT": [
@@ -2089,6 +2201,13 @@
         "type": "string",
         "default": null,
         "sensitive": true
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_INSECURE": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -2188,6 +2307,13 @@
         "implementation": "B",
         "type": "string",
         "default": ""
+      }
+    ],
+    "OTEL_SDK_DISABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": null
       }
     ],
     "OTEL_SERVICE_NAME": [

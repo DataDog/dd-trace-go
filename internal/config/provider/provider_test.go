@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -316,7 +315,7 @@ apm_configuration_default:
 
 		t.Setenv("OTEL_SERVICE_NAME", "otel_service")
 		t.Setenv("OTEL_LOG_LEVEL", "debug")
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=otel_env,service.version=0.5.0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=otel_env,service.version=0.5.0")
 		t.Setenv("OTEL_TRACES_SAMPLER", "traceidratio")
 		t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.8")
 
@@ -390,7 +389,7 @@ func TestProviderTelemetryRegistration(t *testing.T) {
 		_ = p.GetInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 		_ = p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 		_ = p.GetString("DD_TRACE_AGENT_URL", "")
-		_ = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+		_ = p.GetMap("DD_SERVICE_MAPPING", nil, ParseDDMap)
 		_ = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "service", telemetry.OriginEnvVar, telemetry.EmptyID)))
@@ -429,7 +428,7 @@ apm_configuration_default:
 		_ = p.GetInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 		_ = p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 		_ = p.GetString("DD_TRACE_AGENT_URL", "")
-		_ = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+		_ = p.GetMap("DD_SERVICE_MAPPING", nil, ParseDDMap)
 		_ = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "svc", telemetry.OriginLocalStableConfig, "123")))
@@ -534,7 +533,7 @@ apm_configuration_default:
 		assert.Equal(t, intDef, p.GetInt(intKey, intDef))
 		assert.Equal(t, floatDef, p.GetFloat(floatKey, floatDef))
 		assert.Equal(t, durDef, p.GetDuration(durKey, durDef))
-		assert.Equal(t, mapDef, p.GetMap(mapKey, mapDef, internal.DDTagsDelimiter))
+		assert.Equal(t, mapDef, p.GetMap(mapKey, mapDef, ParseDDMap))
 
 		telemetryClient.AssertExpectations(t)
 	})
@@ -558,6 +557,44 @@ func TestGetInt64(t *testing.T) {
 		t.Run(tc.value, func(t *testing.T) {
 			p := newTestProvider(newTestConfigSource(map[string]string{"OTEL_BLRP_SCHEDULE_DELAY": tc.value}, telemetry.OriginEnvVar))
 			assert.Equal(t, tc.expected, p.GetInt64("OTEL_BLRP_SCHEDULE_DELAY", defaultValue))
+		})
+	}
+}
+
+func TestGetMap(t *testing.T) {
+	var parsed []string
+	parse := func(v string) map[string]string {
+		parsed = append(parsed, v)
+		if v == "bad" {
+			return nil
+		}
+		return map[string]string{"k": v}
+	}
+	p := newTestProvider(
+		newTestConfigSource(map[string]string{"OTEL_EXPORTER_OTLP_HEADERS": "bad"}, telemetry.OriginManagedStableConfig),
+		newTestConfigSource(map[string]string{"OTEL_EXPORTER_OTLP_HEADERS": "good"}, telemetry.OriginEnvVar),
+	)
+
+	assert.Equal(t, map[string]string{"k": "good"}, p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, parse))
+	assert.ElementsMatch(t, []string{"bad", "good"}, parsed, "each source is parsed exactly once")
+}
+
+func TestGetInt64WithValidator(t *testing.T) {
+	const defaultValue int64 = 1000
+	isPositive := func(v int64) bool { return v > 0 }
+	for _, tc := range []struct {
+		value    string
+		expected int64
+	}{
+		{value: "", expected: defaultValue},
+		{value: "invalid", expected: defaultValue},
+		{value: "0", expected: defaultValue},
+		{value: "-1000", expected: defaultValue},
+		{value: "500", expected: 500},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			p := newTestProvider(newTestConfigSource(map[string]string{"OTEL_BLRP_SCHEDULE_DELAY": tc.value}, telemetry.OriginEnvVar))
+			assert.Equal(t, tc.expected, p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultValue, isPositive))
 		})
 	}
 }

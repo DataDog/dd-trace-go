@@ -334,7 +334,7 @@ components:
       benchmark apps must resolve it from a published tag, not from a local
       replace directive.
     paths: [ crashtracker/** ]
-    dependent-modules: []
+    dependent-modules: [ internal/apps ]
     gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps ]
 
   - id: civisibility
