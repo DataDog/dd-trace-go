@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/segmentio/kafka-go
+display_name: kafka-go
+description: Instruments Kafka message production and consumption through kafka-go, including header-based trace propagation
+  and optional Data Streams checkpoints and consumer offset tracking.
+packages:
+- name: github.com/segmentio/kafka-go
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- kafka
+creation_date: '2022-02-28'
