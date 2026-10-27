@@ -22,8 +22,32 @@ import (
 
 const (
 	fixtureBuildTimeout = 5 * time.Minute
-	fixtureRunTimeout   = 3 * time.Minute
+	// fixtureScenarioTimeout is the native -test.timeout of a scenario process
+	// that runs its tests in-process.
+	fixtureScenarioTimeout = 2 * time.Minute
+	// fixtureStalledChildTimeout is the longest one fixture child can run
+	// before its harness gives up: fuzzfixture's fixtureChildDeadline, a
+	// one-minute child budget plus a 45s grace. A scenario that spawns children
+	// runs them one after another, so a single stalled child adds this much.
+	fixtureStalledChildTimeout = time.Minute + 45*time.Second
+	// fixtureRunGrace is the wall-clock time runFixtureCommand grants beyond
+	// the scenario's own -test.timeout, for its goroutine dump and exit. The
+	// harness deadline must stay behind the scenario's own timeout, or the
+	// cancellation hides the scenario's result.
+	fixtureRunGrace = time.Minute
 )
+
+// fixtureScenarioBudget returns the native -test.timeout for a scenario. The
+// scenarios that spawn fixture children absorb one fully stalled child on top
+// of their healthy budget, so a child timeout surfaces as the child's own
+// failure, not as the parent's "test timed out" panic.
+func fixtureScenarioBudget(scenario string) time.Duration {
+	switch scenario {
+	case "skip-lifecycle", "fatal-shutdown", "corpus-lifecycle", "parallel-duration":
+		return fixtureScenarioTimeout + fixtureStalledChildTimeout
+	}
+	return fixtureScenarioTimeout
+}
 
 var fixtureScenarios = []string{
 	"pass",
@@ -69,7 +93,7 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 
 		for _, scenario := range fixtureScenarios {
 			t.Run(mode+"/"+scenario, func(t *testing.T) {
-				runFixtureCommand(t, fixtureRunTimeout, fixtureRunDir(mode), fixtureEnv(t, mode, scenario, goCache, goModCache), binaryPath, fixtureScenarioArgs(scenario, filepath.Join(t.TempDir(), "fuzzcache"))...)
+				runFixtureCommand(t, fixtureScenarioBudget(scenario)+fixtureRunGrace, fixtureRunDir(mode), fixtureEnv(t, mode, scenario, goCache, goModCache), binaryPath, fixtureScenarioArgs(scenario, filepath.Join(t.TempDir(), "fuzzcache"))...)
 			})
 		}
 	}
@@ -133,7 +157,7 @@ func fixtureRunDir(mode string) string {
 }
 
 func fixtureScenarioArgs(scenario, fuzzCacheDir string) []string {
-	args := []string{"-test.count=1", "-test.timeout=2m"}
+	args := []string{"-test.count=1", "-test.timeout=" + fixtureScenarioBudget(scenario).String()}
 	switch scenario {
 	case "corpus-lifecycle":
 		return append(args, "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")
@@ -245,7 +269,8 @@ func TestFixtureBuildCommands(t *testing.T) {
 }
 
 func TestFixtureScenarioArgs(t *testing.T) {
-	common := []string{"-test.count=1", "-test.timeout=2m"}
+	common := []string{"-test.count=1", "-test.timeout=2m0s"}
+	spawning := []string{"-test.count=1", "-test.timeout=3m45s"}
 	fuzzCacheDir := filepath.Join("tmp", "fuzzcache")
 	tests := []struct {
 		scenario string
@@ -263,10 +288,10 @@ func TestFixtureScenarioArgs(t *testing.T) {
 		{scenario: "active-fuzz", want: append(slices.Clone(common), "-test.run=^FuzzActiveOther$", "-test.fuzz=^FuzzNativeParity$", "-test.fuzztime=1x", "-test.fuzzcachedir="+fuzzCacheDir)},
 		{scenario: "filtered", want: append(slices.Clone(common), "-test.run=^TestNormalSelection$")},
 		{scenario: "empty", want: append(slices.Clone(common), "-test.run=^$")},
-		{scenario: "fatal-shutdown", want: append(slices.Clone(common), "-test.run=^TestFuzzFatalShutdown$")},
-		{scenario: "skip-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzSkipLifecycle$")},
-		{scenario: "parallel-duration", want: append(slices.Clone(common), "-test.run=^TestFuzzParallelDuration$")},
-		{scenario: "corpus-lifecycle", want: append(slices.Clone(common), "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")},
+		{scenario: "fatal-shutdown", want: append(slices.Clone(spawning), "-test.run=^TestFuzzFatalShutdown$")},
+		{scenario: "skip-lifecycle", want: append(slices.Clone(spawning), "-test.run=^TestFuzzSkipLifecycle$")},
+		{scenario: "parallel-duration", want: append(slices.Clone(spawning), "-test.run=^TestFuzzParallelDuration$")},
+		{scenario: "corpus-lifecycle", want: append(slices.Clone(spawning), "-test.run=^TestFuzzCorpusLifecycle$", "-test.v=true")},
 		{scenario: "repeat-run", want: append(slices.Clone(common), "-test.run=^FuzzNativeParity$")},
 	}
 	gotScenarios := make([]string, 0, len(tests))
