@@ -9,6 +9,8 @@ meta:
   description: The official AWS SDK for Go
 
 aspects:
+  # FIXME: sessions created with session.NewSessionWithOptions or session.New
+  # are not wrapped.
   - id: session.NewSession
     join-point:
       function-call: github.com/aws/aws-sdk-go/aws/session.NewSession

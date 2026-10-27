@@ -1,0 +1,38 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps the session that session.NewSession returns with the contrib, in every
+# package of the build, dependencies included. A call-site rewrite rather than
+# a hook on NewSession: the rewritten package imports the contrib, so the
+# contrib is initialized before a session built in a package-level var or
+# init, which a hook does not guarantee. aws-sdk-go is excluded because the
+# contrib imports it, and the contrib because it would import itself.
+#
+# When the application also wraps the session with awstrace.WrapSession, its
+# handlers replace the ones added here, so each request is traced once, with
+# the application's options.
+#
+# FIXME: sessions created with session.NewSessionWithOptions or session.New are
+# not wrapped, the same as with Orchestrion.
+new_session:
+  target:
+    - "**"
+    - not: "github.com/aws/aws-sdk-go/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/**"
+  where:
+    function_call: github.com/aws/aws-sdk-go/aws/session.NewSession
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*session.Session, error) {
+            sess, err := {{ . }}
+            if sess != nil {
+              sess = awstrace.WrapSession(sess)
+            }
+            return sess, err
+          })()
+  imports:
+    session: github.com/aws/aws-sdk-go/aws/session
+    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws

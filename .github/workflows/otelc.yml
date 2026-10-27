@@ -39,6 +39,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go
+    contrib/aws/aws-sdk-go/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -70,6 +72,7 @@ env:
     99designs.gqlgen
     echo.v4
     echo.v5
+    aws.v1
 
 jobs:
   go-versions-matrix:

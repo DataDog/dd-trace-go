@@ -89,6 +89,7 @@ require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
 )
@@ -100,6 +101,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
+	example.com/awsv1dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
@@ -121,7 +123,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 v2.13.0-dev // indirect
@@ -552,3 +554,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
+
+replace example.com/awsv1dep => ./internal/awsv1dep
