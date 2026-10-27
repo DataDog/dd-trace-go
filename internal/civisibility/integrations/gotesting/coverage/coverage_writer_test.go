@@ -41,6 +41,8 @@ func TestCoverageWriterStop(t *testing.T) {
 
 func TestCoverageWriterFlush(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
+	writer.client = &MockClient{SendCoveragePayloadFunc: drainCoveragePayload}
 	coverage := &testCoverage{}
 	writer.add(coverage)
 	writer.flush()
@@ -49,6 +51,8 @@ func TestCoverageWriterFlush(t *testing.T) {
 
 func TestCoverageWriterConcurrentFlush(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
+	writer.client = &MockClient{SendCoveragePayloadFunc: drainCoveragePayload}
 	coverage := &testCoverage{}
 
 	for range concurrentConnectionLimit + 1 {
@@ -60,6 +64,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 
 func TestCoverageWriterFlushError(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
 		return errors.New("mock error")
 	},
@@ -87,6 +92,11 @@ func TestCoverageWriterConcurrentAddAndFlush(t *testing.T) {
 	}
 	wg.Wait()
 	writer.stop()
+}
+
+func drainCoveragePayload(payload io.Reader) error {
+	_, err := io.Copy(io.Discard, payload)
+	return err
 }
 
 // MockClient is a mock implementation of the Client interface for testing purposes.
