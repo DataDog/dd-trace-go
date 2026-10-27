@@ -240,6 +240,32 @@ func (c *dedicatedClient) SetOnInvalidations(fn func([]rueidis.RedisMessage)) <-
 	return c.dedicatedClient.SetOnInvalidations(fn)
 }
 
+func (c *dedicatedClient) Do(ctx context.Context, cmd rueidis.Completed) rueidis.RedisResult {
+	span, ctx := c.startSpan(ctx, processCommand(&cmd))
+	resp := c.dedicatedClient.Do(ctx, cmd)
+	setClientCacheTags(span, resp)
+	c.finishSpan(span, resp.Error())
+	return resp
+}
+
+func (c *dedicatedClient) DoMulti(ctx context.Context, multi ...rueidis.Completed) []rueidis.RedisResult {
+	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	resp := c.dedicatedClient.DoMulti(ctx, multi...)
+	c.finishSpan(span, c.firstError(resp))
+	return resp
+}
+
+func (c *dedicatedClient) Receive(ctx context.Context, subscribe rueidis.Completed, fn func(msg rueidis.PubSubMessage)) error {
+	span, ctx := c.startSpan(ctx, processCommand(&subscribe))
+	err := c.dedicatedClient.Receive(ctx, subscribe, fn)
+	c.finishSpan(span, err)
+	return err
+}
+
+func (c *dedicatedClient) Close() {
+	c.dedicatedClient.Close()
+}
+
 type commander interface {
 	Commands() []string
 }
