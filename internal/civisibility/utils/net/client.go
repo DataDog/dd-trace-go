@@ -148,7 +148,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		// Agentless mode is enabled.
 		apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
 		if apiKeyValue == "" {
-			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
+			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it") //errtrack:ignore missing user configuration
 			return nil
 		}
 
