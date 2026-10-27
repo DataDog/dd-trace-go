@@ -6,6 +6,7 @@
 package sfn
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -18,19 +19,34 @@ import (
 
 var instr = internal.Instr
 
-func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation string) {
+// enricher adds the Datadog trace context to the input of Step Functions executions.
+// The zero value injects the trace context.
+type enricher struct {
+	noInject bool
+}
+
+// NewEnricher returns an enricher that writes the trace context into the request only if inject is true.
+// The span tags are recorded either way.
+func NewEnricher(inject bool) *enricher {
+	return &enricher{noInject: !inject}
+}
+
+func (e *enricher) EnrichOperation(_ context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "StartExecution":
-		handleStartExecution(span, in)
+		e.handleStartExecution(span, in)
 	case "StartSyncExecution":
-		handleStartSyncExecution(span, in)
+		e.handleStartSyncExecution(span, in)
 	}
 }
 
-func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartExecutionInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read StartExecutionInput params")
+		return
+	}
+	if e.noInject {
 		return
 	}
 
@@ -38,10 +54,13 @@ func handleStartExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params.Input = modifiedInput
 }
 
-func handleStartSyncExecution(span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handleStartSyncExecution(span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sfn.StartSyncExecutionInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read StartSyncExecutionInput params")
+		return
+	}
+	if e.noInject {
 		return
 	}
 
