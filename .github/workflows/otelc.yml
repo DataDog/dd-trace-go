@@ -43,10 +43,14 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/gin-gonic/gin
+    contrib/gin-gonic/gin/otelc
     contrib/go-chi/chi
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
     contrib/go-chi/chi.v5/otelc
+    contrib/gofiber/fiber.v2
+    contrib/gofiber/fiber.v2/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -65,8 +69,10 @@ env:
     otelc-autostart
     net_http
     sql
+    gin
     chi
     chi.v5
+    fiber.v2
     redigo
     grpc
     gorilla_mux
