@@ -124,8 +124,8 @@ func TestFixtureChildExit(t *testing.T) {
 	for _, scenario := range []string{"command-exit", "command-success"} {
 		output, err := runFixtureChild(binary, append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO="+scenario), "-test.run=^TestFixtureChildProcess$")
 		if scenario == "command-exit" {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 17 {
+			exit, ok := errors.AsType[*exec.ExitError](err)
+			if !ok || exit.ExitCode() != 17 {
 				t.Fatalf("exit=%v, want 17: %s", err, output)
 			}
 		} else if err != nil || !strings.Contains(string(output), "FIXTURE_CHILD_SUCCESS") {
@@ -150,8 +150,7 @@ func TestFixtureChildCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "TestFixtureChildProcess") {
 		t.Fatalf("cancellation lost: %v: %s", err, output.String())
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		t.Fatalf("cancellation can be mistaken for an expected exit: %v", err)
 	}
 	if cmd.ProcessState == nil || !strings.Contains(output.String(), "FIXTURE_CHILD_READY") {
