@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/modelcontextprotocol/go-sdk
+display_name: modelcontextprotocol/go-sdk
+description: Instruments MCP server tool calls and session initialization with LLM Observability spans, input/output and error
+  recording, and optional tool intent capture.
+packages:
+- name: github.com/modelcontextprotocol/go-sdk
+category:
+- gen_ai
+- mcp.server
+systems: []
+creation_date: '2025-12-04'
