@@ -19,8 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
-// TestCaseServeConn serves a request on a connection passed to ServeConn,
-// which does not call Serve.
+// TestCaseServeConn serves two connections on one server with
+// Server.ServeConn, which does not call Serve.
 type TestCaseServeConn struct {
 	srv *fasthttp.Server
 }
@@ -33,9 +33,42 @@ func (tc *TestCaseServeConn) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseServeConn) Run(_ context.Context, t *testing.T) {
+	for range 2 {
+		serveConnOnce(t, tc.srv.ServeConn)
+	}
+}
+
+func (*TestCaseServeConn) ExpectedSpanCount() int { return 2 }
+
+func (*TestCaseServeConn) ExpectedTraces() trace.Traces { return serveConnTraces(2) }
+
+// TestCaseServeConnFunc serves two connections with the package-level
+// fasthttp.ServeConn. It reuses pooled servers with a new handler on each
+// call, and each call must be traced.
+type TestCaseServeConnFunc struct{}
+
+func (*TestCaseServeConnFunc) Setup(_ context.Context, t *testing.T) {
+	if !otelc.Enabled() {
+		t.Skip("orchestrion only instruments Server.Serve")
+	}
+}
+
+func (*TestCaseServeConnFunc) Run(_ context.Context, t *testing.T) {
+	for range 2 {
+		serveConnOnce(t, func(c net.Conn) error { return fasthttp.ServeConn(c, fastHTTPHandler) })
+	}
+}
+
+func (*TestCaseServeConnFunc) ExpectedSpanCount() int { return 2 }
+
+func (*TestCaseServeConnFunc) ExpectedTraces() trace.Traces { return serveConnTraces(2) }
+
+// serveConnOnce sends one request over a pipe served by serve.
+func serveConnOnce(t *testing.T, serve func(net.Conn) error) {
+	t.Helper()
 	client, server := net.Pipe()
 	served := make(chan error, 1)
-	go func() { served <- tc.srv.ServeConn(server) }()
+	go func() { served <- serve(server) }()
 
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
@@ -53,13 +86,10 @@ func (tc *TestCaseServeConn) Run(_ context.Context, t *testing.T) {
 	require.NoError(t, <-served)
 }
 
-func (*TestCaseServeConn) ExpectedSpanCount() int {
-	return 1
-}
-
-func (*TestCaseServeConn) ExpectedTraces() trace.Traces {
-	return trace.Traces{
-		{
+func serveConnTraces(n int) trace.Traces {
+	traces := make(trace.Traces, n)
+	for i := range traces {
+		traces[i] = &trace.Trace{
 			Tags: map[string]any{
 				"name":     "http.request",
 				"resource": "GET /ping",
@@ -69,6 +99,7 @@ func (*TestCaseServeConn) ExpectedTraces() trace.Traces {
 				"component": "valyala/fasthttp",
 				"span.kind": "server",
 			},
-		},
+		}
 	}
+	return traces
 }

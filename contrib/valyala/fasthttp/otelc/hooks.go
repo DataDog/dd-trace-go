@@ -12,6 +12,7 @@ import (
 	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"weak"
 
 	"github.com/valyala/fasthttp"
@@ -58,7 +59,9 @@ func BeforeServe(_ hook.HookContext, srv *fasthttp.Server, _ net.Listener) {
 }
 
 // BeforeServeConn does the same as BeforeServe for a connection served with
-// ServeConn, which does not call Serve.
+// Server.ServeConn, which does not call Serve. The package-level
+// fasthttp.ServeConn reuses pooled servers with a new handler on each call, so
+// the rules replace its call sites with [ServeConn].
 func BeforeServeConn(_ hook.HookContext, srv *fasthttp.Server, _ net.Conn) {
 	wrapServer(srv)
 }
@@ -82,4 +85,34 @@ func wrapServer(srv *fasthttp.Server) {
 	}
 	srv.Handler = fasthttptrace.WrapHandler(srv.Handler)
 	markHandled(srv)
+}
+
+var (
+	// ready is set once the contrib is initialized. See [Ready].
+	ready atomic.Bool
+	// servers is the pool of servers ServeConn serves with. They are passed to
+	// SkipServer when created, so BeforeServeConn leaves them alone.
+	servers = sync.Pool{New: func() any {
+		srv := &fasthttp.Server{}
+		SkipServer(srv)
+		return srv
+	}}
+)
+
+func init() { ready.Store(true) }
+
+// Ready reports whether the contrib is initialized. The rules call [ServeConn]
+// at call sites, outside a hook trampoline that would recover a panic, so they
+// run the original call until then.
+func Ready() bool { return ready.Load() }
+
+// ServeConn replaces the package-level fasthttp.ServeConn at its call sites. It
+// does the same with its own pool of servers, and wraps handler on each call.
+func ServeConn(c net.Conn, handler fasthttp.RequestHandler) error {
+	srv := servers.Get().(*fasthttp.Server)
+	srv.Handler = fasthttptrace.WrapHandler(handler)
+	err := srv.ServeConn(c)
+	srv.Handler = nil
+	servers.Put(srv)
+	return err
 }

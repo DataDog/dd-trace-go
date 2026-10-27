@@ -6,6 +6,8 @@
 package otelc
 
 import (
+	"bufio"
+	"net"
 	"runtime"
 	"sync"
 	"testing"
@@ -74,4 +76,38 @@ func TestHandledFreesServer(t *testing.T) {
 		_, ok := handled.Load(key)
 		return key.Value() == nil && !ok
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+// serveConnOnce sends one request over a pipe served by serve.
+func serveConnOnce(t *testing.T, serve func(net.Conn) error) {
+	t.Helper()
+	client, server := net.Pipe()
+	served := make(chan error, 1)
+	go func() { served <- serve(server) }()
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.SetRequestURI("http://example.com/ping")
+	req.SetConnectionClose()
+	w := bufio.NewWriter(client)
+	require.NoError(t, req.Write(w))
+	require.NoError(t, w.Flush())
+
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+	require.NoError(t, resp.Read(bufio.NewReader(client)))
+	require.NoError(t, client.Close())
+	require.NoError(t, <-served)
+}
+
+func TestServeConnWrapsEachHandler(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	handler := func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) }
+	for range 2 {
+		serveConnOnce(t, func(c net.Conn) error { return ServeConn(c, handler) })
+	}
+	// A pooled server reused with a new handler must trace it too.
+	assert.Len(t, mt.FinishedSpans(), 2)
 }

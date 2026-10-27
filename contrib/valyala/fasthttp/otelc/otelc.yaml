@@ -28,3 +28,31 @@ fasthttp_server_serve_conn:
     - inject_hooks:
         before: BeforeServeConn
         path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
+
+# The package-level fasthttp.ServeConn reuses pooled servers and sets a new
+# handler on each call, which the handled check above cannot follow. Its call
+# sites go to a copy with its own pool that wraps the handler on each call.
+# Before the contrib is initialized, they run the original call. fasthttp and
+# the fasthttp contrib are left out, since the hooks module imports both.
+#
+# A call through a function value, such as f := fasthttp.ServeConn, is not a
+# call site this rule matches. It still uses fasthttp's pool, and only the
+# first handler on each pooled server is traced.
+fasthttp_serve_conn_func:
+  target:
+    - "**"
+    - not: "github.com/valyala/fasthttp/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/**"
+  where:
+    function_call: github.com/valyala/fasthttp.ServeConn
+  do:
+    - wrap_call:
+        replace: |-
+          func() error {
+            if __dd_fasthttpotelc.Ready() {
+              return __dd_fasthttpotelc.ServeConn({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+            }
+            return {{ . }}
+          }()
+  imports:
+    __dd_fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
