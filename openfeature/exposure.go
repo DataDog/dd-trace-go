@@ -223,16 +223,29 @@ func (w *exposureWriter) start() {
 		for {
 			select {
 			case <-w.ticker.C:
-				if n, err := w.flush(); err != nil {
-					containLoggerPanic(func() {
-						log.Error("openfeature: failed to send %d exposure events, dropping them: %v", n, err.Error()) //errtrack:ignore remote request failure
-					})
-				}
+				w.periodicFlush()
 			case <-w.stopChan:
 				return
 			}
 		}
 	}()
+}
+
+// periodicFlush flushes on the writer's timer and logs the outcome.
+func (w *exposureWriter) periodicFlush() {
+	n, err := w.flush()
+	switch {
+	case err != nil:
+		// log.Error keeps only the first message's arguments when it
+		// aggregates repeats, so the per-batch count is logged at debug
+		// instead of in the error.
+		logOnboarding("dropped %d exposure event(s) after a failed send: %s", n, err.Error())
+		containLoggerPanic(func() {
+			log.Error("openfeature: failed to send exposure events, dropping them: %v", err.Error()) //errtrack:ignore remote request failure
+		})
+	case n > 0:
+		logOnboarding("sent %d exposure event(s)", n)
+	}
 }
 
 // append adds an exposure event to the buffer with deduplication

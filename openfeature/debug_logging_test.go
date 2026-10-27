@@ -802,8 +802,39 @@ func TestExposure_DebugLogs(t *testing.T) {
 
 		assert.Eventually(t, func() bool {
 			log.Flush() // log.Error is aggregated until flushed
-			return logger.countContaining("openfeature: failed to send 1 exposure events, dropping them: ") > 0
+			return logger.countContaining("openfeature: failed to send exposure events, dropping them: ") > 0
 		}, 5*time.Second, 5*time.Millisecond)
+		shutdown(t, p)
+	})
+
+	t.Run("sent by a periodic flush", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusAccepted)
+		expose(p, "user-1")
+		p.exposureWriter.periodicFlush()
+		logger.assertContains(t, "openfeature: sent 1 exposure event(s)")
+
+		before := len(logger.all())
+		p.exposureWriter.periodicFlush()
+		assert.Len(t, logger.all(), before, "a periodic flush with nothing pending must not log")
+		shutdown(t, p)
+	})
+
+	// log.Error aggregates repeats under the first message, so each batch's
+	// count must come from its own debug line.
+	t.Run("each failed periodic batch logs its own count", func(t *testing.T) {
+		logger := withLogLevel(t, log.LevelDebug)
+		p := newProvider(t, http.StatusInternalServerError)
+		expose(p, "user-1")
+		p.exposureWriter.periodicFlush()
+		expose(p, "user-2")
+		expose(p, "user-3")
+		p.exposureWriter.periodicFlush()
+		log.Flush() // log.Error is aggregated until flushed
+
+		logger.assertContains(t, "openfeature: dropped 1 exposure event(s) after a failed send: ")
+		logger.assertContains(t, "openfeature: dropped 2 exposure event(s) after a failed send: ")
+		logger.assertContains(t, "openfeature: failed to send exposure events, dropping them: ")
 		shutdown(t, p)
 	})
 
