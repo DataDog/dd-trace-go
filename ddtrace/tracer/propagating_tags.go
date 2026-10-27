@@ -141,7 +141,7 @@ func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSou
 	if source := t.propagatingTag(key); source != "" {
 		tSource, err := internal.ParseTraceSource(source)
 		if err != nil {
-			log.Error("failed to parse trace source tag: %s", err.Error())
+			log.Error("failed to parse trace source tag: %s", err.Error()) //errtrack:ignore invalid propagated input on a request path
 		}
 		tSource |= value
 		t.setPropagatingTagLocked(key, tSource.String())
@@ -234,7 +234,7 @@ func parseDecisionMaker(dm string) uint32 {
 		// on every request. It is invalid external input, not a dd-trace-go
 		// defect, and reporting it per-request would let a peer arbitrarily
 		// inflate an SDK Error Tracking issue.
-		log.Error("failed to convert decision maker to uint32: %s", err.Error())
+		log.Error("failed to convert decision maker to uint32: %s", err.Error()) //errtrack:ignore invalid propagated input on a request path
 		return 0
 	}
 	if v < 0 {

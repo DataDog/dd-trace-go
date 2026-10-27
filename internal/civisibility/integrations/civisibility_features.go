@@ -7,8 +7,9 @@ package integrations
 
 import (
 	"fmt"
-	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,12 +20,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
 	DefaultFlakyRetryCount      = 5
 	DefaultFlakyTotalRetryCount = 1_000
+
+	// maxDynamicFlakyRetryCount matches the per-bucket limit used by dd-trace-py.
+	maxDynamicFlakyRetryCount = 20
 )
 
 type (
@@ -33,6 +39,10 @@ type (
 		RetryCount               int64
 		TotalRetryCount          int64
 		RemainingTotalRetryCount int64
+		// DynamicRetryCounts replaces RetryCount when DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED is set and is nil otherwise.
+		// Entry i is the retry count for a test whose first execution falls in duration bucket i: up to 5s, 10s, 30s,
+		// 5m, and slower. Every entry is at least 1.
+		DynamicRetryCounts *[5]int64
 	}
 
 	searchCommitsResponse struct {
@@ -78,6 +88,11 @@ var (
 	// ciVisibilitySettings contains the CI Visibility settings for this session
 	ciVisibilitySettings net.SettingsResponseData
 
+	// ciVisibilityBackendSlowTestRetries keeps the backend EFD slow test retries (5s, 10s, 30s, 5m) from before
+	// DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES caps them. Dynamic automatic test retries use them because
+	// that cap only limits EFD.
+	ciVisibilityBackendSlowTestRetries [4]int
+
 	// ciVisibilityKnownTests contains the CI Visibility Known Tests data for this session
 	ciVisibilityKnownTests net.KnownTestsResponseData
 
@@ -117,7 +132,7 @@ func ensureSettingsInitialization(serviceName string) {
 		// Create the CI Visibility client
 		ciVisibilityClient = newCIVisibilityClientWithServiceNameFunc(serviceName)
 		if ciVisibilityClient == nil {
-			log.Error("civisibility: error getting the ci visibility http client")
+			log.Error("civisibility: error getting the ci visibility http client") //errtrack:ignore invalid user network configuration
 			return
 		}
 
@@ -137,7 +152,7 @@ func ensureSettingsInitialization(serviceName string) {
 				}()
 				bytes, err := repositoryUpload.run()
 				if err != nil {
-					log.Error("civisibility: error uploading repository changes: %s", err.Error())
+					log.Error("civisibility: error uploading repository changes: %s", err.Error()) //errtrack:ignore repository or network failure
 				} else {
 					log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
 				}
@@ -158,7 +173,7 @@ func ensureSettingsInitialization(serviceName string) {
 				// All ok, upload succeeded
 				return true
 			case <-time.After(timeout):
-				log.Warn("civisibility: timeout waiting for upload repository changes")
+				log.Warn("civisibility: timeout waiting for upload repository changes") //errtrack:ignore repository upload timeout
 				return false
 			}
 		}
@@ -186,7 +201,7 @@ func ensureSettingsInitialization(serviceName string) {
 		if uploadEnabled && ciSettings.RequireGit {
 			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
 			if !waitUpload(1 * time.Minute) {
-				log.Error("civisibility: error getting CI visibility settings due to timeout")
+				log.Error("civisibility: error getting CI visibility settings due to timeout") //errtrack:ignore remote request timeout
 				return
 			}
 			ciSettings, err = ciVisibilityClient.GetSettings()
@@ -199,6 +214,7 @@ func ensureSettingsInitialization(serviceName string) {
 		applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings)
 		earlyFlakeDetectionMaxRetries := internal.IntEnv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, -1)
 		slowTestRetries := &ciSettings.EarlyFlakeDetection.SlowTestRetries
+		ciVisibilityBackendSlowTestRetries = [4]int{slowTestRetries.FiveS, slowTestRetries.TenS, slowTestRetries.ThirtyS, slowTestRetries.FiveM}
 		slowTestRetries.FiveS = capEarlyFlakeDetectionRetries(slowTestRetries.FiveS, earlyFlakeDetectionMaxRetries)
 		slowTestRetries.TenS = capEarlyFlakeDetectionRetries(slowTestRetries.TenS, earlyFlakeDetectionMaxRetries)
 		slowTestRetries.ThirtyS = capEarlyFlakeDetectionRetries(slowTestRetries.ThirtyS, earlyFlakeDetectionMaxRetries)
@@ -208,19 +224,19 @@ func ensureSettingsInitialization(serviceName string) {
 
 		// check if impacted tests is disabled by env-vars
 		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
-			log.Warn("civisibility: impacted tests was disabled by the environment variable")
+			log.Warn("civisibility: impacted tests was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
 		// check if code coverage report upload is disabled by env-vars
 		if ciSettings.CoverageReportUploadEnabled && !internal.BoolEnv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: code coverage report upload was disabled by the environment variable")
+			log.Warn("civisibility: code coverage report upload was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.CoverageReportUploadEnabled = false
 		}
 
 		// check if test management is disabled by env-vars
 		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
-			log.Warn("civisibility: test management was disabled by the environment variable")
+			log.Warn("civisibility: test management was disabled by the environment variable") //errtrack:ignore expected user configuration override
 			ciSettings.TestManagement.Enabled = false
 		}
 
@@ -288,8 +304,48 @@ func applyFlakyRetryEnabledEnvironmentOverride(ciSettings *net.SettingsResponseD
 	if enabled {
 		state = "enabled"
 	}
-	log.Warn("civisibility: automatic test retries were %s by the %s environment variable", state, constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable)
+	log.Warn("civisibility: automatic test retries were %s by the %s environment variable", state, constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable) //errtrack:ignore expected user configuration override
 	ciSettings.FlakyTestRetriesEnabled = enabled
+}
+
+// dynamicFlakyRetryCounts returns the duration-based retry counts, or nil when dynamic automatic test retries are
+// disabled, and records the dynamic_atr_retries.enabled metric. Without a valid DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS
+// value, the counts follow the backend slow test retries, and buckets the backend leaves empty or at zero use the
+// defaults 10, 5, 3, and 2. Tests slower than five minutes, which EFD never retries, get one retry.
+func dynamicFlakyRetryCounts(slowTestRetries [4]int) *[5]int64 {
+	if !internal.BoolEnv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, false) {
+		return nil
+	}
+	value := env.Get(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable)
+	counts, custom := parseDynamicFlakyRetryCounts(value)
+	if !custom {
+		if value != "" {
+			log.Warn("civisibility: ignoring %s=%q, expected five comma-separated integers from 1 to %d", constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, value, maxDynamicFlakyRetryCount) //errtrack:ignore invalid user configuration
+		}
+		counts = [5]int64{10, 5, 3, 2, 1}
+		for i, retries := range slowTestRetries {
+			if retries > 0 {
+				counts[i] = int64(retries)
+			}
+		}
+	}
+	telemetry.DynamicATRRetriesEnabled(custom)
+	log.Debug("civisibility: dynamic automatic test retries enabled [retryCounts: %d]", counts)
+	return &counts
+}
+
+// parseDynamicFlakyRetryCounts parses exactly five comma-separated integers from 1 to maxDynamicFlakyRetryCount.
+func parseDynamicFlakyRetryCounts(value string) (counts [5]int64, ok bool) {
+	n := 0
+	for field := range strings.SplitSeq(value, ",") {
+		count, err := strconv.ParseInt(strings.TrimSpace(field), 10, 64)
+		if n == len(counts) || err != nil || count < 1 || count > maxDynamicFlakyRetryCount {
+			return counts, false
+		}
+		counts[n] = count
+		n++
+	}
+	return counts, n == len(counts)
 }
 
 func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.SettingsResponseData) {
@@ -310,17 +366,17 @@ func applyEarlyFlakeDetectionEnabledEnvironmentOverride(ciSettings *net.Settings
 	if enabled {
 		state = "enabled"
 	}
-	log.Warn("civisibility: early flake detection was %s by the %s environment variable", state, constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable)
+	log.Warn("civisibility: early flake detection was %s by the %s environment variable", state, constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable) //errtrack:ignore expected user configuration override
 	ciSettings.EarlyFlakeDetection.Enabled = enabled
 }
 
 // logSettingsFetchError reports a failed or empty CI Visibility settings response.
 func logSettingsFetchError(err error) {
 	if err != nil {
-		log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+		log.Error("civisibility: error getting CI visibility settings: %s", err.Error()) //errtrack:ignore remote service response
 		return
 	}
-	log.Error("civisibility: error getting CI visibility settings: empty response")
+	log.Error("civisibility: error getting CI visibility settings: empty response") //errtrack:ignore remote service response
 }
 
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
@@ -381,6 +437,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				RetryCount:               retryCount,
 				TotalRetryCount:          totalRetriesCount,
 				RemainingTotalRetryCount: totalRetriesCount,
+				DynamicRetryCounts:       dynamicFlakyRetryCounts(ciVisibilityBackendSlowTestRetries),
 			}
 			log.Debug("civisibility: automatic test retries enabled [retryCount: %d, totalRetryCount: %d]", retryCount, totalRetriesCount)
 		}
@@ -393,7 +450,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				ciEfdData, err := ciVisibilityClient.GetKnownTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error()) //errtrack:ignore remote service response
 				} else if ciEfdData != nil {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
@@ -407,7 +464,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				// get the skippable tests
 				response, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error()) //errtrack:ignore remote service response
 				} else if response != nil {
 					log.Debug("civisibility: skippable tests loaded: %d suites", len(response.Skippables))
 					setAdditionalTags(constants.ItrCorrelationIDTag, response.CorrelationID)
@@ -422,7 +479,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error()) //errtrack:ignore remote service response
 				} else if testManagementTests != nil {
 					ciVisibilityTestManagementTests = *testManagementTests
 					log.Debug("civisibility: test management loaded [attemptToFixRetries: %d]", currentSettings.TestManagement.AttemptToFixRetries)
@@ -435,7 +492,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 			wg.Go(func() {
 				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error())
+					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error()) //errtrack:ignore repository analysis failure
 				} else {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
@@ -580,7 +637,7 @@ func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64,
 	hasBeenUnshallowed, err := hooks.unshallowGitRepository()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
-			log.Warn("%s", err.Error())
+			log.Warn("%s", err.Error()) //errtrack:ignore repository command failure
 		}
 		// if unshallowing the repository failed or if there's nothing to unshallow then we try to upload the packfiles from
 		// the initial commit data
@@ -655,13 +712,8 @@ func sendObjectsPackFile(commitSha string, commitsToInclude []string, commitsToE
 	// send the pack files
 	log.Debug("civisibility: sending pack file with missing commits. files: %v", packFiles) //nolint:gocritic // File list logging for debugging
 
-	// try to remove the pack files after sending them
-	defer func(files []string) {
-		// best effort to remove the pack files after sending
-		for _, file := range files {
-			_ = os.Remove(file)
-		}
-	}(packFiles)
+	// best effort to remove the pack files and their temporary directory after sending them
+	defer utils.RemovePackFiles(packFiles)
 
 	// send the pack files
 	return ciVisibilityClient.SendPackFiles(commitSha, packFiles)

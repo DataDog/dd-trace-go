@@ -39,8 +39,11 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
-	if entityID := internal.ContainerID(); entityID != "" {
-		defaultHeaders["Datadog-Entity-ID"] = entityID
+	if eid := internal.EntityID(); eid != "" {
+		defaultHeaders["Datadog-Entity-ID"] = eid
+	}
+	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
+		defaultHeaders["Datadog-External-Env"] = extEnv
 	}
 	url := agentURL.String() + "/v0.1/pipeline_stats"
 	return &httpTransport{
@@ -76,7 +79,7 @@ func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
 		return err
 	}
 	defer resp.Body.Close()
-	defer io.Copy(io.Discard, req.Body)
+	defer io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	log.Debug("datastreams: pipeline_stats POST status=%d", resp.StatusCode)
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
