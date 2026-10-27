@@ -51,6 +51,7 @@ func TestLogsWriterFlush(t *testing.T) {
 	writer.add(entry)
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
+	writer.stop()
 }
 
 func TestLogsWriterConcurrentFlush(t *testing.T) {
@@ -63,6 +64,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 	}
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
+	writer.stop()
 }
 
 func TestLogsWriterFlushError(t *testing.T) {
@@ -75,6 +77,7 @@ func TestLogsWriterFlushError(t *testing.T) {
 	writer.add(entry)
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
+	writer.stop()
 }
 
 func TestLogsWriterStopFlushesAcceptedLogs(t *testing.T) {
