@@ -37,6 +37,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
@@ -75,6 +76,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/echo/v4 v4.15.3 // indirect
@@ -174,6 +176,12 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
+
+require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev // indirect
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../../contrib/julienschmidt/httprouter
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev // indirect

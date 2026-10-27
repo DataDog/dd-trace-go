@@ -51,6 +51,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -73,6 +75,7 @@ env:
     chi
     chi.v5
     fiber.v2
+    julienschmidt_httprouter
     redigo
     grpc
     gorilla_mux

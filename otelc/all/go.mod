@@ -27,6 +27,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
@@ -44,6 +45,7 @@ require (
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/labstack/echo/v4 v4.15.3 // indirect
 	github.com/labstack/echo/v5 v5.2.0 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
@@ -175,6 +177,12 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../contrib/julienschmidt/httprouter/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ../../contrib/julienschmidt/httprouter
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../contrib/gorilla/mux/otelc
 
