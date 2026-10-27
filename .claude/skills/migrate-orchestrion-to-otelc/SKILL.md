@@ -251,6 +251,9 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
   above the rule, since a hook looks like the more natural choice.
 - A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
   library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
+- A `wrap_call` template must not move the call's arguments into a closure body, because `go f(x)`
+  and `defer f(x)` evaluate `x` at the statement. Pass them as parameters of the closure instead
+  (`fasthttp_serve_conn_func` in `contrib/valyala/fasthttp/otelc/otelc.yaml`).
 - `function_call` and `method_call` only match qualified calls (`pkg.Func()`). Calls inside the
   library itself, and calls through a dot import, are never matched, so a constructor that calls
   another one internally is not wrapped twice.
