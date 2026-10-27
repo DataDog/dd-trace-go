@@ -166,6 +166,13 @@ type Config struct {
 	// dataStreamsIntakeBufferSize is the number of slots in the Data Streams
 	// Monitoring processor's input ring buffer.
 	dataStreamsIntakeBufferSize int
+	// injectKinesis, injectEventBridge, injectSQS, injectSNS and injectSFN control whether the AWS SDK
+	// integration writes the Datadog trace context into requests for that service.
+	injectKinesis     bool
+	injectEventBridge bool
+	injectSQS         bool
+	injectSNS         bool
+	injectSFN         bool
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -487,6 +494,11 @@ func loadConfig() *Config {
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dataStreamsIntakeBufferSize = p.GetIntWithValidator("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", defaultDataStreamsIntakeBufferSize, validateDataStreamsIntakeBufferSize)
+	cfg.injectKinesis = p.GetBool("DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.injectEventBridge = p.GetBool("DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.injectSQS = p.GetBool("DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.injectSNS = p.GetBool("DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.injectSFN = p.GetBool("DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
@@ -928,6 +940,46 @@ func (c *Config) SetRuntimeMetricsOtelEnabled(enabled bool, origin telemetry.Ori
 	}
 	c.runtimeMetricsOtel = enabled
 	configtelemetry.Report("DD_METRICS_OTEL_ENABLED", enabled, origin)
+}
+
+// KinesisInjectDatadogAttributeEnabled reports whether the Datadog trace context may be written
+// into Kinesis records.
+func (c *Config) KinesisInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectKinesis
+}
+
+// EventBridgeInjectDatadogAttributeEnabled reports whether the Datadog trace context may be
+// written into EventBridge event details.
+func (c *Config) EventBridgeInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectEventBridge
+}
+
+// SQSInjectDatadogAttributeEnabled reports whether the Datadog trace context may be written into
+// SQS message attributes.
+func (c *Config) SQSInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectSQS
+}
+
+// SNSInjectDatadogAttributeEnabled reports whether the Datadog trace context may be written into
+// SNS message attributes.
+func (c *Config) SNSInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectSNS
+}
+
+// SFNInjectDatadogAttributeEnabled reports whether the Datadog trace context may be written into
+// the input of Step Functions executions.
+func (c *Config) SFNInjectDatadogAttributeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.injectSFN
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {
