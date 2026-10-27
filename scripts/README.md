@@ -91,7 +91,6 @@ test.sh - Run the tests for dd-trace-go
   -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
   -c | --contrib     - Run contrib tests
   --all              - Synonym for -l -a -i -c
-  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
   -t | --tools       - Install gotestsum and goimports
   -h | --help        - Print this help message
 

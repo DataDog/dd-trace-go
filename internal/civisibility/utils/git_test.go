@@ -180,6 +180,7 @@ func TestPackFiles(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	shas = shas[:min(len(shas), 5)]
 	packfiles := CreatePackFiles(shas, []string{})
+	t.Cleanup(func() { RemovePackFiles(packfiles) })
 	assert.NotEmpty(t, packfiles)
 }
 

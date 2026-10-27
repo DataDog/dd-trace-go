@@ -322,8 +322,7 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 	// (failed to even start, e.g. cmd.Err from a failed Windows extension
 	// lookup) is not, and CombinedOutput would otherwise return it silently
 	// alongside empty output.
-	var execErr *exec.Error
-	if errors.As(err, &execErr) {
+	if execErr, ok := errors.AsType[*exec.Error](err); ok {
 		t.Fatalf("run victim %q: %v", binary, execErr)
 	}
 	return out
