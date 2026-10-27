@@ -17,8 +17,20 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestContribRouter(t *testing.T) {
+	harness.Run(t, new(TestCaseContribRouter))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestOTelSemantics(t *testing.T) {
 	harness.Run(t, new(TestCaseOTelSemantics))
+}
+
+func TestPanic(t *testing.T) {
+	harness.Run(t, new(TestCasePanic))
 }
 
 func TestParentRoute(t *testing.T) {

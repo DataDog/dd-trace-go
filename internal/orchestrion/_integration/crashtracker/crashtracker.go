@@ -75,8 +75,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	cmd := spawnSubprocess(t, crashRoleOrch, tc.mockSrv.URL, &out)
 
 	err := cmd.Wait()
-	var execErr *exec.Error
-	if errors.As(err, &execErr) {
+	if execErr, ok := errors.AsType[*exec.Error](err); ok {
 		t.Fatalf("subprocess failed to start: %v", execErr)
 	}
 	// Any other non-zero exit is expected: the subprocess panics.

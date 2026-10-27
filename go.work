@@ -26,6 +26,7 @@ use (
 	./contrib/emicklei/go-restful.v3
 	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
+	./contrib/gin-gonic/gin/otelc
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
 	./contrib/go-chi/chi/otelc
@@ -48,6 +49,7 @@ use (
 	./contrib/google.golang.org/grpc
 	./contrib/google.golang.org/grpc/otelc
 	./contrib/gorilla/mux
+	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
@@ -57,6 +59,7 @@ use (
 	./contrib/jackc/pgx.v5
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
+	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
