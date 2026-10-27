@@ -111,6 +111,7 @@ workflow-gates:
   lambda-integration-tests.yml: []
   needs-triage.yml: []
   outdated-integrations.yml: []
+  pr-triage-board.yml: []
   pull-request-title-validation.yml: []
   smoke-tests.yml: []
   stale.yml: []
