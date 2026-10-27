@@ -7,10 +7,15 @@ package datastreams
 
 import (
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -70,4 +75,57 @@ func TestHTTPTransport(t *testing.T) {
 	assert.Len(t, fakeTransport.requests, 1)
 	r := fakeTransport.requests[0]
 	assert.Equal(t, "http://agent-address:8126/v0.1/pipeline_stats", r.URL.String())
+}
+
+func TestHTTPTransportExternalEnvironment(t *testing.T) {
+	t.Setenv("DD_EXTERNAL_ENV", "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759")
+	ft := fakeTransport{}
+	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
+	require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	require.Len(t, ft.requests, 1)
+	assert.Equal(t, "it-false,cn-nginx-webserver,pu-75a2b6d5-3949-4afb-ad0d-92ff0674e759", ft.requests[0].Header.Get("Datadog-External-Env"))
+}
+
+// The agent resolves container tags from Datadog-Entity-ID, which must carry the
+// prefixed entity ID ("ci-<cid>" or "in-<inode>") rather than the raw container ID.
+// EntityID is only populated on Linux, so this test is skipped elsewhere.
+func TestHTTPTransportEntityID(t *testing.T) {
+	eid := internal.EntityID()
+	if eid == "" {
+		t.Skip("no entity ID available on this host")
+	}
+	ft := fakeTransport{}
+	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &ft})
+	require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	require.Len(t, ft.requests, 1)
+	assert.Equal(t, eid, ft.requests[0].Header.Get("Datadog-Entity-ID"))
+}
+
+func TestHTTPTransportReusesConnection(t *testing.T) {
+	var newConns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"acknowledged":true,"error":""}`))
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	client := &http.Client{Transport: &http.Transport{}}
+	defer client.CloseIdleConnections()
+	transport := newHTTPTransport(agentURL, client)
+
+	const flushes = 5
+	for range flushes {
+		require.NoError(t, transport.sendPipelineStats(&StatsPayload{Env: "env-1"}))
+	}
+	assert.Equal(t, int32(1), newConns.Load(), "each pipeline_stats flush should reuse the keep-alive connection to the agent")
 }

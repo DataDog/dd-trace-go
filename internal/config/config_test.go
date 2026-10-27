@@ -1772,6 +1772,42 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 	})
 }
 
+func TestOTLPLogsTransportEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		env          map[string]string
+		grpcTarget   string
+		grpcInsecure bool
+		httpEndpoint string
+		httpInsecure bool
+	}{
+		{name: "default", grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "agent host", env: map[string]string{"DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "https agent", env: map[string]string{"DD_TRACE_AGENT_URL": "https://agent:8126"}, grpcTarget: "agent:4317", httpEndpoint: "agent:4318"},
+		{name: "unix agent", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket"}, grpcTarget: "localhost:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "unix agent with host", env: map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "agent"}, grpcTarget: "agent:4317", grpcInsecure: true, httpEndpoint: "agent:4318", httpInsecure: true},
+		{name: "http endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4317/ignored"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "grpc endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "grpc://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "https endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "other scheme endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "dns://collector:4317"}, grpcTarget: "collector:4317", grpcInsecure: true, httpEndpoint: "localhost:4318", httpInsecure: true},
+		{name: "endpoint without scheme", env: map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "//collector:4317"}, grpcTarget: "collector:4317", httpEndpoint: "localhost:4318", httpInsecure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg := loadConfig()
+			target, insecure := cfg.OTLPLogsGRPCEndpoint()
+			assert.Equal(t, tc.grpcTarget, target)
+			assert.Equal(t, tc.grpcInsecure, insecure)
+			endpoint, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
+			assert.Equal(t, tc.httpEndpoint, endpoint)
+			assert.Equal(t, "/v1/logs", path)
+			assert.Equal(t, tc.httpInsecure, insecure)
+		})
+	}
+}
+
 func TestOTLPLogsHeaders(t *testing.T) {
 	t.Run("empty when no headers configured", func(t *testing.T) {
 		assert.Empty(t, loadConfig().OTLPLogsHeaders())
@@ -2727,6 +2763,63 @@ func TestFeatureFlagsEnabled(t *testing.T) {
 	})
 }
 
+func TestFlagEvalTelemetryOptOutEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", false},
+		{"true", true},
+		{"false", false},
+		{"invalid", false},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FlagEvalTelemetryOptOutEnabled())
+		})
+	}
+}
+
+func TestFeatureFlagsExposuresDatadogLoggingEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExposuresDatadogLoggingEnabled())
+		})
+	}
+}
+
+func TestFeatureFlagsExperimentationOptOutMode(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value *string
+		want  string
+	}{
+		{"unset", nil, "disabled"},
+		{"empty", new(""), "disabled"},
+		{"disabled", new("disabled"), "disabled"},
+		{"immediate", new("immediate"), "immediate"},
+		{"normalization deferred to provider", new(" IMMEDIATE "), " IMMEDIATE "},
+		{"validation deferred to provider", new("unsupported"), "unsupported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const key = "DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE"
+			t.Setenv(key, "")
+			if tc.value == nil {
+				require.NoError(t, os.Unsetenv(key))
+			} else {
+				t.Setenv(key, *tc.value)
+			}
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExperimentationOptOutMode())
+		})
+	}
+}
+
 func TestFeatureFlagsConfigurationSource(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()
@@ -2940,19 +3033,20 @@ func TestRuntimeMetricsEndpoint(t *testing.T) {
 		env                            map[string]string
 		httpHost, httpPath, grpcTarget string
 		insecure                       bool
+		httpURL, grpcURL               string
 	}{
-		{"default", nil, "localhost:4318", "/v1/metrics", "localhost:4317", true},
-		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true},
-		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false},
-		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
-		{"unsupported agent URL scheme", map[string]string{"DD_TRACE_AGENT_URL": "tcp://agent:8126", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true},
-		{"unix agent URL", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "host"}, "localhost:4318", "/v1/metrics", "localhost:4317", true},
-		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true},
-		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false},
-		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true},
-		{"invalid signal", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "generic:4318", "/v1/metrics", "generic:4318", true},
-		{"both invalid", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://%", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
-		{"whitespace", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "   "}, "localhost:4318", "/v1/metrics", "localhost:4317", false},
+		{"default", nil, "localhost:4318", "/v1/metrics", "localhost:4317", true, "http://localhost:4318/v1/metrics", "http://localhost:4317"},
+		{"agent URL", map[string]string{"DD_TRACE_AGENT_URL": "http://agent:8126/v1.0/traces", "DD_AGENT_HOST": "host"}, "agent:4318", "/v1/metrics", "agent:4317", true, "http://agent:4318/v1/metrics", "http://agent:4317"},
+		{"https agent URL", map[string]string{"DD_TRACE_AGENT_URL": "https://agent"}, "agent:4318", "/v1/metrics", "agent:4317", false, "https://agent:4318/v1/metrics", "https://agent:4317"},
+		{"invalid agent URL", map[string]string{"DD_TRACE_AGENT_URL": "://invalid-url", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true, "http://host:4318/v1/metrics", "http://host:4317"},
+		{"unsupported agent URL scheme", map[string]string{"DD_TRACE_AGENT_URL": "tcp://agent:8126", "DD_AGENT_HOST": "host"}, "host:4318", "/v1/metrics", "host:4317", true, "http://host:4318/v1/metrics", "http://host:4317"},
+		{"unix agent URL", map[string]string{"DD_TRACE_AGENT_URL": "unix:///var/run/datadog/apm.socket", "DD_AGENT_HOST": "host"}, "localhost:4318", "/v1/metrics", "localhost:4317", true, "http://localhost:4318/v1/metrics", "http://localhost:4317"},
+		{"generic prefix", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/prefix/"}, "collector:4318", "/prefix/v1/metrics", "collector:4318/prefix", true, "http://collector:4318/prefix/v1/metrics", "http://collector:4318/prefix"},
+		{"signal exact", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318/prefix", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "https://signal:443/custom/"}, "signal:443", "/custom/", "signal:443/custom", false, "https://signal:443/custom/", "https://signal:443/custom"},
+		{"signal root", map[string]string{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://signal:4318"}, "signal:4318", "/", "signal:4318", true, "http://signal:4318/", "http://signal:4318"},
+		{"invalid signal", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://generic:4318", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "generic:4318", "/v1/metrics", "generic:4318", true, "http://generic:4318/v1/metrics", "http://generic:4318"},
+		{"both invalid", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://%", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://%"}, "localhost:4318", "/v1/metrics", "localhost:4317", false, "https://localhost:4318/v1/metrics", "https://localhost:4317"},
+		{"whitespace", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "   "}, "localhost:4318", "/v1/metrics", "localhost:4317", false, "https://localhost:4318/v1/metrics", "https://localhost:4317"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for k, v := range tc.env {
@@ -2965,6 +3059,8 @@ func TestRuntimeMetricsEndpoint(t *testing.T) {
 			assert.Equal(t, tc.insecure, insecure)
 			grpcTarget, _ := cfg.RuntimeMetricsGRPCEndpoint()
 			assert.Equal(t, tc.grpcTarget, grpcTarget)
+			assert.Equal(t, tc.httpURL, cfg.RuntimeMetricsHTTPURL())
+			assert.Equal(t, tc.grpcURL, cfg.RuntimeMetricsGRPCURL())
 		})
 	}
 }
