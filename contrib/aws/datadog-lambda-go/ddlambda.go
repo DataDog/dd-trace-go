@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
@@ -267,8 +268,8 @@ func (cfg *Config) toPayloadConfig() payload.Config {
 		pc.StripInjectedContext = cfg.StripInjectedContext
 	}
 	if !pc.StripInjectedContext {
-		enabled, _ := strconv.ParseBool(os.Getenv(StripContextEnabledEnvVar))
-		legacyEnabled, _ := strconv.ParseBool(os.Getenv(StripInjectedContextEnvVar))
+		enabled, _ := strconv.ParseBool(env.Get(StripContextEnabledEnvVar))
+		legacyEnabled, _ := strconv.ParseBool(env.Get(StripInjectedContextEnvVar))
 		pc.StripInjectedContext = enabled || legacyEnabled
 	}
 	return pc
