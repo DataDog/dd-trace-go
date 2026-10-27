@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/open-feature/go-sdk/openfeature"
@@ -114,6 +115,10 @@ type DatadogProvider struct {
 	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
+
+	// rawDataWarned records that this provider warned that debug logs include
+	// raw evaluation data. See warnRawDebugData.
+	rawDataWarned *atomic.Bool
 
 	// source is fixed at construction. // +checklocks:mu
 	source internalffe.Source
@@ -324,7 +329,8 @@ func newDatadogProviderWithSourceAndEVP(
 	}
 	// The tracer may enable debug logging after the provider is constructed.
 	// The hook checks the current level before formatting evaluation details.
-	hooks = append(hooks, newDebugLoggingHook())
+	rawDataWarned := new(atomic.Bool)
+	hooks = append(hooks, newDebugLoggingHook(rawDataWarned))
 
 	p := &DatadogProvider{
 		experimentationOptOutMode: config.ExperimentationOptOutMode,
@@ -336,9 +342,13 @@ func newDatadogProviderWithSourceAndEVP(
 		flagEvalMetricsHook:   evalMetricsHook,
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
+		rawDataWarned:         rawDataWarned,
 		source:                source,
 		eventCh:               make(chan openfeature.Event, eventChannelBufferSize),
 		configChange:          make(chan struct{}),
+	}
+	if log.DebugEnabled() {
+		warnRawDebugData(rawDataWarned)
 	}
 
 	return p
@@ -610,15 +620,21 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
 				// The outer select can still report success on this path, so
 				// without this a truncated teardown would be invisible.
-				log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
+				containLoggerPanic(func() {
+					log.Warn("openfeature: agentless poller did not stop before the shutdown context expired: %v", stopErr.Error()) //errtrack:ignore caller shutdown deadline
+				})
+			} else {
+				logOnboarding("agentless configuration source stopped")
 			}
 		}
 
 		p.mu.Lock()
-		defer p.mu.Unlock()
 		// Stop the exposure writer
-		if p.exposureWriter != nil {
-			p.exposureWriter.flush()
+		var flushed int
+		var flushErr, metricsErr error
+		hasExposureWriter := p.exposureWriter != nil
+		if hasExposureWriter {
+			flushed, flushErr = p.exposureWriter.flush()
 			p.exposureWriter.stop()
 		}
 		// Stop the EVP flag evaluation writer (nil when killswitch disabled).
@@ -627,7 +643,28 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		}
 		// Shut down flag evaluation metrics
 		if p.flagEvalMetricsHook != nil && p.flagEvalMetricsHook.metrics != nil {
-			_ = p.flagEvalMetricsHook.metrics.shutdown(ctx)
+			metricsErr = p.flagEvalMetricsHook.metrics.shutdown(ctx)
+		}
+		p.mu.Unlock()
+
+		// Logged after p.mu is released, and even if the outer select already
+		// gave up on ctx, since this goroutine still finishes the final flush.
+		if hasExposureWriter {
+			switch {
+			case flushErr != nil:
+				containLoggerPanic(func() {
+					log.Error("openfeature: failed to send %d pending exposure events at shutdown, dropping them: %v", flushed, flushErr.Error()) //errtrack:ignore remote request failure
+				})
+			case flushed == 0:
+				logOnboarding("shutdown found no pending exposure events to flush")
+			default:
+				logOnboarding("shutdown sent %d pending exposure event(s)", flushed)
+			}
+		}
+		if metricsErr != nil {
+			containLoggerPanic(func() {
+				log.Warn("openfeature: flag evaluation metrics did not shut down cleanly: %s", metricsErr.Error()) //errtrack:ignore remote request failure
+			})
 		}
 		done <- err
 	}()
@@ -669,7 +706,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
-	logResolution(flagKey, openfeature.Boolean, detail)
+	logResolution(p.rawDataWarned, flagKey, openfeature.Boolean, defaultValue, flatCtx, detail)
 	return detail
 }
 
@@ -699,7 +736,7 @@ func (p *DatadogProvider) StringEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
-	logResolution(flagKey, openfeature.String, detail)
+	logResolution(p.rawDataWarned, flagKey, openfeature.String, defaultValue, flatCtx, detail)
 	return detail
 }
 
@@ -748,7 +785,7 @@ func (p *DatadogProvider) FloatEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
-	logResolution(flagKey, openfeature.Float, detail)
+	logResolution(p.rawDataWarned, flagKey, openfeature.Float, defaultValue, flatCtx, detail)
 	return detail
 }
 
@@ -804,7 +841,7 @@ func (p *DatadogProvider) IntEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
-	logResolution(flagKey, openfeature.Int, detail)
+	logResolution(p.rawDataWarned, flagKey, openfeature.Int, defaultValue, flatCtx, detail)
 	return detail
 }
 
@@ -826,7 +863,7 @@ func (p *DatadogProvider) ObjectEvaluation(
 			FlagMetadata:    result.Metadata,
 		},
 	}
-	logResolution(flagKey, openfeature.Object, detail)
+	logResolution(p.rawDataWarned, flagKey, openfeature.Object, defaultValue, flatCtx, detail)
 	return detail
 }
 
@@ -857,7 +894,7 @@ func (p *DatadogProvider) evaluate(
 	// Capture the evaluation time once, at evaluation entry. It is used for allocation
 	// time-window checks and EVP first/last evaluation bounds.
 	evalNow := time.Now()
-	log.Debug("openfeature: evaluating flag %q", flagKey)
+	logOnboarding("evaluating flag %q", flagKey)
 
 	// Consent for this evaluation, stamped onto res.Metadata by the defer below. Stays false
 	// on paths with no configuration (cancelled context, provider not ready) — an evaluation
