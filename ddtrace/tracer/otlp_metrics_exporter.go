@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"encoding/json"
-	"fmt"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -61,13 +60,13 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 		contentType = otlpContentTypeProto
 	}
 	if err != nil {
-		return fmt.Errorf("otlp_metrics_exporter: marshal failed: %w", err)
+		return &statsSerializationError{format: "otlp", prefix: "otlp_metrics_exporter: marshal failed", err: err}
 	}
 
 	// No retry: a failed metrics interval is dropped rather than retried.
 	// Span metrics are lossy by design — the next flush interval replaces the lost window.
 	if sendErr := e.transport.send(body, contentType); sendErr != nil {
-		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error())
+		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error()) //errtrack:ignore exporter or network failure
 		return sendErr
 	}
 	log.Debug("otlp_metrics_exporter: exported %d bytes (%s) to %s", len(body), e.protocol, e.transport.endpoint)

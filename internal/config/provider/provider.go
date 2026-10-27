@@ -173,16 +173,9 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 	})
 }
 
-func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
-	return get(p, key, def, func(v string) (map[string]string, bool) {
-		m := parseMapString(v, delimiter)
-		return m, len(m) > 0
-	})
-}
-
-// GetMapWithParser is like GetMap but parses each source with parse. A source whose
-// value parses to an empty map is skipped.
-func (p *Provider) GetMapWithParser(key string, def map[string]string, parse func(string) map[string]string) map[string]string {
+// GetMap parses each source with parse. A source whose value parses to an empty
+// map is skipped.
+func (p *Provider) GetMap(key string, def map[string]string, parse func(string) map[string]string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
 		m := parse(v)
 		return m, len(m) > 0
@@ -245,11 +238,11 @@ func normalizeKey(key string) string {
 	return "DD_" + strings.ToUpper(key)
 }
 
-// parseMapString parses a string containing key-value pairs separated by comma or space.
+// ParseDDMap parses a string containing key-value pairs separated by comma or space.
 // It prioritizes the Datadog delimiter (:) over the OTel delimiter (=)
-func parseMapString(str string, delimiter string) map[string]string {
+func ParseDDMap(str string) map[string]string {
 	result := make(map[string]string)
-	internal.ForEachStringTag(str, delimiter, func(key, val string) {
+	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
 		result[key] = val
 	})
 	return result
