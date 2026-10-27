@@ -141,7 +141,7 @@ func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	defer func() {
 		err = file.Close()
 		if err != nil && !errors.Is(err, os.ErrClosed) {
-			logger.Warn("Error closing codeowners file: %s", err.Error())
+			logger.Warn("Error closing codeowners file: %s", err.Error()) //errtrack:ignore filesystem close failure
 		}
 	}()
 	return codeownerspkg.Parse(file)

@@ -6,6 +6,7 @@
 package datastreams
 
 import (
+	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -70,5 +71,25 @@ func (q *fastQueue) poll(timeout time.Duration) *processorInput {
 			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// drain passes fn every element pushed before the call, waiting until deadline
+// for writes that are still in progress. Elements pushed after the call starts
+// are left in the queue.
+func (q *fastQueue) drain(deadline time.Time, fn func(*processorInput)) {
+	end := q.writePos.Load()
+	for processed := int64(0); processed < q.size && q.readPos.Load() < end; {
+		p := q.pop()
+		if p == nil {
+			// A writer has reserved this slot but not stored its element yet.
+			if time.Now().After(deadline) {
+				return
+			}
+			runtime.Gosched()
+			continue
+		}
+		fn(p)
+		processed++
 	}
 }

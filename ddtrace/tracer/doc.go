@@ -186,6 +186,17 @@
 // DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
 // to false.
 //
+// # OTLP Trace Export
+//
+// When traces are exported over OTLP (OTEL_TRACES_EXPORTER=otlp), string global
+// tags (DD_TAGS, OTEL_RESOURCE_ATTRIBUTES, WithGlobalTag) are written once per
+// payload as resource attributes. The service, env and version tags are carried
+// as service.name, deployment.environment.name and service.version instead. A
+// span tag with the same key and value as a resource attribute is not repeated
+// as a span attribute; span values that differ from the resource are kept. The
+// resource is built at startup, so global tags changed later through Remote
+// Config are written on spans instead.
+//
 // # Disabling the OpenTelemetry SDK
 //
 // OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set

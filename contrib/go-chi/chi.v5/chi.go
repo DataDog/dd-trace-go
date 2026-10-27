@@ -9,6 +9,8 @@ package chi // import "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
 import (
 	"math"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 
@@ -41,6 +43,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
+		// Maintain a cache of recorded pattern chain -> unmatched.
+		// The cache is scoped to this handler because a
+		// chain is only meaningful relative to the router that recorded it.
+		var subrouterCache sync.Map
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
@@ -63,7 +69,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, span, cfg)
+				next = withAppsec(next, r, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -71,11 +77,29 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
-			span.SetTag(ext.HTTPRoute, routePattern)
+			rctx := chi.RouteContext(r.Context())
+			routePattern := rctx.RoutePattern()
+			if cfg.otelEnabled && unmatchedSubrouter(rctx, &subrouterCache) {
+				routePattern = ""
+			}
+			if routePattern != "" || !cfg.otelEnabled {
+				routePattern = cfg.modifyResourceName(routePattern)
+			}
+			if routePattern != "" || !cfg.otelEnabled {
+				span.SetTag(ext.HTTPRoute, routePattern)
+			}
+			if cfg.otelEnabled {
+				// Chi exposes the final route pattern only after dispatch, so endpoint tagging
+				// must happen here rather than when the span starts.
+				if endpoint, ok := httptrace.HTTPEndpoint(routePattern, r); ok {
+					span.SetTag(ext.HTTPEndpoint, endpoint)
+				}
+			}
 			var resourceName string
 			if cfg.resourceNamer != nil {
 				resourceName = cfg.resourceNamer(r)
+			} else if cfg.otelEnabled {
+				resourceName = httptrace.ServerSpanName(r.Method, routePattern)
 			} else {
 				resourceName = routePattern
 				if resourceName == "" {
@@ -86,4 +110,51 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}
+}
+
+// unmatchedSubrouter checks whether routing stopped at a Chi mount instead of an
+// endpoint. Inspect the recorded patterns so middleware path rewrites are respected.
+// The answer is cached: resolving it calls Routes(), which rebuilds the router's
+// whole route table, and catch-all patterns reach this on every request.
+func unmatchedSubrouter(rctx *chi.Context, cache *sync.Map) bool {
+	if rctx == nil || rctx.Routes == nil || len(rctx.RoutePatterns) == 0 {
+		return false
+	}
+	last := rctx.RoutePatterns[len(rctx.RoutePatterns)-1]
+	// Mount registers /prefix, /prefix/, and /prefix/*. Ordinary endpoints
+	// cannot be incomplete mounts and need no further lookup.
+	if !strings.HasSuffix(last, "/*") && rctx.RoutePath != "/" {
+		return false
+	}
+	// Key on the entire chain, joining the individual patterns with NUL
+	// (which route patterns never contain) to distinguish between an otherwise
+	// identical pattern with different chains.
+	// E.g. ["/api", "/*"] and ["/api/*"]
+	const patternSep = "\x00"
+	key := strings.Join(rctx.RoutePatterns, patternSep)
+	if unmatched, ok := cache.Load(key); ok {
+		return unmatched.(bool)
+	}
+	unmatched := true
+	routes := rctx.Routes
+	for _, pattern := range rctx.RoutePatterns {
+		var subroutes chi.Routes
+		for _, route := range routes.Routes() {
+			if route.Pattern == pattern {
+				subroutes = route.SubRoutes
+				break
+			}
+			// Chi omits a mount's /prefix and /prefix/ aliases from Routes().
+			if strings.HasSuffix(route.Pattern, "/*") && strings.TrimSuffix(route.Pattern, "/*") == strings.TrimSuffix(pattern, "/") {
+				subroutes = route.SubRoutes
+			}
+		}
+		if subroutes == nil {
+			unmatched = false
+			break
+		}
+		routes = subroutes
+	}
+	cache.Store(key, unmatched)
+	return unmatched
 }
