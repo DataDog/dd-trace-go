@@ -3,22 +3,10 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# Registers the tracing plugin on the *gorm.DB that gorm.Open returns, in every
-# package of the build, dependencies included. A call-site rewrite makes the
-# rewritten package import the contrib, so the contrib is initialized before a
-# gorm.Open in a package-level var or init runs, which a hook on gorm.Open does
-# not guarantee. It also skips the contrib's own Open, which registers the
-# callbacks itself, so those connections are traced once. gorm and its
-# subpackages are excluded: callbacks imports gorm, so rewriting it would
-# create an import cycle.
-#
-# Unlike orchestrion, a failed gorm.Open returns the *gorm.DB with the error, as
-# the uninstrumented call does.
-#
-# Each template takes the call's results as closure parameters, so the call
-# and its arguments are evaluated where the original call was, which matters
-# for a go or defer statement.
-
+# A call-site rule, not a hook on gorm.Open: the rewritten package imports the
+# contrib, so it is initialized before a gorm.Open in a package-level var or
+# init. gorm is excluded because rewriting it would create an import cycle,
+# and the contrib because its own Open registers the callbacks.
 open:
   target:
     - "**"
