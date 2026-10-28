@@ -12,6 +12,10 @@
 # imports the contrib, so the contrib is initialized before an engine created
 # in a package level variable. A hook gives no such order, so it can build the
 # middleware before the contrib's init runs.
+#
+# Each template takes the call's result as a closure parameter, so the call
+# and its arguments are evaluated where the original call was, which matters
+# for a go or defer statement.
 gin_new:
   target:
     - "**"
@@ -22,11 +26,10 @@ gin_new:
   do:
     - wrap_call:
         replace: |-
-          (func() *gin.Engine {
-            e := {{ . }}
+          (func(e *gin.Engine) *gin.Engine {
             e.Use(gintrace.Middleware(""))
             return e
-          })()
+          })({{ . }})
   imports:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
@@ -42,11 +45,10 @@ gin_default:
   do:
     - wrap_call:
         replace: |-
-          (func() *gin.Engine {
-            e := {{ . }}
+          (func(e *gin.Engine) *gin.Engine {
             e.Use(gintrace.Middleware(""))
             return e
-          })()
+          })({{ . }})
   imports:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2

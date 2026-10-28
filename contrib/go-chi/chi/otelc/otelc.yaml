@@ -10,6 +10,10 @@
 # creates sub-routers with NewRouter, which orchestrion does not wrap, and
 # NewRouter calls NewMux, so each call site is wrapped once. The contrib's own
 # tests create routers, and wrapping those would import the contrib into itself.
+#
+# Each template takes the call's result as a closure parameter, so the call
+# and its arguments are evaluated where the original call was, which matters
+# for a go or defer statement.
 
 new_mux:
   target:
@@ -21,11 +25,10 @@ new_mux:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
-            mux := {{ . }}
+          (func(mux *chi.Mux) *chi.Mux {
             mux.Use(chitrace.Middleware())
             return mux
-          })()
+          })({{ . }})
   imports:
     chi: github.com/go-chi/chi
     chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
@@ -40,11 +43,10 @@ new_router:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
-            mux := {{ . }}
+          (func(mux *chi.Mux) *chi.Mux {
             mux.Use(chitrace.Middleware())
             return mux
-          })()
+          })({{ . }})
   imports:
     chi: github.com/go-chi/chi
     chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
