@@ -41,7 +41,7 @@ func TestSelectContribModules(t *testing.T) {
 			want: []string{
 				"contrib/net/http",
 				"contrib/labstack/echo.v4",
-				"contrib/gorilla/mux",
+				"contrib/dimfeld/httptreemux.v5",
 			},
 			notWant: []string{"contrib/database/sql"},
 		},

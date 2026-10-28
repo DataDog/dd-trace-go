@@ -43,10 +43,16 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/gin-gonic/gin
+    contrib/gin-gonic/gin/otelc
     contrib/go-chi/chi
     contrib/go-chi/chi/otelc
     contrib/go-chi/chi.v5
     contrib/go-chi/chi.v5/otelc
+    contrib/gofiber/fiber.v2
+    contrib/gofiber/fiber.v2/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -59,10 +65,14 @@ env:
     contrib/go-redis/redis.v8/otelc
     contrib/redis/go-redis.v9
     contrib/redis/go-redis.v9/otelc
+    contrib/gorilla/mux
+    contrib/gorilla/mux/otelc
     contrib/labstack/echo.v4
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/valyala/fasthttp
+    contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -71,10 +81,14 @@ env:
     otelc-autostart
     net_http
     sql
+    gin
     chi
     chi.v5
+    fiber.v2
+    julienschmidt_httprouter
     redigo
     grpc
+    gorilla_mux
     99designs.gqlgen
     go-redis.v0
     go-redis.v7
@@ -82,6 +96,7 @@ env:
     go-redis.v9
     echo.v4
     echo.v5
+    valyala_fasthttp
 
 jobs:
   go-versions-matrix:

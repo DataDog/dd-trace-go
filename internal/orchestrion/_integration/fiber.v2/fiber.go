@@ -43,6 +43,12 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// ExpectedSpanCount pins the client span and a single Fiber server span, so a
+// second server span from fasthttp or a repeated wrap fails the test.
+func (*TestCase) ExpectedSpanCount() int {
+	return 2
+}
+
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	httpURL := "http://" + tc.addr + "/ping"
 	return trace.Traces{
