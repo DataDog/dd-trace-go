@@ -51,7 +51,7 @@ func BenchmarkBenchMCPSpanStart(b *testing.B) {
 		root, _, _ := spanStart("http.request", &shared, false, ServiceName("metrics-querier"))
 		root.context.setSamplingPriority(1, 0)
 		ctx := context.Background()
-		for d := 0; d < 24; d++ {
+		for d := range 24 {
 			if d == 12 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -78,7 +78,7 @@ func BenchmarkBenchMCPSpanStart(b *testing.B) {
 			case r < 17:
 				opts := []StartSpanOption{ChildOf(parent.context), withContext(deep),
 					ServiceName("metrics-querier"), SpanType("db"), ResourceName("fetch")}
-				for k := 0; k < 10+i%5; k++ {
+				for k := range 10 + i%5 {
 					opts = append(opts, Tag(fmt.Sprintf("tag.%d", k), "v"))
 				}
 				opts = append(opts, Measured())
