@@ -1,0 +1,174 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Call-site rules register each client the application builds, and the hooks
+# below trace registered clients only. The contrib is excluded because it
+# traces the clients it builds itself, and because this module imports it. The
+# rewritten package imports this module, so the contrib is initialized before
+# a client built in a package-level var or init.
+#
+# TODO: wrap_call requires the original call in the template, so it stays in a
+# branch that never runs. Remove the branch once wrap_call can replace a call
+# outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+kafkav2_new_consumer:
+  target:
+    - "**"
+    - not: "github.com/confluentinc/confluent-kafka-go/v2/kafka/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/**"
+  where:
+    function_call: github.com/confluentinc/confluent-kafka-go/v2/kafka.NewConsumer
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Consumer, error) {
+            if false {
+              return {{ . }}
+            }
+            __dd_c, __dd_err := kafkav2.NewConsumer(__dd_conf)
+            if __dd_c != nil {
+              kafkav2otelc.TraceConsumer(__dd_c, __dd_conf)
+            }
+            return __dd_c, __dd_err
+          })({{ .CallArgument 0 }})
+  imports:
+    kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
+    kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_new_producer:
+  target:
+    - "**"
+    - not: "github.com/confluentinc/confluent-kafka-go/v2/kafka/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/**"
+  where:
+    function_call: github.com/confluentinc/confluent-kafka-go/v2/kafka.NewProducer
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Producer, error) {
+            if false {
+              return {{ . }}
+            }
+            __dd_p, __dd_err := kafkav2.NewProducer(__dd_conf)
+            if __dd_p != nil {
+              kafkav2otelc.TraceProducer(__dd_p, __dd_conf)
+            }
+            return __dd_p, __dd_err
+          })({{ .CallArgument 0 }})
+  imports:
+    kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
+    kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+# A call-site rule cannot reach the receiver of a method call, so the client
+# methods are hooked where they are defined. kafka.Consumer.ReadMessage and
+# kafka.Consumer.Close call Poll, so ReadMessage needs no rule.
+kafkav2_consumer_poll:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Poll
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerPoll
+        after: AfterConsumerPoll
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_consumer_events:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Events
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerEvents
+        after: AfterConsumerEvents
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_consumer_commit:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Commit
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerCommit
+        after: AfterConsumerCommit
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_consumer_commit_message:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: CommitMessage
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerCommitMessage
+        after: AfterConsumerCommitMessage
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_consumer_commit_offsets:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: CommitOffsets
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerCommitOffsets
+        after: AfterConsumerCommitOffsets
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_consumer_close:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Close
+    recv: "*Consumer"
+  do:
+    - inject_hooks:
+        before: BeforeConsumerClose
+        after: AfterConsumerClose
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_producer_produce:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Produce
+    recv: "*Producer"
+  do:
+    - inject_hooks:
+        before: BeforeProducerProduce
+        after: AfterProducerProduce
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_producer_events:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Events
+    recv: "*Producer"
+  do:
+    - inject_hooks:
+        before: BeforeProducerEvents
+        after: AfterProducerEvents
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_producer_produce_channel:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: ProduceChannel
+    recv: "*Producer"
+  do:
+    - inject_hooks:
+        before: BeforeProducerProduceChannel
+        after: AfterProducerProduceChannel
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+
+kafkav2_producer_close:
+  target: github.com/confluentinc/confluent-kafka-go/v2/kafka
+  where:
+    func: Close
+    recv: "*Producer"
+  do:
+    - inject_hooks:
+        before: BeforeProducerClose
+        path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
