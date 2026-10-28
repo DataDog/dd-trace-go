@@ -43,6 +43,9 @@ func WrapRouter(router *httprouter.Router, opts ...RouterOption) *Router {
 
 // ServeHTTP implements [http.Handler].
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if instrumentation.OtelcEnabled() {
+		req = req.WithContext(traceMark(req.Context(), r.Router))
+	}
 	tw, treq, afterHandle, handled := r.BeforeHandle(w, req)
 	defer afterHandle()
 	if handled {
