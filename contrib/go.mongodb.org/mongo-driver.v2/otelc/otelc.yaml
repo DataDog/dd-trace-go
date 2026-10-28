@@ -19,6 +19,6 @@ mongo_v2_client:
     function_call: go.mongodb.org/mongo-driver/v2/mongo/options.Client
   do:
     - wrap_call:
-        replace: "{{ . }}.SetMonitor(mongotrace.NewMonitor())"
+        replace: "{{ . }}.SetMonitor(mongov2trace.NewMonitor())"
   imports:
-    mongotrace: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo
+    mongov2trace: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo
