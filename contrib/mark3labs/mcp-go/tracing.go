@@ -62,9 +62,10 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			if marshalErr != nil {
 				instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
 			}
+			_, redact := ctx.Value(redactToolOutputKey{}).(struct{})
 			var outputText string
 			if result != nil {
-				if _, redact := ctx.Value(redactToolOutputKey{}).(struct{}); redact {
+				if redact {
 					outputText = "[REDACTED]"
 				} else {
 					resultJSON, marshalErr := json.Marshal(result)
@@ -89,7 +90,7 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			if err != nil {
 				toolSpan.Finish(llmobs.WithError(err))
 			} else if result != nil && result.IsError {
-				toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+				toolSpan.Finish(llmobs.WithError(toolResultError(result, redact)))
 			} else {
 				toolSpan.Finish()
 			}
@@ -101,13 +102,56 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 	}
 }
 
+// toolResultError uses the result's first text content as the error message,
+// unless the tool output is redacted.
+func toolResultError(result *mcp.CallToolResult, redact bool) error {
+	if !redact {
+		for _, c := range result.Content {
+			switch tc := c.(type) {
+			case mcp.TextContent:
+				if tc.Text != "" {
+					return errors.New(tc.Text)
+				}
+			case *mcp.TextContent:
+				if tc != nil && tc.Text != "" {
+					return errors.New(tc.Text)
+				}
+			}
+		}
+	}
+	return errors.New("tool resulted in an error")
+}
+
 func newHooks() *hooks {
 	return &hooks{
 		spanCache: &sync.Map{},
 	}
 }
 
+// spanCacheKey returns id as a key for hooks.spanCache. JSON-RPC 2.0 allows
+// only a string or a number as a request ID. mcp-go does not validate the ID,
+// so a client can send an object or an array. These values are not comparable
+// and cause sync.Map to panic. For them, spanCacheKey returns false.
+// mcp-go's RequestId.UnmarshalJSON stores integral numbers as int64, and the
+// hooks receive the ID as any. Accept int64 and int so a numeric ID stays
+// traceable even if mcp-go starts passing RequestId.Value() into the hooks.
+func spanCacheKey(id any) (any, bool) {
+	switch id.(type) {
+	case string, float64, int64, int:
+		return id, true
+	default:
+		return nil, false
+	}
+}
+
 func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.InitializeRequest) {
+	key, ok := spanCacheKey(id)
+	if !ok {
+		// The client controls the ID value, so log only its type. The logger
+		// aggregates errors, so a client cannot fill the logs.
+		instr.Logger().Error("mcp-go: skipping initialize span: unsupported JSON-RPC request ID type %T", id)
+		return
+	}
 	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
 	clientName := request.Params.ClientInfo.Name
@@ -118,7 +162,7 @@ func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.Ini
 		instrmcp.MCPMethodTag:        request.Method,
 	}))
 
-	h.spanCache.Store(id, taskSpan)
+	h.spanCache.Store(key, taskSpan)
 	tagWithSessionID(ctx, taskSpan)
 }
 
@@ -130,7 +174,11 @@ func (h *hooks) onError(ctx context.Context, id any, method mcp.MCPMethod, messa
 	if method != mcp.MethodInitialize {
 		return
 	}
-	value, ok := h.spanCache.LoadAndDelete(id)
+	key, ok := spanCacheKey(id)
+	if !ok {
+		return
+	}
+	value, ok := h.spanCache.LoadAndDelete(key)
 	if !ok {
 		return
 	}
@@ -159,7 +207,11 @@ func tagWithSessionID(ctx context.Context, span llmobs.Span) {
 }
 
 func finishSpanWithIO[Req any, Res any](h *hooks, id any, request Req, result Res) {
-	value, ok := h.spanCache.LoadAndDelete(id)
+	key, ok := spanCacheKey(id)
+	if !ok {
+		return
+	}
+	value, ok := h.spanCache.LoadAndDelete(key)
 	if !ok {
 		return
 	}

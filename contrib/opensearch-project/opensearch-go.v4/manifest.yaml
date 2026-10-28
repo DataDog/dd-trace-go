@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/opensearch-project/opensearch-go/v4
+display_name: opensearch-go v4
+description: Instruments OpenSearch Go client requests for search, document indexing and retrieval, index management, and
+  cluster operations, recording request details and errors.
+packages:
+- name: github.com/opensearch-project/opensearch-go/v4
+category:
+- db.client
+systems:
+- opensearch
+creation_date: '2025-06-20'

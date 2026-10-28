@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/gin-gonic/gin
+display_name: Gin
+description: Traces inbound Gin HTTP requests through middleware (auto-injected by Orchestrion), with optional HTML render
+  spans, optional inferred API Gateway proxy or Pub/Sub push-delivery parent spans, and AppSec request/response body monitoring
+  when enabled.
+packages:
+- name: github.com/gin-gonic/gin
+category:
+- http.server
+- template.render
+systems: []
+creation_date: '2016-10-19'

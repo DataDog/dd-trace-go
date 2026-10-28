@@ -17,3 +17,12 @@ aspects:
           imports:
             echotrace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
           template: echotrace.Wrap({{ . }})
+
+  - id: NewWithConfig
+    join-point:
+      function-call: github.com/labstack/echo/v5.NewWithConfig
+    advice:
+      - wrap-expression:
+          imports:
+            echotrace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
+          template: echotrace.Wrap({{ . }})

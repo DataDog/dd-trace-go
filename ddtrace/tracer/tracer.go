@@ -293,12 +293,14 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	}
 
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
+		if err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
 		}
+		t.config.otelMeterProviderInstalled = installed
 	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
@@ -418,8 +420,16 @@ func (t *tracer) startAppSec() {
 	}
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.metaStructAvailable()))
 	appsec.Start(appsecopts...)
+}
+
+// metaStructAvailable reports whether spans can carry meta_struct to the backend. OTLP has no
+// meta_struct field: the OTLP exporter writes a meta_struct value as a JSON string attribute under
+// its own key, which Datadog does not read. Without meta_struct, App and API Protection writes the
+// _dd.appsec.json span tag, which OTLP ingestion keeps.
+func (t *tracer) metaStructAvailable() bool {
+	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
@@ -548,9 +558,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 	s.SetUser(id, opts...)
 }
 
-// payloadQueueSize is the buffer size of the trace channel.
-const payloadQueueSize = 1000
-
 func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
@@ -622,7 +629,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		config:           c,
 		otlpExportMode:   otlpExportMode,
 		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
+		out:              make(chan *chunk, c.internalConfig.PayloadQueueSize()),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
@@ -769,6 +776,9 @@ func (t *tracer) refreshAgentFeatures() {
 	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
 	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
 		log.Debug("agent info poll failed: %s", err.Error())
+		if decodeErr, ok := errors.AsType[*agentFeaturesDecodeError](err); ok {
+			telemetrylog.ReportError("Failed to decode agent info response", decodeErr.err)
+		}
 		// Keep last-known-good; a network or decode error is never evidence that
 		// v1 became unavailable.
 		return
@@ -1005,8 +1015,15 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // +checklocksignore — Initialization time, span not yet shared.
-func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) *Span {
+// It returns the started span, whether the span is the root of its trace, and
+// the service name of the parent span ("" when there is no parent).
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
 	var opts StartSpanConfig
+	// A caller passing N options is our best cheap signal for how many
+	// Tag-family options it might include; Tag uses this to size Tags on
+	// its first write instead of starting unsized and rehashing once the
+	// tag count grows past a small map's initial capacity.
+	opts.tagsHint = len(options)
 	for _, fn := range options {
 		if fn == nil {
 			continue
@@ -1097,8 +1114,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.setMetaInit("language", "go")
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	span.pprofCtxRestore = pprofContext
-	// setTags takes s.mu internally. Tags may override service name
-	// (ServiceName option), so the top-level check below runs after.
+	// setTags takes s.mu internally. Tags may override the service name
+	// (ServiceName option), so the span service must not be compared with the
+	// parent service until every mutation has been applied.
 	span.setTags(opts.Tags)
 	// The span snapshot is populated by tracer.StartSpan once all
 	// env/version/service-mapping mutations have been applied, so we
@@ -1107,14 +1125,36 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// sync until then.
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
+		// The root span of the trace is always a local root (top-level) span.
+		markTopLevel(span)
 	}
-	if isRootSpan || parentService != span.service {
-		// The span is the local root span.
-		span.setMetricInit(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.metrics, keyMeasured)
+	// The child top-level decision is deferred to StartSpan: the service name
+	// may still change there (default service, global tags, service mapping),
+	// and the span is a local root span only if its final service differs from
+	// its parent's. See https://github.com/DataDog/dd-trace-go/issues/5487.
+	return span, isRootSpan, parentService
+}
+
+// markTopLevel marks the span as a local root (top-level) span. It sets
+// _dd.top_level and removes the redundant _dd.measured tag, because every
+// top-level span is measured.
+// +checklocksignore — Initialization time, span not yet shared.
+func markTopLevel(s *Span) {
+	s.setMetricInit(keyTopLevel, 1)
+	// all top level spans are measured. So the measured tag is redundant.
+	delete(s.metrics, keyMeasured)
+}
+
+// markChildTopLevel marks a child span as top-level when its service differs
+// from its parent's service. StartSpan runs this decision after applying every
+// service mutation (default service, global tags, service mapping). The mock
+// tracer applies none of them, so it linknames this function to run the same
+// decision on the services from the span options alone.
+// +checklocksignore — Initialization time, span not yet shared.
+func markChildTopLevel(s *Span, isRootSpan bool, parentService string) {
+	if !isRootSpan && parentService != s.service {
+		markTopLevel(s)
 	}
-	return span
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
@@ -1130,7 +1170,7 @@ func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
-	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	span, isRootSpan, parentService := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
 	if ciVisibilityTracerType != "" {
 		setCIVisibilityTracerType(span, ciVisibilityTracerType)
 	}
@@ -1170,6 +1210,19 @@ func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options
 		delete(span.metrics, ext.Environment)
 		span.meta.Set(ext.Environment, cSnap.Env)
 	}
+	// Publish the resolved service to the context snapshot before the sampler
+	// runs. A custom Sampler may synchronously start a child span that reads
+	// this span's snapshot in spanStart; without this write the child would
+	// still see the empty, pre-default service of its parent and falsely
+	// compare services. The full snapshot is synced again at the end of
+	// StartSpan, after the pprof labels have been applied.
+	span.context.setSpanSnapshotService(span.service, span.serviceSource)
+	// Every service mutation (default service, service tags, global tags,
+	// service mapping) has been applied above, so the span service can now be
+	// compared with its parent's: a child span that ends up in a different
+	// service is the local root span (service entry point) of that service.
+	// See https://github.com/DataDog/dd-trace-go/issues/5487.
+	markChildTopLevel(span, isRootSpan, parentService)
 	// Apply the pprof labels before t.sample: a custom Sampler receives the span
 	// and may publish it to another goroutine, after which writing span fields
 	// here would race with that goroutine (e.g. SetTag or Finish).

@@ -98,6 +98,10 @@ Our CI pipeline includes several automated checks:
 - **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
 - **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
 
+#### Cache Pool Metrics Workflow
+
+- **Pool telemetry**: `cache-pool-metrics.yml` runs hourly and on manual dispatch. It snapshots the repository's shared Actions cache pool through the cache API (`scripts/citiming pool`) and submits `ci.cache.pool.*` gauges to Datadog: pool size and entry count per cache kind, workload, OS and ref type, total and (when readable) limit bytes, the eviction horizon, and the presence and age of default-branch seed entries. Submission is best-effort; the text snapshot stays in the job log as the record. See [scripts/README.md](./scripts/README.md) for the gauge definitions.
+
 ### Which checks run on a pull request
 
 Most workflows only run when a change could plausibly affect them. Two mechanisms
@@ -406,7 +410,11 @@ Upon each tracer release, new configuration keys are automatically tagged by our
 
 #### Overriding automatic test retries
 
-`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
+`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` explicitly overrides the automatic test retries setting returned by the CI Visibility backend. When the variable is unset or has an invalid boolean value, the tracer preserves the backend setting. Set it to `true` to enable automatic test retries or `false` to disable them regardless of the backend setting. When the override enables retries that the backend disabled, the backend response provides no retry counts, so the budget comes from `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` (default 5, ignored when duration-based retries are enabled; see below) and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` (default 1000).
+
+#### Duration-based automatic test retries
+
+`DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED=true` makes automatic test retries pick each test's retry count from the duration of its first execution, and `DD_CIVISIBILITY_FLAKY_RETRY_COUNT` is ignored. It has no effect unless automatic test retries are enabled, and `DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` still caps the session. The durations use the Early Flake Detection buckets, but with inclusive upper bounds: up to 5s, up to 10s, up to 30s, up to 5m, and slower. By default each bucket takes the backend's Early Flake Detection slow test retries; buckets the backend leaves empty or at zero use 10, 5, 3, and 2, and tests slower than five minutes get one retry. `DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES` only limits Early Flake Detection and does not change these counts. `DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS` sets the five counts directly as comma-separated integers from 1 to 20, in bucket order, for example `3,2,1,1,1`. An empty value is the same as unset; any other invalid value logs a warning and falls back to the counts above.
 
 #### Code coverage report flags
 
@@ -425,7 +433,7 @@ go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Auto-detection via tests
@@ -447,7 +455,7 @@ go run ./scripts/configinverter/main.go generate
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Handling related CI failures
@@ -483,7 +491,7 @@ make fix-modules
 make generate
 ```
 
-This is neccessary because dd-trace-go is a multi-module repository.
+This is necessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 

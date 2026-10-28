@@ -31,6 +31,11 @@
 //   - save result: classification per save event from job log markers:
 //     saved, exact_key_skip, conflict, error. A successful job does not prove
 //     a successful save.
+//   - restore source: where a cloudx restore came from, carried from the
+//     matched key by the setup action: exact, default (a default-branch
+//     fallback), branch, or none. Compare reports the counts per stratum
+//     alongside entries whose matched key and restored cross-check
+//     disagree.
 //   - job headline: baseline-weighted job-minutes. Each comparable stratum
 //     has weight w = its baseline success count; improvement is
 //     1 - sum(w*candidate p50) / sum(w*baseline p50). A stratum is
@@ -79,7 +84,7 @@ func main() {
 
 func dispatch(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: citiming <collect|compare> [flags]")
+		return errors.New("usage: citiming <collect|compare|pool> [flags]")
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
@@ -87,7 +92,9 @@ func dispatch(args []string) error {
 		return cmdCollect(rest)
 	case "compare":
 		return cmdCompare(rest)
+	case "pool":
+		return cmdPool(rest)
 	default:
-		return fmt.Errorf("unknown command %q (want collect or compare)", cmd)
+		return fmt.Errorf("unknown command %q (want collect, compare or pool)", cmd)
 	}
 }
