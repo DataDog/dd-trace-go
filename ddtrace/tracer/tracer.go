@@ -1085,6 +1085,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.start = startTime
 	span.integration = "manual"
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
+	span.meta.Reserve(len(opts.Tags) + 1)  // +1 for "language"
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 

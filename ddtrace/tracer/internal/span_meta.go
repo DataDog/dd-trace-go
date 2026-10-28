@@ -180,6 +180,14 @@ func (sm *SpanMeta) setPromoted(key, value string) bool {
 }
 
 // initMap allocates the flat map and inserts the first entry.
+// Reserve pre-sizes the flat map for n entries when it does not exist yet,
+// so a span that receives many tags does not rehash while they are set.
+func (sm *SpanMeta) Reserve(n int) {
+	if sm.m == nil && n > 8 {
+		sm.m = make(map[string]string, n)
+	}
+}
+
 func (sm *SpanMeta) initMap(key, value string) {
 	sm.m = make(map[string]string, metaMapHint)
 	sm.m[key] = value
