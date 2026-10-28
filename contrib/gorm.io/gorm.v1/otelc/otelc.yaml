@@ -14,6 +14,11 @@
 #
 # Unlike orchestrion, a failed gorm.Open returns the *gorm.DB with the error, as
 # the uninstrumented call does.
+#
+# Each template takes the call's results as closure parameters, so the call
+# and its arguments are evaluated where the original call was, which matters
+# for a go or defer statement.
+
 open:
   target:
     - "**"
@@ -24,8 +29,7 @@ open:
   do:
     - wrap_call:
         replace: |-
-          (func() (*gorm.DB, error) {
-            db, err := {{ . }}
+          (func(db *gorm.DB, err error) (*gorm.DB, error) {
             if err != nil {
               return db, err
             }
@@ -36,7 +40,7 @@ open:
               return nil, err
             }
             return db, nil
-          })()
+          })({{ . }})
   imports:
     gorm: gorm.io/gorm
     gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
