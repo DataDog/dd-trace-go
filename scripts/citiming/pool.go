@@ -201,7 +201,9 @@ func classifyPoolRef(ref, defaultBranch string) string {
 		return "pr"
 	case strings.HasPrefix(ref, "refs/heads/mq-working-branch-"):
 		return "mq"
-	case strings.HasPrefix(ref, "refs/tags/"):
+	// The release workflows run on release-v* branches; their entries
+	// are release scope just like tag refs.
+	case strings.HasPrefix(ref, "refs/heads/release-v"), strings.HasPrefix(ref, "refs/tags/"):
 		return "release"
 	default:
 		return "other"
@@ -462,6 +464,7 @@ func cmdPool(args []string) error {
 	flags := flagSet("pool")
 	repo := flags.String("repo", "", "OWNER/NAME")
 	format := flags.String("format", "text", "output format: text or datadog")
+	payloadFile := flags.String("payload-file", "", "also write the datadog payload of this snapshot to this file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -494,6 +497,18 @@ func cmdPool(args []string) error {
 	} else {
 		report.limitNote = "storage-limit endpoint: " + err.Error()
 		fmt.Fprintf(os.Stderr, "  ! storage limit unavailable: %v\n", err)
+	}
+	if *payloadFile != "" {
+		// Written before (or instead of) the text output and always from
+		// the same report, so the payload file and the logged text
+		// describe one snapshot.
+		data, err := json.MarshalIndent(buildPoolPayload(report, *repo), "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*payloadFile, append(data, '\n'), 0o644); err != nil {
+			return err
+		}
 	}
 	switch *format {
 	case "text":

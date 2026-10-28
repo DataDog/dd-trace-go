@@ -14,9 +14,9 @@ import (
 )
 
 // poolEntryJSON builds one /actions/caches entry.
-func poolEntryJSON(key, ref string, size int64, created, accessed string) string {
+func poolEntryJSON(id int64, key, ref string, size int64, created, accessed string) string {
 	entry := map[string]any{
-		"id":               1,
+		"id":               id,
 		"key":              key,
 		"ref":              ref,
 		"size_in_bytes":    size,
@@ -148,6 +148,8 @@ func TestClassifyPoolRef(t *testing.T) {
 		{"refs/pull/1/head", "main", "pr"},
 		{"refs/heads/mq-working-branch-abc123", "main", "mq"},
 		{"refs/tags/v2.11.0", "main", "release"},
+		{"refs/heads/release-v2.11.0", "main", "release"},
+		{"refs/heads/release-v2", "main", "release"},
 		{"", "main", "other"},
 	}
 	for _, c := range cases {
@@ -409,7 +411,7 @@ func TestPoolTextRendersSeedPresence(t *testing.T) {
 
 func TestPoolEntriesListedThroughCollectCacheSnapshot(t *testing.T) {
 	entries := []string{
-		poolEntryJSON("gitdb-1-abc", "refs/pull/1/merge", 1024, "2026-10-13T10:00:00Z", "2026-10-13T10:00:00Z"),
+		poolEntryJSON(7, "gitdb-1-abc", "refs/pull/1/merge", 1024, "2026-10-13T10:00:00Z", "2026-10-13T10:00:00Z"),
 	}
 	fake := &fakeClient{
 		repo:          "DataDog/dd-trace-go",
@@ -467,7 +469,7 @@ func TestFmtPoolAge(t *testing.T) {
 func TestPoolOmitsEvictionHorizonWhenNoAccessFound(t *testing.T) {
 	at := mustTime(t, "2026-10-13T12:00:00Z")
 	entries := []string{
-		poolEntryJSON("go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-"+
+		poolEntryJSON(9, "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-"+
 			"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744",
 			"refs/heads/main", giB, "2026-10-13T06:00:00Z", ""),
 	}
@@ -489,5 +491,34 @@ func TestPoolOmitsEvictionHorizonWhenNoAccessFound(t *testing.T) {
 	}
 	if text := renderPoolText(report, "DataDog/dd-trace-go"); !strings.Contains(text, "oldest last access: n/a") {
 		t.Errorf("text report does not mark the missing horizon:\n%s", text)
+	}
+}
+
+func TestCollectCacheSnapshotDedupesPagingShifts(t *testing.T) {
+	// The list endpoint pages without a stable sort; an entry can repeat
+	// across a page boundary while the pool churns. The snapshot must
+	// keep each entry once.
+	h := "60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380"
+	page := make([]string, 0, 3)
+	page = append(page,
+		poolEntryJSON(11, "gitdb-1-abc", "refs/pull/1/merge", 1024, "2026-10-13T10:00:00Z", "2026-10-13T10:00:00Z"),
+		poolEntryJSON(12, "go-cache-Linux-X64-ddtg-cx1-unit-core-c4dca83bdf2018a1-1.27.2-main-"+h+"-1",
+			"refs/heads/main", giB, "2026-10-13T06:00:00Z", "2026-10-13T10:00:00Z"),
+		// Entry 12 repeated, as the next page would after the inventory
+		// shifted mid-paging; only the key differs so the dedup cannot
+		// rely on the entry content.
+		poolEntryJSON(12, "go-cache-Linux-X64-ddtg-cx1-unit-core-c4dca83bdf2018a1-1.27.2-main-"+h+"-2",
+			"refs/heads/main", 2*giB, "2026-10-13T06:00:00Z", "2026-10-13T10:00:00Z"))
+	fake := &fakeClient{
+		repo:          "DataDog/dd-trace-go",
+		defaultBranch: "main",
+		cachesJSON:    poolCachesPage(page...),
+	}
+	snap, err := collectCacheSnapshot(fake, "2026-10-13T12:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Entries) != 2 {
+		t.Fatalf("snapshot kept %d entries, want 2 (the repeated ID dropped)", len(snap.Entries))
 	}
 }
