@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/binary"
@@ -38,10 +39,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -51,66 +54,68 @@ var contribIntegrations = map[string]struct {
 	name     string // user readable name for startup logs
 	imported bool   // true if the user has imported the integration
 }{
-	"github.com/99designs/gqlgen":                   {"gqlgen", false},
-	"github.com/aerospike/aerospike-client-go/v7":   {"Aerospike", false},
-	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
-	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
-	"github.com/bradfitz/gomemcache":                {"Memcache", false},
-	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
-	"cloud.google.com/go/pubsub/v2":                 {"Pub/Sub v2", false},
-	"github.com/cloudevents/sdk-go/v2":              {"CloudEvents SDK v2", false},
-	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
-	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
-	"database/sql":                                  {"SQL", false},
-	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", false},
-	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
-	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
-	"github.com/gin-gonic/gin":                      {"Gin", false},
-	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
-	"github.com/go-chi/chi":                         {"chi", false},
-	"github.com/go-chi/chi/v5":                      {"chi v5", false},
-	"github.com/go-pg/pg/v10":                       {"go-pg v10", false},
-	"github.com/go-redis/redis":                     {"Redis", false},
-	"github.com/go-redis/redis/v7":                  {"Redis v7", false},
-	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
-	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
-	"github.com/gocql/gocql":                        {"Cassandra", false},
-	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
-	"github.com/gomodule/redigo":                    {"Redigo", false},
-	"google.golang.org/api":                         {"Google API", false},
-	"google.golang.org/grpc":                        {"gRPC", false},
-	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
-	"gorm.io/gorm.v1":                               {"Gorm v1", false},
-	"github.com/graph-gophers/graphql-go":           {"Graph Gophers GraphQL", false},
-	"github.com/graphql-go/graphql":                 {"GraphQL-Go GraphQL", false},
-	"github.com/hashicorp/consul/api":               {"Consul", false},
-	"github.com/hashicorp/vault/api":                {"Vault", false},
-	"github.com/jackc/pgx/v5":                       {"PGX", false},
-	"github.com/jmoiron/sqlx":                       {"SQLx", false},
-	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
-	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
-	"github.com/labstack/echo/v4":                   {"echo v4", false},
-	"log/slog":                                      {"log/slog", false},
-	"github.com/mark3labs/mcp-go":                   {"MCP", false},
-	"github.com/miekg/dns":                          {"miekg/dns", false},
-	"net/http":                                      {"HTTP", false},
-	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
-	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
-	"github.com/redis/rueidis":                      {"Rueidis", false},
-	"github.com/rs/zerolog":                         {"Zerolog", false},
-	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
-	"github.com/IBM/sarama":                         {"IBM sarama", false},
-	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
-	"github.com/sirupsen/logrus":                    {"Logrus", false},
-	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
-	"github.com/tidwall/buntdb":                     {"BuntDB", false},
-	"github.com/twitchtv/twirp":                     {"Twirp", false},
-	"github.com/twmb/franz-go":                      {"franz-go", false},
-	"github.com/uptrace/bun":                        {"Bun", false},
-	"github.com/urfave/negroni":                     {"Negroni", false},
-	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
-	"github.com/valkey-io/valkey-go":                {"Valkey", false},
-	"go.uber.org/zap":                               {"Zap", false},
+	"github.com/99designs/gqlgen":                    {"gqlgen", false},
+	"github.com/aerospike/aerospike-client-go/v7":    {"Aerospike", false},
+	"github.com/aws/aws-sdk-go":                      {"AWS SDK", false},
+	"github.com/aws/aws-sdk-go-v2":                   {"AWS SDK v2", false},
+	"github.com/bradfitz/gomemcache":                 {"Memcache", false},
+	"cloud.google.com/go/pubsub.v1":                  {"Pub/Sub", false},
+	"cloud.google.com/go/pubsub/v2":                  {"Pub/Sub v2", false},
+	"github.com/cloudevents/sdk-go/v2":               {"CloudEvents SDK v2", false},
+	"github.com/confluentinc/confluent-kafka-go":     {"Kafka (confluent)", false},
+	"github.com/confluentinc/confluent-kafka-go/v2":  {"Kafka (confluent) v2", false},
+	"connectrpc.com/connect":                         {"Connect RPC", false},
+	"database/sql":                                   {"SQL", false},
+	"github.com/dimfeld/httptreemux/v5":              {"HTTP Treemux", false},
+	"github.com/elastic/go-elasticsearch/v6":         {"Elasticsearch v6", false},
+	"github.com/emicklei/go-restful/v3":              {"go-restful v3", false},
+	"github.com/gin-gonic/gin":                       {"Gin", false},
+	"github.com/globalsign/mgo":                      {"MongoDB (mgo)", false},
+	"github.com/go-chi/chi":                          {"chi", false},
+	"github.com/go-chi/chi/v5":                       {"chi v5", false},
+	"github.com/go-pg/pg/v10":                        {"go-pg v10", false},
+	"github.com/go-redis/redis":                      {"Redis", false},
+	"github.com/go-redis/redis/v7":                   {"Redis v7", false},
+	"github.com/go-redis/redis/v8":                   {"Redis v8", false},
+	"go.mongodb.org/mongo-driver":                    {"MongoDB", false},
+	"github.com/gocql/gocql":                         {"Cassandra", false},
+	"github.com/gofiber/fiber/v2":                    {"Fiber", false},
+	"github.com/gomodule/redigo":                     {"Redigo", false},
+	"google.golang.org/api":                          {"Google API", false},
+	"google.golang.org/grpc":                         {"gRPC", false},
+	"github.com/gorilla/mux":                         {"Gorilla Mux", false},
+	"gorm.io/gorm.v1":                                {"Gorm v1", false},
+	"github.com/graph-gophers/graphql-go":            {"Graph Gophers GraphQL", false},
+	"github.com/graphql-go/graphql":                  {"GraphQL-Go GraphQL", false},
+	"github.com/hashicorp/consul/api":                {"Consul", false},
+	"github.com/hashicorp/vault/api":                 {"Vault", false},
+	"github.com/jackc/pgx/v5":                        {"PGX", false},
+	"github.com/jmoiron/sqlx":                        {"SQLx", false},
+	"github.com/julienschmidt/httprouter":            {"HTTP Router", false},
+	"k8s.io/client-go/kubernetes":                    {"Kubernetes", false},
+	"github.com/labstack/echo/v4":                    {"echo v4", false},
+	"log/slog":                                       {"log/slog", false},
+	"github.com/mark3labs/mcp-go":                    {"MCP", false},
+	"github.com/miekg/dns":                           {"miekg/dns", false},
+	"net/http":                                       {"HTTP", false},
+	"gopkg.in/olivere/elastic.v5":                    {"Elasticsearch v5", false},
+	"github.com/redis/go-redis/v9":                   {"Redis v9", false},
+	"github.com/redis/rueidis":                       {"Rueidis", false},
+	"github.com/rs/zerolog":                          {"Zerolog", false},
+	"github.com/segmentio/kafka-go":                  {"Kafka v0", false},
+	"github.com/IBM/sarama":                          {"IBM sarama", false},
+	"github.com/Shopify/sarama":                      {"Shopify sarama", false},
+	"github.com/sirupsen/logrus":                     {"Logrus", false},
+	"github.com/syndtr/goleveldb":                    {"LevelDB", false},
+	"github.com/tidwall/buntdb":                      {"BuntDB", false},
+	"github.com/twitchtv/twirp":                      {"Twirp", false},
+	"github.com/twmb/franz-go":                       {"franz-go", false},
+	"github.com/uptrace/bun":                         {"Bun", false},
+	"github.com/urfave/negroni":                      {"Negroni", false},
+	"github.com/valyala/fasthttp":                    {"FastHTTP", false},
+	"github.com/valkey-io/valkey-go":                 {"Valkey", false},
+	"go.uber.org/zap":                                {"Zap", false},
+	"github.com/opensearch-project/opensearch-go/v4": {"opensearch-go v4", false},
 }
 
 // Supported trace protocols.
@@ -204,6 +209,10 @@ type config struct {
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
+
+	// otelMeterProviderInstalled reports whether OTel runtime metrics are
+	// exported by the MeterProvider the tracer installed.
+	otelMeterProviderInstalled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -235,11 +244,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		fn(c)
 	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
-	if c.httpClient == nil || orchestrion.Enabled() {
-		if orchestrion.Enabled() && c.httpClient != nil {
+	instrumented := orchestrion.Enabled() || otelc.Enabled()
+	if c.httpClient == nil || instrumented {
+		if instrumented && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
-			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+			log.Debug("Compile-time instrumentation is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
 		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
@@ -316,9 +326,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.internalConfig.Debug() {
-		log.SetLevel(log.LevelDebug)
-	}
+	// Always apply the level, so that restarting without one restores the default.
+	log.SetLevel(c.internalConfig.LogLevel())
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
 		// Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
@@ -551,6 +560,15 @@ func (a *atomicAgentFeatures) update(fn func(agentFeatures) agentFeatures) {
 // previous snapshot" during a poll.
 var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
 
+type agentFeaturesDecodeError struct {
+	err error
+}
+
+func (e *agentFeaturesDecodeError) Error() string {
+	return "decoding features: " + e.err.Error()
+}
+func (e *agentFeaturesDecodeError) Unwrap() error { return e.err }
+
 // fetchAgentFeatures queries the trace-agent's /info endpoint and parses the
 // response into an agentFeatures value. It returns an error if the request
 // fails or the response cannot be decoded; the caller should retain the
@@ -602,8 +620,17 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		} `json:"config"`
 	}
 	var info infoResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
-		return agentFeatures{}, fmt.Errorf("decoding features: %w", err)
+	// Read the response body before parsing it. A body read can fail mid-stream
+	// (connection reset, truncated response, cancellation), and those failures
+	// are transport errors, not malformed agent responses — they must stay
+	// local-only rather than reach Error Tracking as agentFeaturesDecodeError.
+	// Parsing the buffered bytes can then only fail for protocol reasons.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return agentFeatures{}, fmt.Errorf("reading features: %w", err)
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&info); err != nil {
+		return agentFeatures{}, &agentFeaturesDecodeError{err: err}
 	}
 	var features agentFeatures
 	features.DropP0s = info.ClientDropP0s
@@ -663,7 +690,12 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		if errors.Is(err, errAgentFeaturesNotSupported) {
 			return features, protoV04
 		}
-		log.Error("%s", err.Error())
+		if decodeErr, ok := errors.AsType[*agentFeaturesDecodeError](err); ok {
+			log.Error("%s", err.Error()) //errtrack:ignore reported by ReportError below
+			telemetrylog.ReportError("Failed to decode agent info response", decodeErr.err)
+		} else {
+			log.Error("%s", err.Error()) //errtrack:ignore agent or network discovery failure
+		}
 		return features, protoUnknown
 	}
 	if features.v1TracesAdvertised {
@@ -1021,13 +1053,13 @@ func WithAgentURL(agentURL string) StartOption {
 				u, _ = url.Parse(urlErr.URL)
 				if u != nil {
 					urlErr.URL = u.Redacted()
-					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
+					log.Warn("Fail to parse Agent URL: %s", urlErr.Err) //errtrack:ignore invalid user configuration
 					return
 				}
-				log.Warn("Fail to parse Agent URL: %s", err.Error())
+				log.Warn("Fail to parse Agent URL: %s", err.Error()) //errtrack:ignore invalid user configuration
 				return
 			}
-			log.Warn("Fail to parse Agent URL")
+			log.Warn("Fail to parse Agent URL") //errtrack:ignore invalid user configuration
 			return
 		}
 		switch u.Scheme {
@@ -1042,7 +1074,7 @@ func WithAgentURL(agentURL string) StartOption {
 				Path:   u.Path,
 			}, telemetry.OriginCode)
 		default:
-			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL) //errtrack:ignore invalid user configuration
 		}
 	}
 }
@@ -1306,6 +1338,22 @@ func WithPartialFlushing(numSpans int) StartOption {
 	}
 }
 
+// WithPayloadQueueSize sets the size of the buffer that holds finished traces
+// waiting to be encoded and sent to the agent. When the queue is full, new
+// traces are dropped and reported through the datadog.tracer.traces_dropped
+// metric with the reason:queue_full tag. The default is 1000. This can also
+// be configured by setting DD_TRACE_PAYLOAD_QUEUE_SIZE. Values outside the
+// range 1 to 10000 are ignored and the default is used: a value below 1
+// would leave the queue unbuffered and drop almost every trace, and each
+// queue slot retains a whole trace chunk until the worker drains it, so a
+// larger queue can retain large amounts of memory while the worker is
+// stalled.
+func WithPayloadQueueSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetPayloadQueueSize(size, internalconfig.OriginCode)
+	}
+}
+
 // WithStatsComputation enables or disables client-side stats computation,
 // allowing the tracer to compute stats from traces. This can reduce network
 // traffic to the Datadog Agent, and produce more accurate stats data.
@@ -1325,6 +1373,18 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
+	}
+}
+
+// WithDataStreamsIntakeBufferSize sets the number of slots in the Data Streams
+// Monitoring processor's input ring buffer. Once full, new checkpoints and
+// Kafka offsets overwrite the oldest unread ones, so raising this value
+// trades memory for tolerance to bursts or a slow agent. This can also be
+// configured by setting DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. Non-positive
+// values are ignored.
+func WithDataStreamsIntakeBufferSize(size int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDataStreamsIntakeBufferSize(size, internalconfig.OriginCode)
 	}
 }
 
@@ -1394,7 +1454,15 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]any{}
+			// Go maps preallocate group storage only for a hint above 8,
+			// the runtime's group width. At or below 8, an unsized make is
+			// allocation-identical and keeps the compiler's makemap_small
+			// fast path, so presizing would only add call overhead.
+			if cfg.tagsHint > 8 {
+				cfg.Tags = make(map[string]any, cfg.tagsHint)
+			} else {
+				cfg.Tags = make(map[string]any)
+			}
 		}
 		cfg.Tags[k] = v
 	}

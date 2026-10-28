@@ -77,7 +77,7 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	// Extract client info from params if available
 	if params := req.GetParams(); params != nil {
-		if initParams, ok := params.(*mcp.InitializeParams); ok {
+		if initParams, ok := params.(*mcp.InitializeParams); ok && initParams != nil && initParams.ClientInfo != nil {
 			clientName := initParams.ClientInfo.Name
 			clientVersion := initParams.ClientInfo.Version
 			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
@@ -152,9 +152,18 @@ func finishSpanWithIO[S textIOSpan](span S, method string, req mcp.Request, outp
 	if err != nil {
 		span.Finish(llmobs.WithError(err))
 	} else if toolResult, ok := output.(*mcp.CallToolResult); ok && toolResult != nil && toolResult.IsError {
-		// Use generic error message since details are already in the output field
-		span.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+		span.Finish(llmobs.WithError(toolResultError(toolResult)))
 	} else {
 		span.Finish()
 	}
+}
+
+// toolResultError uses the result's first text content as the error message.
+func toolResultError(result *mcp.CallToolResult) error {
+	for _, c := range result.Content {
+		if tc, ok := c.(*mcp.TextContent); ok && tc != nil && tc.Text != "" {
+			return errors.New(tc.Text)
+		}
+	}
+	return errors.New("tool resulted in an error")
 }

@@ -93,6 +93,10 @@ jobs:
     if: needs.set-up.outputs.has-contribs == 'true'
     runs-on:
       group: "APM Larger Runners"
+    # Without this the job inherits GitHub's 360-minute default, so a hang (for
+    # example in docker compose up) burns six hours of a larger runner and holds
+    # the merge queue. A healthy chunk takes under 22 minutes (p99 about 12).
+    timeout-minutes: 45
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml
@@ -213,8 +217,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/trace-check-results
-          RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
-          curl -s -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
+          RESPONSE_CODE=$(curl -s --retry 5 --retry-delay 2 --retry-connrefused -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+          curl -fsS --retry 5 --retry-delay 2 --retry-connrefused -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
           echo "$RESPONSE_CODE" > /tmp/trace-check-results/response_code-${{ strategy.job-index }}.txt
           echo "APM Test Agent Check Traces Summary Results:"
           jq "." /tmp/trace-check-results/summary-${{ strategy.job-index }}.json

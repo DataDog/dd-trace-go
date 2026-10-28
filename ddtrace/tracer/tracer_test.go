@@ -232,6 +232,18 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
+	t.Run("otel_sdk_disabled", func(t *testing.T) {
+		t.Setenv("OTEL_SDK_DISABLED", "true")
+		Start()
+		defer Stop()
+		if _, ok := getGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := getGlobalTracer().(*NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
 	t.Run("deadlock/api", func(_ *testing.T) {
 		Stop()
 		Stop()
@@ -877,6 +889,118 @@ func TestTracerStartChildSpan(t *testing.T) {
 	})
 }
 
+func TestSpanTopLevelServiceResolution(t *testing.T) {
+	t.Run("empty-service", func(t *testing.T) {
+		// A child span started with an explicitly empty service name gets the
+		// tracer's default service, the same service as its parent. It must
+		// not be marked top-level and must keep _dd.measured.
+		tracer, err := newTracer(WithService("connect.test"))
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent")
+		child := tracer.StartSpan("child.empty_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName(""),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "connect.test", child.service)
+		assert.NotContains(t, child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, child.metrics[keyMeasured])
+	})
+
+	t.Run("empty-service-other-parent-service", func(t *testing.T) {
+		// When the parent runs a different service than the tracer default, a
+		// child with an empty service name ends up in the default service. It
+		// is the entry point of that service and must be top-level.
+		tracer, err := newTracer(WithService("default-service"))
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("parent-service"))
+		child := tracer.StartSpan("child.empty_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName(""),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "default-service", child.service)
+		assert.Equal(t, 1.0, child.metrics[keyTopLevel])
+		assert.NotContains(t, child.metrics, keyMeasured)
+	})
+
+	t.Run("service-mapping", func(t *testing.T) {
+		// A child explicitly started with a service name that the tracer maps
+		// to the parent's (already mapped) service ends up in the same service
+		// as its parent. It must not be marked top-level.
+		tracer, err := newTracer(
+			WithService("connect.test"),
+			WithServiceMapping("map.me", "mapped-service"),
+		)
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("map.me"))
+		child := tracer.StartSpan("child.mapped_service",
+			ChildOf(parent.Context()),
+			Measured(),
+			ServiceName("map.me"),
+		)
+		child.Finish()
+		parent.Finish()
+
+		assert.Equal(t, "mapped-service", parent.service)
+		assert.Equal(t, "mapped-service", child.service)
+		assert.NotContains(t, child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, child.metrics[keyMeasured])
+	})
+
+	t.Run("reentrant-sampler", func(t *testing.T) {
+		// A custom sampler may synchronously start a child span while the
+		// parent is still being started. The child must read the parent's
+		// resolved service, not the empty service from the parent's
+		// not-yet-published snapshot.
+		sampler := &childStartingSampler{}
+		tracer, err := newTracer(WithService("connect.test"), WithSampler(sampler))
+		require.NoError(t, err)
+		defer tracer.Stop()
+		sampler.tr = tracer
+
+		parent := tracer.StartSpan("parent")
+		parent.Finish()
+		require.NotNil(t, sampler.child)
+
+		assert.Equal(t, "connect.test", sampler.child.service)
+		assert.NotContains(t, sampler.child.metrics, keyTopLevel)
+		assert.Equal(t, 1.0, sampler.child.metrics[keyMeasured])
+	})
+}
+
+// childStartingSampler starts a child span of every span it samples. It is
+// used to test spans that are started while their parent is still being
+// started.
+type childStartingSampler struct {
+	tr         *tracer
+	child      *Span
+	reentrancy bool
+}
+
+func (s *childStartingSampler) Sample(span *Span) bool {
+	if s.reentrancy || s.tr == nil {
+		return true
+	}
+	s.reentrancy = true
+	s.child = s.tr.StartSpan("child.reentrant", ChildOf(span.Context()), Measured())
+	s.child.Finish()
+	s.reentrancy = false
+	return true
+}
+
 func TestTracerBaggagePropagation(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer()
@@ -1423,7 +1547,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	// tracer, so all spans from both tracers end up on tracer1's worker.
 	setGlobalTracer(tracer1)
 
-	count := payloadQueueSize / 3
+	count := internalconfig.DefaultPayloadQueueSize / 3
 
 	for range count {
 		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
@@ -1473,6 +1597,56 @@ func TestOTLPExportMode(t *testing.T) {
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
+}
+
+func TestMetaStructAvailable(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		agentMetaStruct bool
+		otlpExportMode  bool
+		want            bool
+	}{
+		{name: "agent supports meta_struct", agentMetaStruct: true, want: true},
+		{name: "agent supports meta_struct but OTLP export", agentMetaStruct: true, otlpExportMode: true},
+		{name: "agent without meta_struct"},
+		{name: "agent without meta_struct and OTLP export", otlpExportMode: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &tracer{config: &config{}, otlpExportMode: tc.otlpExportMode}
+			tr.config.agent.store(agentFeatures{metaStructAvailable: tc.agentMetaStruct})
+			assert.Equal(t, tc.want, tr.metaStructAvailable())
+		})
+	}
+}
+
+// TestMetaStructAvailableAtStartup builds real unstarted tracers. It checks
+// that the startup path sets otlpExportMode and the agent features as the
+// meta_struct decision expects.
+func TestMetaStructAvailableAtStartup(t *testing.T) {
+	t.Run("OTLP export, agent unreachable", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		tr, err := newUnstartedTracer(WithAgentAddr("127.0.0.1:1"))
+		require.NoError(t, err)
+		defer tr.Stop()
+		assert.True(t, tr.otlpExportMode)
+		assert.False(t, tr.metaStructAvailable())
+	})
+
+	// CI Visibility is selected before OTLP, so the OTLP writer stays off.
+	// The agent value then decides.
+	for _, agentMetaStruct := range []bool{true, false} {
+		t.Run(fmt.Sprintf("CI Visibility with OTLP configured, agent meta_struct %t", agentMetaStruct), func(t *testing.T) {
+			t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+			tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), func(c *config) {
+				c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.agent.store(agentFeatures{metaStructAvailable: agentMetaStruct})
+			assert.False(t, tr.otlpExportMode)
+			assert.Equal(t, agentMetaStruct, tr.metaStructAvailable())
+		})
+	}
 }
 
 func TestOTLPSpanMetricsUseOTLPSenderWithAgentTraceWriter(t *testing.T) {
@@ -1765,7 +1939,7 @@ func TestOTLPExportModeSpanEvents(t *testing.T) {
 	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
 
 	// convertSpan emits a native OTLP event carrying its attributes.
-	otlp := convertSpan(s, "svc", false)
+	otlp := convertSpan(s, "svc", false, nil)
 	assert.Len(otlp.Events, 1)
 	assert.Equal("exception", otlp.Events[0].Name)
 	assert.NotEmpty(otlp.Events[0].Attributes)
@@ -2021,7 +2195,7 @@ func TestTracerRace(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	total := payloadQueueSize / 3
+	total := cap(tracer.out) / 3
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -2126,7 +2300,7 @@ func TestWorker(t *testing.T) {
 		assert.Nil(t, err)
 		defer stop()
 
-		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		n := cap(tracer.out) * 10 // put more traces than the chan size, on purpose
 		for range n {
 			root := tracer.newRootSpan("pylons.request", "pylons", "/")
 			child := tracer.newChildSpan("redis.command", root)
@@ -2136,7 +2310,7 @@ func TestWorker(t *testing.T) {
 
 		flush(-1)
 		synctest.Wait() // wait for writer to process the tick and flush queued traces
-		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+		assert.GreaterOrEqual(t, transport.Len(), cap(tracer.out))
 	})
 }
 
@@ -2170,11 +2344,10 @@ func TestPushTrace(t *testing.T) {
 
 	oldLvl := log.GetLevel()
 	defer func() { log.SetLevel(oldLvl) }()
-	log.SetLevel(log.LevelDebug)
 
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
-	tracer, err := newUnstartedTracer()
+	tracer, err := newUnstartedTracer(WithDebugMode(true))
 	assert.Nil(err)
 	defer tracer.Stop()
 	trace := []*Span{
@@ -2196,11 +2369,11 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize * 2
+	many := cap(tracer.out) * 2
 	for i := range many {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
-	assert.Len(tracer.out, payloadQueueSize)
+	assert.Len(tracer.out, cap(tracer.out))
 	log.Flush()
 	assert.True(len(tp.Logs()) >= 1)
 }
@@ -2766,25 +2939,52 @@ func BenchmarkStartSpan(b *testing.B) {
 // using the plain Tag/ServiceName/ResourceName option API, and it crosses
 // Go's small-map (8-bucket) growth threshold, making it a baseline for
 // evaluating future changes to how spanStart/Tag size the per-span tag map.
+//
+// The child cases pin the overcount trade-off of spanStart's len(options)
+// hint: StartSpanFromContext appends ChildOf and withContext after the
+// caller's options, so 7 and 8 Tag options reach spanStart as 9 and 10.
+// The hint presizes the tag map past the real entry count, and since 7 and
+// 8 entries fit an unsized map's initial group, these cases pay the
+// presized allocation without a rehash to avoid. They show the cost of
+// that accepted trade-off next to the 9-tag win.
 func BenchmarkStartSpanManyTags(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
-	assert.Nil(b, err)
-	defer stop()
-
-	b.ResetTimer()
-	for b.Loop() {
-		tracer.StartSpan("valkey.command",
-			Tag("component", "valkey-io/valkey-go"),
-			Tag("span.kind", "client"),
-			Tag("db.system", "valkey"),
-			Tag("out.host", "127.0.0.1"),
-			Tag("out.port", "6379"),
-			Tag("out.db", "0"),
-			Tag("resource.name", "GET"),
-			Tag("db.user", "default"),
-			Tag("valkey.raw_command", "GET foo"),
-		)
+	tags := []StartSpanOption{
+		Tag("component", "valkey-io/valkey-go"),
+		Tag("span.kind", "client"),
+		Tag("db.system", "valkey"),
+		Tag("out.host", "127.0.0.1"),
+		Tag("out.port", "6379"),
+		Tag("out.db", "0"),
+		Tag("resource.name", "GET"),
+		Tag("db.user", "default"),
+		Tag("valkey.raw_command", "GET foo"),
 	}
+
+	b.Run("9-tags", func(b *testing.B) {
+		tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+		assert.Nil(b, err)
+		defer stop()
+
+		b.ResetTimer()
+		for b.Loop() {
+			tracer.StartSpan("valkey.command", tags...)
+		}
+	})
+
+	child := func(b *testing.B, n int) {
+		tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+		assert.Nil(b, err)
+		defer stop()
+		parent := tracer.StartSpan("valkey.client")
+		ctx := ContextWithSpan(context.Background(), parent)
+
+		b.ResetTimer()
+		for b.Loop() {
+			StartSpanFromContext(ctx, "valkey.command", tags[:n]...)
+		}
+	}
+	b.Run("7-tags-child", func(b *testing.B) { child(b, 7) })
+	b.Run("8-tags-child", func(b *testing.B) { child(b, 8) })
 }
 
 func BenchmarkStartSpanConcurrent(b *testing.B) {
@@ -3684,8 +3884,8 @@ func TestNoopTracerStartSpan(t *testing.T) {
 	undo := log.UseLogger(customLogger{l: llog.New(w, "", llog.LstdFlags)})
 	defer undo()
 
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelDebug)
-	defer log.SetLevel(log.LevelWarn)
 
 	StartSpan("abcd")
 

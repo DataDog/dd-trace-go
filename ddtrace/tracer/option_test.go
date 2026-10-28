@@ -461,7 +461,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 60, len(cfg.integrations))
+		assert.Equal(t, 62, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -617,6 +617,62 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.False(t, c.internalConfig.Debug())
+		})
+		t.Run("otel-env-threshold", func(t *testing.T) {
+			for _, tc := range []struct {
+				otel  string
+				want  log.Level
+				lines int
+			}{
+				{otel: "info", want: log.LevelInfo, lines: 2},
+				{otel: "warn", want: log.LevelWarn, lines: 1},
+				{otel: "error", want: log.LevelError, lines: 0},
+				{otel: "invalid", want: log.LevelInfo, lines: 2},
+			} {
+				t.Run(tc.otel, func(t *testing.T) {
+					defer log.SetLevel(log.GetLevel())
+					log.SetLevel(log.LevelDebug)
+					t.Setenv("OTEL_LOG_LEVEL", tc.otel)
+					c, err := newTestConfig()
+					assert.NoError(t, err)
+					assert.False(t, c.internalConfig.Debug())
+					assert.Equal(t, tc.want, log.GetLevel())
+
+					rl := new(log.RecordLogger)
+					defer log.UseLogger(rl)()
+					log.Info("info message")
+					log.Warn("warn message")
+					assert.Len(t, rl.Logs(), tc.lines)
+				})
+			}
+		})
+		t.Run("dd-debug-overrides-otel-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			c, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.True(t, c.internalConfig.Debug())
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+		})
+		t.Run("restart-restores-default-threshold", func(t *testing.T) {
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("OTEL_LOG_LEVEL", "error")
+			_, err := newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelError, log.GetLevel())
+
+			t.Setenv("OTEL_LOG_LEVEL", "")
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+
+			_, err = newTestConfig(WithDebugMode(true))
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelDebug, log.GetLevel())
+			_, err = newTestConfig()
+			assert.NoError(t, err)
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
 		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
@@ -1143,6 +1199,79 @@ func TestTraceRetry(t *testing.T) {
 	})
 }
 
+func TestPayloadQueueSize(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	// Reading DD_TRACE_PAYLOAD_QUEUE_SIZE goes through internal/config's
+	// provider, whose env source reads via internal/env (never os.Getenv).
+	t.Run("env var", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, 2000, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("env var sets queue capacity", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		assert.Equal(t, 2000, cap(tr.out))
+	})
+	// The channel allocation in newUnstartedTracer panics with
+	// "makechan: size out of range" for unbounded values, so the config
+	// must clamp before it reaches make(chan *chunk, ...).
+	t.Run("env var above max keeps default capacity", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "1000000000000")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, cap(tr.out))
+	})
+	t.Run("env var below 1 falls back to default", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "0")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("non-numeric env var falls back to default", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "one-thousand")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("env var above max falls back to default", func(t *testing.T) {
+		// A value this large would panic with "makechan: size out of range".
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "1000000000000")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(2500))
+		assert.NoError(t, err)
+		assert.Equal(t, 2500, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option overrides env var", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PAYLOAD_QUEUE_SIZE", "2000")
+		c, err := newTestConfig(WithPayloadQueueSize(2500))
+		assert.NoError(t, err)
+		assert.Equal(t, 2500, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option below 1 falls back to default", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(0))
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+	t.Run("option above max falls back to default", func(t *testing.T) {
+		c, err := newTestConfig(WithPayloadQueueSize(internalconfig.MaxPayloadQueueSize + 1))
+		assert.NoError(t, err)
+		assert.Equal(t, internalconfig.DefaultPayloadQueueSize, c.internalConfig.PayloadQueueSize())
+	})
+}
+
 func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
 		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
@@ -1394,16 +1523,15 @@ func TestStartWithLink(t *testing.T) {
 	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
-func TestOtelResourceAtttributes(t *testing.T) {
-	t.Run("max 10", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		globalTags := c.internalConfig.GlobalTags()
-		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
-		assert.Len(globalTags, 11)
-	})
+func TestOtelResourceAttributes(t *testing.T) {
+	t.Setenv("DD_TAGS", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	tags := c.internalConfig.GlobalTags()
+	for i := 1; i <= 12; i++ {
+		assert.Equal(t, fmt.Sprintf("val%d", i), tags[fmt.Sprintf("tag%d", i)])
+	}
 }
 
 func TestTagSeparators(t *testing.T) {
@@ -1605,12 +1733,16 @@ func TestEnvConfig(t *testing.T) {
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing")
-		assert := assert.New(t)
-		c, err := newTestConfig()
-		assert.NoError(err)
+		for _, key := range []string{"deployment.environment.name", "deployment.environment"} {
+			t.Run(key, func(t *testing.T) {
+				t.Setenv("OTEL_RESOURCE_ATTRIBUTES", key+"=testing")
+				assert := assert.New(t)
+				c, err := newTestConfig()
+				assert.NoError(err)
 
-		assert.Equal("testing", c.internalConfig.Env())
+				assert.Equal("testing", c.internalConfig.Env())
+			})
+		}
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1628,7 +1760,7 @@ func TestEnvConfig(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(c.internalConfig.Env(), "")
 
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
 		assert.Equal("testing0", c.internalConfig.Env())
@@ -2004,6 +2136,34 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.internalConfig.StatsComputationEnabled())
+	})
+}
+
+func TestWithDataStreamsIntakeBufferSize(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(500))
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", "500")
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.Equal(500, c.internalConfig.DataStreamsIntakeBufferSize())
+	})
+	t.Run("non-positive-ignored", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithDataStreamsIntakeBufferSize(0))
+		assert.NoError(err)
+		assert.Equal(10000, c.internalConfig.DataStreamsIntakeBufferSize())
 	})
 }
 

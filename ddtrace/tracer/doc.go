@@ -165,12 +165,71 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # Payload Queue Size
+//
+// Finished traces wait in an in-process queue before being encoded and sent to
+// the agent. When the queue is full, new traces are dropped and reported through
+// the datadog.tracer.traces_dropped metric with the reason:queue_full tag. The
+// queue's buffer size defaults to 1000 and can be changed with
+// tracer.WithPayloadQueueSize or the DD_TRACE_PAYLOAD_QUEUE_SIZE environment
+// variable. Values outside the range 1 to 10000 are rejected (the default
+// is kept): a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and each slot above that retains a whole trace chunk until the
+// worker drains it, so a larger queue can retain large amounts of memory
+// while the worker is stalled.
+//
+// # Data Streams Monitoring Intake Buffer Size
+//
+// The Data Streams Monitoring processor holds incoming checkpoints and Kafka
+// offsets in a fixed-size ring buffer. When the buffer is full, new entries
+// overwrite the oldest unread ones, and the drop count is reported on the
+// datadog.datastreams.processor.dropped_payloads metric, split by cause into
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall. Raise the
+// buffer size to trade memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots.
+//
 // # OpenTelemetry Semantic Conventions
 //
 // DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
 // conventions, forces trace export through OTLP, and overrides
 // DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
 // to false.
+//
+// # OTLP Trace Export
+//
+// When traces are exported over OTLP (OTEL_TRACES_EXPORTER=otlp), string global
+// tags (DD_TAGS, OTEL_RESOURCE_ATTRIBUTES, WithGlobalTag) are written once per
+// payload as resource attributes. The service, env and version tags are carried
+// as service.name, deployment.environment.name and service.version instead. A
+// span tag with the same key and value as a resource attribute is not repeated
+// as a span attribute; span values that differ from the resource are kept. The
+// resource is built at startup, so global tags changed later through Remote
+// Config are written on spans instead.
+//
+// # Disabling the OpenTelemetry SDK
+//
+// OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set
+// explicitly, and takes precedence over OTEL_TRACES_EXPORTER. It also disables
+// OTel logs and metrics, even when DD_LOGS_OTEL_ENABLED or
+// DD_METRICS_OTEL_ENABLED is set to true.
+//
+// # Diagnostic Log Level
+//
+// The tracer, the profiler, and other components of this module share one
+// diagnostic logger. The tracer prints its own diagnostics at the info level
+// and above by default. OTEL_LOG_LEVEL sets that threshold to debug, info, warn
+// or error (case-insensitive, and surrounding whitespace is ignored), and
+// lower-severity messages are not printed. Invalid values are ignored with a
+// warning. DD_TRACE_DEBUG=true or WithDebugMode(true) enables debug logs
+// regardless of OTEL_LOG_LEVEL, and DD_TRACE_DEBUG=false disables
+// OTEL_LOG_LEVEL=debug. The tracer applies the level each time it starts, and
+// the threshold filters every component that logs through the shared logger.
+// At the error threshold, the profiler still prints its errors and hides its
+// info and warning messages.
 //
 // # Trace Protocol
 //
@@ -236,4 +295,4 @@
 // dependency and no Remote Config capability advertised. See the openfeature package's
 // documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
 // selection rules.
-package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+package tracer

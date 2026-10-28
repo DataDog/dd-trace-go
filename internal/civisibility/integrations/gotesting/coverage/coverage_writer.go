@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -29,11 +30,20 @@ const (
 )
 
 type coverageWriter struct {
-	client  net.Client       // http client
-	payload *coveragePayload // Encodes and buffers events in msgpack format.
-	climit  chan struct{}    // Limits the number of concurrent outgoing connections.
-	wg      sync.WaitGroup   // Waits for all uploads to finish.
-	mu      sync.Mutex       // Guards payload rotation between add and flush.
+	client                    net.Client       // http client
+	payload                   *coveragePayload // Encodes and buffers events in msgpack format.
+	climit                    chan struct{}    // Limits the number of concurrent outgoing connections.
+	wg                        sync.WaitGroup   // Waits for all uploads to finish.
+	mu                        sync.Mutex       // Guards payload rotation and pendingSerializationError.
+	pendingSerializationError error            // First serialization error in the active payload window.
+}
+
+func reportCoverageEncodingError(err error) {
+	telemetrylog.ReportError("coverageWriter: Error encoding msgpack", err)
+}
+
+func reportCoverageBufferError(err error) {
+	telemetrylog.LogAndReportError("coverageWriter: failure getting coverage data", err)
 }
 
 func newCoverageWriter() *coverageWriter {
@@ -48,17 +58,24 @@ func newCoverageWriter() *coverageWriter {
 func (w *coverageWriter) add(coverage *testCoverage) {
 	telemetry.EventsEnqueueForSerialization()
 	ciTestCoverage := newCiTestCoverageData(coverage)
-	var payloadToFlush *coveragePayload
+	var (
+		payloadToFlush     *coveragePayload
+		serializationError error
+	)
 
 	w.mu.Lock()
 	if err := w.payload.push(ciTestCoverage); err != nil {
-		log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
+		w.recordSerializationErrorLocked(err)
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
 		payloadToFlush = w.rotatePayloadLocked()
+		serializationError = w.takePendingSerializationErrorLocked()
 	}
 	w.mu.Unlock()
 
+	if serializationError != nil {
+		reportCoverageEncodingError(serializationError)
+	}
 	if payloadToFlush != nil {
 		w.flushPayload(payloadToFlush)
 	}
@@ -76,11 +93,33 @@ func (w *coverageWriter) stop() {
 func (w *coverageWriter) flush() {
 	w.mu.Lock()
 	payloadToFlush := w.rotatePayloadLocked()
+	serializationError := w.takePendingSerializationErrorLocked()
 	w.mu.Unlock()
 
+	if serializationError != nil {
+		reportCoverageEncodingError(serializationError)
+	}
 	if payloadToFlush != nil {
 		w.flushPayload(payloadToFlush)
 	}
+}
+
+// recordSerializationErrorLocked preserves the local error log and retains
+// one representative for Error Tracking at the next payload boundary.
+// w.mu must be held by the caller.
+func (w *coverageWriter) recordSerializationErrorLocked(err error) {
+	log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
+	if w.pendingSerializationError == nil {
+		w.pendingSerializationError = err
+	}
+}
+
+// takePendingSerializationErrorLocked returns and clears the pending Error
+// Tracking report for the current payload window. w.mu must be held by the caller.
+func (w *coverageWriter) takePendingSerializationErrorLocked() error {
+	err := w.pendingSerializationError
+	w.pendingSerializationError = nil
+	return err
 }
 
 // rotatePayloadLocked swaps out the current payload while w.mu is held.
@@ -115,14 +154,14 @@ func (w *coverageWriter) flushPayload(oldp *coveragePayload) {
 
 		buf, err := p.getBuffer()
 		if err != nil {
-			log.Error("coverageWriter: failure getting coverage data: %s", err.Error())
+			reportCoverageBufferError(err)
 			return
 		}
 
 		telemetry.CodeCoverageFiles(float64(p.itemCount()))
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
-			log.Error("coverageWriter: failure sending coverage data: %s", err.Error())
+			log.Error("coverageWriter: failure sending coverage data: %s", err.Error()) //errtrack:ignore remote request failure
 		}
 	}(oldp)
 }

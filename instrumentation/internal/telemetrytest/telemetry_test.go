@@ -39,18 +39,18 @@ func TestTelemetryEnabled(t *testing.T) {
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if filepath.Base(path) != "go.mod" {
+		if entry.IsDir() || entry.Name() != "go.mod" {
 			return nil
 		}
-		if strings.Contains(path, "integration_tests") ||
-			strings.Contains(path, fmt.Sprintf("%ctest%c", os.PathSeparator, os.PathSeparator)) {
+		moduleDir := filepath.Dir(path)
+		if skipContribModule(moduleDir) {
 			return nil
 		}
-		rErr := testTelemetryEnabled(t, filepath.Dir(path))
+		rErr := testTelemetryEnabled(t, moduleDir)
 		if rErr != nil {
 			return fmt.Errorf("path: %s, err: %w", path, rErr)
 		}
@@ -59,6 +59,17 @@ func TestTelemetryEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// skipContribModule reports whether the module at moduleDir is outside the
+// telemetry check. otelc hook modules call into the parent contrib module,
+// which loads telemetry itself.
+func skipContribModule(moduleDir string) bool {
+	if strings.Contains(moduleDir, "integration_tests") ||
+		strings.Contains(moduleDir, fmt.Sprintf("%ctest%c", os.PathSeparator, os.PathSeparator)) {
+		return true
+	}
+	return filepath.Base(moduleDir) == "otelc"
 }
 
 func testTelemetryEnabled(t *testing.T, contribPath string) error {

@@ -10,9 +10,24 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 )
 
+// Feature names are stable slugs identifying each AppSec feature. They are returned by [Feature.String] and are the
+// values accepted by the DD_APPSEC_DISABLE_FEATURES environment variable.
+const (
+	FeatureTrace   = "trace"
+	FeatureWAF     = "waf"
+	FeatureHTTP    = "http"
+	FeatureGRPC    = "grpc"
+	FeatureGraphQL = "graphql"
+	FeatureUser    = "user"
+	FeatureSQLi    = "sqli"
+	FeatureLFI     = "lfi"
+	FeatureCMDi    = "cmdi"
+	FeatureSSRF    = "ssrf"
+)
+
 // Feature is an interface that represents a feature that can be started and stopped.
 type Feature interface {
-	// String should return a user-friendly name for the feature.
+	// String returns the feature name, one of the Feature* slug constants.
 	String() string
 	// Stop stops the feature.
 	Stop()

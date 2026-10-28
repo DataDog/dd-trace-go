@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+package statsdtest
 
 import (
 	"fmt"
@@ -62,6 +62,10 @@ func (t TestStatsdCall) Tags() []string {
 
 func (t TestStatsdCall) IntVal() int64 {
 	return t.intVal
+}
+
+func (t TestStatsdCall) TimeVal() time.Duration {
+	return t.timeVal
 }
 
 func (tg *TestStatsdClient) addCount(name string, value int64) {
@@ -194,7 +198,7 @@ func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make([]TestStatsdCall, len(tg.timingCalls))
-	copy(c, tg.countCalls)
+	copy(c, tg.timingCalls)
 	return c
 }
 

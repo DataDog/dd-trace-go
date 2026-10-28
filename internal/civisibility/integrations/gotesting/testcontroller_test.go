@@ -105,6 +105,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[7], false) {
 		fmt.Printf(scenarioStarted, scenarios[7])
 		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
+	} else if internal.BoolEnv("TestDynamicFlakyTestRetries", false) {
+		fmt.Printf(scenarioStarted, "TestDynamicFlakyTestRetries")
+		runDynamicFlakyTestRetriesTests(m)
 	} else if internal.BoolEnv("TestIntelligentTestRunnerWithCoverageBackfill", false) {
 		fmt.Printf(scenarioStarted, "TestIntelligentTestRunnerWithCoverageBackfill")
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
@@ -126,6 +129,7 @@ func TestMain(m *testing.M) {
 		_, layoutReason := getRetryAttemptLayout()
 		layoutAvailable := layoutReason == ""
 		runTestControllerSubprocess("AdditionalFeatureAllocationUnitTests", "^TestAdditionalFeatureSelectorDoesNotAllocate$", "Bypass=true", "-test.parallel=1")
+		runTestControllerSubprocess("FuzzExampleUnitTests", "^Test(CompleteFuzz|RecordFuzzPanic|TestingFuzzWorkerRequested|FuzzEvents|ExampleOutput|CaptureExampleOutput|RunManagedExample|RestoreTestingMWorkloads|FuzzAndExampleDescriptors|InstrumentedAllWorkloads)", "Bypass=true")
 		runTestControllerSubprocess("RetryParityUnitTests", buildRetryParityUnitRunFilter(*tests, layoutAvailable), "Bypass=true", "-test.parallel=1")
 		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests, layoutAvailable), "Bypass=true")
 		if layoutAvailable {
@@ -133,6 +137,7 @@ func TestMain(m *testing.M) {
 			for _, v := range scenarios {
 				runTestControllerSubprocess(v, legacyScenarioRunFilter, v+"=true")
 			}
+			runTestControllerSubprocess("TestDynamicFlakyTestRetries", "^TestRetryWithFail$", "TestDynamicFlakyTestRetries=true")
 		}
 	}
 
@@ -376,6 +381,33 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check logs
 	checkLogs()
+
+	os.Exit(0)
+}
+
+// runDynamicFlakyTestRetriesTests checks that dynamic automatic test retries take the retry count from the first
+// execution's duration bucket even when the flat DD_CIVISIBILITY_FLAKY_RETRY_COUNT would disable retries.
+func runDynamicFlakyTestRetriesTests(m *testing.M) {
+	server := setUpHTTPServer(true, false, false, nil, false, nil, false, nil, false, nil)
+	defer server.Close()
+
+	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "0")
+	os.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, "true")
+	os.Setenv(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, "2,1,1,1,1")
+
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	// TestRetryWithFail passes on its fourth execution, so two retries must leave it failing.
+	exitCode := RunM(m)
+	if exitCode != 1 {
+		panic("expected the exit code to be 1. Got exit code: " + strconv.Itoa(exitCode))
+	}
+
+	finishedSpans := mTracer.FinishedSpans()
+	retryWithFailSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 3)
+	checkSpansByTagValue(retryWithFailSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 2)
+	checkSpansByTagValue(retryWithFailSpans, constants.TestStatus, constants.TestStatusFail, 3)
 
 	os.Exit(0)
 }
