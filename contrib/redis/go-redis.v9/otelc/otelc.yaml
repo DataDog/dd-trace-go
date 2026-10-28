@@ -3,30 +3,11 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# The rules rewrite the call sites of every go-redis client constructor whose
-# result the contrib's WrapClient accepts, in every package of the build,
-# dependencies included, except go-redis and the go-redis contrib.
-#
-# go-redis also calls its own constructors, for example for Ring shards,
-# Cluster nodes and NewUniversalClient. Those calls are inside go-redis, so they
-# are not rewritten and each client is traced once, at the level the
-# application created it. A hook on the constructor definitions would fire for
-# them too and trace each command twice. A hook also creates no import edge, so
-# a client built in a package-level variable could reach the contrib before its
-# init runs.
-#
-# Each template takes the call's results as closure parameters, so the call
-# and its arguments are evaluated where the original call was, which matters
-# for a go or defer statement.
-#
-# FIXME: when the application sets RingOptions.NewClient or
-# ClusterOptions.NewClient to a function that calls redis.NewClient, that
-# call is rewritten too, so the shard or node client and the Ring or Cluster
-# are both wrapped and each command reports two spans.
-#
-# The contrib calls redis.NewClient itself, and wrapping that call would import
-# the contrib into itself.
-
+# Call-site rules, not hooks on the constructors: go-redis builds Ring shards,
+# Cluster nodes and universal clients with its own constructors, which a hook
+# would wrap a second time, and the rewritten package imports the contrib, so
+# it is initialized before a client built in a package-level var or init. The
+# contrib is excluded because it calls redis.NewClient itself.
 new_client:
   target:
     - "**"
@@ -63,6 +44,10 @@ new_failover_client:
     redis: github.com/redis/go-redis/v9
     redistrace: github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
 
+# FIXME: when ClusterOptions.NewClient, or RingOptions.NewClient for new_ring,
+# calls redis.NewClient, that call is rewritten too, so the node or shard
+# client and the Cluster or Ring are both wrapped and each command reports two
+# spans.
 new_cluster_client:
   target:
     - "**"

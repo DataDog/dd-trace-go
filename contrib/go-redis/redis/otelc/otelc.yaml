@@ -3,22 +3,11 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# The rules rewrite the redis.NewClient and redis.NewFailoverClient call sites
-# in every package of the build, dependencies included, except go-redis and the
-# go-redis contrib. The contrib's WrapClient only takes a *redis.Client, so
-# Cluster, Ring and universal clients are not traced.
-#
-# A hook on the constructor definitions would look more natural, but it creates
-# no import edge, so a client built in a package-level variable could reach the
-# contrib before its init runs.
-#
-# Each template takes the call's results as closure parameters, so the call
-# and its arguments are evaluated where the original call was, which matters
-# for a go or defer statement.
-#
-# The contrib calls redis.NewClient itself, and wrapping that call would import
-# the contrib into itself.
-
+# Call-site rules, not hooks on the constructors: the rewritten package imports
+# the contrib, so it is initialized before a client built in a package-level
+# var or init. The contrib is excluded because it calls redis.NewClient
+# itself. Cluster, Ring and universal clients are not traced, because this
+# contrib's WrapClient only takes a *redis.Client.
 new_client:
   target:
     - "**"
