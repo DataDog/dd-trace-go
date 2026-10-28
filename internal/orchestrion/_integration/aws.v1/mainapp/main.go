@@ -45,7 +45,7 @@ func main() {
 	// Traced by the rules alone.
 	sess, err := session.NewSession(cfg)
 	if err != nil {
-		log.Fatalf("mainapp: %v", err)
+		log.Fatalf("mainapp: %s", err.Error())
 	}
 	listTables(srv.URL, "direct", sess)
 
@@ -55,20 +55,20 @@ func main() {
 
 	depSession, err := awsv1dep.NewSession(cfg)
 	if err != nil {
-		log.Fatalf("mainapp: %v", err)
+		log.Fatalf("mainapp: %s", err.Error())
 	}
 	listTables(srv.URL, "dependency", depSession)
 
 	withOptions, err := session.NewSessionWithOptions(session.Options{Config: *cfg})
 	if err != nil {
-		log.Fatalf("mainapp: %v", err)
+		log.Fatalf("mainapp: %s", err.Error())
 	}
 	listTables(srv.URL, "with options", withOptions)
 	listTables(srv.URL, "new", session.New(cfg)) //nolint:staticcheck // session.New is deprecated but still supported
 
 	depWithOptions, err := awsv1dep.NewSessionWithOptions(cfg)
 	if err != nil {
-		log.Fatalf("mainapp: %v", err)
+		log.Fatalf("mainapp: %s", err.Error())
 	}
 	listTables(srv.URL, "dependency with options", depWithOptions)
 	listTables(srv.URL, "dependency new", awsv1dep.New(cfg))
@@ -85,6 +85,6 @@ func main() {
 func listTables(endpoint, style string, sess *session.Session) {
 	ddb := dynamodb.New(sess, &aws.Config{Endpoint: new(endpoint)})
 	if _, err := ddb.ListTables(&dynamodb.ListTablesInput{}); err != nil {
-		log.Fatalf("mainapp: %s session: %v", style, err)
+		log.Fatalf("mainapp: %s session: %s", style, err.Error())
 	}
 }
