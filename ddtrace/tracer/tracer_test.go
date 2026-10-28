@@ -4363,7 +4363,7 @@ func BenchmarkSpanStart(b *testing.B) {
 			if d == 12 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
-				b.Cleanup(cancel)
+				defer cancel()
 			}
 			ctx = context.WithValue(ctx, spanStartBenchKey(d), d)
 			ctx = &spanCtx{Context: ctx, span: root, snapshot: root.context}
