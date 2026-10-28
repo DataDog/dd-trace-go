@@ -1,0 +1,11 @@
+_v: 1
+name: haproxy/stream-processing-offload
+display_name: HAProxy Stream Processing Offload Engine
+description: Instruments HTTP traffic that HAProxy offloads over SPOE to a Datadog agent, creating server request spans with
+  Datadog trace-context propagation and App and API Protection analysis and blocking, plus optional inferred API Gateway or
+  Pub/Sub push parent spans.
+packages: []
+category:
+- http.server
+systems: []
+creation_date: '2025-10-02'
