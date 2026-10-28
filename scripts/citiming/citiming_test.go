@@ -1822,3 +1822,181 @@ func TestCollectAbortsOnRateLimit(t *testing.T) {
 		}
 	})
 }
+
+// ---- restore-source telemetry (cloudx cache-matched-key passthrough) ----
+
+// cloudxObservationJSON builds a cloudx setup_go observation whose restore
+// entry carries the matched key, restore source, dependency match and the
+// restored cross-check, in the shape the setup-go action emits since the
+// restore-source derive step.
+func cloudxObservationJSON(t *testing.T, matched, source, dep, restored string) string {
+	payload := map[string]any{
+		"provider": "cloudx",
+		"workload": "multi-os",
+		"runtime":  map[string]string{"name": "go", "requested": "1.27", "version": "1.27.2"},
+		"restores": []any{map[string]any{
+			"name":              "setup_go",
+			"enabled":           "true",
+			"outcome":           "success",
+			"cache_hit":         "false",
+			"cache_matched_key": matched,
+			"restore_source":    source,
+			"dep_match":         dep,
+			"restored":          restored,
+		}},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal observation: %v", err)
+	}
+	return string(b)
+}
+
+func TestRestoreDisagrees(t *testing.T) {
+	matched := "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-" +
+		"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744"
+	cases := []struct {
+		name     string
+		obs      restoreObs
+		provider string
+		want     bool
+	}{
+		{
+			name:     "matched key with empty module cache",
+			obs:      restoreObs{Name: "setup_go", CacheMatchedKey: &matched, Restored: "false"},
+			provider: "cloudx", want: true,
+		},
+		{
+			name:     "empty matched key with non-empty module cache",
+			obs:      restoreObs{Name: "setup_go", CacheMatchedKey: new(""), Restored: "true"},
+			provider: "cloudx", want: true,
+		},
+		{
+			name:     "matched key agrees with restored",
+			obs:      restoreObs{Name: "setup_go", CacheMatchedKey: &matched, Restored: "true"},
+			provider: "cloudx", want: false,
+		},
+		{
+			name:     "cold miss agrees with restored",
+			obs:      restoreObs{Name: "setup_go", CacheMatchedKey: new(""), Restored: "false"},
+			provider: "cloudx", want: false,
+		},
+		{
+			name:     "no matched-key field cannot disagree",
+			obs:      restoreObs{Name: "setup_go", Restored: "true"},
+			provider: "cloudx", want: false,
+		},
+		{
+			name:     "tools entry never disagrees",
+			obs:      restoreObs{Name: "tools", CacheMatchedKey: &matched, Restored: "false"},
+			provider: "cloudx", want: false,
+		},
+		{
+			name:     "github-cache entries never disagree",
+			obs:      restoreObs{Name: "setup_go", CacheMatchedKey: &matched, Restored: "false"},
+			provider: "github-cache", want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := restoreDisagrees(&tc.obs, tc.provider); got != tc.want {
+				t.Errorf("restoreDisagrees = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildJobRecordStoresRestoreSource(t *testing.T) {
+	matched := "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-" +
+		"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744"
+	r := makeRun(31, 1, "pull_request", "Multi-OS Unit and Integration Tests", "2026-09-13T11:00:00Z", "sha31")
+	j := makeJob(311, "test-multi-os (windows-latest, 1.27)", "2026-09-13T11:01:00Z", "2026-09-13T11:30:00Z")
+	logText := joinLines(baseLogLines(cloudxObservationJSON(t, matched, "default", "true", "true")))
+	c := &fakeClient{repo: "DataDog/dd-trace-go", logs: map[int64]string{311: logText}}
+
+	rec, err := buildJobRecord(c, r, j, "2026-09-14T00:00:00Z", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.HasLogs || len(rec.Cache.Restores) != 1 {
+		t.Fatalf("record = %+v", rec)
+	}
+	got := rec.Cache.Restores[0]
+	// With a matched key present, the classification comes from it: a
+	// non-empty matched key and a false cache-hit is a prefix restore.
+	if got.Result != "prefix" {
+		t.Errorf("result = %q, want prefix (classification from the matched key)", got.Result)
+	}
+	if got.RestoreSource != "default" || got.DepMatch != "true" {
+		t.Errorf("restore_source/dep_match = %q/%q, want default/true", got.RestoreSource, got.DepMatch)
+	}
+	if got.Disagreement {
+		t.Error("matched key agrees with restored, disagreement should be false")
+	}
+}
+
+// jobRecordWithRestores builds a job observation whose cache restores carry
+// explicit classifications, for compare-level reporting tests.
+func jobRecordWithRestores(id int64, conclusion string, restores []restoreClassification) jobObservation {
+	rec := jobRecord("w.yml", "A", id, secondsPtr(100), conclusion)
+	rec.Cache.Restores = restores
+	return rec
+}
+
+func TestCompareReportsRestoreSourceAndDisagreement(t *testing.T) {
+	baseDir, candDir, outDir := t.TempDir(), t.TempDir(), t.TempDir()
+	base := make([]jobObservation, 0, minRunSamples)
+	cand := make([]jobObservation, 0, minRunSamples)
+	for i := range minRunSamples {
+		base = append(base, jobRecordWithRestores(int64(i+1), "success", []restoreClassification{
+			{Name: "setup_go", Result: "cold_miss", RestoreSource: "none"},
+			{Name: "setup_go", Result: "cold_miss", RestoreSource: "none", Disagreement: true},
+		}))
+		cand = append(cand, jobRecordWithRestores(int64(101+i), "success", []restoreClassification{
+			{Name: "setup_go", Result: "prefix", RestoreSource: "default", DepMatch: "true"},
+			{Name: "setup_go", Result: "prefix", RestoreSource: "default"},
+			{Name: "setup_go", Result: "prefix", RestoreSource: "branch"},
+		}))
+	}
+	writeTestStore(t, baseDir, base, nil)
+	writeTestStore(t, candDir, cand, nil)
+	if err := cmdCompare([]string{"--baseline", baseDir, "--candidate", candDir, "--output-dir", outDir}); err != nil {
+		t.Fatalf("compare: %v", err)
+	}
+	report, err := os.ReadFile(filepath.Join(outDir, "comparison.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"restore source b/c",
+		// 5 baseline records x 2 restores each, all "none";
+		// 5 candidate records x (default + default + branch).
+		"none:10/default:10 branch:5",
+		"key≠restored b/c",
+		"5/0",
+	} {
+		if !strings.Contains(string(report), want) {
+			t.Errorf("report lacks %q:\n%s", want, report)
+		}
+	}
+	csvData, err := os.ReadFile(filepath.Join(outDir, "comparison.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	csv := string(csvData)
+	for _, want := range []string{"baseline_restore_source", "candidate_restore_source", "none:10", "default:10 branch:5"} {
+		if !strings.Contains(csv, want) {
+			t.Errorf("csv lacks %q", want)
+		}
+	}
+}
+
+func TestSummarizeRestoreSources(t *testing.T) {
+	if got := summarizeRestoreSources(nil); got != "" {
+		t.Errorf("empty sources = %q, want \"\"", got)
+	}
+	got := summarizeRestoreSources(map[string]int{"branch": 2, "default": 3, "exact": 1, "none": 4, "weird": 1})
+	if want := "exact:1 default:3 branch:2 none:4 weird:1"; got != want {
+		t.Errorf("summary = %q, want %q", got, want)
+	}
+}
