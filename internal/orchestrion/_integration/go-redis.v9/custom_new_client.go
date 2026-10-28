@@ -19,12 +19,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
-// TestCaseCustomNewClient pins how a Ring whose RingOptions.NewClient calls
-// redis.NewClient is traced.
-//
-// FIXME: the rules wrap both the Ring and the shard client that the
-// application's NewClient function builds, so each command reports two
-// redis.command spans.
+// TestCaseCustomNewClient checks that a Ring whose RingOptions.NewClient calls
+// redis.NewClient reports one redis.command span per command, although the
+// rules wrap both the Ring and the shard client. The shard's dial is still
+// traced, under the Ring's command span.
 type TestCaseCustomNewClient struct {
 	addr string
 }
@@ -51,19 +49,19 @@ func (tc *TestCaseCustomNewClient) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, ring.Close())
 }
 
+// ExpectedSpanCount is test.root, the Ring's redis.command span and the
+// shard's redis.dial span.
 func (*TestCaseCustomNewClient) ExpectedSpanCount() int {
-	return 4
+	return 3
 }
 
 func (*TestCaseCustomNewClient) ExpectedTraces() trace.Traces {
-	ringSpan := commandSpan("redis.client", "custom-new-client", false)
-	ringSpan.Children = trace.Traces{commandSpan("redis.client", "custom-new-client", true)}
 	return trace.Traces{
 		{
 			Tags: map[string]any{
 				"name": "test.root",
 			},
-			Children: trace.Traces{ringSpan},
+			Children: trace.Traces{commandSpan("redis.client", "custom-new-client", true)},
 		},
 	}
 }

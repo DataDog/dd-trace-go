@@ -133,6 +133,10 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	ctx, skip := markOrSkip(ctx, ddh)
+	if skip {
+		return ctx, nil
+	}
 	raw := cmd.String()
 	parts := strings.Split(raw, " ")
 	length := len(parts) - 1
@@ -152,6 +156,9 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 }
 
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	if tracedByOther(ctx, ddh) {
+		return nil
+	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption
@@ -164,6 +171,10 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 }
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	ctx, skip := markOrSkip(ctx, ddh)
+	if skip {
+		return ctx, nil
+	}
 	raw := commandsToString(cmds)
 	parts := strings.Split(raw, " ")
 	length := len(parts) - 1
@@ -189,6 +200,9 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 }
 
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	if tracedByOther(ctx, ddh) {
+		return nil
+	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption

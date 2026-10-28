@@ -149,6 +149,10 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 
 func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
+		ctx, skip := markOrSkip(ctx, ddh)
+		if skip {
+			return hook(ctx, cmd)
+		}
 		raw := cmd.String()
 		// Preserve the formatted command's casing and first-word resource, but
 		// allow argument-free generic commands whose String contains no space.
@@ -180,6 +184,10 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
+		ctx, skip := markOrSkip(ctx, ddh)
+		if skip {
+			return hook(ctx, cmds)
+		}
 		p := ddh.params
 		tags := map[string]any{
 			ext.ResourceName:        "redis.pipeline",

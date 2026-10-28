@@ -44,10 +44,6 @@ new_failover_client:
     redis: github.com/redis/go-redis/v9
     redistrace: github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
 
-# FIXME: when ClusterOptions.NewClient, or RingOptions.NewClient for new_ring,
-# calls redis.NewClient, that call is rewritten too, so the node or shard
-# client and the Cluster or Ring are both wrapped and each command reports two
-# spans.
 new_cluster_client:
   target:
     - "**"
