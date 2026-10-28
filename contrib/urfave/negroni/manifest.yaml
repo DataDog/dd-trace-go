@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/urfave/negroni
+display_name: Negroni
+description: Instruments inbound HTTP requests through Negroni middleware with server spans, trace-context extraction, response-status
+  error tagging, and optional inferred proxy and Pub/Sub push-delivery spans.
+packages:
+- name: github.com/urfave/negroni
+category:
+- http.server
+systems: []
+creation_date: '2021-09-08'

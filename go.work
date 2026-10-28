@@ -26,6 +26,7 @@ use (
 	./contrib/emicklei/go-restful.v3
 	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
+	./contrib/gin-gonic/gin/otelc
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
 	./contrib/go-chi/chi/otelc
@@ -42,6 +43,7 @@ use (
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
+	./contrib/gofiber/fiber.v2/otelc
 	./contrib/gomodule/redigo
 	./contrib/gomodule/redigo/otelc
 	./contrib/google.golang.org/api
@@ -49,6 +51,7 @@ use (
 	./contrib/google.golang.org/grpc
 	./contrib/google.golang.org/grpc/otelc
 	./contrib/gorilla/mux
+	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
@@ -58,6 +61,7 @@ use (
 	./contrib/jackc/pgx.v5
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
+	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
@@ -85,6 +89,7 @@ use (
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
+	./contrib/valyala/fasthttp/otelc
 	./instrumentation/internal/namingschematest
 	./instrumentation/internal/validationtest
 	./instrumentation/testutils/containers

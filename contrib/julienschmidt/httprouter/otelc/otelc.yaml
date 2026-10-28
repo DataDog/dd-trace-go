@@ -1,0 +1,32 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Traces every request an httprouter.Router serves through the contrib,
+# routers built in dependencies included. Routers the application wrapped with
+# the contrib itself are traced once.
+router_serve_http:
+  target: github.com/julienschmidt/httprouter
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_hooks:
+        before: BeforeServeHTTP
+        after: AfterServeHTTP
+        path: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
+
+# Marks the requests a router wrapped with the contrib serves, so the hook
+# above leaves them alone. It lives here and not in the contrib so a plain
+# build does not pay for it.
+contrib_router_mark:
+  target: github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2
+  where:
+    func: ServeHTTP
+    recv: "*Router"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $req := .FuncArgument 1 -}}
+          {{ $req }} = {{ $req }}.WithContext(traceMark({{ $req }}.Context(), {{ .Receiver }}.Router))
