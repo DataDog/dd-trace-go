@@ -21,8 +21,12 @@
 #
 # TODO: wrap_call rejects a replace template without the original call
 # ({{ . }}), so the producer templates keep it in a branch that never runs.
-# They evaluate each argument once, into typed variables so a nil argument
-# compiles. Remove the branch once wrap_call can replace a call outright.
+# They take the arguments as typed closure parameters, so each argument is
+# evaluated once and where the original call was, which matters for a go or
+# defer statement, and a nil argument compiles. The parameter names keep a
+# prefix so they cannot hide a variable that the original call refers to.
+# Remove the branch once wrap_call can replace a call outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
 
 sarama_new_consumer:
   target:
@@ -77,18 +81,16 @@ sarama_new_sync_producer:
   do:
     - wrap_call:
         replace: |-
-          (func() (sarama.SyncProducer, error) {
+          (func(__dd_addrs []string, __dd_cfg *sarama.Config) (sarama.SyncProducer, error) {
             if false {
               return {{ . }}
             }
-            var __dd_addrs []string = {{ .CallArgument 0 }}
-            var __dd_cfg *sarama.Config = {{ .CallArgument 1 }}
             __dd_p, __dd_err := sarama.NewSyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
-          })()
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
     sarama: github.com/IBM/sarama
     saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -104,17 +106,16 @@ sarama_new_sync_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func() (sarama.SyncProducer, error) {
+          (func(__dd_client sarama.Client) (sarama.SyncProducer, error) {
             if false {
               return {{ . }}
             }
-            var __dd_client sarama.Client = {{ .CallArgument 0 }}
             __dd_p, __dd_err := sarama.NewSyncProducerFromClient(__dd_client)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
-          })()
+          })({{ .CallArgument 0 }})
   imports:
     sarama: github.com/IBM/sarama
     saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -130,18 +131,16 @@ sarama_new_async_producer:
   do:
     - wrap_call:
         replace: |-
-          (func() (sarama.AsyncProducer, error) {
+          (func(__dd_addrs []string, __dd_cfg *sarama.Config) (sarama.AsyncProducer, error) {
             if false {
               return {{ . }}
             }
-            var __dd_addrs []string = {{ .CallArgument 0 }}
-            var __dd_cfg *sarama.Config = {{ .CallArgument 1 }}
             __dd_p, __dd_err := sarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
-          })()
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
     sarama: github.com/IBM/sarama
     saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -157,17 +156,16 @@ sarama_new_async_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func() (sarama.AsyncProducer, error) {
+          (func(__dd_client sarama.Client) (sarama.AsyncProducer, error) {
             if false {
               return {{ . }}
             }
-            var __dd_client sarama.Client = {{ .CallArgument 0 }}
             __dd_p, __dd_err := sarama.NewAsyncProducerFromClient(__dd_client)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
-          })()
+          })({{ .CallArgument 0 }})
   imports:
     sarama: github.com/IBM/sarama
     saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
