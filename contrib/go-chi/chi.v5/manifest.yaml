@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/go-chi/chi/v5
+display_name: chi v5
+description: Traces chi v5 inbound HTTP requests with route-named server spans via middleware, auto-installed on NewRouter/NewMux
+  by Orchestrion, with optional AppSec protection and optional inferred API Gateway or Pub/Sub push-delivery spans.
+packages:
+- name: github.com/go-chi/chi/v5
+category:
+- http.server
+systems: []
+creation_date: '2021-03-22'

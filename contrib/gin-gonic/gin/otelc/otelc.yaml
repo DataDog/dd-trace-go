@@ -1,0 +1,263 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps gin.New call sites with the tracing middleware. Like orchestrion, it
+# reaches every package of the build, dependencies included, except gin and the
+# gin contrib, whose own tests create engines. gin.Default calls New inside gin,
+# where this rule does not apply, so gin_default covers it.
+#
+# A call site rewrite instead of a hook on gin.New: the rewritten package
+# imports the contrib, so the contrib is initialized before an engine created
+# in a package level variable. A hook gives no such order, so it can build the
+# middleware before the contrib's init runs.
+gin_new:
+  target:
+    - "**"
+    - not: "github.com/gin-gonic/gin"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gin-gonic/**"
+  where:
+    function_call: github.com/gin-gonic/gin.New
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *gin.Engine {
+            e := {{ . }}
+            e.Use(gintrace.Middleware(""))
+            return e
+          })()
+  imports:
+    gin: github.com/gin-gonic/gin
+    gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+
+# Wraps gin.Default call sites, like gin_new.
+gin_default:
+  target:
+    - "**"
+    - not: "github.com/gin-gonic/gin"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gin-gonic/**"
+  where:
+    function_call: github.com/gin-gonic/gin.Default
+  do:
+    - wrap_call:
+        replace: |-
+          (func() *gin.Engine {
+            e := {{ . }}
+            e.Use(gintrace.Middleware(""))
+            return e
+          })()
+  imports:
+    gin: github.com/gin-gonic/gin
+    gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+
+# The bind rules run AppSec on the value a successful *gin.Context bind call
+# filled in, one rule per method, since a point selector cannot be alternated.
+# All of them share AfterBind, which works because gin declares these methods
+# in one file with the same signature.
+#
+# TODO: merge the bind rules, the render rules, and gin_new with gin_default
+# into one rule each once otelc supports one-of in where:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1520
+gin_context_bind:
+  target: github.com/gin-gonic/gin
+  where:
+    func: Bind
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_should_bind:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBind
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_bind_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_should_bind_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_bind_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindTOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_should_bind_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindTOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_bind_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindYAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_should_bind_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindYAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_bind_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: BindXML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_should_bind_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ShouldBindXML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        after: AfterBind
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+# The render rules run AppSec on the body passed to a *gin.Context render
+# method, and skip the write when AppSec blocks the request. They share
+# BeforeRender, like the bind rules share AfterBind.
+gin_context_ascii_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: AsciiJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_indented_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: IndentedJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: JSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_jsonp:
+  target: github.com/gin-gonic/gin
+  where:
+    func: JSONP
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_pure_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: PureJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_secure_json:
+  target: github.com/gin-gonic/gin
+  where:
+    func: SecureJSON
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_xml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: XML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_yaml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: YAML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_toml:
+  target: github.com/gin-gonic/gin
+  where:
+    func: TOML
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
+
+gin_context_protobuf:
+  target: github.com/gin-gonic/gin
+  where:
+    func: ProtoBuf
+    recv: "*Context"
+  do:
+    - inject_hooks:
+        before: BeforeRender
+        path: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2

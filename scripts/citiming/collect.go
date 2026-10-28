@@ -393,7 +393,14 @@ func buildJobRecord(c client, r run, j job, collectedAt string, skipLogs bool) (
 	if ev != nil && ev.observation != nil {
 		for _, ro := range ev.observation.Restores {
 			result := classifyRestore(&ro, ev.observation.Provider)
-			restores = append(restores, restoreClassification{Name: ro.Name, Result: result})
+			class := restoreClassification{
+				Name:          ro.Name,
+				Result:        result,
+				RestoreSource: ro.RestoreSource,
+				DepMatch:      ro.DepMatch,
+			}
+			class.Disagreement = restoreDisagrees(&ro, ev.observation.Provider)
+			restores = append(restores, class)
 		}
 		wl = workloadMeta{
 			Provider:           ev.observation.Provider,

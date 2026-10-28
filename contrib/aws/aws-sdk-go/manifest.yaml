@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/aws/aws-sdk-go
+display_name: AWS SDK for Go
+description: Instruments AWS SDK for Go service requests through wrapped sessions, recording operation metadata, retries,
+  responses, and errors with service-specific resource enrichment.
+packages:
+- name: github.com/aws/aws-sdk-go
+category:
+- cloud_provider.client
+systems:
+- aws
+creation_date: '2018-08-01'
