@@ -420,8 +420,16 @@ func (t *tracer) startAppSec() {
 	}
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.metaStructAvailable()))
 	appsec.Start(appsecopts...)
+}
+
+// metaStructAvailable reports whether spans can carry meta_struct to the backend. OTLP has no
+// meta_struct field: the OTLP exporter writes a meta_struct value as a JSON string attribute under
+// its own key, which Datadog does not read. Without meta_struct, App and API Protection writes the
+// _dd.appsec.json span tag, which OTLP ingestion keeps.
+func (t *tracer) metaStructAvailable() bool {
+	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
@@ -550,9 +558,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 	s.SetUser(id, opts...)
 }
 
-// payloadQueueSize is the buffer size of the trace channel.
-const payloadQueueSize = 1000
-
 func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
@@ -624,7 +629,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		config:           c,
 		otlpExportMode:   otlpExportMode,
 		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
+		out:              make(chan *chunk, c.internalConfig.PayloadQueueSize()),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,

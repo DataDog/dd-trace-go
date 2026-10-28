@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/confluentinc/confluent-kafka-go
+display_name: confluent-kafka-go
+description: Instruments confluent-kafka-go message production and consumption with trace propagation and optional Data Streams
+  checkpoints, delivery offsets, consumer commits, and high-watermark tracking.
+packages:
+- name: github.com/confluentinc/confluent-kafka-go
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- kafka
+creation_date: '2018-09-11'

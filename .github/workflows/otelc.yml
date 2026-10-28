@@ -51,6 +51,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -61,6 +63,8 @@ env:
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/valyala/fasthttp
+    contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -73,12 +77,14 @@ env:
     chi
     chi.v5
     fiber.v2
+    julienschmidt_httprouter
     redigo
     grpc
     gorilla_mux
     99designs.gqlgen
     echo.v4
     echo.v5
+    valyala_fasthttp
 
 jobs:
   go-versions-matrix:

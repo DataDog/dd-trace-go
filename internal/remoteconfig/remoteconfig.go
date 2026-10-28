@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -199,7 +200,17 @@ var (
 	client    *Client
 	clientMux sync.Mutex
 	started   bool
+	activeEnv atomic.Pointer[string]
 )
+
+// ActiveEnv returns the environment reported by the running Remote Config client.
+// It is safe to call from a product callback while Stop waits for polling to end.
+func ActiveEnv() string {
+	if env := activeEnv.Load(); env != nil {
+		return *env
+	}
+	return ""
+}
 
 // newClient creates a new remoteconfig Client
 func newClient(config ClientConfig) (*Client, error) {
@@ -246,6 +257,7 @@ func Start(config ClientConfig) error {
 		return err
 	}
 	started = true
+	activeEnv.Store(&client.Env)
 
 	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
 	var (
@@ -312,6 +324,7 @@ func Stop() {
 	}
 	client = nil
 	started = false
+	activeEnv.Store(nil)
 }
 
 // Reset destroys the client instance.
@@ -326,6 +339,7 @@ func Reset() {
 	}
 	client = nil
 	started = false
+	activeEnv.Store(nil)
 }
 
 // ClientID returns the client ID of the RC singleton, or an empty string if the
