@@ -59,6 +59,20 @@ func main() {
 	}
 	listTables(srv.URL, "dependency", depSession)
 
+	withOptions, err := session.NewSessionWithOptions(session.Options{Config: *cfg})
+	if err != nil {
+		log.Fatalf("mainapp: %v", err)
+	}
+	listTables(srv.URL, "with options", withOptions)
+	listTables(srv.URL, "new", session.New(cfg)) //nolint:staticcheck // session.New is deprecated but still supported
+
+	depWithOptions, err := awsv1dep.NewSessionWithOptions(cfg)
+	if err != nil {
+		log.Fatalf("mainapp: %v", err)
+	}
+	listTables(srv.URL, "dependency with options", depWithOptions)
+	listTables(srv.URL, "dependency new", awsv1dep.New(cfg))
+
 	// Also traced by the application.
 	userSession := awstrace.WrapSession(session.Must(session.NewSession(cfg)), awstrace.WithService(userService))
 	listTables(srv.URL, "user", userSession)

@@ -15,3 +15,14 @@ import (
 func NewSession(cfg *aws.Config) (*session.Session, error) {
 	return session.NewSession(cfg)
 }
+
+// NewSessionWithOptions returns a session built from cfg with
+// session.NewSessionWithOptions.
+func NewSessionWithOptions(cfg *aws.Config) (*session.Session, error) {
+	return session.NewSessionWithOptions(session.Options{Config: *cfg})
+}
+
+// New returns a session built from cfg with the deprecated session.New.
+func New(cfg *aws.Config) *session.Session {
+	return session.New(cfg) //nolint:staticcheck // session.New is deprecated but still supported
+}

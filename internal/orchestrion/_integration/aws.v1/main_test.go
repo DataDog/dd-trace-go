@@ -35,7 +35,7 @@ func TestSessionsInMain(t *testing.T) {
 	// One span per ListTables call: five sessions traced by the rule alone,
 	// and one the application also wrapped, reported with its own service.
 	assert.Equal(t, map[string]int{
-		"aws.dynamodb":     5,
+		"aws.dynamodb":     9,
 		"aws-user-service": 1,
 	}, services)
 }

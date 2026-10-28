@@ -27,6 +27,14 @@ func TestNewSession(t *testing.T) {
 	harness.Run(t, new(TestCaseNewSession))
 }
 
+func TestNewSessionWithOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseNewSessionWithOptions))
+}
+
+func TestSessionNew(t *testing.T) {
+	harness.Run(t, new(TestCaseSessionNew))
+}
+
 func TestUserWrapSession(t *testing.T) {
 	harness.Run(t, new(TestCaseUserWrapSession))
 }
