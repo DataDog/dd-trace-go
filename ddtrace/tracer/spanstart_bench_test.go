@@ -21,29 +21,21 @@ type spanStartInput struct {
 	opts []StartSpanOption
 }
 
-// BenchmarkBenchMCPSpanStart drives spanStart with a weighted mix modeled on the
-// metrics-querier prod CPU profile (Live Debugger capture skipped; inputs are
-// synthesized from source types and the profile).
+// BenchmarkSpanStart drives spanStart with a weighted mix of inputs.
 //
 // Input classes:
 //   - 60% child spans started from a deep context chain (StartSpanFromContext
 //     style: ChildOf + withContext). The chain alternates spanCtx and
-//     context.WithValue nodes ~12 levels deep with a cancelCtx in the middle.
-//     setLLMObsPropagatingTags walks the whole chain looking for an LLM span
-//     that is never there, which is the ~20% (*spanCtx).Value/(*valueCtx).Value
-//     recursion in prod. Children also hit setMetricInit (sampling priority)
-//     and newSpanContext's trace.push.
+//     context.WithValue nodes 24 levels deep with a cancelCtx in the middle.
+//     No LLM span is in the chain, so a lookup for one walks the whole chain.
+//     The parent has a sampling priority.
 //   - 25% tag-heavy child spans on the same deep chain with 10-14 string Tag
-//     options. More than 8 tags pushes the span meta map past the small-map
-//     size in setTags (growToTable), and the Tag closures fill cfg.Tags, which
-//     matches the mapassign growth under Tag.func1/ApplyV1Options in prod. The
-//     v1 shim (ApplyV1Options) is not in this repo, so its frames cannot appear.
-//   - 15% root spans (no parent, background context, 3-4 tags): newTrace,
-//     SetProfilerRootTags and markTopLevel.
+//     options, so the span meta map holds more than 8 entries.
+//   - 15% root spans (no parent, background context, 3-4 tags).
 //
 // Parents are recreated on each pool regeneration so trace.spans does not grow
 // without bound.
-func BenchmarkBenchMCPSpanStart(b *testing.B) {
+func BenchmarkSpanStart(b *testing.B) {
 	const poolSize = 1000
 	var shared traceinternal.SpanAttributes
 
