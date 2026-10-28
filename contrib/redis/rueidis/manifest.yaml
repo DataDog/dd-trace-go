@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/redis/rueidis
+display_name: rueidis
+description: Instruments rueidis Redis commands, batches, client-side caching, streaming-result calls, and Pub/Sub subscriptions,
+  recording errors and optional raw command details.
+packages:
+- name: github.com/redis/rueidis
+category:
+- db.client
+systems:
+- redis
+creation_date: '2025-03-08'

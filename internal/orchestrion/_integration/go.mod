@@ -94,6 +94,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev // indirect
 )
 
 require (
@@ -106,6 +107,7 @@ require (
 	example.com/awsv1dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
+	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
 	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
@@ -575,6 +577,10 @@ replace github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 => ../../.
 replace example.com/gindep => ./internal/gindep
 
 replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../../../contrib/gofiber/fiber.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../../contrib/valyala/fasthttp/otelc
+
+replace example.com/fasthttpdep => ./internal/fasthttpdep
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../../../contrib/labstack/echo.v4/otelc
 

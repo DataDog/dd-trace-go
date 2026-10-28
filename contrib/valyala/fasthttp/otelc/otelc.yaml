@@ -1,0 +1,66 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps the server's handler with the contrib's tracing the first time
+# Server.Serve runs. ListenAndServe, ServeTLS and the other start methods all
+# call Serve, so this covers them too. Servers passed to SkipServer, such as
+# Fiber's, are left alone.
+fasthttp_server_serve:
+  target: github.com/valyala/fasthttp
+  where:
+    func: Serve
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServe
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
+
+# Same as above for a connection served with Server.ServeConn, which does not
+# call Serve. Fiber's app.Test serves this way.
+fasthttp_server_serve_conn:
+  target: github.com/valyala/fasthttp
+  where:
+    func: ServeConn
+    recv: "*Server"
+  do:
+    - inject_hooks:
+        before: BeforeServeConn
+        path: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
+
+# The package-level fasthttp.ServeConn reuses pooled servers and sets a new
+# handler on each call, which the handled check above cannot follow. Its call
+# sites go to a copy with its own pool that wraps the handler on each call.
+# Before the contrib is initialized, they run the original call. fasthttp and
+# the fasthttp contrib are left out, since the hooks module imports both.
+#
+# The arguments are passed as parameters of the closure, so Go evaluates them
+# at the call site, as it does for go fasthttp.ServeConn(...) and defer
+# fasthttp.ServeConn(...). The original call, which otelc requires in the
+# template, evaluates them again, but it only runs before the contrib is
+# initialized.
+#
+# A call through a function value, such as f := fasthttp.ServeConn, is not a
+# call site this rule matches. It still uses fasthttp's pool, and only the
+# first handler on each pooled server is traced.
+fasthttp_serve_conn_func:
+  target:
+    - "**"
+    - not: "github.com/valyala/fasthttp/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/**"
+  where:
+    function_call: github.com/valyala/fasthttp.ServeConn
+  do:
+    - wrap_call:
+        replace: |-
+          func(c __dd_net.Conn, h __dd_fasthttp.RequestHandler) error {
+            if __dd_fasthttpotelc.Ready() {
+              return __dd_fasthttpotelc.ServeConn(c, h)
+            }
+            return {{ . }}
+          }({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+  imports:
+    __dd_net: net
+    __dd_fasthttp: github.com/valyala/fasthttp
+    __dd_fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2
