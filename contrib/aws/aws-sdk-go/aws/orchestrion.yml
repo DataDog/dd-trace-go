@@ -9,11 +9,16 @@ meta:
   description: The official AWS SDK for Go
 
 aspects:
+  # The session package calls these constructors itself and the contrib imports
+  # it, so it is excluded.
   - id: session.NewSession
     join-point:
-      one-of:
-        - function-call: github.com/aws/aws-sdk-go/aws/session.NewSession
-        - function-call: github.com/aws/aws-sdk-go/aws/session.NewSessionWithOptions
+      all-of:
+        - not:
+            import-path: github.com/aws/aws-sdk-go/aws/session
+        - one-of:
+            - function-call: github.com/aws/aws-sdk-go/aws/session.NewSession
+            - function-call: github.com/aws/aws-sdk-go/aws/session.NewSessionWithOptions
     advice:
       - wrap-expression:
           imports:
@@ -29,7 +34,10 @@ aspects:
 
   - id: session.New
     join-point:
-      function-call: github.com/aws/aws-sdk-go/aws/session.New
+      all-of:
+        - not:
+            import-path: github.com/aws/aws-sdk-go/aws/session
+        - function-call: github.com/aws/aws-sdk-go/aws/session.New
     advice:
       - wrap-expression:
           imports:

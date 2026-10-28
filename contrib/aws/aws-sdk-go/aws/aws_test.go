@@ -1200,3 +1200,40 @@ func TestWrapSessionTwice(t *testing.T) {
 	assert.Equal(t, sendLen, base.Handlers.Send.Len())
 	assert.Equal(t, completeLen, base.Handlers.Complete.Len())
 }
+
+func TestWrapSessionAgainAfterUserHandlers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+			w.Write([]byte(`{"TableNames":[]}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// The first wrap stands for the one otelc adds. The application then adds
+	// a Complete handler and wraps the session itself.
+	sess := WrapSession(session.Must(session.NewSession(cfg)))
+	userErr := errors.New("set by a user handler")
+	sess.Handlers.Complete.PushBackNamed(request.NamedHandler{
+		Name: "user.Complete",
+		Fn:   func(r *request.Request) { r.Error = userErr },
+	})
+	sess = WrapSession(sess, WithService("user-service"))
+
+	// The error a Complete handler sets is not returned by the call, but the
+	// tracing Complete handler reads it when it runs after the user's.
+	_, _ = dynamodb.New(sess).ListTables(&dynamodb.ListTablesInput{})
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "user-service", spans[0].Tag(ext.ServiceName))
+	assert.Equal(t, userErr.Error(), spans[0].Tag(ext.ErrorMsg), "the tracing Complete handler must run after the user's")
+}
