@@ -43,24 +43,21 @@ aspects:
               return cfg
             }({{ . }})
 
-  # config.LoadDefaultConfig replaces the APIOptions of the literal above with
-  # the ones from its options, which drops the middleware. getAPIOptions is
-  # where it reads them, so the middleware is added to its result.
-  - id: config.getAPIOptions
+  # The config LoadDefaultConfig returns already holds the API options the
+  # application passed, which replace the ones the literal above set inside
+  # LoadDefaultConfig, so the middleware is added to the result.
+  - id: config.LoadDefaultConfig
     join-point:
-      all-of:
-        - import-path: github.com/aws/aws-sdk-go-v2/config
-        - function-body:
-            function:
-              - name: getAPIOptions
-              - receiver: false
+      function-call: github.com/aws/aws-sdk-go-v2/config.LoadDefaultConfig
     advice:
-      - prepend-statements:
+      - wrap-expression:
           imports:
             awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+            aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
-            defer func() {
-              if {{ .Function.Result 1 }} && {{ .Function.Result 2 }} == nil {
-                {{ .Function.Result 0 }} = awstrace.APIOptionsWithTracing({{ .Function.Result 0 }})
+            func(cfg aws.Config, err error) (aws.Config, error) {
+              if err == nil {
+                cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
               }
-            }()
+              return cfg, err
+            }({{ . }})
