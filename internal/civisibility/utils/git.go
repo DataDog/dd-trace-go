@@ -101,8 +101,8 @@ var (
 	// safeDirectoryValue holds the cached repository root path for safe.directory config.
 	safeDirectoryValue string
 
-	// errGitCLIDisabledInPayloadFilesMode reports that payload-file mode must avoid invoking the Git CLI.
-	errGitCLIDisabledInPayloadFilesMode = errors.New("git CLI is disabled in payload-file mode")
+	// errGitCLIDisabled reports that the current mode must avoid invoking the Git CLI.
+	errGitCLIDisabled = errors.New("git CLI is disabled")
 )
 
 // branchMetrics holds metrics for evaluating base branch candidates
@@ -195,8 +195,8 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 		}()
 	}
 	if bazel.IsGitCLIDisabled() {
-		log.Debug("civisibility.git: skipping git command in payload-file mode: git %s", strings.Join(args, " "))
-		return nil, errGitCLIDisabledInPayloadFilesMode
+		log.Debug("civisibility.git: skipping git command because the git CLI is disabled: git %s", strings.Join(args, " "))
+		return nil, errGitCLIDisabled
 	}
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
@@ -261,8 +261,8 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 		}()
 	}
 	if bazel.IsGitCLIDisabled() {
-		log.Debug("civisibility.git: skipping git command with stdin in payload-file mode: git %s", strings.Join(args, " "))
-		return "", errGitCLIDisabledInPayloadFilesMode
+		log.Debug("civisibility.git: skipping git command with stdin because the git CLI is disabled: git %s", strings.Join(args, " "))
+		return "", errGitCLIDisabled
 	}
 	gitCommandMutex.Lock()
 	defer gitCommandMutex.Unlock()

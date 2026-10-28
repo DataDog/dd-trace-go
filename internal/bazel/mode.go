@@ -33,6 +33,10 @@ const (
 	PayloadsInFilesEnv = "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES"
 	// UndeclaredOutputsDirEnv points to Bazel's undeclared outputs root where payload files are stored.
 	UndeclaredOutputsDirEnv = "TEST_UNDECLARED_OUTPUTS_DIR"
+	// GitCLIDisabledEnv disables local Git CLI invocation for CI Visibility.
+	// It is an internal knob for test fixture child processes whose bootstrap
+	// must not depend on repository or network git work; it is not public configuration.
+	GitCLIDisabledEnv = "_DD_CIVISIBILITY_GIT_CLI_DISABLED"
 )
 
 // PayloadKind identifies the payload subdirectory and naming strategy used for
@@ -54,6 +58,10 @@ type Mode struct {
 	ManifestEnabled bool
 	// PayloadFilesEnabled reports whether Bazel payload-file mode is enabled.
 	PayloadFilesEnabled bool
+	// GitCLIDisabled reports whether the Git CLI must not be invoked, either
+	// because payload-file mode is enabled or because the internal
+	// GitCLIDisabledEnv knob requests it.
+	GitCLIDisabled bool
 	// ManifestPath is the resolved absolute path to the Bazel manifest file when manifest mode is enabled.
 	ManifestPath string
 	// ManifestDir is the directory that contains the resolved manifest and its cache tree.
@@ -95,9 +103,12 @@ func IsPayloadFilesModeEnabled() bool {
 	return CurrentMode().PayloadFilesEnabled
 }
 
-// IsGitCLIDisabled returns true when the current Bazel mode must not invoke the Git CLI.
+// IsGitCLIDisabled returns true when the current mode must not invoke the Git CLI:
+// payload-file mode always disables it, and the internal GitCLIDisabledEnv knob
+// disables it without changing any other mode.
 func IsGitCLIDisabled() bool {
-	return CurrentMode().PayloadFilesEnabled
+	mode := CurrentMode()
+	return mode.PayloadFilesEnabled || mode.GitCLIDisabled
 }
 
 // CacheHTTPFile returns the expected cache/http file path in manifest mode.
@@ -180,8 +191,10 @@ func resolveMode() Mode {
 	manifestRloc := strings.TrimSpace(env.Get(ManifestFilePathEnv))
 	payloadFilesEnv := strings.TrimSpace(env.Get(PayloadsInFilesEnv))
 	undeclaredOutputsDir := strings.TrimSpace(env.Get(UndeclaredOutputsDirEnv))
-	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_env:%q undeclared_outputs_dir:%q]",
-		manifestRloc, payloadFilesEnv, undeclaredOutputsDir)
+	gitCLIDisabled := parseBoolEnv(env.Get(GitCLIDisabledEnv))
+	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_env:%q undeclared_outputs_dir:%q git_cli_disabled:%t]",
+		manifestRloc, payloadFilesEnv, undeclaredOutputsDir, gitCLIDisabled)
+	mode.GitCLIDisabled = gitCLIDisabled
 
 	if manifestRloc != "" {
 		logger.Debug("civisibility: resolving manifest path from %q", manifestRloc)
@@ -207,8 +220,8 @@ func resolveMode() Mode {
 		logger.Debug("civisibility: payload-file mode disabled after parsing value %q", payloadFilesEnv)
 	}
 
-	logger.Debug("civisibility: test optimization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s]",
-		mode.ManifestEnabled, mode.PayloadFilesEnabled, TestOptimizationPathForLog(mode.ManifestPath), absolutePathForLog(mode.PayloadsRoot))
+	logger.Debug("civisibility: test optimization mode [manifest:%t payload_files:%t git_cli_disabled:%t manifest_file:%s payload_root:%s]",
+		mode.ManifestEnabled, mode.PayloadFilesEnabled, mode.GitCLIDisabled, TestOptimizationPathForLog(mode.ManifestPath), absolutePathForLog(mode.PayloadsRoot))
 	return mode
 }
 

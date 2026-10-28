@@ -577,6 +577,23 @@ func TestIsGitCLIDisabled(t *testing.T) {
 	}
 }
 
+func TestIsGitCLIDisabledByInternalEnv(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	t.Setenv(GitCLIDisabledEnv, "true")
+
+	if !IsGitCLIDisabled() {
+		t.Fatal("expected git cli disabled by internal env")
+	}
+	if IsPayloadFilesModeEnabled() {
+		t.Fatal("expected payload-files mode to stay disabled")
+	}
+	if IsManifestModeEnabled() {
+		t.Fatal("expected manifest mode to stay disabled")
+	}
+}
+
 func containsTestOptimizationLogLine(lines []string, want string) bool {
 	for _, line := range lines {
 		if strings.Contains(line, want) {
