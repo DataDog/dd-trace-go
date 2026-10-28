@@ -178,13 +178,13 @@ jobs:
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
-      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
-      # test timeout. Images (and their pinned digests) come from the shared Testcontainers catalog.
+      # Pull every image of the shared Testcontainers catalog ahead of time, so the pulls don't have
+      # to fit within the test timeout. The catalog pins the images the integration suites use.
       - name: Pull container images
         # Docker is only supported on Linux runners at the moment
         if: runner.os == 'Linux'
         run: |-
-          docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull postgres
+          docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull
 
       - name: Run Tests
         shell: bash
