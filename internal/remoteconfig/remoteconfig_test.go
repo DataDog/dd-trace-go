@@ -758,3 +758,33 @@ func TestPollOnEachSubscribe(t *testing.T) {
 		t.Fatal("no poll within 2s after the second Subscribe")
 	}
 }
+
+// TestClientGlobalNoRace pins that package-level accessors reading the client
+// singleton do not race with Start, which writes the global. Run under -race:
+// before accessors snapshotted the global under clientMux, a concurrent
+// UnregisterCapability during Start triggered the race detector (seen in CI as
+// the openfeature provider shutdown racing a new remote config Start).
+func TestClientGlobalNoRace(t *testing.T) {
+	Reset()
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	defer Reset()
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := RegisterCapability(Capability(i)); err == nil {
+				_ = UnregisterCapability(Capability(i))
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			// Early return when already started and a fresh start both exercise
+			// the guarded global write.
+			_ = Start(DefaultClientConfig())
+		}()
+	}
+	wg.Wait()
+	Stop()
+}
