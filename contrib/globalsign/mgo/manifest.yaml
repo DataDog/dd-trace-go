@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/globalsign/mgo
+display_name: mgo (globalsign)
+description: Instruments MongoDB commands, CRUD operations, queries, aggregation, map-reduce, bulk execution, cursor iteration,
+  and collection and index management through globalsign's mgo client.
+packages:
+- name: github.com/globalsign/mgo
+category:
+- db.client
+systems:
+- mongodb
+creation_date: '2018-08-15'
