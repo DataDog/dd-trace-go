@@ -61,7 +61,7 @@ func main() {
 
 	loaded, err := config.LoadDefaultConfig(ctx, config.WithRegion(region), config.WithCredentialsProvider(creds))
 	if err != nil {
-		log.Fatalf("mainapp: loading config: %v", err)
+		log.Fatalf("mainapp: loading config: %s", err.Error())
 	}
 	listTables(ctx, srv.URL, "load", loaded)
 
@@ -71,7 +71,7 @@ func main() {
 		config.WithAPIOptions(userAgentOption()),
 	)
 	if err != nil {
-		log.Fatalf("mainapp: loading config: %v", err)
+		log.Fatalf("mainapp: loading config: %s", err.Error())
 	}
 	listTables(ctx, srv.URL, "load with API options", withAPIOptions)
 
@@ -90,7 +90,7 @@ func main() {
 		awsconfig.WithDataDogTracer(awstrace.WithService(userService)),
 	)
 	if err != nil {
-		log.Fatalf("mainapp: loading config: %v", err)
+		log.Fatalf("mainapp: loading config: %s", err.Error())
 	}
 	listTables(ctx, srv.URL, "user load", userLoaded)
 
@@ -101,7 +101,7 @@ func main() {
 		awsconfig.WithDataDogTracer(awstrace.WithService(userService)),
 	)
 	if err != nil {
-		log.Fatalf("mainapp: loading config: %v", err)
+		log.Fatalf("mainapp: loading config: %s", err.Error())
 	}
 	listTables(ctx, srv.URL, "user load with API options", userWithAPIOptions)
 
@@ -119,6 +119,6 @@ func userAgentOption() []func(*middleware.Stack) error {
 func listTables(ctx context.Context, endpoint, style string, cfg aws.Config) {
 	ddb := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) { o.BaseEndpoint = &endpoint })
 	if _, err := ddb.ListTables(ctx, nil); err != nil {
-		log.Fatalf("mainapp: %s config: %v", style, err)
+		log.Fatalf("mainapp: %s config: %s", style, err.Error())
 	}
 }
