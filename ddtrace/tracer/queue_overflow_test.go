@@ -49,8 +49,8 @@ var _ ddTransport = (*blockingTransport)(nil)
 // acquires that connection slot on the caller's goroutine (see writer.go),
 // and the caller is always the tracer's single worker goroutine. Once every
 // slot is taken, the next scheduled flush blocks the worker inside flush()
-// itself, so it can no longer drain t.out — and once t.out fills past
-// payloadQueueSize, pushChunk starts dropping chunks.
+// itself, so it can no longer drain t.out — and once t.out fills past its
+// capacity, pushChunk starts dropping chunks.
 func TestQueueOverflowOnStalledAgent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
@@ -93,10 +93,11 @@ func TestQueueOverflowOnStalledAgent(t *testing.T) {
 		synctest.Wait()
 
 		// t.out is now undrained. Fill it to capacity...
-		for range payloadQueueSize {
+		queueSize := cap(trc.out)
+		for range queueSize {
 			trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}})
 		}
-		require.Len(t, trc.out, payloadQueueSize)
+		require.Len(t, trc.out, queueSize)
 
 		// ...and this one is the drop this test reproduces.
 		trc.pushChunk(&chunk{spans: []*Span{newBasicSpan("queue-overflow")}})

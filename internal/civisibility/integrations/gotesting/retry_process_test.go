@@ -1283,10 +1283,10 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 	settings := integrations.GetSettings()
 	oldSettings := *settings
 	flakyRetries := integrations.GetFlakyRetriesSettings()
-	oldFlakyRetryCount := flakyRetries.RetryCount
+	oldFlakyRetries := *flakyRetries
 	t.Cleanup(func() {
 		*settings = oldSettings
-		flakyRetries.RetryCount = oldFlakyRetryCount
+		*flakyRetries = oldFlakyRetries
 	})
 
 	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
@@ -1361,6 +1361,31 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 	}
 	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, time.Second))
 	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, 5*time.Minute), "the scheduler must reuse the span finalizer's duration bucket")
+
+	flakyRetries.DynamicRetryCounts = &[5]int64{6, 5, 4, 3, 2}
+	dynamic := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
+	require.Equal(t, int64(5), computeAdjustedRetryCount(dynamic, 10*time.Second), "dynamic retry counts replace the flat count, with inclusive bucket bounds")
+	dynamicSlowEFD := &testExecutionMetadata{
+		isEarlyFlakeDetectionEnabled: true,
+		isANewTest:                   true,
+		isFlakyTestRetriesEnabled:    true,
+	}
+	require.Equal(t, int64(3), computeAdjustedRetryCount(dynamicSlowEFD, 5*time.Minute), "EFD skips a 5m test, but dynamic retries keep it in the 5m bucket")
+	require.True(t, dynamicSlowEFD.efdFellBackToFlakyRetries)
+}
+
+func TestProcessRetryDynamicDurationBucket(t *testing.T) {
+	for _, test := range []struct {
+		duration time.Duration
+		bucket   int
+	}{
+		{5 * time.Second, 0}, {5*time.Second + 1, 1},
+		{10 * time.Second, 1}, {10*time.Second + 1, 2},
+		{30 * time.Second, 2}, {30*time.Second + 1, 3},
+		{5 * time.Minute, 3}, {5*time.Minute + 1, 4},
+	} {
+		require.Equal(t, test.bucket, dynamicRetryDurationBucket(test.duration), "duration %s", test.duration)
+	}
 }
 
 func TestProcessRetryTestingMReflectionDrift(t *testing.T) {
@@ -3369,62 +3394,97 @@ func TestProcessRetryUnreapedChildRetainsShutdownOwnershipUntilWaitCompletes(t *
 }
 
 func TestRunProcessRetryAttemptRechecksCancellationAfterLaunchGateWait(t *testing.T) {
-	resetProcessRetryLimiterForTesting(t)
-	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
-	defer restoreLaunchGate()
-	releaseGate := holdProcessRetryLaunchGateForTesting(t)
+	for _, expired := range []bool{false, true} {
+		name := "cancel_after_gate_wait"
+		if expired {
+			name = "deadline_before_gate_wait"
+		}
+		t.Run(name, func(t *testing.T) {
+			resetProcessRetryLimiterForTesting(t)
+			restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
+			defer restoreLaunchGate()
+			releaseGate := sync.OnceFunc(holdProcessRetryLaunchGateForTesting(t))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	conditionTriggered := make(chan struct{})
-	armCondition := atomic.Bool{}
-	startCalls := atomic.Int32{}
-	base := time.Unix(1_700_000_000, 0)
-	baseline := &processRetryLaunchBaseline{
-		hooks: processRetryRunnerHooks{
-			command: exec.Command,
-			prepareTree: func(*exec.Cmd) error {
-				armCondition.Store(true)
-				return nil
-			},
-			startAndWait: func(*exec.Cmd) (<-chan error, error) {
-				startCalls.Add(1)
-				return nil, nil
-			},
-			releaseTree: noopProcessRetryTree,
-			now: func() time.Time {
-				if armCondition.CompareAndSwap(true, false) {
-					cancel()
-					close(conditionTriggered)
+			ctx, cancel := context.WithCancel(context.Background())
+			gateWaitEntered := make(chan struct{})
+			allowGateWait := make(chan struct{})
+			resumeGateWait := sync.OnceFunc(func() { close(allowGateWait) })
+			startContext := &processRetryBlockingDoneContext{
+				Context: ctx,
+				entered: gateWaitEntered,
+				release: allowGateWait,
+			}
+			base := time.Unix(1_700_000_000, 0)
+			timeout := make(chan time.Time)
+			if expired {
+				close(timeout)
+			}
+			startCalls := atomic.Int32{}
+			baseline := &processRetryLaunchBaseline{
+				hooks: processRetryRunnerHooks{
+					command:     exec.Command,
+					prepareTree: noopProcessRetryTree,
+					startAndWait: func(*exec.Cmd) (<-chan error, error) {
+						startCalls.Add(1)
+						return nil, errors.New("unexpected child start")
+					},
+					releaseTree: noopProcessRetryTree,
+					now:         func() time.Time { return base },
+					// Keep timer delivery consistent with the frozen clock.
+					newTimer: func(time.Duration) processRetryTimer {
+						return &processRetryStaticTimer{ch: timeout}
+					},
+				},
+				executable:       os.Args[0],
+				workingDirectory: ".",
+				timeout:          time.Second,
+				timeoutSet:       true,
+			}
+			attemptResult := make(chan processRetryAttemptResult, 1)
+			attemptFinished := make(chan struct{})
+			defer func() {
+				cancel()
+				releaseGate()
+				resumeGateWait()
+				<-attemptFinished
+			}()
+			go func() {
+				defer close(attemptFinished)
+				attempt := runProcessRetryAttemptWithBaseline(startContext, processRetryChildConfig{
+					TestName:    "TestCancellationAfterLaunchGateWait",
+					Attempt:     1,
+					RetryReason: constants.AutoTestRetriesRetryReason,
+				}, time.Time{}, false, baseline)
+				if attempt.Cleanup != nil {
+					attempt.Cleanup()
 				}
-				return base
-			},
-		},
-		executable:       os.Args[0],
-		workingDirectory: ".",
-		timeout:          time.Second,
-		timeoutSet:       true,
-	}
-	attemptResult := make(chan processRetryAttemptResult, 1)
-	go func() {
-		attemptResult <- runProcessRetryAttemptWithBaseline(ctx, processRetryChildConfig{
-			TestName:    "TestCancellationAfterLaunchGateWait",
-			Attempt:     1,
-			RetryReason: constants.AutoTestRetriesRetryReason,
-		}, time.Time{}, false, baseline)
-	}()
+				attemptResult <- attempt
+			}()
 
-	<-conditionTriggered
-	releaseGate()
-
-	attempt := <-attemptResult
-	if attempt.Cleanup != nil {
-		defer attempt.Cleanup()
+			var attempt processRetryAttemptResult
+			select {
+			case <-gateWaitEntered:
+				require.False(t, expired, "expired attempt must not reach the launch gate")
+				// Done blocks and returns nil: only reopening the gate wakes
+				// the launch loop, which must then recheck context cancellation.
+				cancel()
+				releaseGate()
+				resumeGateWait()
+				attempt = <-attemptResult
+			case attempt = <-attemptResult:
+				require.True(t, expired, "attempt returned before waiting at the launch gate: %v", attempt.Err)
+			}
+			require.True(t, attempt.SetupFailure)
+			require.Equal(t, expired, attempt.TimedOut)
+			if expired {
+				require.ErrorIs(t, attempt.Err, context.DeadlineExceeded)
+			} else {
+				require.ErrorIs(t, attempt.Err, errProcessRetryLaunchCanceled)
+				require.ErrorIs(t, attempt.Err, context.Canceled)
+			}
+			require.Zero(t, startCalls.Load())
+		})
 	}
-	require.True(t, attempt.SetupFailure)
-	require.False(t, attempt.TimedOut)
-	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchCanceled)
-	require.ErrorIs(t, attempt.Err, context.Canceled)
-	require.Zero(t, startCalls.Load())
 }
 
 func TestRunProcessRetryAttemptRechecksParentDeadlineHardCapAfterLaunchGateWait(t *testing.T) {

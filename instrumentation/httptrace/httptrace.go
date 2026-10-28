@@ -27,14 +27,9 @@ import (
 )
 
 var (
-	cfg = newConfig()
-)
-
-var instr *instrumentation.Instrumentation
-
-func init() {
 	instr = instrumentation.Load(instrumentation.PackageNetHTTP)
-}
+	cfg   = newConfig()
+)
 
 var reportTelemetryConfigOnce sync.Once
 
@@ -43,19 +38,18 @@ type inferredSpanCreatedCtxKey struct{}
 type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
 
 // requestSpanTagsSizeHint pre-sizes the tag map built for every request span.
-// SpanType, HTTPMethod, HTTPURL, HTTPUserAgent, and "_dd.measured" are always
-// set (5), "http.host" is set when present (6), and AppSec header tags, IP
-// tags, and baggage tags add a variable amount on top — this only needs to
-// cover the common case to avoid the first few map growths, not be exact.
+// Both semantic modes set several fixed tags; request attributes, AppSec header
+// tags, IP tags, and baggage tags add a variable amount. This only needs to
+// cover the common case to avoid early map growth, not be exact.
 //
 // The value must be at least 9: the runtime rounds any map hint of 8 or less
 // down to a single 8-slot group, so make(map, 8) is identical to make(map) and
-// reserves nothing. 9 is the smallest hint that reserves a second group, so
-// spans that end up with 9+ tags (IP/AppSec/baggage) skip a growth and rehash.
+// reserves nothing. 9 is the smallest hint that reserves a second group.
 const requestSpanTagsSizeHint = 9
 
-// StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
-// (http.method, http.url, http.useragent). Any further span start option can be added with opts.
+// StartRequestSpan starts a server-side HTTP request span. When DD_TRACE_OTEL_SEMANTICS_ENABLED is true,
+// it uses OpenTelemetry HTTP attributes and a normalized method resource; otherwise, it uses Datadog HTTP tags.
+// Options in opts take precedence over these defaults.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	var ipTags map[string]string
 	if cfg.traceClientIP {
@@ -79,6 +73,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 	})
 
 	var inferredProxySpan *tracer.Span
+	otelSemanticsEnabled := cfg.otelSemanticsEnabled
 
 	if cfg.inferredProxyServicesEnabled {
 		inferredProxySpanCreated := false
@@ -88,7 +83,7 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 		}
 
 		if !inferredProxySpanCreated {
-			inferredProxySpan = startInferredSpanFromHeaders(r.Header)
+			inferredProxySpan = startInferredSpanFromRequest(r, ipTags, otelSemanticsEnabled)
 		}
 	}
 
@@ -109,12 +104,19 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 				ssCfg.Tags = make(map[string]any, requestSpanTagsSizeHint)
 			}
 			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			ssCfg.Tags[ext.HTTPMethod] = r.Method
-			ssCfg.Tags[ext.HTTPURL] = URLFromRequest(r, cfg.queryString)
-			ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			ssCfg.Tags["_dd.measured"] = 1
-			if r.Host != "" {
-				ssCfg.Tags["http.host"] = r.Host
+			if otelSemanticsEnabled {
+				setOTelServerRequestTags(ssCfg.Tags, r, ipTags)
+			} else {
+				ssCfg.Tags[ext.HTTPMethod] = r.Method
+				ssCfg.Tags[ext.HTTPURL] = URLFromRequest(r, cfg.queryString)
+				ssCfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+				if r.Host != "" {
+					ssCfg.Tags["http.host"] = r.Host
+				}
+				for k, v := range ipTags {
+					ssCfg.Tags[k] = v
+				}
 			}
 			appsechttpsec.SetSecurityTestingHeaderTags(ssCfg.Tags, r.Header)
 
@@ -134,9 +136,6 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 				return true
 			})
 
-			for k, v := range ipTags {
-				ssCfg.Tags[k] = v
-			}
 		})
 	nopts = append(nopts, opts...)
 
@@ -147,26 +146,29 @@ func startRequestSpan(r *http.Request, ipTags map[string]string, opts ...tracer.
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
 	return span, ctx, func(status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
-		FinishRequestSpan(span, status, errorFn, opts...)
+		finishRequestSpan(span, status, errorFn, otelSemanticsEnabled, opts...)
 		if inferredProxySpan != nil {
-			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
+			finishRequestSpan(inferredProxySpan, status, errorFn, otelSemanticsEnabled, opts...)
 		}
 	}
 }
 
-// FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
-// code. If not nil, errorFn will override the isStatusError method on httptrace for determining error codes. Any further span finish option can be added with opts.
+// FinishRequestSpan finishes an HTTP request span. When DD_TRACE_OTEL_SEMANTICS_ENABLED is true, it sets
+// http.response.status_code and sets error.type to the status code for responses classified as errors; otherwise,
+// it sets http.status_code. A non-nil errorFn replaces the configured server status check.
 func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts ...tracer.FinishOption) {
+	finishRequestSpan(s, status, errorFn, cfg.otelSemanticsEnabled, opts...)
+}
+
+func finishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, otelSemanticsEnabled bool, opts ...tracer.FinishOption) {
 	var statusStr string
-	var fn func(int) bool
 	if errorFn == nil {
-		fn = cfg.isStatusError
-	} else {
-		fn = errorFn
+		errorFn = cfg.isStatusError
 	}
+	statusError := errorFn(status)
 	// if status is 0, treat it like 200 unless 0 was called out in DD_TRACE_HTTP_SERVER_ERROR_STATUSES
 	if status == 0 {
-		if fn(status) {
+		if statusError {
 			statusStr = "0"
 			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		} else {
@@ -174,7 +176,7 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 		}
 	} else {
 		statusStr = strconv.Itoa(status)
-		if fn(status) {
+		if statusError {
 			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
@@ -194,7 +196,14 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 		// the error stack generation per span that happens in `FinishRequestSpan` before calling `s.Finish`.
 		s.SetTag("error.stack", "")
 	}
-	s.SetTag(ext.HTTPCode, statusStr)
+	if otelSemanticsEnabled {
+		s.SetTag(ext.HTTPResponseStatusCode, statusStr)
+		if statusError {
+			s.SetTag(ext.ErrorType, statusStr)
+		}
+	} else {
+		s.SetTag(ext.HTTPCode, statusStr)
+	}
 	s.Finish(tracer.WithFinishConfig(fc))
 }
 
@@ -202,6 +211,12 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 // collected and obfuscated either by the default query string obfuscator or a custom one provided via
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER is set it takes
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
+// an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and the query string is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), the query string is <redacted>.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, false, r.Host)
@@ -211,6 +226,12 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 // are collected and obfuscated either by the default query string obfuscator or a custom one provided via
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT is set it takes
 // precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, the query string is not collected, also when
+// an allowlist is set.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
+// string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and the query string is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), the query string is <redacted>.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, true, r.Host)
@@ -254,14 +275,32 @@ func withClientAllowlist(c *obfuscateQueryStringConfig) {
 	c.isClient = true
 }
 
+// ForClientSpan makes ObfuscateQueryString use the rules of HTTP client spans, like URLFromClientRequest: it
+// selects the client allowlist (DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT) instead of the server one, and
+// it ignores DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED, which only applies to server spans. Use it for HTTP client
+// integrations whose request type is not a *http.Request.
+func ForClientSpan() ObfuscateQueryStringOption {
+	return forClientSpan
+}
+
+func forClientSpan(c *obfuscateQueryStringConfig) {
+	withClientAllowlist(c)
+	skipCollectionCheck(c)
+}
+
 // skipCollectionCheck makes the call ignore DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED.
 func skipCollectionCheck(c *obfuscateQueryStringConfig) {
 	c.checkCollection = false
 }
 
 // ObfuscateQueryString returns rawQuery with sensitive query parameters obfuscated, following the same rules
-// as URLFromRequest. It returns "" when query string collection is disabled or rawQuery is empty. Use it for
-// integrations whose request type is not a *http.Request, such as fasthttp.
+// as URLFromRequest. It returns "" when query string collection is disabled, when
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, or when rawQuery is empty. When
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: it returns
+// rawQuery as-is, with no redaction of sensitive values. An allowlist still applies. When
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and rawQuery is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), it returns "<redacted>".
+// Use it for integrations whose request type is not a *http.Request, such as fasthttp.
 func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) string {
 	config := obfuscateQueryStringConfig{checkCollection: true}
 	for _, opt := range opts {
@@ -272,15 +311,28 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 	if rawQuery == "" || (config.checkCollection && !cfg.queryString) {
 		return ""
 	}
+	if cfg.dropQueryString {
+		// Fail closed: the configured regexp is not valid, thus the query string
+		// cannot be obfuscated.
+		return ""
+	}
 	if allowlist := cfg.getQueryStringAllowlist(config.isClient); allowlist != nil {
 		// When an allowlist is configured, only keep the specified parameter keys.
 		// This avoids running the expensive obfuscation regex entirely.
 		return filterQueryStringByAllowlist(rawQuery, allowlist)
 	}
 	if cfg.useDefaultObfuscator {
+		if cfg.replaceJWTDelimiter {
+			return obfuscateQueryStringDefaultLiteral(rawQuery)
+		}
 		return obfuscateQueryStringDefault(rawQuery)
 	}
 	if cfg.queryStringRegexp != nil {
+		if cfg.queryStringSizeLimit > 0 && len(rawQuery) > cfg.queryStringSizeLimit {
+			// Bound the cost of the custom regexp: it cannot stop before it
+			// is done. Do not truncate: the tail can contain a secret.
+			return "<redacted>"
+		}
 		return cfg.queryStringRegexp.ReplaceAllLiteralString(rawQuery, "<redacted>")
 	}
 	return rawQuery
@@ -304,20 +356,27 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool, authority 
 	} else {
 		url = path
 	}
-	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	if queryString && r.URL.RawQuery != "" {
-		opts := []ObfuscateQueryStringOption{skipCollectionCheck}
-		if isClient {
-			opts = append(opts, withClientAllowlist)
-		}
-		if query := ObfuscateQueryString(r.URL.RawQuery, opts...); query != "" {
-			url = url + "?" + query
-		}
+	if query := queryStringFromRequest(r, queryString, isClient); query != "" {
+		url = url + "?" + query
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
 		url = url + "#" + frag
 	}
 	return url
+}
+
+// queryStringFromRequest returns "" when queryString is false or the request has no query.
+// Otherwise, it applies the client or server allowlist. Without an allowlist, the built-in
+// obfuscator applies unless DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP overrides it.
+func queryStringFromRequest(r *http.Request, queryString, isClient bool) string {
+	if !queryString || r.URL == nil {
+		return ""
+	}
+	opts := []ObfuscateQueryStringOption{skipCollectionCheck}
+	if isClient {
+		opts = append(opts, withClientAllowlist)
+	}
+	return ObfuscateQueryString(r.URL.RawQuery, opts...)
 }
 
 // filterQueryStringByAllowlist parses a raw query string and returns only the key=value

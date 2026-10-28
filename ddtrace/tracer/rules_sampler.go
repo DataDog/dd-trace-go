@@ -138,7 +138,7 @@ func (rs *traceRulesSampler) enabled() bool {
 
 func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	if rate < 0.0 || rate > 1.0 {
-		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
+		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate) //errtrack:ignore invalid user configuration
 		return false
 	}
 	rs.mu.Lock()
@@ -210,6 +210,17 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 		limiter = rs.limiter
 	}
 	span.applyTraceRuleSampling(rate, sampler, limiter, now)
+}
+
+// fixedRate returns the global sample rate when it alone drives rule-based
+// trace sampling: it is set and no trace rule can take precedence over it.
+func (rs *traceRulesSampler) fixedRate() (float64, bool) {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	if len(rs.rules) > 0 || math.IsNaN(rs.globalRate) {
+		return math.NaN(), false
+	}
+	return rs.globalRate, true
 }
 
 func (rs *traceRulesSampler) limit() (float64, bool) {

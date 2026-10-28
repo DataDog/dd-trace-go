@@ -38,6 +38,7 @@ func resetCIVisibilityStateForTesting() {
 
 	ciVisibilityClient = nil
 	ciVisibilitySettings = net.SettingsResponseData{}
+	ciVisibilityBackendSlowTestRetries = [4]int{}
 	ciVisibilityKnownTests = net.KnownTestsResponseData{}
 	ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{}
 	ciVisibilitySkippables = nil

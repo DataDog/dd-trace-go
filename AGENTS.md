@@ -10,6 +10,7 @@ Run required verification commands directly. If you pipe their output, enable `p
 
 Before reviewing or changing files in these areas, read the applicable scoped instructions:
 
+* [.github/AGENTS.md](./.github/AGENTS.md) -- for updating CI workflows, actions and scripts
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing

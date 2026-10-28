@@ -32,8 +32,20 @@ type ServeConfig struct {
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
-	// Route is the request matched route if any, if empty, a quantization algorithm will create one using the request URL.
+	// Route is the low-cardinality route path template selected for the request, if available.
+	// A non-empty Route is recorded as http.route. Route must not contain the raw request path.
 	Route string
+	// RouteSet reports whether a router resolved Route, including an empty result when no route matched.
+	// When true, TraceAndServe does not infer an OpenTelemetry route from Request.Pattern.
+	RouteSet bool
+	// Internal: This field exists to avoid per-request global lookups.
+	// For internal use, it must match the resolved global config DD_TRACE_OTEL_SEMANTICS_ENABLED,
+	// as this option is not configurable per-request.
+	// Library users must set it to nil and let us resolve DD_TRACE_OTEL_SEMANTICS_ENABLED internally.
+
+	// OTelSemanticsEnabled selects OpenTelemetry rather than Datadog semantic conventions.
+	// Must be left nil.
+	OTelSemanticsEnabled *bool
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
@@ -68,7 +80,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
-	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
+	endpointOpt, endpointFn := handleHTTPEndpoint(cfg.Route, r)
 	opts = append(opts, endpointOpt)
 
 	appsecEnabled := appsec.Enabled()
@@ -100,7 +112,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 			ClientIP:    clientIP,
 		}
 
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, AppSecSpanTagSetter(span, otelSemanticsEnabled()), appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()
@@ -112,38 +124,48 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	return rw, rt, afterHandle, handled
 }
 
+// HTTPEndpointTag returns a start option that sets http.route (when non-empty) and http.endpoint,
+// using HTTPEndpoint to select the endpoint value.
+func HTTPEndpointTag(route string, r *http.Request) tracer.StartSpanOption {
+	opt, _ := handleHTTPEndpoint(route, r)
+	return opt
+}
+
+// HTTPEndpoint returns the endpoint selected by resource-renaming configuration.
+// The route takes precedence over the simplified request path unless
+// DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT is enabled. The boolean
+// is false when endpoint resource renaming is disabled.
+func HTTPEndpoint(route string, r *http.Request) (string, bool) {
+	// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
+	// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
+	if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
+		return "", false
+	}
+
+	httpURL := r.URL.EscapedPath()
+	if cfg.resourceRenamingAlwaysSimplifiedEndpoint || route == "" {
+		return simplifyHTTPUrl(httpURL), true
+	}
+	return route, true
+}
+
 // handleHTTPEndpoint tags the span with http.endpoint based on the resource renaming configuration and returns the computed endpoint.
-func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) (tracer.StartSpanOption, func() string) {
+func handleHTTPEndpoint(route string, r *http.Request) (tracer.StartSpanOption, func() string) {
 	var endpoint string
 
 	return func(sc *tracer.StartSpanConfig) {
 			if sc.Tags == nil {
 				return
 			}
-			if serveCfg.Route != "" {
-				sc.Tags[ext.HTTPRoute] = serveCfg.Route
+			if route != "" {
+				sc.Tags[ext.HTTPRoute] = route
 			}
 
-			// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
-			// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
-			if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
-				return
-			}
-
-			httpURL := r.URL.EscapedPath()
-			if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
-				endpoint = simplifyHTTPUrl(httpURL)
+			var ok bool
+			endpoint, ok = HTTPEndpoint(route, r)
+			if ok {
 				sc.Tags[ext.HTTPEndpoint] = endpoint
-				return
 			}
-
-			if serveCfg.Route != "" {
-				endpoint = serveCfg.Route
-			} else {
-				endpoint = simplifyHTTPUrl(httpURL)
-			}
-
-			sc.Tags[ext.HTTPEndpoint] = endpoint
 		}, func() string {
 			return endpoint
 		}

@@ -25,7 +25,7 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-[embedmd]:# (../tmp/make-help.txt)
+
 ```txt
 Usage: make [target]
 
@@ -83,7 +83,7 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 
 The test script provides many options for different testing scenarios:
 
-[embedmd]:# (../tmp/test-help.txt)
+
 ```txt
 test.sh - Run the tests for dd-trace-go
   this script requires gotestsum, goimports, docker and docker-compose.
@@ -91,7 +91,6 @@ test.sh - Run the tests for dd-trace-go
   -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
   -c | --contrib     - Run contrib tests
   --all              - Synonym for -l -a -i -c
-  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
   -t | --tools       - Install gotestsum and goimports
   -h | --help        - Print this help message
 
@@ -147,12 +146,14 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 ```
 
 **Options:**
+
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
 - `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
+
 ```json
 {
   "sample": "net_http",
@@ -183,6 +184,7 @@ export DATADOG_SITE=datadoghq.com
 ```
 
 **Required environment variables:**
+
 - `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
@@ -224,19 +226,32 @@ go run ./scripts/citiming compare \
 Metric definitions (job wall time including post steps, post time, restore
 and save result classification, PR feedback time including the all-green
 delay, and the exact accepted check-name exclusions) live in the doc
-comment of `scripts/citiming/main.go` and are the report contract.
+comment of `scripts/citiming/main.go` and are the report contract. The `comparison.csv` columns are not a stable interface: new fields are
+inserted as needed, so consumers must match columns by header name, not
+by position.
 
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
 `cold_miss`, disabled, error, or unknown. For isolated-cache providers a
 raw cache-hit of `false` is ambiguous between a prefix restore and a
-cold miss. This applies to the cloudx provider: the setup action adds an
-optional `restored` field to the restore entry (`"true"` when the module
-cache is non-empty after the restore), which classifies the restore as
-prefix (`"true"`) or `cold_miss` (`"false"`); without the field the
-collector reports `unknown`. `actions/setup-go` restores with the primary
-key only, so for the github-cache provider `false` is a cold miss. The
+cold miss. This applies to the cloudx provider: the setup action passes
+the provider's `cache-matched-key` output through, and when the record
+carries it, the classification comes from the matched key (a non-empty
+matched key with a false cache-hit is a prefix restore, an empty one a
+cold miss). Records collected before the field existed keep the optional
+`restored` cross-check (`"true"` when the module cache is non-empty
+after the restore), which classifies the restore as prefix (`"true"`)
+or `cold_miss` (`"false"`); without either the collector reports
+`unknown`. `actions/setup-go` restores with the primary key only, so for
+the github-cache provider `false` is a cold miss. The setup_go entry
+also carries the derived `restore_source` (exact / default / branch /
+none — `default` marks a default-branch fallback restore, the signal
+the seed program measures) and `dep_match` (whether the matched entry
+was keyed with this job's dependency digest); the collector stores
+both, reports restore source per stratum in the cache-behavior table,
+and counts entries whose matched key and `restored` cross-check
+disagree. The
 Datadog count series keeps the contract it has always had, where `miss`
 means "not an exact hit", so every successful restore stays counted and
 existing dashboards remain continuous. The precise exact/prefix/cold

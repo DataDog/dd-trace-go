@@ -4,6 +4,7 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/99designs/gqlgen/otelc
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
@@ -17,15 +18,20 @@ use (
 	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
+	./contrib/connectrpc.com/connect
 	./contrib/database/sql
+	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
 	./contrib/emicklei/go-restful.v3
 	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
+	./contrib/gin-gonic/gin/otelc
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
+	./contrib/go-chi/chi/otelc
 	./contrib/go-chi/chi.v5
+	./contrib/go-chi/chi.v5/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
 	./contrib/go-redis/redis.v7
@@ -35,11 +41,15 @@ use (
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
+	./contrib/gofiber/fiber.v2/otelc
 	./contrib/gomodule/redigo
+	./contrib/gomodule/redigo/otelc
 	./contrib/google.golang.org/api
 	./contrib/google.golang.org/api/internal/gen_endpoints
 	./contrib/google.golang.org/grpc
+	./contrib/google.golang.org/grpc/otelc
 	./contrib/gorilla/mux
+	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
@@ -49,15 +59,19 @@ use (
 	./contrib/jackc/pgx.v5
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
+	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
+	./contrib/labstack/echo.v4/otelc
 	./contrib/labstack/echo.v5
+	./contrib/labstack/echo.v5/otelc
 	./contrib/log/slog
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
 	./contrib/modelcontextprotocol/go-sdk
 	./contrib/net/http
+	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
 	./contrib/opensearch-project/opensearch-go.v4
