@@ -42,7 +42,7 @@ const (
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
-	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
+	flagEvalCountsEnabledEnvVar = "DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
 
@@ -111,7 +111,7 @@ type DatadogProvider struct {
 	flagEvalMetricsHook *flagEvalMetricsHook
 
 	// Flag evaluation EVP writer + hook (new Path B — EVP flagevaluation track).
-	// Both fields are nil when DD_FLAGGING_EVALUATION_COUNTS_ENABLED=false (killswitch).
+	// Both fields are nil when DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED=false (killswitch).
 	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
@@ -296,7 +296,7 @@ func newDatadogProviderWithSourceAndEVP(
 	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 
 	// Conditionally construct the EVP flagevaluation writer + hook.
-	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
+	// Gated by DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED (default true).
 	// When false, both fields are left nil and the EVP path is disabled.
 	// The OTel hook (flagEvalHook above) is registered unconditionally.
 	var evalWriter *flagEvalLoggingWriter

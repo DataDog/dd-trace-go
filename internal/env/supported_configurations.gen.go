@@ -92,10 +92,10 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS":   {},
 	"DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS": {},
 	"DD_FEATURE_FLAGS_ENABLED":                                                {},
+	"DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED":                              {},
 	"DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED":       {},
 	"DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE":                           {},
 	"DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED":                      {},
-	"DD_FLAGGING_EVALUATION_COUNTS_ENABLED":                                   {},
 	"DD_GIT_BRANCH":                                                           {},
 	"DD_GIT_COMMIT_AUTHOR_DATE":                                               {},
 	"DD_GIT_COMMIT_AUTHOR_EMAIL":                                              {},
@@ -360,8 +360,9 @@ var SensitiveConfigurations = map[string]struct{}{
 
 // KeyAliases maps canonical configuration keys to their known aliases.
 var KeyAliases = map[string][]string{
-	"DD_API_KEY":                    {"DD-API-KEY"},
-	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
-	"DD_LLMOBS_PROMPTS_CACHE_TTL":   {"DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS"},
-	"DD_LLMOBS_PROMPTS_TIMEOUT":     {"DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS"},
+	"DD_API_KEY":                                 {"DD-API-KEY"},
+	"DD_APPSEC_STACK_TRACE_ENABLED":              {"DD_APPSEC_STACK_TRACE_ENABLE"},
+	"DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED": {"DD_FLAGGING_EVALUATION_COUNTS_ENABLED"},
+	"DD_LLMOBS_PROMPTS_CACHE_TTL":                {"DD_LLMOBS_PROMPTS_CACHE_TTL_SECONDS"},
+	"DD_LLMOBS_PROMPTS_TIMEOUT":                  {"DD_LLMOBS_PROMPTS_TIMEOUT_SECONDS"},
 }
