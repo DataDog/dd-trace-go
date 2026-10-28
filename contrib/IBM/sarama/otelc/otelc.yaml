@@ -3,31 +3,11 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# Like orchestrion, these rules wrap the result of each sarama constructor call
-# with the contrib, in every package of the build, dependencies included,
-# except sarama and the contrib. function_call only matches qualified calls, so
-# sarama's own calls are never rewritten. That keeps the async producer that
-# sarama's sync producer constructors build, and type assert to their own type,
-# unwrapped. The contrib's tests build sarama values and wrap them, so
-# rewriting those would trace them twice and import the contrib into itself.
-#
-# The rewritten file imports the contrib, so the contrib is initialized before
-# a call from a package-level variable or an init function.
-#
-# The producer rules read the config from the call's own arguments, or from
-# the client for the FromClient constructors, where orchestrion passes the
-# enclosing function's *sarama.Config argument or nil. A nil config reaches
-# the contrib as nil in both tools.
-#
-# TODO: wrap_call rejects a replace template without the original call
-# ({{ . }}), so the producer templates keep it in a branch that never runs.
-# They take the arguments as typed closure parameters, so each argument is
-# evaluated once and where the original call was, which matters for a go or
-# defer statement, and a nil argument compiles. The parameter names keep a
-# prefix so they cannot hide a variable that the original call refers to.
-# Remove the branch once wrap_call can replace a call outright:
-# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
-
+# Call-site rules, not hooks on the constructors: sarama's sync producer
+# constructors call the async ones and type assert the result, which a hook
+# would break, and the rewritten package imports the contrib, so it is
+# initialized before a value built in a package-level var or init. The
+# contrib is excluded because its tests wrap sarama values themselves.
 sarama_new_consumer:
   target:
     - "**"
@@ -70,6 +50,14 @@ sarama_new_consumer_from_client:
     sarama: github.com/IBM/sarama
     saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
+# The producer rules pass the config from the call's arguments, or the client's
+# config, to the contrib. A nil config reaches the contrib as nil.
+#
+# TODO: wrap_call requires the original call in the template, so it stays in a
+# branch that never runs. The parameters keep a prefix so they cannot hide a
+# variable the original call uses. Remove the branch once wrap_call can replace
+# a call outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
 sarama_new_sync_producer:
   target:
     - "**"
