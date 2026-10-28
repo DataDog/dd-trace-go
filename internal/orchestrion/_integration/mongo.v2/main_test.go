@@ -18,6 +18,7 @@ import (
 )
 
 func TestClientInMain(t *testing.T) {
+	maintest.RequireOtelc(t)
 	containers.SkipIfProviderIsNotHealthy(t)
 	_, uri := containers.StartMongoDBTestContainer(t)
 	t.Setenv("MONGODB_URI", uri)
