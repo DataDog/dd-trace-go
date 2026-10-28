@@ -41,6 +41,8 @@ func TestLambda(t *testing.T) {
 		"Start",
 		"StartWithOptions",
 		"StartWithOptionsSpread",
+		"StartHandlerFunc",
+		"StartHandlerFuncSpread",
 		"StartStruct",
 		"StartNewHandler",
 		"StartWithContext",
@@ -48,6 +50,7 @@ func TestLambda(t *testing.T) {
 		"StartHandlerWithContext",
 		"Prewrapped",
 		"Aliased",
+		"AliasedStartHandlerFunc",
 	} {
 		t.Run(variant, func(t *testing.T) {
 			t.Parallel()

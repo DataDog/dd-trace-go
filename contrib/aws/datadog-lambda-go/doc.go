@@ -18,8 +18,9 @@
 // # Orchestrion
 //
 // The Orchestrion integration in this package rewrites every call to
-// lambda.Start, lambda.StartWithOptions, lambda.StartWithContext,
-// lambda.StartHandler and lambda.StartHandlerWithContext so that the handler
+// lambda.Start, lambda.StartWithOptions, lambda.StartHandlerFunc,
+// lambda.StartWithContext, lambda.StartHandler and
+// lambda.StartHandlerWithContext so that the handler
 // goes through WrapFunction (or WrapLambdaHandlerInterface) with a nil Config.
 // That is equivalent to wrapping it by hand, with configuration read from DD_*
 // environment variables. Options passed to lambda.StartWithOptions are kept,

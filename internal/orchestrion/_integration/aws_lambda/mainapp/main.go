@@ -70,6 +70,10 @@ func main() {
 		lambda.StartWithOptions(handler, lambda.WithContext(ctx))
 	case "StartWithOptionsSpread":
 		lambda.StartWithOptions(handler, opts...)
+	case "StartHandlerFunc":
+		lambda.StartHandlerFunc(handler)
+	case "StartHandlerFuncSpread":
+		lambda.StartHandlerFunc(handler, opts...)
 	case "StartStruct":
 		lambda.Start(structHandler{})
 	case "StartNewHandler":
@@ -84,6 +88,8 @@ func main() {
 		lambda.Start(ddlambda.WrapFunction(handler, nil))
 	case "Aliased":
 		startAliased()
+	case "AliasedStartHandlerFunc":
+		startHandlerFuncAliased()
 	default:
 		fmt.Fprintln(os.Stderr, "unknown LAMBDA_VARIANT:", variant)
 		os.Exit(2)

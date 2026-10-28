@@ -10,3 +10,7 @@ import awslambda "github.com/aws/aws-lambda-go/lambda"
 func startAliased() {
 	awslambda.Start(handler)
 }
+
+func startHandlerFuncAliased() {
+	awslambda.StartHandlerFunc(handler)
+}
