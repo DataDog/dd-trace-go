@@ -54,16 +54,7 @@ Follow the [installation instructions](https://docs.datadoghq.com/serverless/ins
 
 [Orchestrion](https://datadoghq.dev/orchestrion/docs/getting-started/) can wrap your handler at build time, so you don't need to call `ddlambda.WrapFunction` yourself. Every `lambda.Start*` call is compiled as if its handler were passed through `ddlambda.WrapFunction(handler, nil)`, and the other Orchestrion integrations (for example `net/http` and `aws-sdk-go-v2`) trace the calls your handler makes. Handlers you already wrap by hand aren't wrapped twice.
 
-This integration is opt-in. It isn't part of `orchestrion/all`, so add it to your `orchestrion.tool.go`:
-
-```go
-import (
-    _ "github.com/DataDog/dd-trace-go/orchestrion/all/v2"
-    _ "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2" // Lambda handler auto-wrap
-)
-```
-
-Then build your function with Orchestrion:
+The integration is part of `orchestrion/all`, so a project [set up for Orchestrion](https://datadoghq.dev/orchestrion/docs/getting-started/) gets it with no extra import. Build your function with Orchestrion:
 
 ```bash
 GOOS=linux GOARCH=amd64 orchestrion go build -o bootstrap .

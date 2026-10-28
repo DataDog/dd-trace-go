@@ -28,6 +28,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"                    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"                       // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"                    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2"            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2"                    // integration

@@ -23,13 +23,8 @@
 // goes through WrapFunction (or WrapLambdaHandlerInterface) with a nil Config.
 // That is equivalent to wrapping it by hand, with configuration read from DD_*
 // environment variables. Options passed to lambda.StartWithOptions are kept,
-// and a handler that is already wrapped by hand is not wrapped again.
-//
-// The integration is opt-in: the github.com/DataDog/dd-trace-go/orchestrion/all
-// package does not include it. To enable it, import this package in your
-// orchestrion.tool.go file:
-//
-//	import _ "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2" // integration
+// and a handler that is already wrapped by hand is not wrapped again. The
+// integration is part of github.com/DataDog/dd-trace-go/orchestrion/all.
 //
 // Continuing traces from upstream services into the function, for event
 // sources other than API Gateway, requires the Datadog Lambda Extension.

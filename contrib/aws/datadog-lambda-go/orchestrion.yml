@@ -19,9 +19,6 @@ meta:
     environment variables. Options passed to lambda.StartWithOptions are kept.
     A handler that is already wrapped by ddlambda is not wrapped again.
 
-    This integration is opt-in. It is not part of orchestrion/all, so a project
-    enables it by importing this package in its orchestrion.tool.go file.
-
     Continuing traces from upstream services into the function, for event
     sources other than API Gateway, requires the Datadog Lambda Extension.
 
