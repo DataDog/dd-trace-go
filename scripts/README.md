@@ -329,6 +329,36 @@ go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
    from the reports; skipped jobs are absent work, not zero durations.
 6. Publish aggregates and run URLs in the PR description, never raw logs.
 
+### citiming pool
+
+`go run ./scripts/citiming pool --repo OWNER/NAME [--format text|datadog]`
+classifies one snapshot of the repository's shared Actions cache pool.
+It reuses the collector's cache snapshot (usage endpoint, entry
+inventory) and classifies every entry by cache kind
+(`go_build`, `tools`, `setup_go_builtin`, `gitdb`, `appsec_modules`,
+`datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
+keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
+for the default branch, `pr`, `mq`, `release`, `other`).
+
+`--format datadog` prints a `/api/v2/series` payload of gauges; the
+`cache-pool-metrics` workflow submits it hourly:
+
+- `ci.cache.pool.size_bytes` and `ci.cache.pool.entries`, per kind,
+  workload, platform and ref type.
+- `ci.cache.pool.total_bytes` (the usage endpoint's active size, falling
+  back to the listed entry sum).
+- `ci.cache.pool.limit_bytes`, only when the storage-limit endpoint
+  returns it; without admin rights it answers 403 and the gauge is
+  skipped.
+- `ci.cache.pool.oldest_access_age_seconds`, the eviction horizon.
+- `ci.cache.pool.default_entry_age_seconds`, the age of the newest
+  default-branch entry per kind, workload and platform: the seed
+  presence signal. A missing series means no seed of that cell exists.
+
+Every series is tagged with the repository. The text format prints the
+same data as a snapshot summary, and the workflow keeps that summary in
+the job log, so evidence exists even when submission fails.
+
 ## Guidelines
 
 - Scripts should be idempotent when possible
