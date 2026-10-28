@@ -186,7 +186,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:c5bf5ec9be0c51d3d2d47bdadbb82680b5c83ceb9cae8457fe44aa736a1784ad
+    image: datadog/agent:latest@sha256:4aa71f1f624e36ed4d04568e4ad3f323af14426db07d2f9ed98869f6d0bdbbd3
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
