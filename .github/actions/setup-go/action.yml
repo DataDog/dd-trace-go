@@ -220,34 +220,43 @@ runs:
         # The branch this run is on (the PR source branch for pull
         # requests), to tell a same-branch restore from a fallback.
         CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
+        # The resolved toolchain and this job's cache-key prefix: both are
+        # embedded verbatim in every key the provider can match, so the
+        # branch is what follows them and no regex guessing is needed.
+        GO_VERSION: ${{ steps.select-go.outputs.go-version }}
+        CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
       run: |
         set -euo pipefail
 
         source="none"
         dep_match="false"
         # Save-key layout, verified against the pinned provider revision:
-        # go-cache-<os>-<arch>-ddtg-cx1-<family>-<digest16>-<go>-<branch>-
-        # <dep-hash>-<run_id>. The branch may contain dashes and slashes, so
-        # the fixed-length hex segments and the run ID anchor the split.
-        # The Go version segment allows one prerelease cluster
-        # (1.28.0-rc.1); a longer hyphen tail belongs to the branch.
-        key_re='^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx1-(.*)-([0-9a-f]{16})-([0-9.]+[0-9A-Za-z.]*-[0-9A-Za-z.]+|[0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$'
+        # go-cache-<os>-<arch>-<CACHE_KEY_PREFIX>-<GO_VERSION>-<branch>-
+        # <dep-hash>-<run_id>. The prefix and the resolved Go version are
+        # known here and appear verbatim (every restore-key tier pins
+        # both), so the branch is parsed by stripping them literally. A
+        # generic regex cannot split the version from a hyphenated branch:
+        # 1.27.2-feature-main parses either way.
         if [[ "$CACHE_HIT" == "true" ]]; then
           source="exact"
         elif [[ -n "$MATCHED_KEY" ]]; then
           source="branch"
         fi
-        if [[ -n "$MATCHED_KEY" && "$MATCHED_KEY" =~ $key_re ]]; then
-          branch="${BASH_REMATCH[6]}"
-          saved_dep_hash="${BASH_REMATCH[7]}"
-          # A fallback is a restore of the default branch's entry from a
-          # DIFFERENT branch: a run already on the default branch that
-          # restores its own earlier entry is a same-branch restore.
-          if [[ "$branch" == "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" && "$source" != "exact" ]]; then
-            source="default"
-          fi
-          if [[ "$saved_dep_hash" == "$DEP_HASH" ]]; then
-            dep_match="true"
+        if [[ -n "$MATCHED_KEY" && "$MATCHED_KEY" == *"-${CACHE_KEY_PREFIX}-${GO_VERSION}-"* ]]; then
+          body="${MATCHED_KEY#*-${CACHE_KEY_PREFIX}-${GO_VERSION}-}"
+          rest="${body%-*}"      # drop the run ID
+          dep_hash="${rest##*-}" # the dependency hash is the last segment
+          rest="${rest%-*}"      # what remains is the branch
+          if [[ "$dep_hash" =~ ^[0-9a-f]{40,64}$ ]]; then
+            # A fallback is a restore of the default branch's entry from a
+            # DIFFERENT branch: a run already on the default branch that
+            # restores its own earlier entry is a same-branch restore.
+            if [[ "$rest" == "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" && "$source" != "exact" ]]; then
+              source="default"
+            fi
+            if [[ "$dep_hash" == "$DEP_HASH" ]]; then
+              dep_match="true"
+            fi
           fi
         fi
         printf 'cache-matched-key=%s\n' "$MATCHED_KEY" >> "$GITHUB_OUTPUT"

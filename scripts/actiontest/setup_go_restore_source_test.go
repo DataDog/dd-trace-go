@@ -18,11 +18,15 @@ import (
 // the same value embedded in the fixture keys below.
 const depHashFixture = "60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380"
 
+// cacheKeyPrefixFixture is the setup-go wrapper's computed prefix
+// (ddtg-cx1-<family>-<digest16>) for the multi-os workload.
+const cacheKeyPrefixFixture = "ddtg-cx1-multi-os-314198ec86eada43"
+
 // matchedKeyFixture builds a cloudx save key in the layout verified at the
 // pinned provider revision:
-// go-cache-<os>-<arch>-ddtg-cx1-<family>-<digest16>-<go>-<branch>-<dep-hash>-<run_id>.
-func matchedKeyFixture(branch string) string {
-	return "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-" +
+// go-cache-<os>-<arch>-<prefix>-<go>-<branch>-<dep-hash>-<run_id>.
+func matchedKeyFixture(goVersion, branch string) string {
+	return "go-cache-Windows-X64-" + cacheKeyPrefixFixture + "-" + goVersion + "-" +
 		branch + "-" + depHashFixture + "-38402253744"
 }
 
@@ -31,11 +35,13 @@ func matchedKeyFixture(branch string) string {
 func deriveRestoreSource(t *testing.T, env map[string]string) map[string]string {
 	t.Helper()
 	base := map[string]string{
-		"CACHE_HIT":      "false",
-		"MATCHED_KEY":    "",
-		"DEP_HASH":       depHashFixture,
-		"DEFAULT_BRANCH": "main",
-		"CURRENT_BRANCH": "feature",
+		"CACHE_HIT":        "false",
+		"MATCHED_KEY":      "",
+		"DEP_HASH":         depHashFixture,
+		"DEFAULT_BRANCH":   "main",
+		"CURRENT_BRANCH":   "feature",
+		"GO_VERSION":       "1.27.2",
+		"CACHE_KEY_PREFIX": cacheKeyPrefixFixture,
 	}
 	maps.Copy(base, env)
 	written, out, err := runSetupGoStep(t, setupGoStep(t, "Derive restore source"), base)
@@ -65,19 +71,19 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 		},
 		{
 			name:         "exact hit",
-			env:          map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("main")},
+			env:          map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("1.27.2", "main")},
 			wantSource:   "exact",
 			wantDepMatch: "true",
 		},
 		{
 			name:         "default-branch fallback restore",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("main")},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "main")},
 			wantSource:   "default",
 			wantDepMatch: "true",
 		},
 		{
 			name:         "same-branch restore",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("eliottness/appsec-disable-features")},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "eliottness/appsec-disable-features")},
 			wantSource:   "branch",
 			wantDepMatch: "true",
 		},
@@ -85,14 +91,14 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			name: "dependency hash differs",
 			env: map[string]string{
 				"DEP_HASH":    "0000000000000000000000000000000000000000000000000000000000000000",
-				"MATCHED_KEY": matchedKeyFixture("main"),
+				"MATCHED_KEY": matchedKeyFixture("1.27.2", "main"),
 			},
 			wantSource:   "default",
 			wantDepMatch: "false",
 		},
 		{
 			name:         "non-default repository branch",
-			env:          map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("develop")},
+			env:          map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("1.27.2", "develop")},
 			wantSource:   "default",
 			wantDepMatch: "true",
 		},
@@ -106,7 +112,7 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			// A nightly run on main restoring its own earlier entry is a
 			// same-branch restore, not a fallback.
 			name:         "same-branch restore on the default branch",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("main"), "CURRENT_BRANCH": "main"},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "main"), "CURRENT_BRANCH": "main"},
 			wantSource:   "branch",
 			wantDepMatch: "true",
 		},
@@ -115,8 +121,43 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			// the branch must still parse after it.
 			name: "prerelease Go version",
 			env: map[string]string{
-				"MATCHED_KEY": "go-cache-macOS-ARM64-ddtg-cx1-multi-os-314198ec86eada43-1.28.0-rc.1-" +
-					"main-" + depHashFixture + "-38402253744",
+				"GO_VERSION":  "1.28.0-rc.1",
+				"MATCHED_KEY": matchedKeyFixture("1.28.0-rc.1", "main"),
+			},
+			wantSource:   "default",
+			wantDepMatch: "true",
+		},
+		{
+			// A hyphenated branch whose last segment equals the default
+			// branch name must not lose its first segments to the version
+			// parse: feature-main is a same-branch restore on feature-main.
+			name: "hyphenated branch ending in the default branch name",
+			env: map[string]string{
+				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "feature-main"),
+				"CURRENT_BRANCH": "feature-main",
+			},
+			wantSource:   "branch",
+			wantDepMatch: "true",
+		},
+		{
+			// The reviewers' repro: 1.27.2-fix-main must parse as version
+			// 1.27.2 on branch fix-main, not as version 1.27.2-fix with a
+			// bogus default-branch fallback.
+			name: "stable version with a fix-main branch",
+			env: map[string]string{
+				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "fix-main"),
+				"CURRENT_BRANCH": "fix-main",
+			},
+			wantSource:   "branch",
+			wantDepMatch: "true",
+		},
+		{
+			// A hyphenated branch still counts as a fallback when the
+			// matched entry is the default branch's.
+			name: "hyphenated current branch restoring a default-branch entry",
+			env: map[string]string{
+				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "main"),
+				"CURRENT_BRANCH": "eliottness/feature-x",
 			},
 			wantSource:   "default",
 			wantDepMatch: "true",
@@ -159,13 +200,13 @@ func TestSetupGoObservationRestoreSourceFields(t *testing.T) {
 		"SETUP_OUTCOME":     "success",
 		"SETUP_CACHE_HIT":   "false",
 		"RESTORED":          "true",
-		"MATCHED_KEY":       matchedKeyFixture("main"),
+		"MATCHED_KEY":       matchedKeyFixture("1.27.2", "main"),
 		"RESTORE_SOURCE":    "default",
 		"DEP_MATCH":         "true",
 	})
 	entry := setupGoRestore(t, record)
 	for key, want := range map[string]string{
-		"cache_matched_key": matchedKeyFixture("main"),
+		"cache_matched_key": matchedKeyFixture("1.27.2", "main"),
 		"restore_source":    "default",
 		"dep_match":         "true",
 		"restored":          "true",

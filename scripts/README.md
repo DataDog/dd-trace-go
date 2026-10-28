@@ -25,7 +25,7 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-[embedmd]:# (../tmp/make-help.txt)
+
 ```txt
 Usage: make [target]
 
@@ -83,7 +83,7 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 
 The test script provides many options for different testing scenarios:
 
-[embedmd]:# (../tmp/test-help.txt)
+
 ```txt
 test.sh - Run the tests for dd-trace-go
   this script requires gotestsum, goimports, docker and docker-compose.
@@ -146,12 +146,14 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 ```
 
 **Options:**
+
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
 - `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
+
 ```json
 {
   "sample": "net_http",
@@ -182,6 +184,7 @@ export DATADOG_SITE=datadoghq.com
 ```
 
 **Required environment variables:**
+
 - `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
@@ -223,7 +226,9 @@ go run ./scripts/citiming compare \
 Metric definitions (job wall time including post steps, post time, restore
 and save result classification, PR feedback time including the all-green
 delay, and the exact accepted check-name exclusions) live in the doc
-comment of `scripts/citiming/main.go` and are the report contract.
+comment of `scripts/citiming/main.go` and are the report contract. The `comparison.csv` columns are not a stable interface: new fields are
+inserted as needed, so consumers must match columns by header name, not
+by position.
 
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
