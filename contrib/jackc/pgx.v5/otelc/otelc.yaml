@@ -16,7 +16,10 @@
 #
 # TODO: wrap_call rejects a replace template without the original call
 # ({{ . }}), so each template keeps it in a branch that never runs. Remove the
-# branch once wrap_call can replace a call outright:
+# branch once wrap_call can replace a call outright. The arguments are
+# closure parameters, so they are evaluated where the original call was,
+# which matters for a go or defer statement, and their names keep a prefix so
+# they cannot hide a variable that the original call refers to:
 # https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
 pgx_connect:
   target:
@@ -29,13 +32,14 @@ pgx_connect:
   do:
     - wrap_call:
         replace: |-
-          (func() (*pgx.Conn, error) {
+          (func(__dd_ctx context.Context, __dd_connString string) (*pgx.Conn, error) {
             if false {
               return {{ . }}
             }
-            return pgxtrace.Connect({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
-          })()
+            return pgxtrace.Connect(__dd_ctx, __dd_connString)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
+    context: context
     pgx: github.com/jackc/pgx/v5
     pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
@@ -50,13 +54,14 @@ pgx_connect_config:
   do:
     - wrap_call:
         replace: |-
-          (func() (*pgx.Conn, error) {
+          (func(__dd_ctx context.Context, __dd_connConfig *pgx.ConnConfig) (*pgx.Conn, error) {
             if false {
               return {{ . }}
             }
-            return pgxtrace.ConnectConfig({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
-          })()
+            return pgxtrace.ConnectConfig(__dd_ctx, __dd_connConfig)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
+    context: context
     pgx: github.com/jackc/pgx/v5
     pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
@@ -71,13 +76,14 @@ pgxpool_new:
   do:
     - wrap_call:
         replace: |-
-          (func() (*pgxpool.Pool, error) {
+          (func(__dd_ctx context.Context, __dd_connString string) (*pgxpool.Pool, error) {
             if false {
               return {{ . }}
             }
-            return pgxtrace.NewPool({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
-          })()
+            return pgxtrace.NewPool(__dd_ctx, __dd_connString)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
+    context: context
     pgxpool: github.com/jackc/pgx/v5/pgxpool
     pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
@@ -92,12 +98,13 @@ pgxpool_new_with_config:
   do:
     - wrap_call:
         replace: |-
-          (func() (*pgxpool.Pool, error) {
+          (func(__dd_ctx context.Context, __dd_config *pgxpool.Config) (*pgxpool.Pool, error) {
             if false {
               return {{ . }}
             }
-            return pgxtrace.NewPoolWithConfig({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
-          })()
+            return pgxtrace.NewPoolWithConfig(__dd_ctx, __dd_config)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
+    context: context
     pgxpool: github.com/jackc/pgx/v5/pgxpool
     pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
