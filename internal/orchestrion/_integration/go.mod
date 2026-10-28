@@ -560,11 +560,20 @@ require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 
 replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
 
-require example.com/httprouterdep v0.0.0-00010101000000-000000000000
+require (
+	example.com/httprouterdep v0.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.13.0-dev
+	github.com/aws/aws-lambda-go v1.46.0
+)
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev // indirect
+	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
+	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
+	github.com/sony/gobreaker v0.5.0 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 
@@ -585,3 +594,5 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 => ../../../contrib/aws/datadog-lambda-go

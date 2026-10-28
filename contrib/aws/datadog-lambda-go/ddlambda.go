@@ -133,7 +133,11 @@ const (
 
 // WrapLambdaHandlerInterface is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.StartHandler function from aws-lambda-go.
+// A handler that was already wrapped by ddlambda is returned unchanged.
 func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Handler {
+	if wrapper.IsWrapped(handler) {
+		return handler
+	}
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerInterfaceWithListeners(handler, listeners...)
@@ -141,7 +145,15 @@ func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Hand
 
 // WrapFunction is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.Start function from aws-lambda-go.
+// The handler can be a function or a lambda.Handler, such as the result of lambda.NewHandler.
+// A handler that was already wrapped by ddlambda is returned unchanged.
 func WrapFunction(handler interface{}, cfg *Config) interface{} {
+	if wrapper.IsWrapped(handler) {
+		return handler
+	}
+	if h, ok := handler.(lambda.Handler); ok {
+		return WrapLambdaHandlerInterface(h, cfg)
+	}
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerWithListeners(handler, listeners...)
@@ -211,7 +223,7 @@ func MetricWithTimestamp(metric string, value float64, timestamp time.Time, tags
 func InvokeDryRun(callback func(ctx context.Context), cfg *Config) (interface{}, error) {
 	wrapped := WrapHandler(callback, cfg)
 	// Convert the wrapped handler to it's underlying raw handler type
-	handler, ok := wrapped.(func(ctx context.Context, msg json.RawMessage) (interface{}, error))
+	handler, ok := wrapper.AsFunc(wrapped)
 	if !ok {
 		logger.Debug("Could not unwrap lambda during dry run")
 	}

@@ -29,4 +29,8 @@ import (
 	// crashtracker is not part of orchestrion/all. It is opt-in, so it needs
 	// an explicit import.
 	_ "github.com/DataDog/dd-trace-go/v2/crashtracker" // integration
+
+	// The AWS Lambda handler integration is not part of orchestrion/all. It is
+	// opt-in, so it needs an explicit import.
+	_ "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2" // integration
 )

@@ -35,3 +35,8 @@ functions:
     handler: bootstrap
     package:
       artifact: build/error.zip
+  hello-orchestrion:
+    runtime: provided.al2
+    handler: bootstrap
+    package:
+      artifact: build/hello-orchestrion.zip

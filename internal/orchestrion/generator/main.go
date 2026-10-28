@@ -42,8 +42,9 @@ import (
 const orchestrionToolGo = "orchestrion.tool.go"
 
 var optionalIntegrations = map[string]struct{}{
-	"instrumentation/errortrace": {},
-	"crashtracker":               {},
+	"instrumentation/errortrace":    {},
+	"crashtracker":                  {},
+	"contrib/aws/datadog-lambda-go": {},
 }
 
 var (

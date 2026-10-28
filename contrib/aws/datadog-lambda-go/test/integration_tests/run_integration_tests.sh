@@ -13,7 +13,17 @@ export SLS_DEPRECATION_DISABLE=*
 
 # These values need to be in sync with serverless.yml, where there needs to be a function
 # defined for every handler_runtime combination
-LAMBDA_HANDLERS=("hello" "error")
+LAMBDA_HANDLERS=("hello" "error" "hello-orchestrion")
+
+# hello-orchestrion is hello without manual wrapping, built with Orchestrion. It
+# has no snapshots of its own: its output must match hello's.
+function snapshot_name() {
+    if [ "$1" = "hello-orchestrion" ]; then
+        echo "hello"
+    else
+        echo "$1"
+    fi
+}
 
 LOGS_WAIT_SECONDS=20
 
@@ -41,15 +51,19 @@ fi
 
 echo "Building Go binaries"
 # Create build directories
-mkdir -p build/hello build/error
+mkdir -p build/hello build/error build/hello-orchestrion
 
 # Build each function
 cd hello && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/hello/bootstrap && cd ..
 cd error && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/error/bootstrap && cd ..
+# The orchestrion binary runs on the host, so it's built before GOOS is set.
+cd hello-orchestrion && GOWORK=off go build -o ../build/orchestrion github.com/DataDog/orchestrion && cd ..
+cd hello-orchestrion && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ../build/orchestrion go build -ldflags="-s -w" -o ../build/hello-orchestrion/bootstrap && cd ..
 
 # Create zip files
 zip -j build/hello.zip build/hello/bootstrap
 zip -j build/error.zip build/error/bootstrap
+zip -j build/hello-orchestrion.zip build/hello-orchestrion/bootstrap
 
 # Generate a random 8-character ID to avoid collisions with other runs
 run_id=$(xxd -l 4 -c 4 -p < /dev/random)
@@ -79,7 +93,7 @@ for input_event_file in "${input_event_files[@]}"; do
         # Get event name without trailing ".json" so we can build the snapshot file name
         input_event_name=$(echo "$input_event_file" | sed "s/.json//")
         # Return value snapshot file format is snapshots/return_values/{handler}_{runtime}_{input-event}
-        snapshot_path="$integration_tests_dir/snapshots/return_values/${function_name}_${input_event_name}.json"
+        snapshot_path="$integration_tests_dir/snapshots/return_values/$(snapshot_name $function_name)_${input_event_name}.json"
 
         return_value=$(DD_API_KEY=$DD_API_KEY sls invoke --stage $run_id -f $function_name --path "$integration_tests_dir/input_events/$input_event_file")
         sls_invoke_exit_code=$?
@@ -87,7 +101,10 @@ for input_event_file in "${input_event_files[@]}"; do
             return_value="Invocation failed"
         fi
 
-        if [ ! -f $snapshot_path ]; then
+        if [ "$(snapshot_name $function_name)" != "$function_name" ] && { [ ! -f $snapshot_path ] || [ -n "$UPDATE_SNAPSHOTS" ]; }; then
+            # Never write another function's snapshot
+            echo "Skipping return value snapshot for $function_name, it's compared to $snapshot_path"
+        elif [ ! -f $snapshot_path ]; then
             # If the snapshot file doesn't exist yet, we create it
             echo "Writing return value to $snapshot_path because no snapshot exists yet"
             echo "$return_value" >$snapshot_path
@@ -116,7 +133,7 @@ sleep $LOGS_WAIT_SECONDS
 set +e # Don't exit this script if there is a diff or the logs endpoint fails
 echo "Fetching logs for invocations and comparing to snapshots"
 for function_name in "${LAMBDA_HANDLERS[@]}"; do
-    function_snapshot_path="./snapshots/logs/$function_name.log"
+    function_snapshot_path="./snapshots/logs/$(snapshot_name $function_name).log"
 
     # Fetch logs with serverless cli, retrying to avoid AWS account-wide rate limit error
     retry_counter=0
@@ -177,10 +194,15 @@ for function_name in "${LAMBDA_HANDLERS[@]}"; do
             # Normalize data in logged metrics
             perl -p -e 's/"(points\\\":\[\[)([0-9]+)/\1XXXX/g' |
             # Remove INIT_START log
-            perl -p -e "s/INIT_START.*//g"
+            perl -p -e "s/INIT_START.*//g" |
+            # Compare to the snapshot's function name
+            perl -p -e "s/-$function_name\b/-$(snapshot_name $function_name)/g"
     )
 
-    if [ ! -f $function_snapshot_path ]; then
+    if [ "$(snapshot_name $function_name)" != "$function_name" ] && { [ ! -f $function_snapshot_path ] || [ -n "$UPDATE_SNAPSHOTS" ]; }; then
+        # Never write another function's snapshot
+        echo "Skipping log snapshot for $function_name, it's compared to $function_snapshot_path"
+    elif [ ! -f $function_snapshot_path ]; then
         # If no snapshot file exists yet, we create one
         echo "Writing logs to $function_snapshot_path because no snapshot exists yet"
         echo "$logs" >$function_snapshot_path
