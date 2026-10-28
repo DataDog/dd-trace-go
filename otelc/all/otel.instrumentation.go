@@ -21,6 +21,8 @@ import (
 
 	// Integrations.
 	_ "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2"
