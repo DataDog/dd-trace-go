@@ -1,0 +1,11 @@
+_v: 1
+name: google.golang.org/api
+display_name: google-api-go-client
+description: Instruments Google API client requests with trace context propagation, status and error recording, endpoint metadata
+  enrichment, and optional request protection.
+packages:
+- name: google.golang.org/api
+category:
+- cloud_provider.client
+systems: []
+creation_date: '2018-09-11'

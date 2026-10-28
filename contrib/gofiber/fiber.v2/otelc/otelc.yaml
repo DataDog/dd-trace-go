@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps fiber.New call sites, in every package of the build, dependencies
+# included, except the fiber contrib, whose own tests wrap their apps
+# themselves. It also passes the app's fasthttp server to SkipServer, so the
+# fasthttp rules leave it alone and each request gets one span.
+new_app:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gofiber/**"
+  where:
+    function_call: github.com/gofiber/fiber/v2.New
+  do:
+    - wrap_call:
+        replace: |-
+          func(app *fiber.App) *fiber.App {
+            fasthttpotelc.SkipServer(app.Server())
+            return app
+          }(fibertrace.Wrap({{ . }}))
+  imports:
+    fiber: github.com/gofiber/fiber/v2
+    fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
+    fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2

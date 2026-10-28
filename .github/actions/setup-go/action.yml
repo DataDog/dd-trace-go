@@ -50,10 +50,16 @@
 # Observability: emits the same structured `cache-observation:` record as the
 # pre-migration action, so scripts/citiming keeps working unchanged. The
 # provider's raw cache-hit boolean is recorded but NOT exposed as an output:
-# for this provider a `false` is ambiguous between a prefix restore and a
-# cold miss, and callers must not treat it as the old hit/miss semantics. The
-# restore entry also carries `restored` ("true" when the module cache was
-# non-empty after the provider ran), which distinguishes the two.
+# its save key ends in the run ID, so it is `true` only on the near
+# impossible exact-key hit. The restore entry instead carries, from the
+# provider's `cache-matched-key` output: `restored` ("true" when the module
+# cache was non-empty after the provider ran, kept as a cross-check of the
+# matched key), `cache_matched_key`, `restore_source` (exact / default /
+# branch / none — `default` marks a default-branch fallback restore from
+# a different branch, the signal the seed program measures), and `dep_match` ("true" when the
+# matched entry was keyed with this job's `hashFiles('**/go.*')` digest,
+# i.e. the same dependency set). The action exposes `cache-matched-key` and
+# `restore-source` as outputs for callers.
 name: 'Setup Go runtime'
 description: 'Select Go, then isolate and refresh the build and module caches'
 inputs:
@@ -102,6 +108,16 @@ outputs:
   cache-key-prefix:
     description: The computed provider cache-key prefix (evidence only).
     value: ${{ steps.cache-key.outputs.prefix }}
+  cache-matched-key:
+    description: >-
+      The provider's matched cache key, including prefix matches; empty on
+      a cold miss and whenever caching did not run.
+    value: ${{ steps.restore-source.outputs.cache-matched-key }}
+  restore-source:
+    description: >-
+      Where the restore came from: exact, default (a default-branch
+      fallback), branch, or none (cold miss).
+    value: ${{ steps.restore-source.outputs.restore-source }}
   cache-metrics:
     description: Raw cache observations and cache paths as JSON.
     value: ${{ steps.cache-metrics.outputs.cache-metrics }}
@@ -173,7 +189,11 @@ runs:
     - name: Isolate and refresh Go build caches
       id: cloudx
       if: ${{ inputs.cache == 'true' && inputs.cache-provider == 'cloudx' }}
-      uses: cloudx-io/setup-go@8b45cf394acf101459db0d47aa9735a4fe5eea63 # v1.0.0
+      # main (includes cloudx-io/setup-go#8). No tag contains #8 yet: the
+      # newest tag v1.0.0 predates it. #8 adds the `save` input (restore-only
+      # mode) and the `cache-matched-key` output this action consumes.
+      # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
+      uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
         go-version: ${{ steps.select-go.outputs.go-version }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
@@ -182,9 +202,67 @@ runs:
         # repository; a single glob is the provider's supported form.
         cache-dependency-path: "**/go.*"
 
-    # The provider's own cache-hit output cannot tell a restore from a cold
-    # miss: its save key ends in the run ID, so it never equals the restored
-    # key and cache-hit is `false` on every run, and it exposes no matched key.
+    # The provider's cache-hit is `true` only on an exact primary-key hit,
+    # which its run_id-terminated save key makes near impossible on a
+    # restore. The matched key (empty on a cold miss) says what was actually
+    # restored; the `restored` flag below cross-checks it against the module
+    # cache contents, so a disagreement between the two is visible evidence
+    # instead of a silent misclassification.
+    - name: Derive restore source
+      id: restore-source
+      if: ${{ inputs.cache == 'true' && inputs.cache-provider == 'cloudx' }}
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.cloudx.outputs.cache-hit }}
+        MATCHED_KEY: ${{ steps.cloudx.outputs.cache-matched-key }}
+        DEP_HASH: ${{ hashFiles('**/go.*') }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        # The branch this run is on (the PR source branch for pull
+        # requests), to tell a same-branch restore from a fallback.
+        CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
+        # The resolved toolchain and this job's cache-key prefix: both are
+        # embedded verbatim in every key the provider can match, so the
+        # branch is what follows them and no regex guessing is needed.
+        GO_VERSION: ${{ steps.select-go.outputs.go-version }}
+        CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
+      run: |
+        set -euo pipefail
+
+        source="none"
+        dep_match="false"
+        # Save-key layout, verified against the pinned provider revision:
+        # go-cache-<os>-<arch>-<CACHE_KEY_PREFIX>-<GO_VERSION>-<branch>-
+        # <dep-hash>-<run_id>. The prefix and the resolved Go version are
+        # known here and appear verbatim (every restore-key tier pins
+        # both), so the branch is parsed by stripping them literally. A
+        # generic regex cannot split the version from a hyphenated branch:
+        # 1.27.2-feature-main parses either way.
+        if [[ "$CACHE_HIT" == "true" ]]; then
+          source="exact"
+        elif [[ -n "$MATCHED_KEY" ]]; then
+          source="branch"
+        fi
+        if [[ -n "$MATCHED_KEY" && "$MATCHED_KEY" == *"-${CACHE_KEY_PREFIX}-${GO_VERSION}-"* ]]; then
+          body="${MATCHED_KEY#*-${CACHE_KEY_PREFIX}-${GO_VERSION}-}"
+          rest="${body%-*}"      # drop the run ID
+          dep_hash="${rest##*-}" # the dependency hash is the last segment
+          rest="${rest%-*}"      # what remains is the branch
+          if [[ "$dep_hash" =~ ^[0-9a-f]{40,64}$ ]]; then
+            # A fallback is a restore of the default branch's entry from a
+            # DIFFERENT branch: a run already on the default branch that
+            # restores its own earlier entry is a same-branch restore.
+            if [[ "$rest" == "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" && "$source" != "exact" ]]; then
+              source="default"
+            fi
+            if [[ "$dep_hash" == "$DEP_HASH" ]]; then
+              dep_match="true"
+            fi
+          fi
+        fi
+        printf 'cache-matched-key=%s\n' "$MATCHED_KEY" >> "$GITHUB_OUTPUT"
+        printf 'restore-source=%s\n' "$source" >> "$GITHUB_OUTPUT"
+        printf 'dep-match=%s\n' "$dep_match" >> "$GITHUB_OUTPUT"
+
     # A fresh runner has an empty GOMODCACHE before the restore, so a
     # non-empty one afterwards means the provider restored an entry.
     - name: Detect restored module cache
@@ -227,9 +305,10 @@ runs:
     # Mirror the pre-migration observation record. The restore entry carries
     # the cache step's outcome and its raw cache-hit boolean. With cloudx a
     # `false` cache-hit is ambiguous between a prefix restore and a cold miss,
-    # so the entry also carries the `restored` flag computed above (omitted
-    # when the provider did not complete, and never set for github-cache,
-    # whose cache-hit is an exact-match boolean).
+    # so the entry also carries the matched key, the derived restore source
+    # and the dependency match, plus the `restored` cross-check computed above
+    # (all four omitted when the provider did not complete, and never set for
+    # github-cache, whose cache-hit is an exact-match boolean).
     - name: Record cache observations
       id: cache-metrics
       if: always()
@@ -243,6 +322,9 @@ runs:
         SETUP_OUTCOME: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outcome || steps.cloudx.outcome }}
         SETUP_CACHE_HIT: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outputs.cache-hit || steps.cloudx.outputs.cache-hit }}
         RESTORED: ${{ steps.restored.outputs.restored }}
+        MATCHED_KEY: ${{ steps.restore-source.outputs.cache-matched-key }}
+        RESTORE_SOURCE: ${{ steps.restore-source.outputs.restore-source }}
+        DEP_MATCH: ${{ steps.restore-source.outputs.dep-match }}
       run: |
         set -euo pipefail
 
@@ -258,14 +340,22 @@ runs:
           --arg enabled "$CACHE_ENABLED" \
           --arg outcome "$SETUP_OUTCOME" \
           --arg hit "$SETUP_CACHE_HIT" \
-          --arg restored "$RESTORED" '
+          --arg restored "$RESTORED" \
+          --arg matched "$MATCHED_KEY" \
+          --arg source "$RESTORE_SOURCE" \
+          --arg dep "$DEP_MATCH" '
           {
             provider: $provider,
             workload: $workload,
             runtime: {name: "go", requested: $requested, version: $version},
             restores: [
               {name: "setup_go", enabled: $enabled, outcome: $outcome, cache_hit: $hit}
-              + (if $restored != "" then {restored: $restored} else {} end)
+              + (if $restored != "" then
+                   {restored: $restored,
+                    cache_matched_key: $matched,
+                    restore_source: $source,
+                    dep_match: $dep}
+                 else {} end)
             ],
             cache_paths: [
               {name: "go_mod", path: ($paths.GOMODCACHE // null)},

@@ -35,6 +35,14 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 2
+    ignore:
+      # cloudx-io/setup-go is pinned to a main-branch commit that includes
+      # cloudx-io/setup-go#8 (the `save` input and the `cache-matched-key`
+      # output). The newest tag, v1.0.0, predates it; updating to it would
+      # drop both. Ignore everything up to and including 1.0.0 — the pin
+      # moves to the first tag that contains #8.
+      - dependency-name: "cloudx-io/setup-go"
+        versions: ["<=1.0.0"]
 
   # Docker — updates base image digests (sha256 pins) to latest verified digests.
   - package-ecosystem: "docker"
