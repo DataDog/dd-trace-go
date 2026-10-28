@@ -3,16 +3,16 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# The aws packages and the service clients are excluded because the contrib
-# imports them, the config package because load_default_config covers it, and
-# the contrib because its tests build configs. APIOptionsWithTracing, not
+# Also rewrites the literal that config.LoadDefaultConfig builds, so the STS and
+# SSO clients it creates for credentials are traced. The aws packages and the
+# service clients are excluded because the contrib imports them, and the
+# contrib because its tests build configs. APIOptionsWithTracing, not
 # AppendMiddleware, so a middleware the application also adds replaces this
 # one instead of adding a second span.
 config_literal:
   target:
     - "**"
     - not: "github.com/aws/aws-sdk-go-v2/aws/**"
-    - not: "github.com/aws/aws-sdk-go-v2/config/**"
     - not: "github.com/aws/aws-sdk-go-v2/service/**"
     - not: "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/**"
   where:
@@ -48,9 +48,9 @@ new_config:
     aws: github.com/aws/aws-sdk-go-v2/aws
     awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
 
-# The config LoadDefaultConfig returns already holds the API options the
-# application passed, for example with config.WithAPIOptions, so the
-# middleware is added after them.
+# LoadDefaultConfig replaces the API options of its literal with the ones the
+# application passed, for example with config.WithAPIOptions, so the middleware
+# is added again to the config it returns.
 load_default_config:
   target:
     - "**"

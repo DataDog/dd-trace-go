@@ -1839,3 +1839,49 @@ func TestAPIOptionsWithTracingCopies(t *testing.T) {
 		assert.NotNil(t, fn, "option %d", i)
 	}
 }
+
+func TestDeduplicateOnlyOwnMiddleware(t *testing.T) {
+	tm := newTraceMiddleware(prepConfig(), false)
+	add := []func(*middleware.Stack) error{tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware}
+	count := func(ids []string, id string) int {
+		n := 0
+		for _, got := range ids {
+			if got == id {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("ours twice", func(t *testing.T) {
+		stack := middleware.NewStack("test", nil)
+		for _, fn := range append(add, add...) {
+			require.NoError(t, fn(stack))
+		}
+		assert.Equal(t, 1, count(stack.Initialize.List(), initTraceMiddlewareID))
+		assert.Equal(t, 1, count(stack.Initialize.List(), startTraceMiddlewareID))
+		assert.Equal(t, 1, count(stack.Deserialize.List(), deserializeTraceMiddlewareID))
+	})
+
+	// A foreign middleware that happens to use one of our IDs must not be
+	// mistaken for ours: ours is still added next to it.
+	t.Run("foreign with the same IDs", func(t *testing.T) {
+		passInit := func(id string) middleware.InitializeMiddleware {
+			return middleware.InitializeMiddlewareFunc(id, func(ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+				return next.HandleInitialize(ctx, in)
+			})
+		}
+		stack := middleware.NewStack("test", nil)
+		require.NoError(t, stack.Initialize.Add(passInit(initTraceMiddlewareID), middleware.Before))
+		require.NoError(t, stack.Initialize.Add(passInit(startTraceMiddlewareID), middleware.After))
+		require.NoError(t, stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc(deserializeTraceMiddlewareID, func(ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
+			return next.HandleDeserialize(ctx, in)
+		}), middleware.After))
+		for _, fn := range add {
+			require.NoError(t, fn(stack))
+		}
+		assert.Equal(t, 2, count(stack.Initialize.List(), initTraceMiddlewareID))
+		assert.Equal(t, 2, count(stack.Initialize.List(), startTraceMiddlewareID))
+		assert.Equal(t, 2, count(stack.Deserialize.List(), deserializeTraceMiddlewareID))
+	})
+}

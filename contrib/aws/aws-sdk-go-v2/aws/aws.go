@@ -133,10 +133,12 @@ const (
 )
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
-	if _, ok := stack.Initialize.Get(initTraceMiddlewareID); ok {
-		return nil
+	if existing, ok := stack.Initialize.Get(initTraceMiddlewareID); ok {
+		if _, ours := existing.(*initMiddleware); ours {
+			return nil
+		}
 	}
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc(initTraceMiddlewareID, func(
+	return stack.Initialize.Add(&initMiddleware{middleware.InitializeMiddlewareFunc(initTraceMiddlewareID, func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
@@ -144,7 +146,18 @@ func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
 		// Bind the timestamp to the context so that we can use it when we have enough information to start the trace.
 		ctx = context.WithValue(ctx, spanTimestampKey{}, time.Now())
 		return next.HandleInitialize(ctx, in)
-	}), middleware.Before)
+	})}, middleware.Before)
+}
+
+// initMiddleware and deserializeMiddleware mark the middleware this package
+// adds, so a stack that already has one of ours skips adding it again, while a
+// foreign middleware with the same ID still fails to add.
+type initMiddleware struct {
+	middleware.InitializeMiddleware
+}
+
+type deserializeMiddleware struct {
+	middleware.DeserializeMiddleware
 }
 
 func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
@@ -243,11 +256,13 @@ func (m *startMiddleware) HandleInitialize(ctx context.Context, in middleware.In
 func (mw *traceMiddleware) addStart(stack *middleware.Stack, fn initializeFunc) error {
 	start := &startMiddleware{fn: fn, autoInstrumented: mw.autoInstrumented}
 	if existing, ok := stack.Initialize.Get(startTraceMiddlewareID); ok {
-		if prev, ok := existing.(*startMiddleware); ok && prev.autoInstrumented && !start.autoInstrumented {
-			_, err := stack.Initialize.Swap(startTraceMiddlewareID, start)
-			return err
+		if prev, ours := existing.(*startMiddleware); ours {
+			if prev.autoInstrumented && !start.autoInstrumented {
+				_, err := stack.Initialize.Swap(startTraceMiddlewareID, start)
+				return err
+			}
+			return nil
 		}
-		return nil
 	}
 	return stack.Initialize.Add(start, middleware.After)
 }
@@ -485,10 +500,12 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
-	if _, ok := stack.Deserialize.Get(deserializeTraceMiddlewareID); ok {
-		return nil
+	if existing, ok := stack.Deserialize.Get(deserializeTraceMiddlewareID); ok {
+		if _, ours := existing.(*deserializeMiddleware); ours {
+			return nil
+		}
 	}
-	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc(deserializeTraceMiddlewareID, func(
+	return stack.Deserialize.Add(&deserializeMiddleware{middleware.DeserializeMiddlewareFunc(deserializeTraceMiddlewareID, func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
 		out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
@@ -525,7 +542,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		spanpointers.AddSpanPointers(ctx, in, out, span)
 
 		return out, metadata, err
-	}), middleware.Before)
+	})}, middleware.Before)
 }
 
 func spanName(awsService, awsOperation string) string {
