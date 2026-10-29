@@ -65,6 +65,8 @@ env:
     contrib/labstack/echo.v5/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
+    contrib/sirupsen/logrus
+    contrib/sirupsen/logrus/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -86,6 +88,7 @@ env:
     echo.v5
     valyala_fasthttp
     dd-span
+    logrus
   # Suites that also run with the buildtag tag, as the orchestrion lane does in
   # DRIVER mode.
   OTELC_BUILDTAG_TEST_PACKAGES: >-
