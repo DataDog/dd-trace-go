@@ -1,0 +1,160 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Call-site rules on the constructors, not on the Config literal: a set_fields
+# rule cannot read CACert next to Transport, and the config can change after
+# the literal. Not hooks either: the rewritten package imports the contrib, so
+# it is initialized before a client built in a package-level var or init.
+# Transport keeps the config's transport when it already traces requests, or
+# when the config sets CACert or CertificateFingerprint, which go-elasticsearch
+# applies only to an *http.Transport.
+#
+# otelc requires the original call in the template. It only runs before the
+# contrib is initialized, and then evaluates the argument a second time.
+v6_new_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v6.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_cfg elasticsearch6.Config) (*elasticsearch6.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            __dd_cfg.Transport = __dd_elastictraceotelc.Transport(__dd_cfg.Transport, nil, "")
+            return elasticsearch6.NewClient(__dd_cfg)
+          })({{ .CallArgument 0 }})
+  imports:
+    elasticsearch6: github.com/elastic/go-elasticsearch/v6
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+# NewDefaultClient calls NewClient(Config{}) inside go-elasticsearch, which the
+# rule above does not reach.
+v6_new_default_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v6.NewDefaultClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*elasticsearch6.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            return elasticsearch6.NewClient(elasticsearch6.Config{Transport: __dd_elastictraceotelc.Transport(nil, nil, "")})
+          })()
+  imports:
+    elasticsearch6: github.com/elastic/go-elasticsearch/v6
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+v7_new_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v7.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_cfg elasticsearch7.Config) (*elasticsearch7.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            __dd_cfg.Transport = __dd_elastictraceotelc.Transport(__dd_cfg.Transport, __dd_cfg.CACert, __dd_cfg.CertificateFingerprint)
+            return elasticsearch7.NewClient(__dd_cfg)
+          })({{ .CallArgument 0 }})
+  imports:
+    elasticsearch7: github.com/elastic/go-elasticsearch/v7
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+v7_new_default_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v7.NewDefaultClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*elasticsearch7.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            return elasticsearch7.NewClient(elasticsearch7.Config{Transport: __dd_elastictraceotelc.Transport(nil, nil, "")})
+          })()
+  imports:
+    elasticsearch7: github.com/elastic/go-elasticsearch/v7
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+v8_new_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v8.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_cfg elasticsearch8.Config) (*elasticsearch8.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            __dd_cfg.Transport = __dd_elastictraceotelc.Transport(__dd_cfg.Transport, __dd_cfg.CACert, __dd_cfg.CertificateFingerprint)
+            return elasticsearch8.NewClient(__dd_cfg)
+          })({{ .CallArgument 0 }})
+  imports:
+    elasticsearch8: github.com/elastic/go-elasticsearch/v8
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+v8_new_typed_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v8.NewTypedClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_cfg elasticsearch8.Config) (*elasticsearch8.TypedClient, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            __dd_cfg.Transport = __dd_elastictraceotelc.Transport(__dd_cfg.Transport, __dd_cfg.CACert, __dd_cfg.CertificateFingerprint)
+            return elasticsearch8.NewTypedClient(__dd_cfg)
+          })({{ .CallArgument 0 }})
+  imports:
+    elasticsearch8: github.com/elastic/go-elasticsearch/v8
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
+
+v8_new_default_client:
+  target:
+    - "**"
+    - not: "github.com/elastic/go-elasticsearch/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/**"
+  where:
+    function_call: github.com/elastic/go-elasticsearch/v8.NewDefaultClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func() (*elasticsearch8.Client, error) {
+            if !__dd_elastictraceotelc.Ready() {
+              return {{ . }}
+            }
+            return elasticsearch8.NewClient(elasticsearch8.Config{Transport: __dd_elastictraceotelc.Transport(nil, nil, "")})
+          })()
+  imports:
+    elasticsearch8: github.com/elastic/go-elasticsearch/v8
+    __dd_elastictraceotelc: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2
