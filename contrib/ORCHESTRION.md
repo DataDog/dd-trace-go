@@ -38,8 +38,12 @@ its surroundings:
 
 - `{{ . }}`: the matched node itself. For `wrap-expression`, this is the expression being wrapped.
 - `{{ .AST }}`: the matched syntax node. Which fields exist depends on the node type. For a call
-  match (`function-call`) the node is a call expression, so `{{ .AST.Fun }}` and
-  `{{ index .AST.Args 0 }}` (first argument) are available. Orchestrion uses the
+  match (`function-call`) the node is a call expression, so `{{ .AST.Fun }}`,
+  `{{ index .AST.Args 0 }}` (first argument) and `{{ .AST.Ellipsis }}` are available.
+  `.AST.Ellipsis` is set when the call spreads its last argument (`f(a, opts...)`), so a template
+  that re-emits the arguments must append `...` when it is set; see
+  [datadog-lambda-go](./aws/datadog-lambda-go/orchestrion.yml) and
+  [zap](./go.uber.org/zap/orchestrion.yml). Orchestrion uses the
   [github.com/dave/dst](https://pkg.go.dev/github.com/dave/dst) library, whose node types mirror the
   standard library [go/ast](https://pkg.go.dev/go/ast); use those references for the full set of
   nodes and fields.

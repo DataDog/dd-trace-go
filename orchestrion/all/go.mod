@@ -9,6 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 v2.13.0-dev
@@ -86,9 +87,13 @@ require (
 	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.8.0 // indirect
+	github.com/aws/aws-lambda-go v1.46.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.32.33 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.32 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.33 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.33 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.34 // indirect
@@ -100,10 +105,16 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.33 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.34 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.35.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.5.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.33.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.45.2 // indirect
+	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
 	github.com/aws/smithy-go v1.27.5 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb // indirect
@@ -243,6 +254,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.8 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/sony/gobreaker v0.5.0 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
@@ -322,6 +334,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 => ../../contrib/aerospike/aerospike-client-go.v7
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../contrib/aws/aws-sdk-go-v2
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 => ../../contrib/aws/datadog-lambda-go
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../contrib/cloud.google.com/go/pubsub.v1
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 => ../../contrib/cloud.google.com/go/pubsub.v2
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 => ../../contrib/cloudevents/sdk-go.v2

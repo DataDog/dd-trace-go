@@ -65,7 +65,7 @@ func TestWrapHandlerWithListeners_msgFlowsThroughListenersInOrder(t *testing.T) 
 		handlerMSG = event
 		return "ok", nil
 	}
-	wrapped := WrapHandlerWithListeners(handler, first, second).(func(context.Context, json.RawMessage) (interface{}, error))
+	wrapped := WrapHandlerWithListeners(handler, first, second).(wrappedFunc)
 	original := json.RawMessage(`{"original":true}`)
 	_, err := wrapped(context.Background(), original)
 	assert.NoError(t, err)
@@ -82,7 +82,7 @@ func runHandlerWithJSON(t *testing.T, filename string, handler interface{}) (*mo
 
 	mhl := mockHandlerListener{}
 
-	wrappedHandler := WrapHandlerWithListeners(handler, &mhl).(func(context.Context, json.RawMessage) (interface{}, error))
+	wrappedHandler := WrapHandlerWithListeners(handler, &mhl).(wrappedFunc)
 
 	response, err := wrappedHandler(ctx, *payload)
 	return &mhl, response, err
@@ -233,7 +233,7 @@ func TestWrapHandlerContextArgumentOnly(t *testing.T) {
 	}
 
 	mhl := mockHandlerListener{}
-	wrappedHandler := WrapHandlerWithListeners(handler, &mhl).(func(context.Context, json.RawMessage) (interface{}, error))
+	wrappedHandler := WrapHandlerWithListeners(handler, &mhl).(wrappedFunc)
 
 	_, err := wrappedHandler(context.Background(), nil)
 	assert.NoError(t, err)
@@ -329,4 +329,19 @@ func TestWrapHandlerInterfaceWithListeners(t *testing.T) {
 	assert.True(t, called)
 	assert.NoError(t, err)
 	assert.Equal(t, uint8('5'), response[0])
+}
+
+func TestIsWrapped(t *testing.T) {
+	fn := func(context.Context) error { return nil }
+	assert.False(t, IsWrapped(fn))
+	assert.True(t, IsWrapped(WrapHandlerWithListeners(fn)))
+
+	h := lambda.NewHandler(fn)
+	assert.False(t, IsWrapped(h))
+	assert.True(t, IsWrapped(WrapHandlerInterfaceWithListeners(h)))
+
+	_, ok := AsFunc(WrapHandlerWithListeners(fn))
+	assert.True(t, ok)
+	_, ok = AsFunc(fn)
+	assert.False(t, ok)
 }

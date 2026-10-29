@@ -34,7 +34,27 @@ type (
 		handler   lambda.Handler
 		listeners []HandlerListener
 	}
+
+	// wrappedFunc is the type of the handler returned by WrapHandlerWithListeners. It is a named
+	// type so that a handler can be recognized as already wrapped, and not wrapped twice.
+	wrappedFunc func(ctx context.Context, msg json.RawMessage) (any, error)
 )
+
+// IsWrapped reports whether handler was returned by WrapHandlerWithListeners or
+// WrapHandlerInterfaceWithListeners.
+func IsWrapped(handler any) bool {
+	switch handler.(type) {
+	case wrappedFunc, *DatadogHandler:
+		return true
+	}
+	return false
+}
+
+// AsFunc returns handler as a plain function if it was returned by WrapHandlerWithListeners.
+func AsFunc(handler any) (func(ctx context.Context, msg json.RawMessage) (any, error), bool) {
+	f, ok := handler.(wrappedFunc)
+	return f, ok
+}
 
 // WrapHandlerWithListeners wraps a lambda handler, and calls listeners before and after every invocation.
 func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener) interface{} {
@@ -47,7 +67,7 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 	coldStart := true
 
 	// Return custom handler, to be called once per invocation
-	return func(ctx context.Context, msg json.RawMessage) (interface{}, error) {
+	return wrappedFunc(func(ctx context.Context, msg json.RawMessage) (any, error) {
 		//nolint
 		ctx = context.WithValue(ctx, "cold_start", coldStart)
 		for _, listener := range listeners {
@@ -62,7 +82,7 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 		coldStart = false
 		CurrentContext = nil
 		return result, err
-	}
+	})
 }
 
 func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, error) {

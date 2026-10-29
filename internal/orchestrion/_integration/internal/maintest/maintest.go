@@ -9,6 +9,7 @@
 package maintest
 
 import (
+	"bytes"
 	"io"
 	"maps"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -104,32 +106,85 @@ func Build(t *testing.T, pkg string, withOtelc bool) string {
 	if withOtelc {
 		RequireOtelc(t)
 	}
+	bin := binPath(t)
+	if withOtelc {
+		// A private work dir keeps this build from fighting over .otelc-build
+		// with whatever invoked the test.
+		build(t, exec.Command("otelc", "--work-dir", t.TempDir(), "go", "build", "-o", bin, pkg))
+	} else {
+		build(t, exec.Command("go", "build", "-o", bin, pkg))
+	}
+	return bin
+}
 
-	// The test runs in its package directory, inside this module.
-	gomod, err := exec.Command("go", "env", "GOMOD").Output()
-	require.NoError(t, err)
-	moduleDir := filepath.Dir(strings.TrimSpace(string(gomod)))
+// BuildWithOrchestrion builds pkg, a path relative to the module root, with
+// orchestrion and returns the binary. The integrations woven in are the ones
+// this module's orchestrion.tool.go enables.
+func BuildWithOrchestrion(t *testing.T, pkg string) string {
+	t.Helper()
+	bin := binPath(t)
+	// CI installs an orchestrion binary on PATH, built with -cover when it
+	// collects coverage. go run would build a separate, uninstrumented copy.
+	var cmd *exec.Cmd
+	if path, err := exec.LookPath("orchestrion"); err == nil {
+		cmd = exec.Command(path, "go", "build", "-o", bin, pkg)
+	} else {
+		cmd = exec.Command("go", "run", "github.com/DataDog/orchestrion", "go", "build", "-o", bin, pkg)
+	}
+	build(t, cmd)
+	return bin
+}
 
+func binPath(t *testing.T) string {
 	bin := filepath.Join(t.TempDir(), "app")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	var build *exec.Cmd
-	if withOtelc {
-		// A private work dir keeps this build from fighting over .otelc-build
-		// with whatever invoked the test.
-		build = exec.Command("otelc", "--work-dir", t.TempDir(), "go", "build", "-o", bin, pkg)
-	} else {
-		build = exec.Command("go", "build", "-o", bin, pkg)
-	}
-	build.Dir = moduleDir
-	// Workspace mode resolves modules differently from the module graph otelc
-	// analyzes, so both builds are pinned to module mode.
-	build.Env = append(os.Environ(), "GOWORK=off")
-	t.Log("building (slow with otelc: it recompiles the dependency closure)")
-	out, err := build.CombinedOutput()
-	require.NoErrorf(t, err, "build failed:\n%s", out)
 	return bin
+}
+
+func build(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	// The test runs in its package directory, inside this module.
+	gomod, err := exec.Command("go", "env", "GOMOD").Output()
+	require.NoError(t, err)
+	cmd.Dir = filepath.Dir(strings.TrimSpace(string(gomod)))
+	// Workspace mode resolves modules differently from the module graph otelc
+	// analyzes, so all builds are pinned to module mode.
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	t.Log("building (slow with otelc or orchestrion: they recompile the dependency closure)")
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "build failed:\n%s", out)
+}
+
+// ExecUntil runs bin with env added to the environment until stop is closed,
+// then kills it and returns its stdout and stderr. It is for programs that
+// never exit on their own, such as an AWS Lambda function. The test fails if
+// the program exits first, or if stop is not closed within timeout.
+func ExecUntil(t *testing.T, bin string, env []string, stop <-chan struct{}, timeout time.Duration) (stdout, stderr []byte) {
+	t.Helper()
+	var outBuf, errBuf bytes.Buffer
+	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	require.NoError(t, cmd.Start())
+
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
+	select {
+	case <-stop:
+		_ = cmd.Process.Kill()
+		<-exited
+	case err := <-exited:
+		t.Fatalf("the app exited before it was stopped (%v):\nstdout:\n%s\nstderr:\n%s", err, &outBuf, &errBuf)
+	case <-time.After(timeout):
+		_ = cmd.Process.Kill()
+		<-exited
+		t.Fatalf("the app was not stopped within %s:\nstdout:\n%s\nstderr:\n%s", timeout, &outBuf, &errBuf)
+	}
+	return outBuf.Bytes(), errBuf.Bytes()
 }
 
 // Run builds pkg with otelc, runs it, and returns the agent it reported to.

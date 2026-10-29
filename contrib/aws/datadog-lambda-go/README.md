@@ -50,6 +50,18 @@ If you are upgrading from the legacy [`github.com/DataDog/datadog-lambda-go`](ht
 
 Follow the [installation instructions](https://docs.datadoghq.com/serverless/installation/go/), and view your function's enhanced metrics, traces and logs in Datadog.
 
+## Automatic instrumentation with Orchestrion
+
+[Orchestrion](https://datadoghq.dev/orchestrion/docs/getting-started/) can wrap your handler at build time, so you don't need to call `ddlambda.WrapFunction` yourself. Every `lambda.Start*` call is compiled as if its handler were passed through `ddlambda.WrapFunction(handler, nil)`, and the other Orchestrion integrations (for example `net/http` and `aws-sdk-go-v2`) trace the calls your handler makes. Handlers you already wrap by hand aren't wrapped twice.
+
+The integration is part of `orchestrion/all`, so a project [set up for Orchestrion](https://datadoghq.dev/orchestrion/docs/getting-started/) gets it with no extra import. Build your function with Orchestrion:
+
+```bash
+GOOS=linux GOARCH=amd64 orchestrion go build -o bootstrap .
+```
+
+Configuration is read from `DD_*` environment variables. Continuing traces from upstream services into the function, for event sources other than API Gateway, requires the [Datadog Lambda Extension](https://docs.datadoghq.com/serverless/aws_lambda/instrumentation/go/).
+
 ## Configurations
 
 See the [advanced configuration options](https://docs.datadoghq.com/serverless/configuration) to tag your telemetry, capture request/response payloads, filter or scrub sensitive information from logs or traces, and more.
