@@ -105,6 +105,7 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
+	example.com/elasticsearchdep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
@@ -137,7 +138,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
@@ -227,7 +228,7 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
-	github.com/dave/dst v0.27.4 // indirect
+	github.com/dave/dst v0.28.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -585,3 +586,17 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+require (
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 v2.13.0-dev // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
+	github.com/gofrs/flock v0.13.1 // indirect
+	github.com/urfave/cli/v3 v3.14.0 // indirect
+	go.opentelemetry.io/otelc v1.2.0 // indirect
+)
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 => ../../../contrib/elastic/go-elasticsearch.v6/otelc
+
+replace example.com/elasticsearchdep => ./internal/elasticsearchdep
+
+tool go.opentelemetry.io/otelc/tool/cmd/otelc
