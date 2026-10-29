@@ -41,6 +41,8 @@ env:
     contrib/99designs/gqlgen/otelc
     contrib/net/http
     contrib/net/http/otelc
+    contrib/rs/zerolog
+    contrib/rs/zerolog/otelc
     contrib/database/sql
     contrib/database/sql/otelc
     contrib/gin-gonic/gin
@@ -85,6 +87,7 @@ env:
     echo.v4
     echo.v5
     valyala_fasthttp
+    zerolog
 
 jobs:
   go-versions-matrix:
