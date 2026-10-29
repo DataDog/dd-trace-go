@@ -6,8 +6,10 @@
 package remoteconfig
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -787,4 +789,86 @@ func TestClientGlobalNoRace(t *testing.T) {
 	}
 	wg.Wait()
 	Stop()
+}
+
+// TestStopCallbackAccessorNoStall pins that Stop does not hold clientMux while
+// draining the poll goroutine. RC callbacks can call exported accessors:
+// AppSec's ASM_FEATURES callback stops AppSec, whose shutdown unregisters
+// capabilities (appsec.disableRCBlocking). A callback blocked on clientMux
+// while Stop waits for the poll goroutine to exit can only be released by
+// Stop's bounded wait timing out, stalling the whole RC API for that long.
+func TestStopCallbackAccessorNoStall(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Reset()
+
+	entered := make(chan struct{}, 1) // the product callback is running on the poll goroutine
+	release := make(chan struct{})    // closed once Stop should be mid-drain
+	accessorDone := make(chan error, 1)
+
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = time.Hour // only the Subscribe-triggered poll runs
+	// If Stop held clientMux across the drain, it would wait Timeout+1s = 5s.
+	cfg.HTTP = &http.Client{Timeout: 4 * time.Second, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Body != nil {
+			r.Body.Close()
+		}
+		// Round-trips through the response struct so the poll loop sees a valid
+		// (unverified-repository) update for the subscribed product.
+		body, err := json.Marshal(genUpdateResponse([]byte(`{"asm":{"enabled":false}}`), "datadog/2/ASM_FEATURES/asm_features_activation/config"))
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	})}
+	require.NoError(t, Start(cfg))
+
+	_, err := Subscribe(state.ProductASMFeatures, func(ProductUpdate) map[string]state.ApplyStatus {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release // park the poll goroutine until Stop is draining
+		// This is what AppSec's ASM_FEATURES callback does via stop() -> disableRCBlocking().
+		accessorDone <- RegisterCapability(ASMActivation)
+		return nil
+	}, ASMActivation)
+	require.NoError(t, err)
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no poll within 2s after Subscribe")
+	}
+
+	stopDone := make(chan struct{})
+	start := time.Now()
+	go func() {
+		defer close(stopDone)
+		Stop()
+	}()
+	// Let Stop close the stop channel and enter its drain wait while the poll
+	// goroutine is parked inside the callback.
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+
+	// The accessor called from the callback must not stall on clientMux.
+	select {
+	case err := <-accessorDone:
+		if err != nil && !errors.Is(err, ErrClientNotStarted) {
+			t.Fatalf("unexpected accessor error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("accessor called from an RC callback blocked > 2s: Stop holds clientMux while draining")
+	}
+
+	select {
+	case <-stopDone:
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Fatalf("Stop took %s: it waited on a poll goroutine blocked on clientMux", elapsed)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop did not return within 10s")
+	}
 }

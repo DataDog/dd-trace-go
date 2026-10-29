@@ -305,35 +305,51 @@ func Start(config ClientConfig) error {
 // timeout, since a poll may be in flight), then clears the singleton so a later
 // Start() is fresh. On wait timeout it clears anyway (a restart could briefly
 // overlap the in-flight poll). Noop if not running.
+// The singleton is cleared before the wait, not after: RC callbacks invoked by
+// the poll goroutine can call exported accessors (AppSec's ASM_FEATURES
+// callback stops AppSec, which unregisters capabilities). Holding clientMux
+// across the wait would block those accessors on the mutex while Stop waits
+// for the very goroutine that is stuck on it — released only by Stop's
+// bounded wait timing out. Clearing first makes such accessors see
+// ErrClientNotStarted instead of stalling; the poll goroutine still drains on
+// its own captured client, which was never behind the global.
 func Stop() {
 	clientMux.Lock()
-	defer clientMux.Unlock()
-
 	if client == nil {
 		// In case Stop() is called before Start()
+		clientMux.Unlock()
 		return
 	}
 	if !started {
 		// Return early if already stopped.
+		clientMux.Unlock()
 		return
 	}
+	c := client
 	log.Debug("remoteconfig: gracefully stopping the client")
-	client.stopOnce.Do(func() { close(client.stop) })
+	c.stopOnce.Do(func() { close(c.stop) })
+	// Clear the singleton before draining so accessors (including ones called
+	// from RC callbacks by the poll goroutine) can't block on clientMux while
+	// Stop waits below; see TestStopCallbackAccessorNoStall.
+	client = nil
+	started = false
+	activeEnv.Store(nil)
+	clientMux.Unlock()
+
 	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
 	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
+	// A Start() during this window overlaps the draining poll until it exits,
+	// the same brief overlap the wait-timeout path has always allowed.
 	wait := time.Second
-	if client.HTTP != nil && client.HTTP.Timeout > 0 {
-		wait = client.HTTP.Timeout + time.Second
+	if c.HTTP != nil && c.HTTP.Timeout > 0 {
+		wait = c.HTTP.Timeout + time.Second
 	}
 	select {
-	case <-client.done:
+	case <-c.done:
 		log.Debug("remoteconfig: client stopped successfully")
 	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
-	client = nil
-	started = false
-	activeEnv.Store(nil)
 }
 
 // Reset destroys the client instance.
