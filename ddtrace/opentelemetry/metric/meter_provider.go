@@ -40,6 +40,9 @@ func init() {
 			return false, err
 		}
 		if err := startGoRuntimeMetrics(ctx); err != nil {
+			if !installed {
+				return installed, err
+			}
 			return installed, &otelmetricsinstall.RuntimeRegistrationError{Err: err}
 		}
 		return installed, nil
