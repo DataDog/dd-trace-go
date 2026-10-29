@@ -87,6 +87,11 @@ env:
     echo.v4
     echo.v5
     valyala_fasthttp
+    dd-span
+  # Suites that also run with the buildtag tag, as the orchestrion lane does in
+  # DRIVER mode.
+  OTELC_BUILDTAG_TEST_PACKAGES: >-
+    dd-span
 
 jobs:
   go-versions-matrix:
@@ -188,32 +193,48 @@ jobs:
           for pkg in ${OTELC_TEST_PACKAGES}; do
             PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
           done
-          export PACKAGE_NAMES
+          BUILDTAG_PACKAGE_NAMES=""
+          for pkg in ${OTELC_BUILDTAG_TEST_PACKAGES}; do
+            BUILDTAG_PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+          done
+          export PACKAGE_NAMES BUILDTAG_PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
+          echo "Running otelc tests with the buildtag tag for: ${BUILDTAG_PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
           cat > "${RUN_SCRIPT}" <<'EOF'
           #!/usr/bin/env bash
           set -o pipefail
           rc=0
-          for pkg in ${PACKAGE_NAMES}; do
+          # run_suite <package> <log suffix> [go test flags...]
+          run_suite() {
+            local pkg="$1" suffix="$2"
+            shift 2
             # Some suites only build on Linux in CI (//go:build linux || !githubci),
             # and otelc fails on a package with no Go files left to build. Stdout
             # is parsed as test2json, so the notice goes to stderr.
-            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
+            if [[ "$(go list -e "$@" -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
               echo "Skipping ${pkg}: no Go files for this platform" >&2
-              continue
+              return
             fi
-            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
-            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
+            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_')${suffix}.log"
+            otelc go test -v -shuffle=on "$@" "${pkg}" > "${raw}" 2>&1
             status=$?
             go tool test2json -t -p "${pkg}" < "${raw}"
             if [[ "${status}" -ne 0 ]]; then
-              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
+              echo "::group::Raw output for ${pkg}${suffix} (exit ${status})" >&2
               cat "${raw}" >&2
               echo "::endgroup::" >&2
               rc=1
             fi
+          }
+          for pkg in ${PACKAGE_NAMES}; do
+            run_suite "${pkg}" ""
+          done
+          # The command line -tags replaces the one in GOFLAGS, so githubci is
+          # repeated here.
+          for pkg in ${BUILDTAG_PACKAGE_NAMES}; do
+            run_suite "${pkg}" "-buildtag" -tags=githubci,buildtag
           done
           exit "${rc}"
           EOF
