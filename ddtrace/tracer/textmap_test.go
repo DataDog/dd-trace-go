@@ -2913,9 +2913,8 @@ func edgeRequestHeaders() map[string]string {
 	}
 }
 
-// baggageHeaderValue includes a "%" escape so url.PathUnescape actually
-// does work, instead of returning its input unchanged as it would for an
-// all-clean value.
+// baggageHeaderValue contains a "%" escape. The escape forces
+// url.PathUnescape to do real work. An all-clean value returns unchanged.
 const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF%2028,region=us1"
 
 func BenchmarkExtractBaggage(b *testing.B) {
@@ -3414,14 +3413,16 @@ func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
 
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
-	root.SetBaggageItem(",;\\()/:<=>?@[]{}", ",;\\")
+	// The W3C injector drops keys outside the RFC 7230 token set, so use a
+	// token key and keep the special characters in the value.
+	root.SetBaggageItem("key", ",;\\()/:<=>?@[]{}")
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
 	err = tracer.Inject(ctx, carrier)
 	assert.Nil(err)
 
-	assert.Equal(headers.Get("baggage"), "%2C%3B%5C%28%29%2F%3A%3C%3D%3E%3F%40%5B%5D%7B%7D=%2C%3B%5C")
+	assert.Equal(headers.Get("baggage"), "key=%2C%3B%5C()/:<%3D>?@[]{}")
 }
 
 func TestExtractBaggagePropagatorDecoding(t *testing.T) {

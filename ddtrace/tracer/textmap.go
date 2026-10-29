@@ -1935,10 +1935,30 @@ func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier any) error {
 	}
 }
 
+// isTokenKey reports whether key contains only characters that the RFC
+// 7230 token set allows. The W3C baggage key grammar uses this set.
+// isTokenKey trims leading and trailing spaces first, so such a key
+// passes.
+func isTokenKey(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false
+	}
+	for _, c := range key {
+		if !strings.ContainsRune(safeCharactersKey, c) {
+			return false
+		}
+	}
+	return true
+}
+
 // injectTextMap propagates baggage items from the span context into the writer,
 // in the format of a single HTTP "baggage" header. Baggage consists of key=value pairs,
 // separated by commas. This function enforces a maximum number of baggage items and a maximum overall size.
 // If either limit is exceeded, excess items or bytes are dropped, and a warning is logged.
+// The injector drops a key outside the RFC 7230 token set and logs a
+// warning. Such a key cannot appear on the wire without changing its
+// identity. OTel and dd-trace-js reject these members too.
 //
 // Example of a single "baggage" header:
 // baggage: foo=bar,baz=qux
@@ -1953,6 +1973,12 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	ctr := 0
 	var baggageBuilder strings.Builder
 	ctx.ForeachBaggageItem(func(k, v string) bool {
+		if !isTokenKey(k) {
+			// A key outside the RFC 7230 token set cannot appear on the wire
+			// without changing its identity, so drop the member instead.
+			log.Warn("baggage key %q is outside the W3C token set, dropping item", k) //errtrack:ignore invalid baggage key on a request path
+			return true
+		}
 		if baggageItemCapped(ctr) {
 			return false
 		}

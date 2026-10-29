@@ -11,6 +11,8 @@ import (
 
 	otelbaggage "go.opentelemetry.io/otel/baggage"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -230,23 +232,28 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 	})
 }
 
-// TestW3CNonTokenKeyIdentityAfterOneHop pins the current handling of a
-// key outside the RFC 7230 token set. OTel and dd-trace-js reject such
-// members outright. Go percent-encodes a non-token key on inject and
-// never percent-decodes keys on extract. A key such as "user id"
-// therefore changes identity to "user%20id" after one hop.
-func TestW3CNonTokenKeyIdentityAfterOneHop(t *testing.T) {
+// TestW3CNonTokenKeyDroppedOnInject pins the handling of a key outside
+// the RFC 7230 token set. Such a key cannot appear on the wire without
+// changing its identity. Go drops the member on inject and logs a
+// warning. OTel and dd-trace-js reject these members too. Values with
+// non-token characters stay injected, because the W3C grammar
+// percent-encodes values.
+func TestW3CNonTokenKeyDroppedOnInject(t *testing.T) {
+	tp := new(log.RecordLogger)
+	tp.Ignore(commonLogIgnore...)
 	t.Setenv(envPropagationStyle, "baggage")
-	tr, err := newTracer()
+	tr, err := newTracer(WithLogger(tp))
 	require.NoError(t, err)
 	defer tr.Stop()
+	tp.Reset()
 
 	ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
 	ctx.setBaggageItem("key with space", "v")
+	ctx.setBaggageItem("okkey", "value with space")
 
 	out := TextMapCarrier{}
 	require.NoError(t, tr.Inject(ctx, out))
-	assert.Equal(t, "key%20with%20space=v", out[DefaultBaggageHeader])
+	assert.Equal(t, "okkey=value%20with%20space", out[DefaultBaggageHeader])
 
 	sctx, err := tr.Extract(out)
 	require.NoError(t, err)
@@ -255,7 +262,11 @@ func TestW3CNonTokenKeyIdentityAfterOneHop(t *testing.T) {
 		got[k] = v
 		return true
 	})
-	assert.Equal(t, "v", got["key%20with%20space"])
+	assert.Equal(t, map[string]string{"okkey": "value with space"}, got)
+
+	logs := tp.Logs()
+	require.NotEmpty(t, logs, "the drop must log a warning")
+	assert.Contains(t, logs[0], `baggage key "key with space" is outside the W3C token set, dropping item`)
 }
 
 // TestDecodeBaggageFieldMixedEscapes pins the invalid-escape policy of
