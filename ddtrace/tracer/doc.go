@@ -228,6 +228,9 @@
 // resource is built at startup, so global tags changed later through Remote
 // Config are written on spans instead.
 //
+// In OpenTelemetry setups using OTLP trace export, trace statistics computation
+// defaults to the collector or intake.
+//
 // # Disabling the OpenTelemetry SDK
 //
 // OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set
