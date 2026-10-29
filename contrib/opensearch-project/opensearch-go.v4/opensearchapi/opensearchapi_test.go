@@ -266,7 +266,10 @@ type discoveryLogger struct{ done chan error }
 
 func (l *discoveryLogger) LogRoundTrip(req *http.Request, _ *http.Response, err error, _ time.Time, _ time.Duration) error {
 	if req == nil {
-		l.done <- err
+		select {
+		case l.done <- err:
+		default:
+		}
 	}
 	return nil
 }
@@ -300,4 +303,18 @@ func TestNewClientStartupDiscovery(t *testing.T) {
 		require.NoError(t, client.Close())
 	}
 	assert.Len(t, mt.FinishedSpans(), 100, "requests made through the opensearchapi client should be traced")
+}
+
+func TestNewDefaultClient(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client, err := NewDefaultClient()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, client.Close()) }()
+	// The request result depends on whether something listens on the default address.
+	_, _ = client.Cluster.Health(context.Background(), &opensearchapi.ClusterHealthReq{})
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1, "requests made through the default client should be traced")
+	assert.Equal(t, "localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
