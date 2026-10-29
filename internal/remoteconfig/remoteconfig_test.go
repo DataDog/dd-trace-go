@@ -37,26 +37,26 @@ import (
 func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
-	c, err := newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
-	client.Store(c)
+	clientSingleton.Store(client)
 
 	t.Run("registerCallback", func(t *testing.T) {
-		c.callbacks = []Callback{}
+		client.callbacks = []Callback{}
 		nilCallback := func(map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
-		defer func() { c.callbacks = []Callback{} }()
-		require.Equal(t, 0, len(c.callbacks))
+		defer func() { client.callbacks = []Callback{} }()
+		require.Equal(t, 0, len(client.callbacks))
 		err = RegisterCallback(nilCallback)
 		require.NoError(t, err)
-		require.Equal(t, 1, len(c.callbacks))
-		require.Equal(t, 1, len(c.callbacks))
+		require.Equal(t, 1, len(client.callbacks))
+		require.Equal(t, 1, len(client.callbacks))
 		err = RegisterCallback(nilCallback)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(c.callbacks))
+		require.Equal(t, 2, len(client.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
-		c.callbacks = []Callback{}
+		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
 		err = RegisterProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
@@ -75,14 +75,14 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
-		err := c.applyUpdate(resp)
+		err := client.applyUpdate(resp)
 		require.NoError(t, err)
 	})
 
 	t.Run("subscribe", func(t *testing.T) {
-		c, err := newClient(cfg)
+		client, err = newClient(cfg)
 		require.NoError(t, err)
-		client.Store(c)
+		clientSingleton.Store(client)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
 		updates := new(int)
@@ -99,7 +99,7 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
-		err = c.applyUpdate(resp)
+		err = client.applyUpdate(resp)
 		require.NoError(t, err)
 		require.Equal(t, 1, *updates)
 		*updates = 0
@@ -108,7 +108,7 @@ func TestRCClient(t *testing.T) {
 		err = Unsubscribe(tok)
 		cfgPath2 := "datadog/2/APM_TRACING/foo/baz"
 		resp = genUpdateResponse([]byte("test"), cfgPath2)
-		err = c.applyUpdate(resp)
+		err = client.applyUpdate(resp)
 		require.NoError(t, err)
 		require.Equal(t, 0, *updates)
 	})
@@ -296,16 +296,16 @@ func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
 
 func TestRegistration(t *testing.T) {
 	t.Run("callbacks", func(t *testing.T) {
-		c, err := newClient(DefaultClientConfig())
+		client, err := newClient(DefaultClientConfig())
 		require.NoError(t, err)
-		client.Store(c)
+		clientSingleton.Store(client)
 
 		err = RegisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Len(t, c.callbacks, 1)
+		require.Len(t, client.callbacks, 1)
 		err = UnregisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Empty(t, c.callbacks)
+		require.Empty(t, client.callbacks)
 
 		err = RegisterCallback(dummyCallback2)
 		require.NoError(t, err)
@@ -315,60 +315,60 @@ func TestRegistration(t *testing.T) {
 		require.NoError(t, err)
 		err = RegisterCallback(dummyCallback4)
 		require.NoError(t, err)
-		require.Len(t, c.callbacks, 4)
+		require.Len(t, client.callbacks, 4)
 
 		err = UnregisterCallback(dummyCallback1)
 		require.NoError(t, err)
-		require.Len(t, c.callbacks, 3)
-		for _, c := range c.callbacks {
+		require.Len(t, client.callbacks, 3)
+		for _, c := range client.callbacks {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(c))
 		}
 
 		err = UnregisterCallback(dummyCallback3)
 		require.NoError(t, err)
-		require.Len(t, c.callbacks, 2)
-		for _, c := range c.callbacks {
+		require.Len(t, client.callbacks, 2)
+		for _, c := range client.callbacks {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
 		}
 	})
 }
 
 func TestSubscribe(t *testing.T) {
-	c, err := newClient(DefaultClientConfig())
+	client, err := newClient(DefaultClientConfig())
 	require.NoError(t, err)
-	client.Store(c)
+	clientSingleton.Store(client)
 
 	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 
 	tok1, err := Subscribe("my-product", pCallback)
 	require.NoError(t, err)
-	require.Len(t, c.callbacks, 0)
-	require.Len(t, c.subscriptionsMu.subs, 1)
-	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(c.subscriptionsMu.subs[0].callback))
+	require.Len(t, client.callbacks, 0)
+	require.Len(t, client.subscriptionsMu.subs, 1)
+	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(client.subscriptionsMu.subs[0].callback))
 
 	err = RegisterProduct("my-product")
 	require.Error(t, err)
-	require.Len(t, c.subscriptionsMu.subs, 1)
+	require.Len(t, client.subscriptionsMu.subs, 1)
 
 	err = RegisterProduct("my-second-product")
 	require.NoError(t, err)
-	require.Len(t, c.subscriptionsMu.subs, 1)
+	require.Len(t, client.subscriptionsMu.subs, 1)
 
 	_, err = Subscribe("my-second-product", pCallback)
 	require.Error(t, err)
-	require.Len(t, c.subscriptionsMu.subs, 1)
+	require.Len(t, client.subscriptionsMu.subs, 1)
 
 	err = RegisterCallback(callback)
 	require.NoError(t, err)
-	require.Len(t, c.callbacks, 1)
-	require.Len(t, c.subscriptionsMu.subs, 1)
-	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(c.callbacks[0]))
+	require.Len(t, client.callbacks, 1)
+	require.Len(t, client.subscriptionsMu.subs, 1)
+	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(client.callbacks[0]))
 
 	err = Unsubscribe(tok1)
 	require.NoError(t, err)
-	require.Len(t, c.subscriptionsMu.subs, 0)
-	require.Len(t, c.callbacks, 1)
+	require.Len(t, client.subscriptionsMu.subs, 0)
+	require.Len(t, client.callbacks, 1)
 }
 
 func TestNewUpdateRequest(t *testing.T) {
@@ -377,9 +377,9 @@ func TestNewUpdateRequest(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	c, err := newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
-	client.Store(c)
+	clientSingleton.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -388,7 +388,7 @@ func TestNewUpdateRequest(t *testing.T) {
 	_, err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
 	require.NoError(t, err)
 
-	b, err := c.newUpdateRequest()
+	b, err := client.newUpdateRequest()
 	require.NoError(t, err)
 
 	var req clientGetConfigsRequest
@@ -411,9 +411,9 @@ func TestProcessTags(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	c, err := newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
-	client.Store(c)
+	clientSingleton.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -426,7 +426,7 @@ func TestProcessTags(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		processtags.Reload()
 
-		b, err := c.newUpdateRequest()
+		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
 		err = json.Unmarshal(b.Bytes(), &req)
@@ -441,7 +441,7 @@ func TestProcessTags(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 		processtags.Reload()
 
-		b, err := c.newUpdateRequest()
+		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
 		err = json.Unmarshal(b.Bytes(), &req)
@@ -592,10 +592,10 @@ func TestAsync(t *testing.T) {
 	wg.Wait()
 
 	// Verify we have 0 callbacks left after we're done.
-	c := client.Load()
-	c._callbacksMu.RLock()
-	defer c._callbacksMu.RUnlock()
-	require.Empty(t, c.callbacks)
+	client := clientSingleton.Load()
+	client._callbacksMu.RLock()
+	defer client._callbacksMu.RUnlock()
+	require.Empty(t, client.callbacks)
 }
 
 // Ensure the lock ordering between capabilities and subscriptions does not deadlock.
@@ -604,7 +604,8 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	cfg := DefaultClientConfig()
 	c, err := newClient(cfg)
 	require.NoError(t, err)
-	client.Store(c)
+
+	clientSingleton.Store(c)
 	started = true
 	defer Reset()
 
