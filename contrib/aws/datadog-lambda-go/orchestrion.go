@@ -14,8 +14,10 @@ import (
 
 // WrapRuntimeHandler adds invocation instrumentation to an AWS-configured handler.
 // It is used by Orchestrion after AWS has applied the handler's options. AWS retains
-// responsibility for decoding requests and encoding responses; the response reader
-// is returned unchanged. Configuration is read from DD_* environment variables.
+// responsibility for decoding requests and encoding responses. Instrumentation
+// finishes when AWS closes the response reader after sending the response. Direct
+// callers must also close the returned io.Closer. Configuration is read from DD_*
+// environment variables.
 func WrapRuntimeHandler(handler func(context.Context, []byte) (io.Reader, error)) func(context.Context, []byte) (io.Reader, error) {
 	setupAppSec()
 	return wrapper.WrapRuntimeHandlerWithListeners(handler, initializeListeners(nil)...)
