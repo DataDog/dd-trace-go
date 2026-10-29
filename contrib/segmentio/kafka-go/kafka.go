@@ -36,17 +36,10 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	wrapped := &Reader{
 		Reader: c,
 	}
-	cfg := tracing.KafkaConfig{}
-	brokers := c.Config().Brokers
-	if brokers != nil {
-		cfg.BootstrapServers = strings.Join(brokers, ",")
-	}
-	if c.Config().GroupID != "" {
-		cfg.ConsumerGroupID = c.Config().GroupID
-	}
+	cfg := readerKafkaConfig(c)
 	wrapped.tracer = tracing.NewTracer(cfg, opts...)
 	tracing.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer)
-	if brokers == nil || !wrapped.tracer.DSMEnabled() {
+	if c.Config().Brokers == nil || !wrapped.tracer.DSMEnabled() {
 		return wrapped
 	}
 	wrapped.closeAsync = append(wrapped.closeAsync, startFetchClusterID(wrapped.tracer, cfg.BootstrapServers))
@@ -73,7 +66,7 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 		r.prev.Finish()
 		r.prev = nil
 	}
-	msg, err := r.Reader.ReadMessage(ctx)
+	msg, err := r.Reader.ReadMessage(traceMark(ctx, r.Reader))
 	if err != nil {
 		return kafka.Message{}, err
 	}
@@ -89,7 +82,7 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 		r.prev.Finish()
 		r.prev = nil
 	}
-	msg, err := r.Reader.FetchMessage(ctx)
+	msg, err := r.Reader.FetchMessage(traceMark(ctx, r.Reader))
 	if err != nil {
 		return msg, err
 	}
@@ -116,11 +109,8 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	writer := &KafkaWriter{
 		Writer: w,
 	}
-	cfg := tracing.KafkaConfig{}
-	addr := w.Addr.String()
-	if addr != "" {
-		cfg.BootstrapServers = addr
-	}
+	cfg := writerKafkaConfig(w)
+	addr := cfg.BootstrapServers
 	writer.tracer = tracing.NewTracer(cfg, opts...)
 	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
 	if addr == "" || !writer.tracer.DSMEnabled() {
@@ -128,6 +118,25 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	}
 	writer.closeAsync = append(writer.closeAsync, startFetchClusterID(writer.tracer, cfg.BootstrapServers))
 	return writer
+}
+
+func readerKafkaConfig(r *kafka.Reader) tracing.KafkaConfig {
+	cfg := tracing.KafkaConfig{}
+	if brokers := r.Config().Brokers; brokers != nil {
+		cfg.BootstrapServers = strings.Join(brokers, ",")
+	}
+	if r.Config().GroupID != "" {
+		cfg.ConsumerGroupID = r.Config().GroupID
+	}
+	return cfg
+}
+
+func writerKafkaConfig(w *kafka.Writer) tracing.KafkaConfig {
+	cfg := tracing.KafkaConfig{}
+	if w.Addr != nil {
+		cfg.BootstrapServers = w.Addr.String()
+	}
+	return cfg
 }
 
 func startFetchClusterID(tr *tracing.Tracer, bootstrapServers string) func() {
@@ -173,7 +182,7 @@ func (w *KafkaWriter) WriteMessages(ctx context.Context, msgs ...kafka.Message) 
 		spans[i] = w.tracer.StartProduceSpan(ctx, tWriter, tMsg)
 		w.tracer.SetProduceDSMCheckpoint(tMsg, tWriter)
 	}
-	err := w.Writer.WriteMessages(ctx, msgs...)
+	err := w.Writer.WriteMessages(traceMark(ctx, w.Writer), msgs...)
 	for i, span := range spans {
 		w.tracer.FinishProduceSpan(span, msgs[i].Partition, msgs[i].Offset, err)
 	}
