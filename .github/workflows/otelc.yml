@@ -53,6 +53,8 @@ env:
     contrib/gofiber/fiber.v2/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
+    contrib/k8s.io/client-go
+    contrib/k8s.io/client-go/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -78,6 +80,7 @@ env:
     chi.v5
     fiber.v2
     julienschmidt_httprouter
+    k8s_client_go
     redigo
     grpc
     gorilla_mux

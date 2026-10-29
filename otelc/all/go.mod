@@ -16,6 +16,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
 )
@@ -28,6 +29,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev // indirect
@@ -39,6 +41,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/gin-gonic/gin v1.10.1 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
@@ -65,10 +68,15 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/apimachinery v0.35.6 // indirect
+	k8s.io/client-go v0.35.1 // indirect
+	k8s.io/klog/v2 v2.130.1 // indirect
+	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
 )
 
 require (
@@ -210,3 +218,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../cont
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../contrib/labstack/echo.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 => ../../contrib/k8s.io/client-go/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 => ../../contrib/k8s.io/client-go

@@ -61,6 +61,7 @@ use (
 	./contrib/julienschmidt/httprouter
 	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/client-go/otelc
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/labstack/echo.v4/otelc
