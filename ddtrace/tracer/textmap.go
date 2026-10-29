@@ -750,10 +750,20 @@ func addOTBaggageItem(baggage map[string]string, baggageBytes int, warned bool, 
 	if baggage == nil {
 		baggage = make(map[string]string, 1)
 	}
-	dk, _ := url.QueryUnescape(key)
-	dv, _ := url.QueryUnescape(val)
-	baggage[dk] = dv
+	baggage[decodeBaggageField(key)] = decodeBaggageField(val)
 	return baggage, baggageBytes + len(key) + len(val), warned
+}
+
+// decodeBaggageField percent-decodes a baggage key or value, leaving literal
+// '+' intact ('+' is an allowed baggage token character, not a space -- see
+// issue #5181). Invalid escapes are kept as-is instead of discarded: the
+// value came off the wire, possibly from a tracer that did not percent-encode
+// at all, and dropping it to "" would corrupt it.
+func decodeBaggageField(s string) string {
+	if d, err := url.PathUnescape(s); err == nil {
+		return d
+	}
+	return s
 }
 
 // datadogExtractScratch holds the fields extracted from incoming Datadog
@@ -1841,8 +1851,8 @@ func extractTraceID128(ctx *SpanContext, v string) error {
 const (
 	baggageMaxItems     = 64
 	baggageMaxBytes     = 8192
-	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
-	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
+	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*+-.^_`|~"
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*+-./:<>?@[]^_`{|}~"
 )
 
 // encodeKey encodes a key with the specified safe characters
@@ -1855,15 +1865,28 @@ func encodeValue(value string) string {
 	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
 }
 
-// urlEncode performs percent-encoding while respecting the safe characters
+// urlEncode percent-encodes input while leaving the safe characters as-is,
+// the same encoding dd-trace-py applies to baggage. Percent-encoding means a
+// space becomes %20, never '+', and a literal '+' stays a plus sign on the
+// wire: the baggage headers are percent-encoded per the W3C baggage spec,
+// not HTML-form encoded, so query-form escaping corrupts values across
+// tracers (issue #5181).
 func urlEncode(input string, safeCharacters string) string {
 	var encoded strings.Builder
 	for _, c := range input {
 		if strings.ContainsRune(safeCharacters, c) {
 			encoded.WriteRune(c)
-		} else {
-			encoded.WriteString(url.QueryEscape(string(c)))
+			continue
 		}
+		if c == ' ' {
+			// url.QueryEscape is the only stdlib single-string escaper that
+			// percent-encodes every unsafe character, but it encodes spaces as
+			// '+'. Everything else it emits is a valid %XX escape, so the
+			// space is the one case that needs overriding.
+			encoded.WriteString("%20")
+			continue
+		}
+		encoded.WriteString(url.QueryEscape(string(c)))
 	}
 	return encoded.String()
 }
@@ -2032,12 +2055,10 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 			log.Warn("invalid baggage item: %q, dropping entire header", kv) //errtrack:ignore invalid propagated input on a request path
 			return nil, nil
 		}
-		key, _ := url.QueryUnescape(trimmedK)
-		val, _ := url.QueryUnescape(trimmedV)
 		if baggage == nil {
 			baggage = make(map[string]string, 1)
 		}
-		baggage[key] = val
+		baggage[decodeBaggageField(trimmedK)] = decodeBaggageField(trimmedV)
 		byteCount += itemBytes
 		ctr++
 	}
