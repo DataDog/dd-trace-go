@@ -98,10 +98,6 @@ Our CI pipeline includes several automated checks:
 - **Automated bump**: `update-system-tests.yml` runs weekly and opens a PR bumping `SYSTEM_TESTS_REF` to the latest system-tests commit. Trigger it manually with `gh workflow run "Update System Tests"`, or preview the diff without opening a PR using `gh workflow run "Update System Tests" -f dry-run=true`.
 - **Testing against a newer system-tests commit**: if your PR depends on a system-tests change merged after the current pin, either bump `SYSTEM_TESTS_REF` in your branch or re-run the workflow manually with `-f ref=<commit>`.
 
-#### Cache Pool Metrics Workflow
-
-- **Pool telemetry**: `cache-pool-metrics.yml` runs hourly and on manual dispatch. It snapshots the repository's shared Actions cache pool through the cache API (`scripts/citiming pool`) and submits `ci.cache.pool.*` gauges to Datadog: pool size and entry count per cache kind, workload, OS and ref type, total and (when readable) limit bytes, the eviction horizon, and the presence and age of default-branch seed entries. Submission is best-effort; the text snapshot stays in the job log as the record. See [scripts/README.md](./scripts/README.md) for the gauge definitions.
-
 ### Which checks run on a pull request
 
 Most workflows only run when a change could plausibly affect them. Two mechanisms
