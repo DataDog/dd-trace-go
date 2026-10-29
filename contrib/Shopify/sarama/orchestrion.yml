@@ -13,7 +13,7 @@ aspects:
     join-point:
       one-of:
         - function-call: github.com/Shopify/sarama.NewConsumer
-        - function-call: github.com/Shopify/sarama.NewConsumerClient
+        - function-call: github.com/Shopify/sarama.NewConsumerFromClient
     advice:
       - wrap-expression:
           imports:

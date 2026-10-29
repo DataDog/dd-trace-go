@@ -7,7 +7,9 @@ use (
 	./contrib/99designs/gqlgen/otelc
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
+	./contrib/IBM/sarama/otelc
 	./contrib/Shopify/sarama
+	./contrib/Shopify/sarama/otelc
 	./contrib/azure/apim-callout
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
