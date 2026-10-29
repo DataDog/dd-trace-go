@@ -25,6 +25,9 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2"
@@ -33,5 +36,6 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2"
 )

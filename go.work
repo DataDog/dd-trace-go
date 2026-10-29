@@ -34,8 +34,11 @@ use (
 	./contrib/go-chi/chi.v5/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
+	./contrib/go-redis/redis/otelc
 	./contrib/go-redis/redis.v7
+	./contrib/go-redis/redis.v7/otelc
 	./contrib/go-redis/redis.v8
+	./contrib/go-redis/redis.v8/otelc
 	./contrib/go.mongodb.org/mongo-driver
 	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/go.uber.org/zap
@@ -74,6 +77,7 @@ use (
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
+	./contrib/redis/go-redis.v9/otelc
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog

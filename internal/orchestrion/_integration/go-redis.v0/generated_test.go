@@ -18,3 +18,11 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestClients(t *testing.T) {
+	harness.Run(t, new(TestCaseClients))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
