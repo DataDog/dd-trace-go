@@ -230,6 +230,34 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 	})
 }
 
+// TestW3CNonTokenKeyIdentityAfterOneHop pins the current handling of a
+// key outside the RFC 7230 token set. OTel and dd-trace-js reject such
+// members outright. Go percent-encodes a non-token key on inject and
+// never percent-decodes keys on extract. A key such as "user id"
+// therefore changes identity to "user%20id" after one hop.
+func TestW3CNonTokenKeyIdentityAfterOneHop(t *testing.T) {
+	t.Setenv(envPropagationStyle, "baggage")
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
+	ctx.setBaggageItem("key with space", "v")
+
+	out := TextMapCarrier{}
+	require.NoError(t, tr.Inject(ctx, out))
+	assert.Equal(t, "key%20with%20space=v", out[DefaultBaggageHeader])
+
+	sctx, err := tr.Extract(out)
+	require.NoError(t, err)
+	got := map[string]string{}
+	sctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Equal(t, "v", got["key%20with%20space"])
+}
+
 // TestDecodeBaggageFieldMixedEscapes pins the invalid-escape policy of
 // decodeBaggageField. One invalid sequence keeps the WHOLE field raw.
 // dd-trace-py decodes the valid sequences and keeps the invalid ones, and
