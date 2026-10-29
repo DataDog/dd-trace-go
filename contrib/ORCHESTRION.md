@@ -42,7 +42,6 @@ its surroundings:
   `{{ index .AST.Args 0 }}` (first argument) and `{{ .AST.Ellipsis }}` are available.
   `.AST.Ellipsis` is set when the call spreads its last argument (`f(a, opts...)`), so a template
   that re-emits the arguments must append `...` when it is set; see
-  [datadog-lambda-go](./aws/datadog-lambda-go/orchestrion.yml) and
   [zap](./go.uber.org/zap/orchestrion.yml). Orchestrion uses the
   [github.com/dave/dst](https://pkg.go.dev/github.com/dave/dst) library, whose node types mirror the
   standard library [go/ast](https://pkg.go.dev/go/ast); use those references for the full set of
@@ -76,12 +75,19 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
   thread it into the traced call, so context propagates even where the original call has no context
   argument. See the `Get|Head|Post|PostForm` aspect in [net/http](./net/http/orchestrion.client.yml).
 - **Modify library code.** Instead of wrapping from the outside, inject tracing into the library's
-  own functions and types (`add-struct-field`, `function-body`, `prepend-statements`). Choose this
-  when the library has no hook and cannot be wrapped safely (the concrete-wrapper case in
+  own functions and types (`struct-definition`, `add-struct-field`, `function-body`,
+  `prepend-statements`). Choose this when the library has no hook and cannot be wrapped safely
+  (the concrete-wrapper case in
   [INTEGRATIONS.md](./INTEGRATIONS.md) section 3.5), or simply when modifying the library is easier
   and more complete than instrumenting from the outside. `net/http` chose this: instrumenting the
   library's own request handling was simpler than enumerating every way an `http.Server` or handler
   can be built.
+
+  The `struct-definition: <import-path>.<Type>` join point matches the declaration of a named
+  struct (`TypeSpec`). Pair it with `add-struct-field` to attach instrumentation state to library
+  instances. For example, [datadog-lambda-go](./aws/datadog-lambda-go/orchestrion.yml) matches
+  `github.com/aws/aws-lambda-go/lambda.handlerOptions` and adds the `__dd_instrumented` field to
+  avoid instrumenting a handler twice.
 
   The injected library-side code needs to call your tracing logic, which lives in a helper package.
   There are two ways to reach it without an import cycle:

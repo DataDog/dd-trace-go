@@ -7,108 +7,68 @@
 meta:
   name: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
   description: |-
-    Instruments AWS Lambda functions built with github.com/aws/aws-lambda-go.
-
-    Every call to lambda.Start, lambda.StartWithOptions, lambda.StartHandlerFunc,
-    lambda.StartWithContext, lambda.StartHandler and
-    lambda.StartHandlerWithContext is rewritten so that the handler is passed
-    through ddlambda.WrapFunction (or ddlambda.WrapLambdaHandlerInterface for
-    lambda.Handler values), with a nil configuration. This is equivalent to wrapping the handler by hand: it creates
-    an aws.lambda span for every invocation, reports enhanced metrics, and
-    flushes the tracer after each invocation. Configuration is read from DD_*
-    environment variables. Options passed to lambda.StartWithOptions are kept.
-    A handler that is already wrapped by ddlambda is not wrapped again.
+    Instruments AWS Lambda invocations after AWS configures the handler. AWS
+    retains its original handler options, context, request decoder and response
+    encoder. Configuration is read from DD_* environment variables. Handlers
+    already wrapped by ddlambda are not instrumented again.
 
     Continuing traces from upstream services into the function, for event
     sources other than API Gateway, requires the Datadog Lambda Extension.
 
 aspects:
-  - id: lambda.Start
+  - id: handlerOptions.instrumented
     join-point:
-      all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.Start
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
+      struct-definition: github.com/aws/aws-lambda-go/lambda.handlerOptions
     advice:
-      - wrap-expression:
-          imports:
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
-          template: |-
-            {{ .AST.Fun }}(ddlambda.WrapFunction({{ index .AST.Args 0 }}, nil))
+      - add-struct-field:
+          name: __dd_instrumented
+          type: bool
 
-  - id: lambda.StartWithOptions
+  - id: newHandler.manual-instrumentation
     join-point:
       all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.StartWithOptions
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
+        - import-path: github.com/aws/aws-lambda-go/lambda
+        - function-body:
+            function:
+              - name: newHandler
     advice:
-      # Only the handler is wrapped. The options are re-emitted as written,
-      # including a spread `opts...`.
-      - wrap-expression:
-          imports:
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+      # Linking avoids a cycle: ddlambda's helpers themselves depend on lambda.
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper
           template: |-
-            {{- $ellipsis := .AST.Ellipsis -}}
-            {{ .AST.Fun }}(ddlambda.WrapFunction({{ index .AST.Args 0 }}, nil){{ range $i, $a := .AST.Args }}{{ if $i }}, {{ $a }}{{ end }}{{ end }}{{ if $ellipsis }}...{{ end }})
+            //go:linkname __dd_lambda_isWrapped github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper.IsWrapped
+            func __dd_lambda_isWrapped(interface{}) bool
+      - prepend-statements:
+          template: |-
+            {{- $handler := .Function.Argument 0 -}}
+            {{- $result := .Function.Result 0 -}}
+            defer func() {
+              if __dd_lambda_isWrapped({{ $handler }}) {
+                {{ $result }}.__dd_instrumented = true
+              }
+            }()
 
-  - id: lambda.StartHandlerFunc
+  # Keep the original handlerOptions object, including its baseContext and any
+  # future options. Only decorate the invocation adapter AWS already configured.
+  - id: start.instrument-invocations
     join-point:
       all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.StartHandlerFunc
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
+        - import-path: github.com/aws/aws-lambda-go/lambda
+        - function-body:
+            function:
+              - name: start
     advice:
-      # StartHandlerFunc is generic over the handler's type, which the any
-      # returned by WrapFunction doesn't satisfy. It does nothing more than
-      # StartWithOptions, so the call becomes a StartWithOptions call.
-      #
-      # A call with explicit type arguments, lambda.StartHandlerFunc[In, Out](h),
-      # isn't matched: the function-call join point only matches a function
-      # named by an identifier or a selector.
-      - wrap-expression:
-          imports:
-            lambda: github.com/aws/aws-lambda-go/lambda
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
           template: |-
-            {{- $ellipsis := .AST.Ellipsis -}}
-            lambda.StartWithOptions(ddlambda.WrapFunction({{ index .AST.Args 0 }}, nil){{ range $i, $a := .AST.Args }}{{ if $i }}, {{ $a }}{{ end }}{{ end }}{{ if $ellipsis }}...{{ end }})
-
-  - id: lambda.StartWithContext
-    join-point:
-      all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.StartWithContext
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
-    advice:
-      - wrap-expression:
-          imports:
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+            //go:linkname __dd_lambda_wrapRuntimeHandler github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.WrapRuntimeHandler
+            func __dd_lambda_wrapRuntimeHandler(handlerFunc) handlerFunc
+      - prepend-statements:
           template: |-
-            {{ .AST.Fun }}({{ index .AST.Args 0 }}, ddlambda.WrapFunction({{ index .AST.Args 1 }}, nil))
-
-  - id: lambda.StartHandler
-    join-point:
-      all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.StartHandler
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
-    advice:
-      - wrap-expression:
-          imports:
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
-          template: |-
-            {{ .AST.Fun }}(ddlambda.WrapLambdaHandlerInterface({{ index .AST.Args 0 }}, nil))
-
-  - id: lambda.StartHandlerWithContext
-    join-point:
-      all-of:
-        - function-call: github.com/aws/aws-lambda-go/lambda.StartHandlerWithContext
-        - not:
-            import-path: github.com/aws/aws-lambda-go/lambda
-    advice:
-      - wrap-expression:
-          imports:
-            ddlambda: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
-          template: |-
-            {{ .AST.Fun }}({{ index .AST.Args 0 }}, ddlambda.WrapLambdaHandlerInterface({{ index .AST.Args 1 }}, nil))
+            {{- $handler := .Function.Argument 0 -}}
+            if !{{ $handler }}.__dd_instrumented {
+              {{ $handler }}.handlerFunc = __dd_lambda_wrapRuntimeHandler({{ $handler }}.handlerFunc)
+              {{ $handler }}.__dd_instrumented = true
+            }
