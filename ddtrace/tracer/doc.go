@@ -228,6 +228,9 @@
 // resource is built at startup, so global tags changed later through Remote
 // Config are written on spans instead.
 //
+// OTLP trace metrics require OTEL_TRACES_SPAN_METRICS_ENABLED=true, independently
+// of DD_TRACE_STATS_COMPUTATION_ENABLED and DD_METRICS_OTEL_ENABLED.
+//
 // # Disabling the OpenTelemetry SDK
 //
 // OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set

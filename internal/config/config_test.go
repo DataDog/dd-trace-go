@@ -1298,66 +1298,49 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
-	t.Run("auto-enabled when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
+	for _, spanMetrics := range []string{"", "true", "false"} {
+		for _, statsComputation := range []string{"", "true", "false"} {
+			for _, generalMetrics := range []string{"", "true", "false"} {
+				name := "span metrics=" + spanMetrics + "/stats computation=" + statsComputation + "/general metrics=" + generalMetrics
+				t.Run(name, func(t *testing.T) {
+					resetGlobalState()
+					defer resetGlobalState()
+
+					t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+					t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", spanMetrics)
+					t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", statsComputation)
+					t.Setenv("DD_METRICS_OTEL_ENABLED", generalMetrics)
+
+					assert.Equal(t, spanMetrics == "true", Get().OTLPSpanMetricsEnabled())
+				})
+			}
+		}
+	}
+
+	for _, generalMetrics := range []string{"", "true", "false"} {
+		t.Run("native stats default with general metrics="+generalMetrics, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("OTEL_TRACES_EXPORTER", "")
+			t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "")
+			t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "")
+			t.Setenv("DD_METRICS_OTEL_ENABLED", generalMetrics)
+
+			cfg := Get()
+			assert.True(t, cfg.StatsComputationEnabled())
+			assert.False(t, cfg.OTLPSpanMetricsEnabled())
+		})
+	}
+
+	t.Run("explicit true enables OTLP span metrics with native traces", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.True(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("not auto-enabled when OTEL_TRACES_EXPORTER=otlp but DD_METRICS_OTEL_ENABLED unset", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("auto-disabled when OTLP trace export is off even if DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("explicit true overrides auto-detection", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
+		t.Setenv("OTEL_TRACES_EXPORTER", "")
 		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
 
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.True(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("explicit false overrides auto-detection", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+		assert.True(t, Get().OTLPSpanMetricsEnabled())
 	})
 
 	t.Run("explicit false reports calculated stats-computation via setter", func(t *testing.T) {
