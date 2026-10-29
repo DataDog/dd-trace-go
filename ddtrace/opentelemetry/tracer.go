@@ -36,6 +36,11 @@ type oteltracer struct {
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+	if datadogTracerInactive() {
+		// The Datadog tracer does not record. Return a non-recording span that keeps the parent
+		// span context, as the OpenTelemetry no-op tracer does.
+		return noop.NewTracerProvider().Tracer("").Start(ctx, spanName, opts...)
+	}
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
 	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
