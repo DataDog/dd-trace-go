@@ -25,6 +25,8 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2"
