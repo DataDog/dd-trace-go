@@ -77,7 +77,7 @@
     "options": "--name \"elasticsearch8\""
   },
   "mongodb": {
-    "image": "mongo:8",
+    "image": "mongo:7.0@sha256:8bb4442761a63a8dda452744082cdac9644b429807eb977b42324a63cef59ca4",
     "ports": ["27017:27017"],
     "options": "--name \"mongodb\""
   },
