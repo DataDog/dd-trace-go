@@ -96,6 +96,7 @@ func (h *exposureHook) Finally(
 	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
 		return
 	}
+	h.appendDependencyExposures(hookContext, flagEvaluationDetails.FlagMetadata)
 	// The provider checks cancellation before resolving. Cancellation after a
 	// successful resolution must not discard an exposure for the returned value.
 	evaluation := ExposureEvaluation{Details: flagEvaluationDetails}
@@ -104,47 +105,10 @@ func (h *exposureHook) Finally(
 		return
 	}
 
-	allocationKey, _ := evaluation.AllocationKey() // IsExposure established its presence.
-	var serialID *uint32
-	if id, ok := evaluation.SplitSerialID(); ok {
-		serialID = new(id)
-	}
-
-	// Get targeting key (subject ID) from evaluation context
-	evalContext := hookContext.EvaluationContext()
-	targetingKey := evalContext.TargetingKey()
-
-	// Build flat context from evaluation context
-	flatContext := make(map[string]any)
-	flatContext[of.TargetingKey] = targetingKey
-	maps.Copy(flatContext, evalContext.Attributes())
-
-	// Flatten attributes for exposure event
-	flattenedAttrs := flattenContext(flatContext)
-
-	// Extract only primitive attributes for the subject
-	subjectAttrs := extractPrimitiveAttributes(flattenedAttrs)
-
-	// Create exposure event
-	event := exposureEvent{
-		Timestamp: time.Now().UnixMilli(),
-		Allocation: exposureAllocation{
-			Key: allocationKey,
-		},
-		Flag: exposureFlag{
-			Key: hookContext.FlagKey(),
-		},
-		Variant: exposureVariant{
-			Key: flagEvaluationDetails.Variant,
-		},
-		Subject: exposureSubject{
-			ID:         targetingKey,
-			Type:       "",           // Type is optional
-			Attributes: subjectAttrs, // Flattened, primitive-only attributes
-		},
-		SerialID:    serialID,
-		featuresKey: featureValuesKey(flagEvaluationDetails.FlagMetadata, metadataExposureFeaturesKey),
-	}
+	event, _ := makeExposureEvent(hookContext.FlagKey(), flagEvaluationDetails.Variant,
+		flagEvaluationDetails.FlagMetadata, hookContext.EvaluationContext())
+	targetingKey := event.Subject.ID
+	allocationKey := event.Allocation.Key
 
 	// Send to writer for buffering and eventual flushing
 	// Decide once for all destinations. Customer hooks run after provider hooks
@@ -172,6 +136,50 @@ func (h *exposureHook) Finally(
 		logOnboarding("queued exposure event for flag %q (allocation=%q, variant=%q, subject=%q)",
 			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 	}
+}
+
+func (h *exposureHook) appendDependencyExposures(hookContext of.HookContext, metadata of.FlagMetadata) {
+	candidates, _ := metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+	for _, candidate := range candidates {
+		event, eligible := makeExposureEvent(candidate.FlagKey, candidate.Result.VariantKey,
+			candidate.Result.Metadata, hookContext.EvaluationContext())
+		if eligible {
+			h.writer.append(event)
+		}
+	}
+}
+
+func makeExposureEvent(
+	flagKey string,
+	variantKey string,
+	metadata of.FlagMetadata,
+	evalContext of.EvaluationContext,
+) (exposureEvent, bool) {
+	allocationKey, hasAllocation := metadata[metadataAllocationKey].(string)
+	doLog, _ := metadata[metadataDoLogKey].(bool)
+	if !hasAllocation || !doLog || variantKey == "" {
+		return exposureEvent{}, false
+	}
+	var serialID *uint32
+	if id, ok := metadata[metadataSplitSerialIDKey].(uint32); ok {
+		serialID = new(id)
+	}
+	targetingKey := evalContext.TargetingKey()
+	flatContext := make(map[string]any, len(evalContext.Attributes())+1)
+	flatContext[of.TargetingKey] = targetingKey
+	maps.Copy(flatContext, evalContext.Attributes())
+	return exposureEvent{
+		Timestamp:  time.Now().UnixMilli(),
+		Allocation: exposureAllocation{Key: allocationKey},
+		Flag:       exposureFlag{Key: flagKey},
+		Variant:    exposureVariant{Key: variantKey},
+		Subject: exposureSubject{
+			ID:         targetingKey,
+			Attributes: extractPrimitiveAttributes(flattenContext(flatContext)),
+		},
+		SerialID:    serialID,
+		featuresKey: featureValuesKey(metadata, metadataExposureFeaturesKey),
+	}, true
 }
 
 // ExposureEvaluation describes a completed evaluation. Its cache decision

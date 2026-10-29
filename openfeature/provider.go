@@ -85,7 +85,8 @@ type ProviderConfig struct {
 // using configuration received from Datadog, either via Remote Config or
 // Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
-	experimentationOptOutMode ExperimentationOptOutMode
+	experimentationOptOutMode        ExperimentationOptOutMode
+	evaluationTelemetryOptOutEnabled bool
 
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
@@ -333,7 +334,8 @@ func newDatadogProviderWithSourceAndEVP(
 	hooks = append(hooks, newDebugLoggingHook(rawDataWarned))
 
 	p := &DatadogProvider{
-		experimentationOptOutMode: config.ExperimentationOptOutMode,
+		experimentationOptOutMode:        config.ExperimentationOptOutMode,
+		evaluationTelemetryOptOutEnabled: telemetryOptOutEnabled,
 		metadata: openfeature.Metadata{
 			Name: datadogProviderName,
 		},
@@ -940,7 +942,80 @@ func (p *DatadogProvider) evaluate(
 	}
 
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	return evaluateConfiguredFlagWithCallbacks(config, flagKey, defaultValue, flatCtx, evalNow, exclusion,
+		func(dependencyFlagKey string, dependencyType valueType, dependencyDefault any, result evaluationResult) {
+			p.recordDependencyEvaluation(ctx, dependencyFlagKey, dependencyType, dependencyDefault, flatCtx, result)
+		})
+}
+
+func (p *DatadogProvider) recordDependencyEvaluation(
+	ctx context.Context,
+	flagKey string,
+	flagType valueType,
+	defaultValue any,
+	flatCtx openfeature.FlattenedContext,
+	result evaluationResult,
+) {
+	if p.evaluationTelemetryOptOutEnabled {
+		if optedOut, _ := flatCtx["dd_evaluation_telemetry_opt_out"].(bool); optedOut {
+			return
+		}
+	}
+
+	targetingKey, _ := flatCtx[openfeature.TargetingKey].(string)
+	attributes := make(map[string]any, len(flatCtx))
+	for key, value := range flatCtx {
+		if key != openfeature.TargetingKey {
+			attributes[key] = value
+		}
+	}
+	hookContext := openfeature.NewHookContext(
+		flagKey,
+		openFeatureType(flagType),
+		defaultValue,
+		openfeature.ClientMetadata{},
+		p.metadata,
+		openfeature.NewEvaluationContext(targetingKey, attributes),
+	)
+	details := openfeature.InterfaceEvaluationDetails{
+		Value: result.Value,
+		EvaluationDetails: openfeature.EvaluationDetails{
+			FlagKey:  flagKey,
+			FlagType: openFeatureType(flagType),
+			ResolutionDetail: openfeature.ResolutionDetail{
+				Variant:      result.VariantKey,
+				Reason:       result.Reason,
+				ErrorCode:    errorCodeFor(result.Error),
+				FlagMetadata: result.Metadata,
+			},
+		},
+	}
+	if result.Error != nil {
+		details.ErrorMessage = result.Error.Error()
+	}
+	if p.flagEvalMetricsHook != nil && p.flagEvalMetricsHook.metrics != nil {
+		p.flagEvalMetricsHook.metrics.record(ctx, flagKey, details)
+	}
+	if p.flagEvalLoggingWriter != nil {
+		p.flagEvalLoggingWriter.record(hookContext, details)
+	}
+}
+
+func openFeatureType(flagType valueType) openfeature.Type {
+	switch flagType {
+	case valueTypeBoolean:
+		return openfeature.Boolean
+	case valueTypeString:
+		return openfeature.String
+	case valueTypeInteger:
+		return openfeature.Int
+	case valueTypeNumeric:
+		return openfeature.Float
+	case valueTypeJSON:
+		return openfeature.Object
+	default:
+		return openfeature.Boolean
+	}
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.
@@ -968,5 +1043,31 @@ func toResolutionError(err error) openfeature.ResolutionError {
 		return openfeature.NewInvalidContextResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
+	}
+}
+
+func errorCodeFor(err error) openfeature.ErrorCode {
+	if err == nil {
+		return ""
+	}
+	var graphErr *dependencyGraphError
+	if errors.As(err, &graphErr) {
+		return graphErr.code
+	}
+	switch {
+	case errors.Is(err, errFlagNotFound):
+		return openfeature.FlagNotFoundCode
+	case errors.Is(err, errTypeMismatch):
+		return openfeature.TypeMismatchCode
+	case errors.Is(err, errParseError):
+		return openfeature.ParseErrorCode
+	case errors.Is(err, errNoConfiguration):
+		return openfeature.ProviderNotReadyCode
+	case errors.Is(err, errTargetingKeyMissing):
+		return openfeature.TargetingKeyMissingCode
+	case errors.Is(err, errInvalidContext):
+		return openfeature.InvalidContextCode
+	default:
+		return openfeature.GeneralCode
 	}
 }

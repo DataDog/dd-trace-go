@@ -215,6 +215,24 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, condition.Operator)
 				}
 
+				hasAttribute := condition.attributePresent || condition.Attribute != ""
+				hasFlagEvaluation := condition.flagEvaluationPresent || condition.FlagEvaluation != nil
+				if hasAttribute == hasFlagEvaluation {
+					return fmt.Errorf("flag %q allocation %d rule condition must define exactly one of attribute or flagEvaluation", flagKey, i)
+				}
+				if hasFlagEvaluation {
+					if condition.FlagEvaluation == nil {
+						return fmt.Errorf("flag %q allocation %d rule has invalid flag evaluation", flagKey, i)
+					}
+					if condition.FlagEvaluation.Key == "" {
+						return fmt.Errorf("flag %q allocation %d rule has flag evaluation with empty key", flagKey, i)
+					}
+					if condition.Operator != operatorOneOf && condition.Operator != operatorNotOneOf {
+						return fmt.Errorf("flag %q allocation %d rule has flag evaluation with unsupported operator %q",
+							flagKey, i, condition.Operator)
+					}
+				}
+
 				switch condition.Operator {
 				case operatorLT, operatorLTE, operatorGT, operatorGTE:
 					if _, ok := internal.ToFloat64(condition.Value); !ok {
@@ -232,11 +250,9 @@ func validateFlag(flagKey string, flag *flag) error {
 							flagKey, i, regex, err)
 					}
 				case operatorOneOf, operatorNotOneOf:
-					if _, ok := condition.Value.([]any); !ok {
-						if _, ok := condition.Value.([]string); !ok {
-							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
-								flagKey, i, condition.Operator)
-						}
+					if !isStringList(condition.Value) {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires an array of strings",
+							flagKey, i, condition.Operator)
 					}
 				case operatorIsNull:
 					if _, ok := condition.Value.(bool); !ok {
@@ -261,6 +277,22 @@ func validateFlag(flagKey string, flag *flag) error {
 		}
 	}
 	return nil
+}
+
+func isStringList(value any) bool {
+	switch values := value.(type) {
+	case []string:
+		return true
+	case []any:
+		for _, value := range values {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // stopRemoteConfig unsubscribes from Remote Config updates.

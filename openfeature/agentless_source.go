@@ -30,6 +30,11 @@ import (
 // failure before giving up and waiting for the next tick.
 const maxPollAttempts = 3
 
+const (
+	featureFlagsCapabilitiesHeader = "X-DD-FEATURE-FLAGS-CAPABILITIES"
+	dependentFlagCapability        = "dependent-flag-variant-key-v1"
+)
+
 // maxDrainBytes bounds how much of a non-200 response body is read before
 // closing, so the underlying connection can be reused without risking
 // unbounded memory use on a misbehaving endpoint.
@@ -259,6 +264,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
 	req.Header.Set("DD-Client-Library-Version", version.Tag)
+	req.Header.Set(featureFlagsCapabilitiesHeader, dependentFlagCapability)
 	if etag := s.currentETag(); etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}

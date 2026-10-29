@@ -576,6 +576,7 @@ func TestAgentlessSource_Headers(t *testing.T) {
 	assert.Equal(t, "gzip", gotHeaders.Get("Accept-Encoding"))
 	assert.Equal(t, "go", gotHeaders.Get("DD-Client-Library-Language"))
 	assert.NotEmpty(t, gotHeaders.Get("DD-Client-Library-Version"))
+	assert.Equal(t, dependentFlagCapability, gotHeaders.Get(featureFlagsCapabilitiesHeader))
 }
 
 func TestAgentlessSource_Gzip(t *testing.T) {

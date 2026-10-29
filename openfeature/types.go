@@ -7,6 +7,8 @@ package openfeature
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"sync/atomic"
 	"time"
 )
@@ -25,6 +27,9 @@ type universalFlagsConfiguration struct {
 	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
 	// or malformed value fails closed to false.
 	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
+	// EvaluatorParams controls optional evaluator behaviour. Missing fields use
+	// evaluator defaults; a present zero maxDependencyDepth is meaningful.
+	EvaluatorParams evaluatorParams `json:"evaluatorParams,omitempty"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
@@ -46,6 +51,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 		Format                    string                     `json:"format"`
 		Environment               environment                `json:"environment"`
 		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
+		EvaluatorParams           evaluatorParams            `json:"evaluatorParams"`
 		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -56,6 +62,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.Format = raw.Format
 	config.Environment = raw.Environment
 	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
+	config.EvaluatorParams = raw.EvaluatorParams
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]error)
 
@@ -80,6 +87,40 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 		config.Flags[flagKey] = &parsedFlag
 	}
 
+	return nil
+}
+
+type evaluatorParams struct {
+	MaxDependencyDepth        *int `json:"-"`
+	maxDependencyDepthInvalid bool
+}
+
+// UnmarshalJSON keeps malformed depth configuration evaluable so it can be
+// reported as a PARSE_ERROR for each requested flag instead of rejecting the
+// complete configuration update. JSON numbers such as 3.0 are valid integers.
+func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
+	params.MaxDependencyDepth = nil
+	params.maxDependencyDepthInvalid = false
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	depthJSON, present := raw["maxDependencyDepth"]
+	if !present {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(depthJSON, &decoded); err != nil {
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	depth, ok := decoded.(float64)
+	if !ok || math.IsNaN(depth) || math.IsInf(depth, 0) || math.Trunc(depth) != depth || depth < 0 || depth > 255 {
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	value := int(depth)
+	params.MaxDependencyDepth = &value
 	return nil
 }
 
@@ -244,8 +285,48 @@ type condition struct {
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// FlagEvaluation selects another flag's variant key as the condition input.
+	// It is mutually exclusive with Attribute in authored UFC.
+	FlagEvaluation        *flagEvaluation `json:"flagEvaluation,omitempty"`
+	attributePresent      bool
+	flagEvaluationPresent bool
 	// semverComparand is the validated, parsed SemVer condition value.
 	semverComparand *parsedSemver
+}
+
+func (c *condition) UnmarshalJSON(data []byte) error {
+	type plain condition
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*c = condition(decoded)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, c.attributePresent = fields["attribute"]
+	_, c.flagEvaluationPresent = fields["flagEvaluation"]
+	return nil
+}
+
+type flagEvaluation struct {
+	Key string `json:"key"`
+}
+
+func (evaluation *flagEvaluation) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	keyJSON, ok := fields["key"]
+	if !ok || len(fields) != 1 {
+		return fmt.Errorf("flagEvaluation must contain only key")
+	}
+	if err := json.Unmarshal(keyJSON, &evaluation.Key); err != nil || evaluation.Key == "" {
+		return fmt.Errorf("flagEvaluation.key must be a non-empty string")
+	}
+	return nil
 }
 
 // split defines how traffic should be distributed for a specific variant.
