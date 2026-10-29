@@ -102,17 +102,13 @@ func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
 	assert.Equal(t, "Amélie DF 28", got["key with space"])
 }
 
-// TestBaggageWireFormatIsPercentEncoded pins the on-the-wire encoding Go
-// emits for both baggage styles to percent-encoding, matching the W3C
-// baggage spec and go.opentelemetry.io/otel/baggage: a space becomes %20,
-// a literal '+' stays a plus sign, and a literal '%' escapes to %25 so it
-// cannot be mistaken for an escape sequence on a later hop. For W3C
-// values, dd-trace-rb and OTel emit the same three shapes; dd-trace-js
-// agrees on space (%20) and '%' (%25) but escapes a literal '+' as %2B
-// (encodeURIComponent); dd-trace-py leaves '%' verbatim in values (its
-// safe lists include '%'), which is why it still mis-decodes escape-looking
-// values like "a%2Fb" on extract -- its own residual instance of issue
-// #5181.
+// TestBaggageWireFormatIsPercentEncoded pins the on-the-wire encoding for
+// both baggage styles. A space becomes %20. A literal '+' stays a plus
+// sign. A literal '%' escapes to %25, so a later hop cannot mistake it for
+// an escape sequence. go.opentelemetry.io/otel/baggage and dd-trace-rb
+// emit the same shapes for W3C values. dd-trace-js escapes a literal '+'
+// as %2B. dd-trace-py keeps '%' verbatim in values, so its extractor
+// mis-decodes a value such as "a%2Fb".
 func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -133,7 +129,7 @@ func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 			}{
 				{"a+b", "a+b"},                       // '+' is a literal baggage token char
 				{"x y", "x%20y"},                     // space is %20, never '+'
-				{"100%", "100%25"},                   // '%' must be escaped
+				{"100%", "100%25"},                   // '%' escapes to %25
 				{"a%2Fb", "a%252Fb"},                 // escape-looking text must survive a hop
 				{"a + b % c", "a%20+%20b%20%25%20c"}, // combination
 				{"Am\u00e9lie", "Am%C3%A9lie"},       // non-ASCII still percent-encoded
@@ -157,13 +153,12 @@ func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 }
 
 // TestBaggageKeyEncodingIsStyleSplit pins the key handling split between
-// the two baggage styles. W3C "baggage" keys are RFC 7230 tokens: '%' and
-// '+' are valid key characters and go on the wire verbatim, and are NOT
-// percent-decoded on extract -- matching go.opentelemetry.io/otel/baggage,
-// whose parser validates keys as opaque tokens ("W3C Baggage specification
-// does not allow percent-encoded keys") and never decodes them. Legacy
-// ot-baggage-<key> keys have no spec; Go percent-encodes both sides itself,
-// so '%' escapes to %25 there and is decoded back on extract.
+// the two baggage styles. W3C "baggage" keys are RFC 7230 tokens. '%' and
+// '+' are valid key characters, so they travel verbatim and never decode
+// on extract. go.opentelemetry.io/otel/baggage reads keys the same way
+// ("W3C Baggage specification does not allow percent-encoded keys").
+// Legacy ot-baggage-<key> keys have no spec. Go percent-encodes both sides
+// itself, so '%' escapes to %25 there and decodes back on extract.
 func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 	t.Run("w3c_key_stays_verbatim", func(t *testing.T) {
 		t.Setenv(envPropagationStyle, "baggage")
@@ -171,8 +166,8 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 		require.NoError(t, err)
 		defer tr.Stop()
 
-		// Keys with '%' and '+' (both valid token characters) and a
-		// percent-escape-looking key: all must keep their identity.
+		// Keys with '%', '+' or escape-looking text must all keep their
+		// identity.
 		for _, key := range []string{"key%percent", "key+plus", "key%2Flooking"} {
 			ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
 			ctx.setBaggageItem(key, "v")
@@ -192,9 +187,9 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 	})
 
 	t.Run("w3c_foreign_key_not_decoded", func(t *testing.T) {
-		// A baggage header injected by an OTel/JS app carries keys as opaque
-		// tokens; extracting it must not change a key's identity, even when
-		// the key looks like it contains a percent escape.
+		// An OTel/JS app injects keys as opaque tokens. Extraction must not
+		// change a key's identity, even when the key contains what looks
+		// like an escape sequence.
 		t.Setenv(envPropagationStyleExtract, "baggage")
 		tr, err := newTracer()
 		require.NoError(t, err)
@@ -236,30 +231,30 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 }
 
 // TestDecodeBaggageFieldMixedEscapes pins the invalid-escape policy of
-// decodeBaggageField: one invalid sequence keeps the WHOLE field raw rather
-// than partially decoding it (dd-trace-py's unquote decodes valid sequences
-// and leaves invalid ones in place; go.opentelemetry.io/otel/baggage
-// rejects the member entirely). Whole-field-raw is lossless against the
-// wire text, and Go-injected values always escape '%', so this only
-// affects foreign or hand-written headers.
+// decodeBaggageField. One invalid sequence keeps the WHOLE field raw.
+// dd-trace-py decodes the valid sequences and keeps the invalid ones, and
+// go.opentelemetry.io/otel/baggage rejects the member entirely. Go
+// injects always escape '%', so only foreign or hand-written headers
+// reach this path.
 func TestDecodeBaggageFieldMixedEscapes(t *testing.T) {
 	assert.Equal(t, "a%2Bb%C", decodeBaggageField("a%2Bb%C"), "one bad escape keeps the whole field raw")
 	assert.Equal(t, "a+b", decodeBaggageField("a%2Bb"), "all-valid escapes still decode")
 	assert.Equal(t, "100%", decodeBaggageField("100%"), "a lone '%' is not a discard trigger")
 }
 
-// TestBaggageRoundTripsPlusAndPercent covers the issue #5181 corruption end
-// to end: literal '+' and escape-looking '%' values in keys and values must
-// survive an inject/extract hop through both the legacy ot-baggage-* prefix
-// and the W3C "baggage" header.
+// TestBaggageRoundTripsPlusAndPercent covers the issue #5181 corruption
+// end to end. Literal '+' and escape-looking '%' values must survive an
+// inject/extract hop. The test runs the hop through both the legacy
+// ot-baggage-* prefix and the W3C "baggage" header.
 func TestBaggageRoundTripsPlusAndPercent(t *testing.T) {
 	tests := []struct {
 		name  string
 		style string
-		// extra key/value pair specific to the style. The W3C key grammar is
-		// the RFC 7230 token set, so a key containing a space is out-of-spec
-		// there (OTel/JS reject such members outright); the legacy prefix has
-		// no key grammar, so its round-trip keeps covering space-bearing keys.
+		// Extra key/value pair specific to the style. The W3C key grammar is
+		// the RFC 7230 token set. A key that contains a space is out-of-spec
+		// there, and OTel/JS reject such members outright. The legacy prefix
+		// has no key grammar, so its round trip still covers space-bearing
+		// keys.
 		extraKey, extraVal string
 	}{
 		{"legacy_ot_prefix", "datadog", "key with + and space", "val with + and space"},
@@ -273,8 +268,8 @@ func TestBaggageRoundTripsPlusAndPercent(t *testing.T) {
 			defer tr.Stop()
 
 			ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
-			// Keys valid in both styles ('%', '+' and space are all legacy-safe;
-			// '%' and '+' are W3C token characters).
+			// Keys valid in both styles. '%', '+' and space are legacy-safe,
+			// and '%' and '+' are W3C token characters.
 			ctx.setBaggageItem("key+plus", "val+plus")
 			ctx.setBaggageItem("key%2fpercent", "val%2Fpercent")
 			ctx.setBaggageItem("100%", "100%")
@@ -299,12 +294,11 @@ func TestBaggageRoundTripsPlusAndPercent(t *testing.T) {
 	}
 }
 
-// TestGoInjectedBaggageParsesUnderOTel proves W3C wire-format parity against
-// the real reference parser rather than by source inspection alone: a header
-// injected by this tracer's "baggage" style must parse under
-// go.opentelemetry.io/otel/baggage with the identical key (an opaque token,
-// never percent-decoded) and the original value bytes -- including literal
-// '+' and '%' and percent-escape-looking text.
+// TestGoInjectedBaggageParsesUnderOTel proves W3C wire-format parity with
+// the real reference parser. A header injected by this tracer's "baggage"
+// style must parse under go.opentelemetry.io/otel/baggage with the
+// identical key and the original value bytes. This covers literal '+' and
+// '%' and escape-looking text.
 func TestGoInjectedBaggageParsesUnderOTel(t *testing.T) {
 	t.Setenv(envPropagationStyle, "baggage")
 	tr, err := newTracer()
@@ -334,16 +328,15 @@ func TestGoInjectedBaggageParsesUnderOTel(t *testing.T) {
 	}
 }
 
-// TestExtractForeignBaggageHeaders covers extraction of baggage injected by
-// other tracers, which is where query-form unescaping corrupted values.
-// On the legacy ot-baggage-* path, dd-trace-js and dd-trace-py write values
-// verbatim (no encoding), so a literal '+' must not become a space on
-// extract; dd-trace-java instead percent-encodes legacy values on inject
-// (URLEncoder with '+'→%20, so a literal '+' goes out as %2B) and
-// query-decodes on extract (java.net.URLDecoder: '+'→space, its own residual
-// instance of the #5181 bug). On the W3C "baggage" header, dd-trace-py and
-// dd-trace-rb percent-encode spaces as %20 and leave '+' literal, and
-// dd-trace-js emits %20 for spaces but %2B for a literal '+' (encodeURIComponent).
+// TestExtractForeignBaggageHeaders covers extraction of baggage injected
+// by other tracers. On the legacy ot-baggage-* path, dd-trace-js and
+// dd-trace-py inject values verbatim, so a literal '+' must stay a plus
+// sign on extract. dd-trace-java percent-encodes legacy values on inject
+// (URLEncoder, so a literal '+' goes out as %2B), but its extractor
+// query-decodes them, and java.net.URLDecoder turns '+' into a space. On
+// the W3C "baggage" header, dd-trace-py and dd-trace-rb percent-encode
+// spaces as %20 and leave '+' literal. dd-trace-js emits %2B for a
+// literal '+' (encodeURIComponent).
 func TestExtractForeignBaggageHeaders(t *testing.T) {
 	t.Run("legacy_ot_prefix", func(t *testing.T) {
 		t.Setenv(envPropagationStyleExtract, "datadog")

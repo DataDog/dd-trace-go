@@ -638,8 +638,8 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		// Percent-encode as propagatorBaggage.injectTextMap does for the
 		// "baggage" header, so a decoded control byte (e.g. a CRLF from
 		// percent-decoded baggage) can't reach the header name/value
-		// verbatim and poison the request. Keys use the legacy safe set:
-		// this extractor percent-decodes keys, so '%' must be escaped here.
+		// verbatim and poison the request. Keys use the legacy safe set
+		// because this extractor percent-decodes keys.
 		ek, ev := encodeLegacyKey(k), encodeValue(v)
 		// The header name carries p.cfg.BaggagePrefix on top of the encoded
 		// key, so it must count toward the byte cap too -- otherwise the
@@ -755,18 +755,17 @@ func addOTBaggageItem(baggage map[string]string, baggageBytes int, warned bool, 
 	return baggage, baggageBytes + len(key) + len(val), warned
 }
 
-// decodeBaggageField percent-decodes a baggage key or value, leaving literal
-// '+' intact ('+' is an allowed baggage token character, not a space -- see
-// issue #5181). Invalid escapes are kept as-is instead of discarded: the
-// value came off the wire, possibly from a tracer that did not percent-encode
-// at all, and dropping it to "" would corrupt it.
+// decodeBaggageField percent-decodes a baggage key or value. A literal '+'
+// stays a plus sign because the baggage grammar treats '+' as a token
+// character, not a space (issue #5181). A bad escape sequence keeps the
+// whole field raw, even when valid sequences are present, because
+// url.PathUnescape is all-or-nothing. A foreign tracer can send a value
+// that is not percent-encoded. Decoding such a value to "" corrupts it.
 //
-// Policy for mixed valid/invalid escapes: one bad sequence keeps the whole
-// field raw (url.PathUnescape all-or-nothing), rather than decoding the valid
-// sequences and leaving the invalid ones in place as dd-trace-py's
-// unquote does. Whole-field-raw is lossless against the wire text and keeps
-// Go injects (which always escape '%') round-tripping; go.opentelemetry.io/
-// otel/baggage instead rejects the whole member on a bad escape.
+// The other tracers handle a bad escape differently: dd-trace-py decodes
+// the valid sequences and keeps the invalid ones, and
+// go.opentelemetry.io/otel/baggage rejects the whole member. Go keeps the
+// wire text intact.
 func decodeBaggageField(s string) string {
 	if d, err := url.PathUnescape(s); err == nil {
 		return d
@@ -1860,31 +1859,24 @@ const (
 	baggageMaxItems = 64
 	baggageMaxBytes = 8192
 	// safeCharactersKey is the RFC 7230 token set -- the W3C baggage key
-	// grammar. '%' and '+' are valid key characters and stay verbatim on the
-	// wire: the W3C baggage spec does not allow percent-encoded keys, so
-	// escaping '%' would change a key's identity. Key readers differ: Go
-	// and go.opentelemetry.io/otel/baggage treat keys as opaque tokens
-	// (never percent-decoded), dd-trace-js reads them as verbatim tokens,
-	// and dd-trace-py unquotes them on extract -- which is NOT a no-op:
-	// an escape-looking but spec-valid token key like "key%2F" unquotes to
-	// "key/", breaking key identity (one more instance of dd-trace-py's
-	// residual #5181). The majority and the reference parser both keep
-	// keys verbatim.
+	// grammar. The spec forbids percent-encoded keys, so '%' and '+' travel
+	// verbatim: escaping '%' changes a key's identity. Go and
+	// go.opentelemetry.io/otel/baggage never decode keys, and dd-trace-js
+	// reads keys as verbatim tokens. dd-trace-py unquotes keys on extract,
+	// so an escape-looking token key such as "key%2F" becomes "key/".
 	safeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
-	// legacySafeCharactersKey is the key set for the legacy ot-baggage-<key>
-	// prefix style, which has no spec: Go percent-encodes both sides itself.
-	// Unlike W3C keys, '%' is escaped there so the extractor's percent-decode
-	// can never misread a literal '%' as the start of an escape sequence.
+	// legacySafeCharactersKey is the key set for the legacy
+	// ot-baggage-<key> prefix style. That style has no spec. Go encodes and
+	// decodes both sides itself. The legacy extractor percent-decodes keys,
+	// so '%' escapes to %25 there. Without this escape the decode step
+	// can misread a literal '%' as the start of an escape sequence.
 	legacySafeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*+-.^_`|~"
-	// safeCharactersValue omits '%', so a literal '%' escapes to %25 and
-	// cannot be misread as an escape prefix on the next hop. Go's value
-	// encoding matches go.opentelemetry.io/otel/baggage and dd-trace-rb on
-	// the W3C header for all three shapes (space %20, '+' literal, '%'
-	// %25); dd-trace-js agrees on space and '%' but escapes a literal '+'
-	// as %2B (encodeURIComponent); dd-trace-py leaves '%' VERBATIM in
-	// values -- its value safe list includes '%', which is why it still
-	// mis-decodes escape-looking values like "a%2Fb" on extract (its own
-	// residual instance of issue #5181).
+	// safeCharactersValue omits '%'. A literal '%' escapes to %25, so the
+	// decode step cannot misread it as an escape prefix. For the three
+	// risky shapes (space %20, '+' literal, '%' %25) this encoding matches
+	// go.opentelemetry.io/otel/baggage and dd-trace-rb. dd-trace-js escapes
+	// a literal '+' as %2B. dd-trace-py keeps '%' verbatim in values, and
+	// its extract then mis-decodes a value such as "a%2Fb".
 	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*+-./:<>?@[]^_`{|}~"
 )
 
@@ -1893,8 +1885,9 @@ func encodeKey(key string) string {
 	return urlEncode(strings.TrimSpace(key), safeCharactersKey)
 }
 
-// encodeLegacyKey encodes a legacy ot-baggage-<key> key: same as encodeKey
-// except '%' is escaped, because the legacy extractor percent-decodes keys.
+// encodeLegacyKey encodes a legacy ot-baggage-<key> key. It differs from
+// encodeKey in one character: '%' escapes to %25 because the legacy
+// extractor percent-decodes keys.
 func encodeLegacyKey(key string) string {
 	return urlEncode(strings.TrimSpace(key), legacySafeCharactersKey)
 }
@@ -1904,13 +1897,12 @@ func encodeValue(value string) string {
 	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
 }
 
-// urlEncode percent-encodes input while leaving the safe characters as-is,
-// the value encoding go.opentelemetry.io/otel/baggage applies to the W3C
-// baggage header (dd-trace-py differs on '%', which it leaves verbatim).
-// Percent-encoding means a space becomes %20, never '+', and a literal '+'
-// stays a plus sign on the wire: the baggage headers are percent-encoded
-// per the W3C baggage spec, not HTML-form encoded, so query-form escaping
-// corrupts values across tracers (issue #5181).
+// urlEncode percent-encodes input and writes the safe characters as-is.
+// The output matches the value encoding of
+// go.opentelemetry.io/otel/baggage. A space becomes %20, never '+', and
+// a literal '+' stays a plus sign. The W3C baggage specification requires
+// percent-encoding, not HTML form encoding. Query-form encoding corrupts
+// values across tracers (issue #5181).
 func urlEncode(input string, safeCharacters string) string {
 	var encoded strings.Builder
 	for _, c := range input {
@@ -1919,10 +1911,9 @@ func urlEncode(input string, safeCharacters string) string {
 			continue
 		}
 		if c == ' ' {
-			// url.QueryEscape is the only stdlib single-string escaper that
-			// percent-encodes every unsafe character, but it encodes spaces as
-			// '+'. Everything else it emits is a valid %XX escape, so the
-			// space is the one case that needs overriding.
+			// url.QueryEscape is the only stdlib escaper that covers every
+			// unsafe character, but it encodes a space as '+'. All its other
+			// output is a valid %XX escape. Override the space here.
 			encoded.WriteString("%20")
 			continue
 		}
@@ -2098,11 +2089,11 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		if baggage == nil {
 			baggage = make(map[string]string, 1)
 		}
-		// Keys are NOT percent-decoded here: the W3C baggage spec does not
-		// allow percent-encoded keys, and go.opentelemetry.io/otel/baggage
-		// validates keys as opaque RFC 7230 tokens without ever decoding
-		// them, so decoding would change the identity of keys that contain
-		// '%' (a valid token character). Values are percent-encoded per spec.
+		// Do not decode keys here. The W3C baggage specification forbids
+		// percent-encoded keys, and go.opentelemetry.io/otel/baggage reads
+		// keys as opaque RFC 7230 tokens. Decoding changes the identity of
+		// a key that contains '%' (a valid token character). The spec
+		// requires percent-encoded values.
 		baggage[trimmedK] = decodeBaggageField(trimmedV)
 		byteCount += itemBytes
 		ctr++
