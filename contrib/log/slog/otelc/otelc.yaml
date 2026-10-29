@@ -1,0 +1,39 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on slog.New, so log/slog is not modified. Its own
+# default logger keeps its *defaultHandler, and slog.SetDefault needs no change
+# to avoid a deadlock in the log package.
+#
+# replace must keep the original call, so the template builds a second Logger
+# around the wrapped handler. A handler that is already ours is kept as is.
+#
+# ddtrace/tracer calls slog.New and the contrib imports the tracer, so wrapping
+# it would make an import cycle. The build then fails at link time with
+# "inittask ... is not schedulable". Exclude any other package the contrib
+# imports that starts to call slog.New.
+#
+# testing/slogtest checks the handler that the test passes in, so it must get
+# that handler and not ours.
+new:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/log/slog/**"
+    - not: "github.com/DataDog/dd-trace-go/v2/ddtrace/**"
+    - not: "testing/slogtest"
+  where:
+    function_call: log/slog.New
+  do:
+    - wrap_call:
+        replace: |-
+          (func(l *slog.Logger) *slog.Logger {
+            if slogtrace.IsAlreadyWrapped(l.Handler()) {
+              return l
+            }
+            return slog.New(slogtrace.WrapHandler(l.Handler()))
+          })({{ . }})
+  imports:
+    slog: log/slog
+    slogtrace: github.com/DataDog/dd-trace-go/contrib/log/slog/v2
