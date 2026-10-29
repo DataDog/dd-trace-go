@@ -79,6 +79,7 @@ use (
 	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
 	./contrib/sirupsen/logrus
+	./contrib/sirupsen/logrus/otelc
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
 	./contrib/twmb/franz-go

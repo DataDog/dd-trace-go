@@ -65,6 +65,8 @@ env:
     contrib/labstack/echo.v5/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
+    contrib/sirupsen/logrus
+    contrib/sirupsen/logrus/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
