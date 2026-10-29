@@ -132,6 +132,10 @@ type Config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+	// payloadQueueSize is the buffer size of the channel that queues finished trace chunks
+	// waiting to be encoded and sent. When the queue is full, new traces are dropped.
+	// Value from DD_TRACE_PAYLOAD_QUEUE_SIZE, default DefaultPayloadQueueSize.
+	payloadQueueSize int
 	// internalMetricsEnabled enables the tracer's internal metrics (statsd) client.
 	// Value from DD_TRACE_INTERNAL_METRICS_ENABLED, default true.
 	internalMetricsEnabled bool
@@ -256,6 +260,8 @@ type Config struct {
 	// otelSemanticsEnabled enables OpenTelemetry semantic conventions and
 	// their required global configuration overrides. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
 	otelSemanticsEnabled bool
+	// traceOTelEnabled enables the OpenTelemetry API bridge in Orchestrion builds. Set via DD_TRACE_OTEL_ENABLED.
+	traceOTelEnabled bool
 	// otlpTraceURL is the OTLP collector endpoint for traces.
 	otlpTraceURL string
 	// otlpTraceURLDerivedFromAgent reports whether otlpTraceURL should follow
@@ -450,6 +456,7 @@ func loadConfig() *Config {
 	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	cfg.payloadQueueSize = p.GetIntWithValidator("DD_TRACE_PAYLOAD_QUEUE_SIZE", DefaultPayloadQueueSize, validatePayloadQueueSize)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.experimentalFeaturesEnabled = p.GetBool("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", false)
@@ -513,6 +520,7 @@ func loadConfig() *Config {
 	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	cfg.traceOTelEnabled = p.GetBool("DD_TRACE_OTEL_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported") //errtrack:ignore unsupported user configuration
 	}
@@ -1202,6 +1210,36 @@ func (c *Config) PartialFlushEnabled() (enabled bool, minSpans int) {
 	minSpans = c.partialFlushMinSpans
 	c.mu.RUnlock()
 	return enabled, minSpans
+}
+
+// PayloadQueueSize returns the buffer size of the trace payload queue.
+func (c *Config) PayloadQueueSize() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.payloadQueueSize
+}
+
+// SetPayloadQueueSize sets the buffer size of the trace payload queue. Values
+// outside the range 1..MaxPayloadQueueSize are rejected with the default kept
+// instead: a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and a value above MaxPayloadQueueSize can panic with
+// "makechan: size out of range" or exhaust memory when the queue is allocated.
+func (c *Config) SetPayloadQueueSize(size int, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if size < 1 {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1, using default %d. A value below 1 would leave the queue unbuffered and drop almost every trace.", size, DefaultPayloadQueueSize)
+		size = DefaultPayloadQueueSize
+	}
+	if size > MaxPayloadQueueSize {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is above the maximum %d, using default %d. A value above the maximum can panic with \"makechan: size out of range\" or exhaust memory when the queue is allocated.", size, MaxPayloadQueueSize, DefaultPayloadQueueSize)
+		size = DefaultPayloadQueueSize
+	}
+	if c.checkProductConflict("DD_TRACE_PAYLOAD_QUEUE_SIZE", origin, size, product...) {
+		return
+	}
+	c.payloadQueueSize = size
+	configtelemetry.Report("DD_TRACE_PAYLOAD_QUEUE_SIZE", size, origin)
 }
 
 func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
@@ -1902,6 +1940,13 @@ func (c *Config) OTelSemanticsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otelSemanticsEnabled
+}
+
+// TraceOTelEnabled reports whether DD_TRACE_OTEL_ENABLED enables the OpenTelemetry API bridge.
+func (c *Config) TraceOTelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceOTelEnabled
 }
 
 // SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure

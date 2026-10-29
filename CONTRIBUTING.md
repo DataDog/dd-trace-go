@@ -429,7 +429,7 @@ go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Auto-detection via tests
@@ -451,7 +451,7 @@ go run ./scripts/configinverter/main.go generate
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Handling related CI failures
@@ -487,7 +487,7 @@ make fix-modules
 make generate
 ```
 
-This is neccessary because dd-trace-go is a multi-module repository.
+This is necessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 

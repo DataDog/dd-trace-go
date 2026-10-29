@@ -39,6 +39,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go
+    contrib/aws/aws-sdk-go/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -51,16 +53,24 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/julienschmidt/httprouter
+    contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/go.mongodb.org/mongo-driver
+    contrib/go.mongodb.org/mongo-driver/otelc
+    contrib/go.mongodb.org/mongo-driver.v2
+    contrib/go.mongodb.org/mongo-driver.v2/otelc
     contrib/gorilla/mux
     contrib/gorilla/mux/otelc
     contrib/labstack/echo.v4
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/valyala/fasthttp
+    contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -73,12 +83,17 @@ env:
     chi
     chi.v5
     fiber.v2
+    julienschmidt_httprouter
     redigo
     grpc
     gorilla_mux
     99designs.gqlgen
+    mongo
+    mongo.v2
     echo.v4
     echo.v5
+    aws.v1
+    valyala_fasthttp
 
 jobs:
   go-versions-matrix:
@@ -97,6 +112,7 @@ jobs:
           go-version: "1.26.4"
           workload: otelc-matrix
           cache-provider: github-cache
+          cache: "false"
       - name: Compute Matrix
         id: matrix
         run: |-

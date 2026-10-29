@@ -1752,6 +1752,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_OTEL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_OTEL_SEMANTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1769,6 +1776,13 @@
     "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": [
       {
         "implementation": "B",
+        "type": "int",
+        "default": "1000"
+      }
+    ],
+    "DD_TRACE_PAYLOAD_QUEUE_SIZE": [
+      {
+        "implementation": "A",
         "type": "int",
         "default": "1000"
       }

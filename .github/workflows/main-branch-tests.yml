@@ -1,6 +1,10 @@
 name: Main Branch and Release Tests
 
 on:
+  # Manual dispatch re-seeds the default-branch caches by hand, for
+  # example after a Go patch release changed every cache key; only
+  # seed-set keys save (the setup-go action's seed input).
+  workflow_dispatch: # manually
   push:
     branches:
       - release-v*
@@ -15,8 +19,10 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
 
+# A dispatch re-seeds by hand; it gets its own group so it cannot
+# cancel the nightly run it overlaps with, and two dispatches dedupe.
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.event_name == 'workflow_dispatch' && 'reseed' || github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -45,7 +45,7 @@ func TestCoverageWriterFlush(t *testing.T) {
 	writer.client = &MockClient{SendCoveragePayloadFunc: drainCoveragePayload}
 	coverage := &testCoverage{}
 	writer.add(coverage)
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -58,7 +58,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 	for range concurrentConnectionLimit + 1 {
 		writer.add(coverage)
 	}
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -71,7 +71,7 @@ func TestCoverageWriterFlushError(t *testing.T) {
 	}
 	coverage := &testCoverage{}
 	writer.add(coverage)
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -92,6 +92,13 @@ func TestCoverageWriterConcurrentAddAndFlush(t *testing.T) {
 	}
 	wg.Wait()
 	writer.stop()
+}
+
+// flushAndWait flushes writer and waits for the uploads it started, so an
+// upload cannot log into the logger of a test that runs afterwards.
+func flushAndWait(writer *coverageWriter) {
+	writer.flush()
+	writer.wg.Wait()
 }
 
 func drainCoveragePayload(payload io.Reader) error {

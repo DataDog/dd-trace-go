@@ -1547,7 +1547,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	// tracer, so all spans from both tracers end up on tracer1's worker.
 	setGlobalTracer(tracer1)
 
-	count := payloadQueueSize / 3
+	count := internalconfig.DefaultPayloadQueueSize / 3
 
 	for range count {
 		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
@@ -1597,6 +1597,56 @@ func TestOTLPExportMode(t *testing.T) {
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
+}
+
+func TestMetaStructAvailable(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		agentMetaStruct bool
+		otlpExportMode  bool
+		want            bool
+	}{
+		{name: "agent supports meta_struct", agentMetaStruct: true, want: true},
+		{name: "agent supports meta_struct but OTLP export", agentMetaStruct: true, otlpExportMode: true},
+		{name: "agent without meta_struct"},
+		{name: "agent without meta_struct and OTLP export", otlpExportMode: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := &tracer{config: &config{}, otlpExportMode: tc.otlpExportMode}
+			tr.config.agent.store(agentFeatures{metaStructAvailable: tc.agentMetaStruct})
+			assert.Equal(t, tc.want, tr.metaStructAvailable())
+		})
+	}
+}
+
+// TestMetaStructAvailableAtStartup builds real unstarted tracers. It checks
+// that the startup path sets otlpExportMode and the agent features as the
+// meta_struct decision expects.
+func TestMetaStructAvailableAtStartup(t *testing.T) {
+	t.Run("OTLP export, agent unreachable", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		tr, err := newUnstartedTracer(WithAgentAddr("127.0.0.1:1"))
+		require.NoError(t, err)
+		defer tr.Stop()
+		assert.True(t, tr.otlpExportMode)
+		assert.False(t, tr.metaStructAvailable())
+	})
+
+	// CI Visibility is selected before OTLP, so the OTLP writer stays off.
+	// The agent value then decides.
+	for _, agentMetaStruct := range []bool{true, false} {
+		t.Run(fmt.Sprintf("CI Visibility with OTLP configured, agent meta_struct %t", agentMetaStruct), func(t *testing.T) {
+			t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+			tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), func(c *config) {
+				c.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+			defer tr.Stop()
+			tr.config.agent.store(agentFeatures{metaStructAvailable: agentMetaStruct})
+			assert.False(t, tr.otlpExportMode)
+			assert.Equal(t, agentMetaStruct, tr.metaStructAvailable())
+		})
+	}
 }
 
 func TestOTLPSpanMetricsUseOTLPSenderWithAgentTraceWriter(t *testing.T) {
@@ -2145,7 +2195,7 @@ func TestTracerRace(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	total := payloadQueueSize / 3
+	total := cap(tracer.out) / 3
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -2250,7 +2300,7 @@ func TestWorker(t *testing.T) {
 		assert.Nil(t, err)
 		defer stop()
 
-		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		n := cap(tracer.out) * 10 // put more traces than the chan size, on purpose
 		for range n {
 			root := tracer.newRootSpan("pylons.request", "pylons", "/")
 			child := tracer.newChildSpan("redis.command", root)
@@ -2260,7 +2310,7 @@ func TestWorker(t *testing.T) {
 
 		flush(-1)
 		synctest.Wait() // wait for writer to process the tick and flush queued traces
-		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+		assert.GreaterOrEqual(t, transport.Len(), cap(tracer.out))
 	})
 }
 
@@ -2319,11 +2369,11 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize * 2
+	many := cap(tracer.out) * 2
 	for i := range many {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
-	assert.Len(tracer.out, payloadQueueSize)
+	assert.Len(tracer.out, cap(tracer.out))
 	log.Flush()
 	assert.True(len(tp.Logs()) >= 1)
 }
