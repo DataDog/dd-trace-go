@@ -22,3 +22,7 @@ func Test(t *testing.T) {
 func TestClient(t *testing.T) {
 	harness.Run(t, new(TestCaseClient))
 }
+
+func TestDefaultClient(t *testing.T) {
+	harness.Run(t, new(TestCaseDefaultClient))
+}

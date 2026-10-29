@@ -118,7 +118,12 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-copyright
+          # No Go build cache: this job compiles almost nothing, and every
+          # saved entry costs the shared pool space a seed needs. The
+          # provider label stays for the observation record; a rollback is
+          # setting cache back to "true".
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -153,6 +158,7 @@ jobs:
           check-latest: "true"
           workload: static-check-github-actions
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -165,6 +171,9 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/action
+      - name: Test workflows apps
+        working-directory: .github/workflows/apps
+        run: go test ./pr-triage-board/
       # These validate CI configuration, not Go code: that every workflow is
       # registered in .github/ci-components.yml, that native paths: filters are
       # declared and still live, that each join job depends on `changes`, and
@@ -228,6 +237,7 @@ jobs:
           check-latest: "true"
           workload: static-check-docs
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -261,6 +271,7 @@ jobs:
           check-latest: "true"
           workload: static-check-format
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools

@@ -23,6 +23,8 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
@@ -31,6 +33,10 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev // indirect
@@ -51,6 +57,7 @@ require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.8 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
 	github.com/bytedance/sonic/loader v0.2.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -75,6 +82,7 @@ require (
 	github.com/gomodule/redigo v1.9.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
@@ -114,6 +122,8 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.mongodb.org/mongo-driver v1.17.7 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.4.2 // indirect
 	go.opentelemetry.io/collector/component v1.61.0 // indirect
 	go.opentelemetry.io/collector/featuregate v1.61.0 // indirect
 	go.opentelemetry.io/collector/pdata v1.61.0 // indirect
@@ -178,6 +188,14 @@ replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../.
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../../contrib/go.mongodb.org/mongo-driver/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 => ../../../contrib/go.mongodb.org/mongo-driver
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
+
 require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev // indirect
 
 replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
@@ -215,3 +233,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../c
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../contrib/aws/aws-sdk-go
