@@ -84,7 +84,7 @@ func main() {
 
 func dispatch(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: citiming <collect|compare> [flags]")
+		return errors.New("usage: citiming <collect|compare|pool> [flags]")
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
@@ -92,7 +92,9 @@ func dispatch(args []string) error {
 		return cmdCollect(rest)
 	case "compare":
 		return cmdCompare(rest)
+	case "pool":
+		return cmdPool(rest)
 	default:
-		return fmt.Errorf("unknown command %q (want collect or compare)", cmd)
+		return fmt.Errorf("unknown command %q (want collect, compare or pool)", cmd)
 	}
 }

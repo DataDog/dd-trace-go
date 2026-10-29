@@ -29,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 type appsecTestLogger struct{ *testing.T }
@@ -37,7 +38,8 @@ func (l appsecTestLogger) Log(msg string) { l.T.Log(msg) }
 
 func startAppSec(t *testing.T) (tracer.Tracer, agenttest.Agent) {
 	t.Helper()
-	require.True(t, built.WithOrchestrion, "this test must be run with orchestrion enabled")
+	require.True(t, built.WithOrchestrion || otelc.Enabled(),
+		"this test must be run with either orchestrion or otelc enabled")
 	if runtime.GOOS == "windows" {
 		t.Skip("appsec does not support Windows")
 	}
