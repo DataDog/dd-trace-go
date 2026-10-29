@@ -51,6 +51,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/gocql/gocql
+    contrib/gocql/gocql/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
@@ -85,6 +87,7 @@ env:
     echo.v4
     echo.v5
     valyala_fasthttp
+    gocql
 
 jobs:
   go-versions-matrix:

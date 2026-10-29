@@ -40,6 +40,7 @@ use (
 	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
+	./contrib/gocql/gocql/otelc
 	./contrib/gofiber/fiber.v2
 	./contrib/gofiber/fiber.v2/otelc
 	./contrib/gomodule/redigo
