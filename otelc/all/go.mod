@@ -13,6 +13,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev
@@ -24,6 +26,8 @@ require (
 	github.com/99designs/gqlgen v0.17.97 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev // indirect
@@ -62,6 +66,8 @@ require (
 	github.com/valyala/fasthttp v1.75.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
+	go.mongodb.org/mongo-driver v1.17.7 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
@@ -178,6 +184,14 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../contrib/go.mongodb.org/mongo-driver/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 => ../../contrib/go.mongodb.org/mongo-driver
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 => ../../contrib/go.mongodb.org/mongo-driver.v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../contrib/go.mongodb.org/mongo-driver.v2
 
 require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev
 

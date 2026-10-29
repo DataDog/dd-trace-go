@@ -90,6 +90,8 @@ require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
@@ -112,6 +114,7 @@ require (
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
+	example.com/mongodep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.3 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.3 // indirect
@@ -146,8 +149,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev // indirect
@@ -555,6 +558,12 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+replace example.com/mongodep => ./internal/mongodep
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../../contrib/go.mongodb.org/mongo-driver/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2/otelc
 
 require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.13.0-dev // indirect
 
