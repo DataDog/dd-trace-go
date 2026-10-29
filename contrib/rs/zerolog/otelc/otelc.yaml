@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on New: zerolog calls New itself in Output, so a
+# hook would add a second hook to a logger that already has one. The rewritten
+# package imports the contrib, so it is initialized before a logger built in a
+# package-level var. zerolog/log is not excluded, because it builds the global
+# logger with zerolog.New.
+#
+# zerolog.Logger literals are not covered. Their fields are unexported, so the
+# only literal outside zerolog is the zero value, which has no writer and logs
+# nothing.
+new:
+  target:
+    - "**"
+    - not: "github.com/rs/zerolog"
+    - not: "github.com/DataDog/dd-trace-go/contrib/rs/zerolog/**"
+  where:
+    function_call: github.com/rs/zerolog.New
+  do:
+    - wrap_call:
+        replace: "{{ . }}.Hook(zerologtrace.DDContextLogHook{})"
+  imports:
+    zerologtrace: github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2

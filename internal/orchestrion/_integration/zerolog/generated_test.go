@@ -18,3 +18,27 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestCorrelationContribHook(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationContribHook))
+}
+
+func TestCorrelationGlobal(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationGlobal))
+}
+
+func TestCorrelationNew(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationNew))
+}
+
+func TestCorrelationOutput(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationOutput))
+}
+
+func TestCorrelationPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationPackageVar))
+}
+
+func TestDependencyNew(t *testing.T) {
+	harness.Run(t, new(TestCaseDependencyNew))
+}
