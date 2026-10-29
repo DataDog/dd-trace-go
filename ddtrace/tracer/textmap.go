@@ -1865,9 +1865,11 @@ const (
 	// escaping '%' would change a key's identity. Key readers differ: Go
 	// and go.opentelemetry.io/otel/baggage treat keys as opaque tokens
 	// (never percent-decoded), dd-trace-js reads them as verbatim tokens,
-	// and dd-trace-py unquotes them on extract -- the majority and the
-	// reference parser both keep keys verbatim, and dd-trace-py's unquote
-	// is a no-op for spec-valid token keys like these.
+	// and dd-trace-py unquotes them on extract -- which is NOT a no-op:
+	// an escape-looking but spec-valid token key like "key%2F" unquotes to
+	// "key/", breaking key identity (one more instance of dd-trace-py's
+	// residual #5181). The majority and the reference parser both keep
+	// keys verbatim.
 	safeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
 	// legacySafeCharactersKey is the key set for the legacy ot-baggage-<key>
 	// prefix style, which has no spec: Go percent-encodes both sides itself.
@@ -1876,11 +1878,13 @@ const (
 	legacySafeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*+-.^_`|~"
 	// safeCharactersValue omits '%', so a literal '%' escapes to %25 and
 	// cannot be misread as an escape prefix on the next hop. Go's value
-	// encoding matches go.opentelemetry.io/otel/baggage and dd-trace-js /
-	// dd-trace-rb on the W3C header (space %20, '+' literal, '%' %25);
-	// dd-trace-py leaves '%' VERBATIM in values -- its value safe list
-	// includes '%', which is why it still mis-decodes escape-looking values
-	// like "a%2Fb" on extract (its own residual instance of issue #5181).
+	// encoding matches go.opentelemetry.io/otel/baggage and dd-trace-rb on
+	// the W3C header for all three shapes (space %20, '+' literal, '%'
+	// %25); dd-trace-js agrees on space and '%' but escapes a literal '+'
+	// as %2B (encodeURIComponent); dd-trace-py leaves '%' VERBATIM in
+	// values -- its value safe list includes '%', which is why it still
+	// mis-decodes escape-looking values like "a%2Fb" on extract (its own
+	// residual instance of issue #5181).
 	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*+-./:<>?@[]^_`{|}~"
 )
 
