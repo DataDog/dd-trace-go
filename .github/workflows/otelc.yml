@@ -33,64 +33,6 @@ env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
   OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261015110818-d3d72efe9f25' }}
-  # Modules otelc reads, tidied by both jobs next to the application each one
-  # builds.
-  OTELC_MODULES: >-
-    otelc/all
-    contrib/99designs/gqlgen
-    contrib/99designs/gqlgen/otelc
-    contrib/net/http
-    contrib/net/http/otelc
-    contrib/database/sql
-    contrib/database/sql/otelc
-    contrib/gin-gonic/gin
-    contrib/gin-gonic/gin/otelc
-    contrib/go-chi/chi
-    contrib/go-chi/chi/otelc
-    contrib/go-chi/chi.v5
-    contrib/go-chi/chi.v5/otelc
-    contrib/gofiber/fiber.v2
-    contrib/gofiber/fiber.v2/otelc
-    contrib/julienschmidt/httprouter
-    contrib/julienschmidt/httprouter/otelc
-    contrib/gomodule/redigo
-    contrib/gomodule/redigo/otelc
-    contrib/google.golang.org/grpc
-    contrib/google.golang.org/grpc/otelc
-    contrib/go.mongodb.org/mongo-driver
-    contrib/go.mongodb.org/mongo-driver/otelc
-    contrib/go.mongodb.org/mongo-driver.v2
-    contrib/go.mongodb.org/mongo-driver.v2/otelc
-    contrib/gorilla/mux
-    contrib/gorilla/mux/otelc
-    contrib/labstack/echo.v4
-    contrib/labstack/echo.v4/otelc
-    contrib/labstack/echo.v5
-    contrib/labstack/echo.v5/otelc
-    contrib/valyala/fasthttp
-    contrib/valyala/fasthttp/otelc
-  # Suites under internal/orchestrion/_integration that run with otelc.
-  OTELC_TEST_PACKAGES: >-
-    otelc
-    gls
-    gls-leak
-    otelc-autostart
-    net_http
-    sql
-    gin
-    chi
-    chi.v5
-    fiber.v2
-    julienschmidt_httprouter
-    redigo
-    grpc
-    gorilla_mux
-    99designs.gqlgen
-    mongo
-    mongo.v2
-    echo.v4
-    echo.v5
-    valyala_fasthttp
 
 jobs:
   go-versions-matrix:
@@ -139,6 +81,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Lists the otelc modules and the suites that run with otelc. See
+      # scripts/otelc_ci_lists.sh.
+      - name: List otelc modules and suites
+        shell: bash
+        run: ./scripts/otelc_ci_lists.sh >> "${GITHUB_ENV}"
 
       - name: Setup Go
         id: setup-go
@@ -264,6 +212,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # Lists the otelc modules and the suites that run with otelc. See
+      # scripts/otelc_ci_lists.sh.
+      - name: List otelc modules and suites
+        shell: bash
+        run: ./scripts/otelc_ci_lists.sh >> "${GITHUB_ENV}"
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
