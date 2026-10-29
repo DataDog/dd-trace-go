@@ -611,7 +611,9 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 
 // recordingClientConfig returns an RC client config whose HTTP client records
 // each request (non-blocking) and returns an empty body. PollInterval is 1h, so
-// a request seen within the test window can only be a Subscribe-driven poll.
+// a request seen within a short window is never from the ticker. Tests use it to
+// assert that Subscribe triggers a poll and that Start, RegisterProduct and
+// RegisterCapability don't.
 // AgentURL is set so updateState builds an absolute request URL (as in prod),
 // which the RoundTripper asserts.
 func recordingClientConfig(t *testing.T, requests chan<- struct{}) ClientConfig {
