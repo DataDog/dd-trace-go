@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/sirupsen/logrus
+display_name: logrus
+description: Instruments logrus log records with a correlation hook that adds trace and span identifiers from the active span
+  context at every logging level.
+packages:
+- name: github.com/sirupsen/logrus
+category:
+- log.emission
+systems: []
+creation_date: '2022-05-04'

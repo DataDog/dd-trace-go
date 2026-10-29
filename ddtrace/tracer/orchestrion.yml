@@ -35,6 +35,7 @@ meta:
 
 extends:
   - ../../internal/orchestrion/gls.orchestrion.yml
+  - ./otel-bridge.orchestrion.yml
 
 aspects:
   # Automatically manage the tracer lifecycle

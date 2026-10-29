@@ -1,0 +1,10 @@
+_v: 1
+name: os
+display_name: os
+description: Instruments Go's os file opening and process creation with optional security checks and blocking against local
+  file inclusion and command injection attacks.
+packages: []
+category:
+- other
+systems: []
+creation_date: '2025-01-20'

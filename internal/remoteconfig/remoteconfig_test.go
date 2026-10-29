@@ -708,6 +708,27 @@ func TestNoPollWithoutRegistration(t *testing.T) {
 	}
 }
 
+// TestActiveEnv verifies ActiveEnv reports the running client's env, and that
+// both Stop and Reset clear it.
+func TestActiveEnv(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Reset()
+	assert.Empty(t, ActiveEnv())
+
+	cfg := recordingClientConfig(t, make(chan struct{}, 1))
+	cfg.Env = "test-env"
+	require.NoError(t, Start(cfg))
+	assert.Equal(t, "test-env", ActiveEnv())
+	Stop()
+	assert.Empty(t, ActiveEnv(), "Stop must clear the env")
+
+	require.NoError(t, Start(cfg))
+	assert.Equal(t, "test-env", ActiveEnv())
+	Reset()
+	assert.Empty(t, ActiveEnv(), "Reset must clear the env")
+}
+
 // TestPollOnEachSubscribe verifies a second Subscribe polls again after the
 // first drains (pollNow coalesces while queued, then fires for later Subscribes).
 func TestPollOnEachSubscribe(t *testing.T) {
