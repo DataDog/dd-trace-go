@@ -82,11 +82,19 @@ jq -cn \
     ["runtime.name:" + $metrics.runtime.name,
      "runtime.version:" + (if $metrics.runtime.version == ""
      then "unknown" else $metrics.runtime.version end)];
+  # The save post never reports its own outcome in these series: save
+  # health is gauge-only (ci.cache.pool.*, scripts/citiming pool).
   def seed_tags($entry):
     (if ($entry | has("restore_source"))
      then ["restore_source:" + $entry.restore_source] else [] end)
     + (if ($entry | has("dep_match"))
-       then ["dep_match:" + $entry.dep_match] else [] end);
+       then ["dep_match:" + $entry.dep_match] else [] end)
+    + (if ($entry | has("seed_key"))
+       then ["seed_key:" + (if $entry.seed_key == "true"
+         then "true" else "false" end)] else [] end)
+    + (if ($entry | has("save"))
+       then ["save_mode:" + (if $entry.save == "true"
+         then "seed" else "restore_only" end)] else [] end);
   def count_series($name; $result; $entry):
     {metric: "ci.step.cache.restore", type: 1, interval: 1,
      points: [{timestamp: $timestamp, value: 1}],

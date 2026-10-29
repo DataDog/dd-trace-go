@@ -118,7 +118,12 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-copyright
+          # No Go build cache: this job compiles almost nothing, and every
+          # saved entry costs the shared pool space a seed needs. The
+          # provider label stays for the observation record; a rollback is
+          # setting cache back to "true".
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -153,6 +158,7 @@ jobs:
           check-latest: "true"
           workload: static-check-github-actions
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -231,6 +237,7 @@ jobs:
           check-latest: "true"
           workload: static-check-docs
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -264,6 +271,7 @@ jobs:
           check-latest: "true"
           workload: static-check-format
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools

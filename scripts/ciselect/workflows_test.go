@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -86,6 +87,50 @@ func TestEveryWorkflowIsRegistered(t *testing.T) {
 		}
 	}
 }
+
+// TestCacheSeedAndDisableLiterals pins the workflow literals the Go
+// cache seeding program depends on. actionlint checks syntax only: a
+// deleted seed literal silently reverts that workload to per-run saves, a
+// deleted `cache: "false"` literal resumes a light job's pool writes, and
+// a deleted workflow_dispatch trigger removes manual re-seeding after a
+// Go patch release.
+func TestCacheSeedAndDisableLiterals(t *testing.T) {
+	root, _ := workflowPaths(t)
+	seedLiterals := map[string]int{
+		"multios-unit-tests.yml":     1,
+		"smoke-tests.yml":            4,
+		"unit-integration-tests.yml": 3,
+	}
+	for name, want := range seedLiterals {
+		body := readText(t, filepath.Join(root, workflowDir), name)
+		if got := len(seedLiteral.FindAllString(body, -1)); got != want {
+			t.Errorf("%s has %d seed literals, want %d", name, got, want)
+		}
+	}
+	cacheFalse := map[string]int{
+		"static-checks.yml": 5,
+		"orchestrion.yml":   1,
+		"otelc.yml":         1,
+	}
+	for name, want := range cacheFalse {
+		body := readText(t, filepath.Join(root, workflowDir), name)
+		if got := len(cacheFalseLiteral.FindAllString(body, -1)); got != want {
+			t.Errorf("%s has %d cache-disabled literals, want %d", name, got, want)
+		}
+	}
+	// Manual re-seeding path: main-branch-tests.yml must keep its
+	// workflow_dispatch trigger so seeds can be re-made by hand after a
+	// Go patch release changes every key.
+	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "main-branch-tests.yml"))
+	if _, ok := on["workflow_dispatch"]; !ok {
+		t.Error("main-branch-tests.yml lacks the workflow_dispatch trigger")
+	}
+}
+
+var (
+	seedLiteral       = regexp.MustCompile(`(?m)^\s+seed:`)
+	cacheFalseLiteral = regexp.MustCompile(`(?m)^\s+cache: "false"$`)
+)
 
 // TestNativePathFiltersAreDeclared pins down which workflows are allowed to
 // filter themselves with a native `paths:` block. Native filters are an
