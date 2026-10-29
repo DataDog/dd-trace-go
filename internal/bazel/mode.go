@@ -107,8 +107,7 @@ func IsPayloadFilesModeEnabled() bool {
 // payload-file mode always disables it, and the internal GitCLIDisabledEnv knob
 // disables it without changing any other mode.
 func IsGitCLIDisabled() bool {
-	mode := CurrentMode()
-	return mode.PayloadFilesEnabled || mode.GitCLIDisabled
+	return CurrentMode().GitCLIDisabled
 }
 
 // CacheHTTPFile returns the expected cache/http file path in manifest mode.
@@ -194,7 +193,6 @@ func resolveMode() Mode {
 	gitCLIDisabled := parseBoolEnv(env.Get(GitCLIDisabledEnv))
 	logger.Debug("civisibility: resolving test optimization mode [manifest_env:%q payload_files_env:%q undeclared_outputs_dir:%q git_cli_disabled:%t]",
 		manifestRloc, payloadFilesEnv, undeclaredOutputsDir, gitCLIDisabled)
-	mode.GitCLIDisabled = gitCLIDisabled
 
 	if manifestRloc != "" {
 		logger.Debug("civisibility: resolving manifest path from %q", manifestRloc)
@@ -219,6 +217,10 @@ func resolveMode() Mode {
 	} else if payloadFilesEnv != "" {
 		logger.Debug("civisibility: payload-file mode disabled after parsing value %q", payloadFilesEnv)
 	}
+
+	// The field carries the effective disablement that IsGitCLIDisabled reports:
+	// payload-file mode disables the Git CLI just like the internal knob does.
+	mode.GitCLIDisabled = gitCLIDisabled || mode.PayloadFilesEnabled
 
 	logger.Debug("civisibility: test optimization mode [manifest:%t payload_files:%t git_cli_disabled:%t manifest_file:%s payload_root:%s]",
 		mode.ManifestEnabled, mode.PayloadFilesEnabled, mode.GitCLIDisabled, TestOptimizationPathForLog(mode.ManifestPath), absolutePathForLog(mode.PayloadsRoot))
