@@ -1,0 +1,66 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The rewritten package imports this module, so the contrib is initialized
+# before a cluster built in a package-level var or init. The contrib is
+# excluded because its deprecated NewCluster traces queries itself, and
+# because this module imports it.
+gocql_new_cluster:
+  target:
+    - "**"
+    - not: "github.com/gocql/gocql/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/**"
+  where:
+    function_call: github.com/gocql/gocql.NewCluster
+  do:
+    - wrap_call:
+        replace: |-
+          (func(cluster *gocql.ClusterConfig) *gocql.ClusterConfig {
+            gocqlotelc.ObserveCluster(cluster)
+            return cluster
+          })({{ . }})
+  imports:
+    gocql: github.com/gocql/gocql
+    gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
+
+# A hook for clusters built with a struct literal or any other way, because
+# set_fields cannot read Hosts from the literal it rewrites, and the observer
+# needs it for the contact points tag. The hook gives no init order, so such a
+# session created during package init, before the contrib's init, is not
+# traced. The contrib calls gocql.NewSession directly to skip this hook.
+gocql_cluster_create_session:
+  target: github.com/gocql/gocql
+  where:
+    func: CreateSession
+    recv: "*ClusterConfig"
+  do:
+    - inject_hooks:
+        before: BeforeCreateSession
+        path: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
+
+# TODO: wrap_call requires the original call in the template, so it stays in a
+# branch that never runs. Remove the branch once wrap_call can replace a call
+# outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+gocql_new_session:
+  target:
+    - "**"
+    - not: "github.com/gocql/gocql/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/**"
+  where:
+    function_call: github.com/gocql/gocql.NewSession
+  do:
+    - wrap_call:
+        replace: |-
+          (func(cluster gocql.ClusterConfig) (*gocql.Session, error) {
+            if false {
+              return {{ . }}
+            }
+            gocqlotelc.ObserveCluster(&cluster)
+            return gocql.NewSession(cluster)
+          })({{ .CallArgument 0 }})
+  imports:
+    gocql: github.com/gocql/gocql
+    gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
