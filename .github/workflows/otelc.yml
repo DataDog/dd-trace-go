@@ -63,6 +63,8 @@ env:
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/segmentio/kafka-go
+    contrib/segmentio/kafka-go/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -85,6 +87,7 @@ env:
     echo.v4
     echo.v5
     valyala_fasthttp
+    segmentio_kafka.v0
 
 jobs:
   go-versions-matrix:

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -75,6 +76,13 @@ func Load(pkg Package) *Instrumentation {
 // Version returns the version of the dd-trace-go package.
 func Version() string {
 	return version.Tag
+}
+
+// OtelcEnabled reports whether the application was built with otelc
+// (OpenTelemetry Go compile-time instrumentation). Integrations use it to run
+// code that only otelc builds need.
+func OtelcEnabled() bool {
+	return otelc.Enabled()
 }
 
 // Instrumentation represents instrumentation for a package.

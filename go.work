@@ -78,6 +78,7 @@ use (
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
+	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
