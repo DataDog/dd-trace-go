@@ -10,6 +10,7 @@ use (
 	./contrib/Shopify/sarama
 	./contrib/azure/apim-callout
 	./contrib/aws/aws-sdk-go
+	./contrib/aws/aws-sdk-go/otelc
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
@@ -37,7 +38,9 @@ use (
 	./contrib/go-redis/redis.v7
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
+	./contrib/go.mongodb.org/mongo-driver/otelc
 	./contrib/go.mongodb.org/mongo-driver.v2
+	./contrib/go.mongodb.org/mongo-driver.v2/otelc
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2

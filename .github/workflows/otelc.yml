@@ -39,6 +39,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go
+    contrib/aws/aws-sdk-go/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -59,6 +61,10 @@ env:
     contrib/google.golang.org/grpc/otelc
     contrib/jackc/pgx.v5
     contrib/jackc/pgx.v5/otelc
+    contrib/go.mongodb.org/mongo-driver
+    contrib/go.mongodb.org/mongo-driver/otelc
+    contrib/go.mongodb.org/mongo-driver.v2
+    contrib/go.mongodb.org/mongo-driver.v2/otelc
     contrib/gorilla/mux
     contrib/gorilla/mux/otelc
     contrib/labstack/echo.v4
@@ -85,8 +91,11 @@ env:
     gorilla_mux
     99designs.gqlgen
     pgx
+    mongo
+    mongo.v2
     echo.v4
     echo.v5
+    aws.v1
     valyala_fasthttp
 
 jobs:

@@ -18,3 +18,23 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestNewSession(t *testing.T) {
+	harness.Run(t, new(TestCaseNewSession))
+}
+
+func TestNewSessionWithOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseNewSessionWithOptions))
+}
+
+func TestSessionNew(t *testing.T) {
+	harness.Run(t, new(TestCaseSessionNew))
+}
+
+func TestUserWrapSession(t *testing.T) {
+	harness.Run(t, new(TestCaseUserWrapSession))
+}
