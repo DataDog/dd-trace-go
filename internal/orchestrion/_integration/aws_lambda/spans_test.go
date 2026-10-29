@@ -24,6 +24,8 @@ type span struct {
 	Error    int               `json:"error"`
 	Name     string            `json:"name"`
 	Resource string            `json:"resource"`
+	Start    int64             `json:"start"`
+	Duration int64             `json:"duration"`
 	Meta     map[string]string `json:"meta"`
 }
 

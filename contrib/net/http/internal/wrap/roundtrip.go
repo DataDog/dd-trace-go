@@ -200,7 +200,11 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 	}
 
 	// Clone the request so we can modify it without causing visible side-effects to the caller...
+	trailer := req.Trailer
 	req = req.Clone(ctx)
+	// The body may populate trailers during Read (for example AWS Lambda's
+	// streaming error trailers). Keep that map shared with the body.
+	req.Trailer = trailer
 	for k, v := range baggage.All(ctx) {
 		span.SetBaggageItem(k, v)
 	}

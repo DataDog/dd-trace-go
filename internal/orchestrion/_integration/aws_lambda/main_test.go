@@ -61,14 +61,15 @@ func TestLambda(t *testing.T) {
 			api, stdout, stderr := runLambda(t, bin, variant, `{"name":"test"}`, srv.URL)
 			require.Emptyf(t, api.Errors(), "stderr:\n%s", stderr)
 
-			requireTraces(t, parseSpans(t, stdout), stdout)
+			requireTraces(t, parseSpans(t, stdout), stdout, !strings.HasPrefix(variant, "Prewrapped"))
 		})
 	}
 }
 
 // requireTraces checks that every invocation produced exactly one aws.lambda
-// span, with both HTTP client spans as its children.
-func requireTraces(t *testing.T, spans []span, stdout []byte) {
+// span, with application HTTP calls and, for runtime wrappers, the response POST
+// as children. All children must finish before the invocation is flushed.
+func requireTraces(t *testing.T, spans []span, stdout []byte, runtimeWrapped bool) {
 	t.Helper()
 	var lambdaSpans []span
 	for _, s := range spans {
@@ -91,15 +92,21 @@ func requireTraces(t *testing.T, spans []span, stdout []byte) {
 			assert.Equal(t, root.TraceID, s.TraceID)
 			assert.Equal(t, "http.request", s.Name)
 			assert.Equal(t, "client", s.Meta["span.kind"])
+			assert.GreaterOrEqual(t, root.Start+root.Duration, s.Start+s.Duration)
 			paths = append(paths, s.Meta["http.url"][strings.LastIndex(s.Meta["http.url"], "/"):])
 		}
-		assert.ElementsMatchf(t, []string{"/with-context", "/without-context"}, paths, "children of %s", root.Meta["request_id"])
+		wantPaths := []string{"/with-context", "/without-context"}
+		if runtimeWrapped {
+			wantPaths = append(wantPaths, "/response")
+		}
+		assert.ElementsMatchf(t, wantPaths, paths, "children of %s", root.Meta["request_id"])
 	}
 }
 
 func runLambda(t *testing.T, bin, variant, payload, serverURL string) (*runtimeAPI, []byte, []byte) {
 	t.Helper()
 	api := newRuntimeAPI(t, invocations)
+	api.waitForNext = true
 	api.payload = payload
 	stdout, stderr := maintest.ExecUntil(t, bin, []string{
 		"LAMBDA_VARIANT=" + variant,

@@ -62,6 +62,14 @@ GOOS=linux GOARCH=amd64 orchestrion go build -o bootstrap .
 
 Configuration is read from `DD_*` environment variables. Continuing traces from upstream services into the function, for event sources other than API Gateway, requires the [Datadog Lambda Extension](https://docs.datadoghq.com/serverless/aws_lambda/instrumentation/go/).
 
+### Invocation completion
+
+Automatic instrumentation keeps the invocation span and metrics active until AWS closes the response after sending it to the Runtime API. This allows the response POST's HTTP span to finish before flushing the invocation trace. The wrapper preserves response bytes, forwards `ContentType` when available, and delegates `Close` to the original reader. It records the first read error, or a close error after EOF. If AWS closes the response before a terminal read, completion records the close error, context cancellation, or `io.ErrUnexpectedEOF`. Completion runs once. A transport error after EOF is not exposed to the wrapper and cannot be recorded on the invocation span.
+
+Handler panics finish tracing and metrics before propagating the original panic to AWS. This also applies to the manual `WrapFunction` and `WrapLambdaHandlerInterface` wrappers. It does not recover panics on goroutines started by application code.
+
+Manual `WrapFunction` still finishes when the function returns, including when it returns a reader. AWS decides whether to serialize that value as JSON or consume it as a stream, after the manual wrapper returns. Use automatic instrumentation without a manual wrapper to include streamed response work. `WrapLambdaHandlerInterface(lambda.NewHandler(...), ...)` includes reader consumption inside `Invoke`, but AWS buffers that interface's response. Manually wrapped handlers remain excluded from automatic wrapping to avoid duplicate instrumentation.
+
 ## Configurations
 
 See the [advanced configuration options](https://docs.datadoghq.com/serverless/configuration) to tag your telemetry, capture request/response payloads, filter or scrub sensitive information from logs or traces, and more.

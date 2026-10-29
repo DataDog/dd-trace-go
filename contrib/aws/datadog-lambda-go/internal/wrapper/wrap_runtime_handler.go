@@ -16,7 +16,7 @@ import (
 )
 
 // WrapRuntimeHandlerWithListeners instruments AWS's configured invocation adapter
-// without changing its event type, decoding options, or response reader.
+// without changing its event type, decoding options, or response bytes.
 func WrapRuntimeHandlerWithListeners(handler func(context.Context, []byte) (io.Reader, error), listeners ...HandlerListener) func(context.Context, []byte) (io.Reader, error) {
 	coldStart := true
 	return func(ctx context.Context, payload []byte) (io.Reader, error) {
@@ -27,10 +27,11 @@ func WrapRuntimeHandlerWithListeners(handler func(context.Context, []byte) (io.R
 			ctx, msg = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
-		defer func() {
+		completion := &invocationCompletion{ctx: ctx, listeners: listeners, cleanup: func() {
 			coldStart = false
 			CurrentContext = nil
-		}()
+		}}
+		defer completion.recoverPanic()
 
 		// AWS exposes the original response through this hook. Preserve existing
 		// hooks and leave serialization (including streaming readers) to AWS.
@@ -40,11 +41,12 @@ func WrapRuntimeHandlerWithListeners(handler func(context.Context, []byte) (io.R
 		})
 		result, err := handler(ctx, msg)
 		if response != nil {
-			ctx = context.WithValue(ctx, extension.DdLambdaResponse, response)
+			completion.ctx = context.WithValue(ctx, extension.DdLambdaResponse, response)
 		}
-		for _, listener := range listeners {
-			listener.HandlerFinished(ctx, err)
+		if err != nil || result == nil {
+			completion.finish(err)
+			return result, err
 		}
-		return result, err
+		return completion.wrapResponse(result), nil
 	}
 }

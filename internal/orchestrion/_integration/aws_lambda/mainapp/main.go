@@ -64,6 +64,14 @@ func main() {
 	ctx := context.Background()
 	opts := []lambda.Option{lambda.WithContext(ctx)}
 	switch variant := os.Getenv("LAMBDA_VARIANT"); variant { //nolint:forbidigo // test setting, not a DD_* configuration
+	case "Streaming":
+		startStreaming(false)
+	case "StreamingError":
+		startStreaming(true)
+	case "Panic":
+		startPanic(false)
+	case "ManualPanic":
+		startPanic(true)
 	case "Start":
 		lambda.Start(handler)
 	case "StartWithOptions":

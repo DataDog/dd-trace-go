@@ -57,7 +57,7 @@ func TestLambdaOptions(t *testing.T) {
 			}
 			require.Emptyf(t, api.Errors(), "stderr:\n%s", stderr)
 			require.Equal(t, []string{tc.response, tc.response}, api.Responses())
-			requireTraces(t, parseSpans(t, stdout), stdout)
+			requireTraces(t, parseSpans(t, stdout), stdout, true)
 		})
 	}
 }
