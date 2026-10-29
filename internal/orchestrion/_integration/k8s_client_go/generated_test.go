@@ -13,14 +13,50 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestContribConfigWrap(t *testing.T) {
+	harness.Run(t, new(TestCaseContribConfigWrap))
+}
+
+func TestContribWrapTransport(t *testing.T) {
+	harness.Run(t, new(TestCaseContribWrapTransport))
+}
+
+func TestContribWrapTransportChain(t *testing.T) {
+	harness.Run(t, new(TestCaseContribWrapTransportChain))
+}
+
+func TestCopyConfig(t *testing.T) {
+	harness.Run(t, new(TestCaseCopyConfig))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestNewCfgFunc(t *testing.T) {
 	harness.Run(t, new(TestCaseNewCfgFunc))
+}
+
+func TestNewCfgFuncSpanCount(t *testing.T) {
+	harness.Run(t, new(TestCaseNewCfgFuncSpanCount))
+}
+
+func TestPackageLevelConfig(t *testing.T) {
+	harness.Run(t, new(TestCasePackageLevelConfig))
 }
 
 func TestStructLiteralWithParam(t *testing.T) {
 	harness.Run(t, new(TestCaseStructLiteralWithParam))
 }
 
+func TestStructLiteralWithParamSpanCount(t *testing.T) {
+	harness.Run(t, new(TestCaseStructLiteralWithParamSpanCount))
+}
+
 func TestStructLiteralWithoutParam(t *testing.T) {
 	harness.Run(t, new(TestCaseStructLiteralWithoutParam))
+}
+
+func TestStructLiteralWithoutParamSpanCount(t *testing.T) {
+	harness.Run(t, new(TestCaseStructLiteralWithoutParamSpanCount))
 }
