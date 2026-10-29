@@ -305,7 +305,7 @@ func BenchmarkSpanAttributesAll(b *testing.B) {
 	}
 }
 
-func TestSpanMetaReserve(t *testing.T) {
+func TestSpanMetaReserveIfLargeEnough(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		initial map[string]string
@@ -319,7 +319,7 @@ func TestSpanMetaReserve(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sm := SpanMeta{m: tc.initial}
-			sm.Reserve(tc.n)
+			sm.ReserveIfLargeEnough(tc.n)
 			if tc.wantNil {
 				assert.Nil(t, sm.m)
 				return
