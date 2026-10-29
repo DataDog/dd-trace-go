@@ -24,6 +24,7 @@
 /.gitmodules                    @DataDog/dd-trace-go-guild
 /.idea/                         @DataDog/dd-trace-go-guild
 /.orchestrion-version           @DataDog/dd-trace-go-guild
+/.actrc                         @DataDog/dd-trace-go-guild
 /.pre-commit-config.yaml        @DataDog/dd-trace-go-guild
 *.md                            @DataDog/dd-trace-go-guild
 /LICENSE                        @DataDog/dd-trace-go-guild

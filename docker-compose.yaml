@@ -1,3 +1,9 @@
+# This is NOT the stack CI uses. `.github/workflows/unit-integration-tests.yml`
+# uses .github/testservices/docker-compose.yaml, which pins different — mostly
+# older — image versions on purpose. The divergence is deliberate and is
+# tabulated under "Reproducing CI locally" in CONTRIBUTING.md. To reproduce a
+# CI failure against CI's versions, use `make ci/run` instead of this file.
+
 services:
   aerospike:
     image: aerospike:ce-8.2.0.0_1@sha256:74ee58f449dbb0a444d05939e74eea4dbb8af249e42409611a51014ebd973f9a
