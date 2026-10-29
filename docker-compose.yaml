@@ -186,7 +186,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:c5bf5ec9be0c51d3d2d47bdadbb82680b5c83ceb9cae8457fe44aa736a1784ad
+    image: datadog/agent:latest@sha256:4aa71f1f624e36ed4d04568e4ad3f323af14426db07d2f9ed98869f6d0bdbbd3
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -202,7 +202,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.69.0@sha256:cbcc6c032ad8cb6fca45ed904db7b8e0952a72aebb00885dc19ff5057e4543ad
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.69.1@sha256:af1d11e2826341ea0ba09a5cc9e7a2ff6b466bfeaa1f53b1e5ead9bdc7047461
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -242,7 +242,7 @@ services:
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine@sha256:6d687bc26426d092694743054fc674fc54d3c161fefa1ad20b54192f8580a8c1
+    image: memcached:1.6-alpine@sha256:6a089e37cbb8acd75c80c6c0667fe57ec54db68782fb1b3afb1d0eb265e50070
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
       interval: 5s
@@ -252,7 +252,7 @@ services:
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:8.3.2@sha256:2d623f09f1cc46a38b3ace3ee055016617b8f749db1596440bd9ecbe57601d3f
+    image: confluentinc/confluent-local:8.4.0@sha256:fc5e5415670e05f3125c4226388c17eb1488858804aca699492b0e6159158209
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"

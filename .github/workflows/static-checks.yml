@@ -165,6 +165,9 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/action
+      - name: Test workflows apps
+        working-directory: .github/workflows/apps
+        run: go test ./pr-triage-board/
       # These validate CI configuration, not Go code: that every workflow is
       # registered in .github/ci-components.yml, that native paths: filters are
       # declared and still live, that each join job depends on `changes`, and

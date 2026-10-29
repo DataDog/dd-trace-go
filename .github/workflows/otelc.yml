@@ -39,6 +39,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go
+    contrib/aws/aws-sdk-go/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -59,12 +61,18 @@ env:
     contrib/google.golang.org/grpc/otelc
     contrib/gorm.io/gorm.v1
     contrib/gorm.io/gorm.v1/otelc
+    contrib/go.mongodb.org/mongo-driver
+    contrib/go.mongodb.org/mongo-driver/otelc
+    contrib/go.mongodb.org/mongo-driver.v2
+    contrib/go.mongodb.org/mongo-driver.v2/otelc
     contrib/gorilla/mux
     contrib/gorilla/mux/otelc
     contrib/labstack/echo.v4
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/valyala/fasthttp
+    contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
   OTELC_TEST_PACKAGES: >-
     otelc
@@ -83,8 +91,12 @@ env:
     gorilla_mux
     99designs.gqlgen
     gorm
+    mongo
+    mongo.v2
     echo.v4
     echo.v5
+    aws.v1
+    valyala_fasthttp
 
 jobs:
   go-versions-matrix:
