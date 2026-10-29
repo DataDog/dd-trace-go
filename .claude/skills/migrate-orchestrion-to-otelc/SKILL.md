@@ -162,8 +162,8 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      (`example.com/otelcexternalapp`) sorts before `otelc/all`. Every pass then fails with
      `module github.com/DataDog/dd-trace-go@latest found (...), but does not contain package`.
    - Add it to `go.work` (`make fix-modules` does not touch the workspace).
-   - Add the contrib and its `otelc` module to `OTELC_MODULES` in `.github/workflows/otelc.yml`,
-     which CI tidies before running otelc. Every module otelc reads needs a current `go.mod`.
+   - Add a `.otelc` file to the suite's directory under `internal/orchestrion/_integration`, so
+     CI runs it with otelc. CI finds the otelc module itself (`scripts/otelc_ci_lists.sh`).
 6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
    otelc spans against the orchestrion ones.
 7. From the repository root, in a shell **without** `GOWORK=off`:
