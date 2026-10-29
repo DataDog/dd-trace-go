@@ -13,6 +13,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,6 +30,9 @@ func init() {
 
 type datadogHook struct {
 	*params
+	// replaced is set in an otelc build when the application wraps the client
+	// again, so that only the newer hook traces it.
+	replaced atomic.Bool
 }
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
@@ -66,7 +70,9 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	}
 	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
 
-	client.AddHook(&datadogHook{params: hookParams})
+	h := &datadogHook{params: hookParams}
+	replaceHook(client, h)
+	client.AddHook(h)
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay
@@ -131,6 +137,9 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if ddh.replaced.Load() {
+			return hook(ctx, network, addr)
+		}
 		// Every tag DialHook sets is static (constant for the client's
 		// lifetime), so the span can start from spanCfg alone, with no
 		// per-call tag map.
@@ -149,7 +158,7 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 
 func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
-		ctx, skip := markOrSkip(ctx, ddh)
+		ctx, skip := markOrSkip(ctx, ddh, cmd)
 		if skip {
 			return hook(ctx, cmd)
 		}
@@ -184,7 +193,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
-		ctx, skip := markOrSkip(ctx, ddh)
+		ctx, skip := markOrSkipPipeline(ctx, ddh, cmds)
 		if skip {
 			return hook(ctx, cmds)
 		}

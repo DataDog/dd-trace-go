@@ -31,6 +31,10 @@ func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
 }
 
+func TestExplicitWrap(t *testing.T) {
+	harness.Run(t, new(TestCaseExplicitWrap))
+}
+
 func TestUniversalClients(t *testing.T) {
 	harness.Run(t, new(TestCaseUniversalClients))
 }

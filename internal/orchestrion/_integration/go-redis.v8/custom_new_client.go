@@ -48,18 +48,28 @@ func (tc *TestCaseCustomNewClient) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, ring.Close())
 }
 
-// ExpectedSpanCount is test.root and the Ring's redis.command span.
+// ExpectedSpanCount is test.root, the Ring's redis.command span, and the
+// shard's COMMAND span under it.
 func (*TestCaseCustomNewClient) ExpectedSpanCount() int {
-	return 2
+	return 3
 }
 
 func (*TestCaseCustomNewClient) ExpectedTraces() trace.Traces {
+	ringSpan := commandSpan("redis.client", "custom-new-client", false)
+	ringSpan.Children = trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "redis.command",
+				"resource": "command:",
+			},
+		},
+	}
 	return trace.Traces{
 		{
 			Tags: map[string]any{
 				"name": "test.root",
 			},
-			Children: trace.Traces{commandSpan("redis.client", "custom-new-client", false)},
+			Children: trace.Traces{ringSpan},
 		},
 	}
 }
