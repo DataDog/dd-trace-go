@@ -49,7 +49,7 @@ func TestLogsWriterFlush(t *testing.T) {
 	writer.client = &MockClient{SendLogsFunc: drainLogsPayload}
 	entry := &logEntry{}
 	writer.add(entry)
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -61,7 +61,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 	for range concurrentConnectionLimit + 1 {
 		writer.add(entry)
 	}
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -73,7 +73,7 @@ func TestLogsWriterFlushError(t *testing.T) {
 	}
 	entry := &logEntry{}
 	writer.add(entry)
-	writer.flush()
+	flushAndWait(writer)
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
@@ -187,6 +187,13 @@ func TestLogsWriterDoesNotBlockOnConnectionLimitWhileSchedulingFlush(t *testing.
 
 	close(release)
 	writer.stop()
+}
+
+// flushAndWait flushes writer and waits for the uploads it started, so an
+// upload cannot log into the logger of a test that runs afterwards.
+func flushAndWait(writer *logsWriter) {
+	writer.flush()
+	writer.wg.Wait()
 }
 
 func drainLogsPayload(payload io.Reader) error {

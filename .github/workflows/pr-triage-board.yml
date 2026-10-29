@@ -1,0 +1,62 @@
+name: PR Triage Board
+
+on:
+  schedule:
+    - cron: '0 7-17 * * 1-5' # Every hour from 07:00 to 17:00 UTC, Mon-Fri
+  workflow_dispatch: # Manually trigger a run
+    inputs:
+      issue-number:
+        description: 'Issue to update with the board. Defaults to the repository variable PR_TRIAGE_BOARD_ISSUE. Leave both empty to only print the board.'
+        required: false
+        type: string
+      maintainer:
+        description: 'Handle to filter the board (optional)'
+        required: false
+        type: string
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-triage-board
+  cancel-in-progress: false
+
+jobs:
+  update-board:
+    name: Update the PR triage board
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # Required by Octo STS to mint the token
+    steps:
+      - name: Get GitHub token (DataDog/dd-trace-go)
+        id: octo-sts
+        uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.pr-triage-board
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .github/workflows/apps/go.mod
+          cache: false
+      - name: Generate the board
+        run: |-
+          args=(--repo "${GITHUB_REPOSITORY}" --limit 100)
+          if [ -n "${ISSUE_NUMBER}" ]; then
+            args+=(--issue "${ISSUE_NUMBER}")
+          fi
+          if [ -n "${MAINTAINER}" ]; then
+            args+=(--maintainer "${MAINTAINER}")
+          fi
+          go run ./.github/workflows/apps/pr-triage-board "${args[@]}"
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          ISSUE_NUMBER: ${{ inputs.issue-number || vars.PR_TRIAGE_BOARD_ISSUE }}
+          MAINTAINER: ${{ inputs.maintainer }}
