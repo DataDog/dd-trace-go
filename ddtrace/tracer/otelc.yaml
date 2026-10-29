@@ -202,3 +202,68 @@ create_tracer:
           defer tracer.Stop()
   imports:
     tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+# ---------------------------------------------------------------------------
+# Custom spans
+# ---------------------------------------------------------------------------
+
+# FIXME: a directive on a function literal is not expanded
+# (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1602).
+#
+# otelc matches argument types by name, so an argument whose type only
+# implements context.Context does not give the parent. The parent then comes
+# from goroutine-local storage.
+#
+# dd-trace-go's packages are not excluded, so the integration suites are
+# reached. A //dd:span in a package the tracer imports would make an import
+# cycle.
+#
+# The imports keep the plain aliases. In package main, create_tracer already
+# adds `tracer`, and otelc rejects another alias for that path there. A
+# package-level `tracer` or `context` identifier in a file that does not import
+# them breaks the build.
+dd_span:
+  target: "**"
+  where:
+    directive: dd:span
+  do:
+    - expand_directive:
+        template: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = "__dd_span_ctx" -}}
+            {{- if $req }}
+          __dd_span_ctx := {{ $req }}.Context()
+            {{- else }}
+          __dd_span_ctx := context.TODO()
+            {{- end }}
+          {{- end }}
+          {{- $name := .FuncName -}}
+          {{- $op := $name -}}
+          {{- range .DirectiveArgs -}}
+            {{- if not $op -}}{{- $op = .Value -}}{{- end -}}
+            {{- if eq .Key "span.name" -}}{{- $op = .Value -}}{{- break -}}{{- end -}}
+          {{- end }}
+          var __dd_span *tracer.Span
+          __dd_span, {{ $ctx }} = tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" $op }},
+          {{- with $name }}
+            tracer.Tag("function-name", {{ printf "%q" . }}),
+          {{- end }}
+          {{- range .DirectiveArgs }}
+            {{- if ne .Key "span.name" }}
+            tracer.Tag({{ printf "%q" .Key }}, {{ printf "%q" .Value }}),
+            {{- end }}
+          {{- end }}
+          )
+          {{- with $req }}
+          {{ . }} = {{ . }}.WithContext({{ $ctx }})
+          {{- end }}
+          {{- with .FuncReturnOfType "error" }}
+          defer func() { __dd_span.Finish(tracer.WithError({{ . }})) }()
+          {{- else }}
+          defer __dd_span.Finish()
+          {{- end }}
+  imports:
+    context: context
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer

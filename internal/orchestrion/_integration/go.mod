@@ -104,6 +104,7 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/ddspandep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
@@ -593,3 +594,5 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace example.com/echodep => ./internal/echodep
 
 replace github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 => ../../../contrib/sirupsen/logrus/otelc
+
+replace example.com/ddspandep => ./internal/ddspandep
