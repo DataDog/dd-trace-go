@@ -120,6 +120,28 @@
 // of our integrations. You can see a list of supported integrations here:
 // https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib
 //
+// # LLM Observability distributed context
+//
+// When LLM Observability is enabled, the tracer propagates the LLMObs trace
+// identity alongside the APM one. Those values travel in two carriers at once:
+// the Datadog propagating tags, carried inside x-datadog-tags, and the W3C
+// baggage header under a reserved llmobs.* key namespace. Both are written on
+// every outbound injection. On extraction baggage is preferred and the
+// propagating tag is used as a fallback, so peers running older tracer versions
+// continue to be understood.
+//
+// The second carrier exists because the first is tied to APM trace identity. An
+// intermediary that drops the APM trace headers, for instance to re-root the
+// trace and apply its own sampling decision, also drops the LLMObs context
+// riding inside them; the downstream service then begins a new LLMObs trace
+// instead of continuing the caller's. Baggage is extracted even when no trace
+// identity is present, so the LLMObs trace survives that hop.
+//
+// This behaviour depends on baggage remaining an enabled propagation style.
+// DD_TRACE_PROPAGATION_STYLE includes it by default. Removing it leaves the
+// propagating tags as the only carrier, and LLMObs trace continuity once again
+// requires the APM trace headers to reach the downstream service intact.
+//
 // # Client-Side Stats Cardinality Controls
 //
 // When client-side stats computation is enabled (WithStatsComputation or
