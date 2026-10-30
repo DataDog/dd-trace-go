@@ -75,11 +75,14 @@ groups:
 # .github/workflows/otelc.yml; the selector reads it from there at runtime.
 integration-suites:
   # Modules so cross-cutting that a change affects suites which never import
-  # them: the weavers inject their spans into more than 20 suites. A change in
-  # one of these runs the full lane instead of a narrowed set.
+  # them: the weavers inject `net/http` spans into more than 20 suites, and
+  # the `slog` aspect links `WrapHandler` into every `slog.New` caller (the
+  # `echo.v5` suite calls it) with no contrib import. A change in one of
+  # these runs every gated lane in full instead of a narrowed set.
   shared-modules:
     - contrib/net/http
     - contrib/net/http/otelc
+    - contrib/log/slog
   # Every directory under contrib/ or instrumentation/ with a go.mod must
   # have an entry, even an empty list. Keys are module directories; values
   # are the suite names that exercise the module. An empty list means no

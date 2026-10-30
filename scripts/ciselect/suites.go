@@ -195,8 +195,8 @@ func loadOtelcSuites(root string) (map[string]bool, error) {
 // that suite; a path inside a contrib module names the suites its mapping
 // lists, expanded through the module require graph (a change to a required
 // module affects its dependents' suites); a file of the shared _integration
-// module itself, or of a shared-modules entry, drives every suite. A path
-// that turns a lane's gate on but names no suite for it fails open: that lane
+// module itself, a shared-modules entry, or a workspace manifest drives every
+// gated lane in full. A path that turns a lane's gate on but names no suite for it fails open: that lane
 // runs every suite, never zero. A path whose component gates neither lane
 // contributes nothing at all -- a doc edit inside a code directory must not
 // drag in that directory's suites. One refinement cuts against the fail-open:
@@ -237,9 +237,8 @@ func (t *table) selectSuites(root string, res *result) error {
 	}
 
 	var (
-		sel    = map[string]map[string]bool{laneOtelc: {}, laneOrchestrion: {}}
-		esc    = map[string]bool{laneOtelc: false, laneOrchestrion: false}
-		shared bool
+		sel = map[string]map[string]bool{laneOtelc: {}, laneOrchestrion: {}}
+		esc = map[string]bool{laneOtelc: false, laneOrchestrion: false}
 		// Module contributions expand through the require graph. A seed whose
 		// own mapping is empty fails open regardless of the closure.
 		seeds     = map[string]bool{}
@@ -287,16 +286,27 @@ func (t *table) selectSuites(root string, res *result) error {
 			}
 			// A file of the _integration module itself: its go.mod, its tool
 			// file, testdata, the internal helper tree. All suites compile
-			// against it, so every suite must run.
-			shared = true
+			// against it, so every gated lane runs every suite.
+			escalateLanes(res, file, esc)
 			continue
 		}
 		if m, ok := enclosingModule(byDir, file); ok {
 			if sharedModule[m.Dir] {
 				// Cross-cutting modules reach suites that never import them
-				// (the weavers inject net/http spans into 20+ suites), so a
-				// change runs the full lane instead of a narrowed set.
-				shared = true
+				// (the weavers inject net/http spans into 20+ suites, and the
+				// slog aspect links WrapHandler into every slog.New caller),
+				// so every gated lane runs the full suite set.
+				escalateLanes(res, file, esc)
+				continue
+			}
+			// A manifest change can upgrade an external dependency for every
+			// module that requires it, and the require graph follows repository
+			// modules only, so the suites a bump reaches are not visible here:
+			// fail the gated lanes open. Root manifests are claimed by the
+			// universal component, the _integration one by the shared rule
+			// above, so only workspace modules reach this check.
+			if strings.HasSuffix(file, "/go.mod") || strings.HasSuffix(file, "/go.sum") {
+				escalateLanes(res, file, esc)
 				continue
 			}
 			seeds[m.Dir] = true
@@ -344,7 +354,7 @@ func (t *table) selectSuites(root string, res *result) error {
 
 	for _, lane := range []string{laneOtelc, laneOrchestrion} {
 		switch {
-		case shared || esc[lane]:
+		case esc[lane]:
 			res.Suites[lane] = SuiteVerdict{All: true}
 		case len(sel[lane]) > 0:
 			out := make([]string, 0, len(sel[lane]))
@@ -385,6 +395,19 @@ func pathsOf(res *result) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+// escalateLanes fails every lane the path's component gates open, without
+// narrowing: shared inputs (the _integration module's own files,
+// shared-modules entries, workspace manifests) reach suites no graph the
+// selector follows can name, so the gated lanes run every suite instead of
+// a narrowed set.
+func escalateLanes(res *result, file string, esc map[string]bool) {
+	for _, lane := range []string{laneOtelc, laneOrchestrion} {
+		if res.pathGatesHave(file, lane) {
+			esc[lane] = true
+		}
+	}
 }
 
 // failOpen escalates each lane the path's component gates when the path

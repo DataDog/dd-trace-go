@@ -307,6 +307,39 @@ func TestSuiteSelection(t *testing.T) {
 			wantOrch:    true,
 		},
 		{
+			// The slog aspect links WrapHandler into every slog.New caller
+			// (the echo.v5 suite calls it) with no import the graphs follow,
+			// so slog is a shared-modules entry too: the orchestrion lane runs
+			// in full, and otelc stays off because nothing otelc-side weaves
+			// it. A shared entry reaches only the lanes its paths gate.
+			name:        "an injected-aspect module runs the orchestrion lane in full",
+			files:       []string{"contrib/log/slog/slog.go"},
+			otelc:       SuiteVerdict{},
+			orchestrion: SuiteVerdict{All: true},
+			wantOrch:    true,
+		},
+		{
+			// A manifest change can upgrade an external dependency for every
+			// module that requires it (pubsub.v1 and pubsub.v2 both require
+			// gRPC), and the repo-internal require graph cannot see that, so
+			// the gated lanes fail open. grpc gates both lanes.
+			name:        "a workspace manifest change fails the gated lanes open",
+			files:       []string{"contrib/google.golang.org/grpc/go.mod"},
+			otelc:       SuiteVerdict{All: true},
+			orchestrion: SuiteVerdict{All: true},
+			wantOtelc:   true,
+			wantOrch:    true,
+		},
+		{
+			// The manifest rule scoped per lane: dns gates orchestrion only,
+			// so only that lane fails open.
+			name:        "a manifest change fails only the gated lane open",
+			files:       []string{"contrib/miekg/dns/go.sum"},
+			otelc:       SuiteVerdict{},
+			orchestrion: SuiteVerdict{All: true},
+			wantOrch:    true,
+		},
+		{
 			// database/sql is required by gorm.v1 and sqlx, so the require
 			// closure pulls the gorm suite in next to sql.
 			name:         "a required module's closure widens the selection",
