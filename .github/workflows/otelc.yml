@@ -195,39 +195,22 @@ jobs:
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
           PACKAGE_NAMES=""
           for pkg in ${OTELC_TEST_PACKAGES}; do
-            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
-          done
-          export PACKAGE_NAMES
-          echo "Running otelc tests for: ${PACKAGE_NAMES}"
-
-          RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
-          cat > "${RUN_SCRIPT}" <<'EOF'
-          #!/usr/bin/env bash
-          set -o pipefail
-          rc=0
-          for pkg in ${PACKAGE_NAMES}; do
             # Some suites only build on Linux in CI (//go:build linux || !githubci),
-            # and otelc fails on a package with no Go files left to build. Stdout
-            # is parsed as test2json, so the notice goes to stderr.
-            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
-              echo "Skipping ${pkg}: no Go files for this platform" >&2
+            # and otelc fails on a package with no Go files left to build.
+            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${PREFIX}/${pkg}")" == "000" ]]; then
+              echo "Skipping ${pkg}: no Go files for this platform"
               continue
             fi
-            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
-            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
-            status=$?
-            go tool test2json -t -p "${pkg}" < "${raw}"
-            if [[ "${status}" -ne 0 ]]; then
-              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
-              cat "${raw}" >&2
-              echo "::endgroup::" >&2
-              rc=1
-            fi
+            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
           done
-          exit "${rc}"
-          EOF
+          echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
-          gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
+          # One invocation for all the suites builds their shared dependency
+          # closure once. An invocation per suite re-ran otelc's build plan
+          # and rebuilt that closure every time, which made the lane take hours.
+          # shellcheck disable=SC2086
+          gotestsum --junitfile "${XML_PATH}" --raw-command -- \
+            otelc go test -json -shuffle=on ${PACKAGE_NAMES}
         working-directory: internal/orchestrion/_integration
         env:
           # otelc-autostart shells out to a nested `otelc go build`, which
