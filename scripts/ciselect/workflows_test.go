@@ -130,7 +130,60 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 var (
 	seedLiteral       = regexp.MustCompile(`(?m)^\s+seed:`)
 	cacheFalseLiteral = regexp.MustCompile(`(?m)^\s+cache: "false"$`)
+	// bareRefGroup matches a concurrency group that is nothing but the ref,
+	// with any spacing between the handlebars.
+	bareRefGroup = regexp.MustCompile(`^\s*\$\{\{\s*github\.ref\s*\}\}\s*$`)
 )
+
+// TestConcurrencyGroupsAreNamespaced rejects a concurrency group that is
+// nothing but the ref.
+//
+// Group names are repository-scoped, not workflow-scoped, so two workflows
+// with a bare-ref group collide on every shared ref. On 2026-10-30 that
+// exact collision made the smoke-tests nightly cancel the main-branch-tests
+// nightly -- both ran on refs/heads/main with cancel-in-progress -- and
+// neither workflow can be distinguished from a future workflow reintroducing
+// the same mistake by review alone. A group is therefore only valid when it
+// carries something workflow-identifying (a literal prefix, github.workflow,
+// or any other expression) alongside the ref.
+func TestConcurrencyGroupsAreNamespaced(t *testing.T) {
+	root, files := workflowPaths(t)
+
+	check := func(f, where, group string) {
+		if group == "" {
+			t.Errorf("%s: %s declares concurrency without a group", f, where)
+			return
+		}
+		if bareRefGroup.MatchString(group) {
+			t.Errorf("%s: %s concurrency group %q is a bare ref. Group names are "+
+				"repository-scoped, so a second workflow with the same group on the "+
+				"same ref would cancel this one's runs (the 2026-10-30 nightly "+
+				"collision). Prefix the group with github.workflow or a literal, "+
+				"e.g. ${{ github.workflow }}-%s", f, where, group, group)
+		}
+	}
+
+	for _, f := range files {
+		doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, f))
+		if conc, ok := doc["concurrency"].(map[string]any); ok {
+			group, _ := conc["group"].(string)
+			check(f, "workflow", group)
+		}
+		jobs, _ := doc["jobs"].(map[string]any)
+		for name, raw := range jobs {
+			job, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			conc, ok := job["concurrency"].(map[string]any)
+			if !ok {
+				continue
+			}
+			group, _ := conc["group"].(string)
+			check(f, "job "+name, group)
+		}
+	}
+}
 
 // TestNativePathFiltersAreDeclared pins down which workflows are allowed to
 // filter themselves with a native `paths:` block. Native filters are an
