@@ -193,12 +193,7 @@ jobs:
           otelc version
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          # aws.v1.test fails to link when otelc builds it together with the
-          # other suites: the instrumented net/http references the
-          # contrib/net/http/otelc hooks, which are not linked into it. It
-          # gets its own invocation until otelc fixes that.
-          SEPARATE_PACKAGES=" aws.v1 "
-          export SHARED_PACKAGES="" ALONE_PACKAGES=""
+          PACKAGE_NAMES=""
           for pkg in ${OTELC_TEST_PACKAGES}; do
             # Some suites only build on Linux in CI (//go:build linux || !githubci),
             # and otelc fails on a package with no Go files left to build.
@@ -206,31 +201,16 @@ jobs:
               echo "Skipping ${pkg}: no Go files for this platform"
               continue
             fi
-            if [[ "${SEPARATE_PACKAGES}" == *" ${pkg} "* ]]; then
-              ALONE_PACKAGES+=" ${PREFIX}/${pkg}"
-            else
-              SHARED_PACKAGES+=" ${PREFIX}/${pkg}"
-            fi
+            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
           done
-          echo "Running otelc tests together for: ${SHARED_PACKAGES}"
-          echo "Running otelc tests separately for: ${ALONE_PACKAGES}"
+          echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           # One invocation for all the suites builds their shared dependency
           # closure once. An invocation per suite re-ran otelc's build plan
           # and rebuilt that closure every time, which made the lane take hours.
-          RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
-          cat > "${RUN_SCRIPT}" <<'EOF'
-          #!/usr/bin/env bash
-          rc=0
           # shellcheck disable=SC2086
-          otelc go test -json -shuffle=on ${SHARED_PACKAGES} || rc=1
-          for pkg in ${ALONE_PACKAGES}; do
-            otelc go test -json -shuffle=on "${pkg}" || rc=1
-          done
-          exit "${rc}"
-          EOF
-
-          gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
+          gotestsum --junitfile "${XML_PATH}" --raw-command -- \
+            otelc go test -json -shuffle=on ${PACKAGE_NAMES}
         working-directory: internal/orchestrion/_integration
         env:
           # otelc-autostart shells out to a nested `otelc go build`, which
