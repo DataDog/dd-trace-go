@@ -8,7 +8,7 @@ replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 
-require github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev
+require github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev.1
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
@@ -21,7 +21,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
