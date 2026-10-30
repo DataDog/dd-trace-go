@@ -30,12 +30,8 @@ var integrationPackages = strings.Join([]string{
 
 // integrationPackagesLine is the space-joined form of the input, which is
 // what the script prints for a full-lane run.
-var integrationPackagesLine = strings.Join([]string{
-	integrationPkgBase,
-	integrationPkgBase + "/gin",
-	integrationPkgBase + "/chi.v5",
-	integrationPkgBase + "/internal/maintest",
-}, " ")
+var integrationPackagesLine = strings.ReplaceAll(
+	strings.TrimSuffix(integrationPackages, "\n"), "\n", " ")
 
 // runSelectSuites executes the selection script the way the Run Tests step
 // does: SUITES in the environment, the package list on stdin.
