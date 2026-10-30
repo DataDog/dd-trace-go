@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // The two lanes that run internal/orchestrion/_integration suites.
@@ -136,6 +138,34 @@ func expandImporters(set map[string]bool, importers map[string][]string, allowed
 	return out
 }
 
+// loadOtelcSuites reads OTELC_TEST_PACKAGES from .github/workflows/otelc.yml,
+// the single reviewable copy of the otelc lane's suite set. The folded scalar
+// decodes to one whitespace-separated string, so Fields splits it into names.
+func loadOtelcSuites(root string) (map[string]bool, error) {
+	path := filepath.Join(root, workflowDir, "otelc.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Env struct {
+			OtelcTestPackages string `yaml:"OTELC_TEST_PACKAGES"`
+		} `yaml:"env"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	fields := strings.Fields(doc.Env.OtelcTestPackages)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("%s: OTELC_TEST_PACKAGES is empty", path)
+	}
+	out := make(map[string]bool, len(fields))
+	for _, s := range fields {
+		out[s] = true
+	}
+	return out, nil
+}
+
 // selectSuites narrows the orchestrion and otelc lanes to the
 // internal/orchestrion/_integration suites affected by the change set, then
 // propagates each lane's gate from its verdict.
@@ -164,9 +194,9 @@ func (t *table) selectSuites(root string, res *result) error {
 		return nil
 	}
 
-	otelcSuite := make(map[string]bool, len(t.IntegrationSuites.OtelcSuites))
-	for _, s := range t.IntegrationSuites.OtelcSuites {
-		otelcSuite[s] = true
+	otelcSuite, err := loadOtelcSuites(root)
+	if err != nil {
+		return err
 	}
 	sharedModule := make(map[string]bool, len(t.IntegrationSuites.SharedModules))
 	for _, m := range t.IntegrationSuites.SharedModules {

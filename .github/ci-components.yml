@@ -67,33 +67,13 @@ groups:
 # internal/orchestrion/_integration (orchestrion and otelc). scripts/ciselect
 # maps each changed path to the suites that exercise it, so the lanes run only
 # what a change can affect instead of the whole matrix. Fail-open: any gated
-# path that cannot be narrowed escalates its lane to every suite.
+# path that cannot be narrowed escalates its lane to every suite, except a
+# suite directory whose import closure stays outside the otelc set, which
+# turns that lane off for the path. `selectSuites` also rewrites both lanes'
+# gates: on when a lane has a selection, off when every gate-on path was
+# suppressed. The otelc set itself lives in OTELC_TEST_PACKAGES in
+# .github/workflows/otelc.yml; the selector reads it from there at runtime.
 integration-suites:
-  # The suites the otelc lane runs. Must match OTELC_TEST_PACKAGES in
-  # .github/workflows/otelc.yml exactly; suites_test.go enforces that.
-  otelc-suites:
-    - otelc
-    - gls
-    - gls-leak
-    - gls-unfinished
-    - otelc-autostart
-    - net_http
-    - sql
-    - gin
-    - chi
-    - chi.v5
-    - fiber.v2
-    - julienschmidt_httprouter
-    - redigo
-    - grpc
-    - gorilla_mux
-    - 99designs.gqlgen
-    - mongo
-    - mongo.v2
-    - echo.v4
-    - echo.v5
-    - aws.v1
-    - valyala_fasthttp
   # Modules so cross-cutting that a change affects suites which never import
   # them: the weavers inject their spans into more than 20 suites. A change in
   # one of these runs the full lane instead of a narrowed set.

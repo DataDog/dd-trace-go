@@ -11,44 +11,32 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// otelcTestPackagesBlock matches the OTELC_TEST_PACKAGES env block in
-// .github/workflows/otelc.yml. The list itself is never hardcoded here: the
-// test parses the workflow, so the two sides cannot drift silently.
-var otelcTestPackagesBlock = regexp.MustCompile(`(?m)^\s*OTELC_TEST_PACKAGES: >-\n((?:[ \t]+[^\n]+\n)+)`)
+// TestOtelcSuiteSetCoversRealSuites reads the otelc lane's suite set from
+// .github/workflows/otelc.yml, the single reviewable copy: it must be
+// non-empty and every entry must be an existing suite directory.
+func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
+	_, _, root := testTable(t)
 
-func parseOtelcTestPackages(t *testing.T, root string) []string {
-	t.Helper()
-	body := readText(t, root, ".github/workflows/otelc.yml")
-	m := otelcTestPackagesBlock.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("no OTELC_TEST_PACKAGES block found in %s", ".github/workflows/otelc.yml")
+	otelcSuites, err := loadOtelcSuites(root)
+	if err != nil {
+		t.Fatalf("loadOtelcSuites() = %v", err)
 	}
-	var out []string
-	for line := range strings.SplitSeq(m[1], "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			out = append(out, line)
+	if len(otelcSuites) == 0 {
+		t.Fatal("OTELC_TEST_PACKAGES parsed to an empty set")
+	}
+	suiteDirs, err := loadSuiteDirs(root)
+	if err != nil {
+		t.Fatalf("loadSuiteDirs() = %v", err)
+	}
+	for name := range otelcSuites {
+		if !suiteDirs[name] {
+			t.Errorf("OTELC_TEST_PACKAGES names %q, which is not a suite under %s", name, integrationRoot)
 		}
-	}
-	if len(out) == 0 {
-		t.Fatalf("OTELC_TEST_PACKAGES parsed to an empty list")
-	}
-	return out
-}
-
-// TestOtelcSuitesMatchWorkflow pins the otelc-suites list to the workflow it
-// must mirror.
-func TestOtelcSuitesMatchWorkflow(t *testing.T) {
-	tab, _, root := testTable(t)
-	want := parseOtelcTestPackages(t, root)
-	if !reflect.DeepEqual(tab.IntegrationSuites.OtelcSuites, want) {
-		t.Errorf("integration-suites.otelc-suites does not match OTELC_TEST_PACKAGES\n got: %v\nwant: %v",
-			tab.IntegrationSuites.OtelcSuites, want)
 	}
 }
 
@@ -91,14 +79,18 @@ func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	}
 }
 
-// TestNamedSuitesExist checks every suite named in otelc-suites or in a
-// modules value against the real tree: it must be a directory directly under
-// internal/orchestrion/_integration containing Go files.
+// TestNamedSuitesExist checks every suite named in OTELC_TEST_PACKAGES or in
+// a modules value against the real tree: it must be a directory directly
+// under internal/orchestrion/_integration containing Go files.
 func TestNamedSuitesExist(t *testing.T) {
 	tab, _, root := testTable(t)
 
-	suites := map[string]bool{}
-	for _, s := range tab.IntegrationSuites.OtelcSuites {
+	otelcSuites, err := loadOtelcSuites(root)
+	if err != nil {
+		t.Fatalf("loadOtelcSuites() = %v", err)
+	}
+	suites := make(map[string]bool, len(otelcSuites))
+	for s := range otelcSuites {
 		suites[s] = true
 	}
 	for _, list := range tab.IntegrationSuites.Modules {

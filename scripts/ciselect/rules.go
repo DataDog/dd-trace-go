@@ -42,10 +42,6 @@ type table struct {
 	// IntegrationSuites maps changed paths to the
 	// internal/orchestrion/_integration suites that exercise them, per lane.
 	IntegrationSuites struct {
-		// OtelcSuites are the suites the otelc lane runs. Must match
-		// OTELC_TEST_PACKAGES in .github/workflows/otelc.yml; suites_test.go
-		// enforces that.
-		OtelcSuites []string `yaml:"otelc-suites"`
 		// SharedModules are contrib modules so cross-cutting that a change
 		// affects suites which never import them; such a change escalates
 		// both lanes to every suite.
