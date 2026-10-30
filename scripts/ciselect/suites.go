@@ -353,28 +353,6 @@ func (t *table) failOpen(res *result, file string, suites map[string]bool, otelc
 	}
 }
 
-// requireClosure returns seeds plus every module that transitively requires
-// one of them, mirroring selectContribModules' matrix expansion.
-func requireClosure(seeds map[string]bool, rev map[string][]string) map[string]bool {
-	closure := make(map[string]bool, len(seeds))
-	queue := make([]string, 0, len(seeds))
-	for m := range seeds {
-		closure[m] = true
-		queue = append(queue, m)
-	}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, dependent := range rev[cur] {
-			if !closure[dependent] {
-				closure[dependent] = true
-				queue = append(queue, dependent)
-			}
-		}
-	}
-	return closure
-}
-
 // suiteSelection renders a verdict for -explain.
 func suiteSelection(v SuiteVerdict) string {
 	switch {
