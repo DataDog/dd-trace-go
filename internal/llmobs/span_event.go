@@ -293,9 +293,11 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	ddAttrs := transport.DDAttributes{
-		SpanID:     spanID,
-		TraceID:    span.llmTraceID,
-		APMTraceID: span.apm.TraceID(),
+		SpanID:           spanID,
+		TraceID:          span.llmTraceID,
+		APMTraceID:       span.apm.TraceID(),
+		SampleRate:       span.sampling.rate,
+		SamplingDecision: span.sampling.decision,
 	}
 	if span.scope != "" {
 		ddAttrs.Scope = span.scope

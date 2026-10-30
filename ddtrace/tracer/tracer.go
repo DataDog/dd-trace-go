@@ -379,6 +379,7 @@ func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
 		MLApp:            c.internalConfig.LLMObsMLApp(),
 		AgentlessEnabled: resolvedAgentless,
 		ProjectName:      c.internalConfig.LLMObsProjectName(),
+		SampleRate:       c.internalConfig.LLMObsSampleRate(),
 		TracerConfig: llmobsconfig.TracerConfig{
 			DDTags:     c.internalConfig.GlobalTags(),
 			Env:        c.internalConfig.Env(),

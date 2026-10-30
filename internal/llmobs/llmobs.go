@@ -549,13 +549,21 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 			parent.TraceID(), parent.SpanID(), parent.MLApp())
 		span.parent = parent
 		span.llmTraceID = parent.llmTraceID
+		span.sampling = parent.sampling
 	} else if propagated, ok := PropagatedLLMSpanFromContext(ctx); ok {
 		log.Debug("llmobs: found propagated llm span in context: (trace_id: %q, span_id: %q, ml_app: %q)",
 			propagated.TraceID, propagated.SpanID, propagated.MLApp)
 		span.propagated = propagated
 		span.llmTraceID = propagated.TraceID
+		// An upstream SDK without sampling support propagates no decision; ship the
+		// span undecided rather than make a second, possibly conflicting, one. A
+		// malformed decision is treated the same way so it is not re-propagated.
+		if d := propagated.SamplingDecision; d == SamplingDecisionKeep || d == SamplingDecisionDrop {
+			span.sampling = samplingDecision{rate: propagated.SampleRate, decision: d}
+		}
 	} else {
 		span.llmTraceID = newLLMObsTraceID()
+		span.sampling = rootSamplingDecision(apmSpan.TraceID(), l.Config.SampleRate)
 	}
 
 	span.parentAgentName, span.parentAgentSpanID = resolveParentAgent(span.parent, span.propagated)
