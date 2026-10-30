@@ -19,10 +19,14 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
 
-# A dispatch re-seeds by hand; it gets its own group so it cannot
-# cancel the nightly run it overlaps with, and two dispatches dedupe.
+# The group name is repository-scoped, not workflow-scoped, so it
+# carries the workflow name: a bare ref group collided with the smoke
+# workflow's, and its nightly cancelled this workflow's nightly
+# (2026-10-30). A dispatch re-seeds by hand; it gets its own group so
+# it cannot cancel the nightly run it overlaps with, and two dispatches
+# dedupe.
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && 'reseed' || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'reseed' || github.ref }}
   cancel-in-progress: true
 
 jobs:
