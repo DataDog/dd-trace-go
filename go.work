@@ -20,6 +20,7 @@ use (
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/connectrpc.com/connect
+	./contrib/connectrpc.com/connect.v2
 	./contrib/database/sql
 	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5

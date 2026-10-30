@@ -65,6 +65,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/confluentinc/confluent-kafka-go":     {"Kafka (confluent)", false},
 	"github.com/confluentinc/confluent-kafka-go/v2":  {"Kafka (confluent) v2", false},
 	"connectrpc.com/connect":                         {"Connect RPC", false},
+	"connectrpc.com/connect/v2":                      {"Connect RPC v2", false},
 	"database/sql":                                   {"SQL", false},
 	"github.com/dimfeld/httptreemux/v5":              {"HTTP Treemux", false},
 	"github.com/elastic/go-elasticsearch/v6":         {"Elasticsearch v6", false},
