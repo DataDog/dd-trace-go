@@ -402,8 +402,12 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 		{
 			workflow: "otelc.yml",
 			job:      "integration-test-done",
-			strict:   []string{"needs.changes.outputs.otelc == 'true'"},
-			deps:     []string{"changes", "go-versions-matrix", "integration-test", "external-app"},
+			strict: []string{
+				"needs.changes.outputs.otelc == 'true'",
+				"needs.integration-test.result != 'success'",
+				"needs.external-app.result != 'success'",
+			},
+			deps: []string{"changes", "go-versions-matrix", "integration-test", "external-app"},
 		},
 		{
 			workflow: "benchmark-apps.yml",
@@ -543,5 +547,33 @@ func TestCoverageUploadsRespectRetries(t *testing.T) {
 	if found != 2 {
 		t.Errorf("found %d %q steps in %s, want 2 (one per test job); a renamed or added "+
 			"upload step needs this guard too", found, stepName, workflow)
+	}
+}
+
+// TestOTelcGatedJobsKeepTheClassifierCondition pins the if: on the expensive
+// jobs. Nothing else asserts it: deleting the condition re-runs the full
+// three-OS matrix on every pull request, and the suite stays green.
+func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
+	_, _, root := testTable(t)
+	path := filepath.Join(root, workflowDir, "otelc.yml")
+	doc, _ := parseWorkflow(t, path)
+	jobs, _ := doc["jobs"].(map[string]any)
+	for _, job := range []string{"go-versions-matrix", "integration-test", "external-app"} {
+		j, _ := jobs[job].(map[string]any)
+		cond, _ := j["if"].(string)
+		if !strings.Contains(cond, "needs.changes.outputs.otelc == 'true'") {
+			t.Errorf("%s lost the classifier condition", job)
+		}
+	}
+}
+
+// TestOTelcRunsOnTheMergeQueue pins the merge-queue push trigger: it is what
+// makes a narrowed pull-request run safe, and removing it stops the full lane
+// run before landing on main with no test failing.
+func TestOTelcRunsOnTheMergeQueue(t *testing.T) {
+	_, _, root := testTable(t)
+	body := readText(t, root, workflowDir+"/otelc.yml")
+	if !strings.Contains(body, "- mq-working-branch-**") {
+		t.Error("otelc.yml stopped triggering on merge-queue pushes")
 	}
 }

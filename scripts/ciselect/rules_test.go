@@ -776,24 +776,54 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 }
 
 // otelcModules returns the module directories listed in OTELC_MODULES in
-// .github/workflows/otelc.yml: one entry indented by four spaces, ended by the
-// next top-level or two-space key.
+// .github/workflows/otelc.yml.
 func otelcModules(t *testing.T, root string) []string {
 	t.Helper()
-	body := readText(t, root, workflowDir+"/otelc.yml")
-	var out []string
-	inList := false
-	for line := range strings.SplitSeq(body, "\n") {
-		switch {
-		case strings.HasPrefix(line, "  OTELC_MODULES:"):
-			inList = true
-		case inList && strings.HasPrefix(line, "    "):
-			if entry := strings.TrimSpace(line); entry != "" && !strings.HasPrefix(entry, "#") {
-				out = append(out, entry)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir+"/otelc.yml"))
+	env, _ := doc["env"].(map[string]any)
+	raw, _ := env["OTELC_MODULES"].(string)
+	return strings.Fields(raw)
+}
+
+// TestOTelcGatedModulesFeedTheLane is the reverse of
+// TestOTelcModulesGateTheOTelcLane: a table row that gates the otelc lane but
+// no longer feeds anything the lane reads keeps spending the three-OS matrix
+// on every pull request that touches it, with nothing to notice. Every
+// contrib or instrumentation module a component gates onto the otelc lane
+// must be covered by an OTELC_MODULES entry in .github/workflows/otelc.yml,
+// itself or an ancestor, with one exception: the otelc suites import
+// testcontainers, so it gates the lane without the module list reading it.
+func TestOTelcGatedModulesFeedTheLane(t *testing.T) {
+	tab, graph, root := testTable(t)
+	modules := otelcModules(t, root)
+
+	_, byDir, err := loadModules(root)
+	if err != nil {
+		t.Fatalf("loadModules() = %v", err)
+	}
+	for dir := range byDir {
+		if dir == "." || dir == "instrumentation/testutils/containers" {
+			continue
+		}
+		probe := dir + "/probe.go"
+		res, err := tab.classify([]string{probe}, graph)
+		if err != nil {
+			t.Fatalf("classify() = %v", err)
+		}
+		if !res.Gates["otelc"] {
+			continue
+		}
+		covered := false
+		for _, m := range modules {
+			if dir == m || strings.HasPrefix(dir, m+"/") {
+				covered = true
+				break
 			}
-		case inList:
-			return out
+		}
+		if !covered {
+			t.Errorf("%s gates the otelc lane but no OTELC_MODULES entry covers it. "+
+				"Either add the module to OTELC_MODULES in .github/workflows/otelc.yml "+
+				"or drop the otelc gate from its component in %s.", dir, tableRelPath)
 		}
 	}
-	return out
 }

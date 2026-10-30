@@ -11,8 +11,8 @@ on:
     branches:
       - release-v*
       # The merge queue is not gated (see CONTRIBUTING.md): a queued commit
-      # runs every lane in full before it can land on main, so a regression
-      # the pull request's narrowed selection skipped cannot reach main first.
+      # re-runs the lanes that trigger on mq-working-branch-** in full, this one
+      # now included, so a narrowed pull request cannot skip this lane here.
       - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'

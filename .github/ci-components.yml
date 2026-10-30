@@ -425,9 +425,9 @@ components:
   - id: otelc-external-app
     why: >-
       The application the otelc lane's external-app job builds, through
-      scripts/build_otelc_external_app.sh. No pull-request job builds it, so it
-      needs no gate beyond hygiene and otelc; claimed here before the broad
-      apps entry.
+      scripts/build_otelc_external_app.sh. Only that job builds it, so it needs
+      no gate beyond hygiene and otelc; claimed here before the broad apps
+      entry.
     paths: [ internal/apps/otelc-external-app/** ]
     gates: ["@go-hygiene", otelc]
 
