@@ -30,16 +30,16 @@ SUITES="${SUITES#"${SUITES%%[![:space:]]*}"}"
 SUITES="${SUITES%"${SUITES##*[![:space:]]}"}"
 
 case "${SUITES}" in
-"" | "NONE" | "ALL")
-  # Full lane: pass the platform-aware list through, joined on single
-  # spaces like every narrowed output below.
-  for pkg in ${full}; do
-    packages+="${packages:+ }${pkg}"
-  done
-  echo "${packages}"
-  echo "./civisibility"
-  exit 0
-  ;;
+  "" | "NONE" | "ALL")
+    # Full lane: pass the platform-aware list through, joined on single
+    # spaces like every narrowed output below.
+    for pkg in ${full}; do
+      packages+="${packages:+ }${pkg}"
+    done
+    echo "${packages}"
+    echo "./civisibility"
+    exit 0
+    ;;
 esac
 
 packages=""
@@ -61,12 +61,12 @@ for pkg in ${full}; do
     continue
   fi
   case "${pkg}" in
-  */_integration | */_integration/internal/*)
-    # The module's own packages always run: the root package holds
-    # TestOrchestrionPresent, and internal/ holds the shared helpers.
-    packages+="${packages:+ }${pkg}"
-    continue
-    ;;
+    */_integration | */_integration/internal/*)
+      # The module's own packages always run: the root package holds
+      # TestOrchestrionPresent, and internal/ holds the shared helpers.
+      packages+="${packages:+ }${pkg}"
+      continue
+      ;;
   esac
   for suite in ${SUITES}; do
     # Shell equality keeps '.' literal, so chi.v5 matches only chi.v5.
