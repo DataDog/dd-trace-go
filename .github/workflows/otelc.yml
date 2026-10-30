@@ -99,6 +99,10 @@ env:
     echo.v5
     aws.v1
     valyala_fasthttp
+  # otelc does not yet link these suites in a multi-package build. Each of
+  # these suites runs in its own invocation until an otelc release fixes the
+  # link step.
+  OTELC_SERIAL_TEST_PACKAGES: aws.v1
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -250,36 +254,70 @@ jobs:
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
           PACKAGE_NAMES=""
+          SERIAL_PACKAGE_NAMES=""
           for pkg in ${OTELC_TEST_PACKAGES}; do
-            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            case " ${OTELC_SERIAL_TEST_PACKAGES} " in
+              *" ${pkg} "*) SERIAL_PACKAGE_NAMES+=" ${PREFIX}/${pkg}" ;;
+              *) PACKAGE_NAMES+=" ${PREFIX}/${pkg}" ;;
+            esac
           done
-          export PACKAGE_NAMES
+          export PACKAGE_NAMES SERIAL_PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
+          echo "Running serial otelc tests for: ${SERIAL_PACKAGE_NAMES}"
 
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
           cat > "${RUN_SCRIPT}" <<'EOF'
           #!/usr/bin/env bash
           set -o pipefail
           rc=0
+
+          # One otelc invocation builds the whole instrumented dependency
+          # closure. Running all non-serial suites in one invocation lets them
+          # share the build cache. Stdout must stay pure test2json, because
+          # gotestsum parses it. otelc sends its own messages to stderr. The
+          # stderr of a failing invocation goes to a stderr group.
+          run_otelc() {
+            local name=$1
+            shift
+            local raw="${RUNNER_TEMP}/otelc-stderr-${name}.log"
+            otelc go test -json -v -shuffle=on "$@" 2> "${raw}"
+            local status=$?
+            if [[ "${status}" -ne 0 ]]; then
+              echo "::group::otelc stderr for ${name} (exit ${status})" >&2
+              cat "${raw}" >&2
+              echo "::endgroup::" >&2
+              return 1
+            fi
+            return 0
+          }
+
+          # Some suites only build on Linux in CI (//go:build linux || !githubci),
+          # and otelc fails on a package with no Go files left to build. Stdout
+          # is parsed as test2json, so the notice goes to stderr.
+          has_go_files() {
+            [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "$1")" != "000" ]]
+          }
+
+          shared=()
           for pkg in ${PACKAGE_NAMES}; do
-            # Some suites only build on Linux in CI (//go:build linux || !githubci),
-            # and otelc fails on a package with no Go files left to build. Stdout
-            # is parsed as test2json, so the notice goes to stderr.
-            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
+            if has_go_files "${pkg}"; then
+              shared+=("${pkg}")
+            else
+              echo "Skipping ${pkg}: no Go files for this platform" >&2
+            fi
+          done
+          if [[ "${#shared[@]}" -gt 0 ]]; then
+            run_otelc shared "${shared[@]}" || rc=1
+          fi
+
+          for pkg in ${SERIAL_PACKAGE_NAMES}; do
+            if ! has_go_files "${pkg}"; then
               echo "Skipping ${pkg}: no Go files for this platform" >&2
               continue
             fi
-            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
-            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
-            status=$?
-            go tool test2json -t -p "${pkg}" < "${raw}"
-            if [[ "${status}" -ne 0 ]]; then
-              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
-              cat "${raw}" >&2
-              echo "::endgroup::" >&2
-              rc=1
-            fi
+            run_otelc "$(echo "${pkg}" | tr '/' '_')" "${pkg}" || rc=1
           done
+
           exit "${rc}"
           EOF
 
