@@ -166,12 +166,13 @@ type Span struct {
 	// +checklocks:mu
 	statSpan *tracerStatSpan `msg:"-"`
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	context      *SpanContext `msg:"-"` // span propagation context
+	context *SpanContext `msg:"-"` // span propagation context
+
+	// The bools are grouped to avoid padding: Span sits at the top of a Go allocator size class.
+	goExecTraced bool `msg:"-"`
+	noDebugStack bool `msg:"-"` // disables debug stack traces
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
-
 	// +checklocks:mu
 	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	// +checklocks:mu
@@ -1129,7 +1130,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 	}
 
-	s.recordLLMObsDownstreamCall(t)
 	s.finish(t)
 }
 
@@ -1184,6 +1184,9 @@ func (s *Span) finish(finishTime int64) {
 	}
 	if s.duration < 0 {
 		s.duration = 0
+	}
+	if s.llmobsDownstreamOwner != nil {
+		s.recordLLMObsDownstreamCallLocked()
 	}
 	if s.taskEnd != nil {
 		s.taskEnd()

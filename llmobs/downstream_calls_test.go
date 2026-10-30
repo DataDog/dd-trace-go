@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -221,5 +222,111 @@ func TestToolSpanDownstreamCalls(t *testing.T) {
 		assert.Len(t, got.Calls, 50)
 		assert.Equal(t, 5, got.OmittedCount)
 		assert.Equal(t, 55, got.TotalCount, "totals include omitted calls")
+	})
+
+	t.Run("otel-semantic-tags", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		span, _ := tracer.StartSpanFromContext(ctx, "http.request",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.HTTPRequestMethod, "GET"),
+			tracer.Tag(ext.URLFull, "https://api.example.com/v1/orders/7"),
+			tracer.Tag(ext.HTTPResponseStatusCode, "503"),
+		)
+		span.Finish()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		assert.Equal(t, []downstreamCall{
+			{Kind: "http", Method: "GET", Host: "api.example.com", Target: "/v1/orders/?", Status: "503", Count: 1, ErrorCount: 1},
+		}, sortedCalls(got.Calls))
+	})
+
+	t.Run("path-only-url-keeps-destination-host", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		span, _ := tracer.StartSpanFromContext(ctx, "vault",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.HTTPMethod, "GET"),
+			tracer.Tag(ext.HTTPURL, "/v1/secret/data"),
+			tracer.Tag(ext.NetworkDestinationName, "vault.internal"),
+			tracer.Tag(ext.NetworkDestinationPort, "8200"),
+		)
+		span.Finish()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		assert.Equal(t, []string{"vault.internal:8200"}, got.Hosts)
+		assert.Equal(t, []string{"GET vault.internal:8200/v1/secret/data"}, got.Endpoints)
+	})
+
+	t.Run("grpc-status-and-db-endpoint-labels", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		rpc, _ := tracer.StartSpanFromContext(ctx, "grpc.client",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.GRPCFullMethod, "/search.Search/Query"),
+			tracer.Tag(ext.NetworkDestinationName, "search.internal"),
+			tracer.Tag("grpc.code", "Unavailable"),
+		)
+		rpc.Finish()
+		db, _ := tracer.StartSpanFromContext(ctx, "postgres.query",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.DBSystem, "postgresql"),
+			tracer.Tag(ext.NetworkDestinationName, "db.internal"),
+			tracer.Tag(ext.NetworkDestinationPort, "5432"),
+		)
+		db.Finish()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		assert.ElementsMatch(t, []string{"Unavailable"}, got.Statuses)
+		assert.ElementsMatch(t, []string{
+			"search.internal/search.Search/Query",
+			"postgresql db.internal:5432 postgres.query",
+		}, got.Endpoints)
+		assert.Equal(t, 1, got.TotalErrorCount)
+	})
+
+	t.Run("concurrent-finish-records-once", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		span, _ := tracer.StartSpanFromContext(ctx, "http.request",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.HTTPURL, "https://api.example.com/a"),
+		)
+		var wg sync.WaitGroup
+		for range 10 {
+			wg.Go(func() { span.Finish() })
+		}
+		wg.Wait()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		assert.Equal(t, 1, got.TotalCount)
+	})
+
+	t.Run("secret-like-and-long-paths-redacted", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		httpCall(ctx, "POST", "https://hooks.example.com/services/T0A1B2C3D/B4E5F6G7H/aBcDeFgHiJkLmNoPqRsT1234", "200")
+		httpCall(ctx, "GET", "https://api.example.com/users/jane@example.com/profile", "200")
+		httpCall(ctx, "GET", "https://api.example.com/"+strings.Repeat("a", 1000), "200")
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		raw, err := json.Marshal(got)
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), "aBcDeFgHiJkLmNoPqRsT1234")
+		assert.NotContains(t, string(raw), "jane@example.com")
+		assert.Contains(t, got.Targets, "/users/?/profile")
+		for _, target := range got.Targets {
+			assert.LessOrEqual(t, len(target), 256)
+		}
 	})
 }
