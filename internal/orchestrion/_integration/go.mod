@@ -94,6 +94,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev // indirect
@@ -113,6 +114,7 @@ require (
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
 	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
+	example.com/gormdep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -160,7 +162,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev
-	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.13.0-dev // indirect
@@ -560,6 +562,10 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../../contrib/gorm.io/gorm.v1/otelc
+
+replace example.com/gormdep => ./internal/gormdep
 
 replace example.com/mongodep => ./internal/mongodep
 

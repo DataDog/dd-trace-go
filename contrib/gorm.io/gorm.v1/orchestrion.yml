@@ -21,7 +21,7 @@ aspects:
             func() (*gorm.DB, error) {
               db, err := {{ . }}
               if err != nil {
-                return nil, err
+                return db, err
               }
               if _, ok := db.Plugins["DDTracePlugin"]; ok {
                 return db, nil

@@ -59,6 +59,8 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/gorm.io/gorm.v1
+    contrib/gorm.io/gorm.v1/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -89,6 +91,7 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    gorm
     mongo
     mongo.v2
     echo.v4

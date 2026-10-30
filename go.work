@@ -54,6 +54,7 @@ use (
 	./contrib/gorilla/mux
 	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
+	./contrib/gorm.io/gorm.v1/otelc
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
 	./contrib/haproxy/stream-processing-offload
