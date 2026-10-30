@@ -186,6 +186,10 @@ type Span struct {
 
 	// +checklocks:mu
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+
+	// llmobsDownstreamOwner is the LLMObs tool span this outbound call is reported to, if any.
+	// Set before the span is shared and read-only until clear(), so it is read without s.mu.
+	llmobsDownstreamOwner *illmobs.Span `msg:"-"`
 }
 
 func (s *Span) clear() {
@@ -223,6 +227,7 @@ func (s *Span) clear() {
 	s.pprofCtxActive = nil
 	s.pprofCtxRestore = nil
 	s.taskEnd = nil
+	s.llmobsDownstreamOwner = nil
 	// Always keep this unlock as the last line. If we ever introduce
 	// code above that could panic, we should move it as deferred call
 	// under s.mu.Lock().
@@ -1124,6 +1129,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 	}
 
+	s.recordLLMObsDownstreamCall(t)
 	s.finish(t)
 }
 

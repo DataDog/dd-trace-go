@@ -1111,6 +1111,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.context = newSpanContext(span, context)
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
+		span.llmobsDownstreamOwner = llmobsDownstreamOwner(pprofContext)
 	}
 	span.setMetaInit("language", "go")
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
