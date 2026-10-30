@@ -30,7 +30,7 @@ func parseOtelcTestPackages(t *testing.T, root string) []string {
 		t.Fatalf("no OTELC_TEST_PACKAGES block found in %s", ".github/workflows/otelc.yml")
 	}
 	var out []string
-	for _, line := range strings.Split(m[1], "\n") {
+	for line := range strings.SplitSeq(m[1], "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			out = append(out, line)
 		}

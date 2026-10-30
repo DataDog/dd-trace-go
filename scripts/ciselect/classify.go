@@ -7,6 +7,7 @@ package main
 
 import (
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -150,12 +151,7 @@ func (t *table) classify(changed []string, g *workflowGraph) (*result, error) {
 
 // pathGatesHave reports whether the component that claimed file enables gate.
 func (r *result) pathGatesHave(file, gate string) bool {
-	for _, g := range r.PathGates[file] {
-		if g == gate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.PathGates[file], gate)
 }
 
 // anyGateWithPrefix reports whether any enabled gate starts with prefix.
