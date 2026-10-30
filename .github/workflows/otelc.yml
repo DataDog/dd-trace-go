@@ -273,17 +273,64 @@ jobs:
 
           # One otelc invocation builds the whole instrumented dependency
           # closure. Running all non-serial suites in one invocation lets them
-          # share the build cache. Stdout must stay pure test2json, because
-          # gotestsum parses it. otelc sends its own messages to stderr. The
-          # stderr of a failing invocation goes to a stderr group.
+          # share the build cache. Stdout must stay pure test2json in every
+          # path, because gotestsum parses it, so each invocation writes its
+          # stdout to a file and the script relays only valid test2json lines
+          # from it. otelc sends its own messages to stderr, which goes to a
+          # log file. The captured output of a failing invocation goes to a
+          # stderr group.
+          #
+          # A package that fails setup (for example a suite that does not
+          # load) makes otelc print plain go output on stdout and abort the
+          # whole invocation, so no suite reports and gotestsum writes no
+          # JUnit suites. When a failing invocation emitted no test2json
+          # package event at all, the script reruns its suites one invocation
+          # at a time, like the old per-suite loop, and converts that output
+          # with test2json. Every suite then reports, and the step still
+          # fails.
           run_otelc() {
             local name=$1
             shift
+            local out="${RUNNER_TEMP}/otelc-out-${name}.json"
             local raw="${RUNNER_TEMP}/otelc-stderr-${name}.log"
-            otelc go test -json -v -shuffle=on "$@" 2> "${raw}"
+            otelc go test -json -v -shuffle=on "$@" > "${out}" 2> "${raw}"
             local status=$?
+            if [[ "${status}" -eq 0 ]]; then
+              cat "${out}"
+              return 0
+            fi
+            echo "::group::otelc output for ${name} (exit ${status})" >&2
+            grep -v '^{' "${out}" >&2 || true
+            cat "${raw}" >&2
+            echo "::endgroup::" >&2
+            if grep -q '"Package"' "${out}"; then
+              # Some suites already reported their events. Relay the test2json
+              # lines only; the plain lines of the failed packages stay in
+              # the group above.
+              grep '^{' "${out}" || true
+            else
+              local pkg
+              for pkg in "$@"; do
+                run_suite_fallback "${pkg}" || rc=1
+              done
+            fi
+            return 1
+          }
+
+          # One suite rerun after an invocation failed before any package
+          # reported. The commands match the old per-suite loop, and test2json
+          # converts the plain output so gotestsum records the suite and its
+          # failure.
+          run_suite_fallback() {
+            local pkg=$1
+            local name
+            name="$(echo "${pkg}" | tr '/' '_')"
+            local raw="${RUNNER_TEMP}/otelc-raw-${name}.log"
+            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
+            local status=$?
+            go tool test2json -t -p "${pkg}" < "${raw}"
             if [[ "${status}" -ne 0 ]]; then
-              echo "::group::otelc stderr for ${name} (exit ${status})" >&2
+              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
               cat "${raw}" >&2
               echo "::endgroup::" >&2
               return 1
