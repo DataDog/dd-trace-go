@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // maxDownstreamCalls caps the distinct endpoints recorded per tool span. Calls to further
@@ -58,11 +60,17 @@ type downstreamCalls struct {
 	totalDuration time.Duration
 }
 
-// DownstreamPathTemplate replaces numeric, UUID and long hex segments of path with "?".
+// maxDownstreamFieldLen bounds the host and target of each recorded call, so a long path from
+// an untrusted server can't inflate the span event.
+const maxDownstreamFieldLen = 256
+
+// DownstreamPathTemplate replaces path segments that look like identifiers or secrets with "?":
+// numeric, UUID and long hex IDs, segments containing "@" or "%" (emails, encoded values), and
+// long segments mixing letters and digits (tokens).
 func DownstreamPathTemplate(path string) string {
 	segments := strings.Split(path, "/")
 	for i, s := range segments {
-		if downstreamIDSegment.MatchString(s) {
+		if isOpaqueSegment(s) {
 			segments[i] = "?"
 		}
 	}
@@ -70,6 +78,46 @@ func DownstreamPathTemplate(path string) string {
 		return t
 	}
 	return "/"
+}
+
+func isOpaqueSegment(s string) bool {
+	if downstreamIDSegment.MatchString(s) || strings.ContainsAny(s, "@%") {
+		return true
+	}
+	if len(s) < 24 {
+		return false
+	}
+	var hasLetter, hasDigit bool
+	for _, r := range s {
+		switch {
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case unicode.IsLetter(r):
+			hasLetter = true
+		}
+	}
+	return hasLetter && hasDigit
+}
+
+func truncateDownstreamField(s string) string {
+	if len(s) <= maxDownstreamFieldLen {
+		return s
+	}
+	cut := maxDownstreamFieldLen
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// downstreamEndpoint labels a call as "METHOD host/path", or "METHOD host target" when the target
+// is not a path (database operations, gRPC methods), so host and target stay distinguishable.
+func downstreamEndpoint(c DownstreamCall) string {
+	hostTarget := c.Host + c.Target
+	if c.Host != "" && c.Target != "" && !strings.HasPrefix(c.Target, "/") {
+		hostTarget = c.Host + " " + c.Target
+	}
+	return strings.TrimSpace(c.Method + " " + hostTarget)
 }
 
 // RecordDownstreamCall adds c to the span's downstream call summary. Only tool spans keep one,
@@ -95,6 +143,7 @@ func (d *downstreamCalls) record(c DownstreamCall) {
 
 	key := c
 	key.Failed, key.Duration = false, 0
+	key.Host, key.Target = truncateDownstreamField(key.Host), truncateDownstreamField(key.Target)
 	entry, ok := d.index[key]
 	if !ok {
 		if len(d.entries) >= maxDownstreamCalls {
@@ -147,7 +196,7 @@ func (d *downstreamCalls) close() map[string]any {
 		hosts.add(c.Host)
 		targets.add(c.Target)
 		statuses.add(c.Status)
-		endpoints.add(strings.TrimSpace(c.Method + " " + c.Host + c.Target))
+		endpoints.add(downstreamEndpoint(c))
 	}
 	summary := map[string]any{
 		"calls":             calls,

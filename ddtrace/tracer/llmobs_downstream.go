@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"net"
 	"net/url"
 	"strconv"
 	"time"
@@ -39,55 +40,73 @@ func (s *Span) isLLMObsDownstreamClient() bool {
 	return kind == ext.SpanKindClient
 }
 
-// recordLLMObsDownstreamCall reports s to its owning tool span if s is an outbound client call.
-// Query strings, credentials, resource names and SQL are never read.
-func (s *Span) recordLLMObsDownstreamCall(finishTime int64) {
-	owner := s.llmobsDownstreamOwner
-	if owner == nil {
-		return
-	}
-	s.mu.RLock()
-	if s.finished {
-		s.mu.RUnlock()
-		return
-	}
-	if kind, _ := s.meta.Get(ext.SpanKind); kind != ext.SpanKindClient {
-		s.mu.RUnlock()
-		return
-	}
-	call := s.llmobsDownstreamCallLocked(finishTime)
-	s.mu.RUnlock()
+// gRPC status tags set by the gRPC and Connect client integrations.
+const (
+	grpcCodeTag       = "grpc.code"
+	grpcStatusCodeTag = "rpc.grpc.status_code"
+)
 
-	owner.RecordDownstreamCall(call)
+// recordLLMObsDownstreamCallLocked reports s to its owning tool span if s is an outbound client
+// call. It runs from finish after the one-time finished check, so a span is reported once even
+// if Finish is called concurrently. Query strings, credentials, resource names and SQL are never
+// read.
+// +checklocks:s.mu
+func (s *Span) recordLLMObsDownstreamCallLocked() {
+	if kind, _ := s.meta.Get(ext.SpanKind); kind != ext.SpanKindClient {
+		return
+	}
+	s.llmobsDownstreamOwner.RecordDownstreamCall(s.llmobsDownstreamCallLocked())
 }
 
 // +checklocksread:s.mu
-func (s *Span) llmobsDownstreamCallLocked(finishTime int64) illmobs.DownstreamCall {
-	call := illmobs.DownstreamCall{Duration: time.Duration(max(finishTime-s.start, 0))}
-	host := s.metaStringLocked(ext.NetworkDestinationName)
-	if host == "" {
-		host = s.metaStringLocked(ext.TargetHost)
+func (s *Span) llmobsDownstreamCallLocked() illmobs.DownstreamCall {
+	call := illmobs.DownstreamCall{Duration: time.Duration(s.duration)}
+	host := s.firstMetaLocked(ext.NetworkDestinationName, ext.TargetHost, ext.ServerAddress)
+	if port := s.firstMetaLocked(ext.NetworkDestinationPort, ext.TargetPort, ext.ServerPort); host != "" && port != "" {
+		host = net.JoinHostPort(host, port)
 	}
-	switch rawURL := s.metaStringLocked(ext.HTTPURL); {
+	call.Host = host
+	switch rawURL := s.firstMetaLocked(ext.HTTPURL, ext.URLFull); {
 	case rawURL != "":
-		call.Kind, call.Method, call.Status = "http", s.metaStringLocked(ext.HTTPMethod), s.metaStringLocked(ext.HTTPCode)
+		call.Kind = "http"
+		call.Method = s.firstMetaLocked(ext.HTTPMethod, ext.HTTPRequestMethod)
+		call.Status = s.firstMetaLocked(ext.HTTPCode, ext.HTTPResponseStatusCode)
 		if u, err := url.Parse(rawURL); err == nil {
-			call.Host, call.Target = u.Host, illmobs.DownstreamPathTemplate(u.Path)
+			// Some integrations record only the path and set the host separately.
+			if u.Host != "" {
+				call.Host = u.Host
+			}
+			call.Target = illmobs.DownstreamPathTemplate(u.Path)
 		}
-	case s.metaStringLocked(ext.GRPCFullMethod) != "":
-		call.Kind, call.Host, call.Target = "grpc", host, s.metaStringLocked(ext.GRPCFullMethod)
-	case s.metaStringLocked(ext.DBSystem) != "":
-		call.Kind, call.Method, call.Host, call.Target = "db", s.metaStringLocked(ext.DBSystem), host, s.name
+	case s.firstMetaLocked(ext.GRPCFullMethod) != "":
+		call.Kind, call.Target = "grpc", s.firstMetaLocked(ext.GRPCFullMethod)
+		call.Status = s.firstMetaLocked(grpcCodeTag, grpcStatusCodeTag)
+	case s.firstMetaLocked(ext.DBSystem) != "":
+		call.Kind, call.Method, call.Target = "db", s.firstMetaLocked(ext.DBSystem), s.name
 	default:
-		call.Kind, call.Method, call.Host, call.Target = "other", s.metaStringLocked(ext.Component), host, s.name
+		call.Kind, call.Method, call.Target = "other", s.firstMetaLocked(ext.Component), s.name
 	}
-	status, _ := strconv.Atoi(call.Status)
-	call.Failed = s.error != 0 || status >= 400
+	call.Failed = s.error != 0 || downstreamStatusFailed(call.Kind, call.Status)
 	return call
 }
 
+func downstreamStatusFailed(kind, status string) bool {
+	if status == "" {
+		return false
+	}
+	if kind == "grpc" {
+		return status != "OK" && status != "0"
+	}
+	code, _ := strconv.Atoi(status)
+	return code >= 400
+}
+
 // +checklocksread:s.mu
-func (s *Span) metaStringLocked(key string) string {
-	v, _ := s.meta.Get(key)
-	return v
+func (s *Span) firstMetaLocked(keys ...string) string {
+	for _, key := range keys {
+		if v, ok := s.meta.Get(key); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
