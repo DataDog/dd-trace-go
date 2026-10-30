@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/internal/orchtool"
 )
 
@@ -349,6 +350,10 @@ func fixtureEnv(t *testing.T, mode, scenario, goCache, goModCache string) []stri
 		"DD_APPSEC_ENABLED=false",
 		"DD_APPSEC_SCA_ENABLED=false",
 		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
+		// The fixture process and every grandchild it spawns bootstrap CI
+		// Visibility; none of the scenarios assert git tags, so skip repository
+		// git work (including shallow-clone network fetches) entirely.
+		bazel.GitCLIDisabledEnv+"=true",
 		"XDG_CACHE_HOME="+filepath.Join(tempRoot, "xdg"),
 		"GOCACHE="+goCache,
 		"GOMODCACHE="+goModCache,

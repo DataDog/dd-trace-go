@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/internal/mockci"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -46,7 +47,8 @@ func CheckCorpusLifecycle(t *testing.T, enabled string, corpusSize int) {
 	if skippedCorpus {
 		enabled = "true"
 	}
-	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=corpus-child", "DD_CIVISIBILITY_ENABLED="+enabled)
+	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=corpus-child", "DD_CIVISIBILITY_ENABLED="+enabled,
+		bazel.GitCLIDisabledEnv+"=true")
 	if skippedCorpus {
 		cmd.Env = append(cmd.Env, "DD_FUZZ_CORPUS_SKIP=true")
 	}
@@ -395,7 +397,10 @@ func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	// Distinct mock backends can reuse an address. Their settings must not
 	// survive in a shared read cache and change a later child's directives.
+	// Children also skip the Git CLI: their short test timeouts must not be
+	// spent on repository git work such as shallow-clone fetches.
 	cmd.Env = append(slices.Clone(childEnv),
+		bazel.GitCLIDisabledEnv+"=true",
 		"HOME="+filepath.Join(cacheRoot, "home"),
 		"XDG_CACHE_HOME="+filepath.Join(cacheRoot, "cache"),
 		"LOCALAPPDATA="+filepath.Join(cacheRoot, "cache"),
