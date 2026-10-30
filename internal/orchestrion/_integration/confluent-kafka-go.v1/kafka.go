@@ -31,6 +31,11 @@ var (
 type TestCase struct {
 	container *kafkatest.KafkaContainer
 	addr      []string
+	clusterID string
+}
+
+func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
@@ -38,6 +43,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.container = container
 	tc.addr = []string{addr}
+	tc.clusterID = containers.KafkaClusterID(t, container)
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
@@ -60,6 +66,7 @@ func (tc *TestCase) produceMessage(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
+	time.Sleep(3 * time.Second)
 	defer func() {
 		<-delivery
 		producer.Close()
@@ -89,6 +96,7 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	}
 	c, err := kafka.NewConsumer(cfg)
 	require.NoError(t, err, "failed to create consumer")
+	time.Sleep(3 * time.Second)
 	defer c.Close()
 
 	err = c.Assign([]kafka.TopicPartition{
@@ -108,7 +116,7 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	require.Equal(t, "key2", string(m.Key))
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -118,9 +126,10 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"resource": "Produce Topic " + topic,
 			},
 			Meta: map[string]string{
-				"span.kind":        "producer",
-				"component":        "confluentinc/confluent-kafka-go/kafka",
-				"messaging.system": "kafka",
+				"span.kind":                  "producer",
+				"component":                  "confluentinc/confluent-kafka-go/kafka",
+				"messaging.system":           "kafka",
+				"messaging.kafka.cluster_id": tc.clusterID,
 			},
 			Children: trace.Traces{
 				{
@@ -135,6 +144,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":                         "confluentinc/confluent-kafka-go/kafka",
 						"messaging.system":                  "kafka",
 						"messaging.kafka.bootstrap.servers": "localhost",
+						"messaging.kafka.cluster_id":        tc.clusterID,
 					},
 				},
 			},
