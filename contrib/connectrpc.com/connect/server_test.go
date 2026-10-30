@@ -6,11 +6,12 @@
 package connect
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -75,13 +76,29 @@ func sendMessage(_ context.Context, conn connectrpc.StreamingHandlerConn) error 
 	return conn.Send(wrapperspb.String("hello"))
 }
 
+// codedPanic is a panic value with a code.
+var codedPanic = connectrpc.NewError(connectrpc.CodeNotFound, errors.New("coded panic"))
+
+// panickingUnary panics. Tests look for it in stack traces.
+//
+//go:noinline
+func panickingUnary(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
+	panic("handler panic")
+}
+
 func TestUnaryHandler(t *testing.T) {
 	var typedNilConnectErr *connectrpc.Error
+	errorPanics := &derefError{}
 	for _, test := range []struct {
 		name      string
 		next      connectrpc.UnaryFunc
 		wantPanic any
+		// panicNil runs the case with GODEBUG=panicnil=1, with which recover reports a panic(nil) as
+		// no panic.
+		panicNil  bool
+		goexit    bool   // the handler calls runtime.Goexit
 		wantError string // a substring of the recorded error; empty if none may be recorded
+		wantStack string // a substring of the recorded error's stack
 	}{
 		{
 			name: "success",
@@ -89,10 +106,7 @@ func TestUnaryHandler(t *testing.T) {
 				return connectrpc.NewResponse(request.Any().(*wrapperspb.StringValue)), nil
 			},
 		},
-		{
-			name: "panic", wantPanic: "handler panic", wantError: "handler panic",
-			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) { panic("handler panic") },
-		},
+		{name: "panic", next: panickingUnary, wantPanic: "handler panic", wantError: "handler panic", wantStack: "panickingUnary"},
 		{
 			name: "typed nil error", wantError: "unsafe to inspect",
 			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
@@ -109,20 +123,46 @@ func TestUnaryHandler(t *testing.T) {
 			name: "panic with an error that panics when unwrapped", wantPanic: wrappedDerefError, wantError: "unsafe to inspect",
 			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) { panic(wrappedDerefError) },
 		},
+		// The tracer calls Error while it holds the span's lock.
+		{
+			name: "error whose Error method panics", wantError: "panics when formatted",
+			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
+				return nil, &derefError{}
+			},
+		},
+		{
+			name: "panic with an error whose Error method panics", wantPanic: errorPanics, wantError: "panics when formatted",
+			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) { panic(errorPanics) },
+		},
+		{
+			name: "panic(nil)", panicNil: true, wantError: "panic: <nil>",
+			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
+				panicWith(nil)
+				return nil, nil
+			},
+		},
+		{
+			// recover reports nil for runtime.Goexit too, which finishes the span as a return does.
+			name: "runtime.Goexit", goexit: true,
+			next: func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
+				runtime.Goexit()
+				return nil, nil
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.panicNil && !runsWithPanicNil(t) {
+				return
+			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			parent := tracer.StartSpan("parent")
-			// A request that connect did not build is a handler's: its spec is not a client's.
+			// A request that connect did not build is a handler's: its spec is not a client's. It
+			// reports no protocol.
 			request := connectrpc.NewRequest(wrapperspb.String("hello"))
 			require.NoError(t, tracer.Inject(parent.Context(), tracer.HTTPHeadersCarrier(request.Header())))
-			handle := func() { _, _ = NewServerInterceptor().WrapUnary(test.next)(context.Background(), request) }
-			if test.wantPanic != nil {
-				assert.PanicsWithValue(t, test.wantPanic, handle)
-			} else {
-				assert.NotPanics(t, handle)
-			}
+			o := outcomeOf(t, func() { _, _ = NewServerInterceptor().WrapUnary(test.next)(context.Background(), request) })
+			assert.Equal(t, callOutcome{panicked: test.wantPanic != nil || test.panicNil, value: test.wantPanic, goexit: test.goexit}, o)
 			parent.Finish()
 
 			spans := spansNamed(mt.FinishedSpans(), operationServer)
@@ -130,26 +170,38 @@ func TestUnaryHandler(t *testing.T) {
 			span := spans[0]
 			assert.Equal(t, parent.Context().SpanID(), span.ParentID())
 			assert.Equal(t, "server", span.Tag(ext.SpanKind))
-			assert.Equal(t, "connectrpc", span.Tag(ext.RPCSystem))
+			for _, key := range []string{ext.RPCSystem, ext.GRPCFullMethod, tagConnectErrorCode, tagGRPCStatusCode} {
+				assert.Nil(t, span.Tag(key), key)
+			}
 			if test.wantError == "" {
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			} else {
 				assert.Contains(t, span.Tag(ext.ErrorMsg), test.wantError)
+			}
+			if test.wantStack != "" {
+				assert.Contains(t, span.Tag(ext.ErrorHandlingStack), test.wantStack)
 			}
 		})
 	}
 }
 
 // TestStreamingHandlerPanics checks that a panic finishes every span with an error and is
-// re-raised unchanged.
+// re-raised unchanged. The call span reports CodeInternal, which the transport sends for a panic,
+// and message spans the panic's own code.
 func TestStreamingHandlerPanics(t *testing.T) {
+	errorPanics := &derefError{}
 	for _, test := range []struct {
 		name      string
 		opts      []Option
 		conn      func(*fakeHandlerConn)
 		handler   connectrpc.StreamingHandlerFunc
 		wantPanic any
+		// panicNil runs the case with GODEBUG=panicnil=1, with which recover reports a panic(nil),
+		// such as the one wantPanic then stands for, as no panic.
+		panicNil  bool
 		wantSpans int
+		// wantMessageCode is the status of the message spans, if not "unknown".
+		wantMessageCode string
 	}{
 		{
 			name: "handler", wantPanic: "handler panic", wantSpans: 1,
@@ -157,6 +209,10 @@ func TestStreamingHandlerPanics(t *testing.T) {
 		},
 		{name: "Receive", conn: func(c *fakeHandlerConn) { c.receive = panics("receive panic") }, handler: receiveMessage, wantPanic: "receive panic", wantSpans: 2},
 		{name: "Send", conn: func(c *fakeHandlerConn) { c.send = panics("send panic") }, handler: sendMessage, wantPanic: "send panic", wantSpans: 2},
+		{
+			name: "Receive with a coded error", conn: func(c *fakeHandlerConn) { c.receive = panics(codedPanic) }, handler: receiveMessage,
+			wantPanic: codedPanic, wantSpans: 2, wantMessageCode: "not_found",
+		},
 		{
 			name: "Receive with an error that panics when unwrapped", conn: func(c *fakeHandlerConn) { c.receive = panics(wrappedDerefError) },
 			handler: receiveMessage, wantPanic: wrappedDerefError, wantSpans: 2,
@@ -170,21 +226,42 @@ func TestStreamingHandlerPanics(t *testing.T) {
 			name: "tagging metadata on the call span", opts: []Option{WithMetadataTags(), WithStreamMessages(false)},
 			conn: func(c *fakeHandlerConn) { c.headerPanicsAfter = 1 }, handler: receiveMessage, wantPanic: "header panic", wantSpans: 1,
 		},
+		{
+			name: "handler with an error whose Error method panics", wantPanic: errorPanics, wantSpans: 1,
+			handler: func(context.Context, connectrpc.StreamingHandlerConn) error { panic(errorPanics) },
+		},
+		{
+			name: "Receive with an error whose Error method panics", conn: func(c *fakeHandlerConn) { c.receive = panics(errorPanics) },
+			handler: receiveMessage, wantPanic: errorPanics, wantSpans: 2,
+		},
+		{
+			name: "handler with nil", panicNil: true, wantSpans: 1,
+			handler: func(context.Context, connectrpc.StreamingHandlerConn) error { panicWith(nil); return nil },
+		},
+		{name: "Receive with nil", conn: func(c *fakeHandlerConn) { c.receive = panics(nil) }, handler: receiveMessage, panicNil: true, wantSpans: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.panicNil && !runsWithPanicNil(t) {
+				return
+			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			conn := newFakeHandlerConn()
 			if test.conn != nil {
 				test.conn(conn)
 			}
-			assert.PanicsWithValue(t, test.wantPanic, func() {
+			assert.Equal(t, callOutcome{panicked: true, value: test.wantPanic}, outcomeOf(t, func() {
 				_ = traceFakeHandler(context.Background(), conn, test.handler, test.opts...)
-			})
+			}))
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, test.wantSpans)
 			for _, span := range spans {
 				assert.NotNil(t, span.Tag(ext.ErrorMsg), span.OperationName())
+				want := cmp.Or(test.wantMessageCode, "unknown")
+				if span.OperationName() == operationServer {
+					want = "internal"
+				}
+				assert.Equal(t, want, span.Tag(tagConnectErrorCode), span.OperationName())
 			}
 		})
 	}
@@ -192,18 +269,6 @@ func TestStreamingHandlerPanics(t *testing.T) {
 
 // TestStreamingHandlerUnsafeErrors checks errors whose methods panic because of a nil pointer.
 func TestStreamingHandlerUnsafeErrors(t *testing.T) {
-	var typedNilConnectErr *connectrpc.Error
-	errs := []struct {
-		name string
-		err  error
-	}{
-		{name: "typed nil connect error", err: typedNilConnectErr},
-		{name: "typed nil custom error", err: (*derefError)(nil)},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}},
-		{name: "wrapped typed nil connect error", err: fmt.Errorf("op: %w", typedNilConnectErr)},
-		{name: "wrapped typed nil custom error", err: wrappedDerefError},
-		{name: "wrapped typed nil error whose Is method panics", err: wrappedDerefIsError},
-	}
 	ops := []struct {
 		name         string
 		set          func(*fakeHandlerConn, error)
@@ -226,24 +291,25 @@ func TestStreamingHandlerUnsafeErrors(t *testing.T) {
 		},
 	}
 	for _, op := range ops {
-		for _, unsafe := range errs {
+		for _, unsafe := range unsafeErrors {
 			t.Run(op.name+"/"+unsafe.name, func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 				conn := newFakeHandlerConn()
 				op.set(conn, unsafe.err)
 				var err error
-				require.NotPanics(t, func() {
+				require.Equal(t, callOutcome{}, outcomeOf(t, func() {
 					err = traceFakeHandler(context.Background(), conn, op.handler(unsafe.err))
-				})
+				}))
 				assert.True(t, err == unsafe.err, "got %#v, want the original error", err)
+				wantError := cmp.Or(unsafe.wantError, "unsafe to inspect")
 				calls := spansNamed(mt.FinishedSpans(), operationServer)
 				require.Len(t, calls, 1)
-				assert.Contains(t, calls[0].Tag(ext.ErrorMsg), "unsafe to inspect")
+				assert.Contains(t, calls[0].Tag(ext.ErrorMsg), wantError)
 				messages := spansNamed(mt.FinishedSpans(), operationMessage)
 				require.Len(t, messages, op.wantMessages)
 				for _, span := range messages {
-					assert.Contains(t, span.Tag(ext.ErrorMsg), "unsafe to inspect")
+					assert.Contains(t, span.Tag(ext.ErrorMsg), wantError)
 				}
 			})
 		}

@@ -6,15 +6,19 @@
 package connect
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +26,7 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/connectrpc.com/connectshared"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -41,9 +46,31 @@ const (
 	bidiProcedure         = "/test.connect.v1.TestService/Bidi"
 )
 
+// The user-visible operation names, tag names and values that the tests check.
+const (
+	operationClient  = "connect.client"
+	operationServer  = "connect.server"
+	operationMessage = "connect.message"
+
+	tagMethodKind            = "connect.method.kind"
+	tagConnectErrorCode      = "rpc.connect_rpc.error_code"
+	tagGRPCStatusCode        = "rpc.grpc.status_code"
+	tagConnectRequest        = "connect.request"
+	tagGRPCRequest           = "grpc.request"
+	tagRequestMetadataPrefix = "rpc.request.metadata."
+
+	methodKindUnary        = "unary"
+	methodKindClientStream = "client_streaming"
+	methodKindServerStream = "server_streaming"
+	methodKindBidiStream   = "bidi_streaming"
+)
+
 var (
 	bidiSpec       = connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi}
 	bidiClientSpec = connectrpc.Spec{Procedure: bidiProcedure, StreamType: connectrpc.StreamTypeBidi, IsClient: true}
+
+	connectProtocol = connectshared.ProtocolFor(connectrpc.ProtocolConnect)
+	grpcProtocol    = connectshared.ProtocolFor(connectrpc.ProtocolGRPC)
 )
 
 // testProtocols are the wire protocols that end-to-end tests run over.
@@ -128,10 +155,27 @@ func (r *testRig) client(procedure string) *connectrpc.Client[wrapperspb.StringV
 // newTLSServer serves handler over HTTP/2, which bidirectional streams require.
 func newTLSServer(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
-	server := httptest.NewUnstartedServer(handler)
+	return startTLSServer(t, httptest.NewUnstartedServer(handler))
+}
+
+// startTLSServer starts server over HTTP/2. It is closed when the test ends.
+func startTLSServer(t *testing.T, server *httptest.Server) *httptest.Server {
+	t.Helper()
 	server.EnableHTTP2 = true
 	server.StartTLS()
-	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		closed := make(chan struct{})
+		go func() {
+			defer close(closed)
+			server.Close()
+		}()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			// Close waits for every handler: a stuck one fails the test rather than hanging it.
+			t.Error("the test server did not close")
+		}
+	})
 	return server
 }
 
@@ -216,6 +260,14 @@ func testError(value string) error {
 		return connectrpc.NewError(connectrpc.CodeInternal, context.Canceled)
 	case "eof":
 		return io.EOF
+	case "os-deadline":
+		return fmt.Errorf("query: %w", os.ErrDeadlineExceeded)
+	case "nil-error-detail":
+		// connect keeps the nil detail, and sends it as null over the Connect protocol.
+		err := connectrpc.NewError(connectrpc.CodeInternal, errors.New("internal error"))
+		err.AddDetail(nil)
+		err.AddDetail(errorWithDetails(connectrpc.CodeInternal).Details()[0])
+		return err
 	default:
 		return nil
 	}
@@ -292,11 +344,17 @@ func tagsWithPrefix(span *mocktracer.Span, prefix string) map[string]any {
 // child, through the span-start helpers the interceptor uses.
 func startAllSpanKinds(ctx context.Context, cfg *config) {
 	for _, component := range []instrumentation.Component{instrumentation.ComponentClient, instrumentation.ComponentServer} {
-		tags := make(map[string]any, 6)
-		addProcedureTags(tags, bidiSpec)
-		addProtocolTags(tags, &grpcProtocol, bidiProcedure)
-		call, callCtx := cfg.startCallSpan(ctx, component, bidiProcedure, nil, tags)
-		cfg.startMessageSpan(callCtx, messageTags(bidiSpec, &grpcProtocol), component).Finish()
+		call, callCtx := cfg.core.StartCallSpan(ctx, component, sharedSpec(bidiSpec), grpcProtocol, nil)
+		if component == instrumentation.ComponentClient {
+			var messages connectshared.ClientMessages
+			messages.Init(callCtx, cfg.core, sharedSpec(bidiSpec), grpcProtocol, connectshared.PeerTags{})
+			messages.Start().Finish()
+		} else {
+			var messages connectshared.ServerMessages
+			messages.Init(callCtx, cfg.core, sharedSpec(bidiSpec), grpcProtocol, tracer.TextMapCarrier{})
+			span, _ := messages.Start()
+			span.Finish()
+		}
 		call.Finish()
 	}
 }
@@ -329,6 +387,90 @@ func returns(err error) func() error { return func() error { return err } }
 
 func panics(value any) func() error { return func() error { panic(value) } }
 
+// panicWith panics with value, which may be nil.
+func panicWith(value any) { panic(value) }
+
+// callOutcome is how a call ended: by returning, with a panic, possibly with a nil value, or with
+// runtime.Goexit.
+type callOutcome struct {
+	panicked bool
+	value    any
+	goexit   bool
+}
+
+// outcomeOf runs fn on its own goroutine and reports how it ended. It fails the test if fn does not
+// end in time, which would mean a deadlock.
+func outcomeOf(t *testing.T, fn func()) callOutcome {
+	t.Helper()
+	done := make(chan callOutcome, 1)
+	go func() {
+		var o callOutcome
+		ended := false
+		defer func() {
+			if !ended {
+				o = callOutcome{goexit: true}
+			}
+			done <- o
+		}()
+		func() {
+			returned := false
+			defer func() {
+				if !returned {
+					o.panicked, o.value = true, recover()
+				}
+			}()
+			fn()
+			returned = true
+		}()
+		// Only a return or a recovered panic gets here: runtime.Goexit does not.
+		ended = true
+	}()
+	select {
+	case o := <-done:
+		return o
+	case <-time.After(5 * time.Second):
+		t.Fatal("the call did not end")
+		return callOutcome{}
+	}
+}
+
+// recoversNilPanics reports whether recover returns nil for panic(nil), as it does with
+// GODEBUG=panicnil=1.
+func recoversNilPanics() (recoversNil bool) {
+	defer func() { recoversNil = recover() == nil }()
+	panicWith(nil)
+	return false
+}
+
+// runsWithPanicNil reports whether the test runs with GODEBUG=panicnil=1. Otherwise it runs the
+// test again in a child process with that setting, which is process-wide, and fails unless it
+// passes there; the caller then returns.
+func runsWithPanicNil(t *testing.T) bool {
+	t.Helper()
+	if recoversNilPanics() {
+		return true
+	}
+	var pattern []string
+	for name := range strings.SplitSeq(t.Name(), "/") {
+		pattern = append(pattern, "^"+regexp.QuoteMeta(name)+"$")
+	}
+	args := []string{"-test.run=" + strings.Join(pattern, "/"), "-test.v", "-test.count=1"}
+	for _, arg := range os.Args[1:] {
+		// With go test -cover, the child's coverage joins the parent's.
+		if strings.HasPrefix(arg, "-test.gocoverdir=") {
+			args = append(args, arg)
+		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], args...)
+	cmd.Env = append(os.Environ(), "GODEBUG="+strings.TrimPrefix(os.Getenv("GODEBUG")+",panicnil=1", ","))
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "child process output:\n%s", out)
+	assert.Contains(t, string(out), "--- PASS: "+t.Name()+" ", "child process output:\n%s", out)
+	return false
+}
+
 // nilConnectErrorWrapper wraps a nil *connectrpc.Error without calling any of its methods.
 type nilConnectErrorWrapper struct{}
 
@@ -353,6 +495,24 @@ var (
 	wrappedDerefError   = fmt.Errorf("op: %w", (*derefError)(nil))
 	wrappedDerefIsError = fmt.Errorf("op: %w", (*derefIsError)(nil))
 )
+
+// unsafeErrors are the errors that a stream operation or a handler may return and whose methods
+// panic.
+var unsafeErrors = []struct {
+	name string
+	err  error
+	// wantError is what the spans record, if not the substitute for an unsafe error.
+	wantError string
+}{
+	{name: "typed nil connect error", err: (*connectrpc.Error)(nil)},
+	{name: "typed nil custom error", err: (*derefError)(nil)},
+	{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}},
+	{name: "wrapped typed nil connect error", err: fmt.Errorf("op: %w", (*connectrpc.Error)(nil))},
+	{name: "wrapped typed nil custom error", err: wrappedDerefError},
+	{name: "wrapped typed nil error whose Is method panics", err: wrappedDerefIsError},
+	// The tracer calls Error while it holds the span's lock.
+	{name: "error whose Error method panics", err: &derefError{}, wantError: "panics when formatted"},
+}
 
 func TestUnary(t *testing.T) {
 	for _, protocol := range testProtocols {
@@ -458,6 +618,18 @@ func TestUnaryErrors(t *testing.T) {
 			wantCode: uint32(connectrpc.CodeInternal), wantError: true,
 			wantTags: map[string]any{"grpc.status_details._0": "seconds:1", "connect.status_details._0": nil, ext.ErrorHandlingStack: nil},
 		},
+		{
+			// The tag's index is the detail's position on the wire. Over gRPC, connect itself panics
+			// sending a nil detail.
+			name: "nil error detail", value: "nil-error-detail", opts: []Option{WithErrorDetailTags(), NoDebugStack()},
+			wantCode: "internal", wantError: true,
+			wantTags: map[string]any{"connect.status_details._0": nil, "connect.status_details._1": "seconds:1", ext.ErrorHandlingStack: nil},
+		},
+		// connect's handlers send an uncoded error that wraps os.ErrDeadlineExceeded as
+		// CodeDeadlineExceeded.
+		{name: "uncoded os deadline", value: "os-deadline", wantCode: "deadline_exceeded", wantError: true},
+		{name: "gRPC uncoded os deadline", value: "os-deadline", protocolOpts: grpc, wantCode: uint32(connectrpc.CodeDeadlineExceeded), wantError: true},
+		{name: "non-error os deadline", value: "os-deadline", opts: []Option{NonErrorCodes(connectrpc.CodeDeadlineExceeded)}, wantCode: "deadline_exceeded"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -482,6 +654,101 @@ func TestUnaryErrors(t *testing.T) {
 				for key, value := range test.wantTags {
 					assert.Equal(t, value, span.Tag(key), "%s %s", kind, key)
 				}
+			}
+		})
+	}
+
+	// A traced server answers as an untraced one, and in time: the tracer calls Error while it holds
+	// the span's lock, and with GODEBUG=panicnil=1 recover reports panic(nil) as no panic. connect
+	// calls Error to send an error, so an error whose Error method panics resets the stream, and so
+	// does a panic unless a connect.WithRecover recovers it: HTTP/2 clients then get CodeInternal.
+	recovered := func(code connectrpc.Code) connectrpc.HandlerOption {
+		return connectrpc.WithRecover(func(_ context.Context, _ connectrpc.Spec, _ http.Header, value any) error {
+			return connectrpc.NewError(code, fmt.Errorf("recovered: %v", value))
+		})
+	}
+	panicBoom := func() error { panic("boom") }
+	for _, test := range []struct {
+		name     string
+		panicNil bool
+		fail     func() error
+		// outer and inner are handler options listed before and after the interceptor.
+		outer, inner []connectrpc.HandlerOption
+		wantError    string // a substring of the error that the traced server's call span records
+		// wantCode is the code that the client gets and, unless wantStatus is set, the status of the
+		// server's call span. Neither is checked if it is 0.
+		wantCode, wantStatus connectrpc.Code
+	}{
+		{name: "error whose Error method panics", fail: func() error { return &derefError{} }, wantError: "panics when formatted"},
+		{name: "panic(nil)", panicNil: true, fail: func() error { panicWith(nil); return nil }, wantError: "panic: <nil>"},
+		{name: "panic", fail: panicBoom, wantError: "panic: boom", wantCode: connectrpc.CodeInternal},
+		{
+			name: "panic with a coded error", fail: func() error { panic(connectrpc.NewError(connectrpc.CodeNotFound, errors.New("boom"))) },
+			wantError: "not_found: boom", wantCode: connectrpc.CodeInternal,
+		},
+		{
+			name: "panic recovered outside the interceptor", fail: panicBoom, outer: []connectrpc.HandlerOption{recovered(connectrpc.CodeInternal)},
+			wantError: "panic: boom", wantCode: connectrpc.CodeInternal,
+		},
+		{
+			// The span records the panic, not the error that the recover function returns.
+			name: "panic recovered outside the interceptor with another code", fail: panicBoom, outer: []connectrpc.HandlerOption{recovered(connectrpc.CodeUnavailable)},
+			wantError: "panic: boom", wantCode: connectrpc.CodeUnavailable, wantStatus: connectrpc.CodeInternal,
+		},
+		{
+			name: "panic recovered inside the interceptor", fail: panicBoom, inner: []connectrpc.HandlerOption{recovered(connectrpc.CodeUnavailable)},
+			wantError: "recovered: boom", wantCode: connectrpc.CodeUnavailable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.panicNil && !runsWithPanicNil(t) {
+				return
+			}
+			handler := func(context.Context, *connectrpc.Request[wrapperspb.StringValue]) (*connectrpc.Response[wrapperspb.StringValue], error) {
+				return nil, test.fail()
+			}
+			for _, protocol := range testProtocols {
+				t.Run(protocol.name, func(t *testing.T) {
+					mt := mocktracer.Start()
+					defer mt.Stop()
+					codes := make(map[bool]connectrpc.Code)
+					for _, traced := range []bool{false, true} {
+						opts := slices.Clone(test.outer)
+						if traced {
+							opts = append(opts, connectrpc.WithInterceptors(NewServerInterceptor()))
+						}
+						opts = append(opts, test.inner...)
+						mux := http.NewServeMux()
+						mux.Handle(unaryProcedure, connectrpc.NewUnaryHandler(unaryProcedure, handler, opts...))
+						server := httptest.NewUnstartedServer(mux)
+						// net/http logs the handlers' panics.
+						server.Config.ErrorLog = log.New(io.Discard, "", 0)
+						startTLSServer(t, server)
+						client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](server.Client(), server.URL+unaryProcedure, protocol.opts...)
+						var err error
+						require.Equal(t, callOutcome{}, outcomeOf(t, func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+							defer cancel()
+							_, err = client.CallUnary(ctx, connectrpc.NewRequest(wrapperspb.String("hello")))
+						}), "traced: %v", traced)
+						codes[traced] = connectrpc.CodeOf(err)
+					}
+					assert.Equal(t, codes[false], codes[true])
+					assert.NotEqual(t, connectrpc.CodeDeadlineExceeded, codes[true])
+					require.Eventually(t, func() bool { return len(spansNamed(mt.FinishedSpans(), operationServer)) == 1 }, 5*time.Second, time.Millisecond)
+					serverSpan := spansNamed(mt.FinishedSpans(), operationServer)[0]
+					assert.Contains(t, serverSpan.Tag(ext.ErrorMsg), test.wantError)
+					if test.wantCode == 0 {
+						return
+					}
+					assert.Equal(t, test.wantCode, codes[true])
+					status := cmp.Or(test.wantStatus, test.wantCode)
+					if protocol.grpc {
+						assert.EqualValues(t, status, serverSpan.Tag(tagGRPCStatusCode))
+					} else {
+						assert.Equal(t, status.String(), serverSpan.Tag(tagConnectErrorCode))
+					}
+				})
 			}
 		})
 	}
@@ -591,11 +858,11 @@ func TestStreamingFailsAfterAMessage(t *testing.T) {
 	for _, test := range []struct {
 		name, procedure, kind string
 		code                  connectrpc.Code
-		run                   func(*testing.T, *testRig)
+		run                   func(t *testing.T, rig *testRig, code connectrpc.Code)
 	}{
 		{
 			name: "server", procedure: serverStreamProcedure, kind: methodKindServerStream, code: connectrpc.CodeDataLoss,
-			run: func(t *testing.T, rig *testRig) {
+			run: func(t *testing.T, rig *testRig, _ connectrpc.Code) {
 				stream, err := rig.client(serverStreamProcedure).CallServerStream(context.Background(), connectrpc.NewRequest(wrapperspb.String(failAfterOne)))
 				require.NoError(t, err)
 				require.True(t, stream.Receive())
@@ -604,19 +871,12 @@ func TestStreamingFailsAfterAMessage(t *testing.T) {
 				require.NoError(t, stream.Close())
 			},
 		},
+		{name: "bidi", procedure: bidiProcedure, kind: methodKindBidiStream, code: connectrpc.CodeInternal, run: bidiFailingWith("error")},
+		// connect's handlers send an uncoded error that wraps os.ErrDeadlineExceeded as
+		// CodeDeadlineExceeded.
 		{
-			name: "bidi", procedure: bidiProcedure, kind: methodKindBidiStream, code: connectrpc.CodeInternal,
-			run: func(t *testing.T, rig *testRig) {
-				stream := rig.client(bidiProcedure).CallBidiStream(context.Background())
-				require.NoError(t, stream.Send(wrapperspb.String("hello")))
-				_, err := stream.Receive()
-				require.NoError(t, err)
-				require.NoError(t, stream.Send(wrapperspb.String("error")))
-				_, err = stream.Receive()
-				require.Equal(t, connectrpc.CodeInternal, connectrpc.CodeOf(err))
-				require.NoError(t, stream.CloseRequest())
-				require.NoError(t, stream.CloseResponse())
-			},
+			name: "bidi with an os deadline", procedure: bidiProcedure, kind: methodKindBidiStream, code: connectrpc.CodeDeadlineExceeded,
+			run: bidiFailingWith("os-deadline"),
 		},
 	} {
 		for _, protocol := range testProtocols {
@@ -624,7 +884,7 @@ func TestStreamingFailsAfterAMessage(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 				rig := newTestRig(t, []Option{WithService("server")}, []Option{WithService("client")}, protocol.opts...)
-				test.run(t, rig)
+				test.run(t, rig, test.code)
 				clientSpan, serverSpan := requireCallPair(t, mt, test.kind)
 				for _, span := range []*mocktracer.Span{clientSpan, serverSpan} {
 					assert.NotNil(t, span.Tag(ext.ErrorMsg), span.OperationName())
@@ -646,6 +906,22 @@ func TestStreamingFailsAfterAMessage(t *testing.T) {
 				assert.Equal(t, "client", failed[0].Tag(ext.ServiceName))
 			})
 		}
+	}
+}
+
+// bidiFailingWith returns a run function of TestStreamingFailsAfterAMessage that exchanges a
+// message on a bidi stream, then sends value, whose error the server fails with.
+func bidiFailingWith(value string) func(*testing.T, *testRig, connectrpc.Code) {
+	return func(t *testing.T, rig *testRig, code connectrpc.Code) {
+		stream := rig.client(bidiProcedure).CallBidiStream(context.Background())
+		require.NoError(t, stream.Send(wrapperspb.String("hello")))
+		_, err := stream.Receive()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(wrapperspb.String(value)))
+		_, err = stream.Receive()
+		require.Equal(t, code, connectrpc.CodeOf(err))
+		require.NoError(t, stream.CloseRequest())
+		require.NoError(t, stream.CloseResponse())
 	}
 }
 
@@ -1266,582 +1542,102 @@ func (sideCallInterceptor) WrapStreamingHandler(next connectrpc.StreamingHandler
 	return next
 }
 
-func TestFinishSpan(t *testing.T) {
-	var (
-		typedNilConnectErr *connectrpc.Error
-		call               = finishMode{}
-		message            = messageFinishMode
-		panicked           = finishMode{isPanic: true}
-		unaryGET           = unaryFinishMode(&connectProtocol, http.MethodGet)
-		boom               = connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
-	)
-	unaryGETPanic := unaryGET
-	unaryGETPanic.isPanic = true
-	for _, test := range []struct {
-		name     string
-		err      error
-		protocol string // connectrpc.ProtocolConnect if empty
-		mode     finishMode
-		opts     []Option
-		// wantCode is the protocol's status tag, or nil if the tag must be absent.
-		wantCode any
-		// wantError is a substring of the recorded error; empty if no error may be recorded.
-		wantError string
-		want304   bool
-		wantTags  map[string]any // a nil value means the tag is absent
-	}{
-		{name: "nil error", mode: call},
-		{name: "nil error over gRPC", protocol: connectrpc.ProtocolGRPC, mode: call, wantCode: 0},
-		{name: "error", err: boom, mode: call, wantCode: "internal", wantError: "boom"},
-		{name: "error over gRPC", err: boom, protocol: connectrpc.ProtocolGRPC, mode: call, wantCode: uint32(connectrpc.CodeInternal), wantError: "boom"},
-		{name: "error over gRPC-Web", err: boom, protocol: connectrpc.ProtocolGRPCWeb, mode: call, wantCode: uint32(connectrpc.CodeInternal), wantError: "boom"},
-		{name: "error over an unknown protocol", err: boom, protocol: "future-protocol", mode: call, wantCode: "internal", wantError: "boom"},
-		{
-			name: "error stack", err: boom, mode: call, wantCode: "internal", wantError: "boom",
-			wantTags: map[string]any{ext.ErrorHandlingStack: assert.ValueAssertionFunc(assert.NotNil)},
-		},
-		{
-			name: "NoDebugStack", err: boom, mode: call, opts: []Option{NoDebugStack()}, wantCode: "internal", wantError: "boom",
-			wantTags: map[string]any{ext.ErrorHandlingStack: nil, ext.ErrorStack: nil},
-		},
-
-		// End of stream.
-		{name: "EOF ends a message stream", err: io.EOF, mode: message},
-		{name: "EOF ends a gRPC message stream", err: io.EOF, protocol: connectrpc.ProtocolGRPC, mode: message, wantCode: 0},
-		{name: "connect end-of-stream sentinel", err: connectrpc.NewError(connectrpc.CodeUnknown, io.EOF), mode: message},
-		{name: "wrapped EOF ends a message stream", err: fmt.Errorf("read: %w", io.EOF), mode: message},
-		{name: "coded EOF is a message error", err: connectrpc.NewError(connectrpc.CodeInternal, io.EOF), mode: message, wantCode: "internal", wantError: "EOF"},
-		{name: "EOF is a call error", err: io.EOF, mode: call, wantCode: "unknown", wantError: "EOF"},
-
-		// Not modified.
-		{name: "not modified GET", err: connectrpc.NewNotModifiedError(nil), mode: unaryGET, want304: true},
-		{name: "not modified POST", err: connectrpc.NewNotModifiedError(nil), mode: unaryFinishMode(&connectProtocol, http.MethodPost), wantCode: "unknown", wantError: "not modified"},
-		{
-			name: "not modified over gRPC", err: connectrpc.NewNotModifiedError(nil), protocol: connectrpc.ProtocolGRPC,
-			mode: unaryFinishMode(&grpcProtocol, http.MethodGet), wantCode: uint32(connectrpc.CodeUnknown), wantError: "not modified",
-		},
-		{
-			name: "not modified over gRPC-Web", err: connectrpc.NewNotModifiedError(nil), protocol: connectrpc.ProtocolGRPCWeb,
-			mode: unaryFinishMode(protocolTagsFor(connectrpc.ProtocolGRPCWeb), http.MethodGet), wantCode: uint32(connectrpc.CodeUnknown), wantError: "not modified",
-		},
-
-		// Suppression.
-		{name: "uncoded cancellation is never an error", err: context.Canceled, mode: call, opts: []Option{NonErrorCodes()}, wantCode: "canceled"},
-		{name: "coded cancellation is suppressed by default", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled), mode: call, wantCode: "canceled"},
-		{
-			name: "coded cancellation can be an error", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled), mode: call,
-			opts: []Option{NonErrorCodes()}, wantCode: "canceled", wantError: "canceled",
-		},
-		{name: "explicit code beats the cause", err: connectrpc.NewError(connectrpc.CodeInternal, context.Canceled), mode: call, wantCode: "internal", wantError: "canceled"},
-		{name: "NonErrorCodes keeps the status", err: connectrpc.NewError(connectrpc.CodeNotFound, errors.New("nope")), mode: call, opts: []Option{NonErrorCodes(connectrpc.CodeNotFound)}, wantCode: "not_found"},
-		{
-			name: "error check can suppress an error", err: boom, mode: call, wantCode: "internal",
-			opts: []Option{WithErrorCheck(func(procedure string, err error) bool { return procedure != unaryProcedure || !errors.Is(err, boom) })},
-		},
-
-		// Panics are always recorded.
-		{name: "panic with a cancellation", err: context.Canceled, mode: panicked, wantCode: "canceled", wantError: "canceled"},
-		{name: "panic with a suppressed code", err: connectrpc.NewError(connectrpc.CodeCanceled, context.Canceled), mode: panicked, wantCode: "canceled", wantError: "canceled"},
-		{name: "panic with not modified", err: connectrpc.NewNotModifiedError(nil), mode: unaryGETPanic, wantCode: "unknown", wantError: "not modified"},
-		{name: "panic in a message span", err: context.Canceled, mode: finishMode{allowEOF: true, isPanic: true}, wantCode: "canceled", wantError: "canceled"},
-		{name: "panic with EOF in a message span", err: io.EOF, mode: finishMode{allowEOF: true, isPanic: true}, wantCode: "unknown", wantError: "EOF"},
-		{
-			name: "panic bypasses NonErrorCodes and the error check", err: connectrpc.NewError(connectrpc.CodeNotFound, errors.New("boom")), mode: panicked,
-			opts:     []Option{NonErrorCodes(connectrpc.CodeNotFound), WithErrorCheck(func(string, error) bool { return false })},
-			wantCode: "not_found", wantError: "boom",
-		},
-
-		// Errors that panic when inspected.
-		{name: "typed nil connect error", err: typedNilConnectErr, mode: call, wantCode: "unknown", wantError: "unsafe to inspect"},
-		{name: "typed nil custom error", err: (*derefError)(nil), mode: call, wantCode: "unknown", wantError: "unsafe to inspect"},
-		{
-			name: "nil connect error in the chain", err: nilConnectErrorWrapper{}, mode: unaryGET, opts: []Option{WithErrorDetailTags()},
-			wantCode: "unknown", wantError: "unsafe to inspect",
-		},
-		{name: "typed nil panic value", err: panicError(typedNilConnectErr), mode: panicked, wantCode: "unknown", wantError: "panic"},
-		{name: "typed nil message error", err: typedNilConnectErr, mode: message, wantCode: "unknown", wantError: "unsafe to inspect"},
-		{name: "wrapped typed nil custom error", err: wrappedDerefError, mode: message, wantCode: "unknown", wantError: "unsafe to inspect"},
-
-		// Error details.
-		{
-			name: "error details", err: errorWithDetails(connectrpc.CodeInternal), mode: call, opts: []Option{WithErrorDetailTags()},
-			wantCode: "internal", wantError: "internal error", wantTags: map[string]any{"connect.status_details._0": "seconds:1"},
-		},
-		{
-			name: "gRPC error details", err: errorWithDetails(connectrpc.CodeInternal), protocol: connectrpc.ProtocolGRPC, mode: call,
-			opts: []Option{WithErrorDetailTags()}, wantCode: uint32(connectrpc.CodeInternal), wantError: "internal error",
-			wantTags: map[string]any{"grpc.status_details._0": "seconds:1"},
-		},
-		{
-			name: "no error details for a suppressed error", err: errorWithDetails(connectrpc.CodeInternal), mode: call,
-			opts: []Option{WithErrorDetailTags(), NonErrorCodes(connectrpc.CodeInternal)}, wantCode: "internal",
-			wantTags: map[string]any{"connect.status_details._0": nil},
-		},
-		{
-			name: "no error details by default", err: errorWithDetails(connectrpc.CodeInternal), mode: call,
-			wantCode: "internal", wantError: "internal error", wantTags: map[string]any{"connect.status_details._0": nil},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			protocol := test.protocol
-			if protocol == "" {
-				protocol = connectrpc.ProtocolConnect
-			}
-			tags := protocolTagsFor(protocol)
-			span := tracer.StartSpan("finish")
-			require.NotPanics(t, func() {
-				finishSpan(span, test.err, unaryProcedure, tags, test.mode, newConfig(test.opts...))
-			})
-			require.Len(t, mt.FinishedSpans(), 1)
-			finished := mt.FinishedSpans()[0]
-			assert.EqualValues(t, test.wantCode, finished.Tag(tags.statusCodeTag))
-			other := &grpcProtocol
-			if tags == other {
-				other = &connectProtocol
-			}
-			assert.Nil(t, finished.Tag(other.statusCodeTag))
-			if test.wantError == "" {
-				assert.Nil(t, finished.Tag(ext.ErrorMsg))
-			} else {
-				assert.Contains(t, finished.Tag(ext.ErrorMsg), test.wantError)
-			}
-			if test.want304 {
-				assert.Equal(t, "304", finished.Tag(ext.HTTPCode))
-			} else {
-				assert.Nil(t, finished.Tag(ext.HTTPCode))
-			}
-			for key, value := range test.wantTags {
-				if check, ok := value.(assert.ValueAssertionFunc); ok {
-					check(t, finished.Tag(key), key)
-					continue
-				}
-				assert.Equal(t, value, finished.Tag(key), key)
-			}
-		})
-	}
-
-	t.Run("nil span", func(t *testing.T) {
-		assert.NotPanics(t, func() {
-			finishSpan(nil, errors.New("boom"), unaryProcedure, &connectProtocol, finishMode{}, newConfig())
-		})
-	})
-}
-
-func TestSpanBases(t *testing.T) {
-	bases := func(cfg *config) map[string]*tracer.StartSpanConfig {
-		return map[string]*tracer.StartSpanConfig{
-			"client call":    cfg.client.call,
-			"client message": cfg.client.message,
-			"server call":    cfg.server.call,
-			"server message": cfg.server.message,
+// TestLibrary checks that connectshared mirrors connect's codes, stream types and protocol names,
+// and that library reports what connect's errors are.
+func TestLibrary(t *testing.T) {
+	t.Run("codes", func(t *testing.T) {
+		for code := range connectrpc.Code(21) {
+			assert.Equal(t, code.String(), connectshared.Code(code).String(), "code %d", code)
 		}
-	}
-
-	for _, test := range []struct {
-		name      string
-		analytics bool
-	}{
-		{name: "hold only static tags"},
-		{name: "hold the analytics rate", analytics: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if test.analytics {
-				t.Setenv("DD_TRACE_CONNECT_ANALYTICS_ENABLED", "true")
-			}
-			// Per-span and user-provided values must stay out of the shared bases.
-			cfg := newConfig(WithService("svc"), WithCustomTag("custom-tag", "v"), WithSpanOptions(tracer.Tag("span-option", "v")))
-			static := map[string]any{ext.SpanType: "rpc", ext.Component: "connectrpc.com/connect"}
-			want := map[string]map[string]any{
-				"client call":    {ext.SpanKind: "client", "_dd.measured": 1},
-				"client message": {},
-				"server call":    {ext.SpanKind: "server", "_dd.measured": 1},
-				"server message": {"_dd.measured": 1},
-			}
-			for name, base := range bases(cfg) {
-				wantTags := maps.Clone(static)
-				maps.Copy(wantTags, want[name])
-				if test.analytics {
-					wantTags[ext.EventSampleRate] = 1.0
-				}
-				assert.Equal(t, wantTags, base.Tags, name)
-				// WithStartSpanConfig copies these fields into every span it starts.
-				assert.Nil(t, base.Parent, name)
-				assert.Nil(t, base.SpanLinks, name)
-				assert.Nil(t, base.Context, name)
-				assert.Zero(t, base.SpanID, name)
-				assert.True(t, base.StartTime.IsZero(), name)
-			}
-		})
-	}
-
-	t.Run("are not mutated by spans", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := newConfig(
-			WithCustomTag("custom-tag", "v"),
-			WithSpanOptions(tracer.Tag("span-option", "v"), tracer.ResourceName("from-span-option")),
-		)
-		before := map[string]map[string]any{}
-		for name, base := range bases(cfg) {
-			before[name] = maps.Clone(base.Tags)
-		}
-		for range 3 {
-			startAllSpanKinds(context.Background(), cfg)
-		}
-		for name, base := range bases(cfg) {
-			assert.Equal(t, before[name], base.Tags, name)
-		}
-		require.Len(t, mt.FinishedSpans(), 12)
+		assert.EqualValues(t, connectrpc.CodeCanceled, connectshared.CodeCanceled)
+		assert.EqualValues(t, connectrpc.CodeUnknown, connectshared.CodeUnknown)
+		assert.EqualValues(t, connectrpc.CodeDeadlineExceeded, connectshared.CodeDeadlineExceeded)
+		assert.EqualValues(t, connectrpc.CodeInternal, connectshared.CodeInternal)
 	})
 
-	t.Run("are safe for concurrent use", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := newConfig(WithCustomTag("custom-tag", "v"), WithSpanOptions(tracer.Tag("span-option", "v")))
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Go(func() {
-				for range 50 {
-					startAllSpanKinds(context.Background(), cfg)
-				}
+	t.Run("stream types", func(t *testing.T) {
+		assert.EqualValues(t, connectrpc.StreamTypeUnary, connectshared.StreamTypeUnary)
+		assert.EqualValues(t, connectrpc.StreamTypeClient, connectshared.StreamTypeClient)
+		assert.EqualValues(t, connectrpc.StreamTypeServer, connectshared.StreamTypeServer)
+		assert.EqualValues(t, connectrpc.StreamTypeBidi, connectshared.StreamTypeBidi)
+	})
+
+	t.Run("protocol names", func(t *testing.T) {
+		assert.Same(t, connectshared.ProtocolFor("connect"), connectshared.ProtocolFor(connectrpc.ProtocolConnect))
+		assert.Same(t, connectshared.ProtocolFor("grpc"), connectshared.ProtocolFor(connectrpc.ProtocolGRPC))
+		assert.Same(t, connectshared.ProtocolFor("grpcweb"), connectshared.ProtocolFor(connectrpc.ProtocolGRPCWeb))
+	})
+
+	t.Run("inspect error", func(t *testing.T) {
+		notFound := connectrpc.NewError(connectrpc.CodeNotFound, errors.New("nope"))
+		for _, test := range []struct {
+			name string
+			err  error
+			want connectshared.ErrorInfo
+		}{
+			{name: "connect error", err: notFound, want: connectshared.ErrorInfo{Coded: true, Code: connectshared.Code(connectrpc.CodeNotFound)}},
+			{name: "wrapped", err: fmt.Errorf("call: %w", notFound), want: connectshared.ErrorInfo{Coded: true, Code: connectshared.Code(connectrpc.CodeNotFound)}},
+			{name: "explicit code beats a cancellation", err: connectrpc.NewError(connectrpc.CodeInternal, context.Canceled), want: connectshared.ErrorInfo{Coded: true, Code: connectshared.CodeInternal}},
+			// Errors that a client reads from the wire are not remote: connect's servers send the code
+			// of any error that a handler returns.
+			{name: "wire error", err: connectrpc.NewWireError(connectrpc.CodeNotFound, errors.New("upstream")), want: connectshared.ErrorInfo{Coded: true, Code: connectshared.Code(connectrpc.CodeNotFound)}},
+			{name: "not modified", err: connectrpc.NewNotModifiedError(nil), want: connectshared.ErrorInfo{Coded: true, Code: connectshared.CodeUnknown}},
+			{name: "typed nil connect error", err: (*connectrpc.Error)(nil), want: connectshared.ErrorInfo{Coded: true, Nil: true}},
+			{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}, want: connectshared.ErrorInfo{Coded: true, Nil: true}},
+			{name: "not a connect error", err: errors.New("boom")},
+			{name: "cancellation", err: context.Canceled},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				var got connectshared.ErrorInfo
+				require.NotPanics(t, func() { got = library.InspectError(test.err) })
+				assert.Equal(t, test.want, got)
 			})
 		}
-		wg.Wait()
-		assert.Len(t, mt.FinishedSpans(), 8*50*4)
 	})
 
-	// A stream's Send and Receive may run concurrently and share the stream's message tags.
-	t.Run("share message tags safely", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := newConfig(WithSpanOptions(tracer.Tag("span-option", "v")), WithCustomTag("custom-tag", "v"))
-		shared := messageTags(bidiSpec, &connectProtocol)
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Go(func() {
-				for range 100 {
-					span := cfg.startMessageSpan(context.Background(), shared, instrumentation.ComponentServer)
-					span.SetTag("per-span", "x")
-					span.Finish()
+	t.Run("not modified", func(t *testing.T) {
+		assert.True(t, library.IsNotModified(connectrpc.NewNotModifiedError(nil)))
+		assert.True(t, library.IsNotModified(fmt.Errorf("call: %w", connectrpc.NewNotModifiedError(nil))))
+		assert.False(t, library.IsNotModified(connectrpc.NewError(connectrpc.CodeUnknown, errors.New("not modified"))))
+		assert.False(t, library.IsNotModified(errors.New("boom")))
+	})
+
+	t.Run("error details", func(t *testing.T) {
+		undecodable, err := connectrpc.NewErrorDetail(&anypb.Any{TypeUrl: "type.googleapis.com/does.not.Exist", Value: []byte{1}})
+		require.NoError(t, err)
+		withUndecodable := connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
+		withUndecodable.AddDetail(undecodable)
+		withUndecodable.AddDetail(errorWithDetails(connectrpc.CodeInternal).Details()[0])
+		withNil := connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
+		withNil.AddDetail(nil)
+		withNil.AddDetail(errorWithDetails(connectrpc.CodeInternal).Details()[0])
+		for _, test := range []struct {
+			name string
+			err  error
+			want map[int]string
+		}{
+			{name: "connect", err: errorWithDetails(connectrpc.CodeInternal), want: map[int]string{0: "seconds:1"}},
+			{name: "wrapped", err: fmt.Errorf("call: %w", errorWithDetails(connectrpc.CodeInternal)), want: map[int]string{0: "seconds:1"}},
+			{name: "undecodable detail is skipped", err: withUndecodable, want: map[int]string{1: "seconds:1"}},
+			{name: "nil detail is skipped", err: withNil, want: map[int]string{1: "seconds:1"}},
+			{name: "not a connect error", err: errors.New("boom"), want: map[int]string{}},
+			{name: "typed nil connect error", err: (*connectrpc.Error)(nil), want: map[int]string{}},
+			{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}, want: map[int]string{}},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				if len(test.want) == 0 {
+					// FinishSpan replaces an error that is unsafe to inspect before the library sees
+					// it, so the library also gets the error as is. With no detail to tag, the zero
+					// ErrorDetailTags is not used.
+					require.NotPanics(t, func() { library.ErrorDetails(test.err, connectshared.ErrorDetailTags{}) })
 				}
+				want := make(map[string]any, len(test.want))
+				for index, detail := range test.want {
+					want[fmt.Sprintf("connect.status_details._%d", index)] = detail
+				}
+				finished := finishedWith(t, newConfig(WithErrorDetailTags()), test.err)
+				assert.Equal(t, want, tagsWithPrefix(finished, "connect.status_details."))
 			})
 		}
-		wg.Wait()
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 800)
-		for _, span := range spans {
-			assert.Equal(t, bidiProcedure, span.Tag(ext.ResourceName))
-			assert.Equal(t, "connectrpc", span.Tag(ext.RPCSystem))
-		}
 	})
-
-	// The tracer drops _dd.measured from top-level spans, so the parent has the same service.
-	t.Run("measure call spans and server message spans", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent", tracer.ServiceName("svc"))
-		startAllSpanKinds(ctx, newConfig(WithService("svc")))
-		parent.Finish()
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 5)
-		clientCall := spansNamed(spans, operationClient)[0]
-		for _, span := range spans {
-			switch {
-			case span.OperationName() == "parent":
-			case span.ParentID() == clientCall.SpanID():
-				assert.Nil(t, span.Tag("_dd.measured"), "client message")
-			default:
-				assert.EqualValues(t, 1, span.Tag("_dd.measured"), span.OperationName())
-				assert.Nil(t, span.Tag("_dd.top_level"), span.OperationName())
-			}
-		}
-	})
-}
-
-func TestProtocolTagsFor(t *testing.T) {
-	connectTags := protocolTags{
-		system:              "connectrpc",
-		statusCodeTag:       "rpc.connect_rpc.error_code",
-		requestTag:          "connect.request",
-		statusDetailsPrefix: "connect.status_details.",
-		notModifiedEligible: true,
-	}
-	grpcTags := protocolTags{
-		system:              "grpc",
-		grpcStatus:          true,
-		statusCodeTag:       "rpc.grpc.status_code",
-		requestTag:          "grpc.request",
-		statusDetailsPrefix: "grpc.status_details.",
-	}
-	for _, test := range []struct {
-		protocol string
-		want     protocolTags
-	}{
-		{protocol: connectrpc.ProtocolConnect, want: connectTags},
-		{protocol: connectrpc.ProtocolGRPC, want: grpcTags},
-		{protocol: connectrpc.ProtocolGRPCWeb, want: grpcTags},
-		{protocol: "", want: connectTags},
-		{protocol: "future-protocol", want: connectTags},
-	} {
-		t.Run(fmt.Sprintf("%q", test.protocol), func(t *testing.T) {
-			assert.Equal(t, test.want, *protocolTagsFor(test.protocol))
-		})
-	}
-}
-
-func TestProcedureTags(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		spec connectrpc.Spec
-		want map[string]any
-	}{
-		{
-			name: "unary", spec: connectrpc.Spec{Procedure: "/acme.v1.Svc/Get", StreamType: connectrpc.StreamTypeUnary},
-			want: map[string]any{ext.ResourceName: "/acme.v1.Svc/Get", ext.RPCService: "acme.v1.Svc", ext.RPCMethod: "Get", "connect.method.kind": "unary"},
-		},
-		{
-			name: "client stream", spec: connectrpc.Spec{Procedure: "/acme.v1.Svc/Upload", StreamType: connectrpc.StreamTypeClient},
-			want: map[string]any{ext.ResourceName: "/acme.v1.Svc/Upload", ext.RPCService: "acme.v1.Svc", ext.RPCMethod: "Upload", "connect.method.kind": "client_streaming"},
-		},
-		{
-			name: "server stream", spec: connectrpc.Spec{Procedure: "/acme.v1.Svc/Watch", StreamType: connectrpc.StreamTypeServer},
-			want: map[string]any{ext.ResourceName: "/acme.v1.Svc/Watch", ext.RPCService: "acme.v1.Svc", ext.RPCMethod: "Watch", "connect.method.kind": "server_streaming"},
-		},
-		{
-			name: "bidi stream", spec: connectrpc.Spec{Procedure: "/acme.v1.Svc/Chat", StreamType: connectrpc.StreamTypeBidi},
-			want: map[string]any{ext.ResourceName: "/acme.v1.Svc/Chat", ext.RPCService: "acme.v1.Svc", ext.RPCMethod: "Chat", "connect.method.kind": "bidi_streaming"},
-		},
-		{
-			name: "unknown stream type", spec: connectrpc.Spec{Procedure: "/acme.v1.Svc/Chat", StreamType: connectrpc.StreamType(255)},
-			want: map[string]any{ext.ResourceName: "/acme.v1.Svc/Chat", ext.RPCService: "acme.v1.Svc", ext.RPCMethod: "Chat", "connect.method.kind": "unknown"},
-		},
-		{
-			name: "procedure without a method", spec: connectrpc.Spec{Procedure: "service"},
-			want: map[string]any{ext.ResourceName: "service", ext.RPCService: "service", ext.RPCMethod: "", "connect.method.kind": "unary"},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			tags := map[string]any{}
-			addProcedureTags(tags, test.spec)
-			assert.Equal(t, test.want, tags)
-		})
-	}
-}
-
-func TestCodeOf(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		err  error
-		want connectrpc.Code
-	}{
-		{name: "connect error", err: connectrpc.NewError(connectrpc.CodeNotFound, errors.New("nope")), want: connectrpc.CodeNotFound},
-		{name: "explicit code beats a cancellation", err: connectrpc.NewError(connectrpc.CodeInternal, context.Canceled), want: connectrpc.CodeInternal},
-		{name: "cancellation", err: fmt.Errorf("call: %w", context.Canceled), want: connectrpc.CodeCanceled},
-		{name: "deadline", err: context.DeadlineExceeded, want: connectrpc.CodeDeadlineExceeded},
-		{name: "other error", err: errors.New("boom"), want: connectrpc.CodeUnknown},
-		{name: "typed nil connect error", err: (*connectrpc.Error)(nil), want: connectrpc.CodeUnknown},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}, want: connectrpc.CodeUnknown},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, test.want, codeOf(test.err))
-		})
-	}
-}
-
-func TestIsExpectedStreamEOF(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{name: "nil", err: nil},
-		{name: "EOF", err: io.EOF, want: true},
-		{name: "wrapped EOF", err: fmt.Errorf("read: %w", io.EOF), want: true},
-		{name: "connect end-of-stream sentinel", err: connectrpc.NewError(connectrpc.CodeUnknown, io.EOF), want: true},
-		{name: "coded EOF", err: connectrpc.NewError(connectrpc.CodeInternal, io.EOF)},
-		{name: "other error", err: errors.New("boom")},
-		{name: "cancellation", err: context.Canceled},
-		{name: "typed nil connect error", err: (*connectrpc.Error)(nil)},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}},
-		{name: "typed nil custom error", err: (*derefError)(nil)},
-		{name: "wrapped typed nil custom error", err: wrappedDerefError},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var got bool
-			require.NotPanics(t, func() { got = isExpectedStreamEOF(test.err) })
-			assert.Equal(t, test.want, got)
-		})
-	}
-}
-
-func TestNormalizeError(t *testing.T) {
-	boom := errors.New("boom")
-	for _, test := range []struct {
-		name     string
-		err      error
-		wantSame bool
-	}{
-		{name: "nil", err: nil, wantSame: true},
-		{name: "error", err: boom, wantSame: true},
-		{name: "typed nil connect error", err: (*connectrpc.Error)(nil)},
-		{name: "typed nil custom error", err: (*derefError)(nil)},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}},
-		{name: "wrapped typed nil custom error", err: wrappedDerefError},
-		{name: "wrapped typed nil error whose Is method panics", err: wrappedDerefIsError},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var got error
-			require.NotPanics(t, func() { got = normalizeError(test.err) })
-			if test.wantSame {
-				assert.Equal(t, test.err, got)
-				return
-			}
-			require.Error(t, got)
-			assert.True(t, isSafeToInspect(got))
-			assert.Contains(t, got.Error(), fmt.Sprintf("%T", test.err))
-		})
-	}
-}
-
-func TestPanicError(t *testing.T) {
-	boom := errors.New("boom")
-	for _, test := range []struct {
-		name    string
-		value   any
-		check   func(*testing.T, error)
-		wantMsg string
-	}{
-		{name: "error", value: boom, check: func(t *testing.T, err error) { assert.ErrorIs(t, err, boom) }},
-		{name: "string", value: "boom", wantMsg: "panic: boom"},
-		{name: "typed nil connect error", value: (*connectrpc.Error)(nil), wantMsg: "panic"},
-		{name: "nil connect error in the chain", value: nilConnectErrorWrapper{}, wantMsg: "unsafe to inspect"},
-		{name: "wrapped typed nil custom error", value: wrappedDerefError, wantMsg: "unsafe to inspect"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var err error
-			require.NotPanics(t, func() { err = panicError(test.value) })
-			require.Error(t, err)
-			require.NotPanics(t, func() { _ = err.Error() })
-			if test.check != nil {
-				test.check(t, err)
-			}
-			assert.Contains(t, err.Error(), test.wantMsg)
-		})
-	}
-}
-
-func TestPeerTags(t *testing.T) {
-	// The tracer stores the port as a float64 metric.
-	for _, test := range []struct {
-		addr string
-		want map[string]any
-	}{
-		{addr: "127.0.0.1:8080", want: map[string]any{ext.NetworkDestinationIP: "127.0.0.1", ext.NetworkDestinationPort: 8080.0}},
-		{addr: "[::1]:443", want: map[string]any{ext.NetworkDestinationIP: "::1", ext.NetworkDestinationPort: 443.0}},
-		{addr: "::1", want: map[string]any{ext.NetworkDestinationIP: "::1"}},
-		{addr: "example.com", want: map[string]any{ext.NetworkDestinationName: "example.com"}},
-		{addr: "example.com:80", want: map[string]any{ext.NetworkDestinationName: "example.com", ext.NetworkDestinationPort: 80.0}},
-		{addr: "example.com:http", want: map[string]any{ext.NetworkDestinationName: "example.com"}},
-		{addr: "", want: map[string]any{}},
-	} {
-		t.Run(fmt.Sprintf("%q", test.addr), func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			span := tracer.StartSpan("peer")
-			newPeerTags(connectrpc.Peer{Addr: test.addr}).set(span)
-			span.Finish()
-			got := map[string]any{}
-			for _, key := range []string{ext.NetworkDestinationIP, ext.NetworkDestinationName, ext.NetworkDestinationPort} {
-				if value := mt.FinishedSpans()[0].Tag(key); value != nil {
-					got[key] = value
-				}
-			}
-			assert.Equal(t, test.want, got)
-		})
-	}
-}
-
-func TestInjectSpan(t *testing.T) {
-	t.Run("without a span", func(t *testing.T) {
-		header := make(http.Header)
-		injectSpan(context.Background(), header)
-		assert.Empty(t, header)
-	})
-
-	t.Run("with a span", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
-		defer span.Finish()
-		header := make(http.Header)
-		injectSpan(ctx, header)
-		assert.Equal(t, strconv.FormatUint(span.Context().SpanID(), 10), header.Get(tracer.DefaultParentIDHeader))
-	})
-}
-
-func TestSetRequestTags(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		opts     []Option
-		protocol *protocolTags
-		request  any
-		want     map[string]any // a nil value means the tag is absent
-	}{
-		{name: "disabled", protocol: &connectProtocol, request: wrapperspb.String("hello"), want: map[string]any{"connect.request": nil}},
-		{name: "connect", opts: []Option{WithRequestTags()}, protocol: &connectProtocol, request: wrapperspb.String("hello"), want: map[string]any{"connect.request": `"hello"`}},
-		{name: "gRPC", opts: []Option{WithRequestTags()}, protocol: &grpcProtocol, request: wrapperspb.String("hello"), want: map[string]any{"grpc.request": `"hello"`, "connect.request": nil}},
-		{name: "not a protobuf message", opts: []Option{WithRequestTags()}, protocol: &connectProtocol, request: "hello", want: map[string]any{"connect.request": nil}},
-		{name: "unencodable message", opts: []Option{WithRequestTags()}, protocol: &connectProtocol, request: wrapperspb.String("\xff"), want: map[string]any{"connect.request": nil}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			span := tracer.StartSpan("request")
-			setRequestTags(newConfig(test.opts...), test.request, test.protocol, span)
-			span.Finish()
-			for key, value := range test.want {
-				assert.Equal(t, value, mt.FinishedSpans()[0].Tag(key), key)
-			}
-		})
-	}
-
-	t.Run("nil span", func(t *testing.T) {
-		assert.NotPanics(t, func() {
-			setRequestTags(newConfig(WithRequestTags()), wrapperspb.String("hello"), &connectProtocol, nil)
-		})
-	})
-}
-
-func TestSetErrorDetailTags(t *testing.T) {
-	undecodable, err := connectrpc.NewErrorDetail(&anypb.Any{TypeUrl: "type.googleapis.com/does.not.Exist", Value: []byte{1}})
-	require.NoError(t, err)
-	withUndecodable := connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
-	withUndecodable.AddDetail(undecodable)
-	withUndecodable.AddDetail(errorWithDetails(connectrpc.CodeInternal).Details()[0])
-	for _, test := range []struct {
-		name     string
-		err      error
-		protocol *protocolTags
-		want     map[string]any
-	}{
-		{name: "connect", err: errorWithDetails(connectrpc.CodeInternal), protocol: &connectProtocol, want: map[string]any{"connect.status_details._0": "seconds:1"}},
-		{name: "gRPC", err: errorWithDetails(connectrpc.CodeInternal), protocol: &grpcProtocol, want: map[string]any{"grpc.status_details._0": "seconds:1"}},
-		{name: "wrapped", err: fmt.Errorf("call: %w", errorWithDetails(connectrpc.CodeInternal)), protocol: &connectProtocol, want: map[string]any{"connect.status_details._0": "seconds:1"}},
-		{name: "undecodable detail is skipped", err: withUndecodable, protocol: &connectProtocol, want: map[string]any{"connect.status_details._1": "seconds:1"}},
-		{name: "not a connect error", err: errors.New("boom"), protocol: &connectProtocol, want: map[string]any{}},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}, protocol: &connectProtocol, want: map[string]any{}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			span := tracer.StartSpan("details")
-			require.NotPanics(t, func() { setErrorDetailTags(span, test.err, test.protocol) })
-			span.Finish()
-			got := tagsWithPrefix(mt.FinishedSpans()[0], "connect.status_details.")
-			maps.Copy(got, tagsWithPrefix(mt.FinishedSpans()[0], "grpc.status_details."))
-			assert.Equal(t, test.want, got)
-		})
-	}
 }

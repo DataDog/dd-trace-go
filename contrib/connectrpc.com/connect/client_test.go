@@ -6,10 +6,12 @@
 package connect
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -41,6 +43,7 @@ type fakeClientConn struct {
 	headerCalls                                atomic.Int32
 	spec                                       func() connectrpc.Spec
 	peer                                       func() connectrpc.Peer
+	requestHeader                              func() http.Header
 	send, receive, closeRequest, closeResponse func() error
 }
 
@@ -71,6 +74,9 @@ func (*fakeClientConn) ResponseTrailer() http.Header { return make(http.Header) 
 
 func (c *fakeClientConn) RequestHeader() http.Header {
 	c.headerCalls.Add(1)
+	if c.requestHeader != nil {
+		return c.requestHeader()
+	}
 	return c.header
 }
 
@@ -83,11 +89,75 @@ func traceFakeClient(ctx context.Context, conn connectrpc.StreamingClientConn, o
 	})(ctx, bidiClientSpec)
 }
 
-// newTestStreamingClientConn wraps conn around span without the interceptor, so that a test can
-// drive the stream's bookkeeping directly.
-func newTestStreamingClientConn(cfg *config, conn connectrpc.StreamingClientConn, span *tracer.Span) *streamingClientConn {
-	peer := conn.Peer()
-	return newStreamingClientConn(context.Background(), cfg, conn, span, conn.Spec(), protocolTagsFor(peer.Protocol), newPeerTags(peer))
+// streamingClientInterceptor is an interceptor that only wraps streaming clients.
+type streamingClientInterceptor func(connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc
+
+func (streamingClientInterceptor) WrapUnary(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
+	return next
+}
+
+func (i streamingClientInterceptor) WrapStreamingClient(next connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc {
+	return i(next)
+}
+
+func (streamingClientInterceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc) connectrpc.StreamingHandlerFunc {
+	return next
+}
+
+// receiveHookConn passes what its conn's Receive returns through hook.
+type receiveHookConn struct {
+	connectrpc.StreamingClientConn
+	hook func(error) error
+}
+
+func (c *receiveHookConn) Receive(message any) error {
+	return c.hook(c.StreamingClientConn.Receive(message))
+}
+
+// closingServerURL returns the URL of an HTTP/1.1 server that reads each request up to the end of
+// its chunked body, then closes the connection without responding. It stops when the test ends.
+func closingServerURL(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				var read []byte
+				buf := make([]byte, 4096)
+				for !bytes.Contains(read, []byte("\r\n0\r\n\r\n")) {
+					n, err := conn.Read(buf)
+					if err != nil {
+						return
+					}
+					read = append(read, buf[:n]...)
+				}
+			}()
+		}
+	}()
+	return "http://" + listener.Addr().String()
+}
+
+// streamingHandlerInterceptor is an interceptor that only wraps streaming handlers.
+type streamingHandlerInterceptor func(connectrpc.StreamingHandlerFunc) connectrpc.StreamingHandlerFunc
+
+func (streamingHandlerInterceptor) WrapUnary(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
+	return next
+}
+
+func (streamingHandlerInterceptor) WrapStreamingClient(next connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc {
+	return next
+}
+
+func (i streamingHandlerInterceptor) WrapStreamingHandler(next connectrpc.StreamingHandlerFunc) connectrpc.StreamingHandlerFunc {
+	return i(next)
 }
 
 func TestUnaryClient(t *testing.T) {
@@ -140,6 +210,77 @@ func TestUnaryClient(t *testing.T) {
 		assert.Equal(t, "connectrpc", spans[0].Tag(ext.RPCSystem))
 		assert.Contains(t, spans[0].Tag(ext.ErrorMsg), "unary panic")
 	})
+
+	// connect decodes a null detail in a Connect error body as a nil detail, which it keeps.
+	t.Run("null error detail", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"code":"not_found","message":"nope","details":[null,{"type":"google.protobuf.Duration","value":"CAE"}]}`)
+		}))
+		defer server.Close()
+		client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](server.Client(), server.URL+unaryProcedure,
+			connectrpc.WithInterceptors(NewClientInterceptor(WithErrorDetailTags())))
+		var err error
+		require.Equal(t, callOutcome{}, outcomeOf(t, func() {
+			_, err = client.CallUnary(context.Background(), connectrpc.NewRequest(wrapperspb.String("hello")))
+		}))
+		require.Equal(t, connectrpc.CodeNotFound, connectrpc.CodeOf(err), "%v", err)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "not_found", spans[0].Tag(tagConnectErrorCode))
+		// The tag's index is the detail's position in the body.
+		assert.Equal(t, map[string]any{"connect.status_details._1": "seconds:1"}, tagsWithPrefix(spans[0], "connect.status_details."))
+	})
+
+	// The tracer calls Error while it holds the span's lock: the span records a substitute, and the
+	// call still returns the original error.
+	t.Run("error whose Error method panics", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		callErr := &derefError{}
+		failing := connectrpc.UnaryInterceptorFunc(func(connectrpc.UnaryFunc) connectrpc.UnaryFunc {
+			return func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) { return nil, callErr }
+		})
+		client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](
+			inMemoryHTTPClient{handler: http.NotFoundHandler()}, "http://unused"+unaryProcedure,
+			connectrpc.WithInterceptors(NewClientInterceptor(), failing))
+		var err error
+		require.Equal(t, callOutcome{}, outcomeOf(t, func() {
+			_, err = client.CallUnary(context.Background(), connectrpc.NewRequest(wrapperspb.String("hello")))
+		}))
+		assert.Same(t, callErr, err)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Contains(t, spans[0].Tag(ext.ErrorMsg), "panics when formatted")
+	})
+
+	// With GODEBUG=panicnil=1, recover reports panic(nil) as no panic.
+	t.Run("panic(nil)", func(t *testing.T) {
+		if !runsWithPanicNil(t) {
+			return
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		panicking := connectrpc.UnaryInterceptorFunc(func(connectrpc.UnaryFunc) connectrpc.UnaryFunc {
+			return func(context.Context, connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
+				panicWith(nil)
+				return nil, nil
+			}
+		})
+		client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](
+			inMemoryHTTPClient{handler: http.NotFoundHandler()}, "http://unused"+unaryProcedure,
+			connectrpc.WithInterceptors(NewClientInterceptor(), panicking))
+		assert.Equal(t, callOutcome{panicked: true}, outcomeOf(t, func() {
+			_, _ = client.CallUnary(context.Background(), connectrpc.NewRequest(wrapperspb.String("hello")))
+		}))
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "panic: <nil>", spans[0].Tag(ext.ErrorMsg))
+	})
 }
 
 func TestStreamingClientCallSpan(t *testing.T) {
@@ -173,6 +314,134 @@ func TestStreamingClientCallSpan(t *testing.T) {
 		assert.Equal(t, "canceled", span.Tag(tagConnectErrorCode))
 		assert.Nil(t, span.Tag(ext.ErrorMsg))
 	})
+
+	// The end of the context stands for an abandoned stream. A Receive that is running then and
+	// returns the end of the stream shows that the caller has the RPC's result.
+	for _, test := range []struct {
+		name       string
+		streamType connectrpc.StreamType
+		// deadline ends the context with a deadline while the Receive waits for it; otherwise the
+		// context is canceled while the Receive is running.
+		deadline bool
+		// receive is what the Receive that is running when the context ends returns.
+		receive error
+		// noMessage makes that Receive the first one of a client-streaming response, which then has
+		// no message: CloseAndReceive fails with CodeUnimplemented, which the call span records.
+		noMessage bool
+		wantCode  any
+		wantError bool
+	}{
+		{name: "end of a server stream", streamType: connectrpc.StreamTypeServer, receive: io.EOF},
+		{name: "end of a server stream after the deadline", streamType: connectrpc.StreamTypeServer, deadline: true, receive: io.EOF},
+		{name: "end of a bidi stream", streamType: connectrpc.StreamTypeBidi, receive: io.EOF},
+		{name: "end of a client-streaming response", streamType: connectrpc.StreamTypeClient, receive: io.EOF},
+		{
+			name: "client-streaming response without a message", streamType: connectrpc.StreamTypeClient, noMessage: true,
+			receive: io.EOF, wantCode: "unimplemented", wantError: true,
+		},
+		{
+			name: "client-streaming response without a message after the deadline", streamType: connectrpc.StreamTypeClient,
+			deadline: true, noMessage: true, receive: io.EOF, wantCode: "unimplemented", wantError: true,
+		},
+		{name: "server stream fails with the cancellation", streamType: connectrpc.StreamTypeServer, receive: context.Canceled, wantCode: "canceled"},
+		{
+			name: "server stream fails with the deadline", streamType: connectrpc.StreamTypeServer, deadline: true,
+			receive: context.DeadlineExceeded, wantCode: "deadline_exceeded", wantError: true,
+		},
+	} {
+		t.Run("the end of the response in flight when the context ends/"+test.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			ctx, cancel := context.WithCancel(context.Background())
+			if test.deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+			}
+			defer cancel()
+			procedure := map[connectrpc.StreamType]string{
+				connectrpc.StreamTypeClient: clientStreamProcedure,
+				connectrpc.StreamTypeServer: serverStreamProcedure,
+				connectrpc.StreamTypeBidi:   bidiProcedure,
+			}[test.streamType]
+			receiving, release := make(chan struct{}), make(chan struct{})
+			var receives int
+			conn := newFakeClientConn()
+			conn.spec = func() connectrpc.Spec {
+				return connectrpc.Spec{Procedure: procedure, StreamType: test.streamType, IsClient: true}
+			}
+			conn.receive = func() error {
+				// connect reads a client-streaming response with two Receives: the second one reads
+				// the end of the stream.
+				if receives++; test.streamType == connectrpc.StreamTypeClient && receives == 1 && !test.noMessage {
+					return nil
+				}
+				close(receiving)
+				if test.deadline {
+					<-ctx.Done()
+				} else {
+					<-release
+				}
+				return test.receive
+			}
+			inject := streamingClientInterceptor(func(connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc {
+				return func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn { return conn }
+			})
+			// The first interceptor is the outermost, so the tracing one wraps the fake conn.
+			client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](http.DefaultClient, "http://fake.invalid"+procedure,
+				connectrpc.WithInterceptors(NewClientInterceptor(), inject))
+			called := make(chan error, 1)
+			go func() {
+				switch test.streamType {
+				case connectrpc.StreamTypeClient:
+					stream := client.CallClientStream(ctx)
+					_ = stream.Send(wrapperspb.String("hello"))
+					_, err := stream.CloseAndReceive()
+					called <- err
+				case connectrpc.StreamTypeServer:
+					stream, err := client.CallServerStream(ctx, connectrpc.NewRequest(wrapperspb.String("hello")))
+					if err != nil {
+						called <- err
+						return
+					}
+					for stream.Receive() {
+					}
+					_ = stream.Close()
+					called <- stream.Err()
+				default:
+					stream := client.CallBidiStream(ctx)
+					_ = stream.Send(wrapperspb.String("hello"))
+					_ = stream.CloseRequest()
+					_, err := stream.Receive()
+					_ = stream.CloseResponse()
+					called <- err
+				}
+			}()
+			if !test.deadline {
+				<-receiving
+				// Returns once the context watcher has started.
+				cancel()
+				close(release)
+			}
+			var err error
+			requireReturns(t, "the call", func() { err = <-called })
+			switch {
+			case test.noMessage:
+				require.Equal(t, connectrpc.CodeUnimplemented, connectrpc.CodeOf(err), "%v", err)
+			case test.wantCode == nil:
+				require.True(t, err == nil || errors.Is(err, io.EOF), "%v", err)
+			}
+
+			spans := mt.FinishedSpans()
+			clients := spansNamed(spans, operationClient)
+			require.Len(t, clients, 1)
+			assert.Equal(t, test.wantCode, clients[0].Tag(tagConnectErrorCode))
+			assert.Equal(t, test.wantError, clients[0].Tag(ext.ErrorMsg) != nil, "error: %v", clients[0].Tag(ext.ErrorMsg))
+			if test.wantCode == nil {
+				for _, span := range spansNamed(spans, operationMessage) {
+					assert.Nil(t, span.Tag(ext.ErrorMsg), "message span")
+				}
+			}
+		})
+	}
 
 	// With the span pool, a finished call span's trace may already be flushed and its spans
 	// reused, so a late operation must not start a message span under it.
@@ -267,6 +536,163 @@ func TestStreamingClientCallSpan(t *testing.T) {
 		})
 	}
 
+	// assertCallError checks that span records err, or no error if err is nil, with its status.
+	assertCallError := func(t *testing.T, grpc bool, span *mocktracer.Span, err error) {
+		t.Helper()
+		if err == nil {
+			assert.Nil(t, span.Tag(ext.ErrorMsg))
+		} else {
+			assert.Equal(t, err.Error(), span.Tag(ext.ErrorMsg))
+		}
+		switch {
+		case grpc && err == nil:
+			assert.EqualValues(t, 0, span.Tag(tagGRPCStatusCode))
+		case grpc:
+			assert.EqualValues(t, connectrpc.CodeOf(err), span.Tag(tagGRPCStatusCode))
+		case err == nil:
+			assert.Nil(t, span.Tag(tagConnectErrorCode))
+		default:
+			assert.Equal(t, connectrpc.CodeOf(err).String(), span.Tag(tagConnectErrorCode))
+		}
+	}
+
+	// CloseAndReceive reads the single response of a client-streaming RPC with two Receives, and
+	// reports a response without a message, or with more than one, as CodeUnimplemented: the call
+	// span records what it returns. A caller that reads the stream through Conn() gets the call span
+	// of what its Receives returned, unless they are CloseAndReceive's. Message spans record what
+	// their Receive returned.
+	zeroMessages := connectrpc.NewError(connectrpc.CodeUnimplemented, errors.New("unary response has zero messages"))
+	multipleMessages := connectrpc.NewError(connectrpc.CodeUnimplemented, errors.New("unary response has multiple messages"))
+	lost := connectrpc.NewError(connectrpc.CodeDataLoss, errors.New("lost"))
+	for _, test := range []struct {
+		name      string
+		responses int   // the response messages that the server sends
+		end       error // the error that the server ends the RPC with
+		// codeEOF makes an inner interceptor code every error of the traced conn's Receive as
+		// unavailable, the end of the stream included, as an interceptor that translates errors
+		// would.
+		codeEOF bool
+		// viaConn reads the response through Conn() until a Receive fails, instead of with
+		// CloseAndReceive.
+		viaConn bool
+		// wantErr is what the call span records, and what CloseAndReceive returns.
+		wantErr error
+	}{
+		{name: "no response message", wantErr: zeroMessages},
+		{name: "extra response message", responses: 2, wantErr: multipleMessages},
+		{name: "extra response message before an error", responses: 2, end: lost, wantErr: multipleMessages},
+		{name: "error after the response message", responses: 1, end: lost, wantErr: lost},
+		{name: "no response message with a coded end of stream", codeEOF: true, wantErr: zeroMessages},
+		{name: "coded end of stream after the response message", responses: 1, codeEOF: true},
+		// A first Receive that returns the end of the stream is CloseAndReceive's.
+		{name: "Conn() reader/no response message", viaConn: true, wantErr: zeroMessages},
+		{name: "Conn() reader/extra response message", responses: 2, viaConn: true},
+		{name: "Conn() reader/extra response message before an error", responses: 2, end: lost, viaConn: true, wantErr: lost},
+		{name: "Conn() reader/error after the response message", responses: 1, end: lost, viaConn: true, wantErr: lost},
+		{name: "Conn() reader/no response message with a coded end of stream", codeEOF: true, viaConn: true, wantErr: zeroMessages},
+		// connect's end of stream is any error that wraps io.EOF.
+		{name: "Conn() reader/coded end of stream after the response message", responses: 1, codeEOF: true, viaConn: true},
+	} {
+		for _, protocol := range testProtocols {
+			t.Run(test.name+"/"+protocol.name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				respond := streamingHandlerInterceptor(func(connectrpc.StreamingHandlerFunc) connectrpc.StreamingHandlerFunc {
+					return func(_ context.Context, conn connectrpc.StreamingHandlerConn) error {
+						for conn.Receive(&wrapperspb.StringValue{}) == nil {
+						}
+						for range test.responses {
+							if err := conn.Send(wrapperspb.String("response")); err != nil {
+								return err
+							}
+						}
+						return test.end
+					}
+				})
+				mux := http.NewServeMux()
+				mux.Handle(clientStreamProcedure, connectrpc.NewClientStreamHandler(clientStreamProcedure, clientStreamHandler,
+					connectrpc.WithInterceptors(respond)))
+				// received is what the traced conn's Receives return.
+				var received []error
+				inner := streamingClientInterceptor(func(next connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc {
+					return func(ctx context.Context, spec connectrpc.Spec) connectrpc.StreamingClientConn {
+						return &receiveHookConn{StreamingClientConn: next(ctx, spec), hook: func(err error) error {
+							if err != nil && test.codeEOF {
+								err = connectrpc.NewError(connectrpc.CodeUnavailable, err)
+							}
+							received = append(received, err)
+							return err
+						}}
+					}
+				})
+				rig := &testRig{server: newTLSServer(t, mux), protocolOpts: append([]connectrpc.ClientOption{connectrpc.WithInterceptors(inner)}, protocol.opts...)}
+
+				stream := rig.client(clientStreamProcedure).CallClientStream(context.Background())
+				require.NoError(t, stream.Send(wrapperspb.String("hello")))
+				if test.viaConn {
+					conn, err := stream.Conn()
+					require.NoError(t, err)
+					require.NoError(t, conn.CloseRequest())
+					for conn.Receive(&wrapperspb.StringValue{}) == nil {
+					}
+					_ = conn.CloseResponse()
+				} else {
+					_, err := stream.CloseAndReceive()
+					if test.wantErr == nil {
+						require.NoError(t, err)
+					} else {
+						require.EqualError(t, err, test.wantErr.Error())
+						require.Equal(t, connectrpc.CodeOf(test.wantErr), connectrpc.CodeOf(err))
+					}
+				}
+
+				spans := mt.FinishedSpans()
+				calls := spansNamed(spans, operationClient)
+				require.Len(t, calls, 1)
+				assertCallError(t, protocol.grpc, calls[0], test.wantErr)
+				// One message span per Send and per Receive, in that order.
+				messages := spansNamed(spans, operationMessage)
+				require.Len(t, messages, 1+len(received))
+				assert.Nil(t, messages[0].Tag(ext.ErrorMsg), "Send")
+				for i, err := range received {
+					if err == nil || (errors.Is(err, io.EOF) && connectrpc.CodeOf(err) == connectrpc.CodeUnknown) {
+						assert.Nil(t, messages[1+i].Tag(ext.ErrorMsg), "Receive %d", i+1)
+					} else {
+						assert.Equal(t, err.Error(), messages[1+i].Tag(ext.ErrorMsg), "Receive %d", i+1)
+					}
+				}
+			})
+		}
+	}
+
+	// connect reports a response that never comes, because the server closes the connection, as an
+	// unavailable error that wraps io.ErrUnexpectedEOF. Before v1.17 it wrapped io.EOF, the shape
+	// the coded end-of-stream rows above cover.
+	for _, protocol := range testProtocols {
+		if protocol.name == "grpc" {
+			// gRPC requires HTTP/2.
+			continue
+		}
+		t.Run("connection closed without a response/"+protocol.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			transport := &http.Transport{}
+			defer transport.CloseIdleConnections()
+			client := connectrpc.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](&http.Client{Transport: transport},
+				closingServerURL(t)+clientStreamProcedure, append([]connectrpc.ClientOption{connectrpc.WithInterceptors(NewClientInterceptor())}, protocol.opts...)...)
+			var err error
+			requireReturns(t, "the call", func() {
+				stream := client.CallClientStream(context.Background())
+				_ = stream.Send(wrapperspb.String("hello"))
+				_, err = stream.CloseAndReceive()
+			})
+			require.Error(t, err)
+			calls := spansNamed(mt.FinishedSpans(), operationClient)
+			require.Len(t, calls, 1)
+			assertCallError(t, protocol.grpc, calls[0], err)
+		})
+	}
+
 	sentinelEOF := connectrpc.NewError(connectrpc.CodeUnknown, io.EOF)
 	codedEOF := connectrpc.NewError(connectrpc.CodeInternal, io.EOF)
 	nope := connectrpc.NewError(connectrpc.CodeNotFound, errors.New("nope"))
@@ -357,295 +783,6 @@ func TestStreamingClientCallSpan(t *testing.T) {
 	})
 }
 
-// TestStreamingClientTerminalError drives the bookkeeping of streams whose operations and context
-// race to end the stream, and checks which error the call span records.
-func TestStreamingClientTerminalError(t *testing.T) {
-	canceled := func(message string) error { return connectrpc.NewError(connectrpc.CodeCanceled, errors.New(message)) }
-	internal := func(message string) error { return connectrpc.NewError(connectrpc.CodeInternal, errors.New(message)) }
-	var (
-		rejected  = internal("flaky, ignore")
-		rejected2 = internal("flaky again")
-		accepted  = internal("real failure")
-		shadowed  = internal("shadowed")
-	)
-	rejects := func(errs ...error) func(int32, error) bool {
-		return func(_ int32, err error) bool { return !slices.Contains(errs, err) }
-	}
-	for _, test := range []struct {
-		name string
-		// errCheck is called with the number of calls so far, including this one.
-		errCheck   func(calls int32, err error) bool
-		noCallSpan bool
-		run        func(*streamingClientConn)
-		wantCode   any
-		// wantError is a substring of the recorded error; empty if none may be recorded.
-		wantError      string
-		wantCheckCalls int32 // checked if positive, or with noCallSpan
-	}{
-		{
-			name: "real error beats an earlier cancellation",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.requestFinish(context.Canceled)
-				c.endOperation(connectrpc.NewError(connectrpc.CodeUnavailable, errors.New("boom")), true, false)
-			},
-			wantCode: "unavailable", wantError: "boom",
-		},
-		{
-			name: "panic displaces a stored error",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(canceled("canceled"), true, false)
-				c.endOperation(errors.New("boom"), true, true)
-			},
-			wantCode: "unknown", wantError: "boom",
-		},
-		{
-			name: "panic is never displaced",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(errors.New("boom"), true, true)
-				c.endOperation(internal("later"), true, false)
-			},
-			wantCode: "unknown", wantError: "boom",
-		},
-		{
-			name: "real error replaces a suppressed one",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(canceled("send canceled"), true, false)
-				c.endOperation(internal("boom"), true, false)
-			},
-			wantCode: "internal", wantError: "boom",
-		},
-		{
-			// Were the rejected error only a fallback, the status would stay canceled.
-			name:     "rejected real error still replaces a suppressed one",
-			errCheck: rejects(rejected),
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(canceled("send canceled"), true, false)
-				c.endOperation(rejected, true, false)
-			},
-			wantCode: "internal", wantCheckCalls: 1,
-		},
-		{
-			name: "context deadline replaces a suppressed error",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(canceled("send canceled"), true, false)
-				c.requestFinish(context.DeadlineExceeded)
-				// The in-flight operation ends without ending the stream itself.
-				c.endOperation(nil, false, false)
-			},
-			wantCode: "deadline_exceeded", wantError: "deadline exceeded",
-		},
-		{
-			name: "context deadline survives a later suppressed error",
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.requestFinish(context.DeadlineExceeded)
-				c.endOperation(canceled("receive canceled"), true, false)
-				c.endOperation(nil, false, false)
-			},
-			wantCode: "deadline_exceeded", wantError: "deadline exceeded",
-		},
-		{
-			name:     "error check runs once for a suppressed then a real error",
-			errCheck: func(int32, error) bool { return true },
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(canceled("send canceled"), true, false)
-				c.endOperation(internal("boom"), true, false)
-			},
-			wantCode: "internal", wantError: "boom", wantCheckCalls: 1,
-		},
-		{
-			name:     "falls back when the error check rejects the first real error",
-			errCheck: rejects(rejected),
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(rejected, true, false)
-				c.endOperation(accepted, true, false)
-			},
-			wantCode: "internal", wantError: "real failure", wantCheckCalls: 2,
-		},
-		{
-			name:     "keeps the first real error when the error check rejects the second",
-			errCheck: rejects(rejected),
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(accepted, true, false)
-				c.endOperation(rejected, true, false)
-			},
-			wantCode: "internal", wantError: "real failure", wantCheckCalls: 1,
-		},
-		{
-			// A stateful check would flip its verdict if the primary error were checked twice.
-			name:     "error check runs once for the primary error",
-			errCheck: func(calls int32, _ error) bool { return calls == 1 },
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(accepted, true, false)
-				c.endOperation(shadowed, true, false)
-			},
-			wantCode: "internal", wantError: "real failure", wantCheckCalls: 1,
-		},
-		{
-			name:     "three-way race keeps the accepted fallback",
-			errCheck: rejects(rejected, rejected2),
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(rejected, true, false)
-				c.requestFinish(context.DeadlineExceeded)
-				c.endOperation(rejected2, true, false)
-			},
-			wantCode: "deadline_exceeded", wantError: "deadline exceeded",
-		},
-		{
-			name:     "error check rejecting every error keeps the status",
-			errCheck: rejects(rejected, rejected2),
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.beginOperation()
-				c.endOperation(rejected, true, false)
-				c.endOperation(rejected2, true, false)
-			},
-			wantCode: "internal", wantCheckCalls: 2,
-		},
-		{
-			name:       "no call span skips classification",
-			errCheck:   func(int32, error) bool { return true },
-			noCallSpan: true,
-			run: func(c *streamingClientConn) {
-				c.beginOperation()
-				c.endOperation(internal("boom"), true, false)
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			var calls atomic.Int32
-			var opts []Option
-			if test.errCheck != nil {
-				opts = append(opts, WithErrorCheck(func(_ string, err error) bool {
-					return test.errCheck(calls.Add(1), err)
-				}))
-			}
-			var span *tracer.Span
-			if !test.noCallSpan {
-				span = tracer.StartSpan("connect.client")
-			}
-			conn := newTestStreamingClientConn(newConfig(opts...), newFakeClientConn(), span)
-			require.NotPanics(t, func() { test.run(conn) })
-			if test.wantCheckCalls > 0 || test.noCallSpan {
-				assert.Equal(t, test.wantCheckCalls, calls.Load(), "error check calls")
-			}
-			if test.noCallSpan {
-				assert.Empty(t, mt.FinishedSpans())
-				return
-			}
-			require.Len(t, mt.FinishedSpans(), 1)
-			finished := mt.FinishedSpans()[0]
-			assert.Equal(t, test.wantCode, finished.Tag(tagConnectErrorCode))
-			if test.wantError == "" {
-				assert.Nil(t, finished.Tag(ext.ErrorMsg))
-			} else {
-				assert.Contains(t, finished.Tag(ext.ErrorMsg), test.wantError)
-			}
-		})
-	}
-
-	// An application may keep using a stream whose call span has finished.
-	t.Run("errors after the finish are not kept", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		conn := newTestStreamingClientConn(newConfig(), newFakeClientConn(), tracer.StartSpan("connect.client"))
-		conn.beginOperation()
-		conn.endOperation(internal("first"), true, false)
-		require.Len(t, mt.FinishedSpans(), 1)
-		for range 100 {
-			conn.beginOperation()
-			conn.endOperation(internal("later"), true, false)
-		}
-		conn.mu.Lock()
-		defer conn.mu.Unlock()
-		assert.Empty(t, conn.fallbacks)
-		assert.Equal(t, internal("first").Error(), conn.terminal.err.Error())
-	})
-}
-
-func TestStreamingClientContextWatcher(t *testing.T) {
-	t.Run("an operation ending the stream waits for a running watcher", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		stopCalled := make(chan struct{})
-		conn := newTestStreamingClientConn(newConfig(), newFakeClientConn(), tracer.StartSpan("connect.client"))
-		conn.ctxFinishDone = make(chan struct{})
-		// What context.AfterFunc's stop returns once the context is done and the watcher has
-		// started.
-		conn.stopContextDone = func() bool {
-			close(stopCalled)
-			return false
-		}
-		conn.beginOperation()
-
-		endOperationDone := make(chan struct{})
-		go func() {
-			defer close(endOperationDone)
-			// Finishing with this suppressed error without waiting for the watcher would record
-			// no error.
-			conn.endOperation(connectrpc.NewError(connectrpc.CodeCanceled, errors.New("send canceled")), true, false)
-		}()
-		select {
-		case <-stopCalled:
-		case <-time.After(5 * time.Second):
-			t.Fatal("endOperation did not stop the context watcher")
-		}
-		select {
-		case <-endOperationDone:
-			t.Fatal("endOperation did not wait for the context watcher")
-		case <-time.After(20 * time.Millisecond):
-		}
-		conn.requestFinish(context.DeadlineExceeded)
-		select {
-		case <-endOperationDone:
-		case <-time.After(5 * time.Second):
-			t.Fatal("endOperation did not resume after the context watcher returned")
-		}
-
-		require.Len(t, mt.FinishedSpans(), 1)
-		finished := mt.FinishedSpans()[0]
-		assert.Equal(t, "deadline_exceeded", finished.Tag(tagConnectErrorCode))
-		assert.NotNil(t, finished.Tag(ext.ErrorMsg))
-	})
-
-	// The watcher runs in its own goroutine, where a panic would crash the process.
-	t.Run("recovers an error check panic", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := newConfig(WithErrorCheck(func(string, error) bool { panic("errCheck panic") }))
-		conn := newTestStreamingClientConn(cfg, newFakeClientConn(), tracer.StartSpan("connect.client"))
-		require.NotPanics(t, func() {
-			conn.requestFinish(connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")))
-		})
-		require.Len(t, mt.FinishedSpans(), 1)
-		assert.NotNil(t, mt.FinishedSpans()[0].Tag(ext.ErrorMsg))
-	})
-}
-
 func TestStreamingClientErrorCheckReentry(t *testing.T) {
 	boom := connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
 	for _, test := range []struct {
@@ -703,19 +840,35 @@ func TestStreamingClientErrorCheckReentry(t *testing.T) {
 // TestStreamingClientPanics checks that a panic finishes every span with an error and is
 // re-raised unchanged.
 func TestStreamingClientPanics(t *testing.T) {
+	errorPanics := &derefError{}
+	connectEOF := connectrpc.NewError(connectrpc.CodeUnknown, io.EOF)
+	receive := func(stream connectrpc.StreamingClientConn) { _ = stream.Receive(nil) }
 	for _, test := range []struct {
-		name      string
-		opts      func() []Option
-		conn      func(*fakeClientConn) // nil if creating the connection panics with wantPanic
-		op        func(connectrpc.StreamingClientConn)
-		wantPanic any
+		name string
+		opts func() []Option
+		conn func(*fakeClientConn) // nil if creating the connection panics with wantPanic
+		op   func(connectrpc.StreamingClientConn)
+		// unknownProtocol is set if the panic happens before the conn reports its protocol: the call
+		// span then has none of the protocol's tags.
+		unknownProtocol bool
+		wantPanic       any
+		// panicNil runs the case with GODEBUG=panicnil=1, with which recover reports a panic(nil),
+		// such as the one wantPanic then stands for, as no panic.
+		panicNil  bool
 		wantSpans int
 	}{
-		{name: "creating the connection", wantPanic: "constructor panic", wantSpans: 1},
-		{name: "creating the connection with an error that panics when unwrapped", wantPanic: wrappedDerefError, wantSpans: 1},
+		{name: "creating the connection", unknownProtocol: true, wantPanic: "constructor panic", wantSpans: 1},
 		{
-			name: "reading the peer", wantPanic: "peer panic", wantSpans: 1,
+			name: "creating the connection with an error that panics when unwrapped", unknownProtocol: true,
+			wantPanic: wrappedDerefError, wantSpans: 1,
+		},
+		{
+			name: "reading the peer", unknownProtocol: true, wantPanic: "peer panic", wantSpans: 1,
 			conn: func(c *fakeClientConn) { c.peer = func() connectrpc.Peer { panic("peer panic") } },
+		},
+		{
+			name: "reading the request header", wantPanic: "header panic", wantSpans: 1,
+			conn: func(c *fakeClientConn) { c.requestHeader = func() http.Header { panic("header panic") } },
 		},
 		{name: "Send", conn: func(c *fakeClientConn) { c.send = panics("send panic") }, op: sendHello, wantPanic: "send panic", wantSpans: 2},
 		{
@@ -734,6 +887,13 @@ func TestStreamingClientPanics(t *testing.T) {
 			name: "Receive with io.EOF", opts: func() []Option { return []Option{WithStreamMessages(false)} },
 			conn: func(c *fakeClientConn) { c.receive = panics(io.EOF) },
 			op:   func(stream connectrpc.StreamingClientConn) { _ = stream.Receive(nil) }, wantPanic: io.EOF, wantSpans: 1,
+		},
+		// A Send that returns connect's end-of-stream signal doesn't end the stream, but a panic with
+		// it does.
+		{name: "Send with io.EOF", conn: func(c *fakeClientConn) { c.send = panics(io.EOF) }, op: sendHello, wantPanic: io.EOF, wantSpans: 2},
+		{
+			name: "Send with connect's io.EOF", conn: func(c *fakeClientConn) { c.send = panics(connectEOF) },
+			op: sendHello, wantPanic: connectEOF, wantSpans: 2,
 		},
 		{
 			name: "CloseRequest", conn: func(c *fakeClientConn) { c.closeRequest = panics("close request panic") },
@@ -760,8 +920,28 @@ func TestStreamingClientPanics(t *testing.T) {
 			opts: func() []Option { return []Option{WithErrorCheck(func(string, error) bool { panic("errCheck panic") })} },
 			conn: func(c *fakeClientConn) { c.send = returns(connectrpc.NewError(connectrpc.CodeInternal, io.EOF)) },
 		},
+		{
+			name: "creating the connection with an error whose Error method panics", unknownProtocol: true,
+			wantPanic: errorPanics, wantSpans: 1,
+		},
+		{
+			name: "Receive with an error whose Error method panics", conn: func(c *fakeClientConn) { c.receive = panics(errorPanics) },
+			op: receive, wantPanic: errorPanics, wantSpans: 2,
+		},
+		{name: "creating the connection with nil", unknownProtocol: true, panicNil: true, wantSpans: 1},
+		{name: "Receive with nil", conn: func(c *fakeClientConn) { c.receive = panics(nil) }, op: receive, panicNil: true, wantSpans: 2},
+		{
+			name: "error check with nil", op: sendHello, panicNil: true, wantSpans: 2,
+			opts: func() []Option {
+				return []Option{WithErrorCheck(func(string, error) bool { panicWith(nil); return true })}
+			},
+			conn: func(c *fakeClientConn) { c.send = returns(connectrpc.NewError(connectrpc.CodeInternal, io.EOF)) },
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if test.panicNil && !runsWithPanicNil(t) {
+				return
+			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			var opts []Option
@@ -789,28 +969,97 @@ func TestStreamingClientPanics(t *testing.T) {
 			}
 			calls := spansNamed(spans, operationClient)
 			require.Len(t, calls, 1)
-			// Even when the connection, and so the protocol, is unknown.
-			assert.Equal(t, "connectrpc", calls[0].Tag(ext.RPCSystem))
+			wantSystem, wantCode := any("connectrpc"), any("unknown")
+			if test.unknownProtocol {
+				wantSystem, wantCode = nil, nil
+			}
+			assert.Equal(t, wantSystem, calls[0].Tag(ext.RPCSystem))
+			assert.Equal(t, wantCode, calls[0].Tag(tagConnectErrorCode))
 		})
+	}
+}
+
+// TestClientUnknownProtocol checks that a call whose connection reports no protocol has none of the
+// tags that name one, and so no peer.service derived from rpc.service, but records its error.
+func TestClientUnknownProtocol(t *testing.T) {
+	failure := connectrpc.NewError(connectrpc.CodeUnavailable, errors.New("circuit open"))
+	for _, test := range []struct {
+		name string
+		// open opens the connection in place of connect, unless it is nil.
+		open      connectrpc.StreamingClientFunc
+		wantPanic any
+	}{
+		{name: "known protocol"},
+		{
+			name: "opening panics", wantPanic: "open panic",
+			open: func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn { panic("open panic") },
+		},
+		{
+			name: "a connection that an interceptor returns",
+			open: func(_ context.Context, spec connectrpc.Spec) connectrpc.StreamingClientConn {
+				conn := newFakeClientConn()
+				conn.spec = func() connectrpc.Spec { return spec }
+				conn.peer = func() connectrpc.Peer { return connectrpc.Peer{} }
+				conn.send, conn.closeRequest, conn.receive = returns(failure), returns(failure), returns(failure)
+				return conn
+			},
+		},
+	} {
+		for _, protocol := range testProtocols {
+			t.Run(test.name+"/"+protocol.name, func(t *testing.T) {
+				tr, agent, err := tracertest.Bootstrap(t, tracer.WithPeerServiceDefaults(true), tracer.WithLogger(testutils.DiscardLogger()))
+				require.NoError(t, err)
+				mux := http.NewServeMux()
+				mux.Handle(clientStreamProcedure, connectrpc.NewClientStreamHandler(clientStreamProcedure, clientStreamHandler))
+				opts := slices.Clone(protocol.opts)
+				if test.open != nil {
+					open := streamingClientInterceptor(func(connectrpc.StreamingClientFunc) connectrpc.StreamingClientFunc { return test.open })
+					opts = append(opts, connectrpc.WithInterceptors(open))
+				}
+				rig := &testRig{server: newTLSServer(t, mux), protocolOpts: opts}
+				o := outcomeOf(t, func() {
+					stream := rig.client(clientStreamProcedure).CallClientStream(context.Background())
+					_ = stream.Send(wrapperspb.String("hello"))
+					_, _ = stream.CloseAndReceive()
+				})
+				assert.Equal(t, callOutcome{panicked: test.wantPanic != nil, value: test.wantPanic}, o)
+				tr.Flush()
+
+				spans := agent.(agenttest.SpanLister).Spans()
+				var call *agenttest.Span
+				for _, span := range spans {
+					if span.Operation == operationClient {
+						require.Nil(t, call, "more than one call span")
+						call = span
+					}
+				}
+				require.NotNil(t, call)
+				if test.open == nil {
+					assert.Equal(t, protocol.system, call.Meta[ext.RPCSystem])
+					assert.Equal(t, "test.connect.v1.TestService", call.Meta[ext.PeerService])
+					return
+				}
+				for _, key := range []string{ext.RPCSystem, ext.GRPCFullMethod, tagConnectErrorCode, tagGRPCStatusCode, ext.PeerService} {
+					assert.NotContains(t, call.Tags, key)
+				}
+				assert.EqualValues(t, 1, call.Error)
+				assert.NotEmpty(t, call.Meta[ext.ErrorMsg])
+				for _, span := range spans {
+					if span.Operation == operationMessage {
+						assert.NotContains(t, span.Tags, ext.RPCSystem, "message span")
+					}
+				}
+			})
+		}
 	}
 }
 
 // TestStreamingClientUnsafeErrors checks errors whose methods panic because of a nil pointer.
 func TestStreamingClientUnsafeErrors(t *testing.T) {
-	var typedNilConnectErr *connectrpc.Error
-	errs := []struct {
-		name string
-		err  error
-	}{
-		{name: "typed nil connect error", err: typedNilConnectErr},
-		{name: "typed nil custom error", err: (*derefError)(nil)},
-		{name: "nil connect error in the chain", err: nilConnectErrorWrapper{}},
-		{name: "wrapped typed nil connect error", err: fmt.Errorf("op: %w", typedNilConnectErr)},
-		{name: "wrapped typed nil custom error", err: wrappedDerefError},
-		{name: "wrapped typed nil error whose Is method panics", err: wrappedDerefIsError},
-	}
 	ops := []struct {
 		name string
+		// spec is the stream's, bidiClientSpec if zero.
+		spec connectrpc.Spec
 		set  func(*fakeClientConn, error)
 		call func(connectrpc.StreamingClientConn) error
 	}{
@@ -823,27 +1072,40 @@ func TestStreamingClientUnsafeErrors(t *testing.T) {
 			call: func(stream connectrpc.StreamingClientConn) error { return stream.Receive(nil) },
 		},
 		{
+			// A client-streaming Receive counts the responses (see endReceive).
+			name: "client-streaming Receive", spec: connectrpc.Spec{Procedure: clientStreamProcedure, StreamType: connectrpc.StreamTypeClient, IsClient: true},
+			set:  func(c *fakeClientConn, err error) { c.receive = returns(err) },
+			call: func(stream connectrpc.StreamingClientConn) error { return stream.Receive(nil) },
+		},
+		{
 			name: "CloseRequest", set: func(c *fakeClientConn, err error) { c.closeRequest = returns(err) },
 			call: func(stream connectrpc.StreamingClientConn) error { return stream.CloseRequest() },
 		},
 	}
 	for _, op := range ops {
-		for _, unsafe := range errs {
+		for _, unsafe := range unsafeErrors {
 			t.Run(op.name+"/"+unsafe.name, func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 				conn := newFakeClientConn()
 				op.set(conn, unsafe.err)
-				stream := traceFakeClient(context.Background(), conn)
+				spec := op.spec
+				if spec.Procedure == "" {
+					spec = bidiClientSpec
+				}
+				stream := NewClientInterceptor().WrapStreamingClient(func(context.Context, connectrpc.Spec) connectrpc.StreamingClientConn {
+					return conn
+				})(context.Background(), spec)
 				var err error
-				require.NotPanics(t, func() { err = op.call(stream) })
+				require.Equal(t, callOutcome{}, outcomeOf(t, func() { err = op.call(stream) }))
 				assert.True(t, err == unsafe.err, "got %#v, want the connection's own error", err)
 				requireReturns(t, "CloseResponse", func() { _ = stream.CloseResponse() })
+				wantError := cmp.Or(unsafe.wantError, "unsafe to inspect")
 				calls := spansNamed(mt.FinishedSpans(), operationClient)
 				require.Len(t, calls, 1)
-				assert.Contains(t, calls[0].Tag(ext.ErrorMsg), "unsafe to inspect")
+				assert.Contains(t, calls[0].Tag(ext.ErrorMsg), wantError)
 				for _, span := range spansNamed(mt.FinishedSpans(), operationMessage) {
-					assert.Contains(t, span.Tag(ext.ErrorMsg), "unsafe to inspect")
+					assert.Contains(t, span.Tag(ext.ErrorMsg), wantError)
 				}
 			})
 		}
@@ -1060,27 +1322,9 @@ func TestStreamingClientMetadataTags(t *testing.T) {
 		stream := traceFakeClient(ctx, conn, WithMetadataTags(), WithStreamMessages(false))
 		cancel()
 		require.Eventually(t, func() bool { return len(mt.FinishedSpans()) == 1 }, 5*time.Second, time.Millisecond)
+		reads := conn.headerCalls.Load()
 		require.NoError(t, stream.Send(wrapperspb.String("hello")))
-		wrapped, ok := stream.(*streamingClientConn)
-		require.True(t, ok)
-		assert.True(t, wrapped.finishClaimed.Load())
-		assert.True(t, wrapped.metadataRead.Load())
-		assert.Nil(t, metadataTag(mt.FinishedSpans()[0], "x-late"))
-	})
-
-	// The tracer may reuse a finished span for another trace, so the stream must not tag it even
-	// though the span object is live again.
-	t.Run("never tags a finished call span", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		conn := newFakeClientConn()
-		conn.header.Set("X-Late", "value")
-		span := tracer.StartSpan("reused")
-		stream := newTestStreamingClientConn(newConfig(WithMetadataTags(), WithStreamMessages(false)), conn, span)
-		stream.finishClaimed.Store(true)
-		require.NoError(t, stream.Send(wrapperspb.String("hello")))
-		span.Finish()
-		require.Len(t, mt.FinishedSpans(), 1)
+		assert.Equal(t, reads+1, conn.headerCalls.Load(), "Send reads the metadata")
 		assert.Nil(t, metadataTag(mt.FinishedSpans()[0], "x-late"))
 	})
 }
