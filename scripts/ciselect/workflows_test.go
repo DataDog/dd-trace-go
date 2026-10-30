@@ -243,6 +243,7 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 		"pull-request.yml":   "pull-request-tests-done",
 		"system-tests.yml":   "system-tests-done",
 		"orchestrion.yml":    "integration-test-done",
+		"otelc.yml":          "integration-test-done",
 		"dynamic-checks.yml": "dynamic-checks-summary",
 		"smoke-tests.yml":    "smoke-tests-done",
 	}
@@ -397,6 +398,12 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 				"changes", "generate", "go-versions-matrix",
 				"service-containers", "integration-test",
 			},
+		},
+		{
+			workflow: "otelc.yml",
+			job:      "integration-test-done",
+			strict:   []string{"needs.changes.outputs.otelc == 'true'"},
+			deps:     []string{"changes", "go-versions-matrix", "integration-test", "external-app"},
 		},
 		{
 			workflow: "benchmark-apps.yml",

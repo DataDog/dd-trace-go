@@ -137,11 +137,12 @@ var classifyCases = []classifyCase{
 	{
 		// orchestrion.yml pre-pulls the pinned images from this module's
 		// docker-compose.yaml, so it is the one submodule that keeps that gate.
-		// The benchmark apps do not consume testcontainers, so benchmark-apps
-		// deliberately stays off here despite the orchestrion gate.
-		name:    "the testcontainers module keeps the orchestrion gate",
+		// The otelc suites redigo, mongo, mongo.v2 and aws.v1 import it, so the
+		// otelc gate stays on too. The benchmark apps do not consume
+		// testcontainers, so benchmark-apps deliberately stays off here.
+		name:    "the testcontainers module keeps the orchestrion and otelc gates",
 		files:   []string{"instrumentation/testutils/containers/images/docker-compose.yaml"},
-		want:    []string{"orchestrion", "pull-request-tests"},
+		want:    []string{"orchestrion", "otelc", "pull-request-tests"},
 		notWant: []string{"system-tests", "parametric-tests", "benchmark-apps"},
 	},
 	{
@@ -150,6 +151,22 @@ var classifyCases = []classifyCase{
 		files:   []string{"internal/setup-smoke-test/main.go"},
 		want:    []string{"static-lint", "generate"},
 		notWant: []string{"pull-request-tests", "system-tests", "orchestrion", "benchmark-apps"},
+	},
+	{
+		// The aspect generator is orchestrion-only: nothing otelc reads it, so
+		// the generator split out of orchestrion-suite keeps one lane gate.
+		name:    "the orchestrion generator gates orchestrion only",
+		files:   []string{"internal/orchestrion/generator/main.go"},
+		want:    []string{"orchestrion", "static-lint"},
+		notWant: []string{"otelc", "system-tests", "parametric-tests", "benchmark-apps"},
+	},
+	{
+		// The Go-version matrix feeds both lanes' matrix jobs, so both gates
+		// stay on it after the generator moved to its own component.
+		name:    "the Go-version matrix gates both lanes",
+		files:   []string{"internal/orchestrion/matrix/matrix.go"},
+		want:    []string{"orchestrion", "otelc", "static-lint"},
+		notWant: []string{"system-tests", "parametric-tests"},
 	},
 	{
 		// ci_test_core.sh runs this module's tests, so pull-request-tests must stay on.
@@ -226,6 +243,63 @@ var classifyCases = []classifyCase{
 		files:   []string{"otelc/all/otel.instrumentation.go"},
 		want:    []string{"pull-request-tests", "otelc", "static-lint"},
 		notWant: []string{"system-tests", "orchestrion", "parametric-tests"},
+	},
+	{
+		// The otelc hook modules are separate modules under contrib/, so they
+		// must be claimed before the broad contrib entry. The otelc lane is the
+		// only workflow that runs their suites, so it has to come on with them.
+		// They stay with contrib's other gates: the benchmark apps and the
+		// weblog scenarios resolve these modules like any other contrib.
+		name:    "an otelc hook module gates the otelc lane",
+		files:   []string{"contrib/gin-gonic/gin/otelc/hooks.go"},
+		want:    []string{"otelc", "pull-request-tests", "orchestrion", "benchmark-apps", "system-tests", "static-lint"},
+		notWant: []string{"parametric-tests"},
+	},
+	{
+		// The otelc hook modules and the parent integrations they link against
+		// (contrib/net/http/otelc uses go:linkname into contrib/net/http) are
+		// one subtree per migrated integration, claimed before the broad contrib
+		// entry. They stay with contrib's other gates: the benchmark apps and the
+		// weblog scenarios resolve these modules like any other contrib.
+		name:    "a migrated parent integration gates the otelc lane",
+		files:   []string{"contrib/net/http/internal/orchestrion/roundtrip.go"},
+		want:    []string{"otelc", "pull-request-tests", "orchestrion", "benchmark-apps", "system-tests", "static-lint"},
+		notWant: []string{"parametric-tests"},
+	},
+	{
+		// Some hook files sit directly in the parent module instead of in its
+		// otelc/ submodule; the parent subtree reaches them too.
+		name:    "the otelc hook file in the parent module is claimed too",
+		files:   []string{"contrib/database/sql/otelc.go"},
+		want:    []string{"otelc"},
+		notWant: []string{"parametric-tests"},
+	},
+	{
+		// Its own module under internal/apps/, claimed before the broad apps
+		// entry. Only the otelc external-app job builds it, through
+		// scripts/build_otelc_external_app.sh, so no pull-request gate applies.
+		name:    "the otelc external application gates the otelc lane only",
+		files:   []string{"internal/apps/otelc-external-app/main.go"},
+		want:    []string{"otelc", "static-lint"},
+		notWant: []string{"pull-request-tests", "system-tests", "orchestrion", "benchmark-apps", "parametric-tests"},
+	},
+	{
+		// Run only by the otelc external-app job, but it is still shell, so it
+		// keeps shfmt and shellcheck from @go-hygiene's static-* half.
+		name:    "the otelc external app build script gates otelc and the static checks",
+		files:   []string{"scripts/build_otelc_external_app.sh"},
+		want:    []string{"otelc", "static-format", "static-lint"},
+		notWant: []string{"pull-request-tests", "system-tests", "orchestrion", "benchmark-apps", "parametric-tests"},
+	},
+	{
+		// Every otelc test suite lives under internal/orchestrion/_integration,
+		// which orchestrion-suite already claims. Editing a suite has to run the
+		// otelc lane, or the change would only be exercised by the orchestrion
+		// lane, which does not use otelc.
+		name:    "an otelc suite under the orchestrion integration module gates otelc",
+		files:   []string{"internal/orchestrion/_integration/gin/main_test.go"},
+		want:    []string{"orchestrion", "otelc", "static-lint"},
+		notWant: []string{"system-tests", "parametric-tests", "benchmark-apps"},
 	},
 	{
 		name:    "an unknown root-level file runs everything",
@@ -671,4 +745,55 @@ func TestEveryGoBearingComponentIsPinned(t *testing.T) {
 			"would pass every test. Add a row asserting what this component must and must "+
 			"not run.", id, tableRelPath)
 	}
+}
+
+// TestOTelcModulesGateTheOTelcLane keeps the otelc-integrations entry honest.
+// The otelc lane reads and links every module in OTELC_MODULES (see
+// .github/workflows/otelc.yml), including the parent integrations its hooks
+// attach to. A module on that list whose paths do not turn on the otelc gate
+// would break the lane on a later pull request, with only the nightly run to
+// catch it, so a migration that forgets the table entry fails here first.
+func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
+	tab, graph, root := testTable(t)
+
+	modules := otelcModules(t, root)
+	if len(modules) == 0 {
+		t.Fatal("OTELC_MODULES in .github/workflows/otelc.yml parsed to no modules")
+	}
+	for _, dir := range modules {
+		t.Run(dir, func(t *testing.T) {
+			probe := dir + "/probe.go"
+			res, err := tab.classify([]string{probe}, graph)
+			if err != nil {
+				t.Fatalf("classify() = %v", err)
+			}
+			if !res.Gates["otelc"] {
+				t.Errorf("%s does not enable the otelc gate (claimed by %q); add the module to the otelc-integrations entry in %s",
+					probe, res.Explain[probe], tableRelPath)
+			}
+		})
+	}
+}
+
+// otelcModules returns the module directories listed in OTELC_MODULES in
+// .github/workflows/otelc.yml: one entry indented by four spaces, ended by the
+// next top-level or two-space key.
+func otelcModules(t *testing.T, root string) []string {
+	t.Helper()
+	body := readText(t, root, workflowDir+"/otelc.yml")
+	var out []string
+	inList := false
+	for line := range strings.SplitSeq(body, "\n") {
+		switch {
+		case strings.HasPrefix(line, "  OTELC_MODULES:"):
+			inList = true
+		case inList && strings.HasPrefix(line, "    "):
+			if entry := strings.TrimSpace(line); entry != "" && !strings.HasPrefix(entry, "#") {
+				out = append(out, entry)
+			}
+		case inList:
+			return out
+		}
+	}
+	return out
 }
