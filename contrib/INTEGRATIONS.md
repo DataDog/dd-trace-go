@@ -416,6 +416,7 @@ Run these in order and commit every change they produce. CI fails on a non-clean
    cd internal/orchestrion/_integration
    go run github.com/DataDog/orchestrion go test ./net_http/...
    ```
+
 6. Register the integration with the otelc lane, when your integration ships
    one. Name the module in `OTELC_MODULES` and `OTELC_TEST_PACKAGES` in
    `.github/workflows/otelc.yml`, add the parent subtree to the
