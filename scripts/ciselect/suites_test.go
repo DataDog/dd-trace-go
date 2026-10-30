@@ -40,31 +40,33 @@ func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
 	}
 }
 
-// TestEveryContribModuleHasASuitesEntry walks the real contrib tree: every
-// go.mod directory needs an entry, even an empty one, and no entry may name a
-// directory without a go.mod.
+// TestEveryContribModuleHasASuitesEntry walks the real contrib and
+// instrumentation trees: every go.mod directory needs an entry, even an
+// empty one, and no entry may name a directory without a go.mod.
 func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	tab, _, root := testTable(t)
 
 	want := map[string]bool{}
-	err := filepath.WalkDir(filepath.Join(root, "contrib"), func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && d.Name() == "go.mod" {
-			rel, err := filepath.Rel(root, filepath.Dir(p))
+	for _, tree := range []string{"contrib", "instrumentation"} {
+		err := filepath.WalkDir(filepath.Join(root, tree), func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			want[filepath.ToSlash(rel)] = true
+			if !d.IsDir() && d.Name() == "go.mod" {
+				rel, err := filepath.Rel(root, filepath.Dir(p))
+				if err != nil {
+					return err
+				}
+				want[filepath.ToSlash(rel)] = true
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", tree, err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk contrib: %v", err)
 	}
 	if len(want) == 0 {
-		t.Fatal("found no go.mod under contrib/")
+		t.Fatal("found no go.mod under contrib/ or instrumentation/")
 	}
 
 	for dir := range want {
@@ -74,7 +76,7 @@ func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	}
 	for dir := range tab.IntegrationSuites.Modules {
 		if !want[dir] {
-			t.Errorf("integration-suites.modules lists %q, which has no go.mod under contrib/", dir)
+			t.Errorf("integration-suites.modules lists %q, which has no go.mod under contrib/ or instrumentation/", dir)
 		}
 	}
 }

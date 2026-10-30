@@ -80,11 +80,14 @@ integration-suites:
   shared-modules:
     - contrib/net/http
     - contrib/net/http/otelc
-  # Every directory under contrib/ with a go.mod must have an entry, even an
-  # empty list. Keys are module directories; values are the suite names that
-  # exercise the module. Every named suite must exist as a directory directly
-  # under internal/orchestrion/_integration (the `internal` helper tree is not
-  # a suite). suites_test.go enforces both rules against the real tree.
+  # Every directory under contrib/ or instrumentation/ with a go.mod must
+  # have an entry, even an empty list. Keys are module directories; values
+  # are the suite names that exercise the module. An empty list means no
+  # information, so a change to the module fails its lanes open to every
+  # suite. Every named suite must exist as a directory directly under
+  # internal/orchestrion/_integration (the `internal` helper tree is not a
+  # suite). suites_test.go enforces both rules against the real tree and
+  # derives the pairs from the suites' real imports.
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
     contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
@@ -176,6 +179,37 @@ integration-suites:
     contrib/valkey-io/valkey-go: [ valkey-go ]
     contrib/valyala/fasthttp: [ valyala_fasthttp ]
     contrib/valyala/fasthttp/otelc: [ valyala_fasthttp ]
+    instrumentation/internal/namingschematest: []
+    instrumentation/internal/validationtest: []
+    instrumentation/testutils/containers:
+      [
+        aerospike.v7,
+        aws.v1,
+        aws.v2,
+        confluent-kafka-go.v1,
+        confluent-kafka-go.v2,
+        gcp_pubsub.v1,
+        gcp_pubsub.v2,
+        go-elasticsearch,
+        go-redis.v0,
+        go-redis.v7,
+        go-redis.v8,
+        go-redis.v9,
+        gocql,
+        ibm_sarama,
+        mongo,
+        mongo.v2,
+        opensearch-go.v4,
+        pgx,
+        redigo,
+        rueidis,
+        segmentio_kafka.v0,
+        shopify_sarama,
+        twmb_franz_go,
+        valkey-go,
+        vault,
+      ]
+    instrumentation/testutils/grpc: []
 
 # Which gate each workflow owns. Editing a workflow file enables its own gate
 # (plus static-actions) and nothing else; ciselect additionally walks
