@@ -149,6 +149,15 @@ GLS is a tracer-internal mechanism (see the caveat in `gls.orchestrion.yml`) and
 Integration authors normally do not touch it directly: use `context.Context` and the tracer's
 context-aware helpers, and the tracer plus Orchestrion manage the GLS for you.
 
+### Limitation: spans that never finish
+
+A span leaves the GLS when it finishes. A span that never finishes stays on the GLS of its goroutine
+until an enclosing span on the same goroutine finishes or the goroutine exits. Until then, a span
+that starts on that goroutine without a span in its context takes the open span as parent, and the
+trace of the open span cannot complete. Datadog and OpenTelemetry spans behave the same. Fix the
+leak where the span starts: end every span. The
+[gls-unfinished](../internal/orchestrion/_integration/gls-unfinished) suite shows this behavior.
+
 ### Limitation: goroutine boundaries
 
 The GLS is per-goroutine, so a value on it does not follow work onto a new goroutine. If a span lives
