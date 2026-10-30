@@ -193,36 +193,39 @@ jobs:
           otelc version
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
-          PACKAGE_NAMES=""
+          # aws.v1.test fails to link when otelc builds it together with the
+          # other suites: the instrumented net/http references the
+          # contrib/net/http/otelc hooks, which are not linked into it. It
+          # gets its own invocation until otelc fixes that.
+          SEPARATE_PACKAGES=" aws.v1 "
+          export SHARED_PACKAGES="" ALONE_PACKAGES=""
           for pkg in ${OTELC_TEST_PACKAGES}; do
-            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            # Some suites only build on Linux in CI (//go:build linux || !githubci),
+            # and otelc fails on a package with no Go files left to build.
+            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${PREFIX}/${pkg}")" == "000" ]]; then
+              echo "Skipping ${pkg}: no Go files for this platform"
+              continue
+            fi
+            if [[ "${SEPARATE_PACKAGES}" == *" ${pkg} "* ]]; then
+              ALONE_PACKAGES+=" ${PREFIX}/${pkg}"
+            else
+              SHARED_PACKAGES+=" ${PREFIX}/${pkg}"
+            fi
           done
-          export PACKAGE_NAMES
-          echo "Running otelc tests for: ${PACKAGE_NAMES}"
+          echo "Running otelc tests together for: ${SHARED_PACKAGES}"
+          echo "Running otelc tests separately for: ${ALONE_PACKAGES}"
 
+          # One invocation for all the suites builds their shared dependency
+          # closure once. An invocation per suite re-ran otelc's build plan
+          # and rebuilt that closure every time, which made the lane take hours.
           RUN_SCRIPT="${RUNNER_TEMP}/run-otelc-tests.sh"
           cat > "${RUN_SCRIPT}" <<'EOF'
           #!/usr/bin/env bash
-          set -o pipefail
           rc=0
-          for pkg in ${PACKAGE_NAMES}; do
-            # Some suites only build on Linux in CI (//go:build linux || !githubci),
-            # and otelc fails on a package with no Go files left to build. Stdout
-            # is parsed as test2json, so the notice goes to stderr.
-            if [[ "$(go list -e -f '{{len .GoFiles}}{{len .TestGoFiles}}{{len .XTestGoFiles}}' "${pkg}")" == "000" ]]; then
-              echo "Skipping ${pkg}: no Go files for this platform" >&2
-              continue
-            fi
-            raw="${RUNNER_TEMP}/otelc-raw-$(echo "${pkg}" | tr '/' '_').log"
-            otelc go test -v -shuffle=on "${pkg}" > "${raw}" 2>&1
-            status=$?
-            go tool test2json -t -p "${pkg}" < "${raw}"
-            if [[ "${status}" -ne 0 ]]; then
-              echo "::group::Raw output for ${pkg} (exit ${status})" >&2
-              cat "${raw}" >&2
-              echo "::endgroup::" >&2
-              rc=1
-            fi
+          # shellcheck disable=SC2086
+          otelc go test -json -shuffle=on ${SHARED_PACKAGES} || rc=1
+          for pkg in ${ALONE_PACKAGES}; do
+            otelc go test -json -shuffle=on "${pkg}" || rc=1
           done
           exit "${rc}"
           EOF
