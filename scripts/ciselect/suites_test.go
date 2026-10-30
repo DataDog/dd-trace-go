@@ -169,10 +169,12 @@ func TestSuiteSelection(t *testing.T) {
 			wantOrch:    true,
 		},
 		{
-			// The contrib component does not gate otelc; the suite verdict
-			// propagates the gate.
-			name:        "a contrib change propagates the otelc gate through its suite",
-			files:       []string{"contrib/gin-gonic/gin/gin.go"},
+			// The orchestrion-aspects component claims this path and does not
+			// gate otelc; the suite verdict propagates the gate. rules_test.go
+			// names the same path "an aspect file needs orchestrion and
+			// regeneration only".
+			name:        "an aspect file propagates the otelc gate through its suite",
+			files:       []string{"contrib/gin-gonic/gin/orchestrion.yml"},
 			otelc:       SuiteVerdict{Suites: []string{"gin"}},
 			orchestrion: SuiteVerdict{Suites: []string{"gin"}},
 			wantOtelc:   true,
@@ -327,7 +329,7 @@ func TestSuiteSelection(t *testing.T) {
 			// change to the helper runs the importers too.
 			name:         "an imported helper suite pulls in its importers",
 			files:        []string{"internal/orchestrion/_integration/civisibilitytest/payloads.go"},
-			orchContains: []string{"civisibilitytest", "parallel_testing_retries"},
+			orchContains: []string{"civisibilitytest", "parallel_testing_retries", "civisibility_failnow", "civisibility_failnow_benchmark", "civisibility_failnow_retry"},
 			wantOrch:     true,
 		},
 		{
@@ -417,6 +419,7 @@ func TestSuiteFlagsPinTheSentinels(t *testing.T) {
 		want string
 	}{
 		{name: "otelc narrowed", flag: "-otelc-suites", in: "contrib/gin-gonic/gin/otelc/otelc.yaml\n", want: "gin\n"},
+		{name: "otelc multi-suite", flag: "-otelc-suites", in: "contrib/go.mongodb.org/mongo-driver.v2/otelc/otelc.yaml\n", want: "mongo\nmongo.v2\n"},
 		{name: "otelc all", flag: "-otelc-suites", in: "ddtrace/tracer/tracer.go\n", want: "ALL\n"},
 		{name: "orchestrion none", flag: "-orchestrion-suites", in: "README.md\n", want: "NONE\n"},
 		{name: "orchestrion fail-open", flag: "-orchestrion-suites", in: "contrib/miekg/dns/dns.go\n", want: "ALL\n"},
