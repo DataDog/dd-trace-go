@@ -7,92 +7,90 @@ package connect
 
 import (
 	"context"
+	"maps"
 	"net/http"
-	"sync/atomic"
 
 	connectrpc "connectrpc.com/connect"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/connectrpc.com/connectshared"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func (cfg *config) traceUnaryHandler(ctx context.Context, spec connectrpc.Spec, request connectrpc.AnyRequest, next connectrpc.UnaryFunc) (response connectrpc.AnyResponse, err error) {
-	protocol := protocolTagsFor(request.Peer().Protocol)
+	protocol := connectshared.ProtocolFor(request.Peer().Protocol)
 	httpMethod := request.HTTPMethod()
 	header := request.Header()
-	tags := make(map[string]any, 6)
-	addProcedureTags(tags, spec)
-	addProtocolTags(tags, protocol, spec.Procedure)
-	span, ctx := cfg.startCallSpan(ctx, instrumentation.ComponentServer, spec.Procedure, request, tags, propagationOptions(header)...)
-	finish := spanFinish{procedure: spec.Procedure, protocol: protocol, mode: unaryFinishMode(protocol, httpMethod)}
-	defer cfg.finishOnReturn(&span, &err, &finish, nil)
-	setMetadataTags(cfg, header, span)
-	setRequestTags(cfg, request.Any(), protocol, span)
-	return next(ctx, request)
+	span, ctx := cfg.core.StartServerCall(ctx, sharedSpec(spec), protocol, request, tracer.HTTPHeadersCarrier(header))
+	finish := connectshared.SpanFinish{Procedure: spec.Procedure, Protocol: protocol, Mode: connectshared.UnaryFinishMode(protocol, httpMethod, true)}
+	var guard connectshared.Guard
+	defer cfg.core.FinishOnReturn(&guard, &span, &err, &finish, nil)
+	guard.Run(func() {
+		cfg.core.SetMetadataTags(span, maps.All(header))
+		cfg.core.SetRequestTags(span, request.Any(), protocol)
+		response, err = next(ctx, request)
+	})
+	return response, err
 }
 
 func (cfg *config) traceStreamingHandler(ctx context.Context, spec connectrpc.Spec, conn connectrpc.StreamingHandlerConn, next connectrpc.StreamingHandlerFunc) (err error) {
-	protocol := protocolTagsFor(conn.Peer().Protocol)
-	if cfg.traceStreamCalls {
-		tags := make(map[string]any, 6)
-		addProcedureTags(tags, spec)
-		addProtocolTags(tags, protocol, spec.Procedure)
-		var span *tracer.Span
-		span, ctx = cfg.startCallSpan(ctx, instrumentation.ComponentServer, spec.Procedure, nil, tags, propagationOptions(conn.RequestHeader())...)
-		defer cfg.finishOnReturn(&span, &err, &spanFinish{procedure: spec.Procedure, protocol: protocol}, nil)
-		if cfg.withMetadataTags {
-			setMetadataTags(cfg, conn.RequestHeader(), span)
+	protocol := connectshared.ProtocolFor(conn.Peer().Protocol)
+	if !cfg.core.StreamCalls() {
+		ctx = cfg.core.MarkHandled(ctx, instrumentation.ComponentServer, spec.Procedure, nil)
+		return next(ctx, cfg.messageConn(ctx, spec, conn, protocol))
+	}
+	span, ctx := cfg.core.StartServerCall(ctx, sharedSpec(spec), protocol, nil, tracer.HTTPHeadersCarrier(conn.RequestHeader()))
+	var guard connectshared.Guard
+	// connect's handlers serve every call over HTTP.
+	defer cfg.core.FinishOnReturn(&guard, &span, &err, &connectshared.SpanFinish{Procedure: spec.Procedure, Protocol: protocol, Mode: connectshared.FinishMode{Wire: true, HTTP: true}}, nil)
+	guard.Run(func() {
+		if cfg.core.MetadataTags() {
+			cfg.core.SetMetadataTags(span, maps.All(conn.RequestHeader()))
 		}
-	} else {
-		ctx = markHandled(ctx, serverCallKey{}, callMarker{procedure: spec.Procedure, traced: true})
+		err = next(ctx, cfg.messageConn(ctx, spec, conn, protocol))
+	})
+	return err
+}
+
+// messageConn returns the connection that the handler gets: conn, wrapped if its messages are
+// traced.
+func (cfg *config) messageConn(ctx context.Context, spec connectrpc.Spec, conn connectrpc.StreamingHandlerConn, protocol *connectshared.Protocol) connectrpc.StreamingHandlerConn {
+	if !cfg.core.StreamMessages() {
+		return conn
 	}
-	if !cfg.traceStreamMessages {
-		return next(ctx, conn)
-	}
-	return next(ctx, newStreamingHandlerConn(ctx, cfg, conn, spec, protocol))
+	return newStreamingHandlerConn(ctx, cfg, conn, spec, protocol)
 }
 
 type streamingHandlerConn struct {
 	connectrpc.StreamingHandlerConn
-	cfg *config
-	ctx context.Context
-	// spec is cached so that no conn method is called while recovering from a panic.
-	spec          connectrpc.Spec
-	protocol      *protocolTags
-	messageTags   tracer.StartSpanOption
-	messageFinish spanFinish
+	cfg      *config
+	messages connectshared.ServerMessages
 	// header is a copy of the request headers when there is no call span, taken before the handler
 	// runs: message spans extract their parent from it, and the first one is tagged with its
 	// metadata. Send and Receive don't call RequestHeader, as the handler may modify the headers
 	// concurrently.
-	header         http.Header
-	metadataTagged atomic.Bool
+	header http.Header
 }
 
-func newStreamingHandlerConn(ctx context.Context, cfg *config, conn connectrpc.StreamingHandlerConn, spec connectrpc.Spec, protocol *protocolTags) *streamingHandlerConn {
-	stream := &streamingHandlerConn{
-		StreamingHandlerConn: conn,
-		cfg:                  cfg,
-		ctx:                  ctx,
-		spec:                 spec,
-		protocol:             protocol,
-		messageTags:          messageTags(spec, protocol),
-		messageFinish:        spanFinish{procedure: spec.Procedure, protocol: protocol, mode: messageFinishMode},
-	}
-	if !cfg.traceStreamCalls {
+func newStreamingHandlerConn(ctx context.Context, cfg *config, conn connectrpc.StreamingHandlerConn, spec connectrpc.Spec, protocol *connectshared.Protocol) *streamingHandlerConn {
+	stream := &streamingHandlerConn{StreamingHandlerConn: conn, cfg: cfg}
+	if !cfg.core.StreamCalls() {
 		stream.header = conn.RequestHeader().Clone()
 	}
+	stream.messages.Init(ctx, cfg.core, sharedSpec(spec), protocol, tracer.HTTPHeadersCarrier(stream.header))
 	return stream
 }
 
 func (c *streamingHandlerConn) Receive(message any) (err error) {
 	var span *tracer.Span
-	defer c.cfg.finishOnReturn(&span, &err, &c.messageFinish, nil)
-	span = c.cfg.startMessageSpan(c.ctx, c.messageTags, instrumentation.ComponentServer, c.messageParentOpts()...)
-	c.tagMetadata(span)
-	if err = c.StreamingHandlerConn.Receive(message); err == nil {
-		setRequestTags(c.cfg, message, c.protocol, span)
-	}
+	var guard connectshared.Guard
+	defer c.cfg.core.FinishOnReturn(&guard, &span, &err, c.messages.SpanFinish(), nil)
+	guard.Run(func() {
+		span = c.startMessageSpan()
+		if err = c.StreamingHandlerConn.Receive(message); err == nil {
+			c.messages.TagRequest(span, message)
+		}
+	})
 	return err
 }
 
@@ -102,24 +100,21 @@ func (c *streamingHandlerConn) Send(message any) (err error) {
 		return c.StreamingHandlerConn.Send(message)
 	}
 	var span *tracer.Span
-	defer c.cfg.finishOnReturn(&span, &err, &c.messageFinish, nil)
-	span = c.cfg.startMessageSpan(c.ctx, c.messageTags, instrumentation.ComponentServer, c.messageParentOpts()...)
-	c.tagMetadata(span)
-	return c.StreamingHandlerConn.Send(message)
+	var guard connectshared.Guard
+	defer c.cfg.core.FinishOnReturn(&guard, &span, &err, c.messages.SpanFinish(), nil)
+	guard.Run(func() {
+		span = c.startMessageSpan()
+		err = c.StreamingHandlerConn.Send(message)
+	})
+	return err
 }
 
-// messageParentOpts extracts the propagated parent afresh for every message when there is no call
-// span. An explicit span in c.ctx still wins, but an Orchestrion GLS fallback does not.
-func (c *streamingHandlerConn) messageParentOpts() []tracer.StartSpanOption {
-	if c.cfg.traceStreamCalls {
-		return nil
+// startMessageSpan starts a message span, and tags the first one with the metadata when there is
+// no call span to carry it.
+func (c *streamingHandlerConn) startMessageSpan() *tracer.Span {
+	span, tagMetadata := c.messages.Start()
+	if tagMetadata {
+		c.cfg.core.SetMetadataTags(span, maps.All(c.header))
 	}
-	return propagationOptions(c.header)
-}
-
-// tagMetadata tags the first message span when there is no call span to carry the metadata.
-func (c *streamingHandlerConn) tagMetadata(span *tracer.Span) {
-	if c.cfg.withMetadataTags && !c.cfg.traceStreamCalls && c.metadataTagged.CompareAndSwap(false, true) {
-		setMetadataTags(c.cfg, c.header, span)
-	}
+	return span
 }
