@@ -43,6 +43,13 @@ its surroundings:
   [github.com/dave/dst](https://pkg.go.dev/github.com/dave/dst) library, whose node types mirror the
   standard library [go/ast](https://pkg.go.dev/go/ast); use those references for the full set of
   nodes and fields.
+- `{{ .AST.Ellipsis }}`: for a call match, true when the last argument is spread (`f(a, xs...)`).
+  Branch on it to rebuild a variadic call, re-emitting each argument with
+  `{{ range .AST.Args }}{{ . }}, {{ end }}` or `{{ index .AST.Args N }}`. Rendering the same node
+  twice with `{{ . }}` leaves an unresolved placeholder: use `{{ (index .AST.Args N).Copy }}` for
+  every further use. Appending an argument after the re-emitted arguments (as
+  `append-args` also does) breaks a call whose only argument is a multi-value call, `f(g())`; list
+  it as a caveat (users can opt such calls out with `//orchestrion:ignore`).
 - `{{ .Function }}`: the function enclosing the matched node, available when the match is inside a
   function body (for example a `function-body` join point). Its accessors return an error when they
   do not apply: `{{ .Function.Receiver }}` fails if the function is not a method,
@@ -66,6 +73,19 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
 - **Replace a constructor.** When you provide a drop-in with the same signature and return type, swap
   the call one-to-one (`replace-function`). See [database/sql](./database/sql/orchestrion.yml)
   (`sql.Open`, `sql.OpenDB`) and [pgx.v5](./jackc/pgx.v5/orchestrion.yml).
+- **Add to variadic options.** When the matched call can spread a caller's slice (`f(opts...)`),
+  never write into that slice: other slices of the caller may share its backing array, and
+  concurrent calls would race. Since the Orchestrion version `orchestrion/all` now requires,
+  `append-args` appends to a copy of a spread slice and no longer writes into the caller's
+  ([DataDog/orchestrion#929](https://github.com/DataDog/orchestrion/pull/929)). Releases up to
+  v1.14.0 still write into it, and users who import integrations individually may still weave with
+  one of them. Prefer a `wrap-expression` that combines the options, which leaves the slice
+  untouched with every Orchestrion version: wrap them with a library combinator, as
+  [connect](./connectrpc.com/connect/orchestrion.yml) does with `connect.WithClientOptions` and
+  `connect.WithHandlerOptions`, or branch on `{{ .AST.Ellipsis }}` and pass
+  `slices.Concat[[]T](spread, []T{injected})...`, as [connect.v2](./connectrpc.com/connect.v2/orchestrion.yml)
+  does. If you use `append-args`, its `type:` must be the variadic element type, or spread calls fail
+  to compile.
 - **Grab the surrounding context.** Some calls take no `context.Context` (for example `http.Get`,
   `http.Post`). An aspect can pull a context from the enclosing function with
   `.Function.ArgumentOfType "context.Context"` (or from a `*http.Request` via its `Context()`) and
@@ -109,8 +129,27 @@ This matters because libraries call their own constructors internally. `chi.NewR
 Weaving there makes chi import your contrib, and your contrib imports chi, so the build fails with an
 import cycle.
 
-Guard against it by excluding the library's own packages from the join point with `not`. See
-[chi](./go-chi/chi/orchestrion.yml) (excludes `github.com/go-chi/chi` and its `middleware`
+Guard against it by excluding the library's own packages from the join point with `not`, which
+matches any node its join point does not match. Combine the join points with:
+
+- `all-of`: matches a node only if every listed join point matches it.
+- `one-of`: matches a node if any listed join point matches it, for example any of a library's
+  constructors (the `Handler` aspect of [connect](./connectrpc.com/connect/orchestrion.yml)).
+- `import-path`: matches every node of the package with exactly that import path. It does not match
+  subpackages, so exclude each package that calls the matched function.
+
+For example, [connect.v2](./connectrpc.com/connect.v2/orchestrion.yml) matches `NewClient` calls
+outside the library:
+
+```yaml
+join-point:
+  all-of:
+    - function-call: connectrpc.com/connect/v2.NewClient
+    - not:
+        import-path: connectrpc.com/connect/v2
+```
+
+See also [chi](./go-chi/chi/orchestrion.yml) (excludes `github.com/go-chi/chi` and its `middleware`
 subpackage) and the `Get|Head|Post|PostForm` aspect in [net/http](./net/http/orchestrion.client.yml)
 (excludes `net/http`). The other cycle case, where injected code calls a helper whose package would
 import back, is handled with `go:linkname` (see the modify-library-code pattern above).
@@ -218,7 +257,10 @@ and imports only the Go `testing` integration. It adds no new aspect or integrat
   create a manual root span for the test.
 - `ExpectedTraces` is a partial match, not a full one: it checks that the spans you list appear and
   ignores the rest. Make the assertions as complete as you can, asserting every span the trace should
-  contain.
+  contain. To also check how many spans there are, implement `ExpectedSpanCount`, which returns the
+  number of spans the run produces: the harness then fails when it receives a different number, and
+  matches each listed span to a different received span, so a span listed n times under a parent
+  must occur n times there.
 - Write one file per distinct calling convention the library supports, and one per reported-issue
   regression. This exercises the join-point matchers and catches build breaks at compile time. The
   [integration-test README](../internal/orchestrion/_integration/README.md) lists the conventions
