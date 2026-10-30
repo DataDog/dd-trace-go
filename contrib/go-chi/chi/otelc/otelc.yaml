@@ -3,14 +3,9 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# otelc port of ../orchestrion.yml.
-#
-# Like orchestrion, the rules rewrite call sites in every package of the build,
-# dependencies included, except chi and the chi contrib. Inside chi, Route
-# creates sub-routers with NewRouter, which orchestrion does not wrap, and
-# NewRouter calls NewMux, so each call site is wrapped once. The contrib's own
-# tests create routers, and wrapping those would import the contrib into itself.
-
+# chi's own calls, Route creating sub-routers with NewRouter and NewRouter
+# calling NewMux, are not rewritten, so each router is wrapped once. The
+# contrib is excluded because its tests create routers.
 new_mux:
   target:
     - "**"
@@ -21,11 +16,10 @@ new_mux:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
-            mux := {{ . }}
+          (func(mux *chi.Mux) *chi.Mux {
             mux.Use(chitrace.Middleware())
             return mux
-          })()
+          })({{ . }})
   imports:
     chi: github.com/go-chi/chi
     chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
@@ -40,11 +34,10 @@ new_router:
   do:
     - wrap_call:
         replace: |-
-          (func() *chi.Mux {
-            mux := {{ . }}
+          (func(mux *chi.Mux) *chi.Mux {
             mux.Use(chitrace.Middleware())
             return mux
-          })()
+          })({{ . }})
   imports:
     chi: github.com/go-chi/chi
     chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2

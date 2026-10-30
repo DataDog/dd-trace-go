@@ -393,7 +393,14 @@ func buildJobRecord(c client, r run, j job, collectedAt string, skipLogs bool) (
 	if ev != nil && ev.observation != nil {
 		for _, ro := range ev.observation.Restores {
 			result := classifyRestore(&ro, ev.observation.Provider)
-			restores = append(restores, restoreClassification{Name: ro.Name, Result: result})
+			class := restoreClassification{
+				Name:          ro.Name,
+				Result:        result,
+				RestoreSource: ro.RestoreSource,
+				DepMatch:      ro.DepMatch,
+			}
+			class.Disagreement = restoreDisagrees(&ro, ev.observation.Provider)
+			restores = append(restores, class)
 		}
 		wl = workloadMeta{
 			Provider:           ev.observation.Provider,
@@ -604,6 +611,19 @@ func collectCacheSnapshot(c client, collectedAt string) (cacheSnapshot, error) {
 	if err != nil {
 		return cacheSnapshot{}, err
 	}
+	// The list endpoint pages without a stable sort, so an entry created
+	// or evicted while paging can appear twice or shift across a page
+	// boundary. Deduplicate by ID so the inventory stays a set.
+	dedup := make([]cacheEntry, 0, len(entries))
+	seen := make(map[int64]bool, len(entries))
+	for _, e := range entries {
+		if seen[e.ID] {
+			continue
+		}
+		seen[e.ID] = true
+		dedup = append(dedup, e)
+	}
+	entries = dedup
 	return cacheSnapshot{
 		Kind:        "cache_snapshot",
 		Schema:      schemaVersion,

@@ -3,15 +3,11 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/).
 # Copyright 2026-present Datadog, Inc.
 ---
-# Wraps gin.New call sites with the tracing middleware. Like orchestrion, it
-# reaches every package of the build, dependencies included, except gin and the
-# gin contrib, whose own tests create engines. gin.Default calls New inside gin,
-# where this rule does not apply, so gin_default covers it.
-#
-# A call site rewrite instead of a hook on gin.New: the rewritten package
-# imports the contrib, so the contrib is initialized before an engine created
-# in a package level variable. A hook gives no such order, so it can build the
-# middleware before the contrib's init runs.
+# A call-site rule, not a hook on gin.New: the rewritten package imports the
+# contrib, so it is initialized before an engine created in a package-level
+# var. The contrib is excluded because its tests create engines. gin.Default
+# calls New inside gin, where this rule does not apply, so gin_default covers
+# it.
 gin_new:
   target:
     - "**"
@@ -22,16 +18,14 @@ gin_new:
   do:
     - wrap_call:
         replace: |-
-          (func() *gin.Engine {
-            e := {{ . }}
+          (func(e *gin.Engine) *gin.Engine {
             e.Use(gintrace.Middleware(""))
             return e
-          })()
+          })({{ . }})
   imports:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 
-# Wraps gin.Default call sites, like gin_new.
 gin_default:
   target:
     - "**"
@@ -42,11 +36,10 @@ gin_default:
   do:
     - wrap_call:
         replace: |-
-          (func() *gin.Engine {
-            e := {{ . }}
+          (func(e *gin.Engine) *gin.Engine {
             e.Use(gintrace.Middleware(""))
             return e
-          })()
+          })({{ . }})
   imports:
     gin: github.com/gin-gonic/gin
     gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2

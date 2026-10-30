@@ -34,6 +34,12 @@ permissions:
   id-token: write
   contents: read
 
+# Overlapping runs would double the seed writes: two run_id-keyed
+# entries per key. Deduplicate per ref.
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   setup-env:
     runs-on: ubuntu-latest
@@ -57,6 +63,11 @@ jobs:
           go-version: "1.27"
           check-latest: "true"
           workload: smoke-setup
+          # Default-branch seed set: only the nightly schedule and a
+          # workflow_dispatch on the default branch save these keys.
+          # Every other event restores only: branch and tag pushes,
+          # dispatches from other branches, and workflow_call runs.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -138,6 +149,7 @@ jobs:
           go-version: "1.27"
           check-latest: "true"
           workload: smoke-deps-update
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -282,6 +294,7 @@ jobs:
           go-version: "1.26"
           check-latest: "true"
           workload: smoke-tracer
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -346,6 +359,7 @@ jobs:
           go-version: "1.26"
           check-latest: "true"
           workload: smoke-gen
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools

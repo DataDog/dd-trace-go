@@ -19,13 +19,24 @@
 //	yourCode(ctx)
 //	sp.End()
 //
+// When the application is built with Orchestrion (https://github.com/DataDog/orchestrion) and
+// DD_TRACE_OTEL_ENABLED is true, this package also links the OpenTelemetry API to the spans
+// that Datadog integrations create:
+// trace.SpanFromContext returns the active Datadog span, and the OpenTelemetry global tracer
+// creates spans with the Datadog tracer while the Datadog tracer is running, until the
+// application calls otel.SetTracerProvider.
+// Calling End on a span from trace.SpanFromContext finishes it, as the OpenTelemetry API specifies.
+// The integration that started the span normally finishes it. An End call from the application
+// ends the span early, so the integration cannot add its finish-time tags. Prefer SetAttributes,
+// SetStatus, and RecordError on these spans.
+// With the span pool on, a span that trace.SpanFromContext returned does not go back to the pool.
+//
 // Not every feature provided by OpenTelemetry is supported with this wrapper today, and any new API methods
 // added to the OpenTelemetry API will default to being a no-op until implemented by this library. See the
 // OpenTelemetry package docs for more details: https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
 // This package seeks to implement a minimal set of functions within
 // the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
 // to allow users to send traces to Datadog using existing OpenTelemetry code with minimal changes to the application.
-// Span events (https://opentelemetry.io/docs/concepts/signals/traces/#span-events) are not supported at this time.
 package opentelemetry
 
 import (
@@ -53,6 +64,8 @@ type TracerProvider struct {
 	tracer              *oteltracer
 	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
+	// bridge is true for the provider of the Orchestrion OpenTelemetry API bridge. It does not own the Datadog tracer.
+	bridge bool
 }
 
 // NewTracerProvider returns an instance of an OpenTelemetry TracerProvider,
@@ -83,6 +96,9 @@ func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
 func (p *TracerProvider) Shutdown() error {
+	if p.bridge {
+		return nil
+	}
 	p.Once.Do(func() {
 		tracer.Stop()
 		atomic.StoreUint32(&p.stopped, 1)
