@@ -9,6 +9,8 @@
 package maintest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"maps"
 	"net/http"
@@ -96,6 +98,26 @@ func RequireOtelc(t *testing.T) {
 	t.Skip(msg)
 }
 
+// sharedWorkDir returns the otelc work directory that every nested build of
+// the module in moduleDir shares. Each nested build snapshots and restores
+// the module's go.mod, go.sum, and tool file, so parallel test binaries must
+// not run nested builds at the same time: one build can read go.mod while
+// another truncates it for its restore. One fixed work directory makes all
+// nested builds of the module share the otelc build lock, which serializes
+// them across processes, and lets them reuse the nested build cache. The
+// directory stays outside the module: the outer test invocation holds the
+// module directory's own build lock for the whole test run, and a nested
+// build waiting on that lock would block until the tests end.
+func sharedWorkDir(moduleDir string) string {
+	// Two paths can name the same module, for example through a symlink on
+	// macOS; resolve them so they share one work directory and one lock.
+	if resolved, err := filepath.EvalSymlinks(moduleDir); err == nil {
+		moduleDir = resolved
+	}
+	sum := sha256.Sum256([]byte(moduleDir))
+	return filepath.Join(os.TempDir(), "otelc-maintest-"+hex.EncodeToString(sum[:8]))
+}
+
 // Build builds pkg, a path relative to the module root such as "./chi/mainapp",
 // with otelc when withOtelc is true and with go otherwise, and returns the
 // binary. An otelc build calls RequireOtelc first.
@@ -116,9 +138,9 @@ func Build(t *testing.T, pkg string, withOtelc bool) string {
 	}
 	var build *exec.Cmd
 	if withOtelc {
-		// A private work dir keeps this build from fighting over .otelc-build
-		// with whatever invoked the test.
-		build = exec.Command("otelc", "--work-dir", t.TempDir(), "go", "build", "-o", bin, pkg)
+		// The shared work directory is outside the module, so the nested
+		// builds do not fight over .otelc-build with whatever invoked the test.
+		build = exec.Command("otelc", "--work-dir", sharedWorkDir(moduleDir), "go", "build", "-o", bin, pkg)
 	} else {
 		build = exec.Command("go", "build", "-o", bin, pkg)
 	}
