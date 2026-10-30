@@ -1441,24 +1441,30 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(ctx.reparentID)
 	}
 
-	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
-		if !strings.HasPrefix(k, "_dd.p.") || isLLMObsPropagatingTag(k) {
-			return true
+	// LLMObs tags are only usable downstream alongside the LLMObs parent ID, so a single
+	// lookup decides whether they get priority placement. Traces without LLMObs pay no
+	// more than that lookup. One snapshot serves both passes so they agree.
+	tags := ctx.trace.loadPropagatingTags()
+	_, hasLLMObs := tags[keyPropagatedLLMObsParentID]
+	for k, v := range tags {
+		if !strings.HasPrefix(k, "_dd.p.") || (hasLLMObs && isLLMObsPropagatingTag(k)) {
+			continue
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		key := sanitizeTagKey(k[len("_dd.p."):])
 		value := sanitizeTagValue(v)
 		if b.Len()+len(key)+len(value)+4 > tracestateDDMaxSize { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
-			return false
+			break
 		}
 		b.WriteString(";t.")
 		b.WriteString(key)
 		b.WriteString(":")
 		b.WriteString(value)
-		return true
-	})
-	appendLLMObsTracestateTags(&b, ctx.trace.loadPropagatingTags())
+	}
+	if hasLLMObs {
+		appendLLMObsTracestateTags(&b, tags)
+	}
 	// Emit the OpenTelemetry `ot=` member as the second list-member (right
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
 	// tracestate can't truncate them. An inherited value may be rv-only or
@@ -1511,10 +1517,13 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 
 // llmobsTracestatePriority lists the LLMObs propagating tags in the order they claim
 // space in the 256-byte dd= tracestate member. Map iteration would otherwise drop an
-// arbitrary tag when the member is full; this way the optional agent attribution goes
-// first, and the trace linkage and sampling decision go last. Tags in one group are
-// written together or not at all, so a decision never travels without its rate.
-// x-datadog-tags is unaffected and carries every tag.
+// arbitrary tag when the member is full; this way the optional agent attribution
+// gives way first, and the trace linkage and sampling decision give way last. Tags in
+// one group are written together or not at all, so a decision never travels without
+// its rate. x-datadog-tags is unaffected and carries every tag.
+//
+// The LLMObs tags are written after the other _dd.p.* tags, so an oversized tag such as
+// a long usr.id can still crowd them out; APM's own tags keep precedence in dd=.
 var llmobsTracestatePriority = [][]string{
 	{keyPropagatedLLMObsParentID},
 	{keyPropagatedLLMObsTraceID},

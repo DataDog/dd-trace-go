@@ -4103,3 +4103,42 @@ func TestAppendLLMObsTracestateTagsKeepsSamplingPairTogether(t *testing.T) {
 	assert.Contains(t, out, ";t.llmobs_ml_app:x")
 	assert.LessOrEqual(t, len(out), tracestateDDMaxSize)
 }
+
+func TestComposeTracestateLLMObsWithoutParentID(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request")
+	defer root.Finish()
+	ctx := root.Context()
+
+	// Without the linkage the tags get no priority placement, but still propagate.
+	ctx.trace.replacePropagatingTags(map[string]string{
+		keyPropagatedLLMObsMLAPP: "app",
+	})
+	dd, _, _ := strings.Cut(composeTracestate(ctx, 1, ""), ",")
+	assert.Contains(t, dd, ";t.llmobs_ml_app:app")
+	assert.Equal(t, 1, strings.Count(dd, "llmobs_ml_app"))
+}
+
+func BenchmarkAppendLLMObsTracestateTags(b *testing.B) {
+	tags := map[string]string{
+		keyDecisionMaker:                     "-0",
+		keyPropagatedLLMObsParentID:          "12345678901234567890",
+		keyPropagatedLLMObsTraceID:           "6578a1b200000000a3ce929d0e0e4736",
+		keyPropagatedLLMObsSampleRate:        "0.5",
+		keyPropagatedLLMObsSamplingDecision:  "1",
+		keyPropagatedLLMObsMLAPP:             "ml-app",
+		keyPropagatedLLMObsSessionID:         "session",
+		keyPropagatedLLMObsParentAgentSpanID: "98765432109876543210",
+		keyPropagatedLLMObsParentAgentName:   "agent",
+	}
+	var sb strings.Builder
+	sb.Grow(tracestateDDMaxSize)
+	b.ReportAllocs()
+	for b.Loop() {
+		sb.Reset()
+		sb.WriteString("dd=s:1;p:0000000000000002")
+		appendLLMObsTracestateTags(&sb, tags)
+	}
+}

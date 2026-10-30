@@ -21,6 +21,8 @@ const (
 
 // knuthFactor matches the APM rate sampler and the other tracers, so every SDK
 // in a distributed trace reaches the same decision for the same trace ID.
+// Keep knuthFactor, sampledByRate, and formatSampleRate in sync with their twins
+// in ddtrace/tracer/sampler.go, which internal/llmobs cannot import.
 const knuthFactor = uint64(1111111111111111111)
 
 // samplingDecision is a trace's LLMObs sampling decision. It is decided once on

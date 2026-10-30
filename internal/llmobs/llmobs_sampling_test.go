@@ -133,6 +133,24 @@ func TestSampling(t *testing.T) {
 		assert.Empty(t, s.DDAttributes.SamplingDecision)
 	})
 
+	t.Run("malformed-propagated-decision-stays-undecided", func(t *testing.T) {
+		_, coll, ll := testTracer(t, tracer.WithLLMObsSampleRate(0))
+
+		ctx := llmobs.ContextWithPropagatedLLMSpan(context.Background(), &llmobs.PropagatedLLMSpan{
+			TraceID:          "propagated-trace",
+			SpanID:           "propagated-span",
+			SampleRate:       "0.25",
+			SamplingDecision: "maybe",
+		})
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		s := coll.RequireSpan(t, "span")
+		assert.Empty(t, s.DDAttributes.SampleRate)
+		assert.Empty(t, s.DDAttributes.SamplingDecision)
+	})
+
 	t.Run("distributed-keep-is-propagated-alongside-agent-name", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 

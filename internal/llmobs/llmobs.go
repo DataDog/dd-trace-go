@@ -556,9 +556,10 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		span.propagated = propagated
 		span.llmTraceID = propagated.TraceID
 		// An upstream SDK without sampling support propagates no decision; ship the
-		// span undecided rather than make a second, possibly conflicting, one.
-		if propagated.SamplingDecision != "" {
-			span.sampling = samplingDecision{rate: propagated.SampleRate, decision: propagated.SamplingDecision}
+		// span undecided rather than make a second, possibly conflicting, one. A
+		// malformed decision is treated the same way so it is not re-propagated.
+		if d := propagated.SamplingDecision; d == SamplingDecisionKeep || d == SamplingDecisionDrop {
+			span.sampling = samplingDecision{rate: propagated.SampleRate, decision: d}
 		}
 	} else {
 		span.llmTraceID = newLLMObsTraceID()
