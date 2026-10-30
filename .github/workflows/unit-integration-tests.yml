@@ -134,6 +134,14 @@ jobs:
              "modules":${{ toJson(matrix.chunk) }},
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
+          # Default-branch seed set: the nightly main run of this workflow
+          # (Go 1.27) saves these keys in all three build-tag variants —
+          # standard, and the debug and deadlock families the nightly
+          # dynamic-checks runs use; every other run, including all PR
+          # and merge-queue runs, restores only. The seed comparison uses
+          # the raw input: pass the alias ("1.27"), not a resolved
+          # version ("1.27.2"), or the job stops seeding.
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -353,6 +361,7 @@ jobs:
              "modules":["core"],
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -497,6 +506,7 @@ jobs:
             {"runner":"APM Larger Runners",
              "modules":["internal/apps/telemetry-errors"],
              "coverage":"none"}
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools

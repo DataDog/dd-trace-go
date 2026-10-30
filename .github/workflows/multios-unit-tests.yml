@@ -68,6 +68,20 @@ jobs:
           variant: |-
             {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
+          # Seed set: all six multi-OS strata (both Go versions on
+          # Linux, macOS and Windows), about 2.5 GiB compressed each —
+          # roughly 15 GiB — against the 100 GiB cache quota (2026-10-28).
+          # The nightly default-branch seeds total well under half that
+          # quota: these six, the Go 1.27 unit-integration keys in their
+          # three build-tag variants (standard, and the debug and
+          # deadlock families the nightly dynamic-checks runs use), and
+          # the four smoke keys. The `ci.cache.pool.*` gauges watch the
+          # fill. Nightly schedules and default-branch dispatches save
+          # these keys; every other run of them, including all PR and
+          # merge-queue runs, restores only. To drop a stratum that does
+          # not pay for its restore cost, replace the literal with a
+          # contains() list of the runs-on/go-version pairs to keep.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
