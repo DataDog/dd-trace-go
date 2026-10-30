@@ -303,6 +303,14 @@ jobs:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests resolve orchestrion through their `go run`
+      # fallback on this leg, deliberately: unlike the multios and unit-integration
+      # workflows, no install-orchestrion step runs here. The fallback resolves
+      # the version and dependencies the fixture module's go.mod pins, the same
+      # resolution as the exported binary — only the per-test build cost
+      # differs. The cold-cache download flake that motivated the prebuilt
+      # binary was macOS/Windows only (see .github/actions/install-orchestrion);
+      # this leg runs on Linux.
       - name: Run tests
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
