@@ -39,7 +39,22 @@ type table struct {
 	Groups            map[string][]string `yaml:"groups"`
 	WorkflowGates     map[string][]string `yaml:"workflow-gates"`
 	NativePathFilters []string            `yaml:"native-path-filters"`
-	Components        []component         `yaml:"components"`
+	// IntegrationSuites maps changed paths to the
+	// internal/orchestrion/_integration suites that exercise them, per lane.
+	IntegrationSuites struct {
+		// OtelcSuites are the suites the otelc lane runs. Must match
+		// OTELC_TEST_PACKAGES in .github/workflows/otelc.yml; suites_test.go
+		// enforces that.
+		OtelcSuites []string `yaml:"otelc-suites"`
+		// SharedModules are contrib modules so cross-cutting that a change
+		// affects suites which never import them; such a change escalates
+		// both lanes to every suite.
+		SharedModules []string `yaml:"shared-modules"`
+		// Modules maps every contrib module directory to the suites that
+		// exercise it. An empty list means no suite covers the module.
+		Modules map[string][]string `yaml:"modules"`
+	} `yaml:"integration-suites"`
+	Components []component `yaml:"components"`
 
 	gateSet map[string]bool
 }

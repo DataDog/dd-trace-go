@@ -110,6 +110,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       otelc: ${{ steps.detect.outputs.otelc }}
+      otelc-suites: ${{ steps.detect.outputs.otelc-suites }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,6 +151,9 @@ jobs:
   integration-test:
     env:
       REPORT: gotestsum-report-otelc.xml
+      # The suites the classifier selected: space-separated names, or the
+      # tokens ALL / NONE (empty means the selector failed; read it as ALL).
+      OTELC_SUITES: ${{ needs.changes.outputs.otelc-suites }}
       # Workspace mode resolves modules differently from the module graph otelc
       # analyzes, and it breaks outright when otelc and dd-trace-go disagree on
       # their `go` directive. Same reason the orchestrion lane disables it.
@@ -249,10 +253,22 @@ jobs:
           otelc version
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
+          # The classifier names the suites this change exercises. ALL, NONE
+          # and empty keep the full list; the run script below skips suites
+          # this platform cannot build either way.
           PACKAGE_NAMES=""
-          for pkg in ${OTELC_TEST_PACKAGES}; do
-            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
-          done
+          case "${OTELC_SUITES}" in
+          "" | "NONE" | "ALL")
+            for pkg in ${OTELC_TEST_PACKAGES}; do
+              PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            done
+            ;;
+          *)
+            for pkg in ${OTELC_SUITES}; do
+              PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            done
+            ;;
+          esac
           export PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 

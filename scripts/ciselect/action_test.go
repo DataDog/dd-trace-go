@@ -8,6 +8,7 @@ package main
 import (
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -58,9 +59,25 @@ func TestActionDeclaresAnOutputPerGate(t *testing.T) {
 			t.Errorf("%s declares no output for gate %q", actionPath, gate)
 		}
 	}
-	for _, extra := range []string{"run-all", "static-any", "changed-files"} {
+	for _, extra := range []string{"run-all", "static-any", "changed-files", "contrib-modules", "otelc-suites", "orchestrion-suites"} {
 		if !declared[extra] {
 			t.Errorf("%s declares no %q output", actionPath, extra)
+		}
+	}
+}
+
+// TestActionFailOpenEmitsSuiteTokens pins the fail-open branch: a ciselect
+// failure runs the full suite matrices, so the suite outputs must carry the
+// same ALL token the gates list does. Events other than pull_request do not
+// take this branch: they reach ciselect with an empty change set and get ALL
+// through RunAll.
+func TestActionFailOpenEmitsSuiteTokens(t *testing.T) {
+	_, _, root := testTable(t)
+
+	body := readText(t, root, actionPath)
+	for _, token := range []string{"contrib-modules=ALL", "otelc-suites=ALL", "orchestrion-suites=ALL"} {
+		if !strings.Contains(body, token) {
+			t.Errorf("%s fail-open branch does not emit %s", actionPath, token)
 		}
 	}
 }

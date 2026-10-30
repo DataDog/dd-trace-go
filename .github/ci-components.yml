@@ -63,6 +63,140 @@ groups:
     - static-actions
     - static-docs
 
+# Per-integration-suite targeting for the two lanes that run
+# internal/orchestrion/_integration (orchestrion and otelc). scripts/ciselect
+# maps each changed path to the suites that exercise it, so the lanes run only
+# what a change can affect instead of the whole matrix. Fail-open: any gated
+# path that cannot be narrowed escalates its lane to every suite.
+integration-suites:
+  # The suites the otelc lane runs. Must match OTELC_TEST_PACKAGES in
+  # .github/workflows/otelc.yml exactly; suites_test.go enforces that.
+  otelc-suites:
+    - otelc
+    - gls
+    - gls-leak
+    - gls-unfinished
+    - otelc-autostart
+    - net_http
+    - sql
+    - gin
+    - chi
+    - chi.v5
+    - fiber.v2
+    - julienschmidt_httprouter
+    - redigo
+    - grpc
+    - gorilla_mux
+    - 99designs.gqlgen
+    - mongo
+    - mongo.v2
+    - echo.v4
+    - echo.v5
+    - aws.v1
+    - valyala_fasthttp
+  # Modules so cross-cutting that a change affects suites which never import
+  # them: the weavers inject their spans into more than 20 suites. A change in
+  # one of these runs the full lane instead of a narrowed set.
+  shared-modules:
+    - contrib/net/http
+    - contrib/net/http/otelc
+  # Every directory under contrib/ with a go.mod must have an entry, even an
+  # empty list. Keys are module directories; values are the suite names that
+  # exercise the module. Every named suite must exist as a directory directly
+  # under internal/orchestrion/_integration (the `internal` helper tree is not
+  # a suite). suites_test.go enforces both rules against the real tree.
+  modules:
+    contrib/99designs/gqlgen: [ 99designs.gqlgen ]
+    contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
+    contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
+    contrib/aws/aws-sdk-go: [ aws.v1 ]
+    contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
+    contrib/aws/aws-sdk-go/otelc: [aws.v1]
+    contrib/aws/datadog-lambda-go: []
+    contrib/aws/datadog-lambda-go/test/integration_tests/error: []
+    contrib/aws/datadog-lambda-go/test/integration_tests/hello: []
+    contrib/azure/apim-callout: []
+    contrib/bradfitz/gomemcache: []
+    contrib/cloud.google.com/go/pubsub.v1: [ gcp_pubsub.v1 ]
+    contrib/cloud.google.com/go/pubsub.v2: [ gcp_pubsub.v2 ]
+    contrib/cloudevents/sdk-go.v2: [ cloudevents ]
+    contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
+    contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
+    contrib/connectrpc.com/connect: [ connectrpc ]
+    contrib/database/sql: [ sql ]
+    contrib/database/sql/otelc: [ sql ]
+    contrib/dimfeld/httptreemux.v5: []
+    contrib/elastic/go-elasticsearch.v6: [ go-elasticsearch ]
+    contrib/emicklei/go-restful.v3: []
+    contrib/envoyproxy/go-control-plane: []
+    contrib/gin-gonic/gin: [ gin ]
+    contrib/gin-gonic/gin/otelc: [ gin ]
+    contrib/globalsign/mgo: []
+    contrib/go-chi/chi: [ chi ]
+    contrib/go-chi/chi.v5: [ chi.v5 ]
+    contrib/go-chi/chi.v5/otelc: [ chi.v5 ]
+    contrib/go-chi/chi/otelc: [ chi ]
+    contrib/go-pg/pg.v10: []
+    contrib/go-redis/redis: [ go-redis.v0 ]
+    contrib/go-redis/redis.v7: [ go-redis.v7 ]
+    contrib/go-redis/redis.v8: [ go-redis.v8 ]
+    contrib/go.mongodb.org/mongo-driver: [ mongo ]
+    contrib/go.mongodb.org/mongo-driver.v2: [mongo, mongo.v2]
+    contrib/go.mongodb.org/mongo-driver.v2/otelc: [mongo, mongo.v2]
+    contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
+    contrib/go.uber.org/zap: [ zap ]
+    contrib/gocql/gocql: [ gocql ]
+    contrib/gofiber/fiber.v2: [ fiber.v2 ]
+    contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
+    contrib/gomodule/redigo: [ redigo ]
+    contrib/gomodule/redigo/otelc: [ redigo ]
+    contrib/google.golang.org/api: []
+    contrib/google.golang.org/api/internal/gen_endpoints: []
+    contrib/google.golang.org/grpc: [ grpc ]
+    contrib/google.golang.org/grpc/otelc: [ grpc ]
+    contrib/gorilla/mux: [ gorilla_mux ]
+    contrib/gorilla/mux/otelc: [ gorilla_mux ]
+    contrib/gorm.io/gorm.v1: [ gorm ]
+    contrib/graph-gophers/graphql-go: [ graph-gophers ]
+    contrib/graphql-go/graphql: [ graphql-go ]
+    contrib/haproxy/stream-processing-offload: []
+    contrib/hashicorp/consul: []
+    contrib/hashicorp/vault: [ vault ]
+    contrib/IBM/sarama: [ ibm_sarama ]
+    contrib/jackc/pgx.v5: [ pgx ]
+    contrib/jmoiron/sqlx: []
+    contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
+    contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
+    contrib/k8s.io/client-go: [ k8s_client_go ]
+    contrib/k8s.io/gateway-api: []
+    contrib/labstack/echo.v4: [ echo.v4 ]
+    contrib/labstack/echo.v4/otelc: [ echo.v4 ]
+    contrib/labstack/echo.v5: [ echo.v5 ]
+    contrib/labstack/echo.v5/otelc: [ echo.v5 ]
+    contrib/log/slog: [ slog ]
+    contrib/mark3labs/mcp-go: []
+    contrib/miekg/dns: []
+    contrib/modelcontextprotocol/go-sdk: []
+    contrib/net/http: [ net_http ]
+    contrib/net/http/otelc: [ net_http ]
+    contrib/olivere/elastic.v5: []
+    contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
+    contrib/redis/go-redis.v9: [ go-redis.v9 ]
+    contrib/redis/rueidis: [ rueidis ]
+    contrib/rs/zerolog: [ zerolog ]
+    contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
+    contrib/Shopify/sarama: [ shopify_sarama ]
+    contrib/sirupsen/logrus: [ logrus ]
+    contrib/syndtr/goleveldb: []
+    contrib/tidwall/buntdb: []
+    contrib/twitchtv/twirp: [ twirp ]
+    contrib/twmb/franz-go: [ twmb_franz_go ]
+    contrib/uptrace/bun: []
+    contrib/urfave/negroni: []
+    contrib/valkey-io/valkey-go: [ valkey-go ]
+    contrib/valyala/fasthttp: [ valyala_fasthttp ]
+    contrib/valyala/fasthttp/otelc: [ valyala_fasthttp ]
+
 # Which gate each workflow owns. Editing a workflow file enables its own gate
 # (plus static-actions) and nothing else; ciselect additionally walks
 # `uses: ./.github/workflows/<file>` edges so editing a reusable workflow
