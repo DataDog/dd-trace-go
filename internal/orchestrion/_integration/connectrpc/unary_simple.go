@@ -38,6 +38,8 @@ func (tc *TestCaseUnarySimple) Run(ctx context.Context, t *testing.T) {
 	tc.stop()
 }
 
+func (*TestCaseUnarySimple) ExpectedSpanCount() int { return 4 }
+
 func (tc *TestCaseUnarySimple) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		tc.clientCallSpan(unaryRPC, 0,

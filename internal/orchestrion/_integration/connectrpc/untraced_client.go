@@ -35,12 +35,14 @@ func (tc *TestCaseUntracedClient) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello", res.Msg.GetValue())
 	tc.stop()
-	// The harness cannot assert that a span is absent, so check that no connect.client span was
-	// active when the request was sent.
+	// ExpectedSpanCount rules out a connect.client span that finishes. One would be active when the
+	// request is sent, so also check that no span was.
 	sent := tc.httpClient.last.Load()
 	require.NotNil(t, sent)
 	require.False(t, sent.traced, "request sent under a span")
 }
+
+func (*TestCaseUntracedClient) ExpectedSpanCount() int { return 3 }
 
 func (tc *TestCaseUntracedClient) ExpectedTraces() trace.Traces {
 	return trace.Traces{

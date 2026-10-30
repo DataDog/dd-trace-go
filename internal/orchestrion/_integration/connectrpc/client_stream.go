@@ -49,6 +49,8 @@ func (tc *TestCaseClientStream) Run(ctx context.Context, t *testing.T) {
 	tc.stop()
 }
 
+func (*TestCaseClientStream) ExpectedSpanCount() int { return 12 }
+
 func (tc *TestCaseClientStream) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		// Send x2, then CloseAndReceive's Receive x2 (the response and the EOF).
