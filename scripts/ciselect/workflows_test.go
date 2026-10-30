@@ -149,39 +149,110 @@ var (
 func TestConcurrencyGroupsAreNamespaced(t *testing.T) {
 	root, files := workflowPaths(t)
 
-	check := func(f, where, group string) {
-		if group == "" {
-			t.Errorf("%s: %s declares concurrency without a group", f, where)
-			return
-		}
-		if bareRefGroup.MatchString(group) {
-			t.Errorf("%s: %s concurrency group %q is a bare ref. Group names are "+
-				"repository-scoped, so a second workflow with the same group on the "+
-				"same ref would cancel this one's runs (the 2026-10-30 nightly "+
-				"collision). Prefix the group with github.workflow or a literal, "+
-				"e.g. ${{ github.workflow }}-%s", f, where, group, group)
-		}
-	}
-
 	for _, f := range files {
 		doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, f))
-		if conc, ok := doc["concurrency"].(map[string]any); ok {
-			group, _ := conc["group"].(string)
-			check(f, "workflow", group)
-		}
-		jobs, _ := doc["jobs"].(map[string]any)
-		for name, raw := range jobs {
-			job, ok := raw.(map[string]any)
-			if !ok {
-				continue
+		for where, group := range concurrencyGroups(doc) {
+			if err := bareRefGroupError(f, where, group); err != nil {
+				t.Error(err)
 			}
-			conc, ok := job["concurrency"].(map[string]any)
-			if !ok {
-				continue
-			}
-			group, _ := conc["group"].(string)
-			check(f, "job "+name, group)
 		}
+	}
+}
+
+// concurrencyGroups collects every concurrency group declared in a parsed
+// workflow: the workflow-level one under "workflow", job-level ones under
+// the job's name. Both declaration forms count -- the mapping with a group
+// key, and the scalar shorthand `concurrency: <group>`.
+func concurrencyGroups(doc map[string]any) map[string]string {
+	groups := map[string]string{}
+	add := func(where string, conc any) {
+		switch c := conc.(type) {
+		case map[string]any:
+			group, _ := c["group"].(string)
+			groups[where] = group
+		case string:
+			groups[where] = c
+		}
+	}
+	add("workflow", doc["concurrency"])
+	jobs, _ := doc["jobs"].(map[string]any)
+	for name, raw := range jobs {
+		job, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		add("job "+name, job["concurrency"])
+	}
+	return groups
+}
+
+// bareRefGroupError reports a group that is nothing but the ref, or a
+// declared concurrency block with no group at all.
+func bareRefGroupError(f, where, group string) error {
+	if group == "" {
+		return fmt.Errorf("%s: %s declares concurrency without a group", f, where)
+	}
+	if bareRefGroup.MatchString(group) {
+		return fmt.Errorf("%s: %s concurrency group %q is a bare ref. Group names are "+
+			"repository-scoped, so a second workflow with the same group on the "+
+			"same ref would cancel this one's runs (the 2026-10-30 nightly "+
+			"collision). Prefix the group with github.workflow or a literal, "+
+			"e.g. ${{ github.workflow }}-%s", f, where, group, group)
+	}
+	return nil
+}
+
+// TestConcurrencyGroupForms covers every declaration shape the invariant
+// must police. The scalar shorthand `concurrency: <group>` is valid GitHub
+// Actions syntax and parses as a plain string, so a check that reads only the
+// mapping form would let a bare-ref group slip through it.
+func TestConcurrencyGroupForms(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{
+			name:    "scalar bare ref",
+			yaml:    "concurrency: ${{ github.ref }}",
+			wantErr: true,
+		},
+		{
+			name: "scalar namespaced",
+			yaml: "concurrency: smoke-${{ github.ref }}",
+		},
+		{
+			name:    "mapping bare ref",
+			yaml:    "concurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: true",
+			wantErr: true,
+		},
+		{
+			name: "mapping namespaced",
+			yaml: "concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true",
+		},
+		{
+			name:    "job-level scalar bare ref",
+			yaml:    "jobs:\n  test:\n    concurrency: ${{ github.ref }}",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var doc map[string]any
+			if err := yaml.Unmarshal([]byte(tt.yaml), &doc); err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			groups := concurrencyGroups(doc)
+			if len(groups) == 0 {
+				t.Fatalf("no concurrency group collected from %q", tt.yaml)
+			}
+			for where, group := range groups {
+				err := bareRefGroupError("test.yml", where, group)
+				if got := err != nil; got != tt.wantErr {
+					t.Errorf("bareRefGroupError(%q) = %v, want error: %t", group, err, tt.wantErr)
+				}
+			}
+		})
 	}
 }
 
