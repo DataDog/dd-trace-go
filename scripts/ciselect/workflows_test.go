@@ -91,7 +91,8 @@ func TestEveryWorkflowIsRegistered(t *testing.T) {
 // TestCacheSeedAndDisableLiterals pins the workflow literals the Go
 // cache seeding program depends on. actionlint checks syntax only: a
 // deleted seed literal silently reverts that workload to per-run saves, a
-// deleted `cache: "false"` literal resumes a light job's pool writes, and
+// deleted `cache: "false"` literal resumes a light job's pool writes or
+// restores potentially incompatible instrumented archives, and
 // a deleted workflow_dispatch trigger removes manual re-seeding after a
 // Go patch release.
 func TestCacheSeedAndDisableLiterals(t *testing.T) {
@@ -110,7 +111,7 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	cacheFalse := map[string]int{
 		"static-checks.yml": 5,
 		"orchestrion.yml":   1,
-		"otelc.yml":         1,
+		"otelc.yml":         1, // Matrix computation; both instrumented workloads keep caches on.
 	}
 	for name, want := range cacheFalse {
 		body := readText(t, filepath.Join(root, workflowDir), name)

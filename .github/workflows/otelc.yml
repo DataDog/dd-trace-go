@@ -154,6 +154,7 @@ jobs:
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       # Deliberately not tools-cache: `make tools-install` also installs
@@ -185,6 +186,30 @@ jobs:
           for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
+
+      # A rule that injects an import into a package otelc compiles inside a
+      # nested build poisons the cache for that package: the nested build
+      # drops -toolexec, so its archive is uninstrumented, and it lands under
+      # the same action ID as the main build's. In a normal-parallelism run
+      # that only races, which is why it surfaced as an intermittent
+      # "fingerprint mismatch" link failure on random matrix legs (see the
+      # dyngo fix that made the package import what its GLS rules inject).
+      # Building aws.v1 serially makes the nested build cache the poisoned
+      # archive before the main build reaches the dependency, so a
+      # reintroduced nested resolution fails this step on every run instead
+      # of flaking. It must run before "Run Tests": the warm cache that step
+      # leaves behind would mask the poison.
+      - name: Catch nested import resolution deterministically
+        shell: bash
+        run: otelc go build ./aws.v1/mainapp
+        working-directory: internal/orchestrion/_integration
+        env:
+          # -p belongs in GOFLAGS, not on the command line: the nested build
+          # otelc spawns re-reads GOFLAGS, and that is the build whose order
+          # must be pinned. Archives produced here are reused by "Run Tests"
+          # (same tag, same GOOS/GOARCH), so the lane pays only for the
+          # serialization of a build it does anyway.
+          GOFLAGS: -p=1 -tags=githubci
 
       - name: Run Tests
         shell: bash
@@ -277,6 +302,7 @@ jobs:
           workload: otelc-external-app
           variant: |-
             {"instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       - name: Install otelc binary
