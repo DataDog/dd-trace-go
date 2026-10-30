@@ -76,6 +76,7 @@ env:
     otelc
     gls
     gls-leak
+    gls-unfinished
     otelc-autostart
     net_http
     sql
