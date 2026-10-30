@@ -496,6 +496,19 @@ components:
     gates: [ "@everything" ]
 
   # ----------------------------------------------------------------- contrib
+  # Root-module packages under contrib/ that only some contrib modules import.
+  # Without an entry, `contrib` below claims them, finds no go.mod above them
+  # and tests every contrib module. For the same reason they are not
+  # module-scoped: their measured `dependent-modules` seed the matrix instead.
+  # The gates are those of `contrib`.
+  - id: connectrpc-shared
+    why: >-
+      Shared by the connectrpc.com/connect and connect.v2 contribs only; it
+      imports neither connect major.
+    paths: [ contrib/connectrpc.com/connectshared/** ]
+    dependent-modules: [ contrib/connectrpc.com/connect, contrib/connectrpc.com/connect.v2 ]
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps, system-tests ]
+
   # Module-scoped: ci_contrib_matrix.go narrows the test matrix to the changed
   # modules and their intra-repo reverse dependencies.
   - id: contrib
