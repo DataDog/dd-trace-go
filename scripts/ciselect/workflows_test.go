@@ -111,7 +111,7 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	cacheFalse := map[string]int{
 		"static-checks.yml": 5,
 		"orchestrion.yml":   1,
-		"otelc.yml":         3, // Matrix computation and both instrumented workloads.
+		"otelc.yml":         1, // Matrix computation; both instrumented workloads keep caches on.
 	}
 	for name, want := range cacheFalse {
 		body := readText(t, filepath.Join(root, workflowDir), name)
