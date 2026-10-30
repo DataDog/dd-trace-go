@@ -83,6 +83,16 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Counts
+//
+// Aggregated evaluation events are sent to /api/v2/flagevaluation by default.
+// Set DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED=false before creating the provider
+// to disable this stream. Flag evaluation, configuration fetching, exposure events,
+// span enrichment, and OpenTelemetry evaluation metrics are unchanged.
+// DD_FLAGGING_EVALUATION_COUNTS_ENABLED remains supported as a compatibility alias.
+// When both variables are set, DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED takes
+// precedence, including when empty or invalid (which uses the default, true).
+//
 // # Evaluation Telemetry Opt-Out
 //
 // Applications can enable a per-evaluation telemetry opt-out parameter:
