@@ -166,12 +166,13 @@ type Span struct {
 	// +checklocks:mu
 	statSpan *tracerStatSpan `msg:"-"`
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	context      *SpanContext `msg:"-"` // span propagation context
+	context *SpanContext `msg:"-"` // span propagation context
+
+	// The bools are grouped to avoid padding: Span sits at the top of a Go allocator size class.
+	goExecTraced bool `msg:"-"`
+	noDebugStack bool `msg:"-"` // disables debug stack traces
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
-
 	// +checklocks:mu
 	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	// +checklocks:mu
@@ -186,6 +187,10 @@ type Span struct {
 
 	// +checklocks:mu
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+
+	// llmobsDownstreamOwner is the LLMObs tool span this outbound call is reported to, if any.
+	// Set before the span is shared and read-only until clear(), so it is read without s.mu.
+	llmobsDownstreamOwner *illmobs.Span `msg:"-"`
 }
 
 func (s *Span) clear() {
@@ -223,6 +228,7 @@ func (s *Span) clear() {
 	s.pprofCtxActive = nil
 	s.pprofCtxRestore = nil
 	s.taskEnd = nil
+	s.llmobsDownstreamOwner = nil
 	// Always keep this unlock as the last line. If we ever introduce
 	// code above that could panic, we should move it as deferred call
 	// under s.mu.Lock().
@@ -1178,6 +1184,9 @@ func (s *Span) finish(finishTime int64) {
 	}
 	if s.duration < 0 {
 		s.duration = 0
+	}
+	if s.llmobsDownstreamOwner != nil {
+		s.recordLLMObsDownstreamCallLocked()
 	}
 	if s.taskEnd != nil {
 		s.taskEnd()

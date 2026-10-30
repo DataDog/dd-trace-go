@@ -283,6 +283,9 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	maps.Copy(tags, span.llmCtx.tags)
 
 	setMetadataCostTags(metadata, validateCostTags(span, tags))
+	if spanKind == SpanKindTool {
+		setMetadataDownstreamCalls(metadata, span.downstream.close())
+	}
 	if len(metadata) > 0 {
 		meta["metadata"] = metadata
 	}
@@ -403,6 +406,20 @@ func setMetadataCostTags(metadata map[string]any, costTags []string) {
 		ddMetadata = make(map[string]any)
 	}
 	ddMetadata["cost_tags"] = append([]string(nil), costTags...)
+	metadata["_dd"] = ddMetadata
+}
+
+func setMetadataDownstreamCalls(metadata map[string]any, summary map[string]any) {
+	if summary == nil {
+		return
+	}
+	ddMetadata, ok := metadata["_dd"].(map[string]any)
+	if ok {
+		ddMetadata = maps.Clone(ddMetadata)
+	} else {
+		ddMetadata = make(map[string]any)
+	}
+	ddMetadata["downstream_calls"] = summary
 	metadata["_dd"] = ddMetadata
 }
 
