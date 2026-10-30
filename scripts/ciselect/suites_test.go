@@ -224,6 +224,22 @@ func TestSuiteSelection(t *testing.T) {
 			wantOrch:    true,
 		},
 		{
+			// The external-app job consumes these inputs: no suite, no
+			// fail-open, but the otelc gate stays on so the build still runs.
+			name:        "an external-app input runs no suite but keeps the gate",
+			files:       []string{"internal/apps/otelc-external-app/main.go"},
+			otelc:       SuiteVerdict{},
+			orchestrion: SuiteVerdict{},
+			wantOtelc:   true,
+		},
+		{
+			name:        "the external-app build script runs no suite but keeps the gate",
+			files:       []string{"scripts/build_otelc_external_app.sh"},
+			otelc:       SuiteVerdict{},
+			orchestrion: SuiteVerdict{},
+			wantOtelc:   true,
+		},
+		{
 			// The workflow-gates self-reference turns the otelc gate on with
 			// no suite information, so fail-open applies.
 			name:        "editing the otelc workflow escalates the otelc lane",

@@ -27,6 +27,27 @@ const (
 // to the repository root.
 const integrationRoot = "internal/orchestrion/_integration"
 
+// otelcExternalAppPrefixes are the inputs of the otelc lane's external-app
+// job: it builds one application and runs no suites. Such a change
+// contributes no suite and does not fail the otelc lane open -- a suite-less
+// full-lane run would burn the three-OS matrix for a build -- but unlike a
+// suppressed suite directory the component's gate vote stays, so the
+// external-app job still has to build.
+var otelcExternalAppPrefixes = []string{
+	"internal/apps/otelc-external-app",
+	"scripts/build_otelc_external_app.sh",
+}
+
+// feedsOtelcExternalApp reports whether file is an external-app job input.
+func feedsOtelcExternalApp(file string) bool {
+	for _, p := range otelcExternalAppPrefixes {
+		if file == p || strings.HasPrefix(file, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // suiteImportRef matches a quoted import path naming a suite package of the
 // integration module, e.g.
 // "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/twirp".
@@ -235,6 +256,11 @@ func (t *table) selectSuites(root string, res *result) error {
 		// docs component claims README.md everywhere, including inside code
 		// directories, and static-docs says nothing about suites.
 		if !res.pathGatesHave(file, laneOtelc) && !res.pathGatesHave(file, laneOrchestrion) {
+			continue
+		}
+		if feedsOtelcExternalApp(file) {
+			// The external-app job consumes these inputs; the selection says
+			// nothing about suites, and the gate vote stays.
 			continue
 		}
 		if rest, ok := strings.CutPrefix(file, integrationRoot+"/"); ok {

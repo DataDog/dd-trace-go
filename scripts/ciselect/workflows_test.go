@@ -529,6 +529,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			job:      "integration-test-done",
 			strict: []string{
 				"needs.changes.outputs.otelc == 'true'",
+				"needs.changes.outputs.otelc-suites != 'NONE'",
 				"needs.integration-test.result != 'success'",
 				"needs.external-app.result != 'success'",
 			},

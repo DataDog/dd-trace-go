@@ -164,7 +164,8 @@ jobs:
       - go-versions-matrix
     if: >-
       github.event_name != 'pull_request' ||
-      needs.changes.outputs.otelc == 'true'
+      (needs.changes.outputs.otelc == 'true' &&
+      needs.changes.outputs.otelc-suites != 'NONE')
     strategy:
       fail-fast: false
       matrix:
@@ -407,13 +408,16 @@ jobs:
           || contains(fromJSON('["failure", "cancelled"]'),
           needs.external-app.result)
           || (needs.changes.outputs.otelc == 'true'
-              && (needs.integration-test.result != 'success'
-                  || needs.external-app.result != 'success'))
+              && needs.external-app.result != 'success')
+          || (needs.changes.outputs.otelc == 'true'
+              && needs.changes.outputs.otelc-suites != 'NONE'
+              && needs.integration-test.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.integration-test.result == 'skipped'
         run: >-
-          echo "No changed path requires otelc tests
-          (see .github/ci-components.yml)."
+          echo "No changed path requires the otelc integration matrix
+          (see .github/ci-components.yml); the external-app build may
+          still have run."
       - name: Success
         run: echo "Success!"
