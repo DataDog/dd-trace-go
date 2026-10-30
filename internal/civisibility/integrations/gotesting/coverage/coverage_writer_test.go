@@ -41,6 +41,7 @@ func TestCoverageWriterStop(t *testing.T) {
 
 func TestCoverageWriterFlush(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendCoveragePayloadFunc: drainCoveragePayload}
 	coverage := &testCoverage{}
 	writer.add(coverage)
@@ -50,6 +51,7 @@ func TestCoverageWriterFlush(t *testing.T) {
 
 func TestCoverageWriterConcurrentFlush(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendCoveragePayloadFunc: drainCoveragePayload}
 	coverage := &testCoverage{}
 
@@ -62,6 +64,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 
 func TestCoverageWriterFlushError(t *testing.T) {
 	writer := newCoverageWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
 		return errors.New("mock error")
 	},
