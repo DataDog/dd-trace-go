@@ -24,15 +24,16 @@ outputs:
     description: >-
       Space-separated internal/orchestrion/_integration suites for the otelc
       lane, the token ALL for every suite, or NONE for none. GitHub outputs are
-      single-line, hence the tokens and the space separation. An EMPTY value
-      means the selector failed; consumers must read it as ALL.
+      single-line, hence the tokens and the space separation. A failure in the
+      selector fails this step; only the gates list falls back to ALL.
     value: ${{ steps.classify.outputs.otelc-suites }}
   orchestrion-suites:
     description: >-
       Space-separated internal/orchestrion/_integration suites for the
       orchestrion lane, the token ALL for every suite, or NONE for none. GitHub
-      outputs are single-line, hence the tokens and the space separation. An
-      EMPTY value means the selector failed; consumers must read it as ALL.
+      outputs are single-line, hence the tokens and the space separation. A
+      failure in the selector fails this step; only the gates list falls back
+      to ALL.
     value: ${{ steps.classify.outputs.orchestrion-suites }}
   pull-request-tests:
     description: "Unit, integration and multi-OS tests"
@@ -146,10 +147,17 @@ runs:
       env:
         CHANGED: ${{ steps.diff.outputs.file }}
       run: |
-        set -uo pipefail
-        if go run ./scripts/ciselect -changed-files "${CHANGED}" -github-output > "${RUNNER_TEMP}/gates.txt"; then
+        # -e makes a selector failure abort the step loudly instead of
+        # emitting an empty suite output downstream would have to guess
+        # about; the gates list keeps its own fail-open below. The diff
+        # step above deliberately tolerates failure and keeps its own
+        # options.
+        set -euo pipefail
+        if go run ./scripts/ciselect -changed-files "${CHANGED}" \
+          -github-output > "${RUNNER_TEMP}/gates.txt"; then
           cat "${RUNNER_TEMP}/gates.txt" >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ciselect -changed-files "${CHANGED}" -explain >> "${GITHUB_STEP_SUMMARY}" || true
+          go run ./scripts/ciselect -changed-files "${CHANGED}" \
+            -explain >> "${GITHUB_STEP_SUMMARY}" || true
           # The three selector flags below repeat the same invocation, so
           # wrap it once; each flag prints one entry per line, or ALL/NONE.
           ciselect() {

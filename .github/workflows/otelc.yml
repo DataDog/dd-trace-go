@@ -152,7 +152,8 @@ jobs:
     env:
       REPORT: gotestsum-report-otelc.xml
       # The suites the classifier selected: space-separated names, or the
-      # tokens ALL / NONE (empty means the selector failed; read it as ALL).
+      # tokens ALL / NONE. A selector failure fails the classify step
+      # instead of emitting an empty value to guess about.
       OTELC_SUITES: ${{ needs.changes.outputs.otelc-suites }}
       # Workspace mode resolves modules differently from the module graph otelc
       # analyzes, and it breaks outright when otelc and dd-trace-go disagree on
