@@ -60,6 +60,7 @@ use (
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
 	./contrib/jackc/pgx.v5
+	./contrib/jackc/pgx.v5/otelc
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
 	./contrib/julienschmidt/httprouter/otelc

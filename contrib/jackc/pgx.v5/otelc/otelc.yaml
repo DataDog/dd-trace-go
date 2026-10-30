@@ -1,0 +1,104 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Call-site rules that call the contrib's constructor instead of a hook: the
+# rewritten package imports the contrib, so it is initialized before a
+# connection opened in a package-level var or init. pgx and pgxpool are
+# excluded because pgxpool opens each connection with pgx.ConnectConfig, and
+# the contrib because it calls the pgx constructors after installing its
+# tracer, so each connection and pool is traced once.
+#
+# TODO: wrap_call requires the original call in the template, so it stays in a
+# branch that never runs. The parameters and the contrib's alias keep a prefix,
+# so they cannot hide, or be hidden by, a variable at the call site. Remove the
+# branch once wrap_call can replace a call outright:
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+pgx_connect:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5.Connect
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_ctx context.Context, __dd_connString string) (*pgx.Conn, error) {
+            if false {
+              return {{ . }}
+            }
+            return __dd_pgxtrace.Connect(__dd_ctx, __dd_connString)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+  imports:
+    context: context
+    pgx: github.com/jackc/pgx/v5
+    __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgx_connect_config:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5.ConnectConfig
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_ctx context.Context, __dd_connConfig *pgx.ConnConfig) (*pgx.Conn, error) {
+            if false {
+              return {{ . }}
+            }
+            return __dd_pgxtrace.ConnectConfig(__dd_ctx, __dd_connConfig)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+  imports:
+    context: context
+    pgx: github.com/jackc/pgx/v5
+    __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgxpool_new:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5/pgxpool.New
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_ctx context.Context, __dd_connString string) (*pgxpool.Pool, error) {
+            if false {
+              return {{ . }}
+            }
+            return __dd_pgxtrace.NewPool(__dd_ctx, __dd_connString)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+  imports:
+    context: context
+    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+
+pgxpool_new_with_config:
+  target:
+    - "**"
+    - not: "github.com/jackc/pgx/v5"
+    - not: "github.com/jackc/pgx/v5/pgxpool"
+    - not: "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/**"
+  where:
+    function_call: github.com/jackc/pgx/v5/pgxpool.NewWithConfig
+  do:
+    - wrap_call:
+        replace: |-
+          (func(__dd_ctx context.Context, __dd_config *pgxpool.Config) (*pgxpool.Pool, error) {
+            if false {
+              return {{ . }}
+            }
+            return __dd_pgxtrace.NewPoolWithConfig(__dd_ctx, __dd_config)
+          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+  imports:
+    context: context
+    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
