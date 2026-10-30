@@ -416,3 +416,10 @@ Run these in order and commit every change they produce. CI fails on a non-clean
    cd internal/orchestrion/_integration
    go run github.com/DataDog/orchestrion go test ./net_http/...
    ```
+6. Register the integration with the otelc lane, when your integration ships
+   one. Name the module in `OTELC_MODULES` and `OTELC_TEST_PACKAGES` in
+   `.github/workflows/otelc.yml`, add the parent subtree to the
+   `otelc-integrations` component in `.github/ci-components.yml`, and add the
+   module's entry to the same file's `integration-suites.modules` mapping.
+   The CI selector derives the suite coverage from those entries, and
+   `make lint/misc` fails until the mapping covers every module.
