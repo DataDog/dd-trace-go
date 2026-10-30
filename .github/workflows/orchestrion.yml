@@ -328,45 +328,14 @@ jobs:
           echo "PATH: ${PATH}"
           echo "Working directory: ${PWD}"
           orchestrion version
-          # SUITES narrows the run to the affected suites (a space-separated
-          # list). Empty, NONE and ALL keep the full suite. A narrowed run
-          # FILTERS the platform-aware package list below instead of naming
-          # packages: go list skips build-constraint-excluded directories
-          # (mongo and mongo.v2 are linux-only under -tags=githubci), while an
-          # explicit ./mongo path fails on macOS and Windows. grep -v
-          # /civisibility also drops civisibility_failnow* and
-          # civisibilitytest from the gotestsum list in full mode; filtering
-          # preserves that in narrowed mode -- they fail on purpose and must
-          # not mark real failures in CI App.
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
-          CIVISIBILITY="./civisibility"
-          # The classifier output can carry stray whitespace around the
-          # tokens; trim it or the exact case comparison below misses.
-          SUITES="${SUITES#"${SUITES%%[![:space:]]*}"}"
-          SUITES="${SUITES%"${SUITES##*[![:space:]]}"}"
-          case "${SUITES}" in
-          "" | "NONE" | "ALL") ;;
-          *)
-            FILTERED=""
-            for pkg in ${PACKAGE_NAMES}; do
-              for suite in ${SUITES}; do
-                # Shell pattern match keeps '.' literal; the full list is
-                # platform-aware, so constraint-excluded suites drop out here.
-                if [[ "${suite}" != "civisibility" &&
-                  "${pkg}" == */"${suite}" ]]; then
-                  FILTERED+="${FILTERED:+ }${pkg}"
-                fi
-              done
-            done
-            PACKAGE_NAMES="${FILTERED}"
-            CIVISIBILITY=""
-            for suite in ${SUITES}; do
-              if [[ "${suite}" == "civisibility" ]]; then
-                CIVISIBILITY="./civisibility"
-              fi
-            done
-            ;;
-          esac
+          # The selection script narrows the platform-aware package list and
+          # picks the civisibility target; see the script header for the
+          # rules, including the full-lane fallback when nothing matches.
+          selection="$(printf '%s\n' "${PACKAGE_NAMES}" |
+            bash "${{ github.workspace }}/dd-trace-go/.github/workflows/apps/select-orchestrion-suites.sh")"
+          PACKAGE_NAMES="$(sed -n '1p' <<< "${selection}")"
+          CIVISIBILITY="$(sed -n '2p' <<< "${selection}")"
 
           case "${MODE}" in
           "DRIVER")
