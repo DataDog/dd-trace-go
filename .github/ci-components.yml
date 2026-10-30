@@ -285,14 +285,23 @@ components:
 
   - id: orchestrion-suite
     why: >-
-      The orchestrion integration module and its CI generators. Distinct from
+      The orchestrion integration module and its Go-version matrix, which the
+      otelc lane also runs (go run ./internal/orchestrion/matrix). Distinct from
       internal/orchestrion/*.go (context.go, gls.go, orchestrion.go), which is
       imported by 78 workspace modules and is therefore matched by `core`.
+      Every otelc test suite also lives under internal/orchestrion/_integration,
+      which this component claims, so it owns the otelc gate for those suites.
     paths:
       - internal/orchestrion/_integration/**
-      - internal/orchestrion/generator/**
       - internal/orchestrion/matrix/**
-    gates: [ "@go-hygiene", orchestrion ]
+    gates: [ "@go-hygiene", orchestrion, otelc ]
+
+  - id: orchestrion-generators
+    why: >-
+      Generates orchestrion's aspect aggregate. Nothing otelc consumes it, so
+      it keeps the orchestrion gate only.
+    paths: [internal/orchestrion/generator/**]
+    gates: ["@go-hygiene", orchestrion]
 
   - id: orchestrion-public
     why: >-
@@ -308,6 +317,37 @@ components:
     paths: [ otelc/** ]
     dependent-modules: []
     gates: [ "@go-hygiene", otelc, pull-request-tests ]
+
+  - id: otelc-integrations
+    why: >-
+      The integrations otelc has migrated. Their otelc hook modules blank-import
+      the contrib packages and link against the parent module's internals
+      (contrib/net/http/otelc uses go:linkname into contrib/net/http), so a
+      change anywhere in the parent module needs the otelc lane. One subtree per
+      integration claims the parent module, its otelc/ submodule, and the
+      otelc*.go hook files that live directly in the parent, before the broad
+      contrib entry claims them without the gate.
+    paths:
+      - contrib/99designs/gqlgen/**
+      - contrib/aws/aws-sdk-go/**
+      - contrib/database/sql/**
+      - contrib/gin-gonic/gin/**
+      - contrib/go-chi/chi/**
+      - contrib/go-chi/chi.v5/**
+      - contrib/gofiber/fiber.v2/**
+      - contrib/go.mongodb.org/mongo-driver/**
+      - contrib/go.mongodb.org/mongo-driver.v2/**
+      - contrib/gomodule/redigo/**
+      - contrib/google.golang.org/grpc/**
+      - contrib/gorilla/mux/**
+      - contrib/julienschmidt/httprouter/**
+      - contrib/labstack/echo.v4/**
+      - contrib/labstack/echo.v5/**
+      - contrib/net/http/**
+      - contrib/valyala/fasthttp/**
+    module-scoped: true
+    dependent-modules: []
+    gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps, system-tests, otelc ]
 
   # --------------------------------------------------- leaf root-module packages
   # No contrib imports these. `dependent-modules` is the measured set of
@@ -382,6 +422,15 @@ components:
   # with its own go.mod may classify as `core`. A new submodule is a test
   # failure until it is listed here.
 
+  - id: otelc-external-app
+    why: >-
+      The application the otelc lane's external-app job builds, through
+      scripts/build_otelc_external_app.sh. Only that job builds it, so it needs
+      no gate beyond hygiene and otelc; claimed here before the broad apps
+      entry.
+    paths: [ internal/apps/otelc-external-app/** ]
+    gates: ["@go-hygiene", otelc]
+
   - id: apps
     why: >-
       Soak and benchmark harness, plus the telemetry-errors E2E that
@@ -425,10 +474,12 @@ components:
   - id: testcontainers
     why: >-
       Also a matrix member, but orchestrion.yml pre-pulls the pinned images from
-      its docker-compose.yaml, so it keeps the orchestrion gate.
+      its docker-compose.yaml, so it keeps the orchestrion gate. The otelc
+      suites redigo, mongo, mongo.v2 and aws.v1 import it, so it keeps the
+      otelc gate too.
     paths: [ instrumentation/testutils/containers/** ]
     module-scoped: true
-    gates: [ "@go-hygiene", pull-request-tests, orchestrion ]
+    gates: ["@go-hygiene", pull-request-tests, orchestrion, otelc]
 
   # -------------------------------------------------------------------- core
   # Reachable from ~90-100 packages in every contrib module. Measured fan-out:
@@ -464,6 +515,13 @@ components:
     # published tag breaks those builds, so it must break this check first.
 
   # ------------------------------------------------------------------- tools
+  - id: otelc-external-app-script
+    why: >-
+      The build script the otelc external-app job runs; claimed here before the
+      broad scripts entry.
+    paths: [ scripts/build_otelc_external_app.sh ]
+    gates: [ otelc, static-format, static-lint ]
+
   - id: release-tooling
     why: Not imported by shipped code; own tests run under test-core.
     paths:

@@ -194,6 +194,23 @@ jobs:
           repository: DataDog/orchestrion
           ref: ${{ inputs.orchestrion-version }}
 
+      # Resolve before restoring caches: "pinned" does not distinguish module
+      # upgrades, and workflow_call refs can name moving branches or tags.
+      - name: Resolve Orchestrion cache version
+        id: orchestrion-cache-version
+        shell: bash
+        env:
+          CUSTOM_VERSION: ${{ inputs.orchestrion-version }}
+        run: |-
+          set -euo pipefail
+          if [[ -n "$CUSTOM_VERSION" ]]; then
+            version="$(git -C orchestrion rev-parse HEAD)"
+          else
+            version="$(awk '$1 == "github.com/DataDog/orchestrion" && $2 != "=>" { print $2; exit }' dd-trace-go/internal/orchestrion/_integration/go.mod)"
+          fi
+          test -n "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
       # Local action references resolve from the workspace, and this
       # repository is checked out beneath dd-trace-go/ — also for the
       # dd-ci-upload step at the end. Local composite actions must stay on
@@ -211,7 +228,7 @@ jobs:
             {"runner":"${{ matrix.runs-on }}",
              "mode":"${{ matrix.mode }}",
              "instrumentation":"orchestrion",
-             "version":${{ toJSON(inputs.orchestrion-version || 'pinned') }},
+             "version":${{ toJSON(steps.orchestrion-cache-version.outputs.version) }},
              "coverage":"${{ inputs.collect-coverage && 'atomic' || 'none' }}",
              "workspace":"off"}
 
