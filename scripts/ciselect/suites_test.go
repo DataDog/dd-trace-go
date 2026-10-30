@@ -375,9 +375,8 @@ func TestSuiteSelection(t *testing.T) {
 	}
 }
 
-// TestSuiteJSONPayload pins the -json contract the orchestrion and otelc
-// workflows read: the per-lane suite verdicts and the per-path component
-// gates must both be present.
+// TestSuiteJSONPayload pins the shape of the -json output: the per-lane suite
+// verdicts and the per-path component gates must both be present.
 func TestSuiteJSONPayload(t *testing.T) {
 	var stdout bytes.Buffer
 	err := run([]string{"-json"}, strings.NewReader("contrib/gin-gonic/gin/gin.go\n"), &stdout)

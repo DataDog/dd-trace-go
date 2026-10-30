@@ -51,7 +51,8 @@ type table struct {
 		// both lanes to every suite.
 		SharedModules []string `yaml:"shared-modules"`
 		// Modules maps every contrib module directory to the suites that
-		// exercise it. An empty list means no suite covers the module.
+		// exercise it. An empty list means no information, so a change to the
+		// module fails its lanes open to every suite.
 		Modules map[string][]string `yaml:"modules"`
 	} `yaml:"integration-suites"`
 	Components []component `yaml:"components"`

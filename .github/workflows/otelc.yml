@@ -259,6 +259,8 @@ jobs:
           PACKAGE_NAMES=""
           case "${OTELC_SUITES}" in
           "" | "NONE" | "ALL")
+            # NONE widens to the full list on purpose: it can only arrive
+            # with the gate off, so this arm is the last resort.
             for pkg in ${OTELC_TEST_PACKAGES}; do
               PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
             done

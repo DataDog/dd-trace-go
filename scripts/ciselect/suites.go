@@ -32,9 +32,9 @@ const integrationRoot = "internal/orchestrion/_integration"
 // suite's mainapp) do not match, so only whole-suite imports form edges.
 var suiteImportRef = regexp.MustCompile(`"[^"]*/internal/orchestrion/_integration/([A-Za-z0-9._-]+)"`)
 
-// SuiteVerdict is one lane's selection of integration suites. Exactly one of
-// All and a non-empty Suites holds; an empty Suites with All false means the
-// lane runs no suite (NONE).
+// SuiteVerdict is one lane's selection of integration suites. At most one of
+// All and a non-empty Suites holds; both zero is the third verdict (NONE),
+// and both consumers read it.
 type SuiteVerdict struct {
 	All    bool     `json:"all"`
 	Suites []string `json:"suites"`
@@ -189,8 +189,8 @@ func (t *table) selectSuites(root string, res *result) error {
 		sel    = map[string]map[string]bool{laneOtelc: {}, laneOrchestrion: {}}
 		esc    = map[string]bool{laneOtelc: false, laneOrchestrion: false}
 		shared bool
-		// Module contributions expand through the require graph, so their
-		// fail-open check waits for the closure below.
+		// Module contributions expand through the require graph. A seed whose
+		// own mapping is empty fails open regardless of the closure.
 		seeds     = map[string]bool{}
 		seedFiles = map[string]string{}
 		// Suite directories whose closure stays outside the otelc suite set;

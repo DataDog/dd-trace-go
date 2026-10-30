@@ -157,9 +157,9 @@ runs:
           }
           mods="$(ciselect -contrib-modules | tr '\n' ' ')"
           echo "contrib-modules=${mods}" >> "${GITHUB_OUTPUT}"
-          # xargs joins the selector lines on single spaces and strips the
-          # trailing newline artifact tr would leave, which a consumer's
-          # exact "ALL" comparison would otherwise miss.
+          # `xargs` joins the selector lines on single spaces and drops the
+          # trailing space tr would leave, which otelc.yml's exact "ALL"
+          # comparison would otherwise miss.
           otelc_suites="$(ciselect -otelc-suites | xargs)"
           echo "otelc-suites=${otelc_suites}" >> "${GITHUB_OUTPUT}"
           orchestrion_suites="$(ciselect -orchestrion-suites | xargs)"
