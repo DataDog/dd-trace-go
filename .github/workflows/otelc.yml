@@ -150,9 +150,13 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           workload: otelc-integration
+          # Restored instrumented archives can cause link-time fingerprint
+          # mismatches. Keep restores off until toolchain isolation is verified.
+          cache: "false"
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       # Deliberately not tools-cache: `make tools-install` also installs
@@ -274,8 +278,11 @@ jobs:
         with:
           go-version: "1.26.4"
           workload: otelc-external-app
+          # Same cache-isolation requirement as the integration-test job.
+          cache: "false"
           variant: |-
             {"instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       - name: Install otelc binary
