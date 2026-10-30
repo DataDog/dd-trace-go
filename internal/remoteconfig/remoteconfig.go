@@ -197,8 +197,8 @@ type subscription struct {
 var (
 	// clientSingleton is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
 	// Using a single RC client instance in the tracer is a requirement for remote configuration.
-	// Atomic reads let product callbacks use the helpers while Stop holds clientMux
-	// waiting for the poll goroutine. Each helper keeps one snapshot of the client.
+	// Atomic reads let each helper capture one client without taking clientMux,
+	// including when called from a product callback during shutdown.
 	clientSingleton atomic.Pointer[Client]
 	clientMux       sync.Mutex
 	started         bool
@@ -262,13 +262,12 @@ func Start(config ClientConfig) error {
 	activeEnv.Store(&client.Env)
 
 	var (
-		c            = client
-		pollInterval = c.PollInterval
-		stop         = c.stop
-		pollNow      = c.pollNow
+		pollInterval = client.PollInterval
+		stop         = client.stop
+		pollNow      = client.pollNow
 	)
 	go func() {
-		defer close(c.done)
+		defer close(client.done)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
@@ -285,35 +284,43 @@ func Start(config ClientConfig) error {
 				return
 			default:
 			}
-			c.Lock()
-			c.updateState()
-			c.Unlock()
+			client.Lock()
+			client.updateState()
+			client.Unlock()
 		}
 	}()
 	return nil
 }
 
-// Stop ends the poll loop, waits for the goroutine to exit (up to the HTTP
-// timeout, since a poll may be in flight), then clears the singleton so a later
-// Start() is fresh. On wait timeout it clears anyway (a restart could briefly
-// overlap the in-flight poll). Noop if not running.
+// Stop clears the singleton and ends the poll loop, waiting for the goroutine
+// to exit (up to the HTTP timeout, since a poll may be in flight). A later Start
+// gets a fresh client and may overlap the draining poll. Noop if not running.
 func Stop() {
 	clientMux.Lock()
-	defer clientMux.Unlock()
-
 	client := clientSingleton.Load()
 	if client == nil {
 		// In case Stop() is called before Start()
+		clientMux.Unlock()
 		return
 	}
 	if !started {
 		// Return early if already stopped.
+		clientMux.Unlock()
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
 	client.stopOnce.Do(func() { close(client.stop) })
+	// Clear the singleton before draining so new callers see a stopped client.
+	// Poll callbacks can still finish using their captured client.
+	clientSingleton.Store(nil)
+	started = false
+	activeEnv.Store(nil)
+	clientMux.Unlock()
+
 	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
 	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
+	// A Start() during this window overlaps the draining poll until it exits,
+	// the same brief overlap the wait-timeout path has always allowed.
 	wait := time.Second
 	if client.HTTP != nil && client.HTTP.Timeout > 0 {
 		wait = client.HTTP.Timeout + time.Second
@@ -324,9 +331,6 @@ func Stop() {
 	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
-	clientSingleton.Store(nil)
-	started = false
-	activeEnv.Store(nil)
 }
 
 // Reset destroys the client instance.

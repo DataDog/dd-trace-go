@@ -172,6 +172,22 @@ goroutines, rely on context-based propagation, not the GLS.
 For propagating context across process boundaries (distributed tracing), see the context propagation
 section in [INTEGRATIONS.md](./INTEGRATIONS.md).
 
+## OpenTelemetry API bridge
+
+With `DD_TRACE_OTEL_ENABLED=true`, an Orchestrion build links the OpenTelemetry trace API to the
+tracer. `ddtrace/tracer/doc.go` describes the behavior. Two aspect files do the weaving:
+
+- `ddtrace/opentelemetry/orchestrion.yml` weaves `go.opentelemetry.io/otel`:
+  `trace.SpanFromContext` and the global tracer call the bridge in `ddtrace/opentelemetry/bridge.go`
+  through `go:linkname`. The aspects read private OpenTelemetry identifiers. Their
+  `meta.description` names them and the tested otel version.
+- `ddtrace/tracer/otel-bridge.orchestrion.yml` weaves the tracer, so that the span pool does not
+  reuse a span that the bridge pinned. The plain-Go part is in `ddtrace/tracer/otel_bridge.go`.
+
+The `otel_api`, `otel_api_provider`, and `otel_api_disabled` suites in
+`internal/orchestrion/_integration` test the woven behavior. See
+[Integration tests](#integration-tests).
+
 ## Integration tests
 
 Auto-instrumentation is verified by the tests under
