@@ -39,9 +39,9 @@ import (
 func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	clientSingleton.Store(client)
 
 	t.Run("registerCallback", func(t *testing.T) {
 		client.callbacks = []Callback{}
@@ -84,6 +84,7 @@ func TestRCClient(t *testing.T) {
 	t.Run("subscribe", func(t *testing.T) {
 		client, err = newClient(cfg)
 		require.NoError(t, err)
+		clientSingleton.Store(client)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
 		updates := new(int)
@@ -297,9 +298,9 @@ func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
 
 func TestRegistration(t *testing.T) {
 	t.Run("callbacks", func(t *testing.T) {
-		var err error
-		client, err = newClient(DefaultClientConfig())
+		client, err := newClient(DefaultClientConfig())
 		require.NoError(t, err)
+		clientSingleton.Store(client)
 
 		err = RegisterCallback(dummyCallback1)
 		require.NoError(t, err)
@@ -335,9 +336,9 @@ func TestRegistration(t *testing.T) {
 }
 
 func TestSubscribe(t *testing.T) {
-	var err error
-	client, err = newClient(DefaultClientConfig())
+	client, err := newClient(DefaultClientConfig())
 	require.NoError(t, err)
+	clientSingleton.Store(client)
 
 	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
@@ -378,9 +379,9 @@ func TestNewUpdateRequest(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	clientSingleton.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -412,9 +413,9 @@ func TestProcessTags(t *testing.T) {
 	cfg.Env = "test-env"
 	cfg.TracerVersion = "tracer-version"
 	cfg.AppVersion = "app-version"
-	var err error
-	client, err = newClient(cfg)
+	client, err := newClient(cfg)
 	require.NoError(t, err)
+	clientSingleton.Store(client)
 
 	err = RegisterProduct("my-product")
 	require.NoError(t, err)
@@ -450,6 +451,52 @@ func TestProcessTags(t *testing.T) {
 
 		assert.Empty(t, req.Client.ClientTracer.ProcessTags)
 	})
+}
+
+// TestConcurrentStartStopCapabilities exercises singleton publication and removal
+// while product goroutines continue using the capability API.
+func TestConcurrentStartStopCapabilities(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	t.Cleanup(Stop)
+	cfg := DefaultClientConfig()
+	cfg.PollInterval = time.Hour // No polling is needed to exercise the singleton.
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		<-start
+		for range 500 {
+			if err := Start(cfg); err != nil {
+				t.Errorf("Start: %v", err)
+				return
+			}
+			Stop()
+		}
+	})
+	operations := []func() error{
+		func() error { return RegisterCapability(FFEFlagEvaluation) },
+		func() error { return UnregisterCapability(FFEFlagEvaluation) },
+		func() error {
+			_, err := HasCapability(FFEFlagEvaluation)
+			return err
+		},
+	}
+	for _, operation := range operations {
+		wg.Go(func() {
+			<-start
+			for range 2000 {
+				// Each call can see either a running client or the gap between
+				// Stop and Start; no other error is valid.
+				if err := operation(); err != nil && err != ErrClientNotStarted {
+					t.Errorf("capability operation: %v", err)
+					return
+				}
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
 }
 
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
@@ -547,6 +594,7 @@ func TestAsync(t *testing.T) {
 	wg.Wait()
 
 	// Verify we have 0 callbacks left after we're done.
+	client := clientSingleton.Load()
 	client._callbacksMu.RLock()
 	defer client._callbacksMu.RUnlock()
 	require.Empty(t, client.callbacks)
@@ -559,7 +607,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	c, err := newClient(cfg)
 	require.NoError(t, err)
 
-	client = c
+	clientSingleton.Store(c)
 	started = true
 	defer Reset()
 
@@ -763,7 +811,7 @@ func TestPollOnEachSubscribe(t *testing.T) {
 
 // TestClientGlobalNoRace pins that package-level accessors reading the client
 // singleton do not race with Start, which writes the global. Run under -race:
-// before accessors snapshotted the global under clientMux, a concurrent
+// before accessors used synchronized snapshots of the global, a concurrent
 // UnregisterCapability during Start triggered the race detector (seen in CI as
 // the openfeature provider shutdown racing a new remote config Start).
 func TestClientGlobalNoRace(t *testing.T) {
@@ -823,6 +871,7 @@ func TestStopCallbackAccessorNoStall(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	})}
 	require.NoError(t, Start(cfg))
+	client := clientSingleton.Load()
 
 	_, err := Subscribe(state.ProductASMFeatures, func(ProductUpdate) map[string]state.ApplyStatus {
 		select {
@@ -848,9 +897,9 @@ func TestStopCallbackAccessorNoStall(t *testing.T) {
 		defer close(stopDone)
 		Stop()
 	}()
-	// Let Stop close the stop channel and enter its drain wait while the poll
-	// goroutine is parked inside the callback.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for Stop to signal shutdown while the poll goroutine is parked
+	// inside the callback.
+	<-client.stop
 	close(release)
 
 	// The accessor called from the callback must not stall on clientMux.
