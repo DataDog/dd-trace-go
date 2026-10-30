@@ -22,11 +22,9 @@ const (
 	fixtureBuildTimeout = 5 * time.Minute
 	fixtureRunTimeout   = 3 * time.Minute
 	// The orchestrion build resolves the orchestrion toolchain from the
-	// module proxy when the runner's module cache does not hold it. The
-	// warm-up gets its own budget so a slow proxy cannot spend the whole
-	// fixtureBuildTimeout on downloads before compilation starts, which
-	// is how the orchestrion-mode build timed out on windows-latest
-	// (multios-unit-tests, run 41049371781).
+	// module proxy when the module cache does not hold it. The warm-up gets
+	// its own budget so that a slow proxy cannot spend the whole
+	// fixtureBuildTimeout on downloads before compilation starts.
 	fixtureModuleDownloadTimeout = 10 * time.Minute
 )
 
@@ -65,8 +63,8 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 		binaryPath := filepath.Join(t.TempDir(), binaryName)
 		buildDir, buildArgs := fixtureBuildCommand(mode, binaryPath)
 		if mode == "orchestrion" {
-			// go mod download is a no-op when the module cache is warm, so this
-			// only costs time on the cold-cache runs that used to flake.
+			// go mod download is a no-op when the module cache is warm, so it
+			// only costs time when the module cache is cold.
 			runFixtureCommand(t, fixtureModuleDownloadTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), goCommand, "mod", "download")
 		}
 		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), goCommand, buildArgs...)

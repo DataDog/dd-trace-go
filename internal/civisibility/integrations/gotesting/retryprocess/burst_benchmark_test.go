@@ -310,9 +310,9 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 	parentProcesses := make(map[parentIdentity]struct{})
 	// liveChildPIDs holds the PIDs of child processes that have not posted
 	// child_finish yet. An OS never runs two processes on one PID at the same
-	// time, so a child_start whose PID is not live is a new process even when
-	// the PID was used by an earlier child: sequential retries on Windows
-	// regularly reuse a just-exited child's PID.
+	// time. A child_start whose PID is not live is therefore a new process.
+	// Sequential retries on Windows regularly reuse the PID of a child that
+	// has already exited.
 	liveChildPIDs := make(map[int]struct{})
 	childProcesses := 0
 	activeByPackage := make(map[string]int)
@@ -950,9 +950,9 @@ func TestProcessRetryBurstMetricsDistinguishParentPIDReuseAcrossPackages(t *test
 func TestProcessRetryBurstMetricsCountReusedChildPIDsAsNewProcesses(t *testing.T) {
 	start := time.Unix(100, 0)
 	collector := newProcessRetryBurstCollector(processRetryBurstScenario{efd: true, retries: 2, packages: 2})
-	// A sequential retry child reuses the PID of the child that just exited
-	// (Windows hands out recently freed PIDs first), reproducing the CI failure
-	// where child processes undercounted the child_start events.
+	// A sequential retry child can reuse the PID of the child that exited
+	// before it, because Windows hands out recently freed PIDs first. The
+	// metrics must count the reused PID as a new process.
 	collector.events = []processRetryBurstRecordedEvent{
 		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "parent_start", PID: 1}, received: start.Add(time.Millisecond)},
 		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "parent_start", PID: 9}, received: start.Add(2 * time.Millisecond)},
