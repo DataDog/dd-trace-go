@@ -308,7 +308,13 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 		pid         int
 	}
 	parentProcesses := make(map[parentIdentity]struct{})
-	childPIDs := make(map[int]struct{})
+	// liveChildPIDs holds the PIDs of child processes that have not posted
+	// child_finish yet. An OS never runs two processes on one PID at the same
+	// time. A child_start whose PID is not live is therefore a new process.
+	// Sequential retries on Windows regularly reuse the PID of a child that
+	// has already exited.
+	liveChildPIDs := make(map[int]struct{})
+	childProcesses := 0
 	activeByPackage := make(map[string]int)
 	maximumByPackage := make(map[string]int)
 	retryReasons := make(map[string]int)
@@ -324,7 +330,10 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 				lastFirstPass = event.received
 			}
 		case "child_start":
-			childPIDs[event.PID] = struct{}{}
+			if _, live := liveChildPIDs[event.PID]; !live {
+				childProcesses++
+			}
+			liveChildPIDs[event.PID] = struct{}{}
 			retryStarts++
 			retryReasons[event.Reason]++
 			if _, ok := firstPassByPackage[event.Package]; !ok {
@@ -338,6 +347,7 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 			retryFinishes++
 			active--
 			activeByPackage[event.Package]--
+			delete(liveChildPIDs, event.PID)
 		case "in_process_retry_start":
 			retryStarts++
 			retryReasons[event.Reason]++
@@ -361,7 +371,7 @@ func (c *processRetryBurstCollector) metrics(start time.Time, elapsed time.Durat
 		parentProcesses:          len(parentProcesses),
 		parentFinishes:           parentFinishes,
 		firstPassCompletions:     len(firstPassByPackage),
-		childProcesses:           len(childPIDs),
+		childProcesses:           childProcesses,
 		retryStarts:              retryStarts,
 		retryFinishes:            retryFinishes,
 		retriesBeforeFirstPass:   retriesBeforeFirstPass,
@@ -934,6 +944,33 @@ func TestProcessRetryBurstMetricsDistinguishParentPIDReuseAcrossPackages(t *test
 	metrics := collector.metrics(start, 3*time.Millisecond, processRetryBurstResourceMetrics{}, "")
 	if metrics.parentProcesses != 2 {
 		t.Fatalf("parent processes = %d, want 2", metrics.parentProcesses)
+	}
+}
+
+func TestProcessRetryBurstMetricsCountReusedChildPIDsAsNewProcesses(t *testing.T) {
+	start := time.Unix(100, 0)
+	collector := newProcessRetryBurstCollector(processRetryBurstScenario{efd: true, retries: 2, packages: 2})
+	// A sequential retry child can reuse the PID of the child that exited
+	// before it, because Windows hands out recently freed PIDs first. The
+	// metrics must count the reused PID as a new process.
+	collector.events = []processRetryBurstRecordedEvent{
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "parent_start", PID: 1}, received: start.Add(time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "parent_start", PID: 9}, received: start.Add(2 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "child_start", PID: 4, Reason: constants.EarlyFlakeDetectionRetryReason}, received: start.Add(3 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "child_start", PID: 5, Reason: constants.EarlyFlakeDetectionRetryReason}, received: start.Add(4 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "child_finish", PID: 4}, received: start.Add(5 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "child_finish", PID: 5}, received: start.Add(6 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "child_start", PID: 4, Reason: constants.EarlyFlakeDetectionRetryReason}, received: start.Add(7 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "child_start", PID: 5, Reason: constants.EarlyFlakeDetectionRetryReason}, received: start.Add(8 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg00", Kind: "child_finish", PID: 4}, received: start.Add(9 * time.Millisecond)},
+		{processRetryBurstEvent: processRetryBurstEvent{Package: "pkg01", Kind: "child_finish", PID: 5}, received: start.Add(10 * time.Millisecond)},
+	}
+	metrics := collector.metrics(start, 11*time.Millisecond, processRetryBurstResourceMetrics{}, "")
+	if metrics.childProcesses != 4 || metrics.retryStarts != 4 || metrics.retryFinishes != 4 {
+		t.Fatalf("child metrics = processes:%d starts:%d finishes:%d, want 4 each (reused PIDs count as new processes)", metrics.childProcesses, metrics.retryStarts, metrics.retryFinishes)
+	}
+	if got := metrics.retryReasons[constants.EarlyFlakeDetectionRetryReason]; got != 4 {
+		t.Fatalf("retry reasons = %d, want 4", got)
 	}
 }
 
