@@ -40,6 +40,8 @@ func (tc *TestCaseServerStreamSimple) Run(ctx context.Context, t *testing.T) {
 	tc.stop()
 }
 
+func (*TestCaseServerStreamSimple) ExpectedSpanCount() int { return 12 }
+
 func (tc *TestCaseServerStreamSimple) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		// The request Send, then Receive x3 (two responses and the EOF).

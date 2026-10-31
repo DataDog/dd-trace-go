@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
 go 1.26.0
 
 require (
-	connectrpc.com/connect v1.16.2
+	connectrpc.com/connect v1.19.0
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca

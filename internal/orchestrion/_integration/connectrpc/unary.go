@@ -83,6 +83,8 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	require.True(t, tc.serverIntercepted.Load(), "user handler interceptor was not called")
 }
 
+func (*TestCase) ExpectedSpanCount() int { return 4 }
+
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		tc.clientCallSpan(unaryRPC, 0,

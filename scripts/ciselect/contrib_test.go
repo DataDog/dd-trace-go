@@ -73,6 +73,12 @@ func TestSelectContribModules(t *testing.T) {
 			wantAll: true,
 		},
 		{
+			name:    "a root-module package under contrib/ selects its measured dependents",
+			files:   []string{"contrib/connectrpc.com/connectshared/config.go"},
+			want:    []string{"contrib/connectrpc.com/connect", "contrib/connectrpc.com/connect.v2"},
+			notWant: []string{"contrib/gin-gonic/gin", "contrib/net/http"},
+		},
+		{
 			name:    "an unclassified path selects everything",
 			files:   []string{"zz-brand-new/thing.go"},
 			wantAll: true,
