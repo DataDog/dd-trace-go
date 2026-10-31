@@ -1,6 +1,6 @@
 **BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about each internal package and their functionalities.
 
-Some internal packages have their own AGENTS.md (e.g. internal/appsec/AGENTS.md, internal/civisibility/AGENTS.md) — read those instead when working in that specific package.
+Some internal packages have their own AGENTS.md (e.g. internal/appsec/AGENTS.md, internal/civisibility/AGENTS.md, internal/config/AGENTS.md) — read those instead when working in that specific package.
 
 ## Updating Documentation
 
