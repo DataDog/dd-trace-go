@@ -1,0 +1,33 @@
+# Installs the orchestrion CLI that the CI Visibility fixture tests drive in
+# subprocesses. The install runs inside the orchestrion fixture module, so the
+# binary resolves the version and dependencies pinned by that module's go.mod —
+# the same resolution the fixture's `go run` fallback performs. The fixture
+# tests prefer this binary over `go run -mod=readonly github.com/DataDog/orchestrion`;
+# without it, a cold module cache makes the tool download outlast the fixture
+# build timeout (the multios macOS/Windows flake). The action exports the
+# binary's exact path through ORCHESTRION_FIXTURE_BIN rather than adding it to
+# PATH: the fixtures must run this binary, and a PATH lookup can find an
+# unrelated orchestrion install.
+name: 'Install orchestrion'
+description: 'Install the orchestrion CLI pinned by the CI Visibility fixture module and export its path in ORCHESTRION_FIXTURE_BIN'
+runs:
+  using: composite
+  steps:
+    - name: Install orchestrion binary
+      shell: bash
+      # The fixture module is not part of go.work, so GOWORK=off keeps the
+      # install in module mode: it resolves the version required by the
+      # module's go.mod instead of @latest. The relative source path avoids
+      # the Windows backslash mangling an interpolated absolute path suffers;
+      # go-retry.sh handles the module-proxy flakiness that can hit a cold
+      # cache download.
+      working-directory: internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion
+      run: |-
+        set -euo pipefail
+        source ../../../../../../../.github/workflows/apps/go-retry.sh
+        GOWORK=off retry_on_corruption go install "github.com/DataDog/orchestrion"
+        gobin="$(go env GOPATH)/bin"
+        if command -v cygpath >/dev/null; then
+          gobin="$(cygpath -m "$gobin")"
+        fi
+        echo "ORCHESTRION_FIXTURE_BIN=$gobin/orchestrion$(go env GOEXE)" >> "$GITHUB_ENV"

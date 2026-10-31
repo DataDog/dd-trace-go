@@ -370,6 +370,11 @@ jobs:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
+
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
       - name: Wait for CI service containers

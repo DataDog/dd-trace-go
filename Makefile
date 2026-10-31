@@ -176,7 +176,8 @@ docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update e
 	$(BIN_PATH) embedmd -w README.md scripts/README.md
 
 ORCHESTRION_VERSION := latest
-ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion
+ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all \
+	internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion
 
 .PHONY: upgrade/orchestrion
 upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
