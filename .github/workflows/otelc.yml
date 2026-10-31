@@ -10,6 +10,10 @@ on:
   push:
     branches:
       - release-v*
+      # The merge queue is not gated (see CONTRIBUTING.md): a queued commit
+      # re-runs the lanes that trigger on mq-working-branch-** in full, this one
+      # now included, so a narrowed pull request cannot skip this lane here.
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -97,9 +101,33 @@ env:
     valyala_fasthttp
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      otelc: ${{ steps.detect.outputs.otelc }}
+      otelc-suites: ${{ steps.detect.outputs.otelc-suites }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   go-versions-matrix:
     name: Go Versions Matrix
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.otelc == 'true'
     outputs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
@@ -123,12 +151,21 @@ jobs:
   integration-test:
     env:
       REPORT: gotestsum-report-otelc.xml
+      # The suites the classifier selected: space-separated names, or the
+      # tokens ALL / NONE. A selector failure fails the classify step
+      # instead of emitting an empty value to guess about.
+      OTELC_SUITES: ${{ needs.changes.outputs.otelc-suites }}
       # Workspace mode resolves modules differently from the module graph otelc
       # analyzes, and it breaks outright when otelc and dd-trace-go disagree on
       # their `go` directive. Same reason the orchestrion lane disables it.
       GOWORK: 'off'
     needs:
+      - changes
       - go-versions-matrix
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.changes.outputs.otelc == 'true' &&
+      needs.changes.outputs.otelc-suites != 'NONE')
     strategy:
       fail-fast: false
       matrix:
@@ -154,6 +191,7 @@ jobs:
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       # Deliberately not tools-cache: `make tools-install` also installs
@@ -186,6 +224,30 @@ jobs:
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
+      # A rule that injects an import into a package otelc compiles inside a
+      # nested build poisons the cache for that package: the nested build
+      # drops -toolexec, so its archive is uninstrumented, and it lands under
+      # the same action ID as the main build's. In a normal-parallelism run
+      # that only races, which is why it surfaced as an intermittent
+      # "fingerprint mismatch" link failure on random matrix legs (see the
+      # dyngo fix that made the package import what its GLS rules inject).
+      # Building aws.v1 serially makes the nested build cache the poisoned
+      # archive before the main build reaches the dependency, so a
+      # reintroduced nested resolution fails this step on every run instead
+      # of flaking. It must run before "Run Tests": the warm cache that step
+      # leaves behind would mask the poison.
+      - name: Catch nested import resolution deterministically
+        shell: bash
+        run: otelc go build ./aws.v1/mainapp
+        working-directory: internal/orchestrion/_integration
+        env:
+          # -p belongs in GOFLAGS, not on the command line: the nested build
+          # otelc spawns re-reads GOFLAGS, and that is the build whose order
+          # must be pinned. Archives produced here are reused by "Run Tests"
+          # (same tag, same GOOS/GOARCH), so the lane pays only for the
+          # serialization of a build it does anyway.
+          GOFLAGS: -p=1 -tags=githubci
+
       - name: Run Tests
         shell: bash
         run: |-
@@ -193,10 +255,24 @@ jobs:
           otelc version
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
+          # The classifier names the suites this change exercises. ALL, NONE
+          # and empty keep the full list; the run script below skips suites
+          # this platform cannot build either way.
           PACKAGE_NAMES=""
-          for pkg in ${OTELC_TEST_PACKAGES}; do
-            PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
-          done
+          case "${OTELC_SUITES}" in
+          "" | "NONE" | "ALL")
+            # NONE widens to the full list on purpose: it can only arrive
+            # with the gate off, so this arm is the last resort.
+            for pkg in ${OTELC_TEST_PACKAGES}; do
+              PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            done
+            ;;
+          *)
+            for pkg in ${OTELC_SUITES}; do
+              PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            done
+            ;;
+          esac
           export PACKAGE_NAMES
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
@@ -263,6 +339,11 @@ jobs:
     name: External Application Build
     env:
       GOWORK: 'off'
+    needs:
+      - changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.otelc == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -277,6 +358,7 @@ jobs:
           workload: otelc-external-app
           variant: |-
             {"instrumentation":"otelc",
+             "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
 
       - name: Install otelc binary
@@ -303,14 +385,39 @@ jobs:
   integration-test-done:
     name: OTelc Integration Tests
     needs:
+      - changes
+      - go-versions-matrix
       - integration-test
       - external-app
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
-      - name: Success
-        if: needs.integration-test.result == 'success' && needs.external-app.result == 'success'
-        run: echo "Success!"
+      # 'skipped' is only a pass when the classifier actually turned the
+      # suite off. GitHub applies an implicit success() to every `needs:`,
+      # so a failing go-versions-matrix would skip integration-test, and
+      # accepting that skip would carry this gate green. Both are
+      # dependencies here, and when the gate is on integration-test and
+      # external-app must have really succeeded.
       - name: Failure
-        if: needs.integration-test.result != 'success' || needs.external-app.result != 'success'
+        if: >-
+          needs.changes.result != 'success'
+          || contains(fromJSON('["failure", "cancelled"]'),
+          needs.go-versions-matrix.result)
+          || contains(fromJSON('["failure", "cancelled"]'),
+          needs.integration-test.result)
+          || contains(fromJSON('["failure", "cancelled"]'),
+          needs.external-app.result)
+          || (needs.changes.outputs.otelc == 'true'
+              && needs.external-app.result != 'success')
+          || (needs.changes.outputs.otelc == 'true'
+              && needs.changes.outputs.otelc-suites != 'NONE'
+              && needs.integration-test.result != 'success')
         run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.integration-test.result == 'skipped'
+        run: >-
+          echo "No changed path requires the otelc integration matrix
+          (see .github/ci-components.yml); the external-app build may
+          still have run."
+      - name: Success
+        run: echo "Success!"
