@@ -52,13 +52,22 @@ func makeExporterWithServer(t *testing.T, srv *captureServer, protocol string) *
 	}
 }
 
+func exportPayload(t *testing.T, exporter *otlpMetricsExporter, payload *pb.ClientStatsPayload) error {
+	t.Helper()
+	rms, err := buildOTLPMetricsRequest(payload, exporter.cfg)
+	if err != nil {
+		return err
+	}
+	return exporter.export(rms)
+}
+
 // ---- otlpMetricsExporter.export ----
 
 func TestOTLPMetricsExporterExportEmptyPayload(t *testing.T) {
 	srv := newCaptureServer(t)
 	exp := makeExporterWithServer(t, srv, "http/json")
 	// A payload with no groups yields a nil request; no HTTP call is made.
-	err := exp.export(makePayload("svc", "", "", nil))
+	err := exportPayload(t, exp, makePayload("svc", "", "", nil))
 	require.NoError(t, err)
 	assert.Empty(t, srv.lastBody, "no HTTP call expected for empty payload")
 }
@@ -71,7 +80,7 @@ func TestOTLPMetricsExporterExportJSONContentType(t *testing.T) {
 		Resource:  "web.request",
 		OkSummary: encodeSketch(t, 50e6),
 	}
-	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
+	err := exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
 	require.NoError(t, err)
 	assert.Equal(t, otlpContentTypeJSON, srv.lastContentType)
 	assert.NotEmpty(t, srv.lastBody)
@@ -85,7 +94,7 @@ func TestOTLPMetricsExporterExportProtoContentType(t *testing.T) {
 		Resource:  "web.request",
 		OkSummary: encodeSketch(t, 50e6),
 	}
-	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
+	err := exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
 	require.NoError(t, err)
 	assert.Equal(t, otlpContentTypeProto, srv.lastContentType)
 	assert.NotEmpty(t, srv.lastBody)
@@ -99,7 +108,7 @@ func TestOTLPMetricsExporterExportJSONIsValidOTLP(t *testing.T) {
 		Resource:  "web.request",
 		OkSummary: encodeSketch(t, 50e6),
 	}
-	require.NoError(t, exp.export(makePayload("svc", "prod", "1.0", []*pb.ClientGroupedStats{gs})))
+	require.NoError(t, exportPayload(t, exp, makePayload("svc", "prod", "1.0", []*pb.ClientGroupedStats{gs})))
 
 	// The body must be valid JSON with the expected metric name.
 	var parsed map[string]any
@@ -117,7 +126,7 @@ func TestOTLPMetricsExporterExportProtobufIsDecodable(t *testing.T) {
 		Resource:  "web.request",
 		OkSummary: encodeSketch(t, 50e6),
 	}
-	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
+	require.NoError(t, exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
 
 	// Decode without importing collector/metrics/v1 to avoid the genproto split
 	// ambiguity with confluent-kafka-go. ExportMetricsServiceRequest wire format:
@@ -153,7 +162,7 @@ func TestOTLPMetricsExporterExportHTTPError(t *testing.T) {
 		cfg:       internalconfig.CreateNew(),
 	}
 	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
-	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
+	err := exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }
@@ -171,7 +180,7 @@ func TestOTLPMetricsExporterCustomHeaders(t *testing.T) {
 		cfg:       internalconfig.CreateNew(),
 	}
 	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
-	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
+	require.NoError(t, exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
 	assert.Equal(t, "my-value", gotHeader)
 }
 
