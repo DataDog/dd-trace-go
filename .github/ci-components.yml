@@ -251,6 +251,7 @@ workflow-gates:
   code_freeze_end.yml: []
   code_freeze_start.yml: []
   config-audit.yml: []
+  errtrack-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
   dora-metrics.yml: []
@@ -284,6 +285,7 @@ native-path-filters:
   - build-metrics.yml
   - config-audit.yml
   - dynamic-checks.yml
+  - errtrack-audit.yml
   - ecosystems-label-pr.yml
   - govulncheck.yml
   - sync-cue-actions.yml
@@ -674,7 +676,7 @@ components:
     gates: [ otelc, static-format, static-lint ]
 
   - id: release-tooling
-    why: Not imported by shipped code; own tests run under test-core.
+    why: Not imported by shipped code; root-module scripts test under test-core, and the scripts/errtrackaudit nested module tests under static-checks' check-modules job.
     paths:
       - scripts/**
       - tools/**

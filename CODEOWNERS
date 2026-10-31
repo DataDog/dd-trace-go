@@ -46,6 +46,8 @@
 /instrumentation/testutils/     @DataDog/dd-trace-go-guild
 /rules/                         @DataDog/dd-trace-go-guild
 /scripts/                       @DataDog/dd-trace-go-guild
+/scripts/errtrackaudit/         @DataDog/dd-trace-go-guild
+/.github/workflows/errtrack-audit.yml @DataDog/dd-trace-go-guild
 /tools/                         @DataDog/dd-trace-go-guild
 /CODEOWNERS                     @DataDog/dd-trace-go-guild
 /Makefile                       @DataDog/dd-trace-go-guild
