@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"testing/slogtest"
 
@@ -229,6 +230,116 @@ func TestHandlerWithGroup(t *testing.T) {
 			},
 		)
 	})
+}
+
+// TestHandlerSiblings checks that loggers derived from the same parent are
+// independent: deriving one must not change what another one logs.
+func TestHandlerSiblings(t *testing.T) {
+	testCases := []struct {
+		name string
+		// parent is built with one call per attr or group, so that its slices
+		// grow and keep spare capacity that siblings could end up sharing.
+		parent func(l *slog.Logger) *slog.Logger
+		derive func(l *slog.Logger, id string) *slog.Logger
+		want   func(id string) map[string]any
+	}{
+		{
+			name: "WithAttrs",
+			parent: func(l *slog.Logger) *slog.Logger {
+				return l.WithGroup("app").
+					With("service", "checkout").
+					With("version", "1.2.3").
+					With("env", "prod")
+			},
+			derive: func(l *slog.Logger, id string) *slog.Logger {
+				return l.With("request_id", id)
+			},
+			want: func(id string) map[string]any {
+				return map[string]any{
+					"app": map[string]any{
+						"service":    "checkout",
+						"version":    "1.2.3",
+						"env":        "prod",
+						"request_id": id,
+						"key":        "val",
+					},
+				}
+			},
+		},
+		{
+			name: "WithGroup",
+			parent: func(l *slog.Logger) *slog.Logger {
+				return l.WithGroup("group1").
+					WithGroup("group2").
+					WithGroup("group3")
+			},
+			derive: func(l *slog.Logger, id string) *slog.Logger {
+				return l.WithGroup(id)
+			},
+			want: func(id string) map[string]any {
+				return map[string]any{
+					"group1": map[string]any{
+						"group2": map[string]any{
+							"group3": map[string]any{
+								id: map[string]any{"key": "val"},
+							},
+						},
+					},
+				}
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("sequential", func(t *testing.T) {
+				var buf bytes.Buffer
+				parent := tc.parent(slog.New(WrapHandler(slog.NewJSONHandler(&buf, nil))))
+
+				a := tc.derive(parent, "a")
+				b := tc.derive(parent, "b")
+				a.Info("a", "key", "val")
+				b.Info("b", "key", "val")
+
+				assertSiblingEntries(t, buf.String(), 2, tc.want)
+			})
+
+			// Run with -race: deriving loggers from a shared parent in parallel,
+			// for example one per request, must not write to shared memory.
+			t.Run("concurrent", func(t *testing.T) {
+				var buf bytes.Buffer
+				parent := tc.parent(slog.New(WrapHandler(slog.NewJSONHandler(&buf, nil))))
+
+				var wg sync.WaitGroup
+				for i := range 10 {
+					id := strconv.Itoa(i)
+					wg.Go(func() {
+						tc.derive(parent, id).Info(id, "key", "val")
+					})
+				}
+				wg.Wait()
+
+				assertSiblingEntries(t, buf.String(), 10, tc.want)
+			})
+		})
+	}
+}
+
+// assertSiblingEntries checks the JSON log lines written by sibling loggers.
+// Each line's message is the id the logger was derived with.
+func assertSiblingEntries(t *testing.T, raw string, wantLen int, want func(id string) map[string]any) {
+	t.Helper()
+
+	lines := strings.Split(strings.TrimRight(raw, "\n"), "\n")
+	require.Len(t, lines, wantLen)
+	for _, line := range lines {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry))
+		id, _ := entry["msg"].(string)
+		delete(entry, "time")
+		delete(entry, "level")
+		delete(entry, "msg")
+		assert.Equal(t, want(id), entry, "logger %q logged %s", id, line)
+	}
 }
 
 // TestRecordClone is a regression test for https://github.com/DataDog/dd-trace-go/issues/2918.
