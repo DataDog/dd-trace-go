@@ -529,6 +529,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			job:      "integration-test-done",
 			strict: []string{
 				"needs.changes.outputs.otelc == 'true'",
+				"needs.changes.outputs.otelc-suites != 'NONE'",
 				"needs.integration-test.result != 'success'",
 				"needs.external-app.result != 'success'",
 			},
@@ -692,13 +693,15 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 	}
 }
 
-// TestOTelcRunsOnTheMergeQueue pins the merge-queue push trigger: it is what
-// makes a narrowed pull-request run safe, and removing it stops the full lane
-// run before landing on main with no test failing.
-func TestOTelcRunsOnTheMergeQueue(t *testing.T) {
+// TestLanesRunOnTheMergeQueue pins the merge-queue push trigger on both
+// gated lanes: it is what makes a narrowed pull-request run safe, and removing
+// it stops the full lane run before landing on main with no test failing.
+func TestLanesRunOnTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
-	body := readText(t, root, workflowDir+"/otelc.yml")
-	if !strings.Contains(body, "- mq-working-branch-**") {
-		t.Error("otelc.yml stopped triggering on merge-queue pushes")
+	for _, f := range []string{"otelc.yml", "orchestrion.yml"} {
+		body := readText(t, root, workflowDir+"/"+f)
+		if !strings.Contains(body, "- mq-working-branch-**") {
+			t.Errorf("%s stopped triggering on merge-queue pushes", f)
+		}
 	}
 }
