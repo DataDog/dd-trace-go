@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,48 @@ func TestOptions(t *testing.T) {
 		WithAgentAddr("test:1234")(cfg)
 		expectedURL := "http://test:1234/profiling/v1/input"
 		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL/code-override-uds", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix:///var/run/datadog/apm.socket")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		WithAgentAddr("test:1234")(cfg)
+		assert.Equal(t, "http://test:1234/profiling/v1/input", cfg.agentURL)
+		assert.Same(t, defaultClient, cfg.httpClient)
+	})
+
+	t.Run("WithAgentAddr/after-WithUDS", func(t *testing.T) {
+		cfg := config{httpClient: defaultClient}
+		WithUDS("/var/run/datadog/apm.socket")(&cfg)
+		WithAgentAddr("test:1234")(&cfg)
+		assert.Equal(t, "http://test:1234/profiling/v1/input", cfg.agentURL)
+		assert.Same(t, defaultClient, cfg.httpClient)
+	})
+
+	t.Run("WithAgentAddr/keeps-custom-client", func(t *testing.T) {
+		client := &http.Client{}
+		var cfg config
+		WithHTTPClient(client)(&cfg)
+		WithAgentAddr("test:1234")(&cfg)
+		assert.Same(t, client, cfg.httpClient)
+	})
+
+	t.Run("WithAgentAddr/keeps-custom-client-after-WithUDS", func(t *testing.T) {
+		client := &http.Client{}
+		cfg := config{httpClient: defaultClient}
+		WithUDS("/var/run/datadog/apm.socket")(&cfg)
+		WithHTTPClient(client)(&cfg)
+		WithAgentAddr("test:1234")(&cfg)
+		assert.Same(t, client, cfg.httpClient)
+	})
+
+	t.Run("WithUDS/after-WithAgentAddr", func(t *testing.T) {
+		cfg := config{httpClient: defaultClient}
+		WithAgentAddr("test:1234")(&cfg)
+		WithUDS("/var/run/datadog/apm.socket")(&cfg)
+		assert.Equal(t, "http://UDS__var_run_datadog_apm.socket/profiling/v1/input", cfg.agentURL)
+		assert.NotSame(t, defaultClient, cfg.httpClient)
 	})
 
 	t.Run("WithUDS", func(t *testing.T) {
