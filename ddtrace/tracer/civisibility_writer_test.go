@@ -22,10 +22,75 @@ import (
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestCIVisibilityImplementsTraceWriter(t *testing.T) {
 	assert.Implements(t, (*traceWriter)(nil), &ciVisibilityTraceWriter{})
+}
+
+// TestCiVisibilitySendErrorClassification verifies the final-drop
+// classification in reportCIVisibilitySendError: a payload construction
+// failure is an SDK serialization defect and reaches Error Tracking, while an
+// agent, network, or filesystem failure stays local-only.
+func TestCiVisibilitySendErrorClassification(t *testing.T) {
+	client, capture := telemetrytest.NewCapturingClient(t)
+	defer client.Close()
+	defer telemetry.MockClient(client)()
+
+	reportCIVisibilitySendError(
+		&ciVisibilityPayloadError{op: "cannot create buffer payload", err: errors.New("envelope encode failed")},
+		3,
+	)
+	reportCIVisibilitySendError(errors.New("network failed"), 5)
+	client.Flush()
+
+	logs := capture.LogMessages()
+	require.Len(t, logs, 1, "transport failures must not be reported")
+	entry := logs[0]
+	assert.Equal(t, "ERROR", string(entry.Level))
+	assert.Equal(t, "Error building CI Visibility payload: error.error_type=errors.errorString", entry.Message)
+	assert.Contains(t, entry.StackTrace, "civisibility_writer.go")
+	assert.Contains(t, entry.StackTrace, "reportCIVisibilitySendError")
+}
+
+// TestCiVisibilityEncodeFailureAggregation verifies that per-event msgpack
+// encode failures are aggregated and reported once at a flush boundary —
+// including when every event failed, leaving an empty payload — and that a
+// later flush does not report the aggregate again.
+func TestCiVisibilityEncodeFailureAggregation(t *testing.T) {
+	client, capture := telemetrytest.NewCapturingClient(t)
+	defer client.Close()
+	defer telemetry.MockClient(client)()
+
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	w := newCiVisibilityTraceWriter(cfg)
+
+	// Simulate three per-event encode failures, as add() would record them.
+	encErr := errors.New("msgp encode failed")
+	w.encodeFailures.Store(3)
+	w.encodeErr.Store(&encErr)
+
+	// The payload is empty (every event failed to encode); the report must
+	// still fire from before the empty-payload early return.
+	w.flush()
+	client.Flush()
+
+	logs := capture.LogMessages()
+	require.Len(t, logs, 1)
+	entry := logs[0]
+	assert.Equal(t, "ERROR", string(entry.Level))
+	assert.Equal(t, "Error encoding CI Visibility events: error.error_type=errors.errorString", entry.Message)
+	assert.Equal(t, "events:3", entry.Tags)
+	assert.Contains(t, entry.StackTrace, "civisibility_writer.go")
+	assert.Contains(t, entry.StackTrace, "reportEncodeFailures")
+
+	// A later flush must not re-report the aggregate.
+	w.flush()
+	client.Flush()
+	assert.Len(t, capture.LogMessages(), 1, "the aggregate must be reported once per writer lifetime")
 }
 
 type failingCiVisibilityTransport struct {
