@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: 6527a73119c51695b4b40a7f92cf43e769676044 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -142,7 +142,7 @@ jobs:
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
@@ -356,7 +356,7 @@ jobs:
 
       - name: Download pre-built weblog image
         if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' && matrix.weblog-variant != 'apim' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/
@@ -372,7 +372,7 @@ jobs:
 
       - name: Download ${{ matrix.weblog-variant }} artifacts
         if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.image_artifact }}
 
@@ -406,7 +406,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -474,7 +474,7 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@6527a73119c51695b4b40a7f92cf43e769676044 # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
@@ -484,7 +484,7 @@ jobs:
       _system_tests_dev_mode: true
       push_to_test_optimization: true
       desired_execution_time: 300
-      ref: f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+      ref: 6527a73119c51695b4b40a7f92cf43e769676044 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests
