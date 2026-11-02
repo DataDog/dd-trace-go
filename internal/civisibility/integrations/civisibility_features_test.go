@@ -7,7 +7,6 @@ package integrations
 
 import (
 	"io"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,8 +22,7 @@ func TestAdditionalFeaturesInitializationPublishesLockFreeFastPath(t *testing.T)
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
-	additionalFeaturesInitializationOnce = sync.Once{}
-	additionalFeaturesInitializationOnce.Do(func() {})
+	markAdditionalFeaturesInitializedForTesting()
 	require.False(t, additionalFeaturesInitialized.Load())
 
 	ensureAdditionalFeaturesInitialization("")
