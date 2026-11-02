@@ -693,15 +693,122 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 	}
 }
 
-// TestLanesRunOnTheMergeQueue pins the merge-queue push trigger on both
-// gated lanes: it is what makes a narrowed pull-request run safe, and removing
-// it stops the full lane run before landing on main with no test failing.
-func TestLanesRunOnTheMergeQueue(t *testing.T) {
+// TestOrchestrionRunsOnTheMergeQueue pins the merge-queue push trigger on the
+// orchestrion lane: it is what makes a narrowed pull-request run safe, and
+// removing it stops the full lane run before landing on main with no test
+// failing.
+func TestOrchestrionRunsOnTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
-	for _, f := range []string{"otelc.yml", "orchestrion.yml"} {
-		body := readText(t, root, workflowDir+"/"+f)
-		if !strings.Contains(body, "- mq-working-branch-**") {
-			t.Errorf("%s stopped triggering on merge-queue pushes", f)
+	body := readText(t, root, workflowDir+"/orchestrion.yml")
+	if !strings.Contains(body, "- mq-working-branch-**") {
+		t.Errorf("orchestrion.yml stopped triggering on merge-queue pushes")
+	}
+}
+
+// TestOTelcSkipsTheMergeQueue is the counterpart of
+// TestOrchestrionRunsOnTheMergeQueue: the OTelc lane is deliberately excluded
+// from the merge queue (see CONTRIBUTING.md), so no on.push.branches pattern
+// may match a merge-queue branch. The trigger is decoded as YAML rather than
+// searched as text, because the explanatory comment in otelc.yml itself names
+// the forbidden pattern.
+func TestOTelcSkipsTheMergeQueue(t *testing.T) {
+	_, _, root := testTable(t)
+	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "otelc.yml"))
+	push, ok := on["push"].(map[string]any)
+	if !ok {
+		return // no push trigger: nothing runs on merge-queue pushes
+	}
+	raw, ok := push["branches"]
+	if !ok {
+		t.Fatal("otelc.yml: on.push has no branches filter, so it runs on every " +
+			"branch, including the merge queue's. The OTelc lane is deliberately " +
+			"excluded from the merge queue (see CONTRIBUTING.md).")
+	}
+	var patterns []string
+	switch v := raw.(type) {
+	case string:
+		patterns = []string{v}
+	case []any:
+		for _, p := range v {
+			s, _ := p.(string)
+			patterns = append(patterns, s)
+		}
+	}
+	for _, pat := range patterns {
+		matched, err := matchesBranchFilter(pat, "mq-working-branch-main-1a2b3c4d")
+		if err != nil {
+			t.Errorf("otelc.yml: on.push.branches %q: %v", pat, err)
+			continue
+		}
+		if matched {
+			t.Errorf("otelc.yml: on.push.branches %q would run the OTelc lane on a "+
+				"merge-queue branch. The lane is deliberately excluded from the merge "+
+				"queue (see CONTRIBUTING.md).", pat)
+		}
+	}
+}
+
+// matchesBranchFilter applies GitHub's branch-filter rules to one pattern:
+// "*" matches zero or more characters but stops at "/", "**" matches anything
+// including "/", and "?" matches one character. Patterns using syntax this
+// matcher does not support return an error, so callers fail rather than guess.
+func matchesBranchFilter(pat, branch string) (bool, error) {
+	for _, bad := range []string{"!", "+", "["} {
+		if strings.Contains(pat, bad) {
+			return false, fmt.Errorf("pattern %q uses unsupported syntax %q", pat, bad)
+		}
+	}
+	var re strings.Builder
+	re.WriteString("^")
+	for i := 0; i < len(pat); i++ {
+		switch c := pat[i]; c {
+		case '*':
+			if i+1 < len(pat) && pat[i+1] == '*' {
+				re.WriteString(".*")
+				i++
+			} else {
+				re.WriteString("[^/]*")
+			}
+		case '?':
+			re.WriteString("[^/]")
+		default:
+			re.WriteString(regexp.QuoteMeta(string(c)))
+		}
+	}
+	re.WriteString("$")
+	return regexp.MustCompile(re.String()).MatchString(branch), nil
+}
+
+func TestMatchesBranchFilter(t *testing.T) {
+	for _, tt := range []struct {
+		pattern, branch string
+		want            bool
+	}{
+		// The queue names branches mq-working-branch-<target>-<hash>.
+		{"release-v*", "mq-working-branch-main-1a2b3c4d", false},
+		{"release-v*", "release-v1.72", true},
+		{"mq-working-branch-**", "mq-working-branch-main-1a2b3c4d", true},
+		{"mq-*", "mq-working-branch-main-1a2b3c4d", true},
+		{"**", "mq-working-branch-main-1a2b3c4d", true},
+		// A branch name has no "/", so a bare "*" still matches it; only a
+		// slash stops "*".
+		{"*", "mq-working-branch-main-1a2b3c4d", true},
+		{"*", "topic/branch", false},
+		{"mq-working-branch-?", "mq-working-branch-x", true},
+		{"mq-working-branch-?", "mq-working-branch-xy", false},
+	} {
+		got, err := matchesBranchFilter(tt.pattern, tt.branch)
+		if err != nil {
+			t.Errorf("matchesBranchFilter(%q, %q) unexpected error: %v", tt.pattern, tt.branch, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("matchesBranchFilter(%q, %q) = %v, want %v", tt.pattern, tt.branch, got, tt.want)
+		}
+	}
+	for _, pat := range []string{"!mq-*", "mq-+", "mq-[w]*"} {
+		if _, err := matchesBranchFilter(pat, "main"); err == nil {
+			t.Errorf("matchesBranchFilter(%q, ...) succeeded, want an error for unsupported syntax", pat)
 		}
 	}
 }
