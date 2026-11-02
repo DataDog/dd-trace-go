@@ -758,21 +758,37 @@ func TestOTelcSkipsTheMergeQueue(t *testing.T) {
 		}
 		raw, has := push["branches"]
 		if !has || raw == nil {
+			// A branchless push event still never runs on a queue branch when
+			// branches-ignore excludes the whole queue namespace, or - only
+			// without a branches-ignore - when its tags filter keeps it to tag
+			// pushes (GitHub: tags or tags-ignore alone suppresses branch pushes;
+			// with branches-ignore also defined, branch pushes follow the
+			// branches-ignore list instead).
+			if ignored := push["branches-ignore"]; ignored != nil {
+				for _, pat := range patternList(ignored) {
+					wide, err := queueWideBranchFilter(pat)
+					if err != nil {
+						t.Errorf("otelc.yml: on.push.branches-ignore %q: %v", pat, err)
+						continue
+					}
+					if wide {
+						return
+					}
+				}
+				t.Errorf("otelc.yml: on.push.branches-ignore has no queue-wide pattern " +
+					"(one of the shape mq-working-branch-** or shorter, such as mq-**; " +
+					"a single '*' cannot cross '/'). Branch pushes the list does not " +
+					"ignore run the OTelc lane on a merge-queue branch. The lane is " +
+					"deliberately excluded from the merge queue (see .github/AGENTS.md).")
+				return
+			}
+			if push["tags"] != nil || push["tags-ignore"] != nil {
+				return // tag-only: branch pushes never trigger this workflow
+			}
 			unfiltered("on.push has no branches filter")
 			return
 		}
-		switch v := raw.(type) {
-		case string:
-			patterns = []string{v}
-		case []any:
-			for _, p := range v {
-				s, _ := p.(string)
-				patterns = append(patterns, s)
-			}
-		default:
-			t.Errorf("otelc.yml: on.push.branches %T is neither a pattern nor a list of them", raw)
-			return
-		}
+		patterns = patternList(raw)
 	default:
 		t.Errorf("otelc.yml: the on key decoded to %T, want a mapping or a list", onVal)
 		return
@@ -904,7 +920,8 @@ func TestMatchesBranchFilter(t *testing.T) {
 // matchesAnyQueueBranch reports whether a pattern can match any branch the
 // merge queue builds on, not just one sample: the queue names them
 // mq-working-branch-<target>-<hash>, where <target> is the merged-into
-// branch (letters, digits, ".", "_" and "-", of any length; modeled
+// branch (any character a git ref name allows — including "/", so a
+// target such as release/1.x is covered — of any length; modeled
 // permissively so a pattern that pins an unlikely target still counts as a
 // queue match) and <hash> is a hexadecimal string. Queue branches contain no
 // "/", so "*" and "**" agree on them; what separates patterns is where
@@ -981,7 +998,8 @@ const (
 // queueStep returns the positions reachable by consuming one character at
 // position s: the literal lit when wild is false, or any character a wildcard
 // can match when wild is true (both "*" and "**" match every character of a
-// queue branch, because the name contains no "/").
+// queue branch that a valid ref name can hold: the witness string chooses
+// where to place a "/", so "*" never needs to cross one).
 func queueStep(s int, lit byte, wild bool) []int {
 	switch {
 	case s < len(queuePrefix):
@@ -989,14 +1007,15 @@ func queueStep(s int, lit byte, wild bool) []int {
 			return []int{s + 1}
 		}
 	case s == firstTarget:
-		if wild || isBranchNameChar(lit) {
+		// A ref name cannot start with "/".
+		if wild || (isRefNameChar(lit) && lit != '/') {
 			return []int{inTarget}
 		}
 	case s == inTarget:
-		// The target itself may contain "-", so a "-" is either a target
-		// character or the separator before <hash>.
+		// The target itself may contain "-" and "/", so one of those is
+		// either a target character or (for "-") the separator before <hash>.
 		var next []int
-		if wild || isBranchNameChar(lit) {
+		if wild || isRefNameChar(lit) {
 			next = append(next, inTarget)
 		}
 		if wild || lit == '-' {
@@ -1015,9 +1034,78 @@ func isHexDigit(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f'
 }
 
-func isBranchNameChar(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
-		c == '.' || c == '_' || c == '-'
+// isRefNameChar reports whether c may appear in a git ref name: git rejects
+// ASCII control characters, space, and "~", "^", ":", "?", "*", "[", "\".
+// Positional rules (no leading or trailing "/", no "//", no "..", ...) are
+// deliberately not modeled: the matcher stays permissive, which can only fire
+// the guard on a pattern no real queue branch satisfies, never miss one.
+func isRefNameChar(c byte) bool {
+	return c > 0x20 && c != '~' && c != '^' && c != ':' && c != '?' &&
+		c != '*' && c != '[' && c != '\\'
+}
+
+// patternList decodes a branches, branches-ignore, or tags filter entry: a
+// single pattern or a list of them.
+func patternList(v any) []string {
+	switch v := v.(type) {
+	case string:
+		return []string{v}
+	case []any:
+		pats := make([]string, 0, len(v))
+		for _, p := range v {
+			s, _ := p.(string)
+			pats = append(pats, s)
+		}
+		return pats
+	default:
+		return nil
+	}
+}
+
+// queueWideBranchFilter reports whether a branches-ignore pattern excludes
+// every merge-queue branch, so a branchless push filtered only by
+// branches-ignore still keeps the queue out. Only the shape
+// <a prefix of mq-working-branch->** qualifies: a "**" matches any
+// continuation of the prefix, while anything else (a single "*", which
+// cannot cross "/"; trailing literals; a prefix of its own) can leave a queue
+// branch unignored. Shapes the helper cannot prove wide fail the guard
+// rather than guess.
+func queueWideBranchFilter(pat string) (bool, error) {
+	toks, err := parseBranchFilter(pat)
+	if err != nil {
+		return false, err
+	}
+	k := 0
+	for k < len(toks) && k < len(queuePrefix) &&
+		toks[k].lit == queuePrefix[k] && !toks[k].opt && !toks[k].star && !toks[k].dstar {
+		k++
+	}
+	return k < len(toks) && toks[k].dstar && !toks[k].opt && k+1 == len(toks), nil
+}
+
+func TestQueueWideBranchFilter(t *testing.T) {
+	for _, tt := range []struct {
+		pattern string
+		want    bool
+	}{
+		{"**", true},
+		{"mq-**", true},
+		{"mq-working-**", true},
+		{"mq-working-branch-**", true},
+		{"mq-working-branch-*", false}, // a single "*" cannot cross "/"
+		{"mq-working-branch-main-**", false},
+		{"release-v**", false},
+		{"mq-working-branch-**-x", false},
+	} {
+		got, err := queueWideBranchFilter(tt.pattern)
+		if err != nil {
+			t.Errorf("queueWideBranchFilter(%q) unexpected error: %v", tt.pattern, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("queueWideBranchFilter(%q) = %v, want %v", tt.pattern, got, tt.want)
+		}
+	}
 }
 
 func TestMatchesAnyQueueBranch(t *testing.T) {
@@ -1040,6 +1128,14 @@ func TestMatchesAnyQueueBranch(t *testing.T) {
 		{"mq-working-branch-main-*cd", true},
 		{"mq-working-branch-main-**d?", true},
 		{"mq-working-branch-release-v*-**", true},
+		// Targets may contain "/" (a target such as release/1.x names the
+		// branch mq-working-branch-release/1.x-<hash>); "*" cannot cross it,
+		// "**" can, and a target never starts or ends with a hash.
+		{"mq-working-branch-release/**-*", true},
+		{"mq-working-branch-release/1.x-*", true},
+		{"mq-working-branch-release/1.x", false},
+		{"mq-working-branch-/x-*", false},    // a ref name cannot start with "/"
+		{"mq-working-branch-main~-*", false}, // "~" is invalid in ref names
 		// Neither the target nor the hash has a length bound.
 		{"mq-working-branch-" + strings.Repeat("a", 40) + "-*", true},
 		{"mq-working-branch-main-" + strings.Repeat("0", 45), true},
