@@ -10,10 +10,8 @@ on:
   push:
     branches:
       - release-v*
-      # The merge queue is not gated (see CONTRIBUTING.md): a queued commit
-      # re-runs the lanes that trigger on mq-working-branch-** in full, this one
-      # now included, so a narrowed pull request cannot skip this lane here.
-      - mq-working-branch-**
+      # Not on mq-working-branch-**: the merge queue deliberately skips this
+      # lane (see .github/AGENTS.md).
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
