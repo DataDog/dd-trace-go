@@ -133,11 +133,8 @@ Some things worth knowing before editing the table:
   `go test -tags depgraph ./scripts/ciselect/` in the `Main Branch and Release
   Tests` workflow.
 - The merge queue is not gated. Everything gating a pull request still runs in
-  full on `mq-working-branch-*` before a commit can land on `main`, with one
-  exception: the OTelc lane ([`.github/workflows/otelc.yml`](./.github/workflows/otelc.yml))
-  is deliberately excluded from the queue. It runs on pull requests,
-  `release-v*` branches, and its nightly schedule, but not on merge-queue
-  branches.
+  full on `mq-working-branch-*` before a commit can land on `main`, unless the
+  queue deliberately excludes the lane (see [`.github/AGENTS.md`](./.github/AGENTS.md)).
 
 To see what a change set resolves to, without pushing:
 

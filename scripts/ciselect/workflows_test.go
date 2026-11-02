@@ -706,36 +706,79 @@ func TestOrchestrionRunsOnTheMergeQueue(t *testing.T) {
 }
 
 // TestOTelcSkipsTheMergeQueue is the counterpart of
-// TestOrchestrionRunsOnTheMergeQueue: the OTelc lane is deliberately excluded
-// from the merge queue (see CONTRIBUTING.md), so no on.push.branches pattern
-// may match a merge-queue branch. The trigger is decoded as YAML rather than
+// TestOrchestrionRunsOnTheMergeQueue: the merge queue deliberately excludes
+// the OTelc lane (see .github/AGENTS.md), so no on.push branch filter may
+// match a merge-queue branch. The trigger is decoded as YAML rather than
 // searched as text, because the explanatory comment in otelc.yml itself names
 // the forbidden pattern.
 func TestOTelcSkipsTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
-	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "otelc.yml"))
-	push, ok := on["push"].(map[string]any)
-	if !ok {
-		return // no push trigger: nothing runs on merge-queue pushes
-	}
-	raw, ok := push["branches"]
-	if !ok {
-		t.Fatal("otelc.yml: on.push has no branches filter, so it runs on every " +
-			"branch, including the merge queue's. The OTelc lane is deliberately " +
-			"excluded from the merge queue (see CONTRIBUTING.md).")
-	}
-	var patterns []string
-	switch v := raw.(type) {
-	case string:
-		patterns = []string{v}
-	case []any:
-		for _, p := range v {
-			s, _ := p.(string)
-			patterns = append(patterns, s)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "otelc.yml"))
+
+	// parseWorkflow handles the decoder's boolean-key rules for the "on"
+	// mapping, but the event list ("on: [push, schedule]") and the single
+	// event ("on: push") shapes need the raw value.
+	var onVal any
+	for _, key := range []any{"on", true} {
+		if v, ok := doc[fmt.Sprint(key)]; ok {
+			onVal = v
 		}
 	}
+	unfiltered := func(why string) {
+		t.Errorf("otelc.yml: %s, so push events run on every branch, including "+
+			"the queue's. The OTelc lane is deliberately excluded from the merge "+
+			"queue (see .github/AGENTS.md).", why)
+	}
+	var patterns []string // on.push.branches entries, if the push event is filtered
+	switch on := onVal.(type) {
+	case nil:
+		return // no event triggers: nothing runs on merge-queue branches
+	case string:
+		if on == "push" {
+			unfiltered(`on: push carries no branch filter`)
+		}
+		return
+	case []any:
+		if slices.ContainsFunc(on, func(v any) bool {
+			s, _ := v.(string)
+			return s == "push"
+		}) {
+			unfiltered(`the push event in the "on" list carries no branch filter`)
+		}
+		return
+	case map[string]any:
+		pushRaw, has := on["push"]
+		if !has {
+			return // no push trigger: nothing runs on merge-queue pushes
+		}
+		push, ok := pushRaw.(map[string]any)
+		if !ok {
+			unfiltered("on.push is a bare event, not a mapping with a branches filter")
+			return
+		}
+		raw, has := push["branches"]
+		if !has || raw == nil {
+			unfiltered("on.push has no branches filter")
+			return
+		}
+		switch v := raw.(type) {
+		case string:
+			patterns = []string{v}
+		case []any:
+			for _, p := range v {
+				s, _ := p.(string)
+				patterns = append(patterns, s)
+			}
+		default:
+			t.Errorf("otelc.yml: on.push.branches %T is neither a pattern nor a list of them", raw)
+			return
+		}
+	default:
+		t.Errorf("otelc.yml: the on key decoded to %T, want a mapping or a list", onVal)
+		return
+	}
 	for _, pat := range patterns {
-		matched, err := matchesBranchFilter(pat, "mq-working-branch-main-1a2b3c4d")
+		matched, err := matchesAnyQueueBranch(pat)
 		if err != nil {
 			t.Errorf("otelc.yml: on.push.branches %q: %v", pat, err)
 			continue
@@ -743,36 +786,78 @@ func TestOTelcSkipsTheMergeQueue(t *testing.T) {
 		if matched {
 			t.Errorf("otelc.yml: on.push.branches %q would run the OTelc lane on a "+
 				"merge-queue branch. The lane is deliberately excluded from the merge "+
-				"queue (see CONTRIBUTING.md).", pat)
+				"queue (see .github/AGENTS.md).", pat)
 		}
 	}
 }
 
-// matchesBranchFilter applies GitHub's branch-filter rules to one pattern:
-// "*" matches zero or more characters but stops at "/", "**" matches anything
-// including "/", and "?" matches one character. Patterns using syntax this
-// matcher does not support return an error, so callers fail rather than guess.
-func matchesBranchFilter(pat, branch string) (bool, error) {
-	for _, bad := range []string{"!", "+", "["} {
+// branchFilterToken is one element of a parsed GitHub branch-filter pattern.
+// Per GitHub's filter-pattern rules: "*" matches zero or more characters but
+// stops at "/", "**" matches anything, and "?" makes the preceding character
+// optional (it matches zero or one of it).
+type branchFilterToken struct {
+	lit   byte // literal character; 0 for wildcards
+	star  bool // "*"
+	dstar bool // "**"
+	opt   bool // a trailing "?" made this literal optional
+}
+
+// parseBranchFilter compiles a branch-filter pattern. Syntax the matchers do
+// not support ("!", "+", "[", "\\", a "?" with nothing to modify) is an error,
+// so callers fail rather than guess.
+func parseBranchFilter(pat string) ([]branchFilterToken, error) {
+	if pat == "" {
+		return nil, errors.New("empty pattern")
+	}
+	for _, bad := range []string{"!", "+", "[", "\\"} {
 		if strings.Contains(pat, bad) {
-			return false, fmt.Errorf("pattern %q uses unsupported syntax %q", pat, bad)
+			return nil, fmt.Errorf("pattern %q uses unsupported syntax %q", pat, bad)
 		}
 	}
-	var re strings.Builder
-	re.WriteString("^")
+	var toks []branchFilterToken
 	for i := 0; i < len(pat); i++ {
 		switch c := pat[i]; c {
 		case '*':
 			if i+1 < len(pat) && pat[i+1] == '*' {
-				re.WriteString(".*")
+				toks = append(toks, branchFilterToken{dstar: true})
 				i++
 			} else {
-				re.WriteString("[^/]*")
+				toks = append(toks, branchFilterToken{star: true})
 			}
 		case '?':
-			re.WriteString("[^/]")
+			last := len(toks) - 1
+			if last < 0 || toks[last].lit == 0 || toks[last].opt {
+				return nil, fmt.Errorf("pattern %q: '?' must follow a plain literal character", pat)
+			}
+			toks[last].opt = true
 		default:
-			re.WriteString(regexp.QuoteMeta(string(c)))
+			toks = append(toks, branchFilterToken{lit: c})
+		}
+	}
+	return toks, nil
+}
+
+// matchesBranchFilter reports whether one pattern matches one branch name.
+func matchesBranchFilter(pat, branch string) (bool, error) {
+	toks, err := parseBranchFilter(pat)
+	if err != nil {
+		return false, err
+	}
+	var re strings.Builder
+	re.WriteString("^")
+	for _, t := range toks {
+		switch {
+		case t.dstar:
+			re.WriteString(".*")
+		case t.star:
+			re.WriteString("[^/]*")
+		default:
+			q := regexp.QuoteMeta(string(t.lit))
+			if t.opt {
+				re.WriteString("(?:" + q + ")?")
+			} else {
+				re.WriteString(q)
+			}
 		}
 	}
 	re.WriteString("$")
@@ -784,18 +869,21 @@ func TestMatchesBranchFilter(t *testing.T) {
 		pattern, branch string
 		want            bool
 	}{
-		// The queue names branches mq-working-branch-<target>-<hash>.
 		{"release-v*", "mq-working-branch-main-1a2b3c4d", false},
 		{"release-v*", "release-v1.72", true},
 		{"mq-working-branch-**", "mq-working-branch-main-1a2b3c4d", true},
 		{"mq-*", "mq-working-branch-main-1a2b3c4d", true},
 		{"**", "mq-working-branch-main-1a2b3c4d", true},
-		// A branch name has no "/", so a bare "*" still matches it; only a
-		// slash stops "*".
+		// A queue branch has no "/", so a bare "*" matches it; a slash stops "*".
 		{"*", "mq-working-branch-main-1a2b3c4d", true},
 		{"*", "topic/branch", false},
-		{"mq-working-branch-?", "mq-working-branch-x", true},
-		{"mq-working-branch-?", "mq-working-branch-xy", false},
+		{"mq-working-branch-*", "mq-working-branch/main", false},
+		// "?" matches zero or one of the preceding character.
+		{"colou?r", "color", true},
+		{"colou?r", "colour", true},
+		{"colou?r", "colouur", false},
+		{"mq-working-branch-main-**d?", "mq-working-branch-main-1a2b3c4d", true},
+		{"mq-working-branch-main-**d?", "mq-working-branch-main-1a2b3c4", true},
 	} {
 		got, err := matchesBranchFilter(tt.pattern, tt.branch)
 		if err != nil {
@@ -806,9 +894,145 @@ func TestMatchesBranchFilter(t *testing.T) {
 			t.Errorf("matchesBranchFilter(%q, %q) = %v, want %v", tt.pattern, tt.branch, got, tt.want)
 		}
 	}
-	for _, pat := range []string{"!mq-*", "mq-+", "mq-[w]*"} {
+	for _, pat := range []string{"!mq-*", "mq-+", "mq-[w]*", `mq-\*`, "*?", "a??", "?"} {
 		if _, err := matchesBranchFilter(pat, "main"); err == nil {
 			t.Errorf("matchesBranchFilter(%q, ...) succeeded, want an error for unsupported syntax", pat)
+		}
+	}
+}
+
+// matchesAnyQueueBranch reports whether a pattern can match any branch the
+// merge queue builds on, not just one sample: the queue names them
+// mq-working-branch-<target>-<hash>, where <target> is the merged-into branch
+// (letters, digits, ".", "_" and "-"; modeled permissively so a pattern that
+// pins an unlikely target still counts as a queue match) and <hash> is a
+// hexadecimal string (length-capped with headroom above a SHA-1). Queue
+// branches contain no "/", so "*" and "**" agree on them; what separates
+// patterns is where their literals can land.
+func matchesAnyQueueBranch(pat string) (bool, error) {
+	toks, err := parseBranchFilter(pat)
+	if err != nil {
+		return false, err
+	}
+	const (
+		maxTargetLen = 24
+		maxHashLen   = 64
+	)
+	for tlen := 1; tlen <= maxTargetLen; tlen++ {
+		for hlen := 1; hlen <= maxHashLen; hlen++ {
+			if branchFilterMatchesTemplate(toks, tlen, hlen) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// branchFilterMatchesTemplate backtracks the pattern tokens over the symbolic
+// branch mq-working-branch-<target>-<hash>: <targetLen> free name characters,
+// a "-", then <hashLen> free hexadecimal characters. A free position matches
+// a literal when the literal belongs to its class; wildcards match any run of
+// positions (the template contains no "/").
+func branchFilterMatchesTemplate(toks []branchFilterToken, targetLen, hashLen int) bool {
+	const prefix = "mq-working-branch-"
+	n := len(prefix) + targetLen + 1 + hashLen
+	// pos(i): fixed character (prefix or separator) or a free position.
+	pos := func(i int) (fixed byte, hex bool) {
+		switch {
+		case i < len(prefix):
+			return prefix[i], false
+		case i < len(prefix)+targetLen:
+			return 0, false
+		case i == len(prefix)+targetLen:
+			return '-', false
+		default:
+			return 0, true
+		}
+	}
+	compat := func(i int, lit byte) bool {
+		fixed, hex := pos(i)
+		switch {
+		case fixed != 0:
+			return lit == fixed
+		case hex:
+			return isHexDigit(lit)
+		default:
+			return isBranchNameChar(lit)
+		}
+	}
+	// memo[i][j]: 0 unknown, 1 match, -1 no match.
+	memo := make([][]int8, n+1)
+	for i := range memo {
+		memo[i] = make([]int8, len(toks)+1)
+	}
+	var match func(i, j int) bool
+	match = func(i, j int) bool {
+		if memo[i][j] != 0 {
+			return memo[i][j] == 1
+		}
+		res := false
+		switch {
+		case j == len(toks):
+			res = i == n
+		case toks[j].star || toks[j].dstar:
+			for k := i; k <= n && !res; k++ {
+				res = match(k, j+1)
+			}
+		case toks[j].opt:
+			res = match(i, j+1) ||
+				(i < n && compat(i, toks[j].lit) && match(i+1, j+1))
+		default:
+			res = i < n && compat(i, toks[j].lit) && match(i+1, j+1)
+		}
+		if res {
+			memo[i][j] = 1
+		} else {
+			memo[i][j] = -1
+		}
+		return res
+	}
+	return match(0, 0)
+}
+
+func isHexDigit(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f'
+}
+
+func isBranchNameChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
+		c == '.' || c == '_' || c == '-'
+}
+
+func TestMatchesAnyQueueBranch(t *testing.T) {
+	for _, tt := range []struct {
+		pattern string
+		want    bool
+	}{
+		// Patterns are anchored, so anything not naming the queue prefix
+		// matches no queue branch.
+		{"release-v*", false},
+		{"main-*", false},
+		{"**", true},
+		{"*", true}, // queue branches contain no "/"
+		{"mq-*", true},
+		{"mq-working-branch-**", true},
+		{"mq-working-branch-main-*", true},
+		// A single sample branch cannot stand in for the namespace: some hash
+		// ends in "e" or "cd", and GitHub's "?" keeps the last "d" optional.
+		{"mq-working-branch-main-*e", true},
+		{"mq-working-branch-main-*cd", true},
+		{"mq-working-branch-main-**d?", true},
+		{"mq-working-branch-release-v*-**", true},
+		// The queue always appends "-<hash>", so the bare target never matches.
+		{"mq-working-branch-main", false},
+	} {
+		got, err := matchesAnyQueueBranch(tt.pattern)
+		if err != nil {
+			t.Errorf("matchesAnyQueueBranch(%q) unexpected error: %v", tt.pattern, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("matchesAnyQueueBranch(%q) = %v, want %v", tt.pattern, got, tt.want)
 		}
 	}
 }

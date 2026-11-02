@@ -10,9 +10,8 @@ on:
   push:
     branches:
       - release-v*
-      # Not on mq-working-branch-**: the merge queue temporarily skips this lane
-      # (see CONTRIBUTING.md).
-      # - mq-working-branch-**
+      # Not on mq-working-branch-**: the merge queue deliberately skips this
+      # lane (see .github/AGENTS.md).
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
