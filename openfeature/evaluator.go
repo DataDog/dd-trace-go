@@ -34,6 +34,10 @@ type evaluationResult struct {
 	Error error
 	// Metadata contains additional evaluation metadata for hooks
 	Metadata map[string]any
+	// DependencyEvaluations contains each reached prerequisite exactly once. It is
+	// populated after the dependency graph finishes and is not exposed as flag
+	// metadata.
+	DependencyEvaluations []dependencyEvaluationRecord
 }
 
 const (
@@ -62,7 +66,12 @@ const (
 	metadataDependencyExposuresKey       = "__dd_dependency_exposures"
 )
 
-type dependencyEvaluationCallback func(string, valueType, any, evaluationResult)
+type dependencyEvaluationRecord struct {
+	FlagKey      string
+	FlagType     valueType
+	DefaultValue any
+	Result       evaluationResult
+}
 
 type dependencyExposureCandidate struct {
 	FlagKey string
@@ -212,28 +221,19 @@ func evaluateConfiguredFlag(
 	now time.Time,
 	exclusion experimentationExclusion,
 ) evaluationResult {
-	return evaluateConfiguredFlagWithCallbacks(config, flagKey, defaultValue, context, now, exclusion, nil)
-}
-
-func evaluateConfiguredFlagWithCallbacks(
-	config *universalFlagsConfiguration,
-	flagKey string,
-	defaultValue any,
-	context map[string]any,
-	now time.Time,
-	exclusion experimentationExclusion,
-	onDependencyEvaluation dependencyEvaluationCallback,
-) evaluationResult {
 	resolver := &lazyDependencyResolver{
-		config:                 config,
-		rootFlagKey:            flagKey,
-		context:                context,
-		now:                    now,
-		exclusion:              exclusion,
-		onDependencyEvaluation: onDependencyEvaluation,
+		config:      config,
+		rootFlagKey: flagKey,
+		context:     context,
+		now:         now,
+		exclusion:   exclusion,
 	}
 	result := evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, resolver)
-	if result.Error == nil && resolver.session != nil && len(resolver.session.exposures) > 0 {
+	if resolver.session == nil {
+		return result
+	}
+	result.DependencyEvaluations = cloneDependencyEvaluationRecords(resolver.session.evaluations)
+	if result.Error == nil && len(resolver.session.exposures) > 0 {
 		if result.Metadata == nil {
 			result.Metadata = make(map[string]any, 1)
 		}
@@ -454,50 +454,64 @@ type memoizedDependency struct {
 }
 
 type dependencyEvaluationSession struct {
-	config                 *universalFlagsConfiguration
-	context                map[string]any
-	now                    time.Time
-	exclusion              experimentationExclusion
-	maxDepth               int
-	active                 map[string]bool
-	memo                   map[string]memoizedDependency
-	frames                 []*dependencyFrame
-	exposures              []dependencyExposureCandidate
-	onDependencyEvaluation dependencyEvaluationCallback
+	config      *universalFlagsConfiguration
+	context     map[string]any
+	now         time.Time
+	exclusion   experimentationExclusion
+	maxDepth    int
+	active      map[string]bool
+	memo        map[string]memoizedDependency
+	frames      []*dependencyFrame
+	exposures   []dependencyExposureCandidate
+	evaluations []dependencyEvaluationRecord
 }
 
 // lazyDependencyResolver keeps the dependency session and all of its maps off
 // the ordinary evaluation path until a flagEvaluation condition is reached.
 type lazyDependencyResolver struct {
-	config                 *universalFlagsConfiguration
-	rootFlagKey            string
-	context                map[string]any
-	now                    time.Time
-	exclusion              experimentationExclusion
-	onDependencyEvaluation dependencyEvaluationCallback
-	session                *dependencyEvaluationSession
+	config      *universalFlagsConfiguration
+	rootFlagKey string
+	context     map[string]any
+	now         time.Time
+	exclusion   experimentationExclusion
+	session     *dependencyEvaluationSession
 }
 
 func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 	if r.session == nil {
 		maxDepth, err := configuredMaxDependencyDepth(r.config)
+		r.session = &dependencyEvaluationSession{
+			config:    r.config,
+			context:   r.context,
+			now:       r.now,
+			exclusion: r.exclusion,
+			maxDepth:  maxDepth,
+			active:    map[string]bool{r.rootFlagKey: true},
+			memo:      make(map[string]memoizedDependency),
+		}
 		if err != nil {
-			return "", &dependencyGraphError{
+			graphErr := &dependencyGraphError{
 				flagKey: ref.Key,
 				code:    of.ParseErrorCode,
 				message: err.Error(),
 				cause:   err,
 			}
-		}
-		r.session = &dependencyEvaluationSession{
-			config:                 r.config,
-			context:                r.context,
-			now:                    r.now,
-			exclusion:              r.exclusion,
-			maxDepth:               maxDepth,
-			active:                 map[string]bool{r.rootFlagKey: true},
-			memo:                   make(map[string]memoizedDependency),
-			onDependencyEvaluation: r.onDependencyEvaluation,
+			// The root is never a prerequisite evaluation record, including when
+			// malformed evaluator parameters are discovered through a self-reference.
+			if ref.Key != r.rootFlagKey {
+				flag := r.config.Flags[ref.Key]
+				flagType := valueTypeBoolean
+				if flag != nil {
+					flagType = flag.VariationType
+				}
+				defaultValue := dependencyDefaultValue(flag)
+				r.session.emit(ref.Key, flagType, defaultValue, evaluationResult{
+					Value:  defaultValue,
+					Reason: of.ErrorReason,
+					Error:  graphErr,
+				})
+			}
+			return "", graphErr
 		}
 	}
 	return r.session.Resolve(ref)
@@ -713,16 +727,72 @@ func withoutEvaluationValue(result evaluationResult) evaluationResult {
 }
 
 func (s *dependencyEvaluationSession) emit(flagKey string, flagType valueType, defaultValue any, result evaluationResult) {
+	for _, evaluation := range s.evaluations {
+		if evaluation.FlagKey == flagKey {
+			return
+		}
+	}
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any, 2)
 	}
 	result.Metadata[metadataEvalTimeKey] = s.now.UnixMilli()
 	result.Metadata[metadataObserveFullEvaluationDataKey] = s.config.ObserveFullEvaluationData
-	if s.onDependencyEvaluation != nil {
-		func() {
-			defer func() { _ = recover() }()
-			s.onDependencyEvaluation(flagKey, flagType, defaultValue, result)
-		}()
+	s.evaluations = append(s.evaluations, dependencyEvaluationRecord{
+		FlagKey:      flagKey,
+		FlagType:     flagType,
+		DefaultValue: cloneTelemetryValue(defaultValue),
+		Result:       cloneEvaluationResult(result),
+	})
+}
+
+func cloneDependencyEvaluationRecords(records []dependencyEvaluationRecord) []dependencyEvaluationRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	cloned := make([]dependencyEvaluationRecord, len(records))
+	for i, record := range records {
+		cloned[i] = dependencyEvaluationRecord{
+			FlagKey:      record.FlagKey,
+			FlagType:     record.FlagType,
+			DefaultValue: cloneTelemetryValue(record.DefaultValue),
+			Result:       cloneEvaluationResult(record.Result),
+		}
+	}
+	return cloned
+}
+
+func cloneEvaluationResult(result evaluationResult) evaluationResult {
+	result.Value = cloneTelemetryValue(result.Value)
+	result.Metadata = cloneTelemetryMap(result.Metadata)
+	result.DependencyEvaluations = nil
+	return result
+}
+
+func cloneTelemetryMap(source map[string]any) map[string]any {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = cloneTelemetryValue(value)
+	}
+	return cloned
+}
+
+func cloneTelemetryValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneTelemetryMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i, item := range value {
+			cloned[i] = cloneTelemetryValue(item)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), value...)
+	default:
+		return value
 	}
 }
 

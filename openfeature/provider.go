@@ -941,11 +941,40 @@ func (p *DatadogProvider) evaluate(
 		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
 	}
 
-	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlagWithCallbacks(config, flagKey, defaultValue, flatCtx, evalNow, exclusion,
-		func(dependencyFlagKey string, dependencyType valueType, dependencyDefault any, result evaluationResult) {
-			p.recordDependencyEvaluation(ctx, dependencyFlagKey, dependencyType, dependencyDefault, flatCtx, result)
-		})
+	// Complete the graph before publishing prerequisite telemetry. The evaluator's
+	// returned batch is detached from its memo and exposure state, and each record
+	// is cloned again before publication so a failed or mutating publisher cannot
+	// affect the root result or another record.
+	res = evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	p.publishDependencyEvaluations(ctx, flatCtx, res.DependencyEvaluations)
+	res.DependencyEvaluations = nil
+	return res
+}
+
+func (p *DatadogProvider) publishDependencyEvaluations(
+	ctx context.Context,
+	flatCtx openfeature.FlattenedContext,
+	records []dependencyEvaluationRecord,
+) {
+	publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
+		p.recordDependencyEvaluation(ctx, record.FlagKey, record.FlagType,
+			record.DefaultValue, flatCtx, record.Result)
+	})
+}
+
+func publishDependencyEvaluationBatch(records []dependencyEvaluationRecord, publish func(dependencyEvaluationRecord)) {
+	for _, record := range records {
+		record := dependencyEvaluationRecord{
+			FlagKey:      record.FlagKey,
+			FlagType:     record.FlagType,
+			DefaultValue: cloneTelemetryValue(record.DefaultValue),
+			Result:       cloneEvaluationResult(record.Result),
+		}
+		func() {
+			defer func() { _ = recover() }()
+			publish(record)
+		}()
+	}
 }
 
 func (p *DatadogProvider) recordDependencyEvaluation(

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,23 +72,21 @@ func TestDependentFlags_NotOneOf(t *testing.T) {
 	require.Equal(t, []string{"dependency"}, dependencyExposureKeys(result))
 }
 
-func TestDependentFlags_NestedEvaluationAndImmediateTelemetry(t *testing.T) {
+func TestDependentFlags_NestedEvaluationReturnsTelemetryBatch(t *testing.T) {
 	config := dependencyTestConfig(
 		dependencyTestFlag("leaf", "leaf-on", nil),
 		dependencyTestFlag("middle", "middle-on", dependencyCondition("leaf", operatorOneOf, "leaf-on")),
 		dependencyTestFlag("root", "root-on", dependencyCondition("middle", operatorOneOf, "middle-on")),
 	)
 
-	var reached []string
-	result := evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-		func(key string, _ valueType, _ any, result evaluationResult) {
-			reached = append(reached, key)
-			require.NotZero(t, result.Metadata[metadataEvalTimeKey])
-		})
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 
 	require.NoError(t, result.Error)
 	require.Equal(t, true, result.Value)
-	require.Equal(t, []string{"leaf", "middle"}, reached)
+	require.Equal(t, []string{"leaf", "middle"}, dependencyEvaluationKeys(result))
+	for _, record := range result.DependencyEvaluations {
+		require.NotZero(t, record.Result.Metadata[metadataEvalTimeKey])
+	}
 	require.Equal(t, []string{"leaf", "middle"}, dependencyExposureKeys(result))
 }
 
@@ -103,18 +102,17 @@ func TestDependentFlags_TransactionalExposureRollbackAndMemoReplay(t *testing.T)
 	}
 	config := dependencyTestConfig(dependency, root)
 
-	var reached []string
-	result := evaluateConfiguredFlagWithCallbacks(config, "root", false, map[string]any{"tier": "free"}, time.Now(), experimentationExclusion{},
-		func(key string, _ valueType, _ any, _ evaluationResult) { reached = append(reached, key) })
+	result := evaluateConfiguredFlag(config, "root", false, map[string]any{"tier": "free"}, time.Now(), experimentationExclusion{})
 
 	require.NoError(t, result.Error)
-	require.Equal(t, []string{"dependency"}, reached, "memoized prerequisites emit evaluation telemetry once")
+	require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result), "memoized prerequisites return evaluation telemetry once")
 	require.Equal(t, []string{"dependency"}, dependencyExposureKeys(result), "the second rule replays the rolled-back candidate")
 
 	root.Allocations[0].Rules = root.Allocations[0].Rules[:1]
-	result = evaluateConfiguredFlagWithCallbacks(config, "root", false, map[string]any{"tier": "free"}, time.Now(), experimentationExclusion{}, nil)
+	result = evaluateConfiguredFlag(config, "root", false, map[string]any{"tier": "free"}, time.Now(), experimentationExclusion{})
 	require.NoError(t, result.Error)
 	require.Equal(t, of.DefaultReason, result.Reason)
+	require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result), "reached evaluations survive rejected rules")
 	require.Empty(t, dependencyExposureKeys(result), "an unmatched root path must not commit prerequisite exposures")
 }
 
@@ -128,11 +126,9 @@ func TestDependentFlags_ReplaysMemoizedSubtreeAfterRollback(t *testing.T) {
 	}
 	config := dependencyTestConfig(leaf, parent, root)
 
-	var reached []string
-	result := evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-		func(key string, _ valueType, _ any, _ evaluationResult) { reached = append(reached, key) })
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 	require.NoError(t, result.Error)
-	require.Equal(t, []string{"leaf", "parent"}, reached)
+	require.Equal(t, []string{"leaf", "parent"}, dependencyEvaluationKeys(result))
 	require.Equal(t, []string{"leaf", "parent"}, dependencyExposureKeys(result))
 }
 
@@ -158,6 +154,7 @@ func TestDependentFlags_RollsBackOnRootFailureAndNoAssignment(t *testing.T) {
 				require.NoError(t, result.Error)
 				require.Equal(t, of.DefaultReason, result.Reason)
 			}
+			require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result), "reached evaluations are non-transactional")
 			require.Empty(t, dependencyExposureKeys(result))
 		})
 	}
@@ -199,14 +196,12 @@ func TestDependentFlags_CycleMissingAndDepthErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var reached []string
-			result := evaluateConfiguredFlagWithCallbacks(test.config, test.root, false, nil, time.Now(), experimentationExclusion{},
-				func(key string, _ valueType, _ any, _ evaluationResult) { reached = append(reached, key) })
+			result := evaluateConfiguredFlag(test.config, test.root, false, nil, time.Now(), experimentationExclusion{})
 			require.Equal(t, of.ErrorReason, result.Reason)
 			var graphErr *dependencyGraphError
 			require.True(t, errors.As(result.Error, &graphErr))
 			require.Equal(t, test.wantCode, graphErr.code)
-			require.Equal(t, test.wantReached, reached)
+			require.Equal(t, test.wantReached, dependencyEvaluationKeys(result))
 			require.Empty(t, dependencyExposureKeys(result))
 		})
 	}
@@ -224,16 +219,16 @@ func TestDependentFlags_OverDepthEmitsRejectedNodeBeforeAncestors(t *testing.T) 
 		errorCode of.ErrorCode
 		message   string
 	}
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 	var events []telemetryEvent
-	result := evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-		func(key string, _ valueType, _ any, result evaluationResult) {
-			events = append(events, telemetryEvent{
-				key:       key,
-				reason:    result.Reason,
-				errorCode: errorCodeFor(result.Error),
-				message:   result.Error.Error(),
-			})
+	for _, record := range result.DependencyEvaluations {
+		events = append(events, telemetryEvent{
+			key:       record.FlagKey,
+			reason:    record.Result.Reason,
+			errorCode: errorCodeFor(record.Result.Error),
+			message:   record.Result.Error.Error(),
 		})
+	}
 	require.Equal(t, of.ErrorReason, result.Reason)
 	require.Equal(t, []telemetryEvent{
 		{key: "leaf", reason: of.ErrorReason, errorCode: of.GeneralCode, message: "maximum flag dependency depth exceeded"},
@@ -254,12 +249,10 @@ func TestDependentFlags_MemoizedSubtreeDepthFailureDoesNotReemitMemoizedNode(t *
 			}}}
 			config := dependencyTestConfigWithDepth(2, leaf, a, b, root)
 
-			var reached []string
-			result := evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-				func(key string, _ valueType, _ any, _ evaluationResult) { reached = append(reached, key) })
+			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 
 			require.Equal(t, of.ErrorReason, result.Reason)
-			require.Equal(t, []string{"leaf", "a", "b"}, reached)
+			require.Equal(t, []string{"leaf", "a", "b"}, dependencyEvaluationKeys(result))
 			require.Empty(t, dependencyExposureKeys(result))
 		})
 	}
@@ -269,9 +262,9 @@ func TestDependentFlags_MissingTelemetryUsesContractMessage(t *testing.T) {
 	config := dependencyTestConfig(
 		dependencyTestFlag("root", "on", dependencyCondition("missing", operatorOneOf, "on")),
 	)
-	var dependencyResult evaluationResult
-	evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-		func(_ string, _ valueType, _ any, result evaluationResult) { dependencyResult = result })
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+	require.Len(t, result.DependencyEvaluations, 1)
+	dependencyResult := result.DependencyEvaluations[0].Result
 	require.EqualError(t, dependencyResult.Error, "prerequisite flag is missing")
 	require.Equal(t, of.ErrorReason, dependencyResult.Reason)
 	require.Equal(t, of.FlagNotFoundCode, errorCodeFor(dependencyResult.Error))
@@ -305,8 +298,47 @@ func TestDependentFlags_InvalidConfiguredDepthIsParseError(t *testing.T) {
 			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 			require.Equal(t, of.ErrorReason, result.Reason)
 			require.ErrorIs(t, result.Error, errParseError)
+			require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result))
+			require.Len(t, result.DependencyEvaluations, 1)
+			record := result.DependencyEvaluations[0]
+			require.Equal(t, valueTypeBoolean, record.FlagType)
+			require.Equal(t, false, record.DefaultValue)
+			require.Equal(t, false, record.Result.Value)
+			require.Equal(t, of.ErrorReason, record.Result.Reason)
+			require.Equal(t, of.ParseErrorCode, errorCodeFor(record.Result.Error))
+			require.ErrorIs(t, record.Result.Error, errParseError)
+			require.Empty(t, dependencyExposureKeys(result))
 		})
 	}
+}
+
+func TestDependentFlags_InvalidConfiguredDepthPublishesDependencyBatch(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "on", nil),
+		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
+	)
+	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
+	h.provider.mu.Lock()
+	h.provider.configuration = config
+	h.provider.mu.Unlock()
+
+	_, err := h.client.BooleanValueDetails(context.Background(), "root", false,
+		of.NewEvaluationContext("subject", nil))
+	require.Error(t, err)
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	require.Len(t, h.sink.events, 2)
+	keys := make([]string, 0, len(h.sink.events))
+	for _, event := range h.sink.events {
+		keys = append(keys, event.Flag.Key)
+	}
+	require.ElementsMatch(t, []string{"dependency", "root"}, keys)
+	var metricCount int64
+	for _, point := range findCounter(t, collectMetrics(t, h.reader)) {
+		metricCount += point.Value
+	}
+	require.Equal(t, int64(2), metricCount)
+	require.Empty(t, h.sink.exposures)
 }
 
 func TestDependentFlags_InvalidConfiguredDepthIsIgnoredUntilDependencyReached(t *testing.T) {
@@ -319,15 +351,60 @@ func TestDependentFlags_InvalidConfiguredDepthIsIgnoredUntilDependencyReached(t 
 	require.True(t, result.Value.(bool))
 }
 
-func TestDependentFlags_TelemetryCallbackCannotBreakEvaluation(t *testing.T) {
+func TestDependentFlags_ReturnedTelemetryIsDetachedAndPublisherCannotBreakEvaluation(t *testing.T) {
+	config := dependencyTestConfig(
+		dependencyTestFlag("leaf", "on", nil),
+		dependencyTestFlag("dependency", "on", dependencyCondition("leaf", operatorOneOf, "on")),
+		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
+	)
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+	require.NoError(t, result.Error)
+	require.True(t, result.Value.(bool))
+	require.Len(t, result.DependencyEvaluations, 2)
+	var published []string
+	publishDependencyEvaluationBatch(result.DependencyEvaluations, func(record dependencyEvaluationRecord) {
+		published = append(published, record.FlagKey)
+		record.Result.Metadata[metadataAllocationKey] = "mutated"
+		record.Result.Value = false
+		if record.FlagKey == "leaf" {
+			panic("telemetry failure")
+		}
+	})
+	require.Equal(t, []string{"leaf", "dependency"}, published, "one failed publisher call must not suppress later records")
+	require.True(t, result.DependencyEvaluations[0].Result.Value.(bool))
+	require.Equal(t, "leaf-allocation", result.DependencyEvaluations[0].Result.Metadata[metadataAllocationKey])
+	require.Equal(t, []string{"leaf", "dependency"}, dependencyExposureKeys(result))
+}
+
+func TestDependentFlags_ParallelRootsKeepReturnedBatchesIndependent(t *testing.T) {
 	config := dependencyTestConfig(
 		dependencyTestFlag("dependency", "on", nil),
 		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
 	)
-	result := evaluateConfiguredFlagWithCallbacks(config, "root", false, nil, time.Now(), experimentationExclusion{},
-		func(string, valueType, any, evaluationResult) { panic("telemetry failure") })
-	require.NoError(t, result.Error)
-	require.True(t, result.Value.(bool))
+	const evaluations = 32
+	var wg sync.WaitGroup
+	errs := make(chan error, evaluations)
+	for range evaluations {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+			if result.Error != nil {
+				errs <- result.Error
+				return
+			}
+			if keys := dependencyEvaluationKeys(result); len(keys) != 1 || keys[0] != "dependency" {
+				errs <- errors.New("unexpected dependency evaluation batch")
+				return
+			}
+			result.DependencyEvaluations[0].Result.Metadata[metadataAllocationKey] = "caller mutation"
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
 }
 
 func TestDependentFlags_ProviderTelemetryAndExposureIntegration(t *testing.T) {
@@ -424,6 +501,14 @@ func dependencyExposureKeys(result evaluationResult) []string {
 	keys := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		keys = append(keys, candidate.FlagKey)
+	}
+	return keys
+}
+
+func dependencyEvaluationKeys(result evaluationResult) []string {
+	keys := make([]string, 0, len(result.DependencyEvaluations))
+	for _, evaluation := range result.DependencyEvaluations {
+		keys = append(keys, evaluation.FlagKey)
 	}
 	return keys
 }
