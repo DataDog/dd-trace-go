@@ -46,6 +46,7 @@ func TestLogsWriterStop(t *testing.T) {
 
 func TestLogsWriterFlush(t *testing.T) {
 	writer := newLogsWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendLogsFunc: drainLogsPayload}
 	entry := &logEntry{}
 	writer.add(entry)
@@ -55,6 +56,7 @@ func TestLogsWriterFlush(t *testing.T) {
 
 func TestLogsWriterConcurrentFlush(t *testing.T) {
 	writer := newLogsWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendLogsFunc: drainLogsPayload}
 	entry := &logEntry{}
 
@@ -67,6 +69,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 
 func TestLogsWriterFlushError(t *testing.T) {
 	writer := newLogsWriter()
+	t.Cleanup(writer.stop)
 	writer.client = &MockClient{SendLogsFunc: func(_ io.Reader) error {
 		return errors.New("mock error")
 	},
@@ -142,6 +145,7 @@ func TestLogsWriterAddAfterStopIsIgnored(t *testing.T) {
 
 func TestLogsWriterDoesNotBlockOnConnectionLimitWhileSchedulingFlush(t *testing.T) {
 	writer := newLogsWriter()
+	t.Cleanup(writer.stop)
 	release := make(chan struct{})
 	started := make(chan struct{}, concurrentConnectionLimit+1)
 	writer.client = &MockClient{SendLogsFunc: func(payload io.Reader) error {
@@ -186,7 +190,6 @@ func TestLogsWriterDoesNotBlockOnConnectionLimitWhileSchedulingFlush(t *testing.
 	}
 
 	close(release)
-	writer.stop()
 }
 
 // flushAndWait flushes writer and waits for the uploads it started, so an

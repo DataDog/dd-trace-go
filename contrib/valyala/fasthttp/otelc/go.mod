@@ -9,8 +9,8 @@ replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../net/http
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fasthttp v1.75.0
 	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25

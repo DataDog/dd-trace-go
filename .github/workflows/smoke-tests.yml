@@ -35,9 +35,14 @@ permissions:
   contents: read
 
 # Overlapping runs would double the seed writes: two run_id-keyed
-# entries per key. Deduplicate per ref.
+# entries per key. The group carries a literal prefix: group names are
+# repository-scoped (a bare ref group cancelled the main-branch-tests
+# nightly, 2026-10-30), and in a workflow_call run github.workflow
+# resolves to the caller's name, so the workflow-name form would join
+# a caller's own group and its cancel-in-progress could cancel that
+# caller.
 concurrency:
-  group: ${{ github.ref }}
+  group: smoke-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
