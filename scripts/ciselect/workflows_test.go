@@ -903,95 +903,112 @@ func TestMatchesBranchFilter(t *testing.T) {
 
 // matchesAnyQueueBranch reports whether a pattern can match any branch the
 // merge queue builds on, not just one sample: the queue names them
-// mq-working-branch-<target>-<hash>, where <target> is the merged-into branch
-// (letters, digits, ".", "_" and "-"; modeled permissively so a pattern that
-// pins an unlikely target still counts as a queue match) and <hash> is a
-// hexadecimal string (length-capped with headroom above a SHA-1). Queue
-// branches contain no "/", so "*" and "**" agree on them; what separates
-// patterns is where their literals can land.
+// mq-working-branch-<target>-<hash>, where <target> is the merged-into
+// branch (letters, digits, ".", "_" and "-", of any length; modeled
+// permissively so a pattern that pins an unlikely target still counts as a
+// queue match) and <hash> is a hexadecimal string. Queue branches contain no
+// "/", so "*" and "**" agree on them; what separates patterns is where
+// their literals can land.
 func matchesAnyQueueBranch(pat string) (bool, error) {
 	toks, err := parseBranchFilter(pat)
 	if err != nil {
 		return false, err
 	}
-	const (
-		maxTargetLen = 24
-		maxHashLen   = 64
-	)
-	for tlen := 1; tlen <= maxTargetLen; tlen++ {
-		for hlen := 1; hlen <= maxHashLen; hlen++ {
-			if branchFilterMatchesTemplate(toks, tlen, hlen) {
+	// Forward reachability over (token index, queue position) states, each
+	// step consuming zero or one character. Iterating instead of recursing
+	// keeps the inTarget→inTarget and inHash→inHash loops from exhausting
+	// the stack.
+	seen := map[[2]int]bool{{0, 0}: true}
+	frontier := [][2]int{{0, 0}}
+	for len(frontier) > 0 {
+		st := frontier[0]
+		frontier = frontier[1:]
+		j, s := st[0], st[1]
+		if j == len(toks) {
+			// The branch may end only once a hash character is consumed.
+			if s == inHash {
 				return true, nil
+			}
+			continue
+		}
+		push := func(nj, ns int) {
+			if !seen[[2]int{nj, ns}] {
+				seen[[2]int{nj, ns}] = true
+				frontier = append(frontier, [2]int{nj, ns})
+			}
+		}
+		t := toks[j]
+		switch {
+		case t.star || t.dstar:
+			// A wildcard may match zero characters, one and stop, or one
+			// and keep consuming.
+			push(j+1, s)
+			for _, ns := range queueStep(s, 0, true) {
+				push(j+1, ns)
+				push(j, ns)
+			}
+		case t.opt:
+			push(j+1, s) // the optional literal matches nothing
+			for _, ns := range queueStep(s, t.lit, false) {
+				push(j+1, ns)
+			}
+		default:
+			for _, ns := range queueStep(s, t.lit, false) {
+				push(j+1, ns)
 			}
 		}
 	}
 	return false, nil
 }
 
-// branchFilterMatchesTemplate backtracks the pattern tokens over the symbolic
-// branch mq-working-branch-<target>-<hash>: <targetLen> free name characters,
-// a "-", then <hashLen> free hexadecimal characters. A free position matches
-// a literal when the literal belongs to its class; wildcards match any run of
-// positions (the template contains no "/").
-func branchFilterMatchesTemplate(toks []branchFilterToken, targetLen, hashLen int) bool {
-	const prefix = "mq-working-branch-"
-	n := len(prefix) + targetLen + 1 + hashLen
-	// pos(i): fixed character (prefix or separator) or a free position.
-	pos := func(i int) (fixed byte, hex bool) {
-		switch {
-		case i < len(prefix):
-			return prefix[i], false
-		case i < len(prefix)+targetLen:
-			return 0, false
-		case i == len(prefix)+targetLen:
-			return '-', false
-		default:
-			return 0, true
+// Positions of the symbolic queue branch mq-working-branch-<target>-<hash>:
+// each character of the fixed prefix, then the first target character
+// (targets are never empty), the remaining target characters, and the hash
+// characters (hexadecimal, never empty). The target and the hash have no
+// length bound — a real ref may use any of the 255 bytes GitHub allows — so
+// the matcher walks these positions instead of enumerating lengths. The
+// branch ends once inHash is reached: the "-" separator is behind us by then
+// and at least one hash character is consumed.
+const queuePrefix = "mq-working-branch-"
+
+const (
+	firstTarget = iota + len(queuePrefix) // 18: first <target> character
+	inTarget                              // a further <target> character, or the "-" separator
+	firstHash                             // first <hash> character
+	inHash                                // a further <hash> character; the branch may end here
+)
+
+// queueStep returns the positions reachable by consuming one character at
+// position s: the literal lit when wild is false, or any character a wildcard
+// can match when wild is true (both "*" and "**" match every character of a
+// queue branch, because the name contains no "/").
+func queueStep(s int, lit byte, wild bool) []int {
+	switch {
+	case s < len(queuePrefix):
+		if wild || lit == queuePrefix[s] {
+			return []int{s + 1}
+		}
+	case s == firstTarget:
+		if wild || isBranchNameChar(lit) {
+			return []int{inTarget}
+		}
+	case s == inTarget:
+		// The target itself may contain "-", so a "-" is either a target
+		// character or the separator before <hash>.
+		var next []int
+		if wild || isBranchNameChar(lit) {
+			next = append(next, inTarget)
+		}
+		if wild || lit == '-' {
+			next = append(next, firstHash)
+		}
+		return next
+	case s == firstHash, s == inHash:
+		if wild || isHexDigit(lit) {
+			return []int{inHash}
 		}
 	}
-	compat := func(i int, lit byte) bool {
-		fixed, hex := pos(i)
-		switch {
-		case fixed != 0:
-			return lit == fixed
-		case hex:
-			return isHexDigit(lit)
-		default:
-			return isBranchNameChar(lit)
-		}
-	}
-	// memo[i][j]: 0 unknown, 1 match, -1 no match.
-	memo := make([][]int8, n+1)
-	for i := range memo {
-		memo[i] = make([]int8, len(toks)+1)
-	}
-	var match func(i, j int) bool
-	match = func(i, j int) bool {
-		if memo[i][j] != 0 {
-			return memo[i][j] == 1
-		}
-		res := false
-		switch {
-		case j == len(toks):
-			res = i == n
-		case toks[j].star || toks[j].dstar:
-			for k := i; k <= n && !res; k++ {
-				res = match(k, j+1)
-			}
-		case toks[j].opt:
-			res = match(i, j+1) ||
-				(i < n && compat(i, toks[j].lit) && match(i+1, j+1))
-		default:
-			res = i < n && compat(i, toks[j].lit) && match(i+1, j+1)
-		}
-		if res {
-			memo[i][j] = 1
-		} else {
-			memo[i][j] = -1
-		}
-		return res
-	}
-	return match(0, 0)
+	return nil
 }
 
 func isHexDigit(c byte) bool {
@@ -1023,6 +1040,10 @@ func TestMatchesAnyQueueBranch(t *testing.T) {
 		{"mq-working-branch-main-*cd", true},
 		{"mq-working-branch-main-**d?", true},
 		{"mq-working-branch-release-v*-**", true},
+		// Neither the target nor the hash has a length bound.
+		{"mq-working-branch-" + strings.Repeat("a", 40) + "-*", true},
+		{"mq-working-branch-main-" + strings.Repeat("0", 45), true},
+		{"mq-working-branch-" + strings.Repeat("b", 60), false}, // never reaches "-<hash>"
 		// The queue always appends "-<hash>", so the bare target never matches.
 		{"mq-working-branch-main", false},
 	} {
