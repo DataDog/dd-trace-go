@@ -700,3 +700,28 @@ func (l *capturingLogger) countContaining(substr string) int {
 	}
 	return count
 }
+
+func TestAgentlessSourceUnsupportedEvaluatorOmitsCapabilities(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Empty(t, r.Header.Values("X-DD-FEATURE-FLAGS-CAPABILITIES"))
+		if requests == 1 {
+			w.Header().Set("ETag", fakeUFCBackendETag)
+			_, _ = w.Write([]byte(fakeUFCValidBody))
+		} else {
+			assert.Equal(t, fakeUFCBackendETag, r.Header.Get("If-None-Match"))
+			w.WriteHeader(http.StatusNotModified)
+		}
+	}))
+	defer server.Close()
+	source, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: server.URL,
+		PollInterval:     time.Second,
+		RequestTimeout:   time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	source.pollOnce(1)
+	source.pollOnce(1)
+	assert.Equal(t, 2, requests)
+}

@@ -139,6 +139,8 @@ const (
 	APMTracingMulticonfig
 	// FFEFlagEvaluation represents the capability for feature flag evaluation via OpenFeature
 	FFEFlagEvaluation
+	// FFEFlagDependentFlagVariantKeyV1 is protocol registration, not evaluator support.
+	FFEFlagDependentFlagVariantKeyV1 Capability = 50
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.

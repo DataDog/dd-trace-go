@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -255,6 +256,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 			})
 		}
 		return pollOutcomeStop, 0
+	}
+	if slices.Contains(internalffe.EvaluatorCapabilities(), internalffe.DependentFlagVariantKeyV1) {
+		req.Header.Set("X-DD-FEATURE-FLAGS-CAPABILITIES", internalffe.DependentFlagVariantKeyV1)
 	}
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
