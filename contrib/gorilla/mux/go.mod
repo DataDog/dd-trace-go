@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.11.1
 )

@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/opensearch-project/opensearch-go/v4 v4.7.3
 	github.com/stretchr/testify v1.11.1
 )
