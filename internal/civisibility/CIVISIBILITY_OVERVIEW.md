@@ -81,6 +81,10 @@
 - `telemetry/` defines dimensional labels for events (framework identifiers, CI provider tags, error types, git command categories) used throughout the package to emit consistent metrics.
 - `names_test.go`, `git_test.go`, `codeowners_test.go`, `ci_providers_test.go`, `net/*_test.go`, etc., provide extensive coverage, often using fixtures to simulate CI environments and network responses.
 
+### Known-tests pagination telemetry
+
+A completed live known-tests fetch reports `known_tests.pages_fetched`, `known_tests.total_fetch_ms`, and `known_tests.total_request_ms` distributions. Request time sums page request helpers, including transport retries and backoff; fetch time also includes parsing and merging. Failed fetches, non-success HTTP responses, short-lived cache hits, and Bazel manifest reads do not emit these completion metrics.
+
 ## Testing, Fixtures, and Tooling
 - Extensive `_test.go` coverage in integrations (`manual_api`, `gotesting`, `logs`) and utils ensures feature toggles, retries, coverage serialization, and network clients behave as expected.
 - Subtest matrix harness (`integrations/gotesting/subtests`) runs under `go test` and exercises the parent/subtest permutations needed to guard subtest-specific instrumentation changes. Enable debug logging to surface per-scenario diagnostics.

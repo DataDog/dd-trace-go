@@ -6,19 +6,28 @@
 package net
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestKnownTestsApiRequest(t *testing.T) {
@@ -314,4 +323,114 @@ func containsLogLine(lines []string, want string) bool {
 		}
 	}
 	return false
+}
+
+type knownTestsRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f knownTestsRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestKnownTestsPaginationMetrics(t *testing.T) {
+	for _, pages := range []int{1, 3} {
+		t.Run(fmt.Sprintf("%d pages", pages), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				now := time.Now()
+				setReadCacheHooksForTest(t, t.TempDir(), &now, 111, 222)
+				recorder := new(telemetrytest.RecordClient)
+				defer coretelemetry.MockClient(recorder)()
+				c := newReadCacheTestClient(nil)
+				c.testConfigurations.Custom = nil
+				calls := 0
+				c.handler = NewRequestHandlerWithClient(&http.Client{Transport: knownTestsRoundTripper(
+					func(request *http.Request) (*http.Response, error) {
+						defer request.Body.Close()
+						var body knownTestsRequest
+						require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
+						require.NotNil(t, body.Data.Attributes.PageInfo)
+						if calls == 0 {
+							require.Empty(t, body.Data.Attributes.PageInfo.PageState)
+						} else {
+							require.Equal(t, strconv.Itoa(calls), body.Data.Attributes.PageInfo.PageState)
+						}
+						calls++
+						time.Sleep(1500 * time.Microsecond)
+						response := knownTestsResponse{}
+						response.Data.Attributes.Tests = KnownTestsResponseDataModules{"module": {"suite": {"test"}}}
+						response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{
+							HasNext: calls < pages, Cursor: strconv.Itoa(calls),
+						}
+						raw, err := json.Marshal(response)
+						require.NoError(t, err)
+						return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {ContentTypeJSON}},
+							Body: io.NopCloser(bytes.NewReader(raw))}, nil
+					}),
+				})
+				result, err := c.GetKnownTests()
+				require.NoError(t, err)
+				require.Len(t, result.Tests["module"]["suite"], pages)
+				require.Equal(t, pages, calls)
+				for name, expected := range map[string]float64{
+					"known_tests.pages_fetched":    float64(pages),
+					"known_tests.total_fetch_ms":   float64(pages) * 1.5,
+					"known_tests.total_request_ms": float64(pages) * 1.5,
+				} {
+					key := telemetrytest.MetricKey{Namespace: coretelemetry.NamespaceCIVisibility, Name: name, Kind: "distribution"}
+					require.Contains(t, recorder.Metrics, key)
+					require.Equal(t, expected, recorder.Metrics[key].Get(), name)
+				}
+				cached, err := c.GetKnownTests()
+				require.NoError(t, err)
+				require.Equal(t, result, cached)
+				require.Equal(t, pages, calls, "cache hit must not fetch more pages")
+				key := telemetrytest.MetricKey{Namespace: coretelemetry.NamespaceCIVisibility, Name: "known_tests.pages_fetched", Kind: "distribution"}
+				require.Equal(t, float64(pages), recorder.Metrics[key].Get(), "cache hit must not submit another sample")
+			})
+		})
+	}
+}
+
+func TestKnownTestsPaginationMetricsOmittedOnFailure(t *testing.T) {
+	for _, failure := range []string{"transport", "malformed JSON", "HTTP error with JSON"} {
+		t.Run(failure, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				now := time.Now()
+				setReadCacheHooksForTest(t, t.TempDir(), &now, 111, 222)
+				recorder := new(telemetrytest.RecordClient)
+				defer coretelemetry.MockClient(recorder)()
+				c := newReadCacheTestClient(nil)
+				c.testConfigurations.Custom = nil
+				calls := 0
+				c.handler = NewRequestHandlerWithClient(&http.Client{Transport: knownTestsRoundTripper(
+					func(request *http.Request) (*http.Response, error) {
+						request.Body.Close()
+						calls++
+						time.Sleep(time.Millisecond)
+						if calls == 1 {
+							return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {ContentTypeJSON}},
+								Body: io.NopCloser(strings.NewReader(`{"data":{"attributes":{"tests":{"module":{"suite":["test"]}},"page_info":{"has_next":true,"cursor":"second"}}}}`))}, nil
+						}
+						if failure == "transport" {
+							return nil, errors.New("connection reset")
+						}
+						status, body := http.StatusOK, "{invalid"
+						if failure == "HTTP error with JSON" {
+							status, body = http.StatusBadRequest, `{"data":{"attributes":{"tests":{}}}}`
+						}
+						return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {ContentTypeJSON}},
+							Body: io.NopCloser(strings.NewReader(body))}, nil
+					}),
+				})
+				_, err := c.GetKnownTests()
+				if failure != "HTTP error with JSON" {
+					require.Error(t, err)
+				}
+				for _, name := range []string{"known_tests.pages_fetched", "known_tests.total_fetch_ms", "known_tests.total_request_ms"} {
+					require.NotContains(t, recorder.Metrics, telemetrytest.MetricKey{
+						Namespace: coretelemetry.NamespaceCIVisibility, Name: name, Kind: "distribution",
+					})
+				}
+			})
+		})
+	}
 }
