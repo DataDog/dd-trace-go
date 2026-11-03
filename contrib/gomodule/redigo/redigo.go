@@ -140,11 +140,12 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 	if err != nil {
 		return nil, err
 	}
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		// The address has no port, for example a unix socket path. The
-		// connection is already established, so use the address as the host.
-		host, port = address, ""
+	// A unix socket path is the whole host, even when it contains a colon.
+	host, port := address, ""
+	if network != "unix" && network != "unixpacket" {
+		if h, p, err := net.SplitHostPort(address); err == nil {
+			host, port = h, p
+		}
 	}
 	p := &params{config: cfg, network: network, host: host, port: port}
 	p.spanCfg = newSpanConfig(cfg, network, host, port)
