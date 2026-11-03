@@ -63,7 +63,7 @@ aspects:
           links:
             - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
           template: |-
-            //go:linkname __dd_lambda_wrapRuntimeHandler github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.WrapRuntimeHandler
+            //go:linkname __dd_lambda_wrapRuntimeHandler github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.wrapRuntimeHandler
             func __dd_lambda_wrapRuntimeHandler(handlerFunc) handlerFunc
       - prepend-statements:
           template: |-

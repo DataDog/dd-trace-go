@@ -886,6 +886,12 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
+			// The worker is the only receiver on t.out. Include all chunks
+			// already queued, but bound the drain so concurrent producers
+			// cannot postpone the flush indefinitely.
+			for remaining := len(t.out); remaining > 0; remaining-- {
+				t.processOutChunk(<-t.out)
+			}
 			t.flushHandler(done)
 
 		case <-t.stop:
