@@ -50,7 +50,7 @@ func TestLLMObsPropagatedValue(t *testing.T) {
 			sc := &SpanContext{trace: &trace{}}
 			if tt.baggageVal != "" {
 				sc.baggage = map[string]string{baggageKeyLLMObsParentID: tt.baggageVal}
-				sc.hasBaggage = 1 
+				sc.hasBaggage = 1
 			}
 			if tt.tagVal != "" {
 				sc.trace.setPropagatingTag(keyPropagatedLLMObsParentID, tt.tagVal)
