@@ -163,6 +163,12 @@ type flag struct {
 	Allocations []*allocation `json:"allocations"`
 	// invalidActivation is consumed only by opted-out future-mode evaluations.
 	invalidActivation bool
+	// dependencyConditionsPrepared distinguishes configurations prepared for
+	// evaluation from flags assembled directly by tests and internal callers.
+	// hasDependencyConditions keeps the ordinary evaluation path from
+	// constructing a dependency resolver when this flag cannot traverse one.
+	dependencyConditionsPrepared bool
+	hasDependencyConditions      bool
 }
 
 // variant represents a single variation/variation of a feature flag.

@@ -572,6 +572,22 @@ func dependencyTestConfig(flags ...*flag) *universalFlagsConfiguration {
 	return config
 }
 
+func TestIndependentEvaluationDoesNotAllocateDependencyResolver(t *testing.T) {
+	config := dependencyTestConfig(&flag{
+		Key: "root", Enabled: true, VariationType: valueTypeBoolean,
+		Variations: map[string]*variant{},
+	})
+	prepareDependencyConditions(config)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result := evaluateConfiguredFlag(config, "root", false, nil, time.Time{}, experimentationExclusion{})
+		if result.Error != nil || len(result.DependencyEvaluations) != 0 {
+			t.Fatalf("unexpected independent result: error=%v dependencyEvaluations=%d", result.Error, len(result.DependencyEvaluations))
+		}
+	})
+	require.Zero(t, allocations)
+}
+
 func dependencyTestConfigWithDepth(depth int, flags ...*flag) *universalFlagsConfiguration {
 	config := dependencyTestConfig(flags...)
 	config.EvaluatorParams.MaxDependencyDepth = &depth

@@ -221,6 +221,10 @@ func evaluateConfiguredFlag(
 	now time.Time,
 	exclusion experimentationExclusion,
 ) evaluationResult {
+	flag, exists := config.Flags[flagKey]
+	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
+		return evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, nil)
+	}
 	resolver := &lazyDependencyResolver{
 		config:      config,
 		rootFlagKey: flagKey,
@@ -240,6 +244,49 @@ func evaluateConfiguredFlag(
 		result.Metadata[metadataDependencyExposuresKey] = resolver.session.exposures
 	}
 	return result
+}
+
+// flagMayEvaluateDependencies reports whether a flag contains any authored
+// prerequisite condition. Accepted provider configurations have this marker
+// prepared once at update time. The scan fallback preserves the behavior of
+// package-internal callers and tests that assemble flags directly.
+func flagMayEvaluateDependencies(flag *flag) bool {
+	if flag.dependencyConditionsPrepared {
+		return flag.hasDependencyConditions
+	}
+	return flagContainsDependencyConditions(flag)
+}
+
+func flagContainsDependencyConditions(flag *flag) bool {
+	for _, allocation := range flag.Allocations {
+		if allocation == nil {
+			continue
+		}
+		for _, rule := range allocation.Rules {
+			if rule == nil {
+				continue
+			}
+			for _, condition := range rule.Conditions {
+				if condition != nil && condition.FlagEvaluation != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func prepareDependencyConditions(config *universalFlagsConfiguration) {
+	if config == nil {
+		return
+	}
+	for _, flag := range config.Flags {
+		if flag == nil || flag.dependencyConditionsPrepared {
+			continue
+		}
+		flag.hasDependencyConditions = flagContainsDependencyConditions(flag)
+		flag.dependencyConditionsPrepared = true
+	}
 }
 
 func evaluateConfiguredFlagOnce(

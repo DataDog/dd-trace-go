@@ -432,6 +432,7 @@ func (p *DatadogProvider) setConfiguration(config *universalFlagsConfiguration) 
 		// configuration after Shutdown.
 		return readinessUnchanged
 	}
+	prepareDependencyConditions(config)
 	p.configuration = config
 	// Wake every waiter blocked on the current generation, then start a fresh
 	// one for the next update: a closed channel cannot be reused as a signal.
