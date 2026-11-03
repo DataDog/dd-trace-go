@@ -6,7 +6,9 @@
 package osinfo_test
 
 import (
+	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,5 +40,8 @@ func Test(t *testing.T) {
 		require.Truef(t, semver.IsValid("v"+kernelRelease), "invalid kernel version: %s", kernelRelease)
 	case "darwin":
 		require.Equal(t, "Darwin", kernelName)
+		out, err := exec.Command("sw_vers", "-productVersion").Output()
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(string(out)), osVersion)
 	}
 }

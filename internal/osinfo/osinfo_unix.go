@@ -11,7 +11,6 @@ import (
 	"bufio"
 	"bytes"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -27,12 +26,12 @@ func init() {
 
 	if runtime.GOOS == "darwin" {
 		kernelName = "Darwin"
-		out, err := exec.Command("sw_vers", "-productVersion").Output()
+		version, err := productVersion()
 		if err != nil {
 			return
 		}
 
-		osVersion = string(bytes.Trim(out, "\n"))
+		osVersion = version
 	}
 
 	var uts unix.Utsname
