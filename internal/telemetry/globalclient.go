@@ -62,11 +62,14 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-	// Increment the WaitGroup before SwapClient makes the client visible so
-	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	// Increment the WaitGroups before SwapClient makes the client visible so
+	// neither StopApp nor Close can observe a zero counter and return before the
+	// flush goroutine runs.
 	startAppFlushWg.Add(1)
+	flushDone := trackStartAppFlush(client)
 	if SwapClient(client) != nil {
-		// A concurrent StartApp call already set the client; undo the Add.
+		// A concurrent StartApp call already set the client; undo the Adds.
+		flushDone()
 		startAppFlushWg.Done()
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
@@ -74,6 +77,7 @@ func StartApp(client Client) {
 
 	go func() {
 		defer startAppFlushWg.Done()
+		defer flushDone()
 		client.Flush()
 	}()
 }
