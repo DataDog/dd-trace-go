@@ -138,9 +138,14 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	}
 	// Resolved once here and handed to propagatedLLMSpan rather than looked up
 	// again, since deciding whether any propagation is present already requires them.
+	// Each is tested before the next is read: a span carrying no LLMObs propagation
+	// is the overwhelmingly common case, and it must cost a single lookup, not two.
 	parentID := llmObsPropagatedValue(s.context, baggageKeyLLMObsParentID, keyPropagatedLLMObsParentID)
+	if parentID == "" {
+		return ctx
+	}
 	traceID := llmObsPropagatedValue(s.context, baggageKeyLLMObsTraceID, keyPropagatedLLMObsTraceID)
-	if parentID == "" || traceID == "" {
+	if traceID == "" {
 		return ctx
 	}
 	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpan(s.context, parentID, traceID))
