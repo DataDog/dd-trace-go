@@ -108,6 +108,15 @@ func TestRegisteredEvaluatorWaitsForProvider(t *testing.T) {
 	}
 }
 
+func TestInternalAnyEvaluatorAcceptsScalarFlag(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	evaluate := newAnyEvaluator(h.client)
+
+	value, err := evaluate(context.Background(), "experiment", "subject", nil)
+	require.NoError(t, err)
+	require.Equal(t, true, value)
+}
+
 func TestEvaluateShard(t *testing.T) {
 	t.Run("targeting key hashes to correct shard", func(t *testing.T) {
 		targetingKey := "user-123"
@@ -453,7 +462,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	if err := of.SetProviderAndWait(provider); err != nil {
 		t.Fatalf("set provider: %v", err)
 	}
-	client := of.NewClient("fixture-test")
 	immediateProvider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
 	})
@@ -547,16 +555,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						assertFixtureFeatures(t, &cfg, tc, result)
 					}
 					if tc.Result.ErrorCode != "" {
-						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
-						if tc.TargetingKey != nil {
-							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
-						}
-						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
-						if err == nil {
+						result := provider.evaluateAny(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+						if result.Error == nil {
 							t.Error("expected SDK evaluation error, got nil")
 						}
-						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
-							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						if code := errorCodeFor(result.Error); code != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", code, tc.Result.ErrorCode)
 						}
 					}
 					for capability, expected := range tc.Capabilities {
@@ -565,12 +569,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 							continue
 						}
 						t.Run(capability, func(t *testing.T) {
-							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+							result := p.evaluateAny(context.Background(), tc.Flag, tc.DefaultValue, ctx)
 							assert.Equal(t, expected.Value, result.Value, "capability result value")
 							if result.Reason != of.Reason(expected.Reason) {
 								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
 							}
-							if code := result.ResolutionDetail().ErrorCode; code != of.ErrorCode(expected.ErrorCode) {
+							if code := errorCodeFor(result.Error); code != of.ErrorCode(expected.ErrorCode) {
 								t.Errorf("error code: got %q, want %q", code, expected.ErrorCode)
 							}
 						})
@@ -623,11 +627,10 @@ func assertFixtureFeatures(t *testing.T, cfg *universalFlagsConfiguration, tc fi
 	if tc.TargetingKey != nil {
 		targetingKey = *tc.TargetingKey
 	}
-	details, err := h.client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue,
-		of.NewEvaluationContext(targetingKey, tc.Attributes))
+	evaluate := newAnyEvaluator(h.client)
+	value, err := evaluate(context.Background(), tc.Flag, targetingKey, tc.Attributes)
 	require.NoError(t, err)
-	assert.Equal(t, tc.Result.Value, details.Value)
-	assert.Equal(t, of.Reason(tc.Result.Reason), details.Reason)
+	assert.Equal(t, tc.Result.Value, value)
 	require.Len(t, callbacks, 1)
 	assertFeatures("HOOK", callbacks[0].Features())
 	if tc.Result.DoLog != nil {

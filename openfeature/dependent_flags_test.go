@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -220,7 +221,7 @@ func TestDependentFlags_OverDepthEmitsRejectedNodeBeforeAncestors(t *testing.T) 
 		message   string
 	}
 	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
-	var events []telemetryEvent
+	events := make([]telemetryEvent, 0, len(result.DependencyEvaluations))
 	for _, record := range result.DependencyEvaluations {
 		events = append(events, telemetryEvent{
 			key:       record.FlagKey,
@@ -385,9 +386,7 @@ func TestDependentFlags_ParallelRootsKeepReturnedBatchesIndependent(t *testing.T
 	var wg sync.WaitGroup
 	errs := make(chan error, evaluations)
 	for range evaluations {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 			if result.Error != nil {
 				errs <- result.Error
@@ -398,12 +397,65 @@ func TestDependentFlags_ParallelRootsKeepReturnedBatchesIndependent(t *testing.T
 				return
 			}
 			result.DependencyEvaluations[0].Result.Metadata[metadataAllocationKey] = "caller mutation"
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
 	for err := range errs {
 		require.NoError(t, err)
+	}
+}
+
+func TestDependentFlags_WideGraphDeduplicatesTelemetry(t *testing.T) {
+	const dependencyCount = 512
+	flags := make([]*flag, 0, dependencyCount+1)
+	conditions := make([]*condition, 0, dependencyCount)
+	for i := range dependencyCount {
+		key := fmt.Sprintf("dependency-%d", i)
+		flags = append(flags, dependencyTestFlag(key, "on", nil))
+		conditions = append(conditions, dependencyCondition(key, operatorOneOf, "on"))
+	}
+	root := dependencyTestFlag("root", "on", nil)
+	root.Allocations[0].Rules = []*rule{{Conditions: conditions}}
+	flags = append(flags, root)
+
+	result := evaluateConfiguredFlag(dependencyTestConfig(flags...), "root", false, nil, time.Now(), experimentationExclusion{})
+
+	require.NoError(t, result.Error)
+	require.Len(t, result.DependencyEvaluations, dependencyCount)
+	exposures, ok := result.Metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+	require.True(t, ok)
+	require.Len(t, exposures, dependencyCount)
+	for i := range dependencyCount {
+		key := fmt.Sprintf("dependency-%d", i)
+		require.Equal(t, key, result.DependencyEvaluations[i].FlagKey)
+		require.Equal(t, key, exposures[i].FlagKey)
+	}
+}
+
+func BenchmarkDependentFlags_WideGraph(b *testing.B) {
+	const dependencyCount = 512
+	flags := make([]*flag, 0, dependencyCount+1)
+	conditions := make([]*condition, 0, dependencyCount)
+	for i := range dependencyCount {
+		key := fmt.Sprintf("dependency-%d", i)
+		flags = append(flags, dependencyTestFlag(key, "on", nil))
+		conditions = append(conditions, dependencyCondition(key, operatorOneOf, "on"))
+	}
+	root := dependencyTestFlag("root", "on", nil)
+	root.Allocations[0].Rules = []*rule{{Conditions: conditions}}
+	flags = append(flags, root)
+	config := dependencyTestConfig(flags...)
+	now := time.Now()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		result := evaluateConfiguredFlag(config, "root", false, nil, now, experimentationExclusion{})
+		exposures, _ := result.Metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+		if result.Error != nil || len(result.DependencyEvaluations) != dependencyCount || len(exposures) != dependencyCount {
+			b.Fatalf("unexpected wide-graph result: error=%v evaluations=%d exposures=%d", result.Error, len(result.DependencyEvaluations), len(exposures))
+		}
 	}
 }
 
@@ -441,6 +493,55 @@ func TestDependentFlags_ProviderTelemetryAndExposureIntegration(t *testing.T) {
 		exposureKeys = append(exposureKeys, exposure.Flag.Key)
 	}
 	require.Equal(t, []string{"leaf", "middle", "root"}, exposureKeys)
+}
+
+func TestDependentFlags_PublicObjectTypeMismatchDoesNotTraverseDependencies(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	)
+	h.provider.mu.Unlock()
+
+	defaultValue := map[string]any{"fallback": true}
+	details, err := h.client.ObjectValueDetails(context.Background(), "root", defaultValue,
+		of.NewEvaluationContext("subject", nil))
+	require.Error(t, err)
+	require.Equal(t, defaultValue, details.Value)
+	require.Equal(t, of.TypeMismatchCode, details.ErrorCode)
+
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	h.provider.exposureWriter.flush()
+	require.Len(t, h.sink.events, 1)
+	require.Equal(t, "root", h.sink.events[0].Flag.Key)
+	require.Empty(t, h.sink.exposures)
+}
+
+func TestDependentFlags_InvalidRootActivationPrecedesTypeMismatch(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly})
+	root := dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on"))
+	root.invalidActivation = true
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		root,
+	)
+	h.provider.mu.Unlock()
+
+	details, err := h.client.StringValueDetails(context.Background(), "root", "fallback",
+		of.NewEvaluationContext("subject", map[string]any{
+			experimentationOptOutAtAttribute: experimentOptOutTestTime,
+		}))
+	require.Error(t, err)
+	require.Equal(t, "fallback", details.Value)
+	require.Equal(t, of.ParseErrorCode, details.ErrorCode)
+
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	h.provider.exposureWriter.flush()
+	require.Len(t, h.sink.events, 1)
+	require.Equal(t, "root", h.sink.events[0].Flag.Key)
+	require.Empty(t, h.sink.exposures)
 }
 
 func TestDependentFlags_OptOutSuppressesDependencyErrorTelemetry(t *testing.T) {

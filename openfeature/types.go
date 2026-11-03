@@ -7,7 +7,7 @@ package openfeature
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"math"
 	"sync/atomic"
 	"time"
@@ -29,7 +29,7 @@ type universalFlagsConfiguration struct {
 	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// EvaluatorParams controls optional evaluator behaviour. Missing fields use
 	// evaluator defaults; a present zero maxDependencyDepth is meaningful.
-	EvaluatorParams evaluatorParams `json:"evaluatorParams,omitempty"`
+	EvaluatorParams evaluatorParams `json:"evaluatorParams"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
@@ -321,10 +321,10 @@ func (evaluation *flagEvaluation) UnmarshalJSON(data []byte) error {
 	}
 	keyJSON, ok := fields["key"]
 	if !ok || len(fields) != 1 {
-		return fmt.Errorf("flagEvaluation must contain only key")
+		return errors.New("flagEvaluation must contain only key")
 	}
 	if err := json.Unmarshal(keyJSON, &evaluation.Key); err != nil || evaluation.Key == "" {
-		return fmt.Errorf("flagEvaluation.key must be a non-empty string")
+		return errors.New("flagEvaluation.key must be a non-empty string")
 	}
 	return nil
 }

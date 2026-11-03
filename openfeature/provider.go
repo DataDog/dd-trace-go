@@ -207,13 +207,23 @@ func newEvaluator(domain string) (internalffe.Evaluator, error) {
 		}
 		client = openfeature.NewClient(domain)
 	}
+	return newAnyEvaluator(client), nil
+}
+
+// anyEvaluationDefault marks the internal UFC adapter's type-agnostic path.
+// It is intentionally private so public ObjectValueDetails calls always request
+// a JSON flag. Its map representation also keeps the OpenFeature hook default
+// value equivalent to the empty object used before this distinction existed.
+type anyEvaluationDefault map[string]any
+
+func newAnyEvaluator(client *openfeature.Client) internalffe.Evaluator {
 	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
 		if err := waitForProvider(ctx, client); err != nil {
 			return nil, err
 		}
-		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+		details, err := client.ObjectValueDetails(ctx, key, anyEvaluationDefault{}, openfeature.NewEvaluationContext(targetingKey, attributes))
 		return details.Value, err
-	}, nil
+	}
 }
 
 func waitForProvider(ctx context.Context, client *openfeature.Client) error {
@@ -689,7 +699,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 	defaultValue bool,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.BoolResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeBoolean)
 
 	// Convert result to boolean
 	boolValue, ok := result.Value.(bool)
@@ -719,7 +729,7 @@ func (p *DatadogProvider) StringEvaluation(
 	defaultValue string,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.StringResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeString)
 
 	// Convert result to string
 	strValue, ok := result.Value.(string)
@@ -749,7 +759,7 @@ func (p *DatadogProvider) FloatEvaluation(
 	defaultValue float64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.FloatResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeNumeric)
 
 	// Convert result to float64
 	var floatValue float64
@@ -798,7 +808,7 @@ func (p *DatadogProvider) IntEvaluation(
 	defaultValue int64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.IntResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeInteger)
 
 	// Convert result to int64
 	var intValue int64
@@ -854,7 +864,12 @@ func (p *DatadogProvider) ObjectEvaluation(
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.InterfaceResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	var result evaluationResult
+	if internalDefault, ok := defaultValue.(anyEvaluationDefault); ok {
+		result = p.evaluateAny(ctx, flagKey, map[string]any(internalDefault), flatCtx)
+	} else {
+		result = p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeJSON)
+	}
 
 	detail := openfeature.InterfaceResolutionDetail{
 		Value: result.Value,
@@ -867,6 +882,17 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 	logResolution(p.rawDataWarned, flagKey, openfeature.Object, defaultValue, flatCtx, detail)
 	return detail
+}
+
+// evaluateAny is the private type-agnostic entrypoint used by the internal UFC
+// adapter. Public OpenFeature object evaluation requires a JSON flag.
+func (p *DatadogProvider) evaluateAny(
+	ctx context.Context,
+	flagKey string,
+	defaultValue any,
+	flatCtx openfeature.FlattenedContext,
+) evaluationResult {
+	return p.evaluate(ctx, flagKey, defaultValue, flatCtx, "")
 }
 
 // Hooks returns hooks for one evaluation.
@@ -892,6 +918,7 @@ func (p *DatadogProvider) evaluate(
 	flagKey string,
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
+	requestedType valueType,
 ) (res evaluationResult) {
 	// Capture the evaluation time once, at evaluation entry. It is used for allocation
 	// time-window checks and EVP first/last evaluation bounds.
@@ -939,6 +966,30 @@ func (p *DatadogProvider) evaluate(
 	exclusion, err := p.experimentationOptOutMode.exclusion(flatCtx)
 	if err != nil {
 		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
+	}
+
+	// A malformed root activation is a configuration error in future-only mode,
+	// so it takes precedence over a caller type mismatch without traversing the
+	// dependency graph.
+	if flag, exists := config.Flags[flagKey]; exists &&
+		exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: openfeature.ErrorReason,
+			Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
+		}
+	}
+
+	// Reject a requested type that does not match the configured root before
+	// traversing its dependency graph. Invalid and missing root flags continue
+	// through the evaluator so they retain their existing error precedence.
+	if flag, exists := config.Flags[flagKey]; requestedType != "" && exists && flag.VariationType != requestedType {
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: openfeature.ErrorReason,
+			Error: fmt.Errorf("%w: flag %q is configured as %s, not %s", errTypeMismatch,
+				flagKey, flag.VariationType, requestedType),
+		}
 	}
 
 	// Complete the graph before publishing prerequisite telemetry. The evaluator's
@@ -1079,8 +1130,7 @@ func errorCodeFor(err error) openfeature.ErrorCode {
 	if err == nil {
 		return ""
 	}
-	var graphErr *dependencyGraphError
-	if errors.As(err, &graphErr) {
+	if graphErr, ok := errors.AsType[*dependencyGraphError](err); ok {
 		return graphErr.code
 	}
 	switch {

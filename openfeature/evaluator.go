@@ -445,6 +445,7 @@ type dependencyCheckpoint struct {
 type dependencyFrame struct {
 	maxReachedDepth int
 	exposureTrace   []dependencyExposureCandidate
+	exposureKeys    map[string]struct{}
 }
 
 type memoizedDependency struct {
@@ -454,16 +455,18 @@ type memoizedDependency struct {
 }
 
 type dependencyEvaluationSession struct {
-	config      *universalFlagsConfiguration
-	context     map[string]any
-	now         time.Time
-	exclusion   experimentationExclusion
-	maxDepth    int
-	active      map[string]bool
-	memo        map[string]memoizedDependency
-	frames      []*dependencyFrame
-	exposures   []dependencyExposureCandidate
-	evaluations []dependencyEvaluationRecord
+	config         *universalFlagsConfiguration
+	context        map[string]any
+	now            time.Time
+	exclusion      experimentationExclusion
+	maxDepth       int
+	active         map[string]bool
+	memo           map[string]memoizedDependency
+	frames         []*dependencyFrame
+	exposures      []dependencyExposureCandidate
+	exposureKeys   map[string]struct{}
+	evaluations    []dependencyEvaluationRecord
+	evaluationKeys map[string]struct{}
 }
 
 // lazyDependencyResolver keeps the dependency session and all of its maps off
@@ -481,13 +484,15 @@ func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 	if r.session == nil {
 		maxDepth, err := configuredMaxDependencyDepth(r.config)
 		r.session = &dependencyEvaluationSession{
-			config:    r.config,
-			context:   r.context,
-			now:       r.now,
-			exclusion: r.exclusion,
-			maxDepth:  maxDepth,
-			active:    map[string]bool{r.rootFlagKey: true},
-			memo:      make(map[string]memoizedDependency),
+			config:         r.config,
+			context:        r.context,
+			now:            r.now,
+			exclusion:      r.exclusion,
+			maxDepth:       maxDepth,
+			active:         map[string]bool{r.rootFlagKey: true},
+			memo:           make(map[string]memoizedDependency),
+			exposureKeys:   make(map[string]struct{}),
+			evaluationKeys: make(map[string]struct{}),
 		}
 		if err != nil {
 			graphErr := &dependencyGraphError{
@@ -554,12 +559,12 @@ func (s *dependencyEvaluationSession) Checkpoint() dependencyCheckpoint {
 
 func (s *dependencyEvaluationSession) Rollback(checkpoint dependencyCheckpoint) {
 	if checkpoint.exposureCount <= len(s.exposures) {
-		s.exposures = s.exposures[:checkpoint.exposureCount]
+		truncateExposureTrace(&s.exposures, s.exposureKeys, checkpoint.exposureCount)
 	}
 	if checkpoint.hasFrame && len(s.frames) > 0 {
 		frame := s.frames[len(s.frames)-1]
 		if checkpoint.frameExposureCount <= len(frame.exposureTrace) {
-			frame.exposureTrace = frame.exposureTrace[:checkpoint.frameExposureCount]
+			truncateExposureTrace(&frame.exposureTrace, frame.exposureKeys, checkpoint.frameExposureCount)
 		}
 	}
 }
@@ -618,7 +623,7 @@ func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string
 	}
 
 	s.active[flagKey] = true
-	frame := &dependencyFrame{maxReachedDepth: depth}
+	frame := &dependencyFrame{maxReachedDepth: depth, exposureKeys: make(map[string]struct{})}
 	s.frames = append(s.frames, frame)
 	frameActive := true
 	defer func() {
@@ -648,7 +653,7 @@ func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string
 	}
 
 	candidate := dependencyExposureCandidate{FlagKey: flagKey, Result: withoutEvaluationValue(result)}
-	appendExposureUnique(&frame.exposureTrace, candidate)
+	appendExposureUnique(&frame.exposureTrace, frame.exposureKeys, candidate)
 	memoized := memoizedDependency{
 		result:          result,
 		descendantDepth: frame.maxReachedDepth - depth,
@@ -705,20 +710,27 @@ func (s *dependencyEvaluationSession) recordReachedDepth(depth int) {
 
 func (s *dependencyEvaluationSession) recordExposureTrace(trace []dependencyExposureCandidate) {
 	for _, candidate := range trace {
-		appendExposureUnique(&s.exposures, candidate)
+		appendExposureUnique(&s.exposures, s.exposureKeys, candidate)
 		if len(s.frames) > 0 {
-			appendExposureUnique(&s.frames[len(s.frames)-1].exposureTrace, candidate)
+			frame := s.frames[len(s.frames)-1]
+			appendExposureUnique(&frame.exposureTrace, frame.exposureKeys, candidate)
 		}
 	}
 }
 
-func appendExposureUnique(target *[]dependencyExposureCandidate, candidate dependencyExposureCandidate) {
-	for _, existing := range *target {
-		if existing.FlagKey == candidate.FlagKey {
-			return
-		}
+func appendExposureUnique(target *[]dependencyExposureCandidate, keys map[string]struct{}, candidate dependencyExposureCandidate) {
+	if _, exists := keys[candidate.FlagKey]; exists {
+		return
 	}
+	keys[candidate.FlagKey] = struct{}{}
 	*target = append(*target, candidate)
+}
+
+func truncateExposureTrace(target *[]dependencyExposureCandidate, keys map[string]struct{}, count int) {
+	for _, candidate := range (*target)[count:] {
+		delete(keys, candidate.FlagKey)
+	}
+	*target = (*target)[:count]
 }
 
 func withoutEvaluationValue(result evaluationResult) evaluationResult {
@@ -727,11 +739,10 @@ func withoutEvaluationValue(result evaluationResult) evaluationResult {
 }
 
 func (s *dependencyEvaluationSession) emit(flagKey string, flagType valueType, defaultValue any, result evaluationResult) {
-	for _, evaluation := range s.evaluations {
-		if evaluation.FlagKey == flagKey {
-			return
-		}
+	if _, exists := s.evaluationKeys[flagKey]; exists {
+		return
 	}
+	s.evaluationKeys[flagKey] = struct{}{}
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any, 2)
 	}
