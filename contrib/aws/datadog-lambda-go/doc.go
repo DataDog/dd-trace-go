@@ -17,15 +17,13 @@
 //
 // # Orchestrion
 //
-// The Orchestrion integration in this package rewrites every call to
-// lambda.Start, lambda.StartWithOptions, lambda.StartHandlerFunc,
-// lambda.StartWithContext, lambda.StartHandler and
-// lambda.StartHandlerWithContext so that the handler
-// goes through WrapFunction (or WrapLambdaHandlerInterface) with a nil Config.
-// That is equivalent to wrapping it by hand, with configuration read from DD_*
-// environment variables. Options passed to lambda.StartWithOptions are kept,
-// and a handler that is already wrapped by hand is not wrapped again. The
-// integration is part of github.com/DataDog/dd-trace-go/orchestrion/all.
+// The Orchestrion integration instruments the common runtime entry point used by
+// every lambda.Start* API, with configuration read from DD_* environment variables.
+// AWS keeps its original configured handler, so its request decoding, response
+// encoding, and context options also apply under Orchestrion. This includes options
+// on prebuilt lambda.NewHandlerWithOptions handlers. A handler already wrapped by
+// hand is not instrumented again, including through lambda.NewHandler.
+// The integration is part of github.com/DataDog/dd-trace-go/orchestrion/all.
 //
 // Continuing traces from upstream services into the function, for event
 // sources other than API Gateway, requires the Datadog Lambda Extension.

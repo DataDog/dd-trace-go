@@ -74,6 +74,23 @@ func main() {
 		lambda.StartHandlerFunc(handler)
 	case "StartHandlerFuncSpread":
 		lambda.StartHandlerFunc(handler, opts...)
+	case "ExplicitHandlerFunc":
+		lambda.StartHandlerFunc[event, string](handler)
+	case "FunctionValue":
+		start := lambda.Start
+		start(handler)
+	case "PrewrappedNewHandler":
+		lambda.Start(lambda.NewHandler(ddlambda.WrapFunction(handler, nil)))
+	case "PrewrappedInterface":
+		lambda.Start(ddlambda.WrapLambdaHandlerInterface(structHandler{}, nil))
+	case "UseNumber":
+		startUseNumber()
+	case "DisallowUnknownFields":
+		startDisallowUnknownFields()
+	case "PrebuiltContext":
+		startPrebuiltContext()
+	case "EncodingOptions":
+		startEncodingOptions()
 	case "StartStruct":
 		lambda.Start(structHandler{})
 	case "StartNewHandler":

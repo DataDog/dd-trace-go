@@ -26,16 +26,18 @@ type runtimeAPI struct {
 
 	done chan struct{}
 
-	mu      sync.Mutex
-	next    int
-	answers int
-	errors  []string
-	n       int
+	mu        sync.Mutex
+	next      int
+	answers   int
+	errors    []string
+	responses []string
+	payload   string
+	n         int
 }
 
 func newRuntimeAPI(t *testing.T, invocations int) *runtimeAPI {
 	t.Helper()
-	api := &runtimeAPI{done: make(chan struct{}), n: invocations}
+	api := &runtimeAPI{done: make(chan struct{}), n: invocations, payload: `{"name":"test"}`}
 	api.Server = httptest.NewServer(http.HandlerFunc(api.serve))
 	t.Cleanup(api.Close)
 	return api
@@ -51,6 +53,13 @@ func (api *runtimeAPI) Errors() []string {
 	api.mu.Lock()
 	defer api.mu.Unlock()
 	return api.errors
+}
+
+// Responses returns the encoded response payloads sent by AWS.
+func (api *runtimeAPI) Responses() []string {
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	return api.responses
 }
 
 func requestID(i int) string {
@@ -80,6 +89,8 @@ func (api *runtimeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	defer api.mu.Unlock()
 	if kind == "error" {
 		api.errors = append(api.errors, id+": "+string(body))
+	} else {
+		api.responses = append(api.responses, string(body))
 	}
 	api.answers++
 	if api.answers == api.n {
@@ -102,5 +113,5 @@ func (api *runtimeAPI) serveNext(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Lambda-Runtime-Deadline-Ms", strconv.FormatInt(time.Now().Add(time.Minute).UnixMilli(), 10))
 	w.Header().Set("Lambda-Runtime-Invoked-Function-Arn", functionARN)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"name":"test"}`)
+	_, _ = io.WriteString(w, api.payload)
 }

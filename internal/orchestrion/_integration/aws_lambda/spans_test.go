@@ -21,6 +21,7 @@ type span struct {
 	TraceID  string            `json:"trace_id"`
 	SpanID   string            `json:"span_id"`
 	ParentID string            `json:"parent_id"`
+	Error    int               `json:"error"`
 	Name     string            `json:"name"`
 	Resource string            `json:"resource"`
 	Meta     map[string]string `json:"meta"`

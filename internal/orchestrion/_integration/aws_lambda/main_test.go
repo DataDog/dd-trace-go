@@ -51,23 +51,14 @@ func TestLambda(t *testing.T) {
 		"Prewrapped",
 		"Aliased",
 		"AliasedStartHandlerFunc",
+		"ExplicitHandlerFunc",
+		"FunctionValue",
+		"PrewrappedNewHandler",
+		"PrewrappedInterface",
 	} {
 		t.Run(variant, func(t *testing.T) {
 			t.Parallel()
-			api := newRuntimeAPI(t, invocations)
-			stdout, stderr := maintest.ExecUntil(t, bin, []string{
-				"LAMBDA_VARIANT=" + variant,
-				"TEST_SERVER_URL=" + srv.URL,
-				"AWS_LAMBDA_RUNTIME_API=" + api.Address(),
-				"AWS_LAMBDA_FUNCTION_NAME=mainapp",
-				// Keep metrics out of the network, and the output small.
-				"DD_FLUSH_TO_LOG=true",
-				"DD_API_KEY=",
-				"DD_SITE=",
-				"DD_TRACE_STARTUP_LOGS=false",
-				"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
-				"DD_REMOTE_CONFIGURATION_ENABLED=false",
-			}, api.done, 2*time.Minute)
+			api, stdout, stderr := runLambda(t, bin, variant, `{"name":"test"}`, srv.URL)
 			require.Emptyf(t, api.Errors(), "stderr:\n%s", stderr)
 
 			requireTraces(t, parseSpans(t, stdout), stdout)
@@ -104,4 +95,24 @@ func requireTraces(t *testing.T, spans []span, stdout []byte) {
 		}
 		assert.ElementsMatchf(t, []string{"/with-context", "/without-context"}, paths, "children of %s", root.Meta["request_id"])
 	}
+}
+
+func runLambda(t *testing.T, bin, variant, payload, serverURL string) (*runtimeAPI, []byte, []byte) {
+	t.Helper()
+	api := newRuntimeAPI(t, invocations)
+	api.payload = payload
+	stdout, stderr := maintest.ExecUntil(t, bin, []string{
+		"LAMBDA_VARIANT=" + variant,
+		"TEST_SERVER_URL=" + serverURL,
+		"AWS_LAMBDA_RUNTIME_API=" + api.Address(),
+		"AWS_LAMBDA_FUNCTION_NAME=mainapp",
+		// Keep metrics out of the network, and the output small.
+		"DD_FLUSH_TO_LOG=true",
+		"DD_API_KEY=",
+		"DD_SITE=",
+		"DD_TRACE_STARTUP_LOGS=false",
+		"DD_INSTRUMENTATION_TELEMETRY_ENABLED=false",
+		"DD_REMOTE_CONFIGURATION_ENABLED=false",
+	}, api.done, 2*time.Minute)
+	return api, stdout, stderr
 }
