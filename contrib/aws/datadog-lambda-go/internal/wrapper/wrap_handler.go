@@ -74,13 +74,18 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 			ctx, msg = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
+		completion := &invocationCompletion{ctx: ctx, listeners: listeners, cleanup: func() {
+			coldStart = false
+			CurrentContext = nil
+		}}
+		returned := false
+		defer completion.finishOnPanic(&returned)
 		result, err := callHandler(ctx, msg, handler)
-		for _, listener := range listeners {
-			ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
-			listener.HandlerFinished(ctx, err)
+		returned = true
+		if result != nil {
+			completion.ctx = context.WithValue(ctx, extension.DdLambdaResponse, result)
 		}
-		coldStart = false
-		CurrentContext = nil
+		completion.finish(err)
 		return result, err
 	})
 }
@@ -95,13 +100,16 @@ func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, er
 	}
 
 	CurrentContext = ctx
+	completion := &invocationCompletion{ctx: ctx, listeners: h.listeners, cleanup: func() {
+		h.coldStart = false
+		CurrentContext = nil
+	}}
+	returned := false
+	defer completion.finishOnPanic(&returned)
 
 	result, err := h.handler.Invoke(ctx, []byte(msg))
-	for _, listener := range h.listeners {
-		listener.HandlerFinished(ctx, err)
-	}
-	h.coldStart = false
-	CurrentContext = nil
+	returned = true
+	completion.finish(err)
 	return result, err
 }
 

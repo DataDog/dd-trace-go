@@ -26,13 +26,16 @@ type runtimeAPI struct {
 
 	done chan struct{}
 
-	mu        sync.Mutex
-	next      int
-	answers   int
-	errors    []string
-	responses []string
-	payload   string
-	n         int
+	mu           sync.Mutex
+	next         int
+	answers      int
+	errors       []string
+	responses    []string
+	contentTypes []string
+	trailers     []http.Header
+	waitForNext  bool
+	payload      string
+	n            int
 }
 
 func newRuntimeAPI(t *testing.T, invocations int) *runtimeAPI {
@@ -91,9 +94,11 @@ func (api *runtimeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		api.errors = append(api.errors, id+": "+string(body))
 	} else {
 		api.responses = append(api.responses, string(body))
+		api.contentTypes = append(api.contentTypes, r.Header.Get("Content-Type"))
+		api.trailers = append(api.trailers, r.Trailer.Clone())
 	}
 	api.answers++
-	if api.answers == api.n {
+	if api.answers == api.n && !api.waitForNext {
 		close(api.done)
 	}
 }
@@ -104,6 +109,9 @@ func (api *runtimeAPI) serveNext(w http.ResponseWriter, r *http.Request) {
 	api.next++
 	api.mu.Unlock()
 	if i >= api.n {
+		if i == api.n && api.waitForNext {
+			close(api.done)
+		}
 		// No more invocations: block like the real API, until the test kills
 		// the function.
 		<-r.Context().Done()

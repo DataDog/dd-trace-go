@@ -77,13 +77,23 @@ func TestWrapRuntimeHandlerWithListeners(t *testing.T) {
 		trace.ResponseEvent(ctx, response)
 		return reader, nil
 	}, listener)
-	for range 2 {
+	for i := range 2 {
+		reader.Reader = strings.NewReader("encoded by AWS")
+		reader.closed = false
 		result, err := wrapped(ctx, []byte(`{"original":true}`))
 		require.NoError(t, err)
-		// Preserve the reader itself, including optional methods such as Close.
-		assert.Same(t, reader, result)
+		assert.Equal(t, i, finishes)
 		assert.False(t, reader.closed)
 		assert.Equal(t, len("encoded by AWS"), reader.Len())
+		assert.Equal(t, "application/custom", result.(interface{ ContentType() string }).ContentType())
+		body, err := io.ReadAll(result)
+		require.NoError(t, err)
+		assert.Equal(t, "encoded by AWS", string(body))
+		assert.Equal(t, i, finishes)
+		assert.False(t, reader.closed)
+		require.NoError(t, result.(io.Closer).Close())
+		assert.True(t, reader.closed)
+		assert.Equal(t, i+1, finishes)
 		assert.Nil(t, CurrentContext)
 	}
 	assert.Equal(t, 2, finishes)

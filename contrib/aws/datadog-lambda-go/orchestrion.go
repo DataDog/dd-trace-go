@@ -14,8 +14,9 @@ import (
 
 // wrapRuntimeHandler is called via go:linkname from orchestrion.yml after AWS has
 // applied the handler's options. AWS retains responsibility for decoding requests
-// and encoding responses; the response reader is returned unchanged.
-// Configuration is read from DD_* environment variables.
+// and encoding responses. Instrumentation finishes when AWS closes the response
+// reader after sending the response. Configuration is read from DD_* environment
+// variables.
 func wrapRuntimeHandler(handler func(context.Context, []byte) (io.Reader, error)) func(context.Context, []byte) (io.Reader, error) {
 	setupAppSec()
 	return wrapper.WrapRuntimeHandlerWithListeners(handler, initializeListeners(nil)...)
