@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -78,6 +79,25 @@ type invokeFunc func(context.Context, []byte) ([]byte, error)
 
 func (f invokeFunc) Invoke(ctx context.Context, p []byte) ([]byte, error) { return f(ctx, p) }
 
+func assertPanicWithoutCompletionFrames(t *testing.T, want any, invoke func()) {
+	t.Helper()
+	defer func() {
+		assert.Same(t, want, recover())
+		pcs := make([]uintptr, 64)
+		n := runtime.Callers(2, pcs)
+		frames := runtime.CallersFrames(pcs[:n])
+		for {
+			frame, more := frames.Next()
+			assert.NotContains(t, frame.Function, "(*invocationCompletion).", "completion must not add panic frames")
+			if !more {
+				break
+			}
+		}
+	}()
+	invoke()
+	t.Error("expected a panic")
+}
+
 func TestPanicCompletion(t *testing.T) {
 	for _, variant := range []string{"runtime", "function", "interface"} {
 		t.Run(variant, func(t *testing.T) {
@@ -90,7 +110,7 @@ func TestPanicCompletion(t *testing.T) {
 				},
 				finish: func(_ context.Context, err error) {
 					finishes++
-					assert.ErrorContains(t, err, "handler panic")
+					assert.ErrorIs(t, err, errInvocationPanic)
 				},
 			}
 			var invoke func()
@@ -106,7 +126,7 @@ func TestPanicCompletion(t *testing.T) {
 				invoke = func() { _, _ = wrapped.Invoke(context.Background(), nil) }
 			}
 			for i := 1; i <= 2; i++ {
-				assert.PanicsWithValue(t, want, invoke)
+				assertPanicWithoutCompletionFrames(t, want, invoke)
 				assert.Equal(t, i, finishes)
 				assert.Nil(t, CurrentContext)
 			}
@@ -185,13 +205,20 @@ func TestRuntimeResponseClose(t *testing.T) {
 	}
 }
 
+type panicContentTypeResponse struct {
+	closeResponse
+	value any
+}
+
+func (r panicContentTypeResponse) ContentType() string { panic(r.value) }
+
 func TestRuntimeResponsePanic(t *testing.T) {
-	for _, operation := range []string{"Read", "Close"} {
+	for _, operation := range []string{"Read", "Close", "ContentType"} {
 		t.Run(operation, func(t *testing.T) {
 			want := &struct{ Message string }{"stream panic"}
 			finishes := 0
 			wrapped := WrapRuntimeHandlerWithListeners(func(context.Context, []byte) (io.Reader, error) {
-				return closeResponse{
+				response := closeResponse{
 					readFunc(func([]byte) (int, error) { panic(want) }),
 					func() error {
 						if operation == "Close" {
@@ -199,18 +226,25 @@ func TestRuntimeResponsePanic(t *testing.T) {
 						}
 						return nil
 					},
-				}, nil
+				}
+				if operation == "ContentType" {
+					return panicContentTypeResponse{response, want}, nil
+				}
+				return response, nil
 			}, runtimeListener{
 				start:  func(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) { return ctx, msg },
-				finish: func(_ context.Context, err error) { finishes++; assert.ErrorContains(t, err, "stream panic") },
+				finish: func(_ context.Context, err error) { finishes++; assert.ErrorIs(t, err, errInvocationPanic) },
 			})
 			result, err := wrapped(context.Background(), nil)
 			require.NoError(t, err)
-			assert.PanicsWithValue(t, want, func() {
-				if operation == "Read" {
+			assertPanicWithoutCompletionFrames(t, want, func() {
+				switch operation {
+				case "Read":
 					_, _ = result.Read(make([]byte, 1))
-				} else {
+				case "Close":
 					_ = result.(io.Closer).Close()
+				case "ContentType":
+					_ = result.(responseContentType).ContentType()
 				}
 			})
 			assert.Equal(t, 1, finishes)

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -64,7 +65,23 @@ func TestLambdaCompletion(t *testing.T) {
 				require.Lenf(t, api.Errors(), 1, "stderr: %s", stderr)
 				assert.Contains(t, api.Errors()[0], `"errorMessage":"handler panic"`)
 				assert.Contains(t, api.Errors()[0], `"errorType":"string"`)
-				assert.Contains(t, api.Errors()[0], "panicHandler")
+				var report struct {
+					StackTrace []struct {
+						Path  string `json:"path"`
+						Label string `json:"label"`
+					} `json:"stackTrace"`
+				}
+				body := strings.TrimPrefix(api.Errors()[0], requestID(0)+": ")
+				require.NoError(t, json.Unmarshal([]byte(body), &report))
+				require.NotEmpty(t, report.StackTrace)
+				var panicSiteFound bool
+				for _, frame := range report.StackTrace {
+					assert.NotContains(t, frame.Path, "internal/wrapper/completion.go", "completion must not add panic frames")
+					if frame.Label == "panicHandler" && strings.HasSuffix(frame.Path, "mainapp/completion.go") {
+						panicSiteFound = true
+					}
+				}
+				assert.True(t, panicSiteFound, "AWS must retain the original panic site")
 			} else {
 				stdout, stderr = maintest.ExecUntil(t, bin, env, api.done, time.Minute)
 				require.Emptyf(t, api.Errors(), "stderr: %s", stderr)
@@ -100,7 +117,7 @@ func TestLambdaCompletion(t *testing.T) {
 			require.Lenf(t, roots, count, "stdout: %s\nstderr: %s", stdout, stderr)
 			for _, root := range roots {
 				if panics {
-					assert.Contains(t, root.Meta["error.message"], "handler panic")
+					assert.Equal(t, "panic during Lambda invocation", root.Meta["error.message"])
 				} else if variant == "StreamingError" {
 					assert.Contains(t, root.Meta["error.message"], "late stream failure")
 				}

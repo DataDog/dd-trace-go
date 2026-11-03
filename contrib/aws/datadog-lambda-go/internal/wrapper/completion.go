@@ -7,7 +7,7 @@ package wrapper
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"sync"
 )
@@ -28,12 +28,14 @@ func (c *invocationCompletion) finish(err error) {
 	})
 }
 
-// recoverPanic must be deferred directly. AWS still receives the original panic
-// value and remains responsible for reporting it and deciding whether to exit.
-func (c *invocationCompletion) recoverPanic() {
-	if value := recover(); value != nil {
-		defer func() { panic(value) }()
-		c.finish(fmt.Errorf("panic: %v", value))
+var errInvocationPanic = errors.New("panic during Lambda invocation")
+
+// finishOnPanic observes an abnormal return without recovering, so AWS receives
+// the original panic value and stack. Recovering and re-panicking here would add
+// frames ahead of the panic site in AWS's size-limited stack trace.
+func (c *invocationCompletion) finishOnPanic(returned *bool) {
+	if !*returned {
+		c.finish(errInvocationPanic)
 	}
 }
 
@@ -45,8 +47,10 @@ type invocationResponse struct {
 }
 
 func (r *invocationResponse) Read(p []byte) (int, error) {
-	defer r.completion.recoverPanic()
+	returned := false
+	defer r.completion.finishOnPanic(&returned)
 	n, err := r.reader.Read(p)
+	returned = true
 	if err != nil {
 		r.mu.Lock()
 		if r.readErr == nil {
@@ -58,11 +62,13 @@ func (r *invocationResponse) Read(p []byte) (int, error) {
 }
 
 func (r *invocationResponse) Close() error {
-	defer r.completion.recoverPanic()
+	returned := false
+	defer r.completion.finishOnPanic(&returned)
 	var err error
 	if closer, ok := r.reader.(io.Closer); ok {
 		err = closer.Close()
 	}
+	returned = true
 	// AWS closes after its response POST finishes. Completing at EOF would
 	// flush while that instrumented HTTP child span is still open, leaving
 	// the invocation trace buffered until the next invocation.
@@ -94,8 +100,11 @@ type invocationResponseWithContentType struct {
 }
 
 func (r *invocationResponseWithContentType) ContentType() string {
-	defer r.completion.recoverPanic()
-	return r.contentType.ContentType()
+	returned := false
+	defer r.completion.finishOnPanic(&returned)
+	contentType := r.contentType.ContentType()
+	returned = true
+	return contentType
 }
 
 func (c *invocationCompletion) wrapResponse(reader io.Reader) io.Reader {

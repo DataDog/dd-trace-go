@@ -31,7 +31,8 @@ func WrapRuntimeHandlerWithListeners(handler func(context.Context, []byte) (io.R
 			coldStart = false
 			CurrentContext = nil
 		}}
-		defer completion.recoverPanic()
+		returned := false
+		defer completion.finishOnPanic(&returned)
 
 		// AWS exposes the original response through this hook. Preserve existing
 		// hooks and leave serialization (including streaming readers) to AWS.
@@ -40,6 +41,7 @@ func WrapRuntimeHandlerWithListeners(handler func(context.Context, []byte) (io.R
 			ResponseEvent: func(_ context.Context, event any) { response = event },
 		})
 		result, err := handler(ctx, msg)
+		returned = true
 		if response != nil {
 			completion.ctx = context.WithValue(ctx, extension.DdLambdaResponse, response)
 		}
