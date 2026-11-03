@@ -8,6 +8,8 @@
 package containers
 
 import (
+	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -19,12 +21,26 @@ func WithTestLogConsumer(t testing.TB) testcontainers.CustomizeRequestOption {
 
 type testLogConsumer struct {
 	testing.TB
+	// done is set by the test cleanup so that Accept can drop log lines the
+	// container log producer delivers after the test has finished. Calling
+	// t.Log then would panic with "Log in goroutine after Test has completed",
+	// because testcontainers-go may not have joined the producer goroutine yet.
+	done *atomic.Bool
 }
 
 func TestLogConsumer(t testing.TB) testcontainers.LogConsumer {
-	return testLogConsumer{t}
+	done := new(atomic.Bool)
+	// Cleanups run in LIFO order, and the consumer is created before
+	// RegisterContainerCleanup registers its StopLogProducer cleanup, so this
+	// runs last: the flag is only set once every other cleanup is done.
+	t.Cleanup(func() { done.Store(true) })
+	return testLogConsumer{t, done}
 }
 
 func (t testLogConsumer) Accept(log testcontainers.Log) {
+	if t.done.Load() {
+		os.Stderr.WriteString("container log after test completion: " + string(log.Content))
+		return
+	}
 	t.TB.Log(string(log.Content))
 }
