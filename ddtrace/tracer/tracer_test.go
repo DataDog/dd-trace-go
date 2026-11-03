@@ -3212,6 +3212,36 @@ func (w *testTraceWriter) Flushed() []*Span {
 	return w.flushed
 }
 
+func TestFlushDrainsQueuedTraces(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tr, err := newUnstartedTracer(withNoopInfoHTTPClient(), withNoopStats(), WithStatsComputation(false))
+		require.NoError(t, err)
+		defer tr.Stop()
+		writer := newTestTraceWriter()
+		tr.traceWriter = writer
+
+		// Block the worker's select with a nil queue, then restore the queue
+		// after it is asleep. Its next selected case must be the explicit flush,
+		// so the test cannot pass by consuming queued chunks before the flush.
+		queue := tr.out
+		tr.out = nil
+		tr.wg.Go(func() { tr.worker(nil) })
+		synctest.Wait()
+		tr.out = queue
+		spans := []*Span{newBasicSpan("first"), newBasicSpan("second")}
+		for _, span := range spans {
+			tr.pushChunk(&chunk{spans: []*Span{span}, willSend: true})
+		}
+
+		tr.Flush()
+		flushed := writer.Flushed()
+		require.Len(t, flushed, len(spans), "Flush must include chunks queued before the request")
+		for i, span := range spans {
+			assert.Same(t, span, flushed[i])
+		}
+	})
+}
+
 func TestFlush(t *testing.T) {
 	tr, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)
