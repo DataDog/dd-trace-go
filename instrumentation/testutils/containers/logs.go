@@ -9,7 +9,7 @@ package containers
 
 import (
 	"os"
-	"sync/atomic"
+	"sync"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -21,26 +21,39 @@ func WithTestLogConsumer(t testing.TB) testcontainers.CustomizeRequestOption {
 
 type testLogConsumer struct {
 	testing.TB
-	// done is set by the test cleanup so that Accept can drop log lines the
-	// container log producer delivers after the test has finished. Calling
-	// t.Log then would panic with "Log in goroutine after Test has completed",
-	// because testcontainers-go may not have joined the producer goroutine yet.
-	done *atomic.Bool
+
+	// mu guards done and serializes logging against the test cleanup, so the
+	// cleanup cannot mark the consumer done while an admitted t.Log call is
+	// still executing.
+	mu   sync.Mutex
+	done bool
 }
 
 func TestLogConsumer(t testing.TB) testcontainers.LogConsumer {
-	done := new(atomic.Bool)
+	c := &testLogConsumer{TB: t}
 	// Cleanups run in LIFO order, and the consumer is created before
 	// RegisterContainerCleanup registers its StopLogProducer cleanup, so this
-	// runs last: the flag is only set once every other cleanup is done.
-	t.Cleanup(func() { done.Store(true) })
-	return testLogConsumer{t, done}
+	// runs last. Correctness does not depend on that ordering: markDone blocks
+	// until any in-flight log returns.
+	t.Cleanup(c.markDone)
+	return c
 }
 
-func (t testLogConsumer) Accept(log testcontainers.Log) {
-	if t.done.Load() {
+func (c *testLogConsumer) markDone() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.done = true
+}
+
+func (c *testLogConsumer) Accept(log testcontainers.Log) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.done {
+		// The container log producer goroutine can deliver a line after the
+		// test has completed, and t.Log panics then. Drop it to stderr
+		// instead, so late lines are not lost.
 		os.Stderr.WriteString("container log after test completion: " + string(log.Content))
 		return
 	}
-	t.TB.Log(string(log.Content))
+	c.TB.Log(string(log.Content))
 }
