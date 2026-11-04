@@ -169,6 +169,7 @@ integration-suites:
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
+    contrib/riverqueue/river: [ riverqueue_river ]
     contrib/rs/zerolog: [ zerolog ]
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
