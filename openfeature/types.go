@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"math/big"
 	"sync/atomic"
 	"time"
 )
@@ -111,16 +110,161 @@ func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	// Validate the original JSON number lexeme exactly. Decoding through
-	// float64 can round a non-integer such as 254.99999999999999 to 255 and
-	// incorrectly accept it as a valid depth.
-	depth, ok := new(big.Rat).SetString(string(bytes.TrimSpace(depthJSON)))
-	if !ok || !depth.IsInt() || depth.Sign() < 0 || !depth.Num().IsInt64() || depth.Num().Int64() > 255 {
+	// float64 can round a non-integer such as 254.99999999999999 to 255. The
+	// bounded parser also avoids expanding untrusted decimal exponents into
+	// arbitrarily large big integers before rejecting values outside 0..255.
+	value, ok := parseMaxDependencyDepth(depthJSON)
+	if !ok {
 		params.maxDependencyDepthInvalid = true
 		return nil
 	}
-	value := int(depth.Num().Int64())
 	params.MaxDependencyDepth = &value
 	return nil
+}
+
+// parseMaxDependencyDepth parses one JSON number without floating-point
+// rounding or big-number exponent expansion. It scans O(len(raw)) bytes and
+// materializes at most the three integer digits needed for the 0..255 range.
+func parseMaxDependencyDepth(raw []byte) (int, bool) {
+	number := bytes.TrimSpace(raw)
+	if len(number) == 0 {
+		return 0, false
+	}
+	i := 0
+	negative := false
+	if number[i] == '-' {
+		negative = true
+		i++
+		if i == len(number) {
+			return 0, false
+		}
+	}
+
+	integerStart := i
+	switch {
+	case number[i] == '0':
+		i++
+	case number[i] >= '1' && number[i] <= '9':
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			i++
+		}
+	default:
+		return 0, false
+	}
+	integerEnd := i
+
+	fractionStart, fractionEnd := i, i
+	if i < len(number) && number[i] == '.' {
+		i++
+		fractionStart = i
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			i++
+		}
+		fractionEnd = i
+		if fractionStart == fractionEnd {
+			return 0, false
+		}
+	}
+
+	exponent, exponentNegative := 0, false
+	if i < len(number) && (number[i] == 'e' || number[i] == 'E') {
+		i++
+		if i < len(number) && (number[i] == '+' || number[i] == '-') {
+			exponentNegative = number[i] == '-'
+			i++
+		}
+		exponentStart := i
+		// Saturating at the input length is sufficient: the fraction and
+		// significand contain fewer digits, so a larger exponent cannot alter
+		// an in-range decision and never needs to be represented exactly.
+		limit := len(number)
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			digit := int(number[i] - '0')
+			if exponent > limit/10 || exponent == limit/10 && digit > limit%10 {
+				exponent = limit
+			} else {
+				exponent = exponent*10 + digit
+			}
+			i++
+		}
+		if exponentStart == i {
+			return 0, false
+		}
+	}
+	if i != len(number) {
+		return 0, false
+	}
+
+	totalDigits := integerEnd - integerStart + fractionEnd - fractionStart
+	leadingZeros, trailingZeros := 0, 0
+	nonzero := false
+	visitDigits := func(visit func(byte) bool) {
+		for _, bounds := range [][2]int{{integerStart, integerEnd}, {fractionStart, fractionEnd}} {
+			for j := bounds[0]; j < bounds[1]; j++ {
+				if !visit(number[j]) {
+					return
+				}
+			}
+		}
+	}
+	visitDigits(func(digit byte) bool {
+		if !nonzero && digit == '0' {
+			leadingZeros++
+		}
+		if digit == '0' {
+			trailingZeros++
+		} else {
+			nonzero = true
+			trailingZeros = 0
+		}
+		return true
+	})
+	if !nonzero {
+		return 0, true // Preserve accepted negative and exponentiated zero forms.
+	}
+	if negative {
+		return 0, false
+	}
+
+	significantDigits := totalDigits - leadingZeros
+	fractionDigits := fractionEnd - fractionStart
+	removeTrailing, appendZeros := 0, 0
+	if exponentNegative {
+		if fractionDigits > trailingZeros || exponent > trailingZeros-fractionDigits {
+			return 0, false
+		}
+		removeTrailing = fractionDigits + exponent
+	} else if exponent < fractionDigits {
+		removeTrailing = fractionDigits - exponent
+		if removeTrailing > trailingZeros {
+			return 0, false
+		}
+	} else {
+		appendZeros = exponent - fractionDigits
+	}
+
+	keptDigits := significantDigits - removeTrailing
+	if keptDigits <= 0 || keptDigits > 3 || appendZeros > 3-keptDigits {
+		return 0, false
+	}
+	value, remaining := 0, keptDigits
+	seenNonzero := false
+	visitDigits(func(digit byte) bool {
+		if !seenNonzero && digit == '0' {
+			return true
+		}
+		seenNonzero = true
+		if remaining == 0 {
+			return false
+		}
+		value = value*10 + int(digit-'0')
+		remaining--
+		return remaining > 0
+	})
+	for range appendZeros {
+		value *= 10
+	}
+	return value, value <= 255
 }
 
 // environment represents environment information for the configuration.

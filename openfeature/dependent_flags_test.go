@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -292,6 +293,7 @@ func TestDependentFlags_InvalidConfiguredDepthIsParseError(t *testing.T) {
 	for _, configured := range []string{
 		"null", `"3"`, "1.5", "-1", "256",
 		"254.99999999999999", "255.00000000000001", "1e-400",
+		"1e1000000", "1e-1000000",
 	} {
 		t.Run(configured, func(t *testing.T) {
 			config := dependencyTestConfig(
@@ -329,6 +331,47 @@ func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
 			require.False(t, params.maxDependencyDepthInvalid)
 			require.NotNil(t, params.MaxDependencyDepth)
 			require.Equal(t, want, *params.MaxDependencyDepth)
+		})
+	}
+}
+
+func TestParseMaxDependencyDepthBoundsAdversarialExponents(t *testing.T) {
+	tests := []struct {
+		value string
+		want  int
+		ok    bool
+	}{
+		{value: "1e1000000"},
+		{value: "1e-1000000"},
+		{value: "255e+000000000000000000000", want: 255, ok: true},
+		{value: "255000e-000000000000000003", want: 255, ok: true},
+		{value: "0e" + strings.Repeat("9", 100_000), ok: true},
+		{value: "1e" + strings.Repeat("9", 100_000)},
+		{value: "1e-" + strings.Repeat("9", 100_000)},
+		{value: strings.Repeat("9", 100_000)},
+	}
+	for _, tt := range tests {
+		got, ok := parseMaxDependencyDepth([]byte(tt.value))
+		require.Equal(t, tt.ok, ok, "value prefix %.32q", tt.value)
+		require.Equal(t, tt.want, got, "value prefix %.32q", tt.value)
+	}
+
+	adversarial := []byte("1e" + strings.Repeat("9", 100_000))
+	allocations := testing.AllocsPerRun(100, func() {
+		_, _ = parseMaxDependencyDepth(adversarial)
+	})
+	require.Zero(t, allocations)
+}
+
+func BenchmarkParseMaxDependencyDepthAdversarialExponent(b *testing.B) {
+	for _, size := range []int{7, 100_000} {
+		b.Run(fmt.Sprintf("digits_%d", size), func(b *testing.B) {
+			raw := []byte("1e" + strings.Repeat("9", size))
+			b.SetBytes(int64(len(raw)))
+			b.ReportAllocs()
+			for b.Loop() {
+				_, _ = parseMaxDependencyDepth(raw)
+			}
 		})
 	}
 }
