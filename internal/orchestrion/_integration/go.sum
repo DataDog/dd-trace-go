@@ -18,8 +18,8 @@ cloud.google.com/go/pubsub v1.50.1 h1:fzbXpPyJnSGvWXF1jabhQeXyxdbCIkXTpjXHy7xviB
 cloud.google.com/go/pubsub v1.50.1/go.mod h1:6YVJv3MzWJUVdvQXG081sFvS0dWQOdnV+oTo++q/xFk=
 cloud.google.com/go/pubsub/v2 v2.0.0 h1:0qS6mRJ41gD1lNmM/vdm6bR7DQu6coQcVwD+VPf0Bz0=
 cloud.google.com/go/pubsub/v2 v2.0.0/go.mod h1:0aztFxNzVQIRSZ8vUr79uH2bS3jwLebwK6q1sgEub+E=
-connectrpc.com/connect v1.19.0 h1:LuqUbq01PqbtL0o7vn0WMRXzR2nNsiINe5zfcJ24pJM=
-connectrpc.com/connect v1.19.0/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
+connectrpc.com/connect v1.21.1 h1:h2kacdlzXpZU2OQFSv98xkjYXNUSr/ptxmGVbS/+CRM=
+connectrpc.com/connect v1.21.1/go.mod h1:fhMcVJ5w6r/yTYhnkEbW6+sIF7OZ5Ay7KYgmfebh2ek=
 connectrpc.com/connect/v2 v2.0.0 h1:PVVpWl2Xv9dIWN2gijs4HK40NSnPFzLqCEEmZ8fCUQ8=
 connectrpc.com/connect/v2 v2.0.0/go.mod h1:N32OLrstcPUzkykFynnefFro3+xzSdOrZlK2jHmS/xo=
 connectrpc.com/grpchealth/v2 v2.0.0 h1:GOBfwE25Q70Kt0QhPawK9BKsh2tP8X0EUGeIk5Sz/ag=

@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
-	connectrpc.com/connect v1.19.0
+	connectrpc.com/connect v1.21.1
 	connectrpc.com/connect/v2 v2.0.0
 	connectrpc.com/grpchealth/v2 v2.0.0
 	connectrpc.com/grpcreflect/v2 v2.0.0
@@ -580,7 +580,10 @@ require example.com/httprouterdep v0.0.0-00010101000000-000000000000
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 

@@ -296,7 +296,7 @@ func TestFinishSpan(t *testing.T) {
 			span := tracer.StartSpan("finish")
 			require.NotPanics(t, func() {
 				if test.panic {
-					cfg.finishSpan(span, test.err, f, true)
+					cfg.finishPanic(span, test.err, f)
 				} else {
 					cfg.FinishSpan(span, test.err, f)
 				}
@@ -437,8 +437,13 @@ func TestErrorCheckArguments(t *testing.T) {
 				calls = append(calls, call{procedure: procedure, err: err})
 				return true
 			}))
+			f := SpanFinish{Procedure: unaryProcedure, Protocol: &connectProtocol, Mode: test.mode}
 			require.NotPanics(t, func() {
-				cfg.finishSpan(tracer.StartSpan("check"), test.err, SpanFinish{Procedure: unaryProcedure, Protocol: &connectProtocol, Mode: test.mode}, test.panic)
+				if test.panic {
+					cfg.finishPanic(tracer.StartSpan("check"), test.err, f)
+				} else {
+					cfg.FinishSpan(tracer.StartSpan("check"), test.err, f)
+				}
 			})
 			assert.Equal(t, test.want, calls)
 		})

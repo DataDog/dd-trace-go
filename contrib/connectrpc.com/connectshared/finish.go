@@ -135,7 +135,7 @@ func (c *Config) FinishSpan(span *tracer.Span, err error, f SpanFinish) {
 	var recorded error
 	if panicked, value := recoverPanic(
 		func() { recorded = c.tagOutcome(span, err, c.finishOutcomeFor(err, f.Procedure, f.Mode), f.Protocol) },
-		func(value any) { c.finishSpan(span, c.lib.panicError(value), f, true) },
+		func(value any) { c.finishPanic(span, c.lib.panicError(value), f) },
 	); panicked {
 		panic(value)
 	}
@@ -143,19 +143,16 @@ func (c *Config) FinishSpan(span *tracer.Span, err error, f SpanFinish) {
 	c.endSpan(span, recorded)
 }
 
-// finishSpan finishes span with err. A panic is always recorded, even when its value would
-// otherwise be suppressed, because it is re-raised and must stay visible in the trace.
-func (c *Config) finishSpan(span *tracer.Span, err error, f SpanFinish, isPanic bool) {
+// finishPanic finishes span, unless it is nil, with err, the error of a panic. Unlike FinishSpan,
+// it neither calls the error check nor applies the non-error rules: the panic is always recorded,
+// even when its value would otherwise be suppressed, because it is re-raised and must stay visible
+// in the trace.
+func (c *Config) finishPanic(span *tracer.Span, err error, f SpanFinish) {
 	if span == nil {
 		return
 	}
 	err = c.lib.normalizeError(err)
-	var out finishOutcome
-	if isPanic {
-		out = finishOutcome{code: f.Mode.panicCode(c.lib, err), recorded: err}
-	} else {
-		out = c.finishOutcomeFor(err, f.Procedure, f.Mode)
-	}
+	out := finishOutcome{code: f.Mode.panicCode(c.lib, err), recorded: err}
 	c.endSpan(span, c.tagOutcome(span, err, out, f.Protocol))
 }
 
@@ -245,7 +242,7 @@ func TagErrorDetails[D any](tags ErrorDetailTags, details []*D, decode func(*D) 
 func (c *Config) FinishOnReturn(guard *Guard, span **tracer.Span, err *error, f *SpanFinish, after func(err error, isPanic bool)) {
 	if guard.panicked {
 		panicErr := c.lib.panicError(guard.value)
-		c.finishSpan(*span, panicErr, *f, true)
+		c.finishPanic(*span, panicErr, *f)
 		if after != nil {
 			after(panicErr, true)
 		}
@@ -258,7 +255,7 @@ func (c *Config) FinishOnReturn(guard *Guard, span **tracer.Span, err *error, f 
 			func() {
 				recorded = c.tagOutcome(*span, opErr, c.finishOutcomeFor(opErr, f.Procedure, f.Mode), f.Protocol)
 			},
-			func(value any) { c.finishSpan(*span, c.lib.panicError(value), *f, true) },
+			func(value any) { c.finishPanic(*span, c.lib.panicError(value), *f) },
 		); panicked {
 			if after != nil {
 				after(c.lib.panicError(value), true)
@@ -282,7 +279,7 @@ func (c *Config) FinishOnOpenPanic(guard *Guard, span **tracer.Span, protocol fu
 		return
 	}
 	f := SpanFinish{Procedure: procedure, Protocol: protocol()}
-	c.finishSpan(*span, c.lib.panicError(guard.value), f, true)
+	c.finishPanic(*span, c.lib.panicError(guard.value), f)
 }
 
 // finishTerminal finishes a client stream's call span with its terminal error err as f classifies
@@ -292,7 +289,7 @@ func (c *Config) FinishOnOpenPanic(guard *Guard, span **tracer.Span, protocol fu
 // as a recovered and re-raised one.
 func (c *Config) finishTerminal(span *tracer.Span, err error, isPanic bool, fallbacks []error, f SpanFinish) (panicked bool, value any) {
 	if isPanic {
-		c.finishSpan(span, err, f, true)
+		c.finishPanic(span, err, f)
 		return false, nil
 	}
 	var recorded error
@@ -301,7 +298,7 @@ func (c *Config) finishTerminal(span *tracer.Span, err error, isPanic bool, fall
 			chosen, out := c.classifyTerminal(err, fallbacks, f)
 			recorded = c.tagOutcome(span, chosen, out, f.Protocol)
 		},
-		func(value any) { c.finishSpan(span, c.lib.panicError(value), f, true) },
+		func(value any) { c.finishPanic(span, c.lib.panicError(value), f) },
 	); panicked {
 		return true, value
 	}

@@ -109,6 +109,7 @@ integration-suites:
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
     contrib/connectrpc.com/connect: [ connectrpc ]
+    contrib/connectrpc.com/connect.v2: [ connectrpc.v2 ]
     contrib/database/sql: [ sql ]
     contrib/database/sql/otelc: [ sql ]
     contrib/dimfeld/httptreemux.v5: []
