@@ -29,23 +29,32 @@ aspects:
           template: |-
             {{- $cfg := .Function.Argument 1 -}}
             if {{ $cfg }} != nil {
-              __dd_config := *{{ $cfg }}
-              if len(__dd_config.JobInsertMiddleware) > 0 || len(__dd_config.WorkerMiddleware) > 0 {
-                // River rejects a config mixing Middleware with the deprecated
-                // JobInsertMiddleware/WorkerMiddleware fields, so follow the caller.
-                // One instance in JobInsertMiddleware also traces work, since it
-                // implements both interfaces and River runs each middleware once.
-                __dd_traced := false
-                for _, __dd_mw := range __dd_config.WorkerMiddleware {
-                  if _, ok := __dd_mw.(*rivertrace.Middleware); ok {
-                    __dd_traced = true
-                  }
+              // Skip clients that already have the middleware in a field
+              // AddMiddleware does not look at: as a plugin, or in the
+              // deprecated WorkerMiddleware field.
+              __dd_traced := false
+              for _, __dd_plugin := range {{ $cfg }}.Plugins {
+                if _, ok := __dd_plugin.(*rivertrace.Middleware); ok {
+                  __dd_traced = true
                 }
-                if !__dd_traced {
-                  __dd_config.JobInsertMiddleware = rivertrace.AddMiddleware(__dd_config.JobInsertMiddleware)
-                }
-              } else {
-                __dd_config.Middleware = rivertrace.AddMiddleware(__dd_config.Middleware)
               }
-              {{ $cfg }} = &__dd_config
+              for _, __dd_mw := range {{ $cfg }}.WorkerMiddleware {
+                if _, ok := __dd_mw.(*rivertrace.Middleware); ok {
+                  __dd_traced = true
+                }
+              }
+              if !__dd_traced {
+                __dd_config := *{{ $cfg }}
+                if len(__dd_config.JobInsertMiddleware) > 0 || len(__dd_config.WorkerMiddleware) > 0 {
+                  // River rejects a config mixing Middleware with the deprecated
+                  // JobInsertMiddleware/WorkerMiddleware fields, so follow the
+                  // caller. One instance in JobInsertMiddleware also traces work,
+                  // since it implements both interfaces and River runs each
+                  // middleware once.
+                  __dd_config.JobInsertMiddleware = rivertrace.AddMiddleware(__dd_config.JobInsertMiddleware)
+                } else {
+                  __dd_config.Middleware = rivertrace.AddMiddleware(__dd_config.Middleware)
+                }
+                {{ $cfg }} = &__dd_config
+              }
             }
