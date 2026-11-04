@@ -70,12 +70,12 @@ func markInvocation(ctx context.Context) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		log.Printf("downstream request: %v", err)
+		log.Printf("downstream request: %s", err.Error())
 		return
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Printf("downstream request: %v", err)
+		log.Printf("downstream request: %s", err.Error())
 		return
 	}
 	defer resp.Body.Close()
