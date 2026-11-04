@@ -192,6 +192,24 @@
 // or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
 // is 10000 slots.
 //
+// # OpenTelemetry API with Orchestrion
+//
+// DD_TRACE_OTEL_ENABLED=true links the OpenTelemetry trace API to the tracer in
+// applications that are built with Orchestrion, through the aspects in
+// ddtrace/opentelemetry/orchestrion.yml. trace.SpanFromContext then returns the
+// span that a Datadog integration started. While the Datadog tracer records, the
+// OpenTelemetry global tracer creates Datadog spans until the application calls
+// otel.SetTracerProvider. A call to End on a span from trace.SpanFromContext
+// finishes the Datadog span. The variable is false by default. Without
+// Orchestrion, it does not change the OpenTelemetry API. trace.SpanFromContext
+// returns only spans that a context carries through ContextWithSpan, which
+// StartSpanFromContext also uses. The fasthttp integration stores its span in
+// another way, so trace.SpanFromContext does not return it. If the context also
+// holds a span of another OpenTelemetry SDK, trace.SpanFromContext returns that
+// span, but spans that the global tracer starts take the Datadog span as parent.
+// With the span pool on, a span that trace.SpanFromContext returned does not go
+// back to the pool.
+//
 // # OpenTelemetry Semantic Conventions
 //
 // DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
