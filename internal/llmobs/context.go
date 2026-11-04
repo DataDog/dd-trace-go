@@ -5,7 +5,10 @@
 
 package llmobs
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+)
 
 type (
 	ctxKeyActiveLLMSpan     struct{}
@@ -47,13 +50,22 @@ func ContextWithPropagatedLLMSpan(ctx context.Context, span *PropagatedLLMSpan) 
 // ActiveLLMSpanFromContext retrieves the active LLMObs span from the context.
 // Returns the span and true if found, nil and false otherwise.
 func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
+	// Skip the context.Value walk, which is costly on deep context chains,
+	// until an active LLM span is stored in a context for the first time.
+	if !activeLLMSpanUsed.Load() {
+		return nil, false
+	}
 	if span, ok := ctx.Value(ctxKeyActiveLLMSpan{}).(*Span); ok {
 		return span, true
 	}
 	return nil, false
 }
 
+// activeLLMSpanUsed reports whether contextWithActiveLLMSpan was ever called.
+var activeLLMSpanUsed atomic.Bool
+
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+	activeLLMSpanUsed.Store(true)
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
 }
 
