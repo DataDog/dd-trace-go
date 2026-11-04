@@ -23,9 +23,11 @@ type Trace struct {
 	SpanID   ID `json:"span_id"`
 	ParentID ID `json:"parent_id"`
 	Meta     map[string]string
-	Metrics  map[string]float64
-	Tags     map[string]any
-	Children []*Trace
+	// MetaAbsent lists the tags that the span must not have.
+	MetaAbsent []string
+	Metrics    map[string]float64
+	Tags       map[string]any
+	Children   []*Trace
 }
 
 type Traces = []*Trace

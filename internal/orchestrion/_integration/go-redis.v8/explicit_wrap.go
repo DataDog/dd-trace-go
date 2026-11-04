@@ -63,6 +63,7 @@ func (*TestCaseExplicitWrap) ExpectedTraces() trace.Traces {
 						"service":  "explicit",
 						"resource": "get",
 					},
+					MetaAbsent: []string{"redis.raw_command"},
 				},
 			},
 		},
