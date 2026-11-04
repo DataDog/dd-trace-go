@@ -230,6 +230,18 @@ comment of `scripts/citiming/main.go` and are the report contract. The `comparis
 inserted as needed, so consumers must match columns by header name, not
 by position.
 
+Only seeding runs save Go build/module caches: a seed-set key (the
+setup-go action's `seed` input) on the nightly schedule or a
+default-branch `workflow_dispatch`. Four dispatch doors reach that
+state on `main`: `main-branch-tests`, the `multios-unit-tests`
+free-form dispatch, the bare `smoke-tests` dispatch, and
+`dynamic-checks`. Every other event restores only. Revert a cloudx
+seed by setting that job's `seed` back to `"false"`. The pool gauges
+(`citiming pool`, run hourly by the `cache-pool-metrics` workflow)
+watch whether the seed entries stay present in the pool. Jobs running
+with `cache: "false"` emit no online series; their observation records
+live only in the job logs, where `scripts/citiming` reads them.
+
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
@@ -328,6 +340,39 @@ go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
    stratum from first attempts), cancellations, and unknown classifications
    from the reports; skipped jobs are absent work, not zero durations.
 6. Publish aggregates and run URLs in the PR description, never raw logs.
+
+### citiming pool
+
+`go run ./scripts/citiming pool --repo OWNER/NAME [--format text|datadog]`
+classifies one snapshot of the repository's shared Actions cache pool.
+It reuses the collector's cache snapshot (usage endpoint, entry
+inventory) and classifies every entry by cache kind
+(`go_build`, `tools`, `setup_go_builtin`, `gitdb`, `appsec_modules`,
+`datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
+keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
+for the default branch, `pr`, `mq`, `release`, `other`).
+
+`--format datadog` prints a `/api/v2/series` payload of gauges; the
+`cache-pool-metrics` workflow submits it hourly:
+
+- `ci.cache.pool.size_bytes` and `ci.cache.pool.entries`, per kind,
+  workload, platform and ref type.
+- `ci.cache.pool.total_bytes` (the usage endpoint's active size, falling
+  back to the listed entry sum).
+- `ci.cache.pool.limit_bytes`, only when the storage-limit endpoint
+  returns it; without admin rights it answers 403 and the gauge is
+  skipped.
+- `ci.cache.pool.oldest_access_age_seconds`, the eviction horizon.
+- `ci.cache.pool.default_entry_age_seconds`, the age of the newest
+  default-branch entry per kind, workload and platform: the seed
+  presence signal. A missing series means no seed of that cell exists.
+  Until a monitor exists for this, treat a missing series on a seeded
+  cell as an evicted seed and re-seed by dispatching `main-branch-tests`
+  on `main`.
+
+Every series is tagged with the repository. The text format prints the
+same data as a snapshot summary, and the workflow keeps that summary in
+the job log, so evidence exists even when submission fails.
 
 ## Guidelines
 

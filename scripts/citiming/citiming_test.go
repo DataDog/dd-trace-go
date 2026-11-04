@@ -26,6 +26,14 @@ type fakeClient struct {
 	logs   map[int64]string
 	checks map[string][]checkRun
 	usage  string
+	// cachesJSON, when set, is the raw first page of /actions/caches.
+	cachesJSON string
+	// defaultBranch, when set, serves the repository endpoint.
+	defaultBranch string
+	// storageLimit, when set, is the raw storage-limit response; otherwise
+	// the endpoint fails like a repo without admin rights.
+	storageLimit    string
+	storageLimitErr error
 	// runQueries records every list-runs path, in order.
 	runQueries []string
 	// headSHAErr, when set, fails every head_sha run query.
@@ -45,7 +53,22 @@ func (f *fakeClient) getJSON(path string) (string, error) {
 		}
 		return `{"active_caches_size_in_bytes":1024,"active_caches_count":2}`, nil
 	}
+	if strings.Contains(path, "/actions/cache/storage-limit") {
+		if f.storageLimitErr != nil {
+			return "", f.storageLimitErr
+		}
+		if f.storageLimit != "" {
+			return f.storageLimit, nil
+		}
+		return "", errors.New("gh api: 403 You must have admin rights to the Repository.")
+	}
+	if path == "repos/"+f.repo && f.defaultBranch != "" {
+		return fmt.Sprintf(`{"default_branch":%q}`, f.defaultBranch), nil
+	}
 	if strings.Contains(path, "/actions/caches") {
+		if f.cachesJSON != "" {
+			return f.cachesJSON, nil
+		}
 		return `{"total_count":0,"actions_caches":[]}`, nil
 	}
 	if strings.Contains(path, "/actions/runs?") {
