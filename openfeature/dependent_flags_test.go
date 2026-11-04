@@ -650,6 +650,34 @@ func TestDependentFlags_PublicObjectTypeMismatchDoesNotTraverseDependencies(t *t
 	require.Empty(t, h.sink.exposures)
 }
 
+func TestDependentFlags_IntegerFlagCanBeEvaluatedAsFloat(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	root := dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on"))
+	root.VariationType = valueTypeInteger
+	root.Variations["root-on"].Value = int64(7)
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		root,
+	)
+	h.provider.mu.Unlock()
+
+	details, err := h.client.FloatValueDetails(context.Background(), "root", 0,
+		of.NewEvaluationContext("subject", nil))
+	require.NoError(t, err)
+	require.Equal(t, 7.0, details.Value)
+	require.Equal(t, of.TargetingMatchReason, details.Reason)
+
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	h.provider.exposureWriter.flush()
+	require.Len(t, h.sink.events, 2)
+	require.ElementsMatch(t, []string{"dependency", "root"}, []string{
+		h.sink.events[0].Flag.Key,
+		h.sink.events[1].Flag.Key,
+	})
+	require.Len(t, h.sink.exposures, 2)
+}
+
 func TestDependentFlags_InvalidRootActivationPrecedesTypeMismatch(t *testing.T) {
 	h := newOptOutHarness(t, ProviderConfig{ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly})
 	root := dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on"))

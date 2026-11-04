@@ -981,10 +981,11 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Reject a requested type that does not match the configured root before
+	// Reject a requested type that is incompatible with the configured root before
 	// traversing its dependency graph. Invalid and missing root flags continue
 	// through the evaluator so they retain their existing error precedence.
-	if flag, exists := config.Flags[flagKey]; requestedType != "" && exists && flag.VariationType != requestedType {
+	if flag, exists := config.Flags[flagKey]; requestedType != "" && exists &&
+		!compatibleEvaluationType(flag.VariationType, requestedType) {
 		return evaluationResult{
 			Value:  defaultValue,
 			Reason: openfeature.ErrorReason,
@@ -1001,6 +1002,13 @@ func (p *DatadogProvider) evaluate(
 	p.publishDependencyEvaluations(ctx, flatCtx, res.DependencyEvaluations)
 	res.DependencyEvaluations = nil
 	return res
+}
+
+// compatibleEvaluationType preserves FloatEvaluation's safe integer widening while
+// retaining strict type checks for all other configured/requested type pairs.
+func compatibleEvaluationType(configuredType, requestedType valueType) bool {
+	return configuredType == requestedType ||
+		(configuredType == valueTypeInteger && requestedType == valueTypeNumeric)
 }
 
 func (p *DatadogProvider) publishDependencyEvaluations(
