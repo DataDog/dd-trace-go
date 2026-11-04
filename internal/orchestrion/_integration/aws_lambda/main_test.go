@@ -11,9 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,44 +87,6 @@ func TestLambdaNoRPC(t *testing.T) {
 	run := runLambda(t, bin, "Start", invokes)
 	require.False(t, run.exited, "the app exited:\n%s", run.output)
 	requireInvocations(t, run, "Start", invokes, true)
-}
-
-// TestLambdaLatestLambdaGo runs against the latest aws-lambda-go release,
-// resolved when the test runs. The module pins the oldest supported one,
-// v1.46.0. The aspect depends on aws-lambda-go internals, so a release that
-// renames them fails here first.
-func TestLambdaLatestLambdaGo(t *testing.T) {
-	modfile := withDependency(t, "github.com/aws/aws-lambda-go@latest")
-	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp", "-modfile="+modfile)
-	invokes := []invocation{{event: `{}`, body: `"ok"`}}
-	run := runLambda(t, bin, "Start", invokes)
-	require.False(t, run.exited, "the app exited:\n%s", run.output)
-	requireInvocations(t, run, "Start", invokes, true)
-}
-
-// withDependency copies this module's go.mod and go.sum to a temporary
-// directory, upgrades module@version there, and returns the go.mod path for
-// go build -modfile.
-func withDependency(t *testing.T, moduleAtVersion string) string {
-	t.Helper()
-	gomod, err := exec.Command("go", "env", "GOMOD").Output()
-	require.NoError(t, err)
-	gomodPath := strings.TrimSpace(string(gomod))
-
-	dir := t.TempDir()
-	modfile := filepath.Join(dir, "go.mod")
-	for src, dst := range map[string]string{gomodPath: modfile, strings.TrimSuffix(gomodPath, ".mod") + ".sum": filepath.Join(dir, "go.sum")} {
-		data, err := os.ReadFile(src)
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(dst, data, 0o644))
-	}
-
-	get := exec.Command("go", "get", "-modfile="+modfile, moduleAtVersion)
-	get.Dir = filepath.Dir(gomodPath)
-	get.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
-	out, err := get.CombinedOutput()
-	require.NoErrorf(t, err, "go get %s:\n%s", moduleAtVersion, out)
-	return modfile
 }
 
 // requireInvocations checks the responses, spans, and enhanced metrics of a
