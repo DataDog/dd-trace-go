@@ -38,6 +38,12 @@ func (s reentrantExposureStringer) String() string {
 	return "reentrant"
 }
 
+type panickingExposureStringer struct{}
+
+func (panickingExposureStringer) String() string {
+	panic("snapshot failed")
+}
+
 func wideDependencyExposureMetadata(count int) of.FlagMetadata {
 	candidates := make([]dependencyExposureCandidate, 0, count)
 	for i := range count {
@@ -333,6 +339,98 @@ func TestExposureSubjectSnapshotDoesNotRunApplicationCodeUnderWriterLock(t *test
 	}
 	if got := writer.buffer[1].Subject.Attributes["reentrant"]; got != "reentrant" {
 		t.Fatalf("root reentrant attribute = %#v, want reentrant", got)
+	}
+}
+
+func TestExposureSnapshotPanicDoesNotConsumeCacheDecision(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	hook := newExposureHook(writer)
+	details := wideExposureHookDetails(of.FlagMetadata{
+		metadataAllocationKey: "root-allocation",
+		metadataDoLogKey:      true,
+	})
+	makeHookContext := func(attribute any) of.HookContext {
+		return of.NewHookContext(
+			"root", of.Boolean, false, of.NewClientMetadata(""),
+			of.Metadata{Name: datadogProviderName},
+			of.NewEvaluationContext("subject", map[string]any{"attribute": attribute}),
+		)
+	}
+
+	panicked := false
+	func() {
+		defer func() { panicked = recover() != nil }()
+		hook.Finally(context.Background(), makeHookContext(panickingExposureStringer{}), details, of.HookHints{})
+	}()
+	if !panicked {
+		t.Fatal("snapshot Stringer did not panic")
+	}
+	if got := len(writer.buffer); got != 0 {
+		t.Fatalf("buffered exposures after snapshot panic = %d, want 0", got)
+	}
+
+	second := wideExposureHookDetails(of.FlagMetadata{
+		metadataAllocationKey: "root-allocation",
+		metadataDoLogKey:      true,
+	})
+	hook.Finally(context.Background(), makeHookContext("safe"), second, of.HookHints{})
+	if got := len(writer.buffer); got != 1 {
+		t.Fatalf("buffered exposures after retry = %d, want 1", got)
+	}
+	if !(&ExposureEvaluation{Details: second}).ShouldSend() {
+		t.Fatal("retry after snapshot panic was reported as a cache hit")
+	}
+}
+
+func TestExposureSnapshotConcurrentDuplicatesCommitOnce(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	event := exposureEvent{
+		Allocation: exposureAllocation{Key: "allocation"},
+		Flag:       exposureFlag{Key: "flag"},
+		Variant:    exposureVariant{Key: "on"},
+		Subject:    exposureSubject{ID: "subject"},
+	}
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	results := make(chan bool, 2)
+	attributes := func() map[string]any {
+		entered <- struct{}{}
+		<-release
+		return map[string]any{"detached": true}
+	}
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			added, known := writer.appendWithDecisionAndAttributes(event, attributes)
+			results <- added && known
+		})
+	}
+	<-entered
+	<-entered
+	close(release)
+	wg.Wait()
+	close(results)
+
+	added := 0
+	for result := range results {
+		if result {
+			added++
+		}
+	}
+	if added != 1 {
+		t.Fatalf("successful concurrent appends = %d, want 1", added)
+	}
+	if got := len(writer.buffer); got != 1 {
+		t.Fatalf("buffered concurrent duplicate exposures = %d, want 1", got)
 	}
 }
 

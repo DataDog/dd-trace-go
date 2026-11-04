@@ -157,6 +157,21 @@ func (c *exposureLRUCache) add(key exposureCacheKey, value exposureCacheValue) b
 	return true
 }
 
+// isDuplicate reports an existing identical entry and refreshes its LRU
+// position without changing the cached decision.
+func (c *exposureLRUCache) isDuplicate(key exposureCacheKey, value exposureCacheValue) bool {
+	elem, exists := c.items[key]
+	if !exists {
+		return false
+	}
+	entry := elem.Value.(*exposureCacheEntry)
+	if entry.value != value {
+		return false
+	}
+	c.order.MoveToFront(elem)
+	return true
+}
+
 // evictOldest removes the least recently used entry
 func (c *exposureLRUCache) evictOldest() {
 	elem := c.order.Back()
@@ -264,9 +279,10 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 	return w.appendWithDecisionAndAttributes(event, nil)
 }
 
-// appendWithDecisionAndAttributes resolves the cache before building the detached
-// subject attributes. The lazy callback is shared by all events in one root
-// evaluation, so cache hits do no context work and admitted events reuse one map.
+// appendWithDecisionAndAttributes checks the cache before building the detached
+// subject attributes, then commits the decision after the snapshot succeeds.
+// The lazy callback is shared by all events in one root evaluation, so cache
+// hits do no context work and admitted events reuse one map.
 func (w *exposureWriter) appendWithDecisionAndAttributes(
 	event exposureEvent,
 	attributes func() map[string]any,
@@ -292,16 +308,19 @@ func (w *exposureWriter) appendWithDecisionAndAttributes(
 		cacheValue.hasSerialID = true
 	}
 
-	// Check deduplication cache - returns true if this is a new or changed entry
-	if !w.cache.add(cacheKey, cacheValue) {
+	// An already committed duplicate needs no subject snapshot. New or changed
+	// entries are committed only after any application-provided String methods
+	// invoked while detaching the snapshot return successfully.
+	if w.cache.isDuplicate(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
 		w.mu.Unlock()
 		return false, true
 	}
 
 	if !w.datadogLoggingEnabled {
+		isNew := w.cache.add(cacheKey, cacheValue)
 		w.mu.Unlock()
-		return true, true
+		return isNew, true
 	}
 	if attributes != nil {
 		// Caller attributes can invoke application String methods. Do not run them
@@ -313,6 +332,13 @@ func (w *exposureWriter) appendWithDecisionAndAttributes(
 			w.mu.Unlock()
 			return false, false
 		}
+	}
+	// Another evaluation may have committed this decision while the writer was
+	// unlocked to build attributes. Recheck under the lock so concurrent
+	// identical evaluations still buffer exactly one exposure.
+	if !w.cache.add(cacheKey, cacheValue) {
+		w.mu.Unlock()
+		return false, true
 	}
 	if event.featuresKey != "" {
 		event.Features = w.featureValues.values(event.featuresKey)
