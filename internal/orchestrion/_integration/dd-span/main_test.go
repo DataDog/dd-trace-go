@@ -25,14 +25,16 @@ func TestSpansInMain(t *testing.T) {
 		require.NotContains(t, spans, s.Operation, "two spans named %q", s.Operation)
 		spans[s.Operation] = s
 	}
-	requireOperations(t, spans, "run", "work", "main.fail")
+	requireOperations(t, spans, "run", "work", "main.fail", "main.literal")
 
 	assert.Zero(t, spans["run"].ParentID)
 	requireParent(t, spans, "work", "run")
 	requireParent(t, spans, "main.fail", "run")
+	requireParent(t, spans, "main.literal", "run")
 	assert.Equal(t, map[string]string{"function-name": "run", "app": "main"}, userMeta(spans["run"]))
 	assert.Equal(t, map[string]string{"function-name": "work", "app": "work"}, userMeta(spans["work"]))
 	assert.EqualValues(t, 1, spans["main.fail"].Error)
 	assert.Equal(t, "main error", spans["main.fail"].Meta["error.message"])
 	assert.Equal(t, "fail", spans["main.fail"].Meta["function-name"])
+	assert.Equal(t, map[string]string{"app": "literal"}, userMeta(spans["main.literal"]))
 }

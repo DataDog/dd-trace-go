@@ -222,22 +222,73 @@ func TestLocalNames(t *testing.T) {
 	requireParent(t, spans, "spanWithLocals", "test.root")
 }
 
-// FIXME: otelc does not expand a directive on a function literal
-// (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1602).
-// Once it does, the otelc branch below fails and must be removed.
 func TestFunctionLiteral(t *testing.T) {
-	spans := traced(t, func(context.Context) {
+	spans := traced(t, func(ctx context.Context) {
 		//dd:span literal:assigned other:tag
 		op := func() {}
 		op()
+		literalDefine()
+		literalAssign()
+		literalReturn()
+		literalGo(ctx)
+		literalDefer()
+		literalCall()
+		literalSend()
+		literalArgument()
+		literalOuter()
 	})
 
-	if otelc.Enabled() {
+	literals := []string{"assigned", "define", "assign", "return", "go", "defer", "call", "send", "argument"}
+	requireOperations(t, spans, append([]string{"test.root", "literalOuter", "inner"}, literals...)...)
+	for _, op := range literals {
+		requireParent(t, spans, op, "test.root")
+		if op != "assigned" {
+			assert.Equal(t, map[string]string{"literal": op}, userMeta(spans[op]))
+		}
+	}
+	// With no function name, the first argument's value names the span.
+	assert.Equal(t, map[string]string{"literal": "assigned", "other": "tag"}, userMeta(spans["assigned"]))
+	requireParent(t, spans, "literalOuter", "test.root")
+	requireParent(t, spans, "inner", "literalOuter")
+	assert.Equal(t, map[string]string{"literal": "inner"}, userMeta(spans["inner"]))
+}
+
+func TestFunctionLiteralContext(t *testing.T) {
+	spans := traced(t, func(ctx context.Context) {
+		other := startOnGoroutine("test.other")
+		defer other.Finish()
+		literalWithContext(ctx)
+		_ = literalWithError()
+	})
+
+	requireOperations(t, spans, "test.root", "test.other", "context", "test.inner", "spanWithRenamedContext", "error")
+	// The parent comes from the argument, not from the active span.
+	requireParent(t, spans, "context", "test.root")
+	requireParent(t, spans, "test.inner", "context")
+	// The literal's body sees a context that carries the new span.
+	requireParent(t, spans, "spanWithRenamedContext", "context")
+	requireParent(t, spans, "error", "test.other")
+	assert.EqualValues(t, 1, spans["error"].Error)
+	assert.Equal(t, "literal error", spans["error"].Meta["error.message"])
+}
+
+// otelc expands a directive on a var declaration or a key:value element, and
+// Orchestrion does not.
+func TestFunctionLiteralOtelcOnly(t *testing.T) {
+	spans := traced(t, func(context.Context) {
+		packageLiteral()
+		literalVar()
+		literalKeyValue()
+	})
+
+	if !otelc.Enabled() {
 		requireOperations(t, spans, "test.root")
 		return
 	}
-	// With no function name, the first argument's value names the span.
-	requireOperations(t, spans, "test.root", "assigned")
-	requireParent(t, spans, "assigned", "test.root")
-	assert.Equal(t, map[string]string{"literal": "assigned", "other": "tag"}, userMeta(spans["assigned"]))
+	literals := []string{"package", "var", "keyvalue"}
+	requireOperations(t, spans, append([]string{"test.root"}, literals...)...)
+	for _, op := range literals {
+		requireParent(t, spans, op, "test.root")
+		assert.Equal(t, map[string]string{"literal": op}, userMeta(spans[op]))
+	}
 }

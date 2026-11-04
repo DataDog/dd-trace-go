@@ -99,3 +99,119 @@ func spanWithLocals() string {
 	ctx := "ctx"
 	return span + ctx
 }
+
+// The functions below each run one function literal annotated in a different
+// place. A literal has no function name, so its span is named after the first
+// directive argument and has no function-name tag.
+
+func literalDefine() {
+	//dd:span literal:define
+	op := func() {}
+	op()
+}
+
+func literalAssign() {
+	var op func()
+	//dd:span literal:assign
+	op = func() {}
+	op()
+}
+
+func literalReturn() {
+	returnLiteral()()
+}
+
+func returnLiteral() func() {
+	//dd:span literal:return
+	return func() {}
+}
+
+func literalGo(ctx context.Context) {
+	done := make(chan struct{})
+	//dd:span literal:go
+	go func(ctx context.Context) {
+		// Finish the span before the caller goes on and the test stops the
+		// tracer. The deferred Finish of the instrumentation then does nothing.
+		if span, ok := tracer.SpanFromContext(ctx); ok {
+			span.Finish()
+		}
+		close(done)
+	}(ctx)
+	<-done
+}
+
+func literalDefer() {
+	//dd:span literal:defer
+	defer func() {}()
+}
+
+func literalCall() {
+	//dd:span literal:call
+	func() {}()
+}
+
+func literalSend() {
+	ch := make(chan func(), 1)
+	//dd:span literal:send
+	ch <- func() {}
+	(<-ch)()
+}
+
+func literalArgument() {
+	call(
+		//dd:span literal:argument
+		func() {},
+	)
+}
+
+func call(f func()) { f() }
+
+// literalOuter has a span, and so has the literal it annotates. The literal
+// that is not annotated has none.
+//
+//dd:span
+func literalOuter() {
+	//dd:span literal:inner
+	inner := func() {
+		func() {}()
+	}
+	inner()
+}
+
+func literalWithContext(ctx context.Context) {
+	//dd:span literal:context
+	op := func(ctx context.Context) {
+		inner := startOnGoroutine("test.inner")
+		defer inner.Finish()
+		spanWithRenamedContext(ctx)
+	}
+	op(ctx)
+}
+
+func literalWithError() error {
+	//dd:span literal:error
+	op := func() error {
+		return errors.New("literal error")
+	}
+	return op()
+}
+
+// otelc also expands a directive on a var declaration or on a key:value
+// element. Orchestrion does not.
+
+//dd:span literal:package
+var packageLiteral = func() {}
+
+func literalVar() {
+	//dd:span literal:var
+	var op = func() {}
+	op()
+}
+
+func literalKeyValue() {
+	ops := map[string]func(){
+		//dd:span literal:keyvalue
+		"op": func() {},
+	}
+	ops["op"]()
+}
