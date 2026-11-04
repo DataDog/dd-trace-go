@@ -34,6 +34,17 @@ permissions:
   id-token: write
   contents: read
 
+# Overlapping runs would double the seed writes: two run_id-keyed
+# entries per key. The group carries a literal prefix: group names are
+# repository-scoped (a bare ref group cancelled the main-branch-tests
+# nightly, 2026-10-30), and in a workflow_call run github.workflow
+# resolves to the caller's name, so the workflow-name form would join
+# a caller's own group and its cancel-in-progress could cancel that
+# caller.
+concurrency:
+  group: smoke-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   setup-env:
     runs-on: ubuntu-latest
@@ -57,6 +68,11 @@ jobs:
           go-version: "1.27"
           check-latest: "true"
           workload: smoke-setup
+          # Default-branch seed set: only the nightly schedule and a
+          # workflow_dispatch on the default branch save these keys.
+          # Every other event restores only: branch and tag pushes,
+          # dispatches from other branches, and workflow_call runs.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -138,6 +154,7 @@ jobs:
           go-version: "1.27"
           check-latest: "true"
           workload: smoke-deps-update
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -282,6 +299,7 @@ jobs:
           go-version: "1.26"
           check-latest: "true"
           workload: smoke-tracer
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
@@ -290,6 +308,14 @@ jobs:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests resolve orchestrion through their `go run`
+      # fallback on this leg, deliberately: unlike the multios and unit-integration
+      # workflows, no install-orchestrion step runs here. The fallback resolves
+      # the version and dependencies the fixture module's go.mod pins, the same
+      # resolution as the exported binary — only the per-test build cost
+      # differs. The cold-cache download flake that motivated the prebuilt
+      # binary was macOS/Windows only (see .github/actions/install-orchestrion);
+      # this leg runs on Linux.
       - name: Run tests
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -346,6 +372,7 @@ jobs:
           go-version: "1.26"
           check-latest: "true"
           workload: smoke-gen
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
