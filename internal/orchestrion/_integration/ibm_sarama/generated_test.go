@@ -27,6 +27,10 @@ func TestAsyncProducerFromClient(t *testing.T) {
 	harness.Run(t, new(TestCaseAsyncProducerFromClient))
 }
 
+func TestBothForks(t *testing.T) {
+	harness.Run(t, new(TestCaseBothForks))
+}
+
 func TestConsumer(t *testing.T) {
 	harness.Run(t, new(TestCaseConsumer))
 }
