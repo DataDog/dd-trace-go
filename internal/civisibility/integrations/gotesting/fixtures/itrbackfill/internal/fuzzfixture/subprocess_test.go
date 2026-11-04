@@ -203,3 +203,44 @@ func TestFixtureChildDeadline(t *testing.T) {
 		}
 	})
 }
+
+func TestFixtureChildHarnessTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want time.Duration
+	}{
+		{name: "child budget", args: []string{"-test.run=^Fuzz$", "-test.timeout=15s"}, want: fixtureChildDeadline(15 * time.Second)},
+		{name: "minute budget", args: []string{"-test.timeout=" + fixtureChildTimeout.String()}, want: fixtureChildDeadline(fixtureChildTimeout)},
+		{name: "no child budget", args: []string{"-test.run=^Fuzz$"}, want: fixtureChildGrace},
+		{name: "invalid child budget", args: []string{"-test.timeout=none"}, want: fixtureChildGrace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := fixtureChildHarnessTimeout(tc.args); got != tc.want {
+				t.Errorf("harness timeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+	// A stalled Windows runner held a child past a 15-second budget and past
+	// the harness deadline. Both budgets must absorb a stall of that scale.
+	if fixtureChildTimeout < 45*time.Second || fixtureChildGrace < 30*time.Second {
+		t.Errorf("child budget shrank below the runner-stall headroom: child=%s grace=%s", fixtureChildTimeout, fixtureChildGrace)
+	}
+}
+
+// The harness deadline must stay behind the child's own -test.timeout. When
+// it fires first, the harness kills the child and the run reports the
+// cancellation instead of the child's result.
+func TestFixtureChildSpendsOwnTimeoutFirst(t *testing.T) {
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runFixtureChild(binary,
+		append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=command-block"),
+		"-test.run=^TestFixtureChildProcess$", "-test.timeout=1s")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("harness deadline fired before the child spent its own timeout: %v: %s", err, output)
+	}
+}

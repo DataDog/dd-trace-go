@@ -154,6 +154,31 @@ func byPathDir(byPath map[string]repoModule, dir string) (repoModule, bool) {
 	return repoModule{}, false
 }
 
+// requireClosure returns seeds plus every module that transitively requires
+// one of them. Both callers seed the walk with the enclosing modules of the
+// changed paths; the contrib matrix additionally seeds from the leaf
+// components' dependent-modules entries, while the integration-suite
+// selection seeds from enclosing modules only.
+func requireClosure(seeds map[string]bool, rev map[string][]string) map[string]bool {
+	closure := make(map[string]bool, len(seeds))
+	queue := make([]string, 0, len(seeds))
+	for m := range seeds {
+		closure[m] = true
+		queue = append(queue, m)
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, dependent := range rev[cur] {
+			if !closure[dependent] {
+				closure[dependent] = true
+				queue = append(queue, dependent)
+			}
+		}
+	}
+	return closure
+}
+
 // selectContribModules resolves a classification into the set of contrib and
 // instrumentation module directories whose tests must run, or selectAll.
 func selectContribModules(root string, r *result) ([]string, error) {
@@ -188,20 +213,7 @@ func selectContribModules(root string, r *result) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	queue := make([]string, 0, len(seeds))
-	for d := range seeds {
-		queue = append(queue, d)
-	}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, dependent := range rev[cur] {
-			if !seeds[dependent] {
-				seeds[dependent] = true
-				queue = append(queue, dependent)
-			}
-		}
-	}
+	seeds = requireClosure(seeds, rev)
 
 	out := make([]string, 0, len(seeds))
 	for d := range seeds {

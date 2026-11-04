@@ -260,6 +260,8 @@ type Config struct {
 	// otelSemanticsEnabled enables OpenTelemetry semantic conventions and
 	// their required global configuration overrides. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
 	otelSemanticsEnabled bool
+	// traceOTelEnabled enables the OpenTelemetry API bridge in Orchestrion builds. Set via DD_TRACE_OTEL_ENABLED.
+	traceOTelEnabled bool
 	// otlpTraceURL is the OTLP collector endpoint for traces.
 	otlpTraceURL string
 	// otlpTraceURLDerivedFromAgent reports whether otlpTraceURL should follow
@@ -518,6 +520,7 @@ func loadConfig() *Config {
 	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, func(v int) bool { return v > 0 })
 	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	cfg.traceOTelEnabled = p.GetBool("DD_TRACE_OTEL_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported") //errtrack:ignore unsupported user configuration
 	}
@@ -1937,6 +1940,13 @@ func (c *Config) OTelSemanticsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otelSemanticsEnabled
+}
+
+// TraceOTelEnabled reports whether DD_TRACE_OTEL_ENABLED enables the OpenTelemetry API bridge.
+func (c *Config) TraceOTelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceOTelEnabled
 }
 
 // SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure

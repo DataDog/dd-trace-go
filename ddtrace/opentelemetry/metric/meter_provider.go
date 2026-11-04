@@ -39,7 +39,13 @@ func init() {
 		if err != nil {
 			return false, err
 		}
-		return installed, startGoRuntimeMetrics(ctx)
+		if err := startGoRuntimeMetrics(ctx); err != nil {
+			if !installed {
+				return installed, err
+			}
+			return installed, &otelmetricsinstall.RuntimeRegistrationError{Err: err}
+		}
+		return installed, nil
 	}
 	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
 		p := installedProvider

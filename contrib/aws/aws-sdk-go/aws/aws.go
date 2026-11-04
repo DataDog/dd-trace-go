@@ -54,6 +54,10 @@ type handlers struct {
 }
 
 // WrapSession wraps a session.Session, causing requests and responses to be traced.
+// Wrapping a session that is already wrapped replaces its tracing handlers, so
+// each request is traced once, with the options of the last call. The handlers
+// move back to the front and back of their lists, so handlers added between
+// two calls still run inside the span.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
 	defaults(cfg)
@@ -63,10 +67,12 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	instr.Logger().Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
+	s.Handlers.Send.RemoveByName(SendHandlerName)
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
 		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
+	s.Handlers.Complete.RemoveByName(CompleteHandlerName)
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
 		Name: CompleteHandlerName,
 		Fn:   h.Complete,
