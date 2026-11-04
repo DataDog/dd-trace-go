@@ -268,9 +268,11 @@ func (cfg *Config) toPayloadConfig() payload.Config {
 		pc.StripInjectedContext = cfg.StripInjectedContext
 	}
 	if !pc.StripInjectedContext {
-		enabled, _ := strconv.ParseBool(env.Get(StripContextEnabledEnvVar))
-		legacyEnabled, _ := strconv.ParseBool(env.Get(StripInjectedContextEnvVar))
-		pc.StripInjectedContext = enabled || legacyEnabled
+		enabled, err := strconv.ParseBool(env.Get(StripContextEnabledEnvVar))
+		if err != nil {
+			enabled, _ = strconv.ParseBool(env.Get(StripInjectedContextEnvVar))
+		}
+		pc.StripInjectedContext = enabled
 	}
 	return pc
 }

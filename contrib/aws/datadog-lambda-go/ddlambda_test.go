@@ -233,6 +233,8 @@ func TestToPayloadConfig(t *testing.T) {
 		{name: "new env var", env: map[string]string{StripContextEnabledEnvVar: "true"}, expected: true},
 		{name: "legacy env var", env: map[string]string{StripInjectedContextEnvVar: "true"}, expected: true},
 		{name: "invalid value", env: map[string]string{StripContextEnabledEnvVar: "yes"}, expected: false},
+		{name: "both set, conflicting", env: map[string]string{StripContextEnabledEnvVar: "false", StripInjectedContextEnvVar: "true"}, expected: false},
+		{name: "invalid new value falls back to legacy", env: map[string]string{StripContextEnabledEnvVar: "yes", StripInjectedContextEnvVar: "true"}, expected: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
