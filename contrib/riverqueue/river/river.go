@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/riverqueue/river/rivertype"
 
@@ -187,7 +188,7 @@ func (m *Middleware) Work(ctx context.Context, job *rivertype.JobRow, doInner fu
 	tags := map[string]any{
 		ext.ResourceName:             job.Kind,
 		ext.MessagingDestinationName: job.Queue,
-		ext.MessagingMessageID:       job.ID,
+		ext.MessagingMessageID:       strconv.FormatInt(job.ID, 10),
 		tagJobKind:                   job.Kind,
 		tagJobAttempt:                job.Attempt,
 		tagJobMaxAttempts:            job.MaxAttempts,

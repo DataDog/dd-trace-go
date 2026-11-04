@@ -294,7 +294,8 @@ func TestWork(t *testing.T) {
 			assert.Equal(t, string(instrumentation.PackageRiverqueueRiver), span.Tag(ext.Component))
 			assert.Equal(t, "river", span.Tag(ext.MessagingSystem))
 			assert.Equal(t, "default", span.Tag(ext.MessagingDestinationName))
-			assert.EqualValues(t, 42, span.Tag(ext.MessagingMessageID))
+			// A string, so large IDs are not rounded through a float64 metric.
+			assert.Equal(t, "42", span.Tag(ext.MessagingMessageID))
 			assert.Equal(t, "sort", span.Tag(tagJobKind))
 			assert.EqualValues(t, 1, span.Tag(tagJobAttempt))
 			assert.EqualValues(t, 25, span.Tag(tagJobMaxAttempts))
