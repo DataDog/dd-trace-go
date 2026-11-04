@@ -16,7 +16,7 @@ require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/DataDog/go-libddwaf/v5 v5.0.1
-	github.com/DataDog/orchestrion v1.14.1-0.20261020101934-9e483f3a0319
+	github.com/DataDog/orchestrion v1.15.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2

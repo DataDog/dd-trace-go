@@ -75,7 +75,7 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
   (`sql.Open`, `sql.OpenDB`) and [pgx.v5](./jackc/pgx.v5/orchestrion.yml).
 - **Add to variadic options.** When the matched call can spread a caller's slice (`f(opts...)`),
   never write into that slice: other slices of the caller may share its backing array, and
-  concurrent calls would race. Since the Orchestrion version `orchestrion/all` now requires,
+  concurrent calls would race. Since Orchestrion v1.15.0, which `orchestrion/all` requires,
   `append-args` appends to a copy of a spread slice and no longer writes into the caller's
   ([DataDog/orchestrion#929](https://github.com/DataDog/orchestrion/pull/929)). Releases up to
   v1.14.0 still write into it, and users who import integrations individually may still weave with
