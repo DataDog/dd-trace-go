@@ -7,8 +7,9 @@
 # default logger keeps its *defaultHandler, and slog.SetDefault needs no change
 # to avoid a deadlock in the log package.
 #
-# replace must keep the original call, so the template builds a second Logger
-# around the wrapped handler. A handler that is already ours is kept as is.
+# The template keeps the original call, so slog.New still panics on a nil
+# handler, and builds a second Logger around the wrapped handler. A handler that
+# is already ours is kept as is.
 #
 # ddtrace/tracer calls slog.New and the contrib imports the tracer, so wrapping
 # it would make an import cycle. The build then fails at link time with

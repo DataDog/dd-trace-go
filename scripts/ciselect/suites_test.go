@@ -307,15 +307,15 @@ func TestSuiteSelection(t *testing.T) {
 			wantOrch:    true,
 		},
 		{
-			// The slog aspect links WrapHandler into every slog.New caller
-			// (the echo.v5 suite calls it) with no import the graphs follow,
-			// so slog is a shared-modules entry too: the orchestrion lane runs
-			// in full, and otelc stays off because nothing otelc-side weaves
-			// it. A shared entry reaches only the lanes its paths gate.
-			name:        "an injected-aspect module runs the orchestrion lane in full",
+			// The slog aspect and the slog otelc rules link WrapHandler into
+			// every slog.New caller (the echo.v5 suite calls it) with no
+			// import the graphs follow, so slog is a shared-modules entry too
+			// and both lanes run in full.
+			name:        "an injected-aspect module runs the gated lanes in full",
 			files:       []string{"contrib/log/slog/slog.go"},
-			otelc:       SuiteVerdict{},
+			otelc:       SuiteVerdict{All: true},
 			orchestrion: SuiteVerdict{All: true},
+			wantOtelc:   true,
 			wantOrch:    true,
 		},
 		{
