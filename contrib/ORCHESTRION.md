@@ -149,6 +149,15 @@ GLS is a tracer-internal mechanism (see the caveat in `gls.orchestrion.yml`) and
 Integration authors normally do not touch it directly: use `context.Context` and the tracer's
 context-aware helpers, and the tracer plus Orchestrion manage the GLS for you.
 
+### Limitation: spans that never finish
+
+A span leaves the GLS when it finishes. A span that never finishes stays on the GLS of its goroutine
+until an enclosing span on the same goroutine finishes or the goroutine exits. Until then, a span
+that starts on that goroutine without a span in its context takes the open span as parent, and the
+trace of the open span cannot complete. Datadog and OpenTelemetry spans behave the same. Fix the
+leak where the span starts: end every span. The
+[gls-unfinished](../internal/orchestrion/_integration/gls-unfinished) suite shows this behavior.
+
 ### Limitation: goroutine boundaries
 
 The GLS is per-goroutine, so a value on it does not follow work onto a new goroutine. If a span lives
@@ -171,6 +180,22 @@ goroutines, rely on context-based propagation, not the GLS.
 
 For propagating context across process boundaries (distributed tracing), see the context propagation
 section in [INTEGRATIONS.md](./INTEGRATIONS.md).
+
+## OpenTelemetry API bridge
+
+With `DD_TRACE_OTEL_ENABLED=true`, an Orchestrion build links the OpenTelemetry trace API to the
+tracer. `ddtrace/tracer/doc.go` describes the behavior. Two aspect files do the weaving:
+
+- `ddtrace/opentelemetry/orchestrion.yml` weaves `go.opentelemetry.io/otel`:
+  `trace.SpanFromContext` and the global tracer call the bridge in `ddtrace/opentelemetry/bridge.go`
+  through `go:linkname`. The aspects read private OpenTelemetry identifiers. Their
+  `meta.description` names them and the tested otel version.
+- `ddtrace/tracer/otel-bridge.orchestrion.yml` weaves the tracer, so that the span pool does not
+  reuse a span that the bridge pinned. The plain-Go part is in `ddtrace/tracer/otel_bridge.go`.
+
+The `otel_api`, `otel_api_provider`, and `otel_api_disabled` suites in
+`internal/orchestrion/_integration` test the woven behavior. See
+[Integration tests](#integration-tests).
 
 ## Integration tests
 
