@@ -15,7 +15,7 @@ import (
 const DependentFlagVariantKeyV1 = "dependent-flag-variant-key-v1"
 
 // DependentFlagsVariantKeyQueryParameter requests prerequisite variant keys in UFC responses.
-const DependentFlagsVariantKeyQueryParameter = "dependent-flags-variant-key"
+const DependentFlagsVariantKeyQueryParameter = "cap_dependent-flags-variant-key"
 
 // DependentFlagsVariantKeyQueryVersion is the supported query parameter version.
 const DependentFlagsVariantKeyQueryVersion = "v1"

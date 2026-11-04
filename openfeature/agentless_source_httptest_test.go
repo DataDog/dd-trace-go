@@ -705,7 +705,7 @@ func TestAgentlessSourceUnsupportedEvaluatorOmitsDependentFlagsParameter(t *test
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		assert.Empty(t, r.URL.Query().Get("dependent-flags-variant-key"))
+		assert.Empty(t, r.URL.Query().Get("cap_dependent-flags-variant-key"))
 		assert.Empty(t, r.Header.Values("X-DD-FEATURE-FLAGS-CAPABILITIES"))
 		if requests == 1 {
 			w.Header().Set("ETag", fakeUFCBackendETag)
@@ -735,7 +735,7 @@ func TestAddEvaluatorCapabilitiesUsesQueryParameter(t *testing.T) {
 	}{
 		{"absent", nil, "https://example.test/ufc?token=preserved"},
 		{"unknown", []string{"unknown-v1"}, "https://example.test/ufc?token=preserved"},
-		{"dependent flags", []string{internalffe.DependentFlagVariantKeyV1}, "https://example.test/ufc?dependent-flags-variant-key=v1&token=preserved"},
+		{"dependent flags", []string{internalffe.DependentFlagVariantKeyV1}, "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=preserved"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "https://example.test/ufc?token=preserved", nil)
